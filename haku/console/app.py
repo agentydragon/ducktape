@@ -230,8 +230,8 @@ def create_app(
         db_sessions, operator_identity_store=operator_identity_store
     )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
-    claude_runtime = console_config.chat_runtimes.claude_code if console_config.chat_runtimes is not None else None
-    codex_runtime = console_config.chat_runtimes.codex_app_server if console_config.chat_runtimes is not None else None
+    claude_runtime = console_config.harnesses.claude_code if console_config.harnesses is not None else None
+    codex_runtime = console_config.harnesses.codex_app_server if console_config.harnesses is not None else None
     static_by_id = {agent.agent_id: agent for agent in console_config.static_agents}
     profile_runtime_kinds = {
         profile.id: set(profile.allowed_chat_runtimes) for profile in console_config.access_profiles

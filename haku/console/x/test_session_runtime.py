@@ -134,7 +134,7 @@ def test_runtime_deployment_wiring_has_no_application_defaults() -> None:
     assert all(field.is_required() for field in RuntimeRegistrationConfig.model_fields.values())
     assert ChatRuntimesConfig.model_fields["claude_code"].is_required()
     assert not ChatRuntimesConfig.model_fields["codex_app_server"].is_required()
-    assert not ConsoleConfigFile.model_fields["chat_runtimes"].is_required()
+    assert not ConsoleConfigFile.model_fields["harnesses"].is_required()
 
 
 def test_new_conversation_request_rejects_client_supplied_access_profile() -> None:
@@ -255,7 +255,7 @@ async def test_replacement_pins_identity_after_agent_profile_change_and_shares_s
 
 def _console_config(**overrides: object) -> dict[str, object]:
     config: dict[str, object] = {
-        "chat_runtimes": {"claude_code": runtime_config().model_dump(mode="json")},
+        "harnesses": {"claude_code": runtime_config().model_dump(mode="json")},
         "auto_approval_policies": [{"id": "manual", "type": "never"}],
         "access_profiles": [
             {"id": "manual", "auto_approval_policy": "manual", "allowed_chat_runtimes": ["claude_code"]}
@@ -281,8 +281,8 @@ def _console_config(**overrides: object) -> dict[str, object]:
 
 def test_chat_runtime_config_is_closed_and_rejects_the_retired_shape() -> None:
     parsed = ConsoleConfigFile.model_validate(_console_config())
-    assert parsed.chat_runtimes is not None
-    assert parsed.chat_runtimes.claude_code == runtime_config()
+    assert parsed.harnesses is not None
+    assert parsed.harnesses.claude_code == runtime_config()
 
     old_shared_config = _console_config()
     old_shared_config.pop("launchable_agents")
@@ -293,7 +293,7 @@ def test_chat_runtime_config_is_closed_and_rejects_the_retired_shape() -> None:
     with pytest.raises(ValidationError, match="extra_forbidden"):
         ConsoleConfigFile.model_validate(
             _console_config(
-                chat_runtimes={
+                harnesses={
                     "claude_code": runtime_config().model_dump(mode="json"),
                     "future_runtime": runtime_config().model_dump(mode="json"),
                 }
@@ -302,25 +302,25 @@ def test_chat_runtime_config_is_closed_and_rejects_the_retired_shape() -> None:
 
     with pytest.raises(ValidationError, match="claude_code must select the claude_code implementation"):
         ConsoleConfigFile.model_validate(
-            _console_config(chat_runtimes={"claude_code": _codex_runtime_config().model_dump(mode="json")})
+            _console_config(harnesses={"claude_code": _codex_runtime_config().model_dump(mode="json")})
         )
 
     with pytest.raises(ValidationError, match="claude_runtime was replaced"):
         ConsoleConfigFile.model_validate(_console_config(claude_runtime=runtime_config().model_dump(mode="json")))
 
-    assert ConsoleConfigFile.model_validate(_console_config(chat_runtimes=None)).chat_runtimes is None
+    assert ConsoleConfigFile.model_validate(_console_config(harnesses=None)).harnesses is None
 
 
 def test_chat_runtime_config_fails_closed_when_malformed() -> None:
     malformed = runtime_config().model_dump(mode="json")
     del malformed["namespace"]
     with pytest.raises(ValidationError, match="namespace"):
-        ConsoleConfigFile.model_validate(_console_config(chat_runtimes={"claude_code": malformed}))
+        ConsoleConfigFile.model_validate(_console_config(harnesses={"claude_code": malformed}))
 
     credentialed = runtime_config().model_dump(mode="json")
     credentialed["mcp_url"] = "https://session-secret@console.example/mcp"
     with pytest.raises(ValidationError, match="mcp_url"):
-        ConsoleConfigFile.model_validate(_console_config(chat_runtimes={"claude_code": credentialed}))
+        ConsoleConfigFile.model_validate(_console_config(harnesses={"claude_code": credentialed}))
 
     flat = runtime_config().model_dump(mode="json")
     flat["oauth_placeholder"] = flat.pop("implementation")["oauth_placeholder"]
@@ -328,7 +328,7 @@ def test_chat_runtime_config_fails_closed_when_malformed() -> None:
     flat.pop("claim_prefix")
     flat.pop("runtime_label")
     with pytest.raises(ValidationError, match="implementation"):
-        ConsoleConfigFile.model_validate(_console_config(chat_runtimes={"claude_code": flat}))
+        ConsoleConfigFile.model_validate(_console_config(harnesses={"claude_code": flat}))
 
 
 def test_claude_environment_contains_placeholder_proxy_and_ca_only() -> None:

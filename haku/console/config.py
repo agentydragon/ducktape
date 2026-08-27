@@ -437,7 +437,7 @@ class ChatRuntimesConfig(BaseModel):
     @classmethod
     def _claude_slot_accepts_only_claude(cls, value: RuntimeRegistrationConfig) -> RuntimeRegistrationConfig:
         if value.kind is not RuntimeKind.CLAUDE_CODE:
-            raise ValueError("chat_runtimes.claude_code must select the claude_code implementation")
+            raise ValueError("harnesses.claude_code must select the claude_code implementation")
         return value
 
     @field_validator("codex_app_server")
@@ -446,7 +446,7 @@ class ChatRuntimesConfig(BaseModel):
         cls, value: RuntimeRegistrationConfig | None
     ) -> RuntimeRegistrationConfig | None:
         if value is not None and value.kind is not RuntimeKind.CODEX_APP_SERVER:
-            raise ValueError("chat_runtimes.codex_app_server must select the codex_app_server implementation")
+            raise ValueError("harnesses.codex_app_server must select the codex_app_server implementation")
         return value
 
     @property

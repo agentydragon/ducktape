@@ -94,7 +94,7 @@ def test_config_advertises_codex_and_explicit_launch_preserves_public_coder_isol
         },
     }
     shared_config: dict[str, Any] = {
-        "chat_runtimes": {
+        "harnesses": {
             "claude_code": {
                 "agent_id": haku_id,
                 "namespace": "claude",
@@ -179,7 +179,7 @@ def test_config_advertises_codex_and_explicit_launch_preserves_public_coder_isol
         assert selected_default.json()["runtime_kind"] == "codex_app_server"
 
     wrong_codex_slot = copy.deepcopy(shared_config)
-    wrong_codex_slot["chat_runtimes"]["codex_app_server"]["implementation"] = {
+    wrong_codex_slot["harnesses"]["codex_app_server"]["implementation"] = {
         "kind": "claude_code",
         "oauth_placeholder": "placeholder",
     }

@@ -17,12 +17,15 @@ def test_deployed_console_config_is_valid() -> None:
     raw = yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/config.yaml").read_text())
     config = ConsoleConfigFile.model_validate(raw)
 
-    assert config.chat_runtimes is not None
-    claude = config.chat_runtimes.claude_code
+    # The deployed ConfigMap still writes the deprecated `chat_runtimes` key (#4772 C4c expand);
+    # the loader maps it onto the canonical `harnesses` field.
+    assert "chat_runtimes" in raw
+    assert config.harnesses is not None
+    claude = config.harnesses.claude_code
     assert claude.claim_prefix == "claude"
     assert claude.runtime_label == "claude-chat"
     assert isinstance(claude.implementation, ClaudeCodeImplementationConfig)
-    codex = config.chat_runtimes.codex_app_server
+    codex = config.harnesses.codex_app_server
     assert codex is not None
     assert codex.claim_prefix == "codex"
     assert codex.runtime_label == "codex-chat"
@@ -90,8 +93,8 @@ def test_deployed_console_settings_load_from_the_shared_yaml(monkeypatch: pytest
     assert str(settings.haku_agent_workspace_setup) == "/usr/local/bin/haku-sandbox-setup.sh"
     raw = yaml.safe_load(config_path.read_text())
     config = ConsoleConfigFile.model_validate(raw)
-    assert config.chat_runtimes is not None
-    codex = config.chat_runtimes.codex_app_server
+    assert config.harnesses is not None
+    codex = config.harnesses.codex_app_server
     assert codex is not None
     implementation = codex.implementation
     assert isinstance(implementation, CodexAppServerImplementationConfig)
