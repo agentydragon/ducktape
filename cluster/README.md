@@ -116,9 +116,9 @@ wyrm2 (NixOS, 2x RTX 5090) provides `nvidia.com/gpu` resources; GPU pods need
 
 DNS (AWS Route 53) and the public website must keep working/recovering with OVH
 only (no Proxmox) — so they must not depend on Proxmox-pinned storage
-(`lvm-proxmox-*`, `local-path-proxmox`) or Proxmox-pinned nodes. Full invariant set,
-compliance tracking, and fix plan:
-<docs/plan.md> § "OVH-Only Resilience Invariants".
+(`lvm-proxmox-*`, `local-path-proxmox`) or Proxmox-pinned nodes. Full invariant set
+and compliance checklist:
+<docs/decisions.md> § "OVH-Only Resilience Invariants".
 
 ## SSO (Authentik)
 

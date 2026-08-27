@@ -1,6 +1,6 @@
 # Storage Strategy
 
-Part of <plan.md>.
+Part of the 2026-04 architecture redesign (its plan is retired; git history has it).
 
 > **Status (2026-05-17)**: Object-storage decision resolved — the cluster
 > deploys **SeaweedFS** on the OVH kimsufi pair as its S3 backend.

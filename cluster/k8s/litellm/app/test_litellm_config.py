@@ -52,7 +52,7 @@ _TANA_LITELLM_BASE = "http://tana-litellm.litellm.svc.cluster.local:4000"
 
 
 # CLIProxyAPI (ChatGPT/Codex subscription) is the only route to the Codex subscription
-# since the private litellm-chatgpt Deployment was retired 2026-08-06 (cluster/docs/plan.md).
+# since the private litellm-chatgpt Deployment was retired 2026-08-06 (cluster/docs/decisions.md).
 # One pod, exposed twice below because its two clients speak different wire protocols and
 # each one's native surface must be reached without a LiteLLM-side translation:
 #

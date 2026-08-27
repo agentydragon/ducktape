@@ -41,8 +41,8 @@ in the `tofu-state-db` CNPG cluster (one schema per `Terraform` CR). Recovery:
 ### DNS and website must survive OVH-only
 
 They must work without Proxmox: no Proxmox-pinned storage (`lvm-proxmox-*`,
-`local-path-proxmox`) and no Proxmox-pinned nodes. See <docs/plan.md> "OVH-Only Resilience
-Invariants".
+`local-path-proxmox`) and no Proxmox-pinned nodes. See <docs/decisions.md> "OVH-Only
+Resilience Invariants".
 
 ## Primary Directive: Declarative Turnkey Bootstrap
 

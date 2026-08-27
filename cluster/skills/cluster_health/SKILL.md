@@ -26,7 +26,7 @@ Run checks in parallel where possible.
 - All Flux Kustomizations — ready status, suspended, stalled
 - HelmReleases — ready status, failed upgrades
 - Terraform resources (tofu-controller) — ready and applied status
-- Identify suspended kustomizations and cross-reference with `cluster/docs/plan.md`
+- Identify suspended kustomizations and cross-reference with `cluster/docs/decisions.md`
   "Suspended Kustomizations" to distinguish expected vs unexpected suspensions
 
 ### Alertmanager & Prometheus Alerts
@@ -163,6 +163,6 @@ dependency order>
 
 Check findings against:
 
-- `cluster/docs/plan.md` "Suspended Kustomizations" — don't flag expected suspensions
+- `cluster/docs/decisions.md` "Suspended Kustomizations" — don't flag expected suspensions
 - `cluster/docs/plan.md` "Next Actions" — note if findings match known TODOs
 - `cluster/docs/troubleshooting.md` — reference known fix procedures for matching symptoms
