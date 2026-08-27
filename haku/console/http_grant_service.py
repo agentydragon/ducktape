@@ -204,6 +204,18 @@ class HttpGrantService:
             ]
         )
 
+    @staticmethod
+    def _allowed(matching: Sequence[HttpGrant]) -> HttpRequestAllowed:
+        """Bound the admission by the earliest matching expiry; report every named credential."""
+        grant = min(matching, key=lambda item: item.expires_at)
+        return HttpRequestAllowed(
+            grant_id=grant.grant_id,
+            expires_at=grant.expires_at,
+            credential_handles=frozenset(
+                match.spec.credential_handle for match in matching if match.spec.credential_handle is not None
+            ),
+        )
+
     async def match_request(
         self, *, request_principal: RequestPrincipal, method: HttpMethod, origin: HttpOrigin, path: str
     ) -> HttpGrantDecision:
@@ -220,8 +232,7 @@ class HttpGrantService:
         ]
         if not matching:
             return HttpRequestDenied(reason="no active HTTP grant covers the request")
-        grant = min(matching, key=lambda item: item.expires_at)
-        return HttpRequestAllowed(grant_id=grant.grant_id, expires_at=grant.expires_at)
+        return self._allowed(matching)
 
     async def match_tunnel(self, *, request_principal: RequestPrincipal, origin: HttpOrigin) -> HttpGrantDecision:
         """Match a CONNECT tunnel, which has no inner request yet: any active grant at the exact
@@ -237,5 +248,4 @@ class HttpGrantService:
         ]
         if not matching:
             return HttpRequestDenied(reason="no active HTTP grant covers the origin")
-        grant = min(matching, key=lambda item: item.expires_at)
-        return HttpRequestAllowed(grant_id=grant.grant_id, expires_at=grant.expires_at)
+        return self._allowed(matching)

@@ -256,6 +256,36 @@ async def test_tunnel_admission_carries_the_earliest_expiry() -> None:
     assert decision.expires_at == earlier.expires_at
 
 
+async def test_match_reports_credential_handles_from_every_matching_grant() -> None:
+    service = HttpGrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    await service.create_grants(
+        owner_agent_id=_AGENT,
+        grant_principal=_GRANT_PRINCIPAL,
+        source_tool_call_id="tool-call-1",
+        grants=(HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}), credential_handle="github-bot"),),
+        expires_at=_NOW + timedelta(minutes=50),
+    )
+    (reachability,) = await service.create_grants(
+        owner_agent_id=_AGENT,
+        grant_principal=_GRANT_PRINCIPAL,
+        source_tool_call_id="tool-call-2",
+        grants=(_SPEC,),
+        expires_at=_NOW + timedelta(minutes=5),
+    )
+
+    request = await service.match_request(
+        request_principal=_request_principal(), method=HttpMethod.GET, origin=_ORIGIN, path="/"
+    )
+    tunnel = await service.match_tunnel(request_principal=_request_principal(), origin=_ORIGIN)
+    for decision in (request, tunnel):
+        assert decision.allowed
+        # Redemption is reported from every matching grant while the pure-reachability grant
+        # still bounds the admission with the earliest expiry.
+        assert decision.credential_handles == frozenset({"github-bot"})
+        assert decision.grant_id == reachability.grant_id
+        assert decision.expires_at == reachability.expires_at
+
+
 async def test_principal_lifecycle_inherits_agent_grants_without_crossing_sessions() -> None:
     repo = FakeRepository()
     service = HttpGrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)

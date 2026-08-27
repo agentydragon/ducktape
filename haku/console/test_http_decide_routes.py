@@ -11,7 +11,14 @@ from fastapi.testclient import TestClient
 
 from haku.console.http_decide_routes import router
 from haku.console.http_decide_service import HttpDecideUnavailableError
-from haku.egress.decision import DecideAllowed, DecideDenied, DecideRequest, DecisionSource, GrantScope
+from haku.egress.decision import (
+    DecideAllowed,
+    DecideDenied,
+    DecideRequest,
+    DecisionSource,
+    GrantScope,
+    PlaceholderSubstitution,
+)
 
 _VALID_UNTIL = datetime.datetime(2026, 8, 27, 12, 30, tzinfo=datetime.UTC)
 _PROXY_TOKEN = "proxy-identity-token"
@@ -86,17 +93,27 @@ def test_allow_wire_shape_carries_provenance_lifetime_and_substitutions() -> Non
             source=DecisionSource.GRANT,
             decision_id="grant:50000000-0000-4000-8000-000000000005",
             valid_until=_VALID_UNTIL,
+            substitutions=[
+                PlaceholderSubstitution(
+                    placeholder="github-token-placeholder",
+                    value="ghp-real-value",
+                    match_headers=frozenset({"authorization"}),
+                )
+            ],
         )
     )
     with _client(service) as client:
         response = _post(client)
     assert response.status_code == 200
+    # This response is the one wire a real credential value travels on: localhost, to the proxy.
     assert response.json() == {
         "allowed": True,
         "source": "grant",
         "decision_id": "grant:50000000-0000-4000-8000-000000000005",
         "valid_until": "2026-08-27T12:30:00Z",
-        "substitutions": [],
+        "substitutions": [
+            {"placeholder": "github-token-placeholder", "value": "ghp-real-value", "match_headers": ["authorization"]}
+        ],
     }
     (decided,) = service.decided
     assert decided.request.path == "/api/items?x=1"

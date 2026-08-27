@@ -8,6 +8,7 @@ that failure mode is the test's subject.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import partial
@@ -23,12 +24,19 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from haku.console.conftest import default_agent_binding, insert_approved_tool_call
 from haku.console.grant_principal import AgentGrantPrincipal
-from haku.console.http_decide_config import LoadedEgressDecide, LoadedFenceCredential
+from haku.console.http_decide_config import LoadedEgressCredential, LoadedEgressDecide, LoadedFenceCredential
 from haku.console.http_decide_service import HttpDecideService, HttpDecideUnavailableError
 from haku.console.http_grant_models import HttpGrantSpec, HttpMethod, HttpOrigin, HttpScheme
 from haku.console.http_grant_repository import PostgresHttpGrantRepository
 from haku.console.http_grant_service import HttpGrantService
-from haku.egress.decision import DecideAllowed, DecideDenied, DecideRequest, DecisionSource, RequestMeta
+from haku.egress.decision import (
+    DecideAllowed,
+    DecideDenied,
+    DecideRequest,
+    DecisionSource,
+    PlaceholderSubstitution,
+    RequestMeta,
+)
 
 _NOW = datetime(2026, 8, 27, 12, 0, tzinfo=UTC)
 _ORIGIN = HttpOrigin(scheme=HttpScheme.HTTPS, host="api.example", port=443)
@@ -37,8 +45,21 @@ _FENCE = "agent-fence-credential"
 _OTHER_FENCE = "other-agent-fence-credential"
 # Configured fence identity that owns no grants: isolation must come from principal filtering.
 _UNGRANTED_AGENT = UUID("10000000-0000-4000-8000-000000000099")
+_GITHUB_VALUE = "ghp-real-bot-token"
 
 _insert_http_source = partial(insert_approved_tool_call, server_id="http_grants")
+
+
+def _github_credential(agent_id: UUID, **overrides: Any) -> LoadedEgressCredential:
+    fields: dict[str, Any] = {
+        "handle": "github-bot",
+        "placeholder": "github-token-placeholder",
+        "value": SecretStr(_GITHUB_VALUE),
+        "match_headers": frozenset({"authorization"}),
+        "agent_ids": frozenset({agent_id}),
+        "origins": frozenset({_ORIGIN}),
+    }
+    return LoadedEgressCredential(**{**fields, **overrides})
 
 
 @dataclass(frozen=True)
@@ -50,7 +71,7 @@ class _Harness:
     binding_id: UUID
 
 
-def _harness(client: Any) -> _Harness:
+def _harness(client: Any, *, credentials: Callable[[UUID], list[LoadedEgressCredential]] | None = None) -> _Harness:
     app = cast(FastAPI, client.app)
     sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
     assert client.portal is not None
@@ -66,6 +87,7 @@ def _harness(client: Any) -> _Harness:
                 LoadedFenceCredential(agent_id=agent_id, token=SecretStr(_FENCE)),
                 LoadedFenceCredential(agent_id=_UNGRANTED_AGENT, token=SecretStr(_OTHER_FENCE)),
             ],
+            credentials=credentials(agent_id) if credentials is not None else [],
         ),
     )
     return _Harness(decide=decide, grants=grants, sessions=sessions, agent_id=agent_id, binding_id=binding_id)
@@ -192,6 +214,98 @@ def test_connect_tunnel_admission(make_client: Any) -> None:
         # A tunnel transports TLS, so a cleartext-origin grant cannot admit one.
         cleartext = decide(_request(method="CONNECT", scheme=None, path=None, host="plain.example", port=80))
         assert isinstance(cleartext, DecideDenied)
+
+
+def test_credentialed_grant_redeems_the_substitution(make_client: Any) -> None:
+    with make_client() as client:
+        harness = _harness(client, credentials=lambda agent_id: [_github_credential(agent_id)])
+        spec = HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}), credential_handle="github-bot")
+        (grant_id,) = _create_grants(client, harness, spec, expires_at=_NOW + timedelta(minutes=30))
+        decide = partial(client.portal.call, harness.decide.decide)
+
+        allowed = decide(_request(path="/repos/agentydragon/ducktape"))
+        assert allowed == DecideAllowed(
+            source=DecisionSource.GRANT,
+            decision_id=f"grant:{grant_id}",
+            valid_until=_NOW + timedelta(minutes=30),
+            substitutions=[
+                PlaceholderSubstitution(
+                    placeholder="github-token-placeholder",
+                    value=_GITHUB_VALUE,
+                    match_headers=frozenset({"authorization"}),
+                )
+            ],
+        )
+
+        # Substitutions come from every matching grant, while the expiry bound stays the earliest:
+        # an additional pure-reachability grant at the origin narrows valid_until, not redemption.
+        (reachability_id,) = _create_grants(
+            client,
+            harness,
+            HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET})),
+            expires_at=_NOW + timedelta(minutes=10),
+        )
+        combined = decide(_request(path="/repos/agentydragon/ducktape"))
+        assert isinstance(combined, DecideAllowed)
+        assert combined.decision_id == f"grant:{reachability_id}"
+        assert combined.valid_until == _NOW + timedelta(minutes=10)
+        assert [substitution.value for substitution in combined.substitutions] == [_GITHUB_VALUE]
+
+
+def test_connect_tunnel_admission_carries_no_substitutions(make_client: Any) -> None:
+    # A tunnel has no inner request to substitute into; each intercepted request is decided
+    # individually and redeems there.
+    with make_client() as client:
+        harness = _harness(client, credentials=lambda agent_id: [_github_credential(agent_id)])
+        spec = HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}), credential_handle="github-bot")
+        _create_grants(client, harness, spec, expires_at=_NOW + timedelta(minutes=30))
+
+        allowed = client.portal.call(partial(harness.decide.decide, _request(method="CONNECT", scheme=None, path=None)))
+
+        assert isinstance(allowed, DecideAllowed)
+        assert allowed.substitutions == []
+
+
+def test_unresolvable_credential_admits_without_substitution(
+    make_client: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Credential redemption is an authority separate from reachability: a handle the deploy
+    config does not back for this request yields no substitution — the admission stands, the
+    inert placeholder passes through — and the mismatch logs a warning naming only the handle."""
+    locked_origin = HttpOrigin(scheme=HttpScheme.HTTPS, host="exact.example", port=443)
+    ghost_origin = HttpOrigin(scheme=HttpScheme.HTTPS, host="third.example", port=443)
+    with make_client() as client:
+        harness = _harness(
+            client,
+            credentials=lambda agent_id: [
+                # Assigned to a different Agent than the one whose fence credential decides here.
+                _github_credential(_UNGRANTED_AGENT),
+                _github_credential(
+                    agent_id, handle="origin-locked", placeholder="origin-locked-placeholder"
+                ),  # redeemable only at _ORIGIN
+            ],
+        )
+        _create_grants(
+            client,
+            harness,
+            HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}), credential_handle="github-bot"),
+            HttpGrantSpec(origin=locked_origin, methods=frozenset({HttpMethod.GET}), credential_handle="origin-locked"),
+            HttpGrantSpec(origin=ghost_origin, methods=frozenset({HttpMethod.GET}), credential_handle="ghost"),
+            expires_at=_NOW + timedelta(minutes=30),
+        )
+        decide = partial(client.portal.call, harness.decide.decide)
+
+        with caplog.at_level("WARNING"):
+            for request, warning in [
+                (_request(), "not assigned"),
+                (_request(host="exact.example"), "not redeemable"),
+                (_request(host="third.example"), "not configured"),
+            ]:
+                decision = decide(request)
+                assert isinstance(decision, DecideAllowed), request.request
+                assert decision.substitutions == []
+                assert warning in caplog.text
+        assert _GITHUB_VALUE not in caplog.text
 
 
 def test_earliest_expiry_bounds_the_admission(make_client: Any) -> None:

@@ -35,6 +35,7 @@ _OTHER_SPEC = HttpGrantSpec(
     origin=HttpOrigin(scheme=HttpScheme.HTTPS, host="api.example", port=8443),
     methods=frozenset({HttpMethod.GET, HttpMethod.POST}),
     path_regex="/v1/.*",
+    credential_handle="github-bot",
 )
 
 _insert_http_source = partial(insert_approved_tool_call, server_id="http_grants")

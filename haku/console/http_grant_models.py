@@ -4,7 +4,9 @@ One grant covers requests to one exact canonical public origin — ``(scheme, ID
 port)`` — narrowed by an explicit HTTP method set and an optional path regex. Whether a granted
 hostname resolves to a permitted public address is the proxy adapter's SSRF/DNS-rebinding check at
 connect time, never a property of the stored grant: this domain answers only who may send which
-requests to which origin.
+requests to which origin. A grant may additionally name the Console-owned credential it redeems
+at that origin by inert config-registry handle (#4885); credential values live in deployment env
+references (`http_decide_config`), never in this domain or in Postgres.
 
 A grant's owner controls its lifecycle, its principal receives the permission, and its source
 ToolCall remains immutable provenance rather than an authorization identity. Lifecycle status is
@@ -106,12 +108,24 @@ class HttpOrigin(BaseModel):
 
 
 class HttpGrantSpec(BaseModel):
-    """One requested coverage item: an exact origin, its permitted methods, an optional path pin."""
+    """One requested coverage item: an exact origin, its permitted methods, an optional path pin,
+    and optionally the Console-owned credential the grant redeems there."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     origin: HttpOrigin
     methods: HttpMethods = Field(description="Request methods the grant permits at the origin.")
+    credential_handle: str | None = Field(
+        default=None,
+        max_length=64,
+        pattern=r"^[a-z][a-z0-9-]*$",
+        description=(
+            "Console-owned egress credential this grant redeems at its origin, named by its "
+            "deploy-config handle (`egress_decide.credentials`). The sandbox holds only the "
+            "credential's inert placeholder; the real value is substituted at the egress proxy "
+            "and never reaches the Agent. Absent, the grant is pure reachability."
+        ),
+    )
     path_regex: str | None = Field(
         default=None,
         min_length=1,
@@ -208,13 +222,23 @@ class HttpGrant(BaseModel):
 
 
 class HttpRequestAllowed(BaseModel):
-    """An active grant covers the request; valid until the named expiry."""
+    """An active grant covers the request; valid until the named expiry.
+
+    ``credential_handles`` carries every credential named by a matching grant — handles are
+    inert config-registry names, never values. Whether a handle actually redeems into a
+    substitution is the decide layer's separate credential-authority evaluation
+    (`http_decide_service`), so this decision alone never moves a secret.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     allowed: Literal[True] = True
     grant_id: UUID
     expires_at: AwareDatetime
+    credential_handles: Annotated[frozenset[str], PlainSerializer(sorted, when_used="json")] = Field(
+        default_factory=frozenset,
+        description="Credential handles named by every matching grant; empty for pure reachability.",
+    )
 
 
 class HttpRequestDenied(BaseModel):

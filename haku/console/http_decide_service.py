@@ -27,7 +27,15 @@ from haku.console.grant_principal import RequestPrincipal
 from haku.console.http_decide_config import LoadedEgressDecide
 from haku.console.http_grant_models import HttpMethod, HttpOrigin, HttpRequestAllowed, HttpScheme
 from haku.console.http_grant_service import HttpGrantService
-from haku.egress.decision import DecideAllowed, DecideDenied, DecideRequest, DecisionSource, GrantScope, RequestMeta
+from haku.egress.decision import (
+    DecideAllowed,
+    DecideDenied,
+    DecideRequest,
+    DecisionSource,
+    GrantScope,
+    PlaceholderSubstitution,
+    RequestMeta,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +103,7 @@ class HttpDecideService:
     def __init__(self, *, grants: HttpGrantService, credentials: LoadedEgressDecide) -> None:
         self._grants = grants
         self._credentials = credentials
+        self._egress_credentials = {credential.handle: credential for credential in credentials.credentials}
 
     def authenticate_proxy(self, authorization: str) -> bool:
         """Whether ``Authorization`` presents exactly the configured proxy identity bearer."""
@@ -141,8 +150,15 @@ class HttpDecideService:
             raise HttpDecideUnavailableError("HTTP grant authority is unavailable") from error
         if isinstance(decision, HttpRequestAllowed):
             decision_id = f"grant:{decision.grant_id}"
+            # A tunnel has no inner request yet, so there is nothing to substitute into; each
+            # intercepted request is decided — and substituted — individually.
+            substitutions = (
+                []
+                if isinstance(canonical, _Tunnel)
+                else self._substitutions_for(principal=principal, origin=origin, handles=decision.credential_handles)
+            )
             logger.info(
-                "egress decision allow agent=%s %s %s://%s:%d decision_id=%s valid_until=%s",
+                "egress decision allow agent=%s %s %s://%s:%d decision_id=%s valid_until=%s credential_handles=%s",
                 principal.agent_id,
                 meta.method,
                 origin.scheme,
@@ -150,8 +166,14 @@ class HttpDecideService:
                 origin.port,
                 decision_id,
                 decision.expires_at.isoformat(),
+                sorted(decision.credential_handles),
             )
-            return DecideAllowed(source=DecisionSource.GRANT, decision_id=decision_id, valid_until=decision.expires_at)
+            return DecideAllowed(
+                source=DecisionSource.GRANT,
+                decision_id=decision_id,
+                valid_until=decision.expires_at,
+                substitutions=substitutions,
+            )
         logger.info(
             "egress decision deny agent=%s %s %s://%s:%d: %s",
             principal.agent_id,
@@ -164,6 +186,45 @@ class HttpDecideService:
         return DecideDenied(
             reason=decision.reason, grant_scope=GrantScope(scheme=origin.scheme, host=origin.host, port=origin.port)
         )
+
+    def _substitutions_for(
+        self, *, principal: RequestPrincipal, origin: HttpOrigin, handles: frozenset[str]
+    ) -> list[PlaceholderSubstitution]:
+        """Resolve the credential handles named by matching grants into this request's substitutions.
+
+        Credential redemption is an authority separate from reachability (#4670): a handle that is
+        not configured, not assigned to the Agent, or not redeemable at this origin yields no
+        substitution while the grant's admission stands — the inert placeholder then passes through
+        verbatim and is worthless upstream (#4884 placeholder ruling). Each such refusal is an
+        operator-visible mismatch between a durable grant and the deploy config, hence the
+        warnings; they name only inert handles, never values.
+        """
+        substitutions: list[PlaceholderSubstitution] = []
+        for handle in sorted(handles):
+            credential = self._egress_credentials.get(handle)
+            if credential is None:
+                logger.warning("egress credential %s named by a matched grant is not configured", handle)
+                continue
+            if principal.agent_id not in credential.agent_ids:
+                logger.warning("egress credential %s is not assigned to agent %s", handle, principal.agent_id)
+                continue
+            if origin not in credential.origins:
+                logger.warning(
+                    "egress credential %s is not redeemable at %s://%s:%d",
+                    handle,
+                    origin.scheme,
+                    origin.host,
+                    origin.port,
+                )
+                continue
+            substitutions.append(
+                PlaceholderSubstitution(
+                    placeholder=credential.placeholder,
+                    value=credential.value.get_secret_value(),
+                    match_headers=credential.match_headers,
+                )
+            )
+        return substitutions
 
 
 def _bearer_token(value: str) -> str | None:

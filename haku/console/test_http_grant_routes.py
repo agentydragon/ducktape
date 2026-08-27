@@ -109,6 +109,7 @@ def test_lists_only_the_authenticated_operators_agents_with_provenance() -> None
                         "origin": {"scheme": "https", "host": "grocy.example", "port": 443},
                         "methods": ["GET"],
                         "path_regex": "/api/.*",
+                        "credential_handle": None,
                     },
                     "status": "active",
                     "created_at": "2026-08-26T23:55:00Z",

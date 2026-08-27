@@ -311,7 +311,10 @@ py_test(
 py_library(
     name = "http_decide_config",
     srcs = ["http_decide_config.py"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        ":http_grant_models",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(

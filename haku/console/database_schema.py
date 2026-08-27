@@ -615,6 +615,10 @@ class HttpGrantRow(Base):
             "AND (end_reason IS NULL OR btrim(end_reason) <> '')",
             name="ck_http_grants_end_shape",
         ),
+        CheckConstraint(
+            "credential_handle IS NULL OR btrim(credential_handle) <> ''",
+            name="ck_http_grants_credential_handle_nonempty",
+        ),
         Index("idx_http_grants_source_tool_call", "source_tool_call_id"),
         Index("idx_http_grants_owner_expiry", "owner_agent_id", "expires_at"),
         Index("idx_http_grants_agent_principal_expiry", "principal_agent_id", "expires_at"),
@@ -642,6 +646,9 @@ class HttpGrantRow(Base):
     port: Mapped[int] = mapped_column(Integer, nullable=False)
     methods: Mapped[frozenset[HttpMethod]] = mapped_column(PydanticColumn(HttpMethods), nullable=False)
     path_regex: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The handle is an inert config-registry name (`http_decide_config`); the credential value it
+    # resolves to lives in a deployment env reference and never enters Postgres.
+    credential_handle: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     released_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

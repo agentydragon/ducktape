@@ -51,6 +51,7 @@ def _row_to_model(row: HttpGrantRow, *, now: datetime.datetime) -> HttpGrant:
             origin=HttpOrigin(scheme=row.scheme, host=row.host, port=row.port),
             methods=row.methods,
             path_regex=row.path_regex,
+            credential_handle=row.credential_handle,
         ),
         status=derive_status(
             released_at=row.released_at, revoked_at=row.revoked_at, expires_at=row.expires_at, now=now
@@ -173,6 +174,7 @@ class PostgresHttpGrantRepository:
                     port=spec.origin.port,
                     methods=spec.methods,
                     path_regex=spec.path_regex,
+                    credential_handle=spec.credential_handle,
                     created_at=created_at,
                     expires_at=expires_at,
                     released_at=None,
