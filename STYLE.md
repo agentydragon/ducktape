@@ -287,7 +287,8 @@ animation's `finished` never settles, so awaiting it hangs rather than capturing
 **Remove**: docstrings/comments that restate the name, signature, or next line; Args/
 Returns sections echoing types; trivial class docstrings; historical "used to"
 comments; **prose arguing that the current code is correct** — what was here before,
-why the change was right, what alternative was rejected; `# === Section ===` banners;
+why the change was right, what alternative was rejected (a litigated rejection moves to
+the design doc, never stays inline — § Decision records); `# === Section ===` banners;
 changelog comments; self-referential counts of an adjacent list ("the three steps
 below") — they drift as rows change; **process narration** — the order work landed in,
 what it replaced, what it is waiting on. An actionable transition is a **tombstone**
@@ -309,6 +310,21 @@ constraint that still holds. Those are instructions wearing a historical tense.
 place; "what" rarely does. Judge the file and not only the line: every comment can pass
 the test above while the file still reads as narration with some code in it. If prose
 is most of what a reader scrolls past, keep cutting.
+
+### Decision records
+
+The rejected-alternative ban above targets inline commentary, not the knowledge. A
+rejection that was genuinely litigated — an approach that looks right, was tried or
+seriously costed, and lost for a non-obvious reason — goes in the component's design
+doc (`<dir>/docs/design.md`, or a rejects section of an existing one), stated as the
+constraint that killed it. That is where future work checks before re-walking a
+months-old rabbithole; nobody searches git history for it.
+
+**The Y-test** decides what qualifies — there, and in every "X rather than Y" sentence
+anywhere: would a competent future author actually try Y? If yes, the rejection earns a
+durable record, and a contrast clause naming it earns its place. If nobody would ever
+try Y ("queries the API rather than hardcoding the list"), the clause is padding —
+state X and stop.
 
 ### Documentation lifecycle
 
