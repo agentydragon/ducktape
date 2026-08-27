@@ -131,6 +131,10 @@ class RoomFrontend(Protocol):
     Implemented by the sync service, which holds the credential and the pacer; consumed by
     `LiveSpans.reconcile` and the conversation subscriber. Every call names the room and the
     attachment because the caller resolved them once per pass; nothing here reads a binding.
+
+    A Protocol rather than `MatrixSyncService`, its production implementer: naming the service
+    here is an import cycle (`sync` imports `Span`), and the pure-fold tests fake Matrix at
+    exactly this boundary.
     """
 
     async def show_span(self, room_id: str, attachment_id: UUID, span: Span, body: str) -> None: ...
