@@ -164,6 +164,9 @@ def _likely_diff_base(repo: pygit2.Repository) -> tuple[str, str] | None:
     return str(tracking_ref.target), f"{remote}/{default_branch}"
 
 
+# CLEANUP(added 2026-08-27): Remove this preflight once the pinned bb CLI
+#   release carries buildbuddy-io/buildbuddy#13067 (applies --binary to every
+#   remote-bazel patch, fixing binary deletions upstream).
 def check_binary_deletions(repo: pygit2.Repository) -> str | None:
     """Preflight for a `bb remote` limitation: its patchset generator runs
     `git diff --binary` only for *modified* binary files, so a binary file

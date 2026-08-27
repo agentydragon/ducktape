@@ -251,7 +251,12 @@ full index line` — every run breaks during git setup until the deleting commit
   base: a working tree whose staged diff deletes `.eval`/`.gz` artifacts breaks
   the `pytest-main-check` commit hook's `bbr query`. `devinfra/bbr.py`'s
   `check_binary_deletions()` preflights this and refuses to run
-  (`BBR_ALLOW_BINARY_DELETIONS=1` overrides).
+  (`BBR_ALLOW_BINARY_DELETIONS=1` overrides). Root cause upstream:
+  `isBinaryFile` runs `file --mime` on the working-tree path, which cannot
+  classify a deleted file. Known upstream and fixed by
+  [buildbuddy#13067](https://github.com/buildbuddy-io/buildbuddy/pull/13067)
+  (unconditional `--binary`, approved 2026-08 but unmerged/unreleased); the
+  preflight and this bullet go away once the pinned `bb` carries it.
 - **Repo-scoped Claude sessions' git `insteadOf` rewrite defeats the
   `github-no-proxy` remote**: Claude Code web sessions rewrite `origin` to a
   local git-mirroring proxy (`http://127.0.0.1:<port>/git/...`) so the cloud
