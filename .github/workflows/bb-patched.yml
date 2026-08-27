@@ -8,6 +8,9 @@ name: bb patched pin
 on:
   workflow_dispatch:
   push:
+    # branches filter keeps the release's own tag push from re-triggering the
+    # workflow (path filters do not apply to tag pushes).
+    branches: ["**"]
     paths:
       - "third_party/bb/**"
       - ".github/workflows/bb-patched.yml"
