@@ -26,7 +26,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.agent_bearer_authority import AgentBearerAuthority
 from haku.console.config import KubernetesAuthorizationConfig, KubernetesAuthorizationSubject
-from haku.console.conftest import default_agent_binding, insert_approved_tool_call, insert_live_session
+from haku.console.conftest import (
+    DEFAULT_ACCESS_PROFILE_ID,
+    default_agent_binding,
+    insert_approved_tool_call,
+    insert_live_session,
+)
 from haku.console.grant_principal import (
     AgentGrantPrincipal,
     GrantPrincipalKind,
@@ -68,8 +73,6 @@ _REQUEST = RequestAttributes(
     path="/api/v1/namespaces/demo/pods",
 )
 _SUBJECT = KubernetesAuthorizationSubject(username="haku-agent-subject", groups=("haku-agents",))
-# The access profile `make_client` assigns its seeded default static agent.
-_PROFILE = "no_auto_approval"
 
 
 class _FakeSubjectAccessReviews:
@@ -115,7 +118,9 @@ class _Console:
         )
         return McpExecutionContext(
             caller=AgentMcpExecutionCaller(
-                principal=RequestPrincipal(agent_id=self.agent_id, session_id=session_id, access_profile_id=_PROFILE)
+                principal=RequestPrincipal(
+                    agent_id=self.agent_id, session_id=session_id, access_profile_id=DEFAULT_ACCESS_PROFILE_ID
+                )
             ),
             tool_call_id=tool_call_id,
             approving_operator_id=None,
@@ -143,7 +148,7 @@ def console(make_client: Callable[..., Any]) -> Iterator[_Console]:
         grants = cast(KubernetesGrantService, app.state.kubernetes_grants)
         sar = _FakeSubjectAccessReviews()
         authorization = KubernetesAuthorizationService(
-            config=KubernetesAuthorizationConfig(subjects_by_access_profile={_PROFILE: _SUBJECT}),
+            config=KubernetesAuthorizationConfig(subjects_by_access_profile={DEFAULT_ACCESS_PROFILE_ID: _SUBJECT}),
             # The trusted in-process path never resolves a bearer; no sources states that.
             agent_bearer_authority=AgentBearerAuthority(()),
             grants=grants,

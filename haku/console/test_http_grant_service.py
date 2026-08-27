@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+import datetime
+from datetime import UTC, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -10,34 +11,82 @@ import pytest_bazel
 
 from haku.console.grant_principal import (
     AgentGrantPrincipal,
+    GrantPrincipal,
     RequestPrincipal,
     SessionGrantPrincipal,
     grant_principal_applies_to,
 )
-from haku.console.http_grant_models import HttpGrant, HttpGrantNotFoundError, HttpGrantStatus, HttpOrigin, HttpScheme
+from haku.console.http_grant_models import (
+    HttpGrant,
+    HttpGrantNotFoundError,
+    HttpGrantSpec,
+    HttpGrantStatus,
+    HttpMethod,
+    HttpOrigin,
+    HttpScheme,
+    derive_status,
+)
 from haku.console.http_grant_service import HttpGrantService
 
-_NOW = datetime(2026, 8, 27, 0, 0, tzinfo=UTC)
+_NOW = datetime.datetime(2026, 8, 27, 0, 0, tzinfo=UTC)
 _AGENT = UUID("10000000-0000-4000-8000-000000000001")
 _OTHER_AGENT = UUID("10000000-0000-4000-8000-000000000002")
 _GRANT_PRINCIPAL = AgentGrantPrincipal(agent_id=_AGENT)
 _ORIGIN = HttpOrigin(scheme=HttpScheme.HTTPS, host="grocy.example", port=443)
 _OTHER_ORIGIN = HttpOrigin(scheme=HttpScheme.HTTPS, host="api.example", port=443)
+_SPEC = HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}))
+_OTHER_SPEC = HttpGrantSpec(origin=_OTHER_ORIGIN, methods=frozenset({HttpMethod.GET}))
 
 
 def _request_principal(agent_id: UUID = _AGENT, session_id: UUID | None = None) -> RequestPrincipal:
     return RequestPrincipal(agent_id=agent_id, session_id=session_id, access_profile_id=None)
 
 
+def _grant(
+    *,
+    spec: HttpGrantSpec = _SPEC,
+    principal: GrantPrincipal = _GRANT_PRINCIPAL,
+    created_at: datetime.datetime = _NOW,
+    expires_at: datetime.datetime,
+    released_at: datetime.datetime | None = None,
+    revoked_at: datetime.datetime | None = None,
+    end_reason: str | None = None,
+) -> HttpGrant:
+    return HttpGrant(
+        grant_id=uuid4(),
+        owner_agent_id=_AGENT,
+        principal=principal,
+        source_tool_call_id="tool-call-preexisting",
+        spec=spec,
+        status=derive_status(released_at=released_at, revoked_at=revoked_at, expires_at=expires_at, now=created_at),
+        created_at=created_at,
+        expires_at=expires_at,
+        released_at=released_at,
+        revoked_at=revoked_at,
+        end_reason=end_reason,
+    )
+
+
 class FakeRepository:
+    """Facts-holding in-memory double: like the real store, status is derived at read time."""
+
     def __init__(self) -> None:
         self.grants: dict[UUID, HttpGrant] = {}
-        self.expire_calls: list[tuple[UUID | None, datetime]] = []
-        self.release_calls: list[tuple[UUID, UUID, str, datetime]] = []
-        self.revoke_source_calls: list[tuple[UUID, str, str, datetime]] = []
+        self.release_calls: list[tuple[UUID, UUID, str, datetime.datetime]] = []
+        self.revoke_calls: list[tuple[UUID, UUID, str, datetime.datetime]] = []
+
+    @staticmethod
+    def _at(grant: HttpGrant, now: datetime.datetime) -> HttpGrant:
+        return grant.model_copy(
+            update={
+                "status": derive_status(
+                    released_at=grant.released_at, revoked_at=grant.revoked_at, expires_at=grant.expires_at, now=now
+                )
+            }
+        )
 
     async def create_many(
-        self, *, owner_agent_id, grant_principal, source_tool_call_id, origins, created_at, expires_at
+        self, *, owner_agent_id, grant_principal, source_tool_call_id, grants, created_at, expires_at
     ):
         created = tuple(
             HttpGrant(
@@ -45,79 +94,59 @@ class FakeRepository:
                 owner_agent_id=owner_agent_id,
                 principal=grant_principal,
                 source_tool_call_id=source_tool_call_id,
-                origin=origin,
+                spec=spec,
                 status=HttpGrantStatus.ACTIVE,
                 created_at=created_at,
                 expires_at=expires_at,
             )
-            for origin in origins
+            for spec in grants
         )
         self.grants.update((grant.grant_id, grant) for grant in created)
         return created
 
-    async def expire(self, *, owner_agent_id=None, now):
-        self.expire_calls.append((owner_agent_id, now))
-        expired = 0
-        for grant_id, grant in tuple(self.grants.items()):
-            if (
-                grant.status is HttpGrantStatus.ACTIVE
-                and grant.expires_at <= now
-                and (owner_agent_id is None or grant.owner_agent_id == owner_agent_id)
-            ):
-                self.grants[grant_id] = grant.model_copy(
-                    update={"status": HttpGrantStatus.EXPIRED, "ended_at": now, "end_reason": "expired"}
-                )
-                expired += 1
-        return expired
+    async def list(self, *, owner_agent_id, now, include_terminal=True):
+        return tuple(self._at(grant, now) for grant in self.grants.values() if grant.owner_agent_id == owner_agent_id)
 
-    async def list(self, *, owner_agent_id, include_terminal=True):
-        return tuple(g for g in self.grants.values() if g.owner_agent_id == owner_agent_id)
-
-    async def list_for_request_principal(self, *, request_principal, include_terminal=True):
+    async def list_for_request_principal(self, *, request_principal, now, include_terminal=True):
         return tuple(
-            grant
+            self._at(grant, now)
             for grant in self.grants.values()
             if grant_principal_applies_to(grant.principal, request_principal)
-            and (include_terminal or grant.status is HttpGrantStatus.ACTIVE)
+            and (include_terminal or self._at(grant, now).status is HttpGrantStatus.ACTIVE)
         )
 
-    async def get(self, *, owner_agent_id, grant_id):
+    async def get(self, *, owner_agent_id, grant_id, now):
         grant = self.grants[grant_id]
         assert grant.owner_agent_id == owner_agent_id
-        return grant
+        return self._at(grant, now)
 
     async def active_for_request_principal(self, *, request_principal, now):
         return tuple(
-            g
-            for g in self.grants.values()
-            if grant_principal_applies_to(g.principal, request_principal)
-            and g.status is HttpGrantStatus.ACTIVE
-            and g.expires_at > now
+            self._at(grant, now)
+            for grant in self.grants.values()
+            if grant_principal_applies_to(grant.principal, request_principal)
+            and self._at(grant, now).status is HttpGrantStatus.ACTIVE
         )
 
-    async def release(self, *, owner_agent_id, grant_id, reason, ended_at):
-        self.release_calls.append((owner_agent_id, grant_id, reason, ended_at))
+    async def release(self, *, owner_agent_id, grant_id, reason, now):
+        self.release_calls.append((owner_agent_id, grant_id, reason, now))
         grant = self.grants[grant_id]
         assert grant.owner_agent_id == owner_agent_id
-        released = grant.model_copy(
-            update={"status": HttpGrantStatus.RELEASED, "ended_at": ended_at, "end_reason": reason}
+        self.grants[grant_id] = grant.model_copy(
+            update={"status": HttpGrantStatus.RELEASED, "released_at": now, "end_reason": reason}
         )
-        self.grants[grant_id] = released
-        return released
+        return self.grants[grant_id]
 
-    async def revoke(self, **kwargs):
-        raise AssertionError("not used by this test")
-
-    async def revoke_source(self, *, owner_agent_id, source_tool_call_id, reason, ended_at):
-        self.revoke_source_calls.append((owner_agent_id, source_tool_call_id, reason, ended_at))
-        return tuple(
-            grant
-            for grant in self.grants.values()
-            if grant.owner_agent_id == owner_agent_id and grant.source_tool_call_id == source_tool_call_id
+    async def revoke(self, *, owner_agent_id, grant_id, reason, now):
+        self.revoke_calls.append((owner_agent_id, grant_id, reason, now))
+        grant = self.grants[grant_id]
+        assert grant.owner_agent_id == owner_agent_id
+        self.grants[grant_id] = grant.model_copy(
+            update={"status": HttpGrantStatus.REVOKED, "revoked_at": now, "end_reason": reason}
         )
+        return self.grants[grant_id]
 
 
-@pytest.mark.asyncio
 async def test_create_and_match_require_the_explicit_agent_id() -> None:
     repo = FakeRepository()
     service = HttpGrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
@@ -125,42 +154,62 @@ async def test_create_and_match_require_the_explicit_agent_id() -> None:
         owner_agent_id=_AGENT,
         grant_principal=_GRANT_PRINCIPAL,
         source_tool_call_id="tool-call-1",
-        origins=(_ORIGIN,),
+        grants=(_SPEC,),
         expires_at=_NOW + timedelta(minutes=5),
     )
 
     assert grant.owner_agent_id == _AGENT
     assert grant.principal == _GRANT_PRINCIPAL
-    assert (await service.match_request(request_principal=_request_principal(), origin=_ORIGIN)).allowed
-    assert not (
-        await service.match_request(request_principal=_request_principal(agent_id=_OTHER_AGENT), origin=_ORIGIN)
+    assert (
+        await service.match_request(
+            request_principal=_request_principal(), method=HttpMethod.GET, origin=_ORIGIN, path="/"
+        )
     ).allowed
-    assert repo.expire_calls == []
+    assert not (
+        await service.match_request(
+            request_principal=_request_principal(agent_id=_OTHER_AGENT), method=HttpMethod.GET, origin=_ORIGIN, path="/"
+        )
+    ).allowed
 
 
-@pytest.mark.asyncio
-async def test_match_covers_only_the_exact_origin() -> None:
+async def test_match_covers_only_the_exact_origin_method_and_path() -> None:
     service = HttpGrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
     await service.create_grants(
         owner_agent_id=_AGENT,
         grant_principal=_GRANT_PRINCIPAL,
         source_tool_call_id="tool-call-1",
-        origins=(_ORIGIN,),
+        grants=(HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}), path_regex="/api/.*"),),
         expires_at=_NOW + timedelta(minutes=5),
     )
 
-    for origin in (
-        _ORIGIN.model_copy(update={"port": 8443}),
-        _ORIGIN.model_copy(update={"scheme": HttpScheme.HTTP}),
-        _ORIGIN.model_copy(update={"host": "sub." + _ORIGIN.host}),
-        _OTHER_ORIGIN,
-    ):
-        decision = await service.match_request(request_principal=_request_principal(), origin=origin)
+    covered = await service.match_request(
+        request_principal=_request_principal(), method=HttpMethod.GET, origin=_ORIGIN, path="/api/items"
+    )
+    assert covered.allowed
+    for method, origin, path in [
+        (HttpMethod.GET, _ORIGIN.model_copy(update={"port": 8443}), "/api/items"),
+        (HttpMethod.GET, _ORIGIN.model_copy(update={"scheme": HttpScheme.HTTP}), "/api/items"),
+        (HttpMethod.GET, _ORIGIN.model_copy(update={"host": "sub." + _ORIGIN.host}), "/api/items"),
+        (HttpMethod.GET, _OTHER_ORIGIN, "/api/items"),
+        (HttpMethod.POST, _ORIGIN, "/api/items"),
+        (HttpMethod.GET, _ORIGIN, "/outside"),
+    ]:
+        decision = await service.match_request(
+            request_principal=_request_principal(), method=method, origin=origin, path=path
+        )
         assert not decision.allowed
-        assert decision.grant_id is None
+        assert decision.reason
 
 
-@pytest.mark.asyncio
+async def test_match_requires_an_absolute_path() -> None:
+    service = HttpGrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+
+    with pytest.raises(ValueError, match="absolute path"):
+        await service.match_request(
+            request_principal=_request_principal(), method=HttpMethod.GET, origin=_ORIGIN, path="api/items"
+        )
+
+
 async def test_principal_lifecycle_inherits_agent_grants_without_crossing_sessions() -> None:
     repo = FakeRepository()
     service = HttpGrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
@@ -169,14 +218,14 @@ async def test_principal_lifecycle_inherits_agent_grants_without_crossing_sessio
         owner_agent_id=_AGENT,
         grant_principal=AgentGrantPrincipal(agent_id=_AGENT),
         source_tool_call_id="tool-call-agent",
-        origins=(_ORIGIN,),
+        grants=(_SPEC,),
         expires_at=_NOW + timedelta(minutes=5),
     )
     (session_grant,) = await service.create_grants(
         owner_agent_id=_AGENT,
         grant_principal=SessionGrantPrincipal(session_id=session_a),
         source_tool_call_id="tool-call-session",
-        origins=(_ORIGIN,),
+        grants=(_SPEC,),
         expires_at=_NOW + timedelta(minutes=5),
     )
 
@@ -196,12 +245,11 @@ async def test_principal_lifecycle_inherits_agent_grants_without_crossing_sessio
         await service.get_applicable_grant(request_principal=request_principal_b, grant_id=session_grant.grant_id)
 
 
-@pytest.mark.asyncio
 async def test_create_many_uses_one_source_and_shared_timestamps() -> None:
     repo = FakeRepository()
     clock_calls = 0
 
-    def clock() -> datetime:
+    def clock() -> datetime.datetime:
         nonlocal clock_calls
         clock_calls += 1
         return _NOW
@@ -212,7 +260,7 @@ async def test_create_many_uses_one_source_and_shared_timestamps() -> None:
         owner_agent_id=_AGENT,
         grant_principal=_GRANT_PRINCIPAL,
         source_tool_call_id="tool-call-1",
-        origins=(_ORIGIN, _OTHER_ORIGIN),
+        grants=(_SPEC, _OTHER_SPEC),
         expires_at=expires_at,
     )
 
@@ -223,7 +271,6 @@ async def test_create_many_uses_one_source_and_shared_timestamps() -> None:
     assert clock_calls == 1
 
 
-@pytest.mark.asyncio
 async def test_create_many_enforces_the_tool_batch_limit_in_the_service() -> None:
     service = HttpGrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
 
@@ -232,14 +279,17 @@ async def test_create_many_enforces_the_tool_batch_limit_in_the_service() -> Non
             owner_agent_id=_AGENT,
             grant_principal=_GRANT_PRINCIPAL,
             source_tool_call_id="tool-call-1",
-            origins=tuple(
-                HttpOrigin(scheme=HttpScheme.HTTPS, host=f"host{index}.example", port=443) for index in range(33)
+            grants=tuple(
+                HttpGrantSpec(
+                    origin=HttpOrigin(scheme=HttpScheme.HTTPS, host=f"host{index}.example", port=443),
+                    methods=frozenset({HttpMethod.GET}),
+                )
+                for index in range(33)
             ),
             expires_at=_NOW + timedelta(minutes=5),
         )
 
 
-@pytest.mark.asyncio
 async def test_release_many_is_bounded_sequential_and_uses_one_timestamp() -> None:
     repo = FakeRepository()
     service = HttpGrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
@@ -247,7 +297,7 @@ async def test_release_many_is_bounded_sequential_and_uses_one_timestamp() -> No
         owner_agent_id=_AGENT,
         grant_principal=_GRANT_PRINCIPAL,
         source_tool_call_id="tool-call-1",
-        origins=(_ORIGIN, _OTHER_ORIGIN),
+        grants=(_SPEC, _OTHER_SPEC),
         expires_at=_NOW + timedelta(minutes=5),
     )
 
@@ -262,7 +312,6 @@ async def test_release_many_is_bounded_sequential_and_uses_one_timestamp() -> No
     ]
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("grant_ids", "message"),
     [
@@ -271,14 +320,15 @@ async def test_release_many_is_bounded_sequential_and_uses_one_timestamp() -> No
         (tuple(UUID(int=value) for value in range(1, 34)), "at most 32 grants"),
     ],
 )
-async def test_release_many_rejects_invalid_lists(grant_ids, message) -> None:
+async def test_end_batches_reject_invalid_lists(grant_ids, message) -> None:
     service = HttpGrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
 
     with pytest.raises(ValueError, match=message):
         await service.release_grants(owner_agent_id=_AGENT, grant_ids=grant_ids)
+    with pytest.raises(ValueError, match=message):
+        await service.revoke_grants(owner_agent_id=_AGENT, grant_ids=grant_ids, reason="cleanup")
 
 
-@pytest.mark.asyncio
 async def test_release_many_keeps_earlier_releases_when_a_later_item_fails() -> None:
     repo = FakeRepository()
     service = HttpGrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
@@ -286,7 +336,7 @@ async def test_release_many_keeps_earlier_releases_when_a_later_item_fails() -> 
         owner_agent_id=_AGENT,
         grant_principal=_GRANT_PRINCIPAL,
         source_tool_call_id="tool-call-1",
-        origins=(_ORIGIN,),
+        grants=(_SPEC,),
         expires_at=_NOW + timedelta(minutes=5),
     )
 
@@ -296,28 +346,39 @@ async def test_release_many_keeps_earlier_releases_when_a_later_item_fails() -> 
     assert repo.grants[grant.grant_id].status is HttpGrantStatus.RELEASED
 
 
-@pytest.mark.asyncio
-async def test_revoke_grant_set_uses_source_tool_call_as_lifecycle_unit() -> None:
+async def test_revoke_many_is_bounded_sequential_and_uses_one_timestamp() -> None:
     repo = FakeRepository()
     service = HttpGrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    grants = await service.create_grants(
+        owner_agent_id=_AGENT,
+        grant_principal=_GRANT_PRINCIPAL,
+        source_tool_call_id="tool-call-1",
+        grants=(_SPEC, _OTHER_SPEC),
+        expires_at=_NOW + timedelta(minutes=5),
+    )
 
-    await service.revoke_grant_set(owner_agent_id=_AGENT, source_tool_call_id="tool-call-1", reason="operator ended")
+    revoked = await service.revoke_grants(
+        owner_agent_id=_AGENT, grant_ids=[grants[0].grant_id, grants[1].grant_id], reason="operator ended"
+    )
 
-    assert repo.revoke_source_calls == [(_AGENT, "tool-call-1", "operator ended", _NOW)]
+    assert all(grant.status is HttpGrantStatus.REVOKED for grant in revoked)
+    assert repo.revoke_calls == [
+        (_AGENT, grants[0].grant_id, "operator ended", _NOW),
+        (_AGENT, grants[1].grant_id, "operator ended", _NOW),
+    ]
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("source_tool_call_id", "origins", "expires_at", "message"),
+    ("source_tool_call_id", "grants", "expires_at", "message"),
     [
-        ("", (_ORIGIN,), _NOW + timedelta(minutes=5), "source_tool_call_id must not be empty"),
-        ("tool-call-1", (), _NOW + timedelta(minutes=5), "origins must not be empty"),
-        ("tool-call-1", (_ORIGIN,), _NOW.replace(tzinfo=None), "expires_at must be timezone-aware"),
-        ("tool-call-1", (_ORIGIN,), _NOW, "expires_at must be in the future"),
-        ("tool-call-1", (_ORIGIN,), _NOW + timedelta(hours=2), "configured grant lifetime"),
+        ("", (_SPEC,), _NOW + timedelta(minutes=5), "source_tool_call_id must not be empty"),
+        ("tool-call-1", (), _NOW + timedelta(minutes=5), "grants must not be empty"),
+        ("tool-call-1", (_SPEC,), _NOW.replace(tzinfo=None), "expires_at must be timezone-aware"),
+        ("tool-call-1", (_SPEC,), _NOW, "expires_at must be in the future"),
+        ("tool-call-1", (_SPEC,), _NOW + timedelta(hours=2), "configured grant lifetime"),
     ],
 )
-async def test_create_rejects_invalid_input(source_tool_call_id, origins, expires_at, message) -> None:
+async def test_create_rejects_invalid_input(source_tool_call_id, grants, expires_at, message) -> None:
     service = HttpGrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
 
     with pytest.raises(ValueError, match=message):
@@ -325,62 +386,29 @@ async def test_create_rejects_invalid_input(source_tool_call_id, origins, expire
             owner_agent_id=_AGENT,
             grant_principal=_GRANT_PRINCIPAL,
             source_tool_call_id=source_tool_call_id,
-            origins=origins,
+            grants=grants,
             expires_at=expires_at,
         )
 
 
-@pytest.mark.asyncio
-async def test_match_ignores_expired_rows_without_writing() -> None:
+async def test_match_and_get_derive_expiry_without_writing() -> None:
     repo = FakeRepository()
-    grant = HttpGrant(
-        grant_id=uuid4(),
-        owner_agent_id=_AGENT,
-        principal=_GRANT_PRINCIPAL,
-        source_tool_call_id="tool-call-1",
-        origin=_ORIGIN,
-        status=HttpGrantStatus.ACTIVE,
-        created_at=_NOW - timedelta(minutes=10),
-        expires_at=_NOW - timedelta(minutes=1),
-    )
+    grant = _grant(created_at=_NOW - timedelta(minutes=10), expires_at=_NOW - timedelta(minutes=1))
     repo.grants[grant.grant_id] = grant
     service = HttpGrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
 
-    assert not (await service.match_request(request_principal=_request_principal(), origin=_ORIGIN)).allowed
-    assert repo.expire_calls == []
+    assert not (
+        await service.match_request(
+            request_principal=_request_principal(), method=HttpMethod.GET, origin=_ORIGIN, path="/"
+        )
+    ).allowed
+    fetched = await service.get_grant(owner_agent_id=_AGENT, grant_id=grant.grant_id)
+    assert fetched.status is HttpGrantStatus.EXPIRED
+    # The stored facts never changed: expiry is derived, not swept.
+    assert repo.grants[grant.grant_id].released_at is None
+    assert repo.grants[grant.grant_id].revoked_at is None
 
 
-@pytest.mark.asyncio
-async def test_get_uses_one_timestamp_when_expiring_a_grant() -> None:
-    repo = FakeRepository()
-    grant = HttpGrant(
-        grant_id=uuid4(),
-        owner_agent_id=_AGENT,
-        principal=_GRANT_PRINCIPAL,
-        source_tool_call_id="tool-call-1",
-        origin=_ORIGIN,
-        status=HttpGrantStatus.ACTIVE,
-        created_at=_NOW - timedelta(minutes=10),
-        expires_at=_NOW - timedelta(minutes=1),
-    )
-    repo.grants[grant.grant_id] = grant
-    clock_calls = 0
-
-    def clock() -> datetime:
-        nonlocal clock_calls
-        clock_calls += 1
-        return _NOW
-
-    service = HttpGrantService(repo, max_lifetime=timedelta(hours=1), clock=clock)
-
-    result = await service.get_grant(owner_agent_id=_AGENT, grant_id=grant.grant_id)
-
-    assert result.status is HttpGrantStatus.EXPIRED
-    assert repo.expire_calls == [(_AGENT, _NOW)]
-    assert clock_calls == 1
-
-
-@pytest.mark.asyncio
 async def test_match_returns_the_earliest_expiration_bound() -> None:
     repo = FakeRepository()
     service = HttpGrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
@@ -388,18 +416,20 @@ async def test_match_returns_the_earliest_expiration_bound() -> None:
         owner_agent_id=_AGENT,
         grant_principal=_GRANT_PRINCIPAL,
         source_tool_call_id="tool-call-1",
-        origins=(_ORIGIN,),
+        grants=(_SPEC,),
         expires_at=_NOW + timedelta(minutes=10),
     )
     (second,) = await service.create_grants(
         owner_agent_id=_AGENT,
         grant_principal=_GRANT_PRINCIPAL,
         source_tool_call_id="tool-call-2",
-        origins=(_ORIGIN,),
+        grants=(_SPEC,),
         expires_at=_NOW + timedelta(minutes=2),
     )
 
-    decision = await service.match_request(request_principal=_request_principal(), origin=_ORIGIN)
+    decision = await service.match_request(
+        request_principal=_request_principal(), method=HttpMethod.GET, origin=_ORIGIN, path="/"
+    )
 
     assert decision.allowed
     assert decision.grant_id == second.grant_id

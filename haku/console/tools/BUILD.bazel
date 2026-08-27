@@ -140,14 +140,15 @@ py_test(
 )
 
 py_library(
-    name = "http",
-    srcs = ["http.py"],
+    name = "http_grants",
+    srcs = ["http_grants.py"],
     visibility = ["//haku/console:__subpackages__"],
     deps = [
         "//haku/console:grant_principal",
         "//haku/console:http_grant_models",
         "//haku/console:http_grant_service",
         "//haku/console:mcp_execution",
+        "//haku/console/agents:enrollment",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],
@@ -198,22 +199,24 @@ py_test(
 )
 
 py_test(
-    name = "test_http",
+    name = "test_http_grants",
     size = "medium",
-    srcs = ["test_http.py"],
+    srcs = ["test_http_grants.py"],
     data = [
         "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
     ],
     requires_docker = True,
     deps = [
-        ":http",
+        ":http_grants",
         "//:conftest",
         "//haku/console:conftest",
+        "//haku/console:database_schema",
         "//haku/console:grant_principal",
         "//haku/console:http_grant_models",
         "//haku/console:http_grant_service",
         "//haku/console:mcp_execution",
+        "//haku/console/agents:enrollment",
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",

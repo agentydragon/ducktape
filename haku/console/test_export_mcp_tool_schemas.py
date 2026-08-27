@@ -57,7 +57,7 @@ _EXPECTED_TOOLS = {
     "haku_index": ("index_status", "search"),
     "haku_routine": ("launch_routine",),
     "hostexec": ("bash",),
-    "http": ("create_grant", "get_grant", "list_grants", "release_grants"),
+    "http_grants": ("create_grant", "get_grant", "list_grants", "release_grants", "revoke_grants"),
     "kubernetes": ("can_i", "create_grant", "get_grant", "list_grants", "release_grants"),
 }
 _SERVER_IDS = list(_EXPECTED_TOOLS)
@@ -68,7 +68,7 @@ _RESULT_TOOLS_MATCH_ARGUMENTS = (
     "haku_index",
     "haku_routine",
     "hostexec",
-    "http",
+    "http_grants",
     "kubernetes",
 )
 

@@ -91,6 +91,34 @@ def grant_principal_for(request_principal: RequestPrincipal, applies_to: GrantPr
     assert_never(applies_to)
 
 
+def grant_principal_from_columns(
+    kind: GrantPrincipalKind, *, agent_id: UUID | None, session_id: UUID | None
+) -> GrantPrincipal:
+    """Reconstruct a grant principal from the relational ``(kind, agent, session)`` column triple."""
+
+    match kind:
+        case GrantPrincipalKind.AGENT:
+            if agent_id is None:
+                raise RuntimeError("Agent-principal grant row is missing its Agent")
+            return AgentGrantPrincipal(agent_id=agent_id)
+        case GrantPrincipalKind.SESSION:
+            if session_id is None:
+                raise RuntimeError("session-principal grant row is missing its session")
+            return SessionGrantPrincipal(session_id=session_id)
+    assert_never(kind)
+
+
+def grant_principal_column_values(grant_principal: GrantPrincipal) -> tuple[UUID | None, UUID | None]:
+    """Project a grant principal onto the relational ``(agent_id, session_id)`` column pair."""
+
+    match grant_principal:
+        case AgentGrantPrincipal(agent_id=agent_id):
+            return agent_id, None
+        case SessionGrantPrincipal(session_id=session_id):
+            return None, session_id
+    assert_never(grant_principal)
+
+
 def grant_principal_applies_to(grant_principal: GrantPrincipal, request_principal: RequestPrincipal) -> bool:
     """Return whether ``grant_principal`` covers ``request_principal``.
 

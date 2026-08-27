@@ -12,7 +12,7 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from fastmcp import Context
-from fastmcp.dependencies import CurrentContext
+from fastmcp.dependencies import CurrentContext, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
 from haku.console.grant_principal import RequestPrincipal
@@ -83,3 +83,7 @@ def require_mcp_execution_context(ctx: Context = _CURRENT_CONTEXT) -> McpExecuti
     if raw is None:
         raise RuntimeError("trusted Haku MCP execution context is required")
     return McpExecutionContext.model_validate(raw)
+
+
+# The default-parameter marker every Console-owned tool signature uses to receive the context.
+EXECUTION_CONTEXT_DEPENDENCY = Depends(require_mcp_execution_context)

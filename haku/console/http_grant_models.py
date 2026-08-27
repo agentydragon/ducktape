@@ -1,13 +1,16 @@
 """Typed vocabulary for temporary HTTP egress grants.
 
-The grant unit is one exact canonical public origin — ``(scheme, IDNA A-label host, port)``.
-V1 deliberately has no wildcard, path, method, regex, or IP-literal grant scopes. Whether a
-granted hostname resolves to a permitted public address is the proxy adapter's SSRF/DNS-rebinding
-check at connect time, never a property of the stored grant: this domain answers only who may
-reach which origin.
+One grant covers requests to one exact canonical public origin — ``(scheme, IDNA A-label host,
+port)`` — narrowed by an explicit HTTP method set and an optional path regex. Whether a granted
+hostname resolves to a permitted public address is the proxy adapter's SSRF/DNS-rebinding check at
+connect time, never a property of the stored grant: this domain answers only who may send which
+requests to which origin.
 
 A grant's owner controls its lifecycle, its principal receives the permission, and its source
-ToolCall remains immutable provenance rather than an authorization identity.
+ToolCall remains immutable provenance rather than an authorization identity. Lifecycle status is
+derived, never stored (root STYLE.md § SQLAlchemy): the row records the end facts —
+``released_at``, ``revoked_at`` — and :func:`derive_status` computes the vocabulary from them and
+the clock, so expiry needs no sweeper.
 """
 
 from __future__ import annotations
@@ -16,11 +19,11 @@ import datetime
 import ipaddress
 import re
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 import idna
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, PlainSerializer, field_validator, model_validator
 
 from haku.console.grant_principal import AgentGrantPrincipal, GrantPrincipal
 
@@ -36,6 +39,23 @@ class HttpScheme(StrEnum):
     HTTP = "http"
     HTTPS = "https"
 
+
+class HttpMethod(StrEnum):
+    """Grantable request methods. CONNECT and TRACE are transport/diagnostic verbs the egress
+    boundary never grants, so they are not vocabulary."""
+
+    GET = "GET"
+    HEAD = "HEAD"
+    POST = "POST"
+    PUT = "PUT"
+    DELETE = "DELETE"
+    OPTIONS = "OPTIONS"
+    PATCH = "PATCH"
+
+
+# Shared by the Pydantic models and the JSONB column type: serialization sorts the set so one
+# method set has one stored and wire form.
+type HttpMethods = Annotated[frozenset[HttpMethod], Field(min_length=1), PlainSerializer(sorted, when_used="json")]
 
 _NON_EMPTY = Annotated[str, Field(min_length=1)]
 # The WHATWG URL parser reads a host whose final label is decimal or 0x-hex as an IPv4 address
@@ -85,8 +105,64 @@ class HttpOrigin(BaseModel):
         return canonical
 
 
+class HttpGrantSpec(BaseModel):
+    """One requested coverage item: an exact origin, its permitted methods, an optional path pin."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    origin: HttpOrigin
+    methods: HttpMethods = Field(description="Request methods the grant permits at the origin.")
+    path_regex: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=512,
+        description=(
+            "Optional regex the request URL's path (query excluded) must fully match, e.g. "
+            "'/repos/agentydragon/.*'. Absent means every path at the origin."
+        ),
+    )
+
+    @field_validator("path_regex")
+    @classmethod
+    def compilable_path_regex(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            re.compile(value)
+        except re.error as error:
+            raise ValueError(f"path_regex is not a valid regular expression: {error}") from error
+        return value
+
+    def covers(self, *, method: HttpMethod, path: str) -> bool:
+        """Whether this coverage admits one request at its origin."""
+
+        if method not in self.methods:
+            return False
+        return self.path_regex is None or re.fullmatch(self.path_regex, path) is not None
+
+
+def derive_status(
+    *,
+    released_at: datetime.datetime | None,
+    revoked_at: datetime.datetime | None,
+    expires_at: datetime.datetime,
+    now: datetime.datetime,
+) -> HttpGrantStatus:
+    """Compute the lifecycle vocabulary from the end facts and the clock.
+
+    Expiration wins over an end action recorded at or after ``expires_at``, so a late release or
+    revocation cannot revive or relabel a lease that had already reached its time bound.
+    """
+
+    if released_at is not None and released_at < expires_at:
+        return HttpGrantStatus.RELEASED
+    if revoked_at is not None and revoked_at < expires_at:
+        return HttpGrantStatus.REVOKED
+    return HttpGrantStatus.EXPIRED if now >= expires_at else HttpGrantStatus.ACTIVE
+
+
 class HttpGrant(BaseModel):
-    """Durable grant returned by the service."""
+    """Durable grant returned by the service; ``status`` is derived from the facts at read time."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -94,19 +170,13 @@ class HttpGrant(BaseModel):
     owner_agent_id: UUID
     principal: GrantPrincipal
     source_tool_call_id: _NON_EMPTY
-    origin: HttpOrigin
+    spec: HttpGrantSpec
     status: HttpGrantStatus
-    created_at: datetime.datetime
-    expires_at: datetime.datetime
-    ended_at: datetime.datetime | None = None
+    created_at: AwareDatetime
+    expires_at: AwareDatetime
+    released_at: AwareDatetime | None = None
+    revoked_at: AwareDatetime | None = None
     end_reason: str | None = None
-
-    @field_validator("created_at", "expires_at", "ended_at")
-    @classmethod
-    def validate_timezone_aware(cls, value: datetime.datetime | None, info: ValidationInfo) -> datetime.datetime | None:
-        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
-            raise ValueError(f"{info.field_name} must be timezone-aware")
-        return value
 
     @model_validator(mode="after")
     def validate_principal_owner(self) -> HttpGrant:
@@ -117,26 +187,44 @@ class HttpGrant(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def validate_timestamps(self) -> HttpGrant:
+    def validate_end_facts(self) -> HttpGrant:
         if self.expires_at <= self.created_at:
             raise ValueError("expires_at must be after created_at")
-        if self.status is HttpGrantStatus.ACTIVE:
-            if self.ended_at is not None or self.end_reason is not None:
-                raise ValueError("an active grant cannot have terminal fields")
-        elif self.ended_at is None or not self.end_reason or not self.end_reason.strip():
-            raise ValueError("a terminal grant requires ended_at and a non-empty end_reason")
+        if self.released_at is not None and self.revoked_at is not None:
+            raise ValueError("a grant cannot be both released and revoked")
+        ended = self.released_at is not None or self.revoked_at is not None
+        if ended != (self.end_reason is not None and bool(self.end_reason.strip())):
+            raise ValueError("end_reason travels exactly with a recorded end action")
+        match self.status:
+            case HttpGrantStatus.RELEASED if self.released_at is None:
+                raise ValueError("a released grant requires released_at")
+            case HttpGrantStatus.REVOKED if self.revoked_at is None:
+                raise ValueError("a revoked grant requires revoked_at")
+            case HttpGrantStatus.ACTIVE if ended:
+                raise ValueError("an active grant cannot carry end facts")
+            case _:
+                pass
         return self
 
 
-class HttpGrantDecision(BaseModel):
-    """Result of matching one origin against a request principal's currently active grants."""
+class HttpRequestAllowed(BaseModel):
+    """An active grant covers the request; valid until the named expiry."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    allowed: bool
-    grant_id: UUID | None = None
-    expires_at: datetime.datetime | None = None
-    reason: str | None = None
+    allowed: Literal[True] = True
+    grant_id: UUID
+    expires_at: AwareDatetime
+
+
+class HttpRequestDenied(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    allowed: Literal[False] = False
+    reason: _NON_EMPTY
+
+
+type HttpGrantDecision = HttpRequestAllowed | HttpRequestDenied
 
 
 class HttpGrantError(Exception):

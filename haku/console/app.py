@@ -93,7 +93,7 @@ from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.recall_index_sync import RecallEmbeddingMaintenance, RecallIndexMaintenance
 from haku.console.tools import (
     gmail as gmail_tools,
-    http as http_tools,
+    http_grants as http_grants_tools,
     kubernetes as kubernetes_tools,
     routine as routine_tools,
     sandbox as sandbox_tools,
@@ -610,8 +610,9 @@ def create_app(
         # listed and where the policy that lets an agent call it lives, and a boolean elsewhere
         # could only ever disagree with it — a listed server with no builder fails the binding
         # validation below.
+        configured_server_ids = {server.id for server in console_config.mcp.servers}
         index_searcher = None
-        if any(server.id == HAKU_INDEX_SERVER_ID for server in console_config.mcp.servers):
+        if HAKU_INDEX_SERVER_ID in configured_server_ids:
             if settings.embedder is None:
                 raise ValueError(
                     f"MCP server {HAKU_INDEX_SERVER_ID!r} is configured but no embedder is: "
@@ -642,8 +643,7 @@ def create_app(
             SandboxServerConfig(
                 client=InClusterSandboxClient(console_config.agent_sandbox), environment=console_config.agent_sandbox
             )
-            if console_config.agent_sandbox is not None
-            and any(server.id == sandbox_tools.SANDBOX_SERVER_ID for server in console_config.mcp.servers)
+            if console_config.agent_sandbox is not None and sandbox_tools.SANDBOX_SERVER_ID in configured_server_ids
             else None
         )
         in_process_servers = build_in_process_servers(
@@ -664,12 +664,12 @@ def create_app(
                         grants=kubernetes_grants, authorization=kubernetes_authorization
                     )
                     if kubernetes_authorization is not None
-                    and any(server.id == kubernetes_tools.KUBERNETES_SERVER_ID for server in console_config.mcp.servers)
+                    and kubernetes_tools.KUBERNETES_SERVER_ID in configured_server_ids
                     else None
                 ),
-                http=(
-                    http_tools.HttpToolsService(grants=http_grants)
-                    if any(server.id == http_tools.HTTP_SERVER_ID for server in console_config.mcp.servers)
+                http_grants=(
+                    http_grants_tools.HttpToolsService(grants=http_grants, agents=agent_authority)
+                    if http_grants_tools.HTTP_GRANTS_SERVER_ID in configured_server_ids
                     else None
                 ),
             )

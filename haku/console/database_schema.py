@@ -57,7 +57,7 @@ from haku.console.chat_models import (
     TurnOutcome,
 )
 from haku.console.grant_principal import GrantPrincipalKind
-from haku.console.http_grant_models import HttpGrantStatus, HttpScheme
+from haku.console.http_grant_models import HttpMethod, HttpMethods, HttpScheme
 from haku.console.kubernetes_grant_models import KubernetesGrantScope, KubernetesGrantStatus, KubernetesRule
 from haku.console.node_daemon_models import NodeDaemonExecutionStatus
 from haku.console.operator_identity import OperatorStatus
@@ -583,11 +583,14 @@ class KubernetesGrantRow(Base):
 
 
 class HttpGrantRow(Base):
-    """One Agent-owned, principal-scoped, time-bounded exact-origin HTTP egress lease.
+    """One Agent-owned, principal-scoped, time-bounded HTTP egress lease.
 
-    The origin is three relational columns because a v1 grant is exactly ``(scheme, host, port)``
-    — no open vocabulary to leave in JSONB. The domain canonicalizes the host to its lowercase
-    IDNA A-label before writing; the check constraint pins that persisted canonical LDH shape.
+    The origin is three relational columns because a grant pins exactly ``(scheme, host, port)``;
+    ``methods``/``path_regex`` narrow requests at that origin. The domain canonicalizes and
+    validates coverage app-side (`http_grant_models`); Postgres holds only the relational
+    invariants. Status is derived, never stored (root STYLE.md § SQLAlchemy): the row records the
+    end facts — ``released_at``, ``revoked_at`` — and `http_grant_models.derive_status` computes
+    the vocabulary from them and the clock, so expiry needs no sweeper.
     ``source_tool_call_id`` is retained as immutable provenance and must refer to the
     Agent-authenticated source call. Lifecycle ownership and authorization applicability are
     deliberately separate columns.
@@ -603,23 +606,19 @@ class HttpGrantRow(Base):
             "AND principal_session_id IS NOT NULL)",
             name="ck_http_grants_principal_shape",
         ),
-        CheckConstraint(
-            "scheme IN ('http', 'https') AND port >= 1 AND port <= 65535 "
-            "AND char_length(host) <= 253 "
-            "AND host ~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$'",
-            name="ck_http_grants_origin_shape",
-        ),
         CheckConstraint("expires_at > created_at", name="ck_http_grants_expiration_after_creation"),
+        # The fact shape the derivation reads: at most one end action, and a reason exactly when
+        # one is recorded.
         CheckConstraint(
-            "(status = 'active' AND ended_at IS NULL AND end_reason IS NULL) OR "
-            "(status IN ('released', 'revoked', 'expired') AND ended_at IS NOT NULL "
-            "AND end_reason IS NOT NULL AND btrim(end_reason) <> '')",
-            name="ck_http_grants_status_shape",
+            "num_nonnulls(released_at, revoked_at) <= 1 "
+            "AND ((num_nonnulls(released_at, revoked_at) = 1) = (end_reason IS NOT NULL)) "
+            "AND (end_reason IS NULL OR btrim(end_reason) <> '')",
+            name="ck_http_grants_end_shape",
         ),
         Index("idx_http_grants_source_tool_call", "source_tool_call_id"),
-        Index("idx_http_grants_owner_status_expiry", "owner_agent_id", "status", "expires_at"),
-        Index("idx_http_grants_agent_principal_status_expiry", "principal_agent_id", "status", "expires_at"),
-        Index("idx_http_grants_session_principal_status_expiry", "principal_session_id", "status", "expires_at"),
+        Index("idx_http_grants_owner_expiry", "owner_agent_id", "expires_at"),
+        Index("idx_http_grants_agent_principal_expiry", "principal_agent_id", "expires_at"),
+        Index("idx_http_grants_session_principal_expiry", "principal_session_id", "expires_at"),
     )
 
     grant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
@@ -641,10 +640,12 @@ class HttpGrantRow(Base):
     scheme: Mapped[HttpScheme] = mapped_column(TextBackedStrEnumColumn(HttpScheme), nullable=False)
     host: Mapped[str] = mapped_column(Text, nullable=False)
     port: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[HttpGrantStatus] = mapped_column(TextBackedStrEnumColumn(HttpGrantStatus), nullable=False)
+    methods: Mapped[frozenset[HttpMethod]] = mapped_column(PydanticColumn(HttpMethods), nullable=False)
+    path_regex: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    ended_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    released_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     end_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 

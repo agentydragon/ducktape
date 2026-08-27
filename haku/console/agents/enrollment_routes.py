@@ -34,6 +34,7 @@ from haku.console.agents.enrollment import (
 from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
 from haku.console.agents.naming import InvalidAgentNameError
 from haku.console.config import Settings
+from haku.console.operator_agents import AgentEnrollmentServiceDep
 from haku.console.operator_auth import OperatorSession, operator_session
 
 entry_router = APIRouter(prefix="/auth/agent-enrollment", tags=["agent-enrollment"])
@@ -119,11 +120,6 @@ class EnrollmentWasDenied(BaseModel):
 type EnrollmentDecisionResponse = EnrollmentContinues | EnrollmentWasDenied
 
 
-def _enrollment_service(request: Request) -> AgentEnrollmentService:
-    return cast(AgentEnrollmentService, request.app.state.agent_enrollment_service)
-
-
-EnrollmentServiceDep = Annotated[AgentEnrollmentService, Depends(_enrollment_service)]
 OperatorSessionDep = Annotated[OperatorSession | None, Depends(operator_session)]
 
 
@@ -240,7 +236,7 @@ def _agent_view(agent: OperatorAgent) -> AgentView:
 async def enrollment_entry(
     interaction_id: UUID,
     request: Request,
-    service: EnrollmentServiceDep,
+    service: AgentEnrollmentServiceDep,
     session: OperatorSessionDep,
     browser_nonce: str | None = None,
 ) -> Response:
@@ -255,7 +251,7 @@ async def enrollment_entry(
 
 
 @operator_router.get("/agents", response_model=AgentListResponse)
-async def list_agents(service: EnrollmentServiceDep, session: OperatorSessionDep) -> AgentListResponse:
+async def list_agents(service: AgentEnrollmentServiceDep, session: OperatorSessionDep) -> AgentListResponse:
     operator = _require_operator(session)
     return AgentListResponse(
         agents=[_agent_view(agent) for agent in await service.list_agents(operator_id=operator.operator_id)],
@@ -265,7 +261,10 @@ async def list_agents(service: EnrollmentServiceDep, session: OperatorSessionDep
 
 @operator_router.put("/agents/{agent_id}/access-profile", response_model=AgentView)
 async def update_agent_access_profile(
-    agent_id: UUID, body: UpdateAgentAccessProfileRequest, service: EnrollmentServiceDep, session: OperatorSessionDep
+    agent_id: UUID,
+    body: UpdateAgentAccessProfileRequest,
+    service: AgentEnrollmentServiceDep,
+    session: OperatorSessionDep,
 ) -> AgentView:
     operator = _require_operator(session)
     try:
@@ -285,7 +284,7 @@ async def update_agent_access_profile(
 
 @operator_router.get("/{interaction_id}", response_model=EnrollmentView)
 async def get_enrollment(
-    interaction_id: UUID, request: Request, service: EnrollmentServiceDep, session: OperatorSessionDep
+    interaction_id: UUID, request: Request, service: AgentEnrollmentServiceDep, session: OperatorSessionDep
 ) -> EnrollmentView:
     operator = _require_operator(session)
     page = await _open_bound_interaction(
@@ -299,7 +298,7 @@ async def decide_enrollment(
     interaction_id: UUID,
     body: EnrollmentDecisionRequest,
     request: Request,
-    service: EnrollmentServiceDep,
+    service: AgentEnrollmentServiceDep,
     session: OperatorSessionDep,
 ) -> Response:
     operator = _require_operator(session)

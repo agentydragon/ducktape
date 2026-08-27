@@ -1,4 +1,4 @@
-"""Domain contracts for temporary exact-origin HTTP grants."""
+"""Domain contracts for temporary HTTP egress grants."""
 
 from __future__ import annotations
 
@@ -10,12 +10,28 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from haku.console.grant_principal import AgentGrantPrincipal
-from haku.console.http_grant_models import HttpGrant, HttpGrantStatus, HttpOrigin, HttpScheme
+from haku.console.http_grant_models import (
+    HttpGrant,
+    HttpGrantSpec,
+    HttpGrantStatus,
+    HttpMethod,
+    HttpOrigin,
+    HttpScheme,
+    derive_status,
+)
+
+_CREATED = datetime.datetime(2026, 8, 21, tzinfo=datetime.UTC)
+_EXPIRES = datetime.datetime(2026, 8, 21, 1, tzinfo=datetime.UTC)
 
 
 def origin(**overrides: object) -> HttpOrigin:
     payload: dict[str, object] = {"scheme": HttpScheme.HTTPS, "host": "example.com", "port": 443, **overrides}
     return HttpOrigin.model_validate(payload)
+
+
+def spec(**overrides: object) -> HttpGrantSpec:
+    payload: dict[str, object] = {"origin": origin(), "methods": [HttpMethod.GET], **overrides}
+    return HttpGrantSpec.model_validate(payload)
 
 
 @pytest.mark.parametrize(
@@ -97,27 +113,75 @@ def test_origin_serializes_canonically() -> None:
     }
 
 
+def test_spec_requires_at_least_one_method_and_sorts_them_canonically() -> None:
+    with pytest.raises(ValidationError):
+        spec(methods=[])
+    dumped = spec(methods=[HttpMethod.POST, HttpMethod.GET, HttpMethod.DELETE]).model_dump(mode="json")
+    assert dumped["methods"] == ["DELETE", "GET", "POST"]
+
+
+def test_spec_rejects_uncompilable_or_blank_path_regex() -> None:
+    with pytest.raises(ValidationError, match="not a valid regular expression"):
+        spec(path_regex="(unclosed")
+    with pytest.raises(ValidationError):
+        spec(path_regex="")
+
+
+def test_spec_coverage_requires_method_and_full_path_match() -> None:
+    coverage = spec(methods=[HttpMethod.GET, HttpMethod.HEAD], path_regex="/repos/agentydragon/.*")
+    assert coverage.covers(method=HttpMethod.GET, path="/repos/agentydragon/ducktape")
+    assert coverage.covers(method=HttpMethod.HEAD, path="/repos/agentydragon/")
+    assert not coverage.covers(method=HttpMethod.POST, path="/repos/agentydragon/ducktape")
+    # fullmatch, not search: a prefix or infix hit is not coverage.
+    assert not coverage.covers(method=HttpMethod.GET, path="/evil/repos/agentydragon/x")
+    assert not coverage.covers(method=HttpMethod.GET, path="/repos")
+    unpinned = spec(methods=[HttpMethod.GET])
+    assert unpinned.covers(method=HttpMethod.GET, path="/anything")
+
+
+def test_grantable_methods_exclude_transport_and_diagnostic_verbs() -> None:
+    assert {method.value for method in HttpMethod} & {"CONNECT", "TRACE"} == set()
+
+
+def test_status_is_derived_from_end_facts_and_the_clock() -> None:
+    early = datetime.datetime(2026, 8, 21, 0, 30, tzinfo=datetime.UTC)
+    assert derive_status(released_at=None, revoked_at=None, expires_at=_EXPIRES, now=_CREATED) is HttpGrantStatus.ACTIVE
+    assert (
+        derive_status(released_at=None, revoked_at=None, expires_at=_EXPIRES, now=_EXPIRES) is HttpGrantStatus.EXPIRED
+    )
+    assert derive_status(released_at=early, revoked_at=None, expires_at=_EXPIRES, now=_EXPIRES) is (
+        HttpGrantStatus.RELEASED
+    )
+    assert derive_status(released_at=None, revoked_at=early, expires_at=_EXPIRES, now=_EXPIRES) is (
+        HttpGrantStatus.REVOKED
+    )
+    # Expiration wins over an end action recorded at or past the time bound.
+    assert derive_status(released_at=_EXPIRES, revoked_at=None, expires_at=_EXPIRES, now=_EXPIRES) is (
+        HttpGrantStatus.EXPIRED
+    )
+
+
 def _grant_payload() -> dict[str, object]:
     return {
         "grant_id": UUID("00000000-0000-4000-8000-000000000001"),
         "owner_agent_id": UUID("00000000-0000-4000-8000-000000000002"),
         "principal": AgentGrantPrincipal(agent_id=UUID("00000000-0000-4000-8000-000000000002")),
         "source_tool_call_id": "tc_source",
-        "origin": origin(),
+        "spec": spec(),
         "status": HttpGrantStatus.ACTIVE,
-        "created_at": datetime.datetime(2026, 8, 21, tzinfo=datetime.UTC),
-        "expires_at": datetime.datetime(2026, 8, 21, 1, tzinfo=datetime.UTC),
+        "created_at": _CREATED,
+        "expires_at": _EXPIRES,
     }
 
 
-@pytest.mark.parametrize("field", ["created_at", "expires_at", "ended_at"])
+@pytest.mark.parametrize("field", ["created_at", "expires_at", "released_at"])
 def test_grant_timestamps_require_timezone_awareness(field: str) -> None:
     payload = _grant_payload()
-    if field == "ended_at":
+    if field == "released_at":
         payload.update(status=HttpGrantStatus.RELEASED, end_reason="done")
     payload[field] = datetime.datetime(2026, 8, 21)
 
-    with pytest.raises(ValidationError, match=rf"{field} must be timezone-aware"):
+    with pytest.raises(ValidationError):
         HttpGrant.model_validate(payload)
 
 
@@ -129,16 +193,27 @@ def test_agent_grant_principal_must_belong_to_lifecycle_owner() -> None:
         HttpGrant.model_validate(payload)
 
 
-def test_grant_terminal_state_requires_ended_at_and_reason() -> None:
+def test_grant_end_facts_travel_together_and_match_the_status() -> None:
+    early = datetime.datetime(2026, 8, 21, 0, 30, tzinfo=datetime.UTC)
+
     payload = _grant_payload()
     payload["status"] = HttpGrantStatus.REVOKED
-
-    with pytest.raises(ValidationError, match="requires ended_at and a non-empty end_reason"):
+    with pytest.raises(ValidationError, match="revoked grant requires revoked_at"):
         HttpGrant.model_validate(payload)
 
     payload = _grant_payload()
-    payload.update(ended_at=datetime.datetime(2026, 8, 21, 0, 30, tzinfo=datetime.UTC), end_reason="early")
-    with pytest.raises(ValidationError, match="an active grant cannot have terminal fields"):
+    payload.update(released_at=early, end_reason="early")
+    with pytest.raises(ValidationError, match="an active grant cannot carry end facts"):
+        HttpGrant.model_validate(payload)
+
+    payload = _grant_payload()
+    payload.update(status=HttpGrantStatus.RELEASED, released_at=early)
+    with pytest.raises(ValidationError, match="end_reason travels exactly with a recorded end action"):
+        HttpGrant.model_validate(payload)
+
+    payload = _grant_payload()
+    payload.update(status=HttpGrantStatus.RELEASED, released_at=early, revoked_at=early, end_reason="both")
+    with pytest.raises(ValidationError, match="cannot be both released and revoked"):
         HttpGrant.model_validate(payload)
 
 

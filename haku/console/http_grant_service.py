@@ -1,4 +1,4 @@
-"""Application service for owned, principal-scoped HTTP egress grants and origin matching."""
+"""Application service for owned, principal-scoped HTTP egress grants and request matching."""
 
 from __future__ import annotations
 
@@ -12,8 +12,11 @@ from haku.console.http_grant_models import (
     HttpGrant,
     HttpGrantDecision,
     HttpGrantNotFoundError,
-    HttpGrantStatus,
+    HttpGrantSpec,
+    HttpMethod,
     HttpOrigin,
+    HttpRequestAllowed,
+    HttpRequestDenied,
 )
 
 
@@ -24,31 +27,27 @@ class HttpGrantRepository(Protocol):
         owner_agent_id: UUID,
         grant_principal: GrantPrincipal,
         source_tool_call_id: str,
-        origins: Sequence[HttpOrigin],
+        grants: Sequence[HttpGrantSpec],
         created_at: datetime.datetime,
         expires_at: datetime.datetime,
     ) -> tuple[HttpGrant, ...]: ...
 
-    async def list(self, *, owner_agent_id: UUID, include_terminal: bool = True) -> tuple[HttpGrant, ...]: ...
+    async def list(
+        self, *, owner_agent_id: UUID, now: datetime.datetime, include_terminal: bool = True
+    ) -> tuple[HttpGrant, ...]: ...
 
-    async def get(self, *, owner_agent_id: UUID, grant_id: UUID) -> HttpGrant: ...
+    async def get(self, *, owner_agent_id: UUID, grant_id: UUID, now: datetime.datetime) -> HttpGrant: ...
 
     async def release(
-        self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, ended_at: datetime.datetime
+        self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime
     ) -> HttpGrant: ...
 
     async def revoke(
-        self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, ended_at: datetime.datetime
+        self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime
     ) -> HttpGrant: ...
 
-    async def revoke_source(
-        self, *, owner_agent_id: UUID, source_tool_call_id: str, reason: str, ended_at: datetime.datetime
-    ) -> tuple[HttpGrant, ...]: ...
-
-    async def expire(self, *, now: datetime.datetime, owner_agent_id: UUID | None = None) -> int: ...
-
     async def list_for_request_principal(
-        self, *, request_principal: RequestPrincipal, include_terminal: bool = True
+        self, *, request_principal: RequestPrincipal, now: datetime.datetime, include_terminal: bool = True
     ) -> tuple[HttpGrant, ...]: ...
 
     async def active_for_request_principal(
@@ -60,6 +59,20 @@ def _utcnow() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC)
 
 
+def _validated_end_batch(grant_ids: Sequence[UUID], reason: str) -> tuple[tuple[UUID, ...], str]:
+    grant_ids = tuple(grant_ids)
+    if not grant_ids:
+        raise ValueError("grant_ids must not be empty")
+    if len(grant_ids) > 32:
+        raise ValueError("at most 32 grants may be ended by one call")
+    if len(set(grant_ids)) != len(grant_ids):
+        raise ValueError("grant_ids must not contain duplicates")
+    reason = reason.strip()
+    if not reason:
+        raise ValueError("grant end reason must not be empty")
+    return grant_ids, reason
+
+
 class HttpGrantService:
     """Own grant lifecycle separately from trusted applicability matching.
 
@@ -67,8 +80,8 @@ class HttpGrantService:
     identity. Operator lifecycle methods require an explicit owner; Agent-facing lifecycle and
     authorization methods require a complete trusted ``RequestPrincipal``. ``match_request`` is
     the temporary-grant evaluator behind the Console decision endpoint: it answers one
-    ``(request principal, exact origin)`` question, carries no request content, and is
-    independent of the proxy adapter executing the decision.
+    ``(request principal, method, origin, path)`` question, carries no request bodies or headers,
+    and is independent of the proxy adapter executing the decision.
     """
 
     def __init__(
@@ -84,26 +97,30 @@ class HttpGrantService:
         if max_lifetime <= datetime.timedelta():
             raise ValueError("max_lifetime must be positive")
 
+    def _now(self) -> datetime.datetime:
+        now = self._clock()
+        if now.tzinfo is None or now.utcoffset() is None:
+            raise ValueError("grant service clock must return a timezone-aware datetime")
+        return now
+
     async def create_grants(
         self,
         *,
         owner_agent_id: UUID,
         grant_principal: GrantPrincipal,
         source_tool_call_id: str,
-        origins: Sequence[HttpOrigin],
+        grants: Sequence[HttpGrantSpec],
         expires_at: datetime.datetime,
     ) -> tuple[HttpGrant, ...]:
-        """Atomically create exact-origin grants with one source call and shared timestamps."""
+        """Atomically create coverage grants with one source call and shared timestamps."""
 
-        now = self._clock()
-        if now.tzinfo is None or now.utcoffset() is None:
-            raise ValueError("grant service clock must return a timezone-aware datetime")
+        now = self._now()
         if not source_tool_call_id:
             raise ValueError("source_tool_call_id must not be empty")
-        origins = tuple(origins)
-        if not origins:
-            raise ValueError("origins must not be empty")
-        if len(origins) > 32:
+        grants = tuple(grants)
+        if not grants:
+            raise ValueError("grants must not be empty")
+        if len(grants) > 32:
             raise ValueError("at most 32 grants may be created by one ToolCall")
         if expires_at.tzinfo is None or expires_at.utcoffset() is None:
             raise ValueError("expires_at must be timezone-aware")
@@ -115,32 +132,27 @@ class HttpGrantService:
             owner_agent_id=owner_agent_id,
             grant_principal=grant_principal,
             source_tool_call_id=source_tool_call_id,
-            origins=origins,
+            grants=grants,
             created_at=now,
             expires_at=expires_at,
         )
 
     async def list_grants(self, *, owner_agent_id: UUID, include_terminal: bool = True) -> tuple[HttpGrant, ...]:
-        await self.expire_grants(owner_agent_id=owner_agent_id)
-        return await self._repository.list(owner_agent_id=owner_agent_id, include_terminal=include_terminal)
+        return await self._repository.list(
+            owner_agent_id=owner_agent_id, now=self._now(), include_terminal=include_terminal
+        )
 
     async def list_applicable_grants(
         self, *, request_principal: RequestPrincipal, include_terminal: bool = True
     ) -> tuple[HttpGrant, ...]:
         """List only grants this authenticated request principal may exercise."""
 
-        await self.expire_grants(owner_agent_id=request_principal.agent_id)
         return await self._repository.list_for_request_principal(
-            request_principal=request_principal, include_terminal=include_terminal
+            request_principal=request_principal, now=self._now(), include_terminal=include_terminal
         )
 
     async def get_grant(self, *, owner_agent_id: UUID, grant_id: UUID) -> HttpGrant:
-        grant = await self._repository.get(owner_agent_id=owner_agent_id, grant_id=grant_id)
-        now = self._clock()
-        if grant.status is HttpGrantStatus.ACTIVE and grant.expires_at <= now:
-            await self._repository.expire(owner_agent_id=owner_agent_id, now=now)
-            grant = await self._repository.get(owner_agent_id=owner_agent_id, grant_id=grant_id)
-        return grant
+        return await self._repository.get(owner_agent_id=owner_agent_id, grant_id=grant_id, now=self._now())
 
     async def get_applicable_grant(self, *, request_principal: RequestPrincipal, grant_id: UUID) -> HttpGrant:
         grant = await self.get_grant(owner_agent_id=request_principal.agent_id, grant_id=grant_id)
@@ -157,24 +169,14 @@ class HttpGrantService:
         releases remain effective and visible; callers can reconcile with ``list_grants``.
         """
 
-        grant_ids = tuple(grant_ids)
-        if not grant_ids:
-            raise ValueError("grant_ids must not be empty")
-        if len(grant_ids) > 32:
-            raise ValueError("at most 32 grants may be released by one ToolCall")
-        if len(set(grant_ids)) != len(grant_ids):
-            raise ValueError("grant_ids must not contain duplicates")
-        reason = reason.strip()
-        if not reason:
-            raise ValueError("grant end reason must not be empty")
-        ended_at = self._clock()
-        released = [
-            await self._repository.release(
-                owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason, ended_at=ended_at
-            )
-            for grant_id in grant_ids
-        ]
-        return tuple(released)
+        grant_ids, reason = _validated_end_batch(grant_ids, reason)
+        now = self._now()
+        return tuple(
+            [
+                await self._repository.release(owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason, now=now)
+                for grant_id in grant_ids
+            ]
+        )
 
     async def release_applicable_grants(
         self, *, request_principal: RequestPrincipal, grant_ids: Sequence[UUID], reason: str = "released"
@@ -185,43 +187,38 @@ class HttpGrantService:
 
     async def revoke_grant(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str) -> HttpGrant:
         return await self._repository.revoke(
-            owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason, ended_at=self._clock()
+            owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason, now=self._now()
         )
 
-    async def revoke_grant_set(
-        self, *, owner_agent_id: UUID, source_tool_call_id: str, reason: str
+    async def revoke_grants(
+        self, *, owner_agent_id: UUID, grant_ids: Sequence[UUID], reason: str
     ) -> tuple[HttpGrant, ...]:
-        """Revoke the durable grant set sharing one approval source ToolCall."""
+        """Revoke a bounded list sequentially; same non-atomicity contract as ``release_grants``."""
 
-        if not source_tool_call_id:
-            raise ValueError("source_tool_call_id must not be empty")
-        return await self._repository.revoke_source(
-            owner_agent_id=owner_agent_id,
-            source_tool_call_id=source_tool_call_id,
-            reason=reason,
-            ended_at=self._clock(),
+        grant_ids, reason = _validated_end_batch(grant_ids, reason)
+        now = self._now()
+        return tuple(
+            [
+                await self._repository.revoke(owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason, now=now)
+                for grant_id in grant_ids
+            ]
         )
 
-    async def expire_grants(self, *, owner_agent_id: UUID | None = None) -> int:
-        return await self._repository.expire(owner_agent_id=owner_agent_id, now=self._clock())
+    async def match_request(
+        self, *, request_principal: RequestPrincipal, method: HttpMethod, origin: HttpOrigin, path: str
+    ) -> HttpGrantDecision:
+        """Match one request against active grants and return the earliest expiry bound."""
 
-    async def match_request(self, *, request_principal: RequestPrincipal, origin: HttpOrigin) -> HttpGrantDecision:
-        """Match one exact origin against active grants and return the earliest expiry bound."""
-
-        now = self._clock()
+        if not path.startswith("/"):
+            raise ValueError("path must be the request URL's absolute path, starting with '/'")
         matching = [
             grant
             for grant in await self._repository.active_for_request_principal(
-                request_principal=request_principal, now=now
+                request_principal=request_principal, now=self._now()
             )
-            if grant.origin == origin
+            if grant.spec.origin == origin and grant.spec.covers(method=method, path=path)
         ]
-        if matching:
-            grant = min(matching, key=lambda item: item.expires_at)
-            return HttpGrantDecision(
-                allowed=True,
-                grant_id=grant.grant_id,
-                expires_at=grant.expires_at,
-                reason="active HTTP grant covers the origin",
-            )
-        return HttpGrantDecision(allowed=False, reason="no active HTTP grant covers the origin")
+        if not matching:
+            return HttpRequestDenied(reason="no active HTTP grant covers the request")
+        grant = min(matching, key=lambda item: item.expires_at)
+        return HttpRequestAllowed(grant_id=grant.grant_id, expires_at=grant.expires_at)

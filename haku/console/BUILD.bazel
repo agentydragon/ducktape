@@ -192,7 +192,7 @@ py_library(
         "//haku/console/tools:hostexec",
         "//haku/console/tools:hostexec_client",
         "//haku/console/tools:hostexec_token",
-        "//haku/console/tools:http",
+        "//haku/console/tools:http_grants",
         "//haku/console/tools:kubernetes",
         "//haku/console/tools:recall_index",
         "//haku/console/tools:routine",
@@ -294,7 +294,6 @@ py_library(
     name = "http_grant_repository",
     srcs = ["http_grant_repository.py"],
     deps = [
-        ":chat_models",
         ":database_schema",
         ":grant_principal",
         ":http_grant_models",
@@ -319,10 +318,20 @@ py_library(
     deps = [
         ":http_grant_models",
         ":http_grant_service",
+        ":operator_agents",
         ":operator_auth",
-        "//haku/console/agents:enrollment",
         "@pypi//fastapi",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "operator_agents",
+    srcs = ["operator_agents.py"],
+    deps = [
+        ":tool_call_actor",
+        "//haku/console/agents:enrollment",
+        "@pypi//fastapi",
     ],
 )
 
@@ -381,8 +390,8 @@ py_library(
     deps = [
         ":kubernetes_grant_models",
         ":kubernetes_grant_service",
+        ":operator_agents",
         ":operator_auth",
-        "//haku/console/agents:enrollment",
         "@pypi//fastapi",
         "@pypi//pydantic",
     ],
@@ -1271,7 +1280,7 @@ py_library(
         "//haku/console:chat_models",
         "//haku/console/mcp_auth:fastmcp_adapter",
         "//haku/console/tools:gmail",
-        "//haku/console/tools:http",
+        "//haku/console/tools:http_grants",
         "//haku/console/tools:kubernetes",
         "//haku/console/tools:routine",
         "//haku/console/tools:sandbox",
@@ -1379,7 +1388,7 @@ py_library(
         "//grocy_mcp:batch_tools",
         "//grocy_mcp:client",
         "//grocy_mcp:mcp_types",
-        "//haku/console/tools:http",
+        "//haku/console/tools:http_grants",
         "//haku/console/tools:kubernetes",
         "//mcp_infra:request_scoped_openapi",
         "@pypi//fastmcp_slim",
@@ -2008,8 +2017,9 @@ py_test(
         ":grant_principal",
         ":http_grant_models",
         ":http_grant_service",
+        "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
     ],
 )

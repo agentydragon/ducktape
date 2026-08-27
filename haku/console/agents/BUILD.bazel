@@ -85,6 +85,7 @@ py_library(
         ":models",
         ":naming",
         "//haku/console:config",
+        "//haku/console:operator_agents",
         "//haku/console:operator_auth",
         "@pypi//fastapi",
         "@pypi//pydantic",

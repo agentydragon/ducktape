@@ -56,13 +56,16 @@ from util.testing.postgres_fixtures import start_postgres_container
 _DEFAULT_AGENT_TOKEN_ENV = "HAKU_CONSOLE_DEFAULT_AGENT_TOKEN"
 _DEFAULT_AGENT_OPERATOR_ENV = "HAKU_CONSOLE_DEFAULT_AGENT_OPERATOR"
 _DEFAULT_AGENT_TOKEN = "default-agent-token"
+# The one access profile `make_client`'s default config defines and assigns its seeded static
+# agent; tests asserting profile identity import this rather than re-minting the literal.
+DEFAULT_ACCESS_PROFILE_ID = "no_auto_approval"
 _DEFAULT_STATIC_AGENTS = [
     {
         "agent_id": "00000000-0000-4000-8000-000000000001",
         "display_name": "Console Test Agent",
         "token_env_var": _DEFAULT_AGENT_TOKEN_ENV,
         "operator_subject_env": _DEFAULT_AGENT_OPERATOR_ENV,
-        "access_profile_id": "no_auto_approval",
+        "access_profile_id": DEFAULT_ACCESS_PROFILE_ID,
     }
 ]
 
@@ -376,8 +379,8 @@ def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.Monkey
         {
             "static_agents": _DEFAULT_STATIC_AGENTS,
             "auto_approval_policies": [{"id": "no_auto_approval", "type": "never"}],
-            "access_profiles": [{"id": "no_auto_approval", "auto_approval_policy": "no_auto_approval"}],
-            "default_access_profile_id": "no_auto_approval",
+            "access_profiles": [{"id": DEFAULT_ACCESS_PROFILE_ID, "auto_approval_policy": "no_auto_approval"}],
+            "default_access_profile_id": DEFAULT_ACCESS_PROFILE_ID,
         },
     )
 

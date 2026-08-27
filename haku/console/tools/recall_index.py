@@ -16,17 +16,15 @@ from typing import Annotated, Literal, Protocol
 from uuid import UUID
 
 from fastmcp import FastMCP
-from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, Field
 
-from haku.console.mcp_execution import McpExecutionContext, require_mcp_execution_context
+from haku.console.mcp_execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext
 from haku.console.recall_index_access import RecallIndexAccessPolicy
 
 HAKU_INDEX_SERVER_ID = "haku_index"
 MAX_RESULTS = 25
 DEFAULT_RESULTS = 8
-_EXECUTION_CONTEXT_DEPENDENCY = Depends(require_mcp_execution_context)
 
 
 class GitSource(BaseModel):
@@ -139,7 +137,7 @@ def build_mcp(searcher: IndexSearcher, *, access: RecallIndexAccessPolicy) -> Fa
                 description="Include matching indexed chunk text. Defaults to true; set false for provenance only.",
             ),
         ] = True,
-        execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
+        execution: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
     ) -> SearchResults:
         """Search one configured logical index for recall.
 
@@ -153,7 +151,7 @@ def build_mcp(searcher: IndexSearcher, *, access: RecallIndexAccessPolicy) -> Fa
         return results if include_content else results.without_content()
 
     @mcp.tool
-    async def index_status(execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY) -> IndexStatus:
+    async def index_status(execution: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY) -> IndexStatus:
         """How current the caller's authorized logical indexes are."""
         if not (index_ids := access.allowed_indexes(execution.caller)):
             raise ToolError("recall index access denied")

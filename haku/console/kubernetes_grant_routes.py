@@ -8,13 +8,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from haku.console.agents.enrollment import AgentEnrollmentService
 from haku.console.kubernetes_grant_models import (
     KubernetesGrant,
     KubernetesGrantNotFoundError,
     KubernetesGrantOwnershipError,
 )
 from haku.console.kubernetes_grant_service import KubernetesGrantService
+from haku.console.operator_agents import AgentEnrollmentServiceDep, owned_agent_names
 from haku.console.operator_auth import OperatorActorDep
 
 router = APIRouter(prefix="/api/kubernetes-grants", tags=["kubernetes-grants"])
@@ -53,25 +53,16 @@ def _grant_service(request: Request) -> KubernetesGrantService:
     return cast(KubernetesGrantService, request.app.state.kubernetes_grants)
 
 
-def _agent_service(request: Request) -> AgentEnrollmentService:
-    return cast(AgentEnrollmentService, request.app.state.agent_enrollment_service)
-
-
 GrantServiceDep = Annotated[KubernetesGrantService, Depends(_grant_service)]
-AgentServiceDep = Annotated[AgentEnrollmentService, Depends(_agent_service)]
-
-
-async def _owned_agents(*, actor: OperatorActorDep, agents: AgentServiceDep) -> dict[UUID, str]:
-    return {agent.agent_id: agent.display_name for agent in await agents.list_agents(operator_id=actor.operator_id)}
 
 
 @router.get("", response_model=KubernetesGrantListResponse)
 async def list_kubernetes_grants(
-    actor: OperatorActorDep, grants: GrantServiceDep, agents: AgentServiceDep
+    actor: OperatorActorDep, grants: GrantServiceDep, agents: AgentEnrollmentServiceDep
 ) -> KubernetesGrantListResponse:
     """List active and historical grants for only this Operator's Agents."""
 
-    owned = await _owned_agents(actor=actor, agents=agents)
+    owned = await owned_agent_names(actor=actor, agents=agents)
     records = [
         OperatorKubernetesGrant(grant=grant, agent_display_name=display_name)
         for agent_id, display_name in owned.items()
@@ -88,11 +79,11 @@ async def revoke_kubernetes_grant(
     body: RevokeKubernetesGrantRequest,
     actor: OperatorActorDep,
     grants: GrantServiceDep,
-    agents: AgentServiceDep,
+    agents: AgentEnrollmentServiceDep,
 ) -> OperatorKubernetesGrant:
     """Revoke one owned Agent's grant with a durable, operator-supplied reason."""
 
-    owned = await _owned_agents(actor=actor, agents=agents)
+    owned = await owned_agent_names(actor=actor, agents=agents)
     display_name = owned.get(agent_id)
     if display_name is None:
         raise HTTPException(status_code=404, detail="Kubernetes grant not found")
@@ -110,11 +101,11 @@ async def revoke_kubernetes_grant_set(
     body: RevokeKubernetesGrantRequest,
     actor: OperatorActorDep,
     grants: GrantServiceDep,
-    agents: AgentServiceDep,
+    agents: AgentEnrollmentServiceDep,
 ) -> KubernetesGrantListResponse:
     """Revoke one owned Agent's complete grant set from a reviewed source ToolCall."""
 
-    owned = await _owned_agents(actor=actor, agents=agents)
+    owned = await owned_agent_names(actor=actor, agents=agents)
     display_name = owned.get(agent_id)
     if display_name is None:
         raise HTTPException(status_code=404, detail="Kubernetes grant not found")

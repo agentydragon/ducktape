@@ -8,7 +8,6 @@ from typing import Annotated
 from uuid import UUID
 
 from fastmcp import FastMCP
-from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -24,10 +23,9 @@ from haku.console.kubernetes_authorization import (
 )
 from haku.console.kubernetes_grant_models import KubernetesGrant, KubernetesGrantScopeKind, KubernetesGrantSpec
 from haku.console.kubernetes_grant_service import KubernetesGrantService
-from haku.console.mcp_execution import McpExecutionContext, require_mcp_execution_context
+from haku.console.mcp_execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext
 
 KUBERNETES_SERVER_ID = "kubernetes"
-_EXECUTION_CONTEXT_DEPENDENCY = Depends(require_mcp_execution_context)
 
 
 class CanIResult(BaseModel):
@@ -155,7 +153,7 @@ def build_mcp(service: KubernetesToolsService) -> FastMCP:
             list[KubernetesAccessCheck],
             Field(min_length=1, max_length=32, description="Kubernetes requests to authorize in one batch."),
         ],
-        context: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
+        context: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
     ) -> list[CanIResult]:
         return await service.can_i(context=context, requests=requests)
 
@@ -187,7 +185,7 @@ def build_mcp(service: KubernetesToolsService) -> FastMCP:
                 )
             ),
         ] = GrantPrincipalKind.AGENT,
-        context: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
+        context: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
     ) -> list[KubernetesGrant]:
         return list(
             await service.create_grants(
@@ -196,13 +194,13 @@ def build_mcp(service: KubernetesToolsService) -> FastMCP:
         )
 
     @mcp.tool
-    async def list_grants(context: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY) -> list[KubernetesGrant]:
+    async def list_grants(context: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY) -> list[KubernetesGrant]:
         return list(await service.list_grants(context=context))
 
     @mcp.tool
     async def get_grant(
         grant_id: Annotated[UUID, Field(description="Grant UUID returned by create_grant.")],
-        context: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
+        context: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
     ) -> KubernetesGrant:
         return await service.get_grant(context=context, grant_id=grant_id)
 
@@ -217,7 +215,7 @@ def build_mcp(service: KubernetesToolsService) -> FastMCP:
             ),
         ],
         reason: Annotated[str, Field(min_length=1, max_length=500)] = "released",
-        context: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
+        context: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
     ) -> list[KubernetesGrant]:
         return list(await service.release_grants(context=context, grant_ids=grant_ids, reason=reason))
 

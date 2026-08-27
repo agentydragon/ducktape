@@ -58,7 +58,6 @@ from haku.console.database_schema import (
     SessionFrame,
 )
 from haku.console.grant_principal import GrantPrincipalKind
-from haku.console.http_grant_models import HttpGrantStatus
 from haku.console.kubernetes_grant_models import KubernetesGrantStatus
 from haku.console.x import conversation_log, session_events
 from haku.console.x.conversation_events import (
@@ -520,21 +519,18 @@ class SessionStore:
             .where(*kubernetes_session_principal, KubernetesGrantRow.status == KubernetesGrantStatus.ACTIVE)
             .values(status=KubernetesGrantStatus.REVOKED, ended_at=now, end_reason="principal_ended")
         )
-        http_session_principal = (
-            HttpGrantRow.principal_kind == GrantPrincipalKind.SESSION,
-            HttpGrantRow.principal_session_id == chat.session_id,
-        )
+        # HTTP grant status is derived, so already-expired leases need no write: one revocation
+        # fact ends every lease this session could still exercise.
         await db.execute(
             update(HttpGrantRow)
             .where(
-                *http_session_principal, HttpGrantRow.status == HttpGrantStatus.ACTIVE, HttpGrantRow.expires_at <= now
+                HttpGrantRow.principal_kind == GrantPrincipalKind.SESSION,
+                HttpGrantRow.principal_session_id == chat.session_id,
+                HttpGrantRow.released_at.is_(None),
+                HttpGrantRow.revoked_at.is_(None),
+                HttpGrantRow.expires_at > now,
             )
-            .values(status=HttpGrantStatus.EXPIRED, ended_at=now, end_reason="expired")
-        )
-        await db.execute(
-            update(HttpGrantRow)
-            .where(*http_session_principal, HttpGrantRow.status == HttpGrantStatus.ACTIVE)
-            .values(status=HttpGrantStatus.REVOKED, ended_at=now, end_reason="principal_ended")
+            .values(revoked_at=now, end_reason="principal_ended")
         )
 
     async def create(

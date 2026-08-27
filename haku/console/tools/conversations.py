@@ -59,13 +59,12 @@ from typing import Annotated, Literal, Protocol
 from uuid import UUID
 
 from fastmcp import FastMCP
-from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, Field
 
 from haku.console.chat_models import BridgeFrameKind
 from haku.console.in_process_server_access import InProcessServerAccessPolicy
-from haku.console.mcp_execution import McpExecutionContext, require_mcp_execution_context
+from haku.console.mcp_execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext
 from haku.console.x.conversation_reads import (
     ConversationEntry,
     FrameRecord,
@@ -76,7 +75,6 @@ from haku.console.x.conversation_reads import (
 )
 
 HAKU_CONVERSATIONS_SERVER_ID = "haku_conversations"
-_EXECUTION_CONTEXT_DEPENDENCY = Depends(require_mcp_execution_context)
 
 # Rows per page. Small on purpose: a frame carries a whole tool result, and the console's
 # past-tool-calls page already learned that asking for hundreds of such rows means a
@@ -177,7 +175,7 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
             Field(default=None, description="From a previous page's `next_cursor`; omit for the newest sessions."),
         ] = None,
         limit: Annotated[int, Field(default=20, ge=1, le=MAX_PAGE, description="Most recent sessions first.")] = 20,
-        execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
+        execution: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
     ) -> SessionPage:
         """List past sessions, newest first. Use `conversation_id` to group continuations."""
         require_conversation_access(execution)
@@ -194,7 +192,7 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
         limit: Annotated[int, Field(default=DEFAULT_PAGE, ge=1, le=MAX_PAGE, description="Newest exchange first.")] = (
             DEFAULT_PAGE
         ),
-        execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
+        execution: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
     ) -> TurnPage:
         """List a session's exchanges with cost, duration, outcome, and frame range."""
         require_conversation_access(execution)
@@ -213,7 +211,7 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
             ),
         ] = None,
         limit: Annotated[int, Field(default=DEFAULT_PAGE, ge=1, le=MAX_PAGE)] = DEFAULT_PAGE,
-        execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
+        execution: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
     ) -> ItemPage:
         """Read the conversation's prompts, messages, reasoning, tool calls, and results oldest first.
 
@@ -241,7 +239,7 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
                 "the named frame.",
             ),
         ] = None,
-        execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
+        execution: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
         limit: Annotated[int, Field(default=DEFAULT_PAGE, ge=1, le=MAX_PAGE)] = DEFAULT_PAGE,
         kinds: Annotated[
             list[FrameKind] | None,

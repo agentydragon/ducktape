@@ -18,7 +18,6 @@ import pytest_bazel
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastmcp import FastMCP
-from fastmcp.dependencies import Depends
 from mcp import types as mcp_types
 from pydantic import ValidationError
 from sqlalchemy import event, select, text
@@ -72,7 +71,7 @@ from haku.console.mcp_config import (
     RemoteServerOAuthAuth,
     validate_in_process_server_bindings,
 )
-from haku.console.mcp_execution import McpExecutionContext, OperatorMcpExecutionCaller, require_mcp_execution_context
+from haku.console.mcp_execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext, OperatorMcpExecutionCaller
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp_reflection_cache import ReflectedCatalog
 from haku.console.node_daemon_models import NodeDaemonExecutionStatus
@@ -90,8 +89,6 @@ from haku.console.tool_calls import (
 from haku.console.tools.gmail import build_mcp as build_gmail_mcp
 from util.net import pick_free_port
 from util.testing.asgi import serve_app_sync
-
-_EXECUTION_CONTEXT_DEPENDENCY = Depends(require_mcp_execution_context)
 
 
 def _build_test_mcp_server() -> FastMCP:
@@ -190,7 +187,7 @@ def _build_execution_context_mcp_server() -> FastMCP:
     server = FastMCP("haku-execution-context-test")
 
     @server.tool()
-    async def caller_id(execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY) -> str:
+    async def caller_id(execution: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY) -> str:
         caller = execution.caller
         return str(caller.operator_id if isinstance(caller, OperatorMcpExecutionCaller) else caller.principal.agent_id)
 

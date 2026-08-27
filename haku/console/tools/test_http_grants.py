@@ -19,25 +19,33 @@ import pytest_bazel
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastmcp import Client
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.conftest import default_agent_binding, insert_approved_tool_call, insert_live_session
+from haku.console.agents.enrollment import AgentEnrollmentService
+from haku.console.conftest import (
+    DEFAULT_ACCESS_PROFILE_ID,
+    default_agent_binding,
+    insert_approved_tool_call,
+    insert_live_session,
+)
+from haku.console.database_schema import Agent
 from haku.console.grant_principal import (
     AgentGrantPrincipal,
     GrantPrincipalKind,
     RequestPrincipal,
     SessionGrantPrincipal,
 )
-from haku.console.http_grant_models import HttpGrantStatus, HttpOrigin, HttpScheme
+from haku.console.http_grant_models import HttpGrantSpec, HttpGrantStatus, HttpMethod, HttpOrigin, HttpScheme
 from haku.console.http_grant_service import HttpGrantService
 from haku.console.mcp_execution import AgentMcpExecutionCaller, McpExecutionContext, OperatorMcpExecutionCaller
-from haku.console.tools.http import HttpToolsService, build_mcp
+from haku.console.tools.http_grants import HttpToolsService, build_mcp
 
 _NOW = datetime(2026, 8, 27, tzinfo=UTC)
 _ORIGIN = HttpOrigin(scheme=HttpScheme.HTTPS, host="grocy.example", port=443)
 _OTHER_ORIGIN = HttpOrigin(scheme=HttpScheme.HTTP, host="mirror.example", port=80)
-# The access profile `make_client` assigns its seeded default static agent.
-_PROFILE = "no_auto_approval"
+_SPEC = HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}))
+_OTHER_SPEC = HttpGrantSpec(origin=_OTHER_ORIGIN, methods=frozenset({HttpMethod.GET, HttpMethod.POST}))
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,15 +71,35 @@ class _Console:
                 self.sessions,
                 binding_id=self.binding_id,
                 now=_NOW,
-                server_id="http",
+                server_id="http_grants",
                 session_id=session_id,
             )
         )
         return McpExecutionContext(
             caller=AgentMcpExecutionCaller(
-                principal=RequestPrincipal(agent_id=self.agent_id, session_id=session_id, access_profile_id=_PROFILE)
+                principal=RequestPrincipal(
+                    agent_id=self.agent_id, session_id=session_id, access_profile_id=DEFAULT_ACCESS_PROFILE_ID
+                )
             ),
             tool_call_id=tool_call_id,
+            approving_operator_id=None,
+            approval_policy_id=None,
+        )
+
+    def operator_context(self) -> McpExecutionContext:
+        """The Operator owning the seeded default Agent, as a direct MCP execution."""
+
+        async def owner_operator_id() -> UUID:
+            async with self.sessions() as session:
+                operator_id = await session.scalar(
+                    select(Agent.owner_operator_id).where(Agent.agent_id == self.agent_id)
+                )
+                assert operator_id is not None
+                return operator_id
+
+        return McpExecutionContext(
+            caller=OperatorMcpExecutionCaller(operator_id=self.call(owner_operator_id)),
+            tool_call_id=None,
             approving_operator_id=None,
             approval_policy_id=None,
         )
@@ -80,7 +108,7 @@ class _Console:
         return self.call(partial(insert_live_session, self.sessions, binding_id=self.binding_id, now=_NOW))
 
 
-def _operator_context() -> McpExecutionContext:
+def _foreign_operator_context() -> McpExecutionContext:
     return McpExecutionContext(
         caller=OperatorMcpExecutionCaller(operator_id=UUID(int=9)),
         tool_call_id="tc_operator",
@@ -95,12 +123,13 @@ def console(make_client: Callable[..., Any]) -> Iterator[_Console]:
         app = cast(FastAPI, client.app)
         sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
         grants = cast(HttpGrantService, app.state.http_grants)
+        agents = cast(AgentEnrollmentService, app.state.agent_enrollment_service)
         assert client.portal is not None
         agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
         yield _Console(
             client=client,
             sessions=sessions,
-            service=HttpToolsService(grants=grants),
+            service=HttpToolsService(grants=grants, agents=agents),
             agent_id=agent_id,
             binding_id=binding_id,
         )
@@ -112,27 +141,38 @@ def test_server_exposes_exact_stable_tool_set_without_context_argument(console: 
             return list(await client.list_tools())
 
     tools = console.call(list_tools)
-    assert {tool.name for tool in tools} == {"create_grant", "list_grants", "get_grant", "release_grants"}
+    assert {tool.name for tool in tools} == {
+        "create_grant",
+        "list_grants",
+        "get_grant",
+        "release_grants",
+        "revoke_grants",
+    }
     for tool in tools:
         assert "context" not in tool.inputSchema.get("properties", {})
     create_grant = next(tool for tool in tools if tool.name == "create_grant")
-    assert set(create_grant.inputSchema["properties"]) == {"origins", "duration_seconds", "applies_to"}
+    assert set(create_grant.inputSchema["properties"]) == {"grants", "duration_seconds", "applies_to"}
     assert create_grant.inputSchema["properties"]["applies_to"]["default"] == "agent"
-    assert create_grant.inputSchema["properties"]["origins"]["minItems"] == 1
-    assert create_grant.inputSchema["properties"]["origins"]["maxItems"] == 32
+    assert create_grant.inputSchema["properties"]["grants"]["minItems"] == 1
+    assert create_grant.inputSchema["properties"]["grants"]["maxItems"] == 32
     release_grants = next(tool for tool in tools if tool.name == "release_grants")
     assert set(release_grants.inputSchema["properties"]) == {"grant_ids", "reason"}
     assert release_grants.inputSchema["properties"]["grant_ids"]["minItems"] == 1
     assert release_grants.inputSchema["properties"]["grant_ids"]["maxItems"] == 32
+    revoke_grants = next(tool for tool in tools if tool.name == "revoke_grants")
+    assert set(revoke_grants.inputSchema["properties"]) == {"owner_agent_id", "grant_ids", "reason"}
+    assert "default" not in revoke_grants.inputSchema["properties"]["reason"]
 
 
-def test_create_persists_trusted_identity_provenance_and_exact_origins(console: _Console) -> None:
+def test_create_persists_trusted_identity_provenance_and_exact_coverage(console: _Console) -> None:
     context = console.agent_context()
-    requested = [_ORIGIN, _OTHER_ORIGIN]
+    requested = [_SPEC, _OTHER_SPEC]
 
     async def exercise() -> None:
-        created = await console.service.create_grants(context=context, origins=requested, duration_seconds=600)
-        assert [grant.origin for grant in created] == requested
+        created = await console.service.create_grants(
+            context=context, grants=requested, duration_seconds=600, applies_to=GrantPrincipalKind.AGENT
+        )
+        assert [grant.spec for grant in created] == requested
         for grant in created:
             assert grant.owner_agent_id == console.agent_id
             assert grant.principal == AgentGrantPrincipal(agent_id=console.agent_id)
@@ -151,13 +191,21 @@ def test_create_persists_trusted_identity_provenance_and_exact_origins(console: 
     "operation",
     [
         pytest.param(
-            lambda service: service.create_grants(context=_operator_context(), origins=[_ORIGIN], duration_seconds=60),
+            lambda service: service.create_grants(
+                context=_foreign_operator_context(),
+                grants=[_SPEC],
+                duration_seconds=60,
+                applies_to=GrantPrincipalKind.AGENT,
+            ),
             id="create",
         ),
-        pytest.param(lambda service: service.list_grants(context=_operator_context()), id="list"),
-        pytest.param(lambda service: service.get_grant(context=_operator_context(), grant_id=UUID(int=2)), id="get"),
+        pytest.param(lambda service: service.list_grants(context=_foreign_operator_context()), id="list"),
         pytest.param(
-            lambda service: service.release_grants(context=_operator_context(), grant_ids=[UUID(int=2)]), id="release"
+            lambda service: service.get_grant(context=_foreign_operator_context(), grant_id=UUID(int=2)), id="get"
+        ),
+        pytest.param(
+            lambda service: service.release_grants(context=_foreign_operator_context(), grant_ids=[UUID(int=2)]),
+            id="release",
         ),
     ],
 )
@@ -168,6 +216,42 @@ def test_operator_cannot_mint_or_inspect_agent_grants(
         console.call(partial(operation, console.service))
 
 
+def test_revoke_is_operator_direct_and_scoped_to_owned_agents(console: _Console) -> None:
+    agent_context = console.agent_context()
+    # Resolved before entering the app's event loop: the portal cannot be re-entered from inside.
+    operator_context = console.operator_context()
+
+    async def exercise() -> None:
+        (grant,) = await console.service.create_grants(
+            context=agent_context, grants=[_SPEC], duration_seconds=600, applies_to=GrantPrincipalKind.AGENT
+        )
+        # An Agent caller never revokes — it releases its own grants instead.
+        with pytest.raises(PermissionError, match="Operator-direct"):
+            await console.service.revoke_grants(
+                context=agent_context, owner_agent_id=console.agent_id, grant_ids=[grant.grant_id], reason="nope"
+            )
+        # A foreign Operator does not see this Agent at all.
+        with pytest.raises(LookupError):
+            await console.service.revoke_grants(
+                context=_foreign_operator_context(),
+                owner_agent_id=console.agent_id,
+                grant_ids=[grant.grant_id],
+                reason="not yours",
+            )
+        (revoked,) = await console.service.revoke_grants(
+            context=operator_context,
+            owner_agent_id=console.agent_id,
+            grant_ids=[grant.grant_id],
+            reason="operator revoked",
+        )
+        assert revoked.status is HttpGrantStatus.REVOKED
+        assert revoked.end_reason == "operator revoked"
+        refetched = await console.service.get_grant(context=agent_context, grant_id=grant.grant_id)
+        assert refetched.status is HttpGrantStatus.REVOKED
+
+    console.call(exercise)
+
+
 def test_session_scope_binds_the_grant_to_the_exact_live_session(console: _Console) -> None:
     session_id = console.live_session()
     session_context = console.agent_context(session_id=session_id)
@@ -175,11 +259,11 @@ def test_session_scope_binds_the_grant_to_the_exact_live_session(console: _Conso
 
     async def exercise() -> None:
         (session_grant,) = await console.service.create_grants(
-            context=session_context, origins=[_ORIGIN], duration_seconds=600, applies_to=GrantPrincipalKind.SESSION
+            context=session_context, grants=[_SPEC], duration_seconds=600, applies_to=GrantPrincipalKind.SESSION
         )
         assert session_grant.principal == SessionGrantPrincipal(session_id=session_id)
         (agent_grant,) = await console.service.create_grants(
-            context=static_context, origins=[_ORIGIN], duration_seconds=600
+            context=static_context, grants=[_SPEC], duration_seconds=600, applies_to=GrantPrincipalKind.AGENT
         )
         # The exact session may exercise both; a static-credential execution of the same Agent
         # never sees the session-scoped grant.
@@ -195,7 +279,7 @@ def test_create_session_scope_rejects_static_agent_context(console: _Console) ->
     async def exercise() -> None:
         with pytest.raises(PermissionError, match="live session-authenticated"):
             await console.service.create_grants(
-                context=context, origins=[_ORIGIN], duration_seconds=600, applies_to=GrantPrincipalKind.SESSION
+                context=context, grants=[_SPEC], duration_seconds=600, applies_to=GrantPrincipalKind.SESSION
             )
         assert await console.service.list_grants(context=context) == ()
 
@@ -207,7 +291,7 @@ def test_release_ends_grants_in_the_supplied_order(console: _Console) -> None:
 
     async def exercise() -> None:
         first, second = await console.service.create_grants(
-            context=context, origins=[_ORIGIN, _OTHER_ORIGIN], duration_seconds=600
+            context=context, grants=[_SPEC, _OTHER_SPEC], duration_seconds=600, applies_to=GrantPrincipalKind.AGENT
         )
         released = await console.service.release_grants(
             context=context, grant_ids=[second.grant_id, first.grant_id], reason="probe complete"
@@ -221,30 +305,42 @@ def test_release_ends_grants_in_the_supplied_order(console: _Console) -> None:
     console.call(exercise)
 
 
-def test_grants_admit_the_matcher_only_for_the_exact_origin_and_principal(console: _Console) -> None:
+def test_grants_admit_the_matcher_only_for_covered_requests(console: _Console) -> None:
     """End to end through the real store: what create_grant mints is what match_request honors."""
 
     context = console.agent_context()
+    spec = HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}), path_regex="/api/.*")
 
     async def exercise() -> None:
-        (grant,) = await console.service.create_grants(context=context, origins=[_ORIGIN], duration_seconds=600)
+        (grant,) = await console.service.create_grants(
+            context=context, grants=[spec], duration_seconds=600, applies_to=GrantPrincipalKind.AGENT
+        )
         principal = context.request_principal
-        allowed = await console.service.grants.match_request(request_principal=principal, origin=_ORIGIN)
+        matcher = console.service.grants.match_request
+        allowed = await matcher(request_principal=principal, method=HttpMethod.GET, origin=_ORIGIN, path="/api/items")
         assert allowed.allowed
         assert allowed.grant_id == grant.grant_id
         assert allowed.expires_at == grant.expires_at
+        # Method, origin, path, and principal each individually deny.
+        for method, target, path in [
+            (HttpMethod.POST, _ORIGIN, "/api/items"),
+            (HttpMethod.GET, _OTHER_ORIGIN, "/api/items"),
+            (HttpMethod.GET, _ORIGIN, "/other"),
+        ]:
+            assert not (await matcher(request_principal=principal, method=method, origin=target, path=path)).allowed
         assert not (
-            await console.service.grants.match_request(request_principal=principal, origin=_OTHER_ORIGIN)
-        ).allowed
-        assert not (
-            await console.service.grants.match_request(
+            await matcher(
                 request_principal=RequestPrincipal(agent_id=UUID(int=7), session_id=None, access_profile_id=None),
+                method=HttpMethod.GET,
                 origin=_ORIGIN,
+                path="/api/items",
             )
         ).allowed
 
         await console.service.release_grants(context=context, grant_ids=[grant.grant_id], reason="done")
-        assert not (await console.service.grants.match_request(request_principal=principal, origin=_ORIGIN)).allowed
+        assert not (
+            await matcher(request_principal=principal, method=HttpMethod.GET, origin=_ORIGIN, path="/api/items")
+        ).allowed
 
     console.call(exercise)
 

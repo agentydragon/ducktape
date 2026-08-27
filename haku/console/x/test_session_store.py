@@ -56,7 +56,7 @@ from haku.console.database_schema import (
     Session,
 )
 from haku.console.grant_principal import GrantPrincipalKind
-from haku.console.http_grant_models import HttpGrantStatus, HttpScheme
+from haku.console.http_grant_models import HttpMethod, HttpScheme
 from haku.console.kubernetes_grant_models import KubernetesGrantStatus, KubernetesNamespacesGrantScope, KubernetesRule
 from haku.console.tool_calls import ToolCallStatus
 from haku.console.x.claude_code.testing.wire import assistant, result, text_block, text_delta
@@ -365,7 +365,7 @@ async def test_session_end_terminalizes_exact_session_grants(chat_store, migrate
         db.add(
             McpToolCall(
                 tool_call_id=http_source_tool_call_id,
-                server_id="http",
+                server_id="http_grants",
                 tool_name="create_grant",
                 status=ToolCallStatus.RUNNING,
                 created_at=datetime.now(UTC),
@@ -402,10 +402,12 @@ async def test_session_end_terminalizes_exact_session_grants(chat_store, migrate
                 scheme=HttpScheme.HTTPS,
                 host="grocy.example",
                 port=443,
-                status=HttpGrantStatus.ACTIVE,
+                methods=frozenset({HttpMethod.GET}),
+                path_regex=None,
                 created_at=datetime.now(UTC),
                 expires_at=datetime.now(UTC) + timedelta(hours=1),
-                ended_at=None,
+                released_at=None,
+                revoked_at=None,
                 end_reason=None,
             )
         )
@@ -420,9 +422,9 @@ async def test_session_end_terminalizes_exact_session_grants(chat_store, migrate
         assert grant.ended_at is not None
         http_grant = await db.get(HttpGrantRow, http_grant_id)
         assert http_grant is not None
-        assert http_grant.status is HttpGrantStatus.REVOKED
+        assert http_grant.revoked_at is not None
+        assert http_grant.released_at is None
         assert http_grant.end_reason == "principal_ended"
-        assert http_grant.ended_at is not None
 
 
 async def test_the_cleanup_sweep_offers_ended_sessions_until_their_claim_is_recorded_gone(
