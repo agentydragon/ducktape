@@ -121,14 +121,13 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
   git-based storage in Forgejo — no PVC, no wyrm2 pinning; see gaffer-private
   `x/thrive_scrape/DESIGN.md`.)
 
-### Down while Proxmox (`atlas`/`wyrm2`) is offline
+### Still down
 
-Suspended only because the home Proxmox host is offline; should auto-recover when it
-returns (not independently parked):
+`atlas` is back up and proxmox-proxy is running again; what remains:
 
-- **sdr** — waiting on `atlas` (also needs the radio re-set-up post-relocation).
-- Not suspended in git, but non-functional while the Proxmox hosts are down:
-  **proxmox-proxy** (needs `atlas`); **ollama**, **nvidia-device-plugin** (need `wyrm2`).
+- **sdr** — suspended pending the radio re-set-up post-relocation.
+- Not suspended in git, but non-functional while `wyrm2` (GPU) is down: **ollama**,
+  **nvidia-device-plugin**.
 
 ## Next Actions
 
@@ -498,8 +497,9 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       promtail) — unsatisfying because it suppresses all readiness checking. Full
       options, analysis, and the long-term fix (auto-remove stale NotReady nodes):
       <plans/offline_node_daemonset_health.md>.
-- [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `proxmox-proxy`,
-      `props`/`props-registry`)
+- [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `props`/`props-registry`).
+      `proxmox-proxy` likely belongs on `optiplex` rather than a roaming laptop —
+      decide placement before moving it.
 - [ ] Cilium Gateway `Programmed: False` (upstream bug `cilium/cilium#42786`):
       hostNetwork gateways currently report `AddressNotAssigned` even though traffic
       works through the hostNetwork Envoy listeners. Current workaround is Route 53
