@@ -117,6 +117,34 @@ class EgressGateAddon:
         )
         await self._gate(flow, meta)
 
+    def responseheaders(self, flow: http.HTTPFlow) -> None:
+        """Stream the upstream response body to the client instead of buffering it whole.
+
+        By this hook the flow was already admitted: the ``request``/``http_connect`` gate ran and
+        allowed it before the upstream was dialed, so streaming the body back bypasses no decision
+        — bodies never enter decide calls and ``match_headers`` scanning never touches them (#4670).
+        Without this, mitmproxy buffers the entire body before forwarding, so a large download (a
+        ``bbr`` → BuildBuddy gRPC stream, a multi-hundred-MB artifact) would not reach the client
+        until the upstream finished serving it, and the proxy's memory would track the body size
+        (#4914).
+
+        Response-direction only. Request-body streaming is deliberately not enabled here: mitmproxy
+        dials the upstream and streams the request body from ``start_request_stream`` *before* the
+        ``request`` hook fires, so a streamed request to an already-pinned destination would reach
+        the upstream ahead of its own per-request decision. Enabling it safely requires moving the
+        gate to ``requestheaders`` (before the dial); that is a separate change, so large request
+        bodies stay buffered and gated as today.
+
+        Synthetic gate refusals already carry materialized content and are sent directly, so setting
+        ``stream`` on them is a no-op — only real upstream responses take the streaming path.
+
+        Informational (1xx) responses are left alone: a ``101 Switching Protocols`` upgrade whose
+        headers do not end the stream would otherwise be misrouted into response-body streaming
+        instead of the WebSocket/upgrade switch, and ``100 Continue`` carries no body to stream.
+        """
+        if flow.response is not None and flow.response.status_code >= 200:
+            flow.response.stream = True
+
     def server_connect(self, data: server_hooks.ServerConnectionHookData) -> None:
         """Force the upstream dial onto the address its decide exchange validated.
 

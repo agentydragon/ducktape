@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Mapping
 from pathlib import Path
 from types import TracebackType
 from typing import Self
@@ -53,6 +54,7 @@ class EgressProxy:
         listen_port: int = 0,
         decide_timeout_seconds: float = DEFAULT_DECIDE_TIMEOUT_SECONDS,
         resolve: ResolveAddresses = resolve_addresses,
+        extra_options: Mapping[str, object] | None = None,
     ) -> None:
         self._decide = decide
         self._confdir = confdir
@@ -60,6 +62,11 @@ class EgressProxy:
         self._listen_port = listen_port
         self._decide_timeout_seconds = decide_timeout_seconds
         self._resolve = resolve
+        # Extra mitmproxy options merged before the forced security options below (which always
+        # win), so the fail-closed contract cannot depend on anything passed here. A test seam
+        # like ``resolve``: the proxy suite sets ``ssl_insecure`` to talk to self-signed
+        # HTTP/2 and WebSocket upstreams it stands up in-process.
+        self._extra_options = dict(extra_options or {})
         self._master: Master | None = None
         self._run_task: asyncio.Task[None] | None = None
         self._bound_port: int | None = None
@@ -77,7 +84,10 @@ class EgressProxy:
         # Addon-owned options exist only after registration. lazy: the default
         # eager strategy dials the upstream before the gate's request hook runs —
         # a fail-open leak. The onboarding app (mitm.it) is an ungated response
-        # surface the fence does not need.
+        # surface the fence does not need. Caller options first, the security-critical
+        # ones last so they can never be overridden.
+        if self._extra_options:
+            master.options.update(**self._extra_options)
         master.options.update(connection_strategy="lazy", onboarding=False)
         self._master = master
         self._run_task = asyncio.create_task(master.run(), name="egress-proxy-master")

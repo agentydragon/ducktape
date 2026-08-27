@@ -54,6 +54,39 @@ py_library(
     ],
 )
 
+py_library(
+    name = "proxy_test_harness",
+    testonly = True,
+    srcs = ["proxy_test_harness.py"],
+    deps = [
+        ":addon",
+        ":decide_client",
+        ":decision",
+        ":localhost_decide_client",
+        ":runner",
+        "@pypi//aiohttp",
+        "@pypi//more_itertools",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "tls_test_support",
+    testonly = True,
+    srcs = ["tls_test_support.py"],
+    deps = ["@pypi//cryptography"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":proxy_test_harness",
+        "@pypi//pytest",
+    ],
+)
+
 py_test(
     name = "test_decision",
     srcs = ["test_decision.py"],
@@ -65,23 +98,112 @@ py_test(
     ],
 )
 
+# The integration suites below (this target and the test_egress_* targets) drive a real
+# in-process mitmproxy — the embedded runner — toward a local upstream, so they need no
+# Docker; they extend the fail-closed conformance harness in proxy_test_harness.py (#4914).
 py_test(
     name = "test_egress_proxy",
     srcs = ["test_egress_proxy.py"],
     deps = [
         ":addon",
-        ":decide_client",
+        ":conftest",
         ":decision",
         ":localhost_decide_client",
-        ":runner",
+        ":proxy_test_harness",
         ":static_decide_client",
         "//:conftest",
         "@pypi//aiohttp",
         "@pypi//mitmproxy",
         "@pypi//more_itertools",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # runtime dep: conftest sets asyncio_mode="auto"
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_egress_credentials",
+    size = "small",
+    srcs = ["test_egress_credentials.py"],
+    deps = [
+        ":conftest",
+        ":decision",
+        ":proxy_test_harness",
+        ":static_decide_client",
+        "//:conftest",
+        "@pypi//more_itertools",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_egress_faults",
+    size = "small",
+    srcs = ["test_egress_faults.py"],
+    deps = [
+        ":conftest",
+        ":decision",
+        ":proxy_test_harness",
+        ":static_decide_client",
+        "//:conftest",
+        "@pypi//aiohttp",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_egress_streaming",
+    size = "medium",
+    srcs = ["test_egress_streaming.py"],
+    deps = [
+        ":conftest",
+        ":proxy_test_harness",
+        ":static_decide_client",
+        "//:conftest",
+        "@pypi//aiohttp",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_egress_tunnel",
+    size = "small",
+    srcs = ["test_egress_tunnel.py"],
+    deps = [
+        ":conftest",
+        ":decide_client",
+        ":decision",
+        ":proxy_test_harness",
+        ":static_decide_client",
+        ":tls_test_support",
+        "//:conftest",
+        "@pypi//aiohttp",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_egress_http2",
+    size = "small",
+    srcs = ["test_egress_http2.py"],
+    deps = [
+        ":conftest",
+        ":proxy_test_harness",
+        ":static_decide_client",
+        ":tls_test_support",
+        "//:conftest",
+        "@pypi//h2",
+        "@pypi//httpx",
+        "@pypi//more_itertools",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
