@@ -31,6 +31,36 @@ of re-running, which also gives per-target granularity rather than per-pattern.
 `devinfra/ci/bes.py` already parses them (`Invocation.test_status`); nothing
 consumes it yet.
 
+## Visual publishing races the invocation it reads
+
+A superseded run's publish fires the instant its cancelled CI run completes,
+while Bazel is often still streaming that commit's results — cancelling the
+workflow does not cancel the invocation. The publish takes what BuildBuddy holds
+at that moment, frequently nothing, and never comes back. Measured: `29154c806`'s
+publish ran 14:29–14:31 and found no manifests; its sweep finished at 14:32:27
+with all 34.
+
+Accepted for now because the damage is bounded to staleness —
+<devinfra/pr_visuals/README.md> states why a partial read can leave a baseline
+pointer old but never move it somewhere wrong. On a busy devel day baselines run
+a few commits behind and PR comments carry more `baseline_fallback` warnings; a
+quiet period heals it.
+
+Two ways out:
+
+- Gate on the invocation's terminal state. `SearchInvocation` reports
+  `invocationStatus`; the publisher could poll to `COMPLETE_INVOCATION_STATUS`
+  before reading artifacts, cheap now that the download itself is ~17s. Unchecked:
+  what BuildBuddy reports for a genuinely in-flight sweep, never sampled live.
+- Export from the BuildBuddy runner via `bb remote -script`, where the artifacts
+  are local files under `bazel-testlogs/`. That deletes the race rather than
+  narrowing it — the export runs inside the invocation instead of reacting to a
+  workflow cancelled while the invocation carried on — and drops the CAS round
+  trip with it. It does not require BuildBuddy Workflows. It is the same
+  credential trade as § Consider pushing images from the BuildBuddy runner:
+  `pr-visuals-publish.yml` deliberately keeps the S3 credential off any runner
+  that PR-controlled code touches, and the same escape hatch applies.
+
 ## Scope the undeclared-outputs download narrower than "every test"
 
 `test:rbe --remote_download_regex=...` in <devinfra/bazel/rbe.bazelrc> forces
