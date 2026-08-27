@@ -384,8 +384,7 @@ and the result it got both appear. Two reasons to do the
 messages first and the frames later, both of which should be re-checked against a real index
 rather than argued:
 
-- **A frame's payload is unbounded.** `read_rollout` already bounds a page in bytes because one
-  `tool_result` can be an entire file (`haku/console/tools/conversations.py`). Embedding those
+- **A frame's payload is unbounded.** One `tool_result` can be an entire file. Embedding those
   verbatim means vectors over file dumps, a corpus that grows with tool volume rather than with
   conversation, and retrieval that returns the file rather than the reasoning about it.
 - **The prompts and answers are the high-signal half.** `conversation_item` is what was actually

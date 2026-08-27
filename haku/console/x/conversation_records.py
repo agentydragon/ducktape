@@ -4,9 +4,8 @@ The store produces these — a session row, a rollout frame, a turn, a transcrip
 <../tools/conversations.py> is the MCP surface that serialises them. They live at the runtime level
 because the store is their only producer.
 
-**A record, not a page.** How records are handed out — the `Page` envelope every listing shares,
-the byte budget a page spends, and the clipping that budget forces — belongs to the tool. What is
-here is what one read produced.
+**A record, not a page.** How records are handed out — the `Page` envelope every listing shares —
+belongs to the tool. What is here is what one read produced.
 
 **Pydantic rather than dataclasses, because the boundary needs it.** Every model here is either an
 MCP tool's return type, whose JSON schema is generated from the class, or a cursor that arrives
@@ -92,12 +91,7 @@ class RolloutFrame(BaseModel):
     direction: str = Field(description="`to_agent` for what the console sent, `from_agent` for what came back.")
     kind: BridgeFrameKind = Field(description="The outer Haku bridge class.")
     created_at: datetime.datetime
-    payload: dict[str, Any] | None = Field(
-        description="The frame exactly as it crossed the wire, or absent when it was clipped for size."
-    )
-    clipped_bytes: int | None = Field(
-        default=None, description="Set instead of `payload` when the frame was too large to return; its size in bytes."
-    )
+    payload: dict[str, Any] = Field(description="The frame exactly as it crossed the wire, whole.")
 
 
 class FrameCursor(BaseModel):
@@ -264,12 +258,7 @@ class ToolResultEntry(_EntryBase):
         "`provenance` names the frames to read the original blocks from."
     )
     structured: Any = Field(
-        default=None, description="The call's structured output, verbatim; absent when it had none or was clipped."
-    )
-    clipped_bytes: int | None = Field(
-        default=None,
-        description="Set instead of `structured` when this entry alone overran a page's budget; its size in bytes. "
-        "`provenance` names the frames to read it from.",
+        default=None, description="The call's structured output, verbatim; absent when it had none."
     )
     outcome: Outcome
 

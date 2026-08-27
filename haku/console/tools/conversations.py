@@ -20,8 +20,9 @@ built to be walked: a `frames` provenance hands `first_frame_seq` straight to `r
 straight to `read_rollout` as its `cursor`, with no arithmetic in between.
 
 **A drilldown, not a dump.** `list_sessions` finds the session, `list_turns` finds the
-exchange, and then one of the two readings. Context is the scarce resource, so a page is bounded
-in rows *and* in bytes — it stops when either runs out and its cursor says where.
+exchange, and then one of the two readings, one row-bounded page at a time. What a reader's
+context can afford is the reader's own concern — the console returns rows whole and lets the
+harness or MCP client truncate for itself.
 
 **Every page has the same shape**, and that is load-bearing rather than cosmetic: `Page` is
 `items` plus `next_cursor`, every tool that pages takes the cursor back as `cursor`, and a cursor
@@ -37,12 +38,6 @@ scan to pick the one worth opening, each carrying enough accounting to choose. `
 `read_rollout` and `read_frame` return the thing itself. The split is not paged-versus-whole —
 `read_rollout` and `read_transcript` page too.
 
-**Every frame is recorded whole**, so a page's byte budget protects nothing but the reader's
-context — which is why it is a budget on the page rather than a cap on each frame. The earlier
-per-frame cap got that wrong in both directions: it dropped frames a page had ample room for, and
-still allowed a page of many just under the line. The census of production frames was blind to
-every `control_response` in the corpus for exactly that reason.
-
 **Reading is a cursor over the log; turns are an index into it.** `frame_seq` already totally
 orders a session, so `read_rollout` needs no notion of a turn — and a turn is the console's
 interpretation rather than the record, since the CLI folds a mid-turn prompt into the running
@@ -53,8 +48,7 @@ worth reading, without the frames themselves being reshaped around it.
 **The records are the store's; the pages are this server's.** What a read produced — a session,
 a frame, a turn, a transcript entry, and the cursors that walk them — is defined beside the store
 that produces it (`haku/console/x/conversation_records.py`). What is here is how those records
-are handed out: the `Page` envelope, the byte budget a page spends, and the clipping that budget
-forces.
+are handed out: the `Page` envelope.
 
 **Reads require the configured in-process-server grant.** The outer Console MCP boundary places
 the revalidated caller in trusted request metadata; it is never supplied by tool arguments.
@@ -62,8 +56,7 @@ the revalidated caller in trusted request metadata; it is never supplied by tool
 
 from __future__ import annotations
 
-import json
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from typing import Annotated, Literal, Protocol
 from uuid import UUID
 
@@ -80,7 +73,6 @@ from haku.console.x.conversation_records import (
     RolloutFrame,
     SessionCursor,
     SessionRecord,
-    ToolResultEntry,
     TranscriptCursor,
     TranscriptEntry,
     TranscriptSlice,
@@ -100,23 +92,6 @@ DEFAULT_PAGE = 25
 # Haku's own outer frame classes. Native harness discriminators remain inside opaque JSON and are
 # deliberately not an argument vocabulary here.
 FrameKind = Literal["harness_frame", "setup_output"]
-
-# Bytes of payload one page will hand back before it stops and points its cursor at where it
-# stopped. A row limit alone does not bound a response, because one `tool_result` can be an entire
-# file — as a frame, and equally as the `structured` half of a transcript entry.
-#
-# **The budget is on the page, not on the row.** Every frame is recorded whole, so there is
-# nothing to protect but the reader's context — and a reader's context is spent by the response,
-# not by any one row in it. A per-frame cap gets that wrong in both directions at once: it dropped
-# a 9 KB frame that a page had ample room for (21% of production `user` frames, every
-# `control_response`, effectively every `system/init`),
-# while still permitting a page of 25 frames just under the line. Stopping the page instead means
-# a large row costs the rest of its page rather than its own contents, and the cursor already
-# says where to resume.
-#
-# 200 KB because that was the old regime's worst case (25 × 8 KB), so the ceiling on a response
-# does not move — only what a reader can spend it on.
-MAX_PAGE_BYTES = 200_000
 
 
 class Page[ItemT, CursorT](BaseModel):
@@ -189,38 +164,6 @@ class ConversationReader(Protocol):
     ) -> TranscriptSlice: ...
 
 
-def payload_bytes(frame: RolloutFrame) -> int:
-    return 0 if frame.payload is None else len(json.dumps(frame.payload))
-
-
-def clip_frame(frame: RolloutFrame) -> RolloutFrame:
-    """Drop a payload, recording what was there.
-
-    Clipping rather than truncating the JSON: half an object is not parseable and reads as
-    corruption, where a stated size and a missing payload is a fact the caller can act on —
-    `read_frame` reads it whole.
-    """
-    return frame.model_copy(update={"payload": None, "clipped_bytes": payload_bytes(frame)})
-
-
-def entry_bytes(entry: TranscriptEntry) -> int:
-    return len(entry.model_dump_json())
-
-
-def clip_entry(entry: TranscriptEntry) -> TranscriptEntry:
-    """Drop a tool result's structured payload — the half that is routinely a whole file.
-
-    Any other entry goes out whole: nothing else here has an unbounded field, and an entry that is
-    large without one is a very long message, which clipping would leave nothing of. `provenance`
-    is on every entry either way, so the frames behind it are always readable.
-    """
-    if isinstance(entry, ToolResultEntry) and entry.structured is not None:
-        return entry.model_copy(
-            update={"structured": None, "clipped_bytes": len(json.dumps(entry.structured, default=str))}
-        )
-    return entry
-
-
 def split_page[ItemT](rows: Sequence[ItemT], *, limit: int) -> tuple[list[ItemT], ItemT | None]:
     """The page, and the first row it did not return — which is what every cursor here names.
 
@@ -228,25 +171,6 @@ def split_page[ItemT](rows: Sequence[ItemT], *, limit: int) -> tuple[list[ItemT]
     last without a second count query.
     """
     return list(rows[:limit]), rows[limit] if len(rows) > limit else None
-
-
-def take_page[ItemT](
-    rows: Sequence[ItemT], *, limit: int, size: Callable[[ItemT], int], clip: Callable[[ItemT], ItemT]
-) -> tuple[list[ItemT], ItemT | None]:
-    """`split_page` under a byte budget: as many rows as fit, and the first one that did not."""
-    page: list[ItemT] = []
-    spent = 0
-    for index, row in enumerate(rows[:limit]):
-        cost = size(row)
-        if not page and cost > MAX_PAGE_BYTES:
-            # One row larger than the entire budget. It has to go out clipped: skipping it would
-            # leave the cursor unable to advance past it, and a reader looping forever.
-            return [clip(row)], rows[index + 1] if len(rows) > index + 1 else None
-        if spent + cost > MAX_PAGE_BYTES:
-            return page, row
-        page.append(row)
-        spent += cost
-    return split_page(rows, limit=limit)
 
 
 def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy) -> FastMCP:
@@ -314,7 +238,7 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
         """
         require_conversation_access(execution)
         slice_ = await reader.read_transcript(session_id, cursor=cursor, limit=limit + 1)
-        entries, more = take_page(slice_.entries, limit=limit, size=entry_bytes, clip=clip_entry)
+        entries, more = split_page(slice_.entries, limit=limit)
         return TranscriptPage(
             items=entries,
             next_cursor=TranscriptCursor.of(more) if more is not None else None,
@@ -344,7 +268,7 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
     ) -> RolloutPage:
         """Read a session's native harness frames in order, rather than its normalized transcript."""
         require_conversation_access(execution)
-        frames, more = take_page(
+        frames, more = split_page(
             await reader.read_frames(
                 session_id,
                 cursor=cursor,
@@ -352,8 +276,6 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
                 kinds=None if kinds is None else [BridgeFrameKind(kind) for kind in kinds],
             ),
             limit=limit,
-            size=payload_bytes,
-            clip=clip_frame,
         )
         return RolloutPage(items=frames, next_cursor=FrameCursor.of(more) if more is not None else None)
 
@@ -365,10 +287,7 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
         ],
         execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY,
     ) -> RolloutFrame:
-        """Read one native frame in full, including a frame clipped from a page.
-
-        Use it when `clipped_bytes` is present or a transcript normalization needs checking.
-        """
+        """Read one exact native frame, when a transcript normalization needs checking."""
         require_conversation_access(execution)
         frame = await reader.read_frame(session_id, frame_seq)
         if frame is None:

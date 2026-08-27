@@ -130,8 +130,8 @@ on every path, so that split is a seam and not a leaf.
 What a conversation read produces: a session row, a rollout frame, a turn, a transcript entry, and
 the cursors that page them. Here rather than in <../tools/conversations.py>, the MCP server that
 reads it, because the store is what produces them. The line the split draws is **record versus
-page**: what one read produced is here, and how it is handed out — the `Page` envelope, the byte
-budget a page spends, and the clipping that budget forces — stays with the tool.
+page**: what one read produced is here, and how it is handed out — the `Page` envelope — stays
+with the tool.
 
 **It is the one edge that runs stable → experimental**, so it is worth knowing before it surprises:
 everything else outside `x/` that names a module inside it is the composition root (<../app.py>).
@@ -184,10 +184,10 @@ Decisions worth knowing before changing it:
   order, including deltas and payloads with no conventional discriminator. The only filter is
   Haku's outer bridge class; setup narration is available explicitly and through its dedicated
   view. Provider-aware summaries belong in provider tooling, not this generic surface.
-- **Nothing is clipped, and the page size is what bounds the response.** The MCP reader clips a
-  frame to a context budget; here the wire is the answer, so clipping would be the lossy projection
-  again one level down. The browser's other cost is drawn down instead: a payload builds its
-  syntax-highlighted editor only once it nears the viewport (`frontend/code_block.tsx`).
+- **Nothing is clipped, and the page size is what bounds the response.** The wire is the answer,
+  so truncating a payload would be the lossy projection again one level down. The browser's cost
+  is drawn down instead: a payload builds its syntax-highlighted editor only once it nears the
+  viewport (`frontend/code_block.tsx`).
 - **Unreadable counts belong to the projected transcript, not a raw row.** Whole-log projection
   reports classes the selected integration did not map; the inspector itself displays exact JSON
   without inventing a native kind or folding one frame in isolation.

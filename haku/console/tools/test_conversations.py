@@ -22,13 +22,7 @@ from haku.console.mcp_execution import (
     mcp_execution_request_meta,
 )
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
-from haku.console.tools.conversations import (
-    HAKU_CONVERSATIONS_SERVER_ID,
-    MAX_PAGE_BYTES,
-    SessionPage,
-    TranscriptPage,
-    build_mcp,
-)
+from haku.console.tools.conversations import HAKU_CONVERSATIONS_SERVER_ID, SessionPage, TranscriptPage, build_mcp
 from haku.console.x.conversation_records import (
     ChannelAttachment,
     FrameCursor,
@@ -85,11 +79,6 @@ def _transcript(result: CallToolResult) -> TranscriptPage:
     members as plain dicts, so an entry read off it is untyped either way.
     """
     return TranscriptPage.model_validate(result.structured_content)
-
-
-def _big_frame(seq: int) -> RolloutFrame:
-    """Two of these overrun one page's budget; one does not."""
-    return _frame(seq, kind="user", payload={"type": "user", "content": "x" * (MAX_PAGE_BYTES * 2 // 3)})
 
 
 def _session(session_id: UUID, created_at: datetime.datetime) -> SessionRecord:
@@ -341,57 +330,6 @@ async def test_the_cursor_reaches_the_store_rather_than_being_filtered_here() ->
     ]
 
 
-async def test_a_page_stops_on_its_byte_budget_and_says_where() -> None:
-    """A row limit alone does not bound a response: one tool result can be a whole file. The
-    frame that would overrun starts the next page rather than being dropped from this one."""
-    reader = _Reader(_big_frame(1), _big_frame(2), _frame(3))
-
-    async with Client(_mcp(reader)) as client:
-        result = await _call(client, "read_rollout", {"session_id": str(SESSION), "limit": 25})
-
-    assert [frame.frame_seq for frame in result.data.items] == [1]
-    assert result.data.next_cursor.frame_seq == 2, "the overrunning frame is where the reader resumes"
-    assert result.data.items[0].clipped_bytes is None, "a frame that fits is never clipped"
-
-
-async def test_a_frame_larger_than_a_whole_page_is_clipped_rather_than_wedging_the_cursor() -> None:
-    """Skipping it would leave the cursor unable to advance past it, and a reader looping on the
-    same page forever. It goes out with its size instead, for `read_frame` to fetch."""
-    reader = _Reader(_frame(1, payload={"type": "user", "content": "x" * (MAX_PAGE_BYTES * 2)}), _frame(2))
-
-    async with Client(_mcp(reader)) as client:
-        result = await _call(client, "read_rollout", {"session_id": str(SESSION), "limit": 25})
-
-    [only] = result.data.items
-    assert only.payload is None
-    assert only.clipped_bytes > MAX_PAGE_BYTES
-    assert result.data.next_cursor.frame_seq == 2
-
-
-async def test_an_oversized_last_frame_ends_the_walk() -> None:
-    """The clipped frame is the last one there is, so there is nothing to resume at. Naming it as
-    the cursor would send the reader back for a page it has already seen."""
-    reader = _Reader(_frame(1, payload={"type": "user", "content": "x" * (MAX_PAGE_BYTES * 2)}))
-
-    async with Client(_mcp(reader)) as client:
-        result = await _call(client, "read_rollout", {"session_id": str(SESSION), "limit": 25})
-
-    assert result.data.items[0].clipped_bytes > MAX_PAGE_BYTES
-    assert result.data.next_cursor is None
-
-
-async def test_one_named_frame_comes_back_whole_however_large() -> None:
-    """The escape hatch: a page has a budget to spend, and a single named frame is the response."""
-    big = _frame(1, payload={"type": "user", "content": "x" * (MAX_PAGE_BYTES * 2)})
-    reader = _Reader(big, _frame(2))
-
-    async with Client(_mcp(reader)) as client:
-        result = await _call(client, "read_frame", {"session_id": str(SESSION), "frame_seq": 1})
-
-    assert result.data.payload == big.payload
-    assert result.data.clipped_bytes is None
-
-
 async def test_a_named_frame_is_read_whole_without_native_classification() -> None:
     reader = _Reader(_frame(7, kind="stream_event"))
 
@@ -487,22 +425,6 @@ async def test_a_transcript_cursor_resumes_where_the_page_stopped() -> None:
     assert _transcript(first).next_cursor == TranscriptCursor(index=2)
     assert [entry.index for entry in _transcript(second).items] == [2, 3]
     assert _transcript(second).next_cursor is None
-
-
-async def test_an_oversized_tool_result_loses_its_structured_half_not_its_provenance() -> None:
-    """`structured` is the part that is routinely a whole file. Dropping it keeps the entry — and
-    the frames it came from — readable, which a page that simply refused it would not."""
-    reader = _Reader(transcript=[_tool_result(0, structured={"stdout": "x" * (MAX_PAGE_BYTES * 2)})])
-
-    async with Client(_mcp(reader)) as client:
-        result = await _call(client, "read_transcript", {"session_id": str(SESSION)})
-
-    entry = one(_transcript(result).items)
-    assert isinstance(entry, ToolResultEntry)
-    assert entry.structured is None
-    assert entry.clipped_bytes is not None
-    assert entry.clipped_bytes > MAX_PAGE_BYTES
-    assert entry.provenance == FromFrames(first_frame_seq=1, last_frame_seq=1)
 
 
 async def test_a_page_size_above_the_cap_is_refused() -> None:
