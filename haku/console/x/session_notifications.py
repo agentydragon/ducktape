@@ -77,6 +77,14 @@ class ConversationWakeKind(StrEnum):
     UPDATE = "update"
     """The conversation's record or its live session's view changed: subscribers should re-read."""
 
+    DELIVERY_DEMAND = "delivery_demand"
+    """A channel queued delivery work for this conversation: its elected drain should look.
+
+    Emitted by the enqueueing transaction itself, because only the channel knows it queued — the
+    wake that made the enqueueing subscriber read has already fired, so nothing conversation-side
+    can announce the queued row. The record is unchanged, which is why this is not `update`.
+    """
+
 
 class SessionEvent(BaseModel):
     """What travels on `CHANNEL`.

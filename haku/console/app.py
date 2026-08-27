@@ -442,6 +442,7 @@ def create_app(
             matrix_revisions.RevisionLog(db_sessions),
             matrix_ledger,
             matrix_room_copy,
+            session_notifications,
         )
         # The room as a subscriber to the conversation: it reads the record from a position it keeps
         # itself and says what the room has not been told, rather than being pushed at by whichever

@@ -441,7 +441,10 @@ Behaviours worth knowing before reading the code:
 - **A produced reply is a row, not a call.** The subscriber writes it when it reads the message
   complete, and `RoomOutboxDrain` — one replica, under the `MXOB` advisory lock —
   claims the oldest, queues it into the pacer, and marks it `sent_at` only once `room_send` has
-  returned. Everything else the console says —
+  returned. The drain is woken by the enqueue's own transaction (`delivery_demand` on the
+  conversation channel) — the only emission that cannot precede the row, since the wake that made
+  the subscriber read fired before the row existed — with a backstop for lost wakes and retries
+  coming due by clock. Everything else the console says —
   the status line, lifecycle and rejection notices, bootstrap narration — stays on the pacer's
   in-process queue, because a notice describing a moment is not worth redelivering ten minutes
   later. Two rules the drain is deliberate about: a failed reply **halts** the queue for its backoff
@@ -598,7 +601,9 @@ the listener be written against psycopg3's API while running on an asyncpg engin
 layers, so their wakes do not share a wire. `session_events` carries `SessionEvent
 {kind, session_id}` (`prompt`, `update`, `abort`) for the runtime's own consumers; the
 `conversation_wakes` channel carries `ConversationWakeEvent {kind, conversation_id, position}`
-(`runtime_demand`, `update`) for conversation subscribers, which never see a session id. The
+(`runtime_demand`, `update`, `delivery_demand`) for conversation subscribers, which never see a
+session id. `delivery_demand`'s emitter is a channel's own enqueue transaction — the one wake only
+the channel can send, because it announces a row only the channel writes. The
 `position` is a hint — the log head as of the emitting write, letting a subscriber skip a read it
 can prove redundant — never content, and never required for correctness. The conversation channel
 is deliberately not named `conversation_events`: what travels on it is a level-triggered wake,
@@ -613,8 +618,8 @@ not need costs one query. `watch_session` hands one session's events to a consum
 edge-triggered and has no row to re-check (the abort watcher). `watch` hands over every session
 event, for the allocator, which has to hear about sessions nothing told it to expect.
 `watch_conversations` is the shape every conversation-scoped consumer
-registers with — the follow socket, the Matrix subscriber, the runtime supervisor, the console-tab
-invalidation fan-out — and hands over
+registers with — the follow socket, the Matrix subscriber and its outbox drain, the runtime
+supervisor, the console-tab invalidation fan-out — and hands over
 the wake payload or `RecheckHeld` ("re-check what you hold"), which the wire never carries: a
 listener reconnect synthesizes it, because the notifications committed during the gap are gone.
 On that reconnect `_wake_everyone` also wakes every waiter; a session _watcher_ gets nothing —

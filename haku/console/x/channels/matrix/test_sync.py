@@ -173,6 +173,8 @@ def _replica(sync_store, conversations, identities, turns, matrix, migrated_sess
         revisions=RevisionLog(migrated_sessions),
         ledger=ledger,
         room_copy=RoomCopy(migrated_sessions),
+        # The drain registers its wake in `run()`, which these tests never enter (see `outbox`).
+        notifications=cast(Any, None),
     )
     service._client = cast(Any, matrix)
     service.pacer = RoomPacer(sends_per_second=1e6, burst=1_000)

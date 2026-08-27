@@ -187,6 +187,7 @@ async def _serve() -> None:
         RevisionLog(sessions),
         ledger,
         room_copy,
+        notifications,
         armed=Path(_environment("HAKU_E2E_REFUSE_NEXT_REPLY")),
     )
     service = SessionService(runtimes, store, notifications, conversation_history=ConversationHistory(sessions))
