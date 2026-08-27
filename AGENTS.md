@@ -131,6 +131,12 @@ three of five separate PRs today and argue about the rest for as long as it take
   sequencing costs the operator a great deal. Dispatch the simple overlapping change
   anyway; whoever lands second rebases.
 - **Never queue ready work behind one contested change.**
+- **Split again under review.** A review round usually contests a handful of things,
+  and the parts the operator calls fine — or comments around without touching — are
+  implied approved. When those uncontested parts are independently landable, split them
+  off into their own PR and land them first, leaving the contested parts on the
+  original PR. The faster small pieces land, the fewer and simpler the cross-agent
+  rebases, and partial wins get secured instead of waiting out the argument.
 - **The only real dependency is unspecifiable content** — the work genuinely depends on
   an open question's answer. "It will conflict" / "touches the same file" / "tidier
   afterwards" are not dependencies.
