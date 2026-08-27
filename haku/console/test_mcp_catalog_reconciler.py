@@ -8,7 +8,7 @@ import pytest_bazel
 from mcp import types as mcp_types
 
 from haku.console.console_events import McpOperatorAuthChangedEvent
-from haku.console.mcp_approval import DegradedReflection
+from haku.console.mcp_approval import DegradedReflection, ReflectionFailureStage
 from haku.console.mcp_catalog_reconciler import OperatorCatalogReconciler
 from haku.console.mcp_config import McpServerEntry, NoCredential, RemoteMcpBackend
 from haku.console.mcp_reflection_cache import ReflectedCatalog
@@ -61,7 +61,7 @@ async def test_snapshot_reads_do_not_reflect_and_are_detached() -> None:
     metadata = AsyncMock(
         side_effect=[
             ReflectedCatalog(tools=[mcp_types.Tool(name="alpha_tool", inputSchema={"type": "object"})]),
-            DegradedReflection(failure_stage="tool_discovery", degraded_reason="offline"),
+            DegradedReflection(failure_stage=ReflectionFailureStage.TOOL_DISCOVERY, degraded_reason="offline"),
         ]
     )
     catalogs = _reconciler(operator_ids=AsyncMock(return_value=[operator_id]), metadata=metadata)

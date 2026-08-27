@@ -12,6 +12,7 @@ from finance.augur.model.sample_sanity import (
     PercentileRangeBound,
     PrivateEquityMarkSanityCheck,
     SampleSanitySpec,
+    SanityStatus,
     evaluate_sample_checks,
     partition_spec_coverage,
 )
@@ -57,14 +58,14 @@ def test_evaluate_sample_checks_reports_pass_and_fail() -> None:
     )
 
     statuses = {result.status for result in results}
-    assert "pass" in statuses
-    assert "fail" in statuses
+    assert SanityStatus.PASS in statuses
+    assert SanityStatus.FAIL in statuses
 
-    failures = [result for result in results if result.status == "fail"]
+    failures = [result for result in results if result.status == SanityStatus.FAIL]
     # The above-the-level band is the only band that should fail.
     assert any("2000" in failure.detail and "3000" in failure.detail for failure in failures)
     # The passing range band records the observed percentile values it bounded.
-    passing_ranges = [r for r in results if r.kind == "percentile_range" and r.status == "pass"]
+    passing_ranges = [r for r in results if r.kind == "percentile_range" and r.status == SanityStatus.PASS]
     assert passing_ranges
     assert all(r.observed == (_SP500_LEVEL, _SP500_LEVEL) for r in passing_ranges)
 
@@ -78,7 +79,7 @@ def test_evaluate_sample_checks_skips_bands_beyond_sampled_horizon() -> None:
         _spec_with_bands(far_band), sampled, rollout_count=_ROLLOUT_COUNT, horizon_months=_HORIZON_MONTHS
     )
 
-    skipped = [result for result in results if result.status == "skipped"]
+    skipped = [result for result in results if result.status == SanityStatus.SKIPPED]
     assert len(skipped) == 1
     assert skipped[0].detail == f"month 120 > sampled horizon {_HORIZON_MONTHS}"
 
@@ -117,12 +118,12 @@ def test_evaluate_sample_checks_surfaces_unmodeled_level_check() -> None:
 
     # The unmodeled level check collapses to a single summary row regardless of how many bands
     # it carried, and never indexes into the (absent) series — proves the partition gate works.
-    unmodeled_rows = [result for result in results if result.status == "unmodeled"]
+    unmodeled_rows = [result for result in results if result.status == SanityStatus.UNMODELED]
     assert len(unmodeled_rows) == 1
     assert unmodeled_rows[0].series_id == unmodeled_key.wire_id
     assert unmodeled_rows[0].kind == "unmodeled"
     # Other bands (against the modeled SP500 series) still surface.
-    assert any(result.kind == "percentile_range" and result.status == "pass" for result in results)
+    assert any(result.kind == "percentile_range" and result.status == SanityStatus.PASS for result in results)
 
 
 def test_evaluate_sample_checks_surfaces_unmodeled_pe_mark_check() -> None:
@@ -149,7 +150,7 @@ def test_evaluate_sample_checks_surfaces_unmodeled_pe_mark_check() -> None:
     )
 
     assert len(results) == 1
-    assert results[0].status == "unmodeled"
+    assert results[0].status == SanityStatus.UNMODELED
     assert "unmodeled_co" in results[0].series_id
 
 

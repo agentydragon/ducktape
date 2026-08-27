@@ -89,6 +89,13 @@ BEST_BEFORE_DESC = (
 )
 PRICE_DESC = "Per-unit price. Omit to use the last recorded price."
 DETAIL_DESC = "`brief` returns only `id` + `name`. `full` returns every column."
+
+
+class DetailLevel(StrEnum):
+    BRIEF = "brief"
+    FULL = "full"
+
+
 DEFAULT_BBD_DESC = (
     "Auto-fill best-before date when `stock_add` omits it. "
     "-1 = never expires, 0 = best-before today, N > 0 = today + N days."

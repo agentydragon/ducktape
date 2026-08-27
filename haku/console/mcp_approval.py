@@ -17,6 +17,7 @@ import logging
 import secrets
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Annotated, Any, Literal, Never, TypeVar, cast
 from uuid import UUID
 
@@ -88,12 +89,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["mcp-approval"])
 
 
+class ReflectionFailureStage(StrEnum):
+    CREDENTIAL_RESOLUTION = "credential_resolution"
+    TOOL_DISCOVERY = "tool_discovery"
+
+
 @dataclass(frozen=True)
 class DegradedReflection:
     """A downstream server's tools couldn't be reflected right now — the *reason*, not a response
     shape. `server_metadata_response` is the only place this becomes the `degraded` API shape."""
 
-    failure_stage: Literal["credential_resolution", "tool_discovery"]
+    failure_stage: ReflectionFailureStage
     degraded_reason: str
 
 
@@ -148,7 +154,7 @@ class AliveServerState(BaseModel):
 
 class DegradedServerState(BaseModel):
     status: Literal["degraded"] = "degraded"
-    failure_stage: Literal["credential_resolution", "tool_discovery"]
+    failure_stage: ReflectionFailureStage
     degraded_reason: str
 
 
@@ -860,7 +866,7 @@ class McpServerDispatcher:
             )
         except Exception as e:
             logger.warning("MCP tool discovery failed for %s", server.id, exc_info=True)
-            return DegradedReflection(failure_stage="tool_discovery", degraded_reason=str(e))
+            return DegradedReflection(failure_stage=ReflectionFailureStage.TOOL_DISCOVERY, degraded_reason=str(e))
 
     async def _reflect(self, server: McpServerEntry, auth_token: str | None) -> ReflectedCatalog:
         transport, transport_auth = _transport(server, self._in_process, auth_token)
@@ -1004,7 +1010,9 @@ async def metadata_for_operator(
         operator_id=operator_id, server=server, oauth_store=oauth_store, provider_store=provider_store
     )
     if isinstance(resolution, _DegradedAuth):
-        return DegradedReflection(failure_stage="credential_resolution", degraded_reason=resolution.reason)
+        return DegradedReflection(
+            failure_stage=ReflectionFailureStage.CREDENTIAL_RESOLUTION, degraded_reason=resolution.reason
+        )
     return await dispatcher.metadata(server, resolution.token)
 
 

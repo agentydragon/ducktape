@@ -64,6 +64,7 @@ py_library(
     deps = [
         ":local_regulation",
         ":schemas",
+        "//finance/augur/product:wire",
         "@pypi//pydantic",
     ],
 )
