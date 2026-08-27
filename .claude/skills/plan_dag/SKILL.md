@@ -28,8 +28,24 @@ PR states wear GitHub's colors (open green, merged purple, solid merge-button
 green for "ready"), so PR standing reads without the legend; merged purple also
 keeps done work visually far from the dashed planned nodes.
 
-- A gate names **whose** action unblocks it and what the action is
-  (`operator: Codex canary`), never a vague "pending".
+- A gate names **whose** action unblocks it, compressed with a human glyph:
+  `🧑 Codex canary`, `🧑 #4667 verdict` — never a vague "pending".
+- Unicode over words where a glyph reads faster: `✓` suffix on merged nodes,
+  `⛔` prefix on a blocking incident, `🧑` for human gates. A blocking incident
+  gets its own class (GitHub danger red: `fill:#FFEBE9,color:#82071E,stroke:#CF222E`)
+  and an edge into whatever it blocks.
+- **Link every node that names an entity**: wrap the `#NNNN` token in a plain
+  anchor — `["<a href='https://github.com/OWNER/REPO/pull/4691'>#4691</a> grant
+principals · PR"]` (single quotes inside the double-quoted label). Anchors
+  survive the label sanitizer; style them inherited so state colors hold:
+
+  ```css
+  .board .mermaid a {
+    color: inherit;
+    text-decoration: underline;
+  }
+  ```
+
 - Gates are hexagons `{{…}}`, **never rhombus `{…}`** — mermaid inflates
   diamonds to fit text diagonally and they dominate the layout.
 - `done` nodes appear only where a live edge needs them as context; the chart
@@ -43,6 +59,9 @@ keeps done work visually far from the dashed planned nodes.
 - **No lane subgraphs.** Side-by-side subgraph boxes force one wide row and the
   whole SVG shrink-to-fits until text is unreadable. Leave workstreams as
   disconnected chains — dagre stacks components vertically on its own.
+- **Lanes as glyphs, not boxes.** Where lane identity is worth showing, prefix
+  each chain's node labels with a small per-lane icon (🔐 💬 🗂 🤖 📸 …) and put
+  the icon key in the legend — the grouping survives without the layout cost.
 - Keep labels ≤ ~30 characters; `flowchart LR`; tighten with
   `%%{init: {"flowchart": {"nodeSpacing": 30, "rankSpacing": 45}}}%%`.
 
@@ -85,6 +104,13 @@ playwright-core`, load the fragment plus
   (`/opt/pw-browsers/chromium-*/chrome-linux/chrome`), screenshot, and check
   effective scale = SVG CSS width ÷ viewBox width ≥ ~0.9. Tiny-text reports
   come from skipping this.
+
+## Iterate against the render, with the reader
+
+The first version will be wrong in ways only pixels show. Render locally, look,
+fix; then treat the reader's reactions ("text too tiny", "merged isn't distinct
+from planned", "link the entities") as the review round they are — apply them to
+the artifact **and** back into this skill when they generalize.
 
 ## Page skeleton
 
