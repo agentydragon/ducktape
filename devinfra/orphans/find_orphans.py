@@ -125,7 +125,7 @@ def run_report(workspace: BazelWorkspace, whitelist_path: Path) -> tuple[list[Pa
     return orphans, stats
 
 
-def main() -> int:
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--whitelist", type=Path, default=None, help="Path to whitelist file (default: devinfra/orphans/whitelist.txt)"
@@ -178,10 +178,10 @@ def main() -> int:
         if orphan_libs:
             counts.append(f"{len(orphan_libs)} orphaned py_library target(s)")
         print(f"\n{' and '.join(counts)} found", file=sys.stderr)
-        return 1
-
-    return 0
+        # The whole point of --check: the caller is a shell gate wanting a nonzero
+        # status when the report is non-empty. Without it the flag does nothing.
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

@@ -26,7 +26,7 @@ from devinfra.firecracker.vm_pod.proxy import start_tcp_to_tcp_proxy, start_tcp_
 logger = logging.getLogger(__name__)
 
 
-def main() -> int:
+def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     config_path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/etc/fc-vm-pod/config.yaml")
@@ -52,8 +52,10 @@ def main() -> int:
 
     rc = fc.process.wait()
     logger.info("Firecracker exited with code %d", rc)
-    return rc
+    # This process is PID 1 of the pod, so its status is what kubelet reads to apply
+    # the restart policy. Firecracker's code has to reach it unchanged.
+    raise SystemExit(rc)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

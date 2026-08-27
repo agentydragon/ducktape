@@ -296,13 +296,12 @@ def fetch_debs(work_dir: Path) -> None:
     logger.info("Downloaded %d .deb files (%.0f MB) to local_debs/", deb_count, total_size_mb)
 
 
-def main() -> int:
+def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
 
     work_dir = get_build_workspace_directory() / "devinfra/claude/web_env"
     fetch_debs(work_dir)
-    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

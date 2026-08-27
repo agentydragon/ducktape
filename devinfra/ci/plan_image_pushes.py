@@ -252,7 +252,7 @@ def _read_invocations(ids: list[str]) -> Invocation | None:
     return merge(readable)
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--spec",
@@ -286,8 +286,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"\n{len(include)} of {len(decisions)} images need a push.", file=sys.stderr)
 
     _write_github_output(matrix=json.dumps({"include": include}), count=str(len(include)))
-    return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
