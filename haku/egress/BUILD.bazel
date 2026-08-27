@@ -29,6 +29,8 @@ py_library(
     deps = [
         ":decide_client",
         ":decision",
+        "@pypi//httpx",
+        "@pypi//pydantic",
     ],
 )
 
@@ -70,11 +72,13 @@ py_test(
         ":addon",
         ":decide_client",
         ":decision",
+        ":localhost_decide_client",
         ":runner",
         ":static_decide_client",
         "//:conftest",
         "@pypi//aiohttp",
         "@pypi//more_itertools",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # runtime dep: conftest sets asyncio_mode="auto"
         "@pypi//pytest_bazel",

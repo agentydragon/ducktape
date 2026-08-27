@@ -7,25 +7,45 @@ gets a refusal AND the upstream sees no TCP connection at all.
 Plain HTTP (absolute-form proxying) keeps TLS trust out of the setup; the
 CONNECT tests cover the tunnel path without the MITM CA because refusal happens
 before any TLS.
+
+``LocalhostDecideClient`` runs the same drills against ``StubConsole``, an
+in-process decide endpoint speaking the real wire models.
 """
 
 from __future__ import annotations
 
 import asyncio
 import base64
+import datetime
 from collections.abc import AsyncIterator
+from contextlib import aclosing, asynccontextmanager
 from dataclasses import dataclass, field
+from ipaddress import IPv4Address
 from pathlib import Path
-from typing import cast
+from typing import assert_never, cast
 
 import aiohttp
 import pytest
 import pytest_bazel
+from aiohttp import web
 from more_itertools import one
+from pydantic import SecretStr
 
 from haku.egress.addon import DEFAULT_DECIDE_TIMEOUT_SECONDS
 from haku.egress.decide_client import DecideClient
-from haku.egress.decision import AllowDecision, Decision, DenyDecision, PlaceholderSubstitution, RequestMeta
+from haku.egress.decision import (
+    AllowDecision,
+    DecideAllowed,
+    DecideDenied,
+    DecideRequest,
+    Decision,
+    DecisionSource,
+    DenyDecision,
+    GrantScope,
+    PlaceholderSubstitution,
+    RequestMeta,
+)
+from haku.egress.localhost_decide_client import DEFAULT_TIMEOUT_SECONDS, LocalhostDecideClient
 from haku.egress.runner import EgressProxy
 from haku.egress.static_decide_client import StaticDecideClient
 
@@ -238,6 +258,180 @@ async def test_connect_decide_exception_fails_closed(upstream: RecordingUpstream
         with pytest.raises(aiohttp.ClientHttpProxyError) as excinfo:
             await session.get(f"https://127.0.0.1:{upstream.port}/", proxy=f"http://127.0.0.1:{proxy.listen_port}")
     assert excinfo.value.status == 502
+    assert (upstream.connections, upstream.requests) == (0, [])
+
+
+PROXY_BEARER = "proxy-identity-bearer"
+FENCE_CREDENTIAL = "agent-fence-credential"
+
+
+def wire_allow() -> DecideAllowed:
+    return DecideAllowed(
+        source=DecisionSource.GRANT,
+        decision_id="grant:50000000-0000-4000-8000-000000000005",
+        valid_until=datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=5),
+        substitutions=allow_with_substitution().substitutions,
+    )
+
+
+@dataclass(frozen=True)
+class Unconfigured:
+    """503 before authentication, as the real endpoint answers until a deploy wires it."""
+
+
+@dataclass(frozen=True)
+class Hang:
+    """Accept the POST, never answer: the client's own timeout must fire."""
+
+
+@dataclass(frozen=True)
+class GarbageBody:
+    """200 whose body is not a ``DecideResponse``."""
+
+
+type StubBehavior = DecideAllowed | DecideDenied | Unconfigured | Hang | GarbageBody
+
+
+@dataclass
+class StubConsole:
+    """In-process decide endpoint speaking the real wire models; parses and records ``DecideRequest``s."""
+
+    behavior: StubBehavior
+    port: int = 0
+    requests: list[DecideRequest] = field(default_factory=list)
+
+    async def handle(self, request: web.Request) -> web.Response:
+        behavior = self.behavior
+        if isinstance(behavior, Unconfigured):
+            return web.json_response({"detail": "HTTP egress decision is not configured"}, status=503)
+        if request.headers.get("Authorization") != f"Bearer {PROXY_BEARER}":
+            return web.json_response({"detail": "proxy identity bearer was rejected"}, status=401)
+        self.requests.append(DecideRequest.model_validate_json(await request.read()))
+        match behavior:
+            case DecideAllowed() | DecideDenied() as verdict:
+                return web.Response(text=verdict.model_dump_json(), content_type="application/json")
+            case Hang():
+                await asyncio.Event().wait()
+                raise AssertionError("unreachable: the event is never set")
+            case GarbageBody():
+                return web.Response(text="} not a decide response {", content_type="application/json")
+            case _:
+                assert_never(behavior)
+
+
+@asynccontextmanager
+async def stub_console(behavior: StubBehavior) -> AsyncIterator[StubConsole]:
+    stub = StubConsole(behavior=behavior)
+    app = web.Application()
+    # The path is pinned to Console's route (haku/console/http_decide_routes.py),
+    # deliberately not imported from the client: drift on either side must fail here.
+    app.router.add_post("/api/internal/http/decide", stub.handle)
+    # handler_cancellation: a Hang handler outliving its disconnected client
+    # would otherwise stall cleanup for the shutdown timeout.
+    runner = web.AppRunner(app, handler_cancellation=True)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    stub.port = one(runner.addresses)[1]
+    try:
+        yield stub
+    finally:
+        await runner.cleanup()
+
+
+def stub_client(
+    stub: StubConsole, *, proxy_bearer: str = PROXY_BEARER, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
+) -> LocalhostDecideClient:
+    return LocalhostDecideClient(
+        base_url=f"http://127.0.0.1:{stub.port}",
+        proxy_bearer=SecretStr(proxy_bearer),
+        fence_credential=SecretStr(FENCE_CREDENTIAL),
+        timeout_seconds=timeout_seconds,
+    )
+
+
+async def test_localhost_decide_allow_flows_end_to_end(upstream: RecordingUpstream, tmp_path: Path) -> None:
+    async with (
+        stub_console(wire_allow()) as stub,
+        aclosing(stub_client(stub)) as decide,
+        make_proxy(decide, tmp_path) as proxy,
+    ):
+        status, body = await proxied_get(
+            proxy, f"http://127.0.0.1:{upstream.port}/hello", headers={"Authorization": f"Bearer {PLACEHOLDER}"}
+        )
+    assert (status, body) == (200, "upstream ok")
+    assert one(upstream.requests).headers["authorization"] == f"Bearer {REAL_CREDENTIAL}"
+    sent = one(stub.requests)
+    assert sent.request == RequestMeta(method="GET", scheme="http", host="127.0.0.1", port=upstream.port, path="/hello")
+    assert sent.fence_credential.get_secret_value() == FENCE_CREDENTIAL
+    assert (sent.resolved_ips, sent.upstream_ip) == (frozenset({IPv4Address("127.0.0.1")}), IPv4Address("127.0.0.1"))
+
+
+async def test_localhost_decide_deny_refuses_without_upstream_contact(
+    upstream: RecordingUpstream, tmp_path: Path
+) -> None:
+    denied = DecideDenied(
+        reason="no standing policy or active grant",
+        grant_scope=GrantScope(scheme="http", host="127.0.0.1", port=upstream.port),
+    )
+    async with (
+        stub_console(denied) as stub,
+        aclosing(stub_client(stub)) as decide,
+        make_proxy(decide, tmp_path) as proxy,
+    ):
+        status, body = await proxied_get(proxy, f"http://127.0.0.1:{upstream.port}/secret")
+    assert status == 403
+    assert "no standing policy or active grant" in body
+    assert (upstream.connections, upstream.requests) == (0, [])
+
+
+async def test_localhost_decide_connect_deny_refuses_tunnel(upstream: RecordingUpstream, tmp_path: Path) -> None:
+    async with (
+        stub_console(DecideDenied(reason="no grant for origin")) as stub,
+        aclosing(stub_client(stub)) as decide,
+        make_proxy(decide, tmp_path) as proxy,
+        aiohttp.ClientSession() as session,
+    ):
+        with pytest.raises(aiohttp.ClientHttpProxyError) as excinfo:
+            await session.get(f"https://127.0.0.1:{upstream.port}/", proxy=f"http://127.0.0.1:{proxy.listen_port}")
+    assert excinfo.value.status == 403
+    assert (upstream.connections, upstream.requests) == (0, [])
+    assert one(stub.requests).request == RequestMeta(
+        method="CONNECT", scheme=None, host="127.0.0.1", port=upstream.port, path=None
+    )
+
+
+@dataclass(frozen=True)
+class EndpointFailure:
+    """One way the decide hop fails; each must refuse with zero upstream contact."""
+
+    behavior: StubBehavior
+    proxy_bearer: str = PROXY_BEARER
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
+
+
+ENDPOINT_FAILURES = [
+    pytest.param(EndpointFailure(behavior=wire_allow(), proxy_bearer="not-the-proxy-bearer"), id="rejected-bearer-401"),
+    pytest.param(EndpointFailure(behavior=Unconfigured()), id="unconfigured-503"),
+    pytest.param(EndpointFailure(behavior=Hang(), timeout_seconds=0.2), id="endpoint-timeout"),
+    pytest.param(EndpointFailure(behavior=GarbageBody()), id="garbage-body"),
+]
+
+
+@pytest.mark.parametrize("failure", ENDPOINT_FAILURES)
+async def test_localhost_decide_endpoint_failure_fails_closed(
+    failure: EndpointFailure, upstream: RecordingUpstream, tmp_path: Path
+) -> None:
+    async with (
+        stub_console(failure.behavior) as stub,
+        aclosing(
+            stub_client(stub, proxy_bearer=failure.proxy_bearer, timeout_seconds=failure.timeout_seconds)
+        ) as decide,
+        make_proxy(decide, tmp_path) as proxy,
+    ):
+        status, body = await proxied_get(proxy, f"http://127.0.0.1:{upstream.port}/secret")
+    assert status == 502
+    assert "fail closed" in body
     assert (upstream.connections, upstream.requests) == (0, [])
 
 
