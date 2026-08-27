@@ -126,13 +126,18 @@ function buildMermaid(showDone) {
 
 - **Render into a plain `<div>`, not `<pre class="mermaid">`** — the artifact
   runtime processes mermaid fences itself and must not fight the page's own
-  renderer. Load mermaid as `window.mermaid` if a harness pre-injected it,
-  else from the CDN (pinned UMD,
-  `https://cdnjs.cloudflare.com/ajax/libs/mermaid/<version>/mermaid.min.js`);
-  `mermaid.initialize({ startOnLoad: false, securityLevel: "loose" })` —
-  `loose` is required or the `<a>` labels are stripped — then
+  renderer. `mermaid.initialize({ startOnLoad: false, securityLevel:
+"loose" })` — `loose` is required or the `<a>` labels are stripped — then
   `mermaid.render(id, source)` and inject the SVG. Re-render on toggle with a
   fresh id.
+- **Load the library with a STATIC `<script src>` tag; never inject it.** The
+  artifact CSP admits allowlisted-CDN scripts only as static tags — a
+  `document.createElement("script")` loader is blocked in the viewer while
+  curl from the workspace sees 200s, so it "fails from all CDNs" only in the
+  browser. Two more traps, both verified: cdnjs hosts the mermaid UMD only
+  through v10 (`11.x/mermaid.min.js` 404s — pin `10.9.1`, with a jsdelivr
+  static tag as backup), and the page code just polls for `window.mermaid`
+  (the local render harness pre-injects the same global).
 - Completed nodes wear `done` + a `✓`; their real dependency edges stay, so
   provenance chains read (landed prerequisites → the merged integration PR →
   the running work). Prune a completed node once nothing live traces to it —
