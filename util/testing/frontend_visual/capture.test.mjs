@@ -55,9 +55,19 @@ function fakePage() {
 }
 
 {
-  const started = Date.now();
-  await settle(10);
-  assert.ok(Date.now() - started >= 10);
+  // settle yields to the event loop instead of resolving synchronously — that is what
+  // callers await it for, to let a pending render flush before a screenshot.
+  //
+  // Asserted as ordering rather than elapsed time on purpose. `Date.now() - started >= 10`
+  // tests the platform's timer, not this wrapper, and flakes: setTimeout may fire a hair
+  // early against Date.now()'s millisecond resolution, which failed CI on ad9239cb.
+  let resolved = false;
+  const pending = settle(0).then(() => {
+    resolved = true;
+  });
+  assert.equal(resolved, false);
+  await pending;
+  assert.equal(resolved, true);
 }
 
 console.log("capture.test.mjs passed");
