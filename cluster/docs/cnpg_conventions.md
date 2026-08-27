@@ -14,13 +14,16 @@ postgres deployments.
 
 Only these CNPG cluster profiles are permitted:
 
-| Profile            | Instances | Pin                                      | Storage                                  | Anti-affinity                         |
-| ------------------ | --------- | ---------------------------------------- | ---------------------------------------- | ------------------------------------- |
-| **OVH-HA**         | 2         | `topology.kubernetes.io/zone: hil-ovh`   | `local-path-ovh` or `local-path-ovh-ssd` | `topologyKey: kubernetes.io/hostname` |
-| **Proxmox-single** | 1         | `topology.kubernetes.io/region: proxmox` | `local-path-proxmox`                     | n/a                                   |
+| Profile            | Instances | Pin                                      | Storage                        | Anti-affinity                         |
+| ------------------ | --------- | ---------------------------------------- | ------------------------------ | ------------------------------------- |
+| **OVH-HA**         | 2         | `topology.kubernetes.io/zone: hil-ovh`   | `local-path-ovh-hdd` or `-ssd` | `topologyKey: kubernetes.io/hostname` |
+| **Proxmox-single** | 1         | `topology.kubernetes.io/region: proxmox` | `local-path-proxmox`           | n/a                                   |
 
 **OVH-HA**: For services co-located with the SeaweedFS cluster on the OVH
-nodes. Two instances on separate nodes.
+nodes. Two instances on separate nodes. Existing clusters mostly still name
+`local-path-ovh` — the deprecated alias re-pinned to the same media as
+`local-path-ovh-hdd`, kept only for already-bound PVCs (see the SC manifest) —
+new clusters name the tiered classes explicitly.
 
 **Proxmox-single**: For homelab services. Single instance co-located with the
 app on Proxmox. Relies on ZFS for local reliability; off-site backups via
@@ -67,7 +70,8 @@ grep -rl 'kind: Cluster' cluster/k8s --include='postgres-cluster*.yaml'
 ```
 
 As of 2026-08, every **live** (unsuspended) cluster is 2-instance OVH-HA —
-most on `local-path-ovh`, plus `forgejo-db-ssd` and `seaweedfs-filer-db-ssd`
+most on the deprecated `local-path-ovh` alias (same media as `-hdd`), plus
+`forgejo-db-ssd` and `seaweedfs-filer-db-ssd`
 on the `local-path-ovh-ssd` tier — with one deviation:
 
 - `study-casino-db` (`k8s/study-casino/db/`): 3 instances pinned
