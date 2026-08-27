@@ -254,26 +254,12 @@ class Redaction:
 
 @dataclass(frozen=True)
 class SyncResult:
-    """One `/sync` pass, parsed down to what the loop acts on.
-
-    Accepts any sequence and holds tuples (`__post_init__`), so a result is a frozen value with
-    content equality however its parts were accumulated.
-    """
-
     next_batch: str
-    messages: Sequence[InboundMessage]
-    invites: Sequence[Invite]
-    unmappable: Sequence[UnmappableEvent] = ()
-    projected: Sequence[ProjectedEvent] = ()
-    redactions: Sequence[Redaction] = ()
-
-    def __post_init__(self) -> None:
-        # `object.__setattr__` is how a frozen dataclass normalises its own fields.
-        object.__setattr__(self, "messages", tuple(self.messages))
-        object.__setattr__(self, "invites", tuple(self.invites))
-        object.__setattr__(self, "unmappable", tuple(self.unmappable))
-        object.__setattr__(self, "projected", tuple(self.projected))
-        object.__setattr__(self, "redactions", tuple(self.redactions))
+    messages: tuple[InboundMessage, ...]
+    invites: tuple[Invite, ...]
+    unmappable: tuple[UnmappableEvent, ...] = ()
+    projected: tuple[ProjectedEvent, ...] = ()
+    redactions: tuple[Redaction, ...] = ()
 
 
 def _msgtype(event: Event | BadEvent) -> str | None:
@@ -385,11 +371,11 @@ class MatrixClient:
         timeline = await self._timelines(response, since)
         return SyncResult(
             next_batch=response.next_batch,
-            messages=timeline.messages,
+            messages=tuple(timeline.messages),
             invites=self._invites(response),
-            unmappable=timeline.unmappable,
-            projected=timeline.projected,
-            redactions=timeline.redactions,
+            unmappable=tuple(timeline.unmappable),
+            projected=tuple(timeline.projected),
+            redactions=tuple(timeline.redactions),
         )
 
     async def join(self, token: str, room_id: str) -> None:
