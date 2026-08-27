@@ -26,9 +26,13 @@ on:
 #                                 not worthless. Queued runs coalesce (a new one replaces
 #                                 the pending one); running ones are left to finish.
 #
-# release.yml and push-images.yml also gate each artifact on its own embedded test, so
-# running them for a commit whose bazel-ci got superseded costs some duplicate
-# publishing, never a wrong one.
+# A superseded bazel-ci is cancelled, and the publish jobs below skip that run rather
+# than publish from it. `cancelled()` reports the *run*, not the dependency, so without
+# the explicit `needs.bazel-ci.result` check they would go ahead with no invocation ids
+# and fail open on every row: measured on devel, that is "42 of 42 images need a push"
+# plus ~20 releases, on the 8-in-10 pushes whose bazel-ci gets cancelled. Nothing is
+# lost by skipping, because the run that superseded this one publishes from its own
+# build, and it holds the newer commit.
 
 permissions:
   contents: write
@@ -47,7 +51,7 @@ jobs:
 
   release:
     needs: [bazel-ci]
-    if: always() && !cancelled() && github.event_name == 'push'
+    if: always() && !cancelled() && github.event_name == 'push' && needs.bazel-ci.result != 'cancelled'
     uses: ./.github/workflows/release.yml
     with:
       # What bazel-ci already built. Empty if it was skipped or died before Bazel
@@ -59,7 +63,7 @@ jobs:
   # props registry, gated on props tests — see push-images.yml.
   push-images:
     needs: [bazel-ci]
-    if: always() && !cancelled() && github.event_name == 'push'
+    if: always() && !cancelled() && github.event_name == 'push' && needs.bazel-ci.result != 'cancelled'
     uses: ./.github/workflows/push-images.yml
     with:
       bazel_invocation_ids: ${{ needs.bazel-ci.outputs.bazel_invocation_ids }}
