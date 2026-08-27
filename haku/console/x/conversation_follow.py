@@ -51,7 +51,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import AsyncGenerator, AsyncIterator, Iterator
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Annotated, Protocol, cast
@@ -115,10 +115,11 @@ class _Follower:
 
 
 class ConversationFollow:
-    """The follow operation: this replica's followers, woken by the conversation their wakes name.
+    """The follow operation: each follower is its own subscriber on the conversation wake channel.
 
-    One per process, started with the app: it holds the conversation watch that every follower's
-    wakes come through, so a conversation nobody is following costs a dictionary miss.
+    The wake channel is the pubsub. A follower holds one filtered callback on it for the life of
+    its socket, so there is no second registry to keep in step with the registrations the channel
+    already tracks.
     """
 
     def __init__(
@@ -135,16 +136,6 @@ class ConversationFollow:
         self._notifications = notifications
         self._window = window
         self._sandbox_poll = sandbox_poll
-        # This replica's local fanout of the broadcast wake to the follow sockets it physically
-        # holds. Authority stays in Postgres NOTIFY, which every replica hears — this is
-        # deliberately not the in-process registry the wake channel exists to replace, because
-        # "no local followers" is a correct answer here, never a missed delivery.
-        self._followers: dict[UUID, set[_Follower]] = {}
-
-    @contextlib.asynccontextmanager
-    async def run(self) -> AsyncIterator[None]:
-        with self._notifications.watch_conversations(self._record):
-            yield
 
     async def follow(
         self, operator_id: UUID, conversation_id: UUID, *, after: int | None = None
@@ -158,7 +149,25 @@ class ConversationFollow:
         Raises `KeyError` for a conversation this operator does not own — the check is the store's
         own read, so a follow can see exactly what a read of the same conversation can.
         """
-        with self._registered(conversation_id) as follower:
+        follower = _Follower()
+
+        def on_wake(wake: ConversationWakeEvent | RecheckHeld) -> None:
+            # Runs on the listener's reader task: no awaiting. Every kind wakes — the read is
+            # positional and returns whatever moved — and the position hint is honored where it
+            # proves the read redundant: having read through position P means having observed
+            # every transaction that wrote through P, whole (`event_seq` is allocated under the
+            # conversation row lock, which is held to commit).
+            match wake:
+                case ConversationWakeEvent(conversation_id=named, position=position):
+                    if named != conversation_id:
+                        return
+                    if position is not None and follower.read_through is not None and follower.read_through >= position:
+                        return
+                    follower.woken.set()
+                case RecheckHeld():
+                    follower.woken.set()
+
+        with self._notifications.watch_conversations(on_wake):
             # Registered before the first read, so a change landing during it wakes this follower
             # rather than being missed. A wake it did not need costs one read.
             if after is None:
@@ -226,41 +235,6 @@ class ConversationFollow:
         return ConversationSnapshot(
             position=position, conversation=await self._reader.conversation(operator_id, conversation_id)
         )
-
-    @contextlib.contextmanager
-    def _registered(self, conversation_id: UUID) -> Iterator[_Follower]:
-        follower = _Follower()
-        self._followers.setdefault(conversation_id, set()).add(follower)
-        try:
-            yield follower
-        finally:
-            followers = self._followers.get(conversation_id)
-            if followers is not None:
-                followers.discard(follower)
-                if not followers:
-                    del self._followers[conversation_id]
-
-    def _record(self, wake: ConversationWakeEvent | RecheckHeld) -> None:
-        """Wake the followers a wake names. Runs on the listener's reader task: no awaiting here.
-
-        Every kind wakes: a follower's read is positional and returns whatever moved, so the kind
-        adds nothing the read does not. The position hint is honored where it proves the read
-        redundant; a wake a follower did not need costs one query. On `RecheckHeld` every follower
-        re-reads.
-        """
-        match wake:
-            case ConversationWakeEvent(conversation_id=conversation_id, position=position):
-                for follower in self._followers.get(conversation_id, ()):
-                    if position is not None and follower.read_through is not None and follower.read_through >= position:
-                        # Its last read observed the emitting transaction whole — the log is dense
-                        # and allocation holds the conversation row lock to commit, so having read
-                        # this position means having read everything that wake announced.
-                        continue
-                    follower.woken.set()
-            case RecheckHeld():
-                for followers in self._followers.values():
-                    for follower in followers:
-                        follower.woken.set()
 
 
 def _still_coming_up(message: ConversationFollowMessage) -> bool:

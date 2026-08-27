@@ -29,6 +29,7 @@ from haku.console.x.session_notifications import (
     libpq_dsn,
     notify,
     notify_conversation,
+    notify_raw,
 )
 from util.sqlalchemy_types import UnknownValue
 
@@ -81,8 +82,9 @@ async def _nothing_within[T](received: asyncio.Queue[T], seconds: float) -> bool
 
 
 async def _emit_raw(db_sessions: async_sessionmaker[AsyncSession], channel: str, payload: str) -> None:
+    """`notify_raw`, with the transaction the production callers already hold opened here."""
     async with db_sessions.begin() as db:
-        await db.execute(text("SELECT pg_notify(:channel, :payload)"), {"channel": channel, "payload": payload})
+        await notify_raw(db, channel, payload)
 
 
 async def _kill_listener_backends(db_sessions: async_sessionmaker[AsyncSession]) -> None:

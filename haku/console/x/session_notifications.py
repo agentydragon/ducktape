@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import defaultdict
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
@@ -147,16 +148,18 @@ _CONNECT_TIMEOUT_SECONDS = 10
 _CLOSE_TIMEOUT_SECONDS = 2
 
 
-async def _notify_on(db: AsyncSession, channel: str, payload: BaseModel) -> None:
-    """Emit one serialized payload as `pg_notify` inside the caller's transaction, on commit."""
-    await db.execute(
-        text("SELECT pg_notify(:channel, :payload)"), {"channel": channel, "payload": payload.model_dump_json()}
-    )
+async def notify_raw(db: AsyncSession, channel: str, payload: str) -> None:
+    """One `pg_notify` inside the caller's transaction, so it fires on commit.
+
+    The single emission both typed wakes serialize into. Tests drive it directly with payloads the
+    typed emitters cannot produce — a garbled envelope, a kind from a release that does not exist.
+    """
+    await db.execute(text("SELECT pg_notify(:channel, :payload)"), {"channel": channel, "payload": payload})
 
 
 async def notify(db: AsyncSession, kind: SessionEventKind, session_id: UUID) -> None:
     """Emit a session wake inside the caller's transaction, so it fires on commit."""
-    await _notify_on(db, CHANNEL, SessionEvent(kind=kind, session_id=session_id))
+    await notify_raw(db, CHANNEL, SessionEvent(kind=kind, session_id=session_id).model_dump_json())
 
 
 async def notify_conversation(
@@ -167,8 +170,10 @@ async def notify_conversation(
     *position* is the optional read-skip hint (`ConversationWakeEvent.position`); omitting it is
     always correct.
     """
-    await _notify_on(
-        db, CONVERSATION_CHANNEL, ConversationWakeEvent(kind=kind, conversation_id=conversation_id, position=position)
+    await notify_raw(
+        db,
+        CONVERSATION_CHANNEL,
+        ConversationWakeEvent(kind=kind, conversation_id=conversation_id, position=position).model_dump_json(),
     )
 
 
@@ -202,16 +207,16 @@ def _terminator(terminated: asyncio.Event) -> Callable[[object], None]:
 
 
 @contextmanager
-def _registered[C](registry: dict[UUID, set[C]], key: UUID, entry: C) -> Iterator[None]:
+def _registered[C](registry: defaultdict[UUID, set[C]], key: UUID, entry: C) -> Iterator[None]:
     """Hold *entry* under *key* for the duration, dropping a key left with no entries."""
-    entries = registry.setdefault(key, set())
-    entries.add(entry)
+    registry[key].add(entry)
     try:
         yield
     finally:
+        entries = registry[key]
         entries.discard(entry)
         if not entries:
-            registry.pop(key, None)
+            del registry[key]
 
 
 def libpq_dsn(database_url: str) -> str:
@@ -230,8 +235,8 @@ class SessionNotifications:
 
     def __init__(self, database_url: str):
         self._dsn = libpq_dsn(database_url)
-        self._waiters: dict[UUID, set[asyncio.Event]] = {}
-        self._session_watchers: dict[UUID, set[Callable[[SessionEvent], None]]] = {}
+        self._waiters: defaultdict[UUID, set[asyncio.Event]] = defaultdict(set)
+        self._session_watchers: defaultdict[UUID, set[Callable[[SessionEvent], None]]] = defaultdict(set)
         self._watchers: set[Callable[[SessionEvent], None]] = set()
         self._conversation_watchers: set[Callable[[ConversationWakeEvent | RecheckHeld], None]] = set()
         self._task: asyncio.Task[None] | None = None
