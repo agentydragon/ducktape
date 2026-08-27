@@ -10,6 +10,15 @@ before any TLS.
 
 ``LocalhostDecideClient`` runs the same drills against ``StubConsole``, an
 in-process decide endpoint speaking the real wire models.
+
+Pinned-dial enforcement (#4670's DNS-rebinding property) is also asserted with
+the plain-HTTP harness: the TCP-recording upstreams observe the dialed socket
+peer, and a decoy listener on the address a fresh resolution would yield must
+stay silent. TLS behavior is preserved by construction rather than asserted
+here: the gate rewrites only ``Server.address`` at ``server_connect`` time,
+while ``Server.sni`` and the Host header keep the hostname (asserted below), so
+mitmproxy's upstream verification still checks the real hostname against the
+real certificate.
 """
 
 from __future__ import annotations
@@ -18,9 +27,9 @@ import asyncio
 import base64
 import datetime
 from collections.abc import AsyncIterator
-from contextlib import aclosing, asynccontextmanager
+from contextlib import AsyncExitStack, aclosing, asynccontextmanager
 from dataclasses import dataclass, field
-from ipaddress import IPv4Address
+from ipaddress import IPv4Address, IPv6Address
 from pathlib import Path
 from typing import assert_never, cast
 
@@ -28,10 +37,12 @@ import aiohttp
 import pytest
 import pytest_bazel
 from aiohttp import web
+from mitmproxy.connection import Client, Server
+from mitmproxy.proxy.server_hooks import ServerConnectionHookData
 from more_itertools import one
 from pydantic import SecretStr
 
-from haku.egress.addon import DEFAULT_DECIDE_TIMEOUT_SECONDS
+from haku.egress.addon import DEFAULT_DECIDE_TIMEOUT_SECONDS, EgressGateAddon, ResolveAddresses, resolve_addresses
 from haku.egress.decide_client import DecideClient
 from haku.egress.decision import (
     DecideAllowed,
@@ -106,20 +117,33 @@ class RecordingUpstream:
         writer.close()
 
 
+@asynccontextmanager
+async def recording_upstream(host: str, port: int = 0) -> AsyncIterator[RecordingUpstream]:
+    recording = RecordingUpstream(port=port)
+    server = await asyncio.start_server(recording.handle, host, port)
+    recording.port = server.sockets[0].getsockname()[1]
+    try:
+        yield recording
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
 @pytest.fixture
 async def upstream() -> AsyncIterator[RecordingUpstream]:
-    recording = RecordingUpstream(port=0)
-    server = await asyncio.start_server(recording.handle, "127.0.0.1", 0)
-    recording.port = server.sockets[0].getsockname()[1]
-    yield recording
-    server.close()
-    await server.wait_closed()
+    async with recording_upstream("127.0.0.1") as recording:
+        yield recording
 
 
 def make_proxy(
-    decide: DecideClient, tmp_path: Path, decide_timeout_seconds: float = DEFAULT_DECIDE_TIMEOUT_SECONDS
+    decide: DecideClient,
+    tmp_path: Path,
+    decide_timeout_seconds: float = DEFAULT_DECIDE_TIMEOUT_SECONDS,
+    resolve: ResolveAddresses = resolve_addresses,
 ) -> EgressProxy:
-    return EgressProxy(decide, confdir=tmp_path / "mitmproxy-confdir", decide_timeout_seconds=decide_timeout_seconds)
+    return EgressProxy(
+        decide, confdir=tmp_path / "mitmproxy-confdir", decide_timeout_seconds=decide_timeout_seconds, resolve=resolve
+    )
 
 
 async def proxied_get(proxy: EgressProxy, url: str, headers: dict[str, str] | None = None) -> tuple[int, str]:
@@ -131,18 +155,36 @@ async def proxied_get(proxy: EgressProxy, url: str, headers: dict[str, str] | No
 
 
 class RaisingDecideClient(DecideClient):
-    async def decide(self, request: RequestMeta) -> DecideResponse:
+    async def decide(
+        self,
+        request: RequestMeta,
+        *,
+        resolved_ips: frozenset[IPv4Address | IPv6Address],
+        upstream_ip: IPv4Address | IPv6Address,
+    ) -> DecideResponse:
         raise RuntimeError("decide transport exploded")
 
 
 class HangingDecideClient(DecideClient):
-    async def decide(self, request: RequestMeta) -> DecideResponse:
+    async def decide(
+        self,
+        request: RequestMeta,
+        *,
+        resolved_ips: frozenset[IPv4Address | IPv6Address],
+        upstream_ip: IPv4Address | IPv6Address,
+    ) -> DecideResponse:
         await asyncio.Event().wait()
         raise AssertionError("unreachable: the event is never set")
 
 
 class MalformedDecideClient(DecideClient):
-    async def decide(self, request: RequestMeta) -> DecideResponse:
+    async def decide(
+        self,
+        request: RequestMeta,
+        *,
+        resolved_ips: frozenset[IPv4Address | IPv6Address],
+        upstream_ip: IPv4Address | IPv6Address,
+    ) -> DecideResponse:
         return cast(DecideResponse, {"allowed": True, "substitutions": []})
 
 
@@ -428,6 +470,125 @@ async def test_localhost_decide_endpoint_failure_fails_closed(
     assert status == 502
     assert "fail closed" in body
     assert (upstream.connections, upstream.requests) == (0, [])
+
+
+@dataclass
+class QueueResolver:
+    """Resolver double whose successive answers differ — the DNS-rebinding scenario (#4670).
+
+    Indexing by call number makes a resolution past the scripted answers fail loudly: any
+    extra call IS the second resolution the pinned dial exists to prevent.
+    """
+
+    answers: list[frozenset[IPv4Address | IPv6Address]]
+    calls: int = 0
+
+    async def __call__(self, host: str, port: int) -> frozenset[IPv4Address | IPv6Address]:
+        answer = self.answers[self.calls]
+        self.calls += 1
+        return answer
+
+
+@asynccontextmanager
+async def pinned_and_decoy_upstreams() -> AsyncIterator[tuple[RecordingUpstream, RecordingUpstream]]:
+    """Two recorders on one port: 127.0.0.2 (the validated first answer) and 127.0.0.1 (the
+    address a fresh resolution of ``localhost`` yields — where an unpinned dial would land)."""
+    async with AsyncExitStack() as stack:
+        pinned = await stack.enter_async_context(recording_upstream("127.0.0.2"))
+        decoy = await stack.enter_async_context(recording_upstream("127.0.0.1", port=pinned.port))
+        yield pinned, decoy
+
+
+async def test_pinned_dial_survives_rebinding_second_answer(tmp_path: Path) -> None:
+    """The dial goes to the first validated answer even though a fresh resolution differs.
+
+    End to end through ``LocalhostDecideClient``: the resolver's first answer (127.0.0.2) is
+    validated by the decide exchange and pinned; its scripted second answer — and the system
+    resolver's real answer for ``localhost`` — is 127.0.0.1, so a re-resolving dial would hit
+    the decoy. Exactly one resolution may happen, and the decoy must stay silent.
+    """
+    resolver = QueueResolver(answers=[frozenset({IPv4Address("127.0.0.2")}), frozenset({IPv4Address("127.0.0.1")})])
+    async with (
+        pinned_and_decoy_upstreams() as (pinned, decoy),
+        stub_console(allow_with_substitution()) as stub,
+        aclosing(stub_client(stub)) as decide,
+        make_proxy(decide, tmp_path, resolve=resolver) as proxy,
+    ):
+        status, body = await proxied_get(proxy, f"http://localhost:{pinned.port}/pinned")
+    assert (status, body) == (200, "upstream ok")
+    recorded = one(pinned.requests)
+    assert recorded.path == "/pinned"
+    # Host semantics preserved: the upstream sees the hostname, never the pinned literal.
+    assert recorded.headers["host"] == f"localhost:{pinned.port}"
+    assert (decoy.connections, decoy.requests) == (0, [])
+    assert resolver.calls == 1
+    sent = one(stub.requests)
+    assert sent.request == RequestMeta(method="GET", scheme="http", host="localhost", port=pinned.port, path="/pinned")
+    assert (sent.resolved_ips, sent.upstream_ip) == (frozenset({IPv4Address("127.0.0.2")}), IPv4Address("127.0.0.2"))
+
+
+async def tunneled_get(proxy_port: int, authority: str, path: str) -> tuple[int, int, str]:
+    """CONNECT to ``authority`` through the proxy, then one cleartext GET inside the tunnel.
+
+    Plain HTTP inside the tunnel keeps TLS trust out of the harness while still driving the
+    tunnel-establishment and intercepted-inner-request paths (mitmproxy parses the tunneled
+    cleartext as HTTP, so the inner request is gated like any other).
+    """
+    reader, writer = await asyncio.open_connection("127.0.0.1", proxy_port)
+    try:
+        writer.write(f"CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n\r\n".encode())
+        await writer.drain()
+        connect_head = await reader.readuntil(b"\r\n\r\n")
+        connect_status = int(connect_head.split(b" ", 2)[1])
+        if connect_status != 200:
+            return connect_status, 0, ""
+        writer.write(f"GET {path} HTTP/1.1\r\nHost: {authority}\r\nConnection: close\r\n\r\n".encode())
+        await writer.drain()
+        raw = await reader.read()
+        head, _, body = raw.partition(b"\r\n\r\n")
+        return connect_status, int(head.split(b" ", 2)[1]), body.decode()
+    finally:
+        writer.close()
+        await writer.wait_closed()
+
+
+async def test_pinned_dial_connect_tunnel_and_inner_request(tmp_path: Path) -> None:
+    """Both the tunnel admission and the inner request dial the validated address.
+
+    The stub resolver answers 127.0.0.2 for the CONNECT decide and again for the inner
+    request's decide; the system resolver's answer for ``localhost`` (127.0.0.1, the decoy)
+    must never be dialed, and no third resolution may happen.
+    """
+    answer = frozenset({IPv4Address("127.0.0.2")})
+    resolver = QueueResolver(answers=[answer, answer])
+    decide = StaticDecideClient(allow_with_substitution())
+    async with pinned_and_decoy_upstreams() as (pinned, decoy), make_proxy(decide, tmp_path, resolve=resolver) as proxy:
+        connect_status, status, body = await tunneled_get(proxy.listen_port, f"localhost:{pinned.port}", "/tunneled")
+    assert (connect_status, status, body) == (200, 200, "upstream ok")
+    recorded = one(pinned.requests)
+    assert (recorded.method, recorded.path) == ("GET", "/tunneled")
+    assert recorded.headers["host"] == f"localhost:{pinned.port}"
+    assert (decoy.connections, decoy.requests) == (0, [])
+    assert resolver.calls == 2
+    assert [request.method for request in decide.requests] == ["CONNECT", "GET"]
+    assert all(request.host == "localhost" for request in decide.requests)
+
+
+async def test_unpinned_upstream_dial_is_killed() -> None:
+    """Defense in depth at the dial chokepoint: a ``server_connect`` no allow pinned is refused.
+
+    Every gated flow pins its destination before mitmproxy dials, so this only triggers for a
+    dial that never passed the gate — which must die rather than resolve.
+    """
+    addon = EgressGateAddon(StaticDecideClient(DecideDenied(reason="unreached")))
+    server = Server(address=("evil.example", 443))
+    addon.server_connect(
+        ServerConnectionHookData(
+            server=server, client=Client(peername=("127.0.0.1", 51234), sockname=("127.0.0.1", 8080))
+        )
+    )
+    assert server.error is not None
+    assert server.address == ("evil.example", 443)  # never rewritten toward a resolution
 
 
 if __name__ == "__main__":

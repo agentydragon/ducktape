@@ -5,9 +5,15 @@ crash FAILS OPEN. That is why the egress adapter embeds mitmproxy as a library
 (github.com/agentydragon/ducktape/issues/4670) and why this addon never relies
 on mitmproxy's error handling as the security boundary: each hook pre-sets a
 refusal response and clears it only on an explicit allow, so a failure anywhere
-in the decision path — decide-client exception, timeout, malformed decision,
-substitution application, even this addon's own bugs — leaves the refusal in
-place and nothing is forwarded upstream.
+in the decision path — resolution, decide-client exception, timeout, malformed
+decision, substitution application, even this addon's own bugs — leaves the
+refusal in place and nothing is forwarded upstream.
+
+The gate also owns DNS: the request host is resolved here exactly once, the
+complete answer travels to the decision endpoint, and ``server_connect`` forces
+the upstream dial onto the pinned address — mitmproxy would otherwise resolve
+the hostname again at dial time, the DNS-rebinding hole #4670's
+connect-to-validated-address property closes.
 
 Requires ``connection_strategy = "lazy"`` (the runner sets it): the default
 eager strategy dials the upstream before the request hook runs, contacting
@@ -20,9 +26,13 @@ import asyncio
 import base64
 import binascii
 import logging
+import socket
+from collections.abc import Awaitable, Callable
+from ipaddress import IPv4Address, IPv6Address, ip_address
 from typing import assert_never
 
 from mitmproxy import http
+from mitmproxy.proxy import server_hooks
 
 from haku.egress.decide_client import DecideClient
 from haku.egress.decision import DecideAllowed, DecideDenied, PlaceholderSubstitution, RequestMeta
@@ -32,6 +42,14 @@ logger = logging.getLogger(__name__)
 DEFAULT_DECIDE_TIMEOUT_SECONDS = 5.0
 
 _FAIL_CLOSED_MESSAGE = "egress decision unavailable; refusing (fail closed)"
+
+type ResolveAddresses = Callable[[str, int], Awaitable[frozenset[IPv4Address | IPv6Address]]]
+
+
+async def resolve_addresses(host: str, port: int) -> frozenset[IPv4Address | IPv6Address]:
+    """Complete system resolution of ``host``: every address the answer contained (#4670)."""
+    infos = await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    return frozenset(ip_address(sockaddr[0]) for _family, _type, _proto, _canonname, sockaddr in infos)
 
 
 def _refusal(status: int, message: str) -> http.Response:
@@ -68,9 +86,22 @@ def _apply_substitution(request: http.Request, substitution: PlaceholderSubstitu
 
 
 class EgressGateAddon:
-    def __init__(self, decide: DecideClient, decide_timeout_seconds: float = DEFAULT_DECIDE_TIMEOUT_SECONDS) -> None:
+    def __init__(
+        self,
+        decide: DecideClient,
+        decide_timeout_seconds: float = DEFAULT_DECIDE_TIMEOUT_SECONDS,
+        resolve: ResolveAddresses = resolve_addresses,
+    ) -> None:
         self._decide = decide
         self._decide_timeout_seconds = decide_timeout_seconds
+        self._resolve = resolve
+        # The validated address each allowed destination must dial. Keyed by the exact
+        # (host, port) the decision was made for, because ``server_connect`` sees only the
+        # connection, not the flow: a dial therefore uses the latest allow's validated address
+        # for that destination — always one a decide exchange validated for exactly this
+        # (host, port), possibly from a newer allow than the flow that triggered the dial.
+        # Grows by distinct destinations seen; never shrinks.
+        self._pinned_upstreams: dict[tuple[str, int], IPv4Address | IPv6Address] = {}
 
     async def http_connect(self, flow: http.HTTPFlow) -> None:
         # A non-2xx response on a CONNECT flow makes mitmproxy refuse the tunnel.
@@ -86,23 +117,50 @@ class EgressGateAddon:
         )
         await self._gate(flow, meta)
 
+    def server_connect(self, data: server_hooks.ServerConnectionHookData) -> None:
+        """Force the upstream dial onto the address its decide exchange validated.
+
+        mitmproxy resolves ``Server.address`` itself at connect time, so a short-TTL
+        rebinding answer could swap the validated public address for a private one between
+        decision and connection (#4670). The override rewrites only ``Server.address``:
+        ``Server.sni`` and the Host header keep the real hostname, so upstream TLS still
+        verifies the real hostname against the real upstream certificate. A dial for a
+        destination no allow pinned is refused — setting ``Server.error`` makes mitmproxy
+        kill the connection before connecting (fail closed).
+        """
+        assert data.server.address is not None  # mitmproxy refuses address-less dials before this hook
+        host, port = data.server.address[0], data.server.address[1]
+        pinned = self._pinned_upstreams.get((host, port))
+        if pinned is None:
+            data.server.error = "egress dial without a validated pinned address; refusing (fail closed)"
+            return
+        data.server.address = (str(pinned), port)
+
     async def _gate(self, flow: http.HTTPFlow, meta: RequestMeta) -> None:
         flow.response = _refusal(502, _FAIL_CLOSED_MESSAGE)
         try:
-            decision = await asyncio.wait_for(self._decide.decide(meta), timeout=self._decide_timeout_seconds)
+            async with asyncio.timeout(self._decide_timeout_seconds):
+                # One resolution per admission: the decision validates this complete answer,
+                # and the deterministic minimum (wire serialization order: IPv4 before IPv6,
+                # then numeric) is the address server_connect will dial verbatim.
+                resolved = await self._resolve(meta.host, meta.port)
+                upstream_ip = min(resolved, key=lambda address: (address.version, int(address)))
+                decision = await self._decide.decide(meta, resolved_ips=resolved, upstream_ip=upstream_ip)
             match decision:
                 case DecideDenied():
                     logger.info("deny %s %s:%d: %s", meta.method, meta.host, meta.port, decision.reason)
                     flow.response = _refusal(403, f"egress denied: {decision.reason}")
                 case DecideAllowed():
+                    self._pinned_upstreams[(meta.host, meta.port)] = upstream_ip
                     applied = sum(
                         _apply_substitution(flow.request, substitution) for substitution in decision.substitutions
                     )
                     logger.info(
-                        "allow %s %s:%d decision_id=%s (substitutions: %d of %d applied)",
+                        "allow %s %s:%d -> %s decision_id=%s (substitutions: %d of %d applied)",
                         meta.method,
                         meta.host,
                         meta.port,
+                        upstream_ip,
                         decision.decision_id,
                         applied,
                         len(decision.substitutions),

@@ -2,17 +2,16 @@
 
 Speaks ``POST /api/internal/http/decide`` (haku/console/http_decide_routes.py):
 the static proxy identity bearer travels in ``Authorization``, the Agent-bound
-fence credential inside the ``DecideRequest`` body. Any failure — connection
-error, timeout, non-2xx (401 rejected bearer, 503 unconfigured or authority
-failure), unparseable body — raises instead of inventing a verdict; the gate
-addon turns every raise into a refusal, so the proxy fails closed.
+fence credential inside the ``DecideRequest`` body; the gate's resolution and
+pin arrive as arguments and travel verbatim. Any failure — connection error,
+timeout, non-2xx (401 rejected bearer, 503 unconfigured or authority failure),
+unparseable body — raises instead of inventing a verdict; the gate addon turns
+every raise into a refusal, so the proxy fails closed.
 """
 
 from __future__ import annotations
 
-import asyncio
-import socket
-from ipaddress import IPv4Address, IPv6Address, ip_address
+from ipaddress import IPv4Address, IPv6Address
 
 import httpx
 from pydantic import SecretStr, TypeAdapter
@@ -24,11 +23,6 @@ DECIDE_PATH = "/api/internal/http/decide"
 DEFAULT_TIMEOUT_SECONDS = 5.0
 
 _RESPONSE_ADAPTER: TypeAdapter[DecideResponse] = TypeAdapter(DecideResponse)
-
-
-async def _resolve(host: str, port: int) -> frozenset[IPv4Address | IPv6Address]:
-    infos = await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM)
-    return frozenset(ip_address(sockaddr[0]) for _family, _type, _proto, _canonname, sockaddr in infos)
 
 
 class LocalhostDecideClient(DecideClient):
@@ -52,17 +46,15 @@ class LocalhostDecideClient(DecideClient):
             trust_env=False,
         )
 
-    async def decide(self, request: RequestMeta) -> DecideResponse:
-        resolved = await _resolve(request.host, request.port)
+    async def decide(
+        self,
+        request: RequestMeta,
+        *,
+        resolved_ips: frozenset[IPv4Address | IPv6Address],
+        upstream_ip: IPv4Address | IPv6Address,
+    ) -> DecideResponse:
         decide_request = DecideRequest(
-            fence_credential=self._fence_credential,
-            request=request,
-            resolved_ips=resolved,
-            # Deterministic pin from the validated answer, in wire serialization
-            # order (IPv4 before IPv6, then numeric).
-            # TODO(github.com/agentydragon/ducktape/issues/4670): enforce the pin —
-            # mitmproxy still re-resolves the hostname when dialing the upstream.
-            upstream_ip=min(resolved, key=lambda address: (address.version, int(address))),
+            fence_credential=self._fence_credential, request=request, resolved_ips=resolved_ips, upstream_ip=upstream_ip
         )
         response = await self._client.post(
             DECIDE_PATH, content=decide_request.model_dump_json(), headers={"Content-Type": "application/json"}

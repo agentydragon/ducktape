@@ -20,7 +20,7 @@ from mitmproxy import addons
 from mitmproxy.master import Master
 from mitmproxy.options import Options
 
-from haku.egress.addon import DEFAULT_DECIDE_TIMEOUT_SECONDS, EgressGateAddon
+from haku.egress.addon import DEFAULT_DECIDE_TIMEOUT_SECONDS, EgressGateAddon, ResolveAddresses, resolve_addresses
 from haku.egress.decide_client import DecideClient
 
 logger = logging.getLogger(__name__)
@@ -52,12 +52,14 @@ class EgressProxy:
         listen_host: str = "127.0.0.1",
         listen_port: int = 0,
         decide_timeout_seconds: float = DEFAULT_DECIDE_TIMEOUT_SECONDS,
+        resolve: ResolveAddresses = resolve_addresses,
     ) -> None:
         self._decide = decide
         self._confdir = confdir
         self._listen_host = listen_host
         self._listen_port = listen_port
         self._decide_timeout_seconds = decide_timeout_seconds
+        self._resolve = resolve
         self._master: Master | None = None
         self._run_task: asyncio.Task[None] | None = None
         self._bound_port: int | None = None
@@ -68,7 +70,10 @@ class EgressProxy:
         )
         master.addons.add(*addons.default_addons())
         signal = _RunningSignal()
-        master.addons.add(EgressGateAddon(self._decide, decide_timeout_seconds=self._decide_timeout_seconds), signal)
+        master.addons.add(
+            EgressGateAddon(self._decide, decide_timeout_seconds=self._decide_timeout_seconds, resolve=self._resolve),
+            signal,
+        )
         # Addon-owned options exist only after registration. lazy: the default
         # eager strategy dials the upstream before the gate's request hook runs —
         # a fail-open leak. The onboarding app (mitm.it) is an ungated response
