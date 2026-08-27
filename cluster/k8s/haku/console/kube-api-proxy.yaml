@@ -2,12 +2,12 @@
 #
 # Two listeners, two trust models. The Gateway terminates the public wildcard certificate and
 # forwards plain HTTP to :8080; that backend hop deliberately trusts the cluster node/pod network
-# and Gateway. In-cluster kubeconfig callers (Console-launched runners) instead use the :8443 TLS
-# listener, because client-go attaches kubeconfig credentials only to an https server — against
-# plain HTTP kubectl sends every request unauthenticated. The Cilium policy admits the Gateway to
-# the plaintext port and the runners to the TLS port. The proxy authenticates every request
-# synchronously with Haku Console, strips the Agent bearer, and uses only its rotating projected
-# ServiceAccount token upstream.
+# and Gateway. In-cluster kubeconfig callers (Console-launched runners and the haku-sandbox exec
+# pool) instead use the :8443 TLS listener, because client-go attaches kubeconfig credentials only
+# to an https server — against plain HTTP kubectl sends every request unauthenticated. The Cilium
+# policy admits the Gateway to the plaintext port and the kubeconfig callers to the TLS port. The
+# proxy authenticates every request synchronously with Haku Console, strips the Agent bearer, and
+# uses only its rotating projected ServiceAccount token upstream.
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -196,8 +196,10 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
-    # Runners use the TLS listener only: their kubeconfigs authenticate, and client-go
-    # attaches those credentials only to an https server.
+    # In-cluster kubeconfig callers use the TLS listener only: their kubeconfigs authenticate,
+    # and client-go attaches those credentials only to an https server. The haku-sandbox exec
+    # pool mounts no ServiceAccount token (sandboxtemplate-haku.yaml), so this admission is its
+    # only kubectl path — sandbox-MCP boxes get the runner treatment (operator ruling, #4710).
     - fromEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: haku-runtime-sandbox
@@ -207,6 +209,9 @@ spec:
             k8s:io.kubernetes.pod.namespace: haku-runtime-sandbox
             k8s:app.kubernetes.io/name: haku-harness-runner
             k8s:haku.allegedly.works/access-profile-id: public-coder
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-sandbox
+            k8s:app.kubernetes.io/name: haku-sandbox
       toPorts:
         - ports:
             - port: "8443"

@@ -96,8 +96,10 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
         for obj in kube_proxy_objects
         if obj["kind"] == "CiliumNetworkPolicy" and obj["metadata"]["name"] == "haku-kube-api-proxy"
     )
-    runner_ingress = one(rule for rule in kube_proxy_policy["spec"]["ingress"] if "fromEndpoints" in rule)
-    assert {frozenset(peer["matchLabels"].items()) for peer in runner_ingress["fromEndpoints"]} == {
+    exec_template = yaml.safe_load((k8s_dir / "haku/workspaces/app/sandboxtemplate-haku.yaml").read_text())
+    exec_pod_labels = exec_template["spec"]["podTemplate"]["metadata"]["labels"]
+    kubeconfig_ingress = one(rule for rule in kube_proxy_policy["spec"]["ingress"] if "fromEndpoints" in rule)
+    assert {frozenset(peer["matchLabels"].items()) for peer in kubeconfig_ingress["fromEndpoints"]} == {
         frozenset(
             {
                 "k8s:io.kubernetes.pod.namespace": template_namespace,
@@ -106,8 +108,16 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
             }.items()
         )
         for profile in ("haku", "public-coder")
+    } | {
+        # The exec pool mounts no ServiceAccount token, so this admission is its only kubectl path.
+        frozenset(
+            {
+                "k8s:io.kubernetes.pod.namespace": exec_template["metadata"]["namespace"],
+                "k8s:app.kubernetes.io/name": exec_pod_labels["app.kubernetes.io/name"],
+            }.items()
+        )
     }
-    assert runner_ingress["toPorts"][0]["ports"] == [{"port": "8443", "protocol": "TCP"}]
+    assert kubeconfig_ingress["toPorts"][0]["ports"] == [{"port": "8443", "protocol": "TCP"}]
 
     haku_binding = yaml.safe_load((k8s_dir / "haku/rbac/rolebinding-haku.yaml").read_text())
     assert haku_binding["subjects"] == [
@@ -817,9 +827,10 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
     kube_objects = list(yaml.safe_load_all((console_dir / "kube-api-proxy.yaml").read_text()))
     kube_policy = one(obj for obj in kube_objects if obj["kind"] == "CiliumNetworkPolicy")
     runtime_profiles = {
-        peer["matchLabels"].get("k8s:haku.allegedly.works/access-profile-id")
+        peer["matchLabels"]["k8s:haku.allegedly.works/access-profile-id"]
         for rule in kube_policy["spec"]["ingress"]
         for peer in rule.get("fromEndpoints", [])
+        if peer["matchLabels"].get("k8s:app.kubernetes.io/name") == "haku-harness-runner"
     }
     assert runtime_profiles == {"haku", "public-coder"}
     assert {obj["metadata"]["name"] for obj in kube_objects if obj["kind"] == "Deployment"} == {"haku-kube-api-proxy"}
