@@ -421,13 +421,18 @@ spec:
             #     value_env_var). The Console holds it and substitutes it into decide responses;
             #     the sandbox only ever presents the inert `github-token-placeholder`. Synced from
             #     the same operator account the retiring iron fence used (haku-egress-github-token
-            #     ESO). Not optional: `egress_decide.credentials` naming a handle whose env is unset
-            #     fails startup by design — a wired credential must resolve.
+            #     ESO). Optional (#4970): an unset value is skipped with a warning by
+            #     load_egress_decide, so a not-yet-synced ESO Secret degrades the github-bot handle
+            #     rather than crash-looping the console (the endpoint still serves reachability
+            #     verdicts). optional: true keeps a missing Secret from blocking pod startup, so the
+            #     skip path is actually reached; the proxy-token and fence credentials below stay
+            #     required (load_egress_decide fails loud on those).
             - name: HAKU_EGRESS_CREDENTIAL_GITHUB_BOT
               valueFrom:
                 secretKeyRef:
                   name: haku-egress-github-token
                   key: token
+                  optional: true
           resources:
             requests:
               cpu: 50m
