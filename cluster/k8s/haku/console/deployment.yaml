@@ -166,10 +166,11 @@ spec:
               value: mailto:agentydragon@gmail.com
             # Where `haku_index.search` embeds its queries: Ollama's OpenAI-compatible
             # endpoint, in its own namespace. The console is outside the haku-egress-proxy
-            # fence, so this is ordinary cluster egress. Index maintenance runs in the two
-            # role-flagged haku-indexer Deployments — source sweeps with the index Git
-            # credentials on the chunk pod, batch embedding with its own embedder wiring on
-            # the embed pod; this pod holds neither the sync loops nor any Git credential.
+            # fence, so this is ordinary cluster egress. Index maintenance runs in the
+            # role-flagged haku-indexer Deployments — a per-index chunk pod for each source
+            # sweep (only the haku-state pod holds a Git credential), batch embedding with its
+            # own embedder wiring on the shared embed pod; this pod holds neither the sync loops
+            # nor any Git credential.
             - name: HAKU_CONSOLE_EMBEDDER__BASE_URL
               value: "http://ollama.ollama.svc.cluster.local:11434/v1"
             # Also the index's `model_key`, so it must be exactly what Ollama reports — the

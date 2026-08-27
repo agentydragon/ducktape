@@ -3,10 +3,11 @@
 One binary, two roles selected by ``--role``, each running one maintenance stage of
 `recall_index_sync` in its own Deployment:
 
-- ``chunk`` sweeps every configured source in the deploy-owned recall-index registry and
-  materializes chunks. Replicas — and console replicas of a release that still carried the loop —
-  may overlap freely: each logical index is maintained under its per-index Postgres advisory
-  lock, so co-existence costs a lost lock attempt, never a double sync.
+- ``chunk`` materializes one logical index of the deploy-owned recall-index registry, named by its
+  ``index_id`` (env ``HAKU_INDEXER_INDEX_ID``) — one Deployment per index. Replicas of an index's
+  pod, and console replicas of a release that still carried the whole-registry loop, may overlap
+  freely: each logical index is maintained under its per-index Postgres advisory lock, so
+  co-existence costs a lost lock attempt, never a double sync.
 - ``embed`` drains the shared embedding queue. Replicas share the queue in disjoint batches
   (`embed_pending` claims ``FOR UPDATE SKIP LOCKED``), so overlap scales the drain instead of
   double-embedding.
@@ -15,9 +16,10 @@ The console keeps serving `haku_index.search`/`index_status` as database readers
 failing or rolling leaves search on the last committed index state, with staleness visible in
 `index_status`.
 
-Each role's settings model requires only that role's credentials — the chunk pod holds index Git
-credentials and no embedder endpoint, the embed pod holds the embedder endpoint and no Git
-credential — so a pod cannot start with the other role's secrets missing *or* present-but-unused.
+Each role's settings model requires only that role's credentials — a chunk pod holds only its one
+index's Git credential (none for the chat or anonymous-Git index) and no embedder endpoint, the
+embed pod holds the embedder endpoint and no Git credential — so a pod cannot start with the other
+role's secrets missing *or* present-but-unused.
 """
 
 from __future__ import annotations
@@ -26,6 +28,7 @@ import argparse
 import asyncio
 import logging
 import signal
+from collections.abc import Iterable
 from contextlib import AbstractAsyncContextManager
 from enum import StrEnum
 from pathlib import Path
@@ -39,7 +42,12 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from haku.console.database_schema import ConversationItem
 from haku.console.indexer_config import load_indexer_config
 from haku.console.recall_index_sync import RecallEmbeddingMaintenance, RecallIndexMaintenance
-from haku.recall_index.config import EmbedderConfig, GitRecallIndexDefinition, RecallIndexSettings
+from haku.recall_index.config import (
+    ConfiguredRecallIndex,
+    EmbedderConfig,
+    GitRecallIndexDefinition,
+    RecallIndexSettings,
+)
 from haku.recall_index.git_tree import configure_ca_trust
 from haku.recall_index.openai_embedder import OpenAIEmbedder
 from haku.recall_index.schema import Base as RecallIndexBase
@@ -69,12 +77,21 @@ class _WorkerSettings(BaseSettings):
 
 
 class ChunkSettings(_WorkerSettings):
-    """The chunk role: source sweeps against the deploy-owned registry."""
+    """The chunk role: sweep exactly one registry index into chunks.
 
-    # The shared deploy-owned console config file: `recall_indexes` is the registry of what this
-    # role materializes, and one file keeps the console's readers and this role's writers on the
+    One Deployment per logical index (#4886): ``index_id`` names the single registry entry this pod
+    sweeps, so a pod carries only that index's credential (the chat and anonymous-Git indexes carry
+    no Git slot). Overlap between the per-index pods, and with a rolling old whole-registry release,
+    stays safe under the per-logical-index advisory lock.
+    """
+
+    # The shared deploy-owned console config file: `recall_indexes` is the registry this role reads
+    # its one index from, and one file keeps the console's readers and this role's writers on the
     # same registry and Git credential slots.
     config_file: Path
+    # The single logical index this pod sweeps. Startup fails loud (`_select_index`) on an id absent
+    # from the registry.
+    index_id: str
     recall_index: RecallIndexSettings = Field(default_factory=RecallIndexSettings)
 
 
@@ -114,6 +131,21 @@ def verify_worker_schema(database_url: str) -> None:
         engine.dispose()
 
 
+def _select_index(indexes: Iterable[ConfiguredRecallIndex], index_id: str) -> ConfiguredRecallIndex:
+    """The one registry index this chunk pod sweeps; fail loud on an id absent from the registry.
+
+    One pod per logical index means the pod's `index_id` is the whole of its work — an id that
+    names nothing in the registry is a misconfigured Deployment, so crash-loop here rather than
+    sweep nothing silently.
+    """
+    by_id = {index.index_id: index for index in indexes}
+    if index_id not in by_id:
+        raise RuntimeError(
+            f"chunk role index {index_id!r} is absent from the recall_indexes registry {sorted(by_id)!r}"
+        )
+    return by_id[index_id]
+
+
 async def async_main(settings: ChunkSettings | EmbedSettings) -> None:
     engine = create_async_engine(settings.database_url.get_secret_value(), pool_pre_ping=True)
     try:
@@ -121,15 +153,13 @@ async def async_main(settings: ChunkSettings | EmbedSettings) -> None:
         stage: AbstractAsyncContextManager[None]
         if isinstance(settings, ChunkSettings):
             config = load_indexer_config(settings.config_file)
-            if any(
-                isinstance(index, GitRecallIndexDefinition) and index.repo_url.startswith("https://")
-                for index in config.recall_indexes
-            ):
+            index = _select_index(config.recall_indexes, settings.index_id)
+            if isinstance(index, GitRecallIndexDefinition) and index.repo_url.startswith("https://"):
                 configure_ca_trust(config.git_ca_bundle)
             stage = RecallIndexMaintenance(
-                engine, sessions, indexes=config.recall_indexes, budget=settings.recall_index.chunk_budget
+                engine, sessions, indexes=(index,), budget=settings.recall_index.chunk_budget
             ).run()
-            logger.info("haku-indexer chunking %s", ", ".join(index.index_id for index in config.recall_indexes))
+            logger.info("haku-indexer chunking %s", index.index_id)
         else:
             stage = RecallEmbeddingMaintenance(
                 sessions,
