@@ -12,11 +12,20 @@ from nio.responses import RoomMessagesResponse, SyncResponse
 
 # Aliased: `client` is the name every test here gives its `MatrixClient` local.
 from haku.console.x.channels.matrix import client as matrix_client
-from haku.console.x.channels.matrix.client import ConversationEventSource, EventTag, MatrixClient, RoomEventKind
+from haku.console.x.channels.matrix.client import (
+    HAKU_CONTENT_KEY,
+    ConversationEventSource,
+    EventTag,
+    MatrixClient,
+    RoomEventKind,
+)
 
 USER = "@haku:allegedly.works"
 OPERATOR = "@rai:allegedly.works"
 ROOM = "!room:allegedly.works"
+
+ATTACHMENT = UUID("11111111-2222-4333-8444-555555555555")
+CONVERSATION = UUID("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee")
 
 
 def _message(sender: str, body: str, event_id: str = "$evt", msgtype: str = "m.text") -> dict[str, Any]:
@@ -300,9 +309,147 @@ async def test_backfill_is_bounded_and_says_what_it_dropped(monkeypatch, caplog)
     assert "gave up backfilling" in caplog.text
 
 
+def _source_tag(seq: int = 7) -> EventTag:
+    return EventTag(
+        kind=RoomEventKind.LIFECYCLE,
+        source=ConversationEventSource(attachment_id=ATTACHMENT, conversation_id=CONVERSATION, event_seq=seq),
+    )
+
+
+def _own_projected(
+    event_id: str = "$own", seq: int = 7, sender: str = USER, replaces: str | None = None
+) -> dict[str, Any]:
+    """An echo of a projected notice, tagged the way the console's own writer tags one."""
+    content: dict[str, Any] = {
+        "msgtype": "m.notice",
+        "body": "the session ended",
+        HAKU_CONTENT_KEY: _source_tag(seq).content(),
+    }
+    if replaces is not None:
+        content["m.relates_to"] = {"rel_type": "m.replace", "event_id": replaces}
+    return {"type": "m.room.message", "event_id": event_id, "sender": sender, "origin_server_ts": 9, "content": content}
+
+
+def _redaction(
+    event_id: str = "$r", redacts: str | None = "$gone", content_redacts: str | None = None
+) -> dict[str, Any]:
+    event: dict[str, Any] = {
+        "type": "m.room.redaction",
+        "event_id": event_id,
+        "sender": OPERATOR,
+        "origin_server_ts": 5,
+        "content": {},
+    }
+    if redacts is not None:
+        event["redacts"] = redacts
+    if content_redacts is not None:
+        event["content"]["redacts"] = content_redacts
+    return event
+
+
+async def test_an_own_projected_notice_comes_back_with_its_source():
+    """The correspondence reader: the writer's own tag, read back off the echo — and never input."""
+    client, _ = _client(_sync_body(_own_projected(event_id="$own", seq=7)))
+
+    result = await client.sync("tok", since="s1")
+
+    [projected] = result.projected
+    assert (projected.room_id, projected.event_id, projected.origin_server_ts, projected.replaces_event_id) == (
+        ROOM,
+        "$own",
+        9,
+        None,
+    )
+    assert projected.source == ConversationEventSource(
+        attachment_id=ATTACHMENT, conversation_id=CONVERSATION, event_seq=7
+    )
+    assert result.messages == (), "our own events stay excluded from ingress"
+
+
+async def test_a_tag_forged_by_another_sender_is_not_correspondence():
+    """The mirror filter is on the sender: nobody else can make the room claim our projection."""
+    client, _ = _client(_sync_body(_own_projected(sender=OPERATOR)))
+
+    result = await client.sync("tok", since="s1")
+
+    assert result.projected == ()
+
+
+async def test_an_own_event_without_a_source_is_not_correspondence():
+    """A reply or the status line is tagged but names no durable event; there is nothing to read."""
+    reply = _message(USER, "the answer", event_id="$reply")
+    reply["content"][HAKU_CONTENT_KEY] = EventTag(kind=RoomEventKind.REPLY).content()
+    client, _ = _client(_sync_body(reply))
+
+    result = await client.sync("tok", since="s1")
+
+    assert result.projected == ()
+
+
+async def test_an_edit_of_a_projected_notice_names_what_it_replaces():
+    """Edit visibility: an `m.replace` surfaces as a revision of the original, tag and all."""
+    client, _ = _client(_sync_body(_own_projected(event_id="$edit", seq=7, replaces="$original")))
+
+    [projected] = (await client.sync("tok", since="s1")).projected
+
+    assert (projected.event_id, projected.replaces_event_id) == ("$edit", "$original")
+
+
+async def test_a_redaction_is_surfaced_from_either_spelling():
+    """Redaction visibility, both wire shapes: top-level `redacts`, and room v11's in-content."""
+    client, _ = _client(
+        _sync_body(
+            _redaction(event_id="$r1", redacts="$a"), _redaction(event_id="$r2", redacts=None, content_redacts="$b")
+        )
+    )
+
+    result = await client.sync("tok", since="s1")
+
+    assert [(redaction.room_id, redaction.redacts_event_id) for redaction in result.redactions] == [
+        (ROOM, "$a"),
+        (ROOM, "$b"),
+    ]
+    assert result.messages == ()
+
+
+async def test_a_garbled_source_degrades_to_a_logged_skip(caplog):
+    """Our own writer — possibly a newer release — so unreadable means one event's correspondence
+    is lost, loudly, and the rest of the batch still lands."""
+    garbled = _own_projected(event_id="$bad")
+    garbled["content"][HAKU_CONTENT_KEY] = {"kind": "lifecycle", "source": {"event_seq": "zero"}}
+    client, _ = _client(_sync_body(garbled, _own_projected(event_id="$good", seq=8)))
+
+    with caplog.at_level("WARNING"):
+        result = await client.sync("tok", since="s1")
+
+    assert [projected.event_id for projected in result.projected] == ["$good"]
+    assert "cannot read the source" in caplog.text
+
+
+async def test_own_echoes_are_recovered_across_a_gap():
+    """The correspondence reader closes the same truncated-timeline gap ingress does — an echo
+    that only ever appeared while the console was down is still recorded."""
+    client, _ = _client(
+        _sync_body(limited=True),
+        pages=[
+            {
+                "chunk": [_own_projected(event_id="$missed", seq=7), _redaction(event_id="$r", redacts="$x")],
+                "start": "p1",
+                "end": "p2",
+            },
+            {"chunk": [], "start": "p2"},
+        ],
+    )
+
+    result = await client.sync("tok", since="s1")
+
+    assert [projected.event_id for projected in result.projected] == ["$missed"]
+    assert [redaction.redacts_event_id for redaction in result.redactions] == ["$x"]
+
+
 def test_a_tag_is_ids_and_kinds_and_omits_what_it_has_none_of() -> None:
-    """What goes under the console's own content key. Nothing reads one back, so what this pins is
-    the wire, for the room's readers."""
+    """What goes under the console's own content key — the wire the correspondence reader and a
+    person reading the room's event source both see."""
     tag = EventTag(kind=RoomEventKind.REPLY, conversation_id=UUID("11111111-2222-3333-4444-555555555555"))
 
     assert tag.content() == {"kind": "reply", "conversation_id": "11111111-2222-3333-4444-555555555555"}

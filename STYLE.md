@@ -51,12 +51,21 @@ instead, so they load on demand.
   provenance goes in inert `#` comments next to the data, not schema fields (`note:`);
   delete write-only fields that survived refactors.
 - **No redundant derived fields**: don't return a collection plus a trivially computable
-  function of it (a list and its `len()`).
+  function of it (a list and its `len()`) — storing or returning `x` alongside
+  `trivial_function(x)` invites drift and leaves open which layer of the stack adds the
+  derivation.
 - **No unnecessary aliasing**: no import renames, fixture re-assignment, or convenience
   re-exports (`AgentEvent = EventType`). Aliases only at public API boundaries
   (`__init__.py` re-exports) or to avoid collisions, with a comment.
 - **Import from the defining module**, never from a module that happens to re-export
   the symbol.
+- **Reuse before minting**: before adding a helper, type, or mechanism, search for the
+  existing one solving the same shape; a near-duplicate dedupes into the original
+  rather than landing beside it.
+- **`typing.Protocol` is a smell by default**: name the concrete type or a union of the
+  real types; a Protocol earns its place only to break a proven circular dependency or
+  in genuinely structural metaprogramming, never as indirection over implementers you
+  can name.
 - **No dynamic attribute probing** (`getattr`/`hasattr`/`setattr`) unless justified and
   documented; in tests, assert attributes directly.
 - **Exceptions**:
@@ -90,6 +99,14 @@ instead, so they load on demand.
   combos that permit nonsense (`hook_installed=False, pid=42`). Dispatch on variants
   with `isinstance` (mypy narrows), not discriminator-string compares — except in
   Mako/Jinja templates, where `kind` strings are acceptable.
+- **One concept, one name across representations**: a concept's Pydantic model, ORM
+  class, and table share the concept-name; representation-role suffixes (`…Row`,
+  `…Body`, `…View`) only where two representations of one concept must coexist in a
+  namespace, and the concept half stays identical.
+- **Identifiers carry their type**: a UUID travels as `UUID` end to end, the
+  conversions absorbed by boundary adapters (Pydantic validators, ORM column types) —
+  no scattered `UUID(x)`/`str(y)` in code. Where a str-typed library surface can't be
+  adapter-absorbed, keeping `str` beats conversion churn.
 - **Typed concurrency messages**: dataclasses/models for actor/mailbox messages and
   results, never `dict[str, T]`.
 - **Dataclasses for internal types, Pydantic at boundaries**: `@dataclass` for purely
@@ -120,8 +137,11 @@ instead, so they load on demand.
   <3 files gets flattened.
 - **Sets for unordered collections** (`set[T]`); lists only when order or duplicates
   matter.
-- **Prefer `more_itertools`**: `one()` when more than one match is a bug, `first()`
-  when many are valid and you want the first; `itertools.batched` over manual slicing.
+- **Don't reinvent the wheel**: a solved problem uses the library the repo already
+  carries, never hand-rolled arithmetic — retry/backoff is `tenacity`; iteration
+  shapes are `more_itertools` (`one()` when more than one match is a bug, `first()`
+  when many are valid and you want the first) or `itertools.batched` over manual
+  slicing.
 
 ## Tombstones
 
@@ -151,6 +171,12 @@ old_field: str | None = None
 **ORM over raw SQL.** Raw SQL only for DB-specific features the ORM handles poorly
 (window functions, recursive CTEs, LATERAL joins), performance-critical queries,
 administrative DDL, or when the ORM equivalent would be markedly less readable.
+
+**Store facts, derive state.** A status column computable from stored facts
+(`revoked_at`, `valid_until`) is derived in queries or properties, never stored — the
+persistence form of no-redundant-derived-fields (§ General): a materialized status is a
+cache that can lie and demands a sweeper. Materialize only for a measured query-cost
+reason, stated where it happens.
 
 ## Build System (Bazel)
 

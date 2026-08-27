@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Literal
 
 import numpy as np
@@ -197,6 +198,13 @@ class SampleSanitySpec(FrozenModel):
         return frozenset(issuers)
 
 
+class SanityStatus(StrEnum):
+    PASS = "pass"
+    FAIL = "fail"
+    SKIPPED = "skipped"
+    UNMODELED = "unmodeled"
+
+
 @dataclass(frozen=True)
 class SanityBandResult:
     """One evaluated sanity check: a labeled expected band vs the observed value(s)."""
@@ -212,7 +220,7 @@ class SanityBandResult:
     # `unmodeled` = the spec asked for this series/issuer but the deployment's preset can't
     # emit it (e.g. a state-space artifact not trained on `rent:vallejo_ca`). The calibration
     # tab renders these distinctly, so a misconfigured spec surfaces rather than failing silently.
-    status: Literal["pass", "fail", "skipped", "unmodeled"]
+    status: SanityStatus
     detail: str  # "" when pass; failure/skip/unmodeled explanation otherwise
 
 
@@ -313,7 +321,7 @@ def _unmodeled_level_row(level_check: LevelSeriesSanityCheck) -> SanityBandResul
         expected_upper=None,
         observed=(),
         observed_labels=(),
-        status="unmodeled",
+        status=SanityStatus.UNMODELED,
         detail=f"level series {series_id!r} is not produced by the deployment's preset",
     )
 
@@ -329,7 +337,7 @@ def _unmodeled_pe_row(issuer_id: IssuerId, *, kind_label: str) -> SanityBandResu
         expected_upper=None,
         observed=(),
         observed_labels=(),
-        status="unmodeled",
+        status=SanityStatus.UNMODELED,
         detail=f"PE issuer {issuer_id!r} is not produced by the deployment's preset",
     )
 
@@ -621,7 +629,7 @@ def _check_anchor(
         expected_upper=float(initial_value),
         observed=(float(values[:, 0].min()), float(values[:, 0].max())),
         observed_labels=("m0 min", "m0 max"),
-        status="pass" if close else "fail",
+        status=SanityStatus.PASS if close else SanityStatus.FAIL,
         detail=detail,
     )
 
@@ -638,7 +646,7 @@ def _check_codes_allowed(values: np.ndarray, *, allowed: frozenset[int], series_
         expected_upper=None,
         observed=(),
         observed_labels=(),
-        status="pass" if not unexpected else "fail",
+        status=SanityStatus.PASS if not unexpected else SanityStatus.FAIL,
         detail=""
         if not unexpected
         else f"{series_id} produced unexpected code(s): {unexpected}; allowed {sorted(allowed)}",
@@ -773,7 +781,7 @@ def _bound_result(
         expected_upper=upper,
         observed=(value,),
         observed_labels=(observed_label,),
-        status="pass" if not detail else "fail",
+        status=SanityStatus.PASS if not detail else SanityStatus.FAIL,
         detail=detail,
     )
 
@@ -805,7 +813,7 @@ def _range_result(
         expected_upper=upper,
         observed=(lower_value, upper_value),
         observed_labels=observed_labels,
-        status="pass" if not out_of_range else "fail",
+        status=SanityStatus.PASS if not out_of_range else SanityStatus.FAIL,
         detail=detail,
     )
 
@@ -822,7 +830,7 @@ def _skip_percentile_bound(
         expected_upper=bound.upper,
         observed=(),
         observed_labels=(),
-        status="skipped",
+        status=SanityStatus.SKIPPED,
         detail=f"month {month} > sampled horizon {horizon_months}",
     )
 
@@ -839,7 +847,7 @@ def _skip_percentile_range_bound(
         expected_upper=bound.upper,
         observed=(),
         observed_labels=(),
-        status="skipped",
+        status=SanityStatus.SKIPPED,
         detail=f"month {month} > sampled horizon {horizon_months}",
     )
 
@@ -860,7 +868,7 @@ def _skip_threshold_probability_bound(
         expected_upper=bound.probability_upper,
         observed=(),
         observed_labels=(),
-        status="skipped",
+        status=SanityStatus.SKIPPED,
         detail=f"month {bound.month} > sampled horizon {horizon_months}",
     )
 
@@ -879,6 +887,6 @@ def _skip_event_kind_observed(bound: EventKindObservedCheck, *, horizon_months: 
         expected_upper=bound.probability_upper,
         observed=(),
         observed_labels=(),
-        status="skipped",
+        status=SanityStatus.SKIPPED,
         detail=f"month {bound.by_month} > sampled horizon {horizon_months}",
     )

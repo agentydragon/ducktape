@@ -14,9 +14,16 @@ js_library(
 )
 
 ts_library(
+    name = "visual_network_ledger",
+    srcs = ["visual_network_ledger.ts"],
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
     name = "mcp_mock",
     srcs = ["mcp_mock.ts"],
     tsconfig = TSCONFIG,
+    deps = [":visual_network_ledger"],
 )
 
 ts_library(

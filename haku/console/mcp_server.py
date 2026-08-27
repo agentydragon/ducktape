@@ -98,6 +98,7 @@ from haku.console.tool_call_service import (
 from haku.console.tool_calls import (
     MCP_TOOL_CALL_META_KEY,
     MCP_TOOL_META_KEY,
+    ApprovalMode,
     McpProxyToolMetadata,
     McpToolCallMetadata,
     SubmitToolCallRequest,
@@ -386,7 +387,7 @@ def _exposed_metadata(
         )
         return tool.model_copy(
             update={
-                "approval_mode": "passthrough" if passthrough else "approval_required",
+                "approval_mode": ApprovalMode.PASSTHROUGH if passthrough else ApprovalMode.APPROVAL_REQUIRED,
                 "input_schema": schema if include_schemas else None,
                 "output_schema": tool.output_schema if include_schemas else None,
             }
@@ -616,7 +617,7 @@ def _build_proxy_tool(
             MCP_TOOL_META_KEY: McpProxyToolMetadata(
                 server_id=server_id,
                 upstream_tool_name=tool.name,
-                approval_mode="passthrough" if passthrough else "approval_required",
+                approval_mode=ApprovalMode.PASSTHROUGH if passthrough else ApprovalMode.APPROVAL_REQUIRED,
             ).model_dump(mode="json")
         },
     )

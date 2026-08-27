@@ -71,7 +71,7 @@ class FakeRegistry:
     async def list_grader_pods(self) -> list[GraderPodInfo]:
         return list(self.pods.values())
 
-    def add_pod(self, slug: SnapshotSlug, *, image_ref: str, phase: PodPhase = "running") -> GraderPodInfo:
+    def add_pod(self, slug: SnapshotSlug, *, image_ref: str, phase: PodPhase = PodPhase.RUNNING) -> GraderPodInfo:
         """Seed a pre-existing pod (e.g. one a previous backend instance started)."""
         self._counter += 1
         name = f"grader-{slug}-{self._counter}"
@@ -210,7 +210,7 @@ async def test_reconcile_reaps_terminal_pod_and_backs_off():
     """A crashed (Failed) grader is finalized/reaped but NOT immediately respawned —
     the first failure opens a backoff window to avoid a tight crash loop."""
     gs, registry = _make_supervisor([SNAP_A])
-    registry.add_pod(SNAP_A, image_ref=FAKE_IMAGE.oci_ref, phase="failed")
+    registry.add_pod(SNAP_A, image_ref=FAKE_IMAGE.oci_ref, phase=PodPhase.FAILED)
     await gs.reconcile(trigger="periodic")
     assert len(registry.reaped) == 1
     assert registry.spawned == []  # backed off, not respawned
@@ -221,7 +221,7 @@ async def test_reconcile_succeeded_pod_respawns_without_backoff():
     """A grader that exited Succeeded is finalized and a fresh one spawned immediately —
     success is not a crash, so it does not trigger backoff."""
     gs, registry = _make_supervisor([SNAP_A])
-    registry.add_pod(SNAP_A, image_ref=FAKE_IMAGE.oci_ref, phase="succeeded")
+    registry.add_pod(SNAP_A, image_ref=FAKE_IMAGE.oci_ref, phase=PodPhase.SUCCEEDED)
     await gs.reconcile(trigger="periodic")
     assert len(registry.reaped) == 1
     assert registry.spawned == [SNAP_A]
@@ -231,7 +231,7 @@ async def test_reconcile_succeeded_pod_respawns_without_backoff():
 async def test_reconcile_respawns_after_backoff_window_elapses():
     """Once the backoff window passes, a failed snapshot is respawned again."""
     gs, registry = _make_supervisor([SNAP_A], backoff_base_s=0.0)
-    registry.add_pod(SNAP_A, image_ref=FAKE_IMAGE.oci_ref, phase="failed")
+    registry.add_pod(SNAP_A, image_ref=FAKE_IMAGE.oci_ref, phase=PodPhase.FAILED)
     await gs.reconcile(trigger="periodic")  # records failure; window already elapsed (base 0)
     assert registry.spawned == []
     await gs.reconcile(trigger="periodic")  # window elapsed -> respawn
@@ -242,7 +242,7 @@ async def test_reconcile_quarantines_after_max_consecutive_failures():
     """After max consecutive failures the snapshot is quarantined: no further respawn."""
     gs, registry = _make_supervisor([SNAP_A], backoff_base_s=0.0, max_consecutive_failures=3)
     for _ in range(3):
-        registry.add_pod(SNAP_A, image_ref=FAKE_IMAGE.oci_ref, phase="failed")
+        registry.add_pod(SNAP_A, image_ref=FAKE_IMAGE.oci_ref, phase=PodPhase.FAILED)
         await gs.reconcile(trigger="periodic")
     assert gs._failures[SNAP_A].consecutive == 3
     registry.spawned.clear()
@@ -253,10 +253,10 @@ async def test_reconcile_quarantines_after_max_consecutive_failures():
 async def test_succeeded_grader_clears_backoff():
     """A snapshot whose grader later exits Succeeded has its failure count reset."""
     gs, registry = _make_supervisor([SNAP_A], backoff_base_s=0.0)
-    registry.add_pod(SNAP_A, image_ref=FAKE_IMAGE.oci_ref, phase="failed")
+    registry.add_pod(SNAP_A, image_ref=FAKE_IMAGE.oci_ref, phase=PodPhase.FAILED)
     await gs.reconcile(trigger="periodic")
     assert SNAP_A in gs._failures
-    registry.add_pod(SNAP_A, image_ref=FAKE_IMAGE.oci_ref, phase="succeeded")
+    registry.add_pod(SNAP_A, image_ref=FAKE_IMAGE.oci_ref, phase=PodPhase.SUCCEEDED)
     await gs.reconcile(trigger="periodic")
     assert SNAP_A not in gs._failures
 

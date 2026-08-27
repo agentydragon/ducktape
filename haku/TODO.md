@@ -220,7 +220,7 @@ the runtimes differ in where the sandbox runs — see
   <runtime/managed_agent/self_hosted/README.md> and its bring-up RCA.
 - **Anthropic-hosted cloud** — **PARKED (2026-07-04)**: the cloud control-plane
   objects were deleted at Anthropic and `cluster/k8s/haku/cloud-agent-tf` is
-  suspended; see <runtime/managed_agent/anthropic_hosted/PLAN.md> for the reason
+  suspended; see <runtime/managed_agent/anthropic_hosted/README.md> for the reason
   and the resume decision. Per-runtime TODO (mostly moot until resumed):
   <runtime/managed_agent/anthropic_hosted/TODO.md>.
 

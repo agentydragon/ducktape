@@ -487,6 +487,7 @@ py_library(
         "@pypi//mcp",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
+        "@pypi//tenacity",
     ],
 )
 
@@ -1181,6 +1182,7 @@ py_library(
         "//haku/console/x/channels/matrix:ingress_ledger",
         "//haku/console/x/channels/matrix:outbox",
         "//haku/console/x/channels/matrix:revisions",
+        "//haku/console/x/channels/matrix:room_copy",
         "//haku/console/x/channels/matrix:room_subscription",
         "//haku/console/x/channels/matrix:conversation",
         "//haku/console/x/channels/matrix:sync",

@@ -20,13 +20,21 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 from pathlib import Path
-from typing import Literal
 from uuid import UUID
 
 from jinja2 import Environment, StrictUndefined
 
 from haku.console.mcp_guidance import SERVER_INSTRUCTIONS
+
+
+class HistorySender(StrEnum):
+    OPERATOR = "operator"
+    # Provenance only: the message came from the harness/console side of the recorded
+    # conversation. It does NOT mean the message went out under the provider LLM API's
+    # `assistant` role — rendered history rides inside the system prompt.
+    ASSISTANT = "assistant"
 
 
 @dataclass(frozen=True)
@@ -38,7 +46,7 @@ class HistoryMessage:
     template chooses human-readable speaker names.
     """
 
-    sender: Literal["operator", "assistant"]
+    sender: HistorySender
     body: str
     sent_at: datetime
 

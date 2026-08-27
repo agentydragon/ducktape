@@ -13,7 +13,7 @@ from pydantic_ai import models
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from skills.info_gathering.evals.twenty_questions.result_types import Correct, Timeout
+from skills.info_gathering.evals.twenty_questions.result_types import Correct, Player, Timeout
 from skills.info_gathering.evals.twenty_questions.x.pydantic_ai.twenty_questions import (
     guesser_agent,
     run_game_loop,
@@ -142,8 +142,8 @@ async def test_log_entries_contain_tool_calls():
         )
 
     assert isinstance(result, Correct)
-    guesser_entries = [e for e in log_entries if e.player == "guesser"]
-    sim_entries = [e for e in log_entries if e.player == "simulator"]
+    guesser_entries = [e for e in log_entries if e.player == Player.GUESSER]
+    sim_entries = [e for e in log_entries if e.player == Player.SIMULATOR]
     assert len(guesser_entries) >= 1
     assert len(sim_entries) >= 1
     assert sim_entries[0].tool_calls[0]["name"] == "correct_answer"

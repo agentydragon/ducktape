@@ -10,10 +10,10 @@
  * calls `process.exit()`.
  */
 
-// `document` and `requestAnimationFrame` are the browser page's, referenced inside
+// `document`, `window`, and `requestAnimationFrame` are the browser page's, referenced inside
 // page.evaluate callbacks (which run in the headless page, not Node) — declare them so this
 // Node script lints under the .mjs node-globals block.
-/* global document, requestAnimationFrame */
+/* global document, window, requestAnimationFrame */
 
 import { frozenClockScript, FROZEN_NOW_MS } from "./launcher.mjs";
 
@@ -61,6 +61,72 @@ export async function prepareDeterministicPage(page, { viewport, colorScheme, no
     { name: "prefers-reduced-motion", value: "reduce" },
     { name: "prefers-color-scheme", value: colorScheme },
   ]);
+}
+
+/**
+ * Wait until the harness's stubbed network is quiet, then fail on anything it recorded.
+ *
+ * The in-page half is `window.__visualNetworkLedger__`
+ * (haku/console/frontend/tool_rendering/screenshot/visual_network_ledger.ts), maintained by the
+ * harness's fetch stub: `pending` holds each stubbed fetch's URL while it is in flight, and
+ * `violations` records what must fail the run — an unmatched route, a rejected fetch, an
+ * unhandled promise rejection. Quiet means `pending` stayed empty across a painted frame, so a
+ * response whose re-render immediately starts another fetch is drained rather than captured
+ * between the two. A timeout names what was still in flight instead of reporting a bare timeout.
+ *
+ * A page with no ledger passes: a harness that stubs no fetch has nothing to settle, and
+ * `abortUnexpectedRequests` is the fence that keeps such a page's network empty.
+ */
+export async function assertNetworkSettled(page, { context, timeoutMs = 10_000 } = {}) {
+  const prefix = context ? `${context}: ` : "";
+  if (!(await page.evaluate(() => Boolean(window.__visualNetworkLedger__)))) return;
+  try {
+    await page.waitForFunction(
+      async () => {
+        const ledger = window.__visualNetworkLedger__;
+        if (ledger.pending.length > 0) return false;
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        return ledger.pending.length === 0;
+      },
+      { timeout: timeoutMs }
+    );
+  } catch (error) {
+    const pending = await page.evaluate(() => window.__visualNetworkLedger__.pending);
+    if (pending.length > 0) {
+      throw new Error(`${prefix}requests still in flight after ${timeoutMs}ms: ${pending.join(", ")}`);
+    }
+    throw error;
+  }
+  const violations = await page.evaluate(() => window.__visualNetworkLedger__.violations);
+  if (violations.length > 0) {
+    throw new Error(`${prefix}network violations:\n  ${violations.join("\n  ")}`);
+  }
+}
+
+/**
+ * Fence off the real network: abort and record every request `allow` does not accept.
+ *
+ * For a page whose content is entirely local (inlined HTML, `file://` assets, stubbed fetch),
+ * any escaping request is a hole in its hermeticity. In the test sandbox such a request can only
+ * fail, and its failure racing the capture is exactly how a transient error state gets published
+ * as a plausible-looking baseline — so the fence aborts it immediately and the caller fails the
+ * scene by asserting the returned array is empty before capturing.
+ *
+ * Installs request interception; `allow` receives the Puppeteer request object.
+ */
+export async function abortUnexpectedRequests(page, allow) {
+  await page.setRequestInterception(true);
+  const violations = [];
+  page.on("request", (request) => {
+    // data:/about: resolve inside the page — not network, so never a hermeticity hole.
+    if (/^(?:data|about):/.test(request.url()) || allow(request)) {
+      void request.continue();
+      return;
+    }
+    violations.push(`${request.resourceType()} ${request.url()}`);
+    void request.abort();
+  });
+  return violations;
 }
 
 /**

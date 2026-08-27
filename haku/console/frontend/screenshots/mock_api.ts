@@ -15,6 +15,7 @@ import {
 } from "./sample_data";
 import type { Conversation, ConversationItem, ConversationPage, SessionFramePage } from "../client";
 import { mockOperatorMcpFetch } from "../tool_rendering/screenshot/mcp_mock";
+import { ensureLedger, recordViolation, tracked } from "../tool_rendering/screenshot/visual_network_ledger";
 import { GOOGLE_CALENDAR_MCP_FIXTURES } from "../tool_rendering/google_calendar/fixtures";
 import { GROCY_MCP_FIXTURES } from "../tool_rendering/grocy/fixtures";
 
@@ -28,7 +29,6 @@ function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
 }
 
-const realFetch = globalThis.fetch;
 const scene = (window as unknown as { __SCENE__?: string }).__SCENE__;
 
 /** The session waking itself — a prompt nobody typed, whose text says what woke it. */
@@ -571,8 +571,7 @@ const mcpServers =
       )
     : SAMPLE_MCP_SERVERS;
 
-globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-  const url = requestUrl(input);
+async function respond(input: RequestInfo | URL, init: RequestInit | undefined, url: string): Promise<Response | null> {
   if (url.includes("/api/kubernetes-grants")) return jsonResponse(SAMPLE_KUBERNETES_GRANTS);
   if (url.includes("/api/agent-enrollment/agents/") && init?.method === "PUT") {
     const body = JSON.parse(String(init.body)) as { access_profile_id: string };
@@ -634,6 +633,22 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
       access_profiles: ["manual_review", "haku_v1"],
       default_access_profile_id: "manual_review",
       form_token: "form-token-for-screenshot",
+    });
+  }
+  // What the conversations pages launch a Web chat with; the harness's own iframe origin.
+  if (url.includes("/api/config")) {
+    return jsonResponse({
+      launch_routine_url: null,
+      haku_ui_url: "https://haku-ui.test",
+      chat_launch_options: [
+        {
+          agent_id: "40000000-0000-4000-8000-000000000004",
+          agent_display_name: "Haku",
+          runtime: "claude_code",
+          runtime_display_name: "Claude Code",
+          is_default: true,
+        },
+      ],
     });
   }
   if (url.includes("/api/deployment")) return jsonResponse(SAMPLE_DEPLOYMENT);
@@ -713,8 +728,22 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
       next_cursor: toolCalls.length === limit ? toolCalls[toolCalls.length - 1].tool_call_id : null,
     });
   }
-  if (realFetch) return realFetch(input, init);
-  return jsonResponse({});
+  return null;
+}
+
+ensureLedger();
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const url = requestUrl(input);
+  return tracked(url, async () => {
+    const response = await respond(input, init, url);
+    if (response !== null) return response;
+    // A route no mock matches must fail the run, loudly and by name — falling through to the real
+    // fetch could only reject in the hermetic sandbox, and answering silently would let a new
+    // surface's unmocked request render an empty state nobody chose. The empty answer below keeps
+    // the page deterministic for the scene's other assertions while the ledger fails the test.
+    recordViolation(`unmatched route: ${url}`);
+    return jsonResponse({});
+  });
 }) as typeof fetch;
 
 // The conversation detail page follows a socket rather than fetching, so the canned answer above

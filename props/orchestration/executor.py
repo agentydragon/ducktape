@@ -8,11 +8,21 @@ and Kubernetes (K8sExecutor).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal, Protocol
+from enum import StrEnum
+from typing import Protocol
 
-# Runtime-agnostic pod lifecycle phase. Maps k8s pod phases directly; the Docker
-# executor maps container states onto the same set.
-PodPhase = Literal["pending", "running", "succeeded", "failed", "unknown"]
+
+# TODO: "Pod" is k8s vocabulary — a runtime-agnostic phase deserves a runtime-agnostic
+# name (e.g. ExecutionPhase); PodInfo likewise.
+class PodPhase(StrEnum):
+    """Runtime-agnostic pod lifecycle phase. Maps k8s pod phases directly; the Docker
+    executor maps container states onto the same set."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    UNKNOWN = "unknown"
 
 
 @dataclass(frozen=True)

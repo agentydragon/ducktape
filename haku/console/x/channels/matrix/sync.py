@@ -16,6 +16,10 @@ An accepted batch is the one thing that commits *before* the watermark, so a cra
 re-delivers it. That is what `ingress_ledger` is for: the loop asks the record which events a
 prompt already carries rather than trusting its own position.
 
+The same `/sync` also carries Haku's own events back. Ingress drops them; the mirror reader keeps
+them (`room_copy`) — recorded ahead of the watermark, never treated as input — and a second live
+copy of one projected notice is redacted here, where the credential is.
+
 It is also the only holder of a Matrix credential. Channel-owned notices go out through `announce`
 rather than a second login; runtime lifecycle is projected from durable conversation events. An
 answer — a row until it has been said — is drained into the room from here (`outbox`).
@@ -28,7 +32,7 @@ import asyncio
 import contextlib
 import datetime
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from uuid import UUID
 
@@ -47,6 +51,8 @@ from haku.console.x.channels.matrix.client import (
     Invite,
     MatrixAuthError,
     MatrixClient,
+    ProjectedEvent,
+    Redaction,
     RoomEventKind,
     UnmappableEvent,
 )
@@ -61,6 +67,7 @@ from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.channels.matrix.outbox import PendingReply, RoomOutbox, RoomOutboxDrain
 from haku.console.x.channels.matrix.pacer import RoomPacer
 from haku.console.x.channels.matrix.revisions import RevisionLog
+from haku.console.x.channels.matrix.room_copy import RoomCopy
 from haku.console.x.conversation_log import writer_for
 
 logger = logging.getLogger(__name__)
@@ -163,6 +170,7 @@ class MatrixSyncService:
         outbox: RoomOutbox,
         revisions: RevisionLog,
         ledger: IngressLedger,
+        room_copy: RoomCopy,
     ):
         # Taken separately from `config`, which carries it as optional: the service is only ever
         # constructed once the password is known to be there.
@@ -175,6 +183,7 @@ class MatrixSyncService:
         self._turns = turns
         self._revisions = revisions
         self._ledger = ledger
+        self._room_copy = room_copy
         self._client = MatrixClient(config.homeserver, config.user_id, config.device_id)
         # Public because its lifecycle is the owner's to drive: everything the console says into
         # the room goes through here, so it outlives no individual send.
@@ -376,7 +385,7 @@ class MatrixSyncService:
 
         self.pacer.send(post)
 
-    def _serviced[T: (InboundMessage, UnmappableEvent)](self, events: tuple[T, ...], live_room: str | None) -> list[T]:
+    def _serviced[T: (InboundMessage, UnmappableEvent)](self, events: Sequence[T], live_room: str | None) -> list[T]:
         """The events of a batch that are ours to act on — read or report.
 
         Haku's own posts are already gone: `MatrixClient._read` drops everything the bot sent.
@@ -407,12 +416,17 @@ class MatrixSyncService:
         **A re-delivered message is dropped from the batch rather than offered again**, and what
         makes that safe is that the ledger only knows an event because a prompt in the record
         carries it.
+
+        **The room's own copy is recorded before the watermark moves.** Recording is idempotent,
+        so a crash in between re-records rather than forgets — which is what lets the reconciler
+        treat "the watermark is past an echo" as "its correspondence is durable".
         """
         result = await self._client.sync(token, await self._store.watermark(self._config.user_id))
         for invite in result.invites:
             await self._handle_invite(token, invite)
         # Read after the invites, so a room bound by this very batch serves it too.
         live_room = await self._live_room(token, result.messages)
+        await self._record_own_copy(result.projected, result.redactions, live_room)
         messages = await self._undelivered(self._serviced(result.messages, live_room))
         unreadable = self._serviced(result.unmappable, live_room)
         recorded = await self._turns.unreadable(unreadable) if unreadable else None
@@ -425,6 +439,44 @@ class MatrixSyncService:
                 case PromptRejected():
                     logger.warning("Matrix: %d message(s) refused with no room to record it", len(messages))
         await self._store.advance(self._config.user_id, result.next_batch, recorded)
+
+    async def _record_own_copy(
+        self, projected: Sequence[ProjectedEvent], redactions: Sequence[Redaction], live_room: str | None
+    ) -> None:
+        """Keep what this batch showed of the room's own copy, and repair what it revealed.
+
+        Filtered to the serviced room quietly — an own echo elsewhere is not an anomaly the way a
+        stranger's message is, just not this console's copy. A duplicate the store reveals is the
+        one failure the transaction id cannot close (a replay after Synapse's cache expired, before
+        the first send's echo was recorded), and the room is owed a redaction for it.
+        """
+        showed = [event for event in projected if event.room_id == live_room]
+        unsaid = [redaction for redaction in redactions if redaction.room_id == live_room]
+        if not showed and not unsaid:
+            return
+        assert live_room is not None  # a room-scoped event's room equalled it
+        for duplicate in await self._room_copy.record(showed, unsaid):
+            await self._redact_duplicate(live_room, duplicate)
+
+    async def _redact_duplicate(self, room_id: str, event_id: str) -> None:
+        """Take back a second copy of a projected notice, best effort but never silent.
+
+        Waited on so a success is real before the pass moves on; a failure is logged and released,
+        because holding the watermark for it would wedge ingress on one cosmetic repair — the store
+        keeps both live rows as the evidence, and the room keeps the duplicate until someone or the
+        next observation of the pair redacts it.
+        """
+        logger.error("Matrix: %s shows a second copy of a projected notice; redacting %s", room_id, event_id)
+
+        async def post() -> None:
+            await self._client.redact(
+                await self._token(), room_id, event_id, reason="duplicate projection of one conversation event"
+            )
+
+        try:
+            await self.pacer.send_and_wait(post)
+        except Exception:
+            logger.exception("Matrix: could not redact duplicate %s; the room keeps both copies", event_id)
 
     async def _undelivered(self, messages: list[InboundMessage]) -> list[InboundMessage]:
         """The messages of a batch no prompt in the record carries yet.
@@ -441,7 +493,7 @@ class MatrixSyncService:
             logger.info("Matrix: %d re-delivered event(s) the record already carries", len(carried))
         return [message for message in messages if message.event_id not in carried]
 
-    async def _live_room(self, token: str, messages: tuple[InboundMessage, ...]) -> str | None:
+    async def _live_room(self, token: str, messages: Sequence[InboundMessage]) -> str | None:
         """The room being serviced, adopting one from traffic when nothing is bound.
 
         Membership already required an operator invite, so a room Haku is joined to and being

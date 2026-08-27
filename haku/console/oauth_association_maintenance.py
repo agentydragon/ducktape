@@ -8,7 +8,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
-from typing import Literal, cast
+from enum import StrEnum
 from uuid import UUID
 
 from sqlalchemy import Text, cast as sql_cast, literal, or_, select, text, union_all
@@ -34,9 +34,15 @@ DEFAULT_REFRESH_INTERVAL = datetime.timedelta(seconds=30)
 _REFRESH_ADVISORY_LOCK = 0x48414B554F415554
 
 
+class OAuthAssociationKind(StrEnum):
+    REMOTE_MCP = "remote_mcp"
+    PROVIDER = "provider"
+    OPERATOR_LOGIN = "operator_login"
+
+
 @dataclass(frozen=True, slots=True)
 class _RefreshTarget:
-    kind: Literal["remote_mcp", "provider", "operator_login"]
+    kind: OAuthAssociationKind
     name: str | None
     operator_id: UUID
 
@@ -83,7 +89,7 @@ class OAuthAssociationMaintenance:
         )
         candidates = [
             select(
-                literal("remote_mcp").label("kind"),
+                literal(OAuthAssociationKind.REMOTE_MCP).label("kind"),
                 McpOperatorOAuthAssociation.server_id.label("name"),
                 OAuthTokenState.operator_id,
             )
@@ -91,7 +97,7 @@ class OAuthAssociationMaintenance:
             .join(Operator, OAuthTokenState.operator_id == Operator.operator_id)
             .where(*refreshable),
             select(
-                literal("provider").label("kind"),
+                literal(OAuthAssociationKind.PROVIDER).label("kind"),
                 ProviderConnection.connection_name.label("name"),
                 OAuthTokenState.operator_id,
             )
@@ -102,7 +108,7 @@ class OAuthAssociationMaintenance:
         if self._refresh_authentik_tokens:
             candidates.append(
                 select(
-                    literal("operator_login").label("kind"),
+                    literal(OAuthAssociationKind.OPERATOR_LOGIN).label("kind"),
                     sql_cast(literal(None), Text).label("name"),
                     OAuthTokenState.operator_id,
                 )
@@ -113,18 +119,14 @@ class OAuthAssociationMaintenance:
         async with self._sessions.begin() as session:
             rows = (await session.execute(union_all(*candidates))).tuples()
             return [
-                _RefreshTarget(
-                    kind=cast(Literal["remote_mcp", "provider", "operator_login"], kind),
-                    name=name,
-                    operator_id=operator_id,
-                )
+                _RefreshTarget(kind=OAuthAssociationKind(kind), name=name, operator_id=operator_id)
                 for kind, name, operator_id in rows
             ]
 
     async def _refresh(self, target: _RefreshTarget) -> None:
         try:
             match target.kind:
-                case "remote_mcp":
+                case OAuthAssociationKind.REMOTE_MCP:
                     assert target.name is not None
                     if (server := self._servers.get(target.name)) is None:
                         logger.warning(
@@ -134,10 +136,10 @@ class OAuthAssociationMaintenance:
                         )
                         return
                     await self._oauth_store.access_token_for(server=server, operator_id=target.operator_id)
-                case "provider":
+                case OAuthAssociationKind.PROVIDER:
                     assert target.name is not None
                     await self._provider_store.access_token_for(connection=target.name, operator_id=target.operator_id)
-                case "operator_login":
+                case OAuthAssociationKind.OPERATOR_LOGIN:
                     await self._authentik_store.access_token_for(operator_id=target.operator_id)
         except Exception:
             logger.exception(

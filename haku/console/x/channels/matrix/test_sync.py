@@ -26,6 +26,8 @@ from haku.console.x.channels.matrix.client import (
     InboundMessage,
     Invite,
     MatrixAuthError,
+    MatrixError,
+    ProjectedEvent,
     RoomEventKind,
     SyncResult,
     UnmappableEvent,
@@ -42,6 +44,7 @@ from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.channels.matrix.outbox import PendingReply
 from haku.console.x.channels.matrix.pacer import RoomPacer
 from haku.console.x.channels.matrix.revisions import RevisionLog
+from haku.console.x.channels.matrix.room_copy import RoomCopy
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
 from haku.console.x.session_events import PromptRejectedBody, UnreadableInputBody
 from haku.console.x.session_store import BridgeAuthentication, SessionStore
@@ -169,6 +172,7 @@ def _replica(sync_store, conversations, identities, turns, matrix, migrated_sess
         outbox=cast(Any, None),
         revisions=RevisionLog(migrated_sessions),
         ledger=ledger,
+        room_copy=RoomCopy(migrated_sessions),
     )
     service._client = cast(Any, matrix)
     service.pacer = RoomPacer(sends_per_second=1e6, burst=1_000)
@@ -754,9 +758,9 @@ async def test_clearing_a_turn_that_never_showed_anything_does_nothing(service, 
 
 
 async def test_a_reply_says_what_it_is(service, matrix, sync_store, bound_room) -> None:
-    """The tag is write-only and for a person reading the room's event source, so what it carries is
-    the kind and nothing that would publish the same thing twice. Which item an event shows is the
-    outbox row's `subject`, which is the transaction it went out under."""
+    """A reply's tag carries the kind and nothing that would publish the same thing twice — and no
+    source, so the correspondence reader leaves it alone. Which item an event shows is the outbox
+    row's `subject`, which is the transaction it went out under."""
     await service.post_reply(_queued("the answer"))
 
     [tag] = matrix.tags
@@ -798,6 +802,94 @@ async def test_a_status_line_names_the_conversation_and_not_a_session(
 
     [tag] = [tag for tag in matrix.tags if tag.kind is RoomEventKind.STATUS]
     assert tag.conversation_id == binding.conversation_id
+
+
+def _projected(
+    event_id: str, attachment_id: UUID, conversation_id: UUID, seq: int, ts: int, room_id: str = MATRIX_ROOM
+) -> ProjectedEvent:
+    return ProjectedEvent(
+        room_id=room_id,
+        event_id=event_id,
+        source=ConversationEventSource(attachment_id=attachment_id, conversation_id=conversation_id, event_seq=seq),
+        origin_server_ts=ts,
+        replaces_event_id=None,
+    )
+
+
+@pytest.fixture
+async def attached(conversations: MatrixConversationStore, bound_room: str) -> tuple[UUID, UUID]:
+    """The bound room's conversation and attachment, which its own events' tags name."""
+    found = await conversations.attachment_of_room(bound_room)
+    assert found is not None
+    return found
+
+
+async def test_an_own_echo_is_recorded_and_is_not_input(
+    service, matrix, turns, sync_store, migrated_sessions, attached
+) -> None:
+    """The pass records what the room showed of Haku's own sends, and never offers it as input."""
+    conversation_id, attachment_id = attached
+    matrix.result = SyncResult("s2", (), (), projected=(_projected("$own", attachment_id, conversation_id, 7, ts=1),))
+
+    await service.sync_once("tok")
+
+    assert await RoomCopy(migrated_sessions).shows(attachment_id, 7)
+    assert (await watermark(sync_store), turns.offered) == ("s2", [])
+
+
+async def test_a_second_live_copy_of_one_source_is_redacted(service, matrix, migrated_sessions, attached) -> None:
+    """Duplicate repair: a replay past Synapse's transaction cache posts a second event, and the
+    next observation of the pair takes the later copy back — the earlier one is the room's copy."""
+    conversation_id, attachment_id = attached
+    matrix.result = SyncResult("s2", (), (), projected=(_projected("$first", attachment_id, conversation_id, 7, ts=1),))
+    await service.sync_once("tok")
+
+    matrix.result = SyncResult("s3", (), (), projected=(_projected("$again", attachment_id, conversation_id, 7, ts=2),))
+    await service.sync_once("tok")
+
+    assert matrix.redacted == ["$again"]
+
+
+async def test_a_failed_duplicate_redaction_does_not_block_the_pass(
+    service, matrix, sync_store, attached, caplog
+) -> None:
+    """Repair is best effort: a redaction the homeserver refuses is logged loudly, the pass still
+    acknowledges its batch, and the store keeps both live rows as the evidence."""
+    conversation_id, attachment_id = attached
+
+    async def refuse(token: str, room_id: str, event_id: str, reason: str) -> None:
+        raise MatrixError("M_FORBIDDEN")
+
+    matrix.redact = refuse
+    matrix.result = SyncResult(
+        "s2",
+        (),
+        (),
+        projected=(
+            _projected("$first", attachment_id, conversation_id, 7, ts=1),
+            _projected("$again", attachment_id, conversation_id, 7, ts=2),
+        ),
+    )
+
+    with caplog.at_level("ERROR"):
+        await service.sync_once("tok")
+
+    assert await watermark(sync_store) == "s2"
+    assert "could not redact duplicate" in caplog.text
+
+
+async def test_an_own_echo_from_an_unserviced_room_reaches_no_row(service, matrix, migrated_sessions, attached) -> None:
+    conversation_id, attachment_id = attached
+    matrix.result = SyncResult(
+        "s2",
+        (),
+        (),
+        projected=(_projected("$stray", attachment_id, conversation_id, 7, ts=1, room_id="!stray:allegedly.works"),),
+    )
+
+    await service.sync_once("tok")
+
+    assert not await RoomCopy(migrated_sessions).shows(attachment_id, 7)
 
 
 async def test_each_kind_of_notice_says_which_it_is(service, matrix, bound_room) -> None:

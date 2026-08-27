@@ -44,7 +44,14 @@ from skills.info_gathering.evals.twenty_questions.prompts import (
     first_user_message,
     load_sim_prompt,
 )
-from skills.info_gathering.evals.twenty_questions.result_types import Correct, LogEntry, Result, RunSummary, Timeout
+from skills.info_gathering.evals.twenty_questions.result_types import (
+    Correct,
+    LogEntry,
+    Player,
+    Result,
+    RunSummary,
+    Timeout,
+)
 from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
     add_common_args,
     output_dir_from_args,
@@ -95,7 +102,7 @@ def build_graph(
         question_text = state["last_question"] or ""
         turn = state["turn"]
         log_entries = list(state["log_entries"])
-        log_entries.append(LogEntry(timestamp=datetime.now(UTC), player="guesser", content=question_text))
+        log_entries.append(LogEntry(timestamp=datetime.now(UTC), player=Player.GUESSER, content=question_text))
 
         question_msg = HumanMessage(content=question_text)
         sim_messages = [*state["simulator_messages"], question_msg]
@@ -115,7 +122,7 @@ def build_graph(
                 log_entries.append(
                     LogEntry(
                         timestamp=datetime.now(UTC),
-                        player="simulator",
+                        player=Player.SIMULATOR,
                         content="correct",
                         tool_calls=[{"name": "correct_answer", "args": {}}],
                     )
@@ -125,7 +132,7 @@ def build_graph(
                 log_entries.append(
                     LogEntry(
                         timestamp=datetime.now(UTC),
-                        player="simulator",
+                        player=Player.SIMULATOR,
                         content=resp,
                         tool_calls=[{"name": "answer", "args": {"response": resp}}],
                     )
@@ -145,7 +152,7 @@ def build_graph(
                 log_entries.append(
                     LogEntry(
                         timestamp=datetime.now(UTC),
-                        player="simulator",
+                        player=Player.SIMULATOR,
                         content=reason,
                         tool_calls=[{"name": "invalid_input", "args": {"reason": reason}}],
                     )
@@ -309,7 +316,7 @@ async def _invoke_simulator(game: GameContext, player_text: str) -> tuple[str, s
 
 async def _ask_yes_no_question(game: GameContext, question: str) -> str:
     """Handle the guesser's ask_yes_no_question tool call."""
-    guesser_entry = LogEntry(timestamp=datetime.now(UTC), player="guesser", content=question)
+    guesser_entry = LogEntry(timestamp=datetime.now(UTC), player=Player.GUESSER, content=question)
     game.log_entries.append(guesser_entry)
 
     tool_name, result_text = await _invoke_simulator(game, question)
@@ -318,7 +325,7 @@ async def _ask_yes_no_question(game: GameContext, question: str) -> str:
         game.invalid_input_count += 1
         sim_entry = LogEntry(
             timestamp=datetime.now(UTC),
-            player="simulator",
+            player=Player.SIMULATOR,
             content=result_text,
             tool_calls=[{"name": "invalid_input", "args": {"reason": result_text}}],
         )
@@ -329,7 +336,7 @@ async def _ask_yes_no_question(game: GameContext, question: str) -> str:
         game.result = Correct(turns=game.turn)
         sim_entry = LogEntry(
             timestamp=datetime.now(UTC),
-            player="simulator",
+            player=Player.SIMULATOR,
             content="correct",
             tool_calls=[{"name": "correct_answer", "args": {}}],
         )
@@ -339,7 +346,7 @@ async def _ask_yes_no_question(game: GameContext, question: str) -> str:
     # Normal answer — consume a turn.
     sim_entry = LogEntry(
         timestamp=datetime.now(UTC),
-        player="simulator",
+        player=Player.SIMULATOR,
         content=result_text,
         tool_calls=[{"name": "answer", "args": {"response": result_text}}],
     )
@@ -354,7 +361,7 @@ async def _ask_yes_no_question(game: GameContext, question: str) -> str:
 
 async def _guess_answer(game: GameContext, answer: str) -> str:
     """Handle the guesser's guess_answer tool call."""
-    guesser_entry = LogEntry(timestamp=datetime.now(UTC), player="guesser", content=f"Guess: {answer}")
+    guesser_entry = LogEntry(timestamp=datetime.now(UTC), player=Player.GUESSER, content=f"Guess: {answer}")
     game.log_entries.append(guesser_entry)
 
     tool_name, result_text = await _invoke_simulator(game, f"My guess is: {answer}")
@@ -363,7 +370,7 @@ async def _guess_answer(game: GameContext, answer: str) -> str:
         game.result = Correct(turns=game.turn)
         sim_entry = LogEntry(
             timestamp=datetime.now(UTC),
-            player="simulator",
+            player=Player.SIMULATOR,
             content="correct",
             tool_calls=[{"name": "correct_answer", "args": {}}],
         )
@@ -374,7 +381,7 @@ async def _guess_answer(game: GameContext, answer: str) -> str:
         game.invalid_input_count += 1
         sim_entry = LogEntry(
             timestamp=datetime.now(UTC),
-            player="simulator",
+            player=Player.SIMULATOR,
             content=result_text,
             tool_calls=[{"name": "invalid_input", "args": {"reason": result_text}}],
         )
@@ -384,7 +391,7 @@ async def _guess_answer(game: GameContext, answer: str) -> str:
     # Wrong guess — consume a turn.
     sim_entry = LogEntry(
         timestamp=datetime.now(UTC),
-        player="simulator",
+        player=Player.SIMULATOR,
         content=result_text,
         tool_calls=[{"name": "answer", "args": {"response": result_text}}],
     )

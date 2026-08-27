@@ -125,8 +125,8 @@ class FrameDirection(StrEnum):
     """Which way a recorded rollout frame crossed the wire.
 
     Named for the agent rather than for the console and the runner, because which process sits
-    at each end is exactly what session re-adoption is expected to change
-    (haku/plans/cli_protocol_ownership.md) and a stored record should survive that.
+    at each end is exactly what session re-adoption changes
+    (haku/runtime/x/bridge/docs/design.md) and a stored record should survive that.
     """
 
     TO_AGENT = "to_agent"

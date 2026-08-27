@@ -17,8 +17,8 @@ so there is no crypto store and no `python-olm`.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
-from dataclasses import dataclass
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4, uuid5
@@ -38,7 +38,7 @@ from nio.responses import (
     SyncResponse,
     WhoamiResponse,
 )
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from haku.console.x.channels.matrix.formatted_body import to_formatted_body
 
@@ -117,8 +117,10 @@ class ConversationEventSource(BaseModel):
 class EventTag(BaseModel):
     """What the console states about an event it is sending.
 
-    **Write-only.** Nothing reads a tag back off an event — ingress excludes Haku's own sender, and
-    re-awakening reads the console's transcript — so the reader it is for is in the room.
+    **Read back by the correspondence reader.** Ingress excludes Haku's own sender before anything
+    is classified; `_own_copy` is the mirror — only our sender, parse the tag, never a prompt — and
+    `room_copy` durably keeps the `source` it reads, which is how a restarted reconciler finds the
+    event already showing a conversation fact instead of posting it again.
 
     **Ids and kinds only.** The room is public and federated, so a tag carrying text would publish
     the same thing twice, in a field nobody renders.
@@ -143,9 +145,10 @@ class EventTag(BaseModel):
 
         A notice projected from a durable conversation row carries its attachment and source fields and gets a
         deterministic transaction id. Re-reading that row before its cursor advances therefore
-        asks Synapse for the same send instead of posting a second event. This is bounded by the
-        homeserver's transaction-cache lifetime; it is replay protection, not durable exactly-once
-        correspondence.
+        asks Synapse for the same send instead of posting a second event. The homeserver's
+        transaction cache bounds this to 30-to-60 minutes, which is only the window between a
+        successful send and its `/sync` echo reaching `room_copy` — past the echo, the reconciler
+        finds the durable correspondence and does not send at all.
 
         Everything else tagged this way — a status edit, room binding, or supervisor notice — has
         no durable source to name and deliberately mints a fresh id. A reply uses its outbox row's
@@ -221,11 +224,42 @@ class Invite:
 
 
 @dataclass(frozen=True)
+class ProjectedEvent:
+    """One event of Haku's own whose tag names the conversation event it projects.
+
+    What the correspondence reader records (`room_copy`): the room's copy of a sealed notice, read
+    back off the same `/sync` ingress uses, under the opposite sender filter.
+    """
+
+    room_id: str
+    event_id: str
+    source: ConversationEventSource
+    origin_server_ts: int
+    # The event this one revises (`m.replace`), absent on an original post. An edit changes what an
+    # event the room already shows says; it is never a second copy of the source.
+    replaces_event_id: str | None
+
+
+@dataclass(frozen=True)
+class Redaction:
+    """An event the room stopped showing (`m.room.redaction`), whoever unsaid it.
+
+    Not filtered to Haku's sender: the operator can redact Haku's copy too, and whether the target
+    was ours is the store's to know.
+    """
+
+    room_id: str
+    redacts_event_id: str
+
+
+@dataclass(frozen=True)
 class SyncResult:
     next_batch: str
     messages: tuple[InboundMessage, ...]
     invites: tuple[Invite, ...]
     unmappable: tuple[UnmappableEvent, ...] = ()
+    projected: tuple[ProjectedEvent, ...] = ()
+    redactions: tuple[Redaction, ...] = ()
 
 
 def _msgtype(event: Event | BadEvent) -> str | None:
@@ -242,6 +276,41 @@ def _msgtype(event: Event | BadEvent) -> str | None:
     match event.source:
         case {"type": "m.room.message", "content": {"msgtype": str(msgtype)}}:
             return msgtype
+        case _:
+            return None
+
+
+@dataclass
+class _Timeline:
+    """One sync's timeline events, split by reader.
+
+    `_read` and `_own_copy` are the two readers of one `/sync` with opposite sender filters; this
+    is where their outputs travel together without either seeing the other's.
+    """
+
+    messages: list[InboundMessage] = field(default_factory=list)
+    unmappable: list[UnmappableEvent] = field(default_factory=list)
+    projected: list[ProjectedEvent] = field(default_factory=list)
+    redactions: list[Redaction] = field(default_factory=list)
+
+    def extend(self, other: _Timeline) -> None:
+        self.messages.extend(other.messages)
+        self.unmappable.extend(other.unmappable)
+        self.projected.extend(other.projected)
+        self.redactions.extend(other.redactions)
+
+    def reverse(self) -> None:
+        self.messages.reverse()
+        self.unmappable.reverse()
+        self.projected.reverse()
+        self.redactions.reverse()
+
+
+def _replaces(content: dict[str, Any]) -> str | None:
+    """The event an `m.replace` edit revises, or None for an original post."""
+    match content.get("m.relates_to"):
+        case {"rel_type": "m.replace", "event_id": str(event_id)}:
+            return event_id
         case _:
             return None
 
@@ -299,9 +368,14 @@ class MatrixClient:
             ),
             SyncResponse,
         )
-        messages, unmappable = await self._timelines(response, since)
+        timeline = await self._timelines(response, since)
         return SyncResult(
-            next_batch=response.next_batch, messages=messages, invites=self._invites(response), unmappable=unmappable
+            next_batch=response.next_batch,
+            messages=tuple(timeline.messages),
+            invites=self._invites(response),
+            unmappable=tuple(timeline.unmappable),
+            projected=tuple(timeline.projected),
+            redactions=tuple(timeline.redactions),
         )
 
     async def join(self, token: str, room_id: str) -> None:
@@ -433,30 +507,78 @@ class MatrixClient:
                 )
         return messages, unmappable
 
-    async def _timelines(
-        self, response: SyncResponse, since: str | None
-    ) -> tuple[tuple[InboundMessage, ...], tuple[UnmappableEvent, ...]]:
-        messages: list[InboundMessage] = []
-        unmappable: list[UnmappableEvent] = []
+    def _own_copy(
+        self, room_id: str, events: Sequence[Event | BadEventType]
+    ) -> tuple[list[ProjectedEvent], list[Redaction]]:
+        """The mirror of `_read`: what the room shows of the console's own projected sends.
+
+        Only our sender, parse the tag, never a prompt — the opposite filter on the same `/sync`,
+        so nothing read here can become input (`_read` keeps dropping our events before ingress
+        classifies anything). Redactions are the exception to the sender rule: whoever unsaid an
+        event, what matters is that the room stopped showing it.
+
+        A tag without a `source` — a reply, the status line, a room notice — names no durable
+        conversation event, so there is no correspondence to read off it.
+        """
+        projected: list[ProjectedEvent] = []
+        redactions: list[Redaction] = []
+        for event in events:
+            if isinstance(event, UnknownBadEvent):
+                continue
+            content = event.source.get("content")
+            if event.source.get("type") == "m.room.redaction":
+                # `redacts` is top-level, and additionally inside `content` from room v11 on;
+                # either spelling names the target.
+                target = event.source.get("redacts") or (content.get("redacts") if isinstance(content, dict) else None)
+                if isinstance(target, str):
+                    redactions.append(Redaction(room_id=room_id, redacts_event_id=target))
+                continue
+            if event.sender != self._user_id or event.source.get("type") != "m.room.message":
+                continue
+            if not isinstance(content, dict) or not isinstance(tag := content.get(HAKU_CONTENT_KEY), dict):
+                continue
+            if not isinstance(raw_source := tag.get("source"), dict):
+                continue
+            try:
+                source = ConversationEventSource.model_validate(raw_source)
+            except ValidationError:
+                # Our own writer — possibly a newer release — so unreadable degrades to missing
+                # correspondence for this one event rather than a wedged sync loop.
+                logger.warning("Matrix: cannot read the source on our own event %s", event.event_id, exc_info=True)
+                continue
+            projected.append(
+                ProjectedEvent(
+                    room_id=room_id,
+                    event_id=event.event_id,
+                    source=source,
+                    origin_server_ts=event.server_timestamp,
+                    replaces_event_id=_replaces(content),
+                )
+            )
+        return projected, redactions
+
+    def _collect(self, room_id: str, events: Sequence[Event | BadEventType], into: _Timeline) -> None:
+        messages, unmappable = self._read(room_id, events)
+        into.messages.extend(messages)
+        into.unmappable.extend(unmappable)
+        projected, redactions = self._own_copy(room_id, events)
+        into.projected.extend(projected)
+        into.redactions.extend(redactions)
+
+    async def _timelines(self, response: SyncResponse, since: str | None) -> _Timeline:
+        timeline = _Timeline()
         for room_id, room in response.rooms.join.items():
             # A truncated timeline is a gap that would otherwise silently swallow what arrived
             # while the console was down. On the first sync there is no range to recover.
             if room.timeline.limited and since is not None and room.timeline.prev_batch is not None:
-                recovered, unreadable = await self._backfill(room_id, room.timeline.prev_batch, since)
-                messages.extend(recovered)
-                unmappable.extend(unreadable)
-            live, unreadable = self._read(room_id, room.timeline.events)
-            messages.extend(live)
-            unmappable.extend(unreadable)
-        return tuple(messages), tuple(unmappable)
+                timeline.extend(await self._backfill(room_id, room.timeline.prev_batch, since))
+            self._collect(room_id, room.timeline.events, timeline)
+        return timeline
 
-    async def _backfill(
-        self, room_id: str, prev_batch: str, since: str
-    ) -> tuple[list[InboundMessage], list[UnmappableEvent]]:
+    async def _backfill(self, room_id: str, prev_batch: str, since: str) -> _Timeline:
         """What arrived between `since` and the start of a truncated timeline, oldest first."""
         logger.warning("Matrix: %s timeline truncated, backfilling from %s", room_id, since)
-        recovered: list[InboundMessage] = []
-        unmappable: list[UnmappableEvent] = []
+        recovered = _Timeline()
         start = prev_batch
         for _ in range(MAX_BACKFILL_PAGES):
             page = _unwrap(
@@ -465,9 +587,7 @@ class MatrixClient:
                 ),
                 RoomMessagesResponse,
             )
-            messages, unreadable = self._read(room_id, page.chunk)
-            recovered.extend(messages)
-            unmappable.extend(unreadable)
+            self._collect(room_id, page.chunk, recovered)
             if not page.chunk or page.end is None:
                 # Reached the watermark: `/messages` stops at `end` and returns nothing past it.
                 break
@@ -481,8 +601,7 @@ class MatrixClient:
                 prev_batch,
             )
         recovered.reverse()
-        unmappable.reverse()
-        return recovered, unmappable
+        return recovered
 
     def _invites(self, response: SyncResponse) -> tuple[Invite, ...]:
         return tuple(

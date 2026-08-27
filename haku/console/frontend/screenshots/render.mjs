@@ -2,7 +2,9 @@
 // chrome, and settings panel). Inlines the compiled stylesheet and bundled harness into a
 // headless-Chromium page, one scene and theme per load, and writes a PNG for every combination.
 // A generator for eyeballing the visuals — NOT a pixel-diff gate — so it never fails on "looks
-// different"; it fails only if a scene crashes or renders an empty #app (waitForSelector throws).
+// different"; it fails if a scene crashes, renders an empty #app (waitForSelector throws), lets a
+// request escape the mocks (aborted and named below), or captures before its stubbed network
+// settled cleanly (assertNetworkSettled).
 //
 // Per-tool preview cards live in their own per-server `:previews` targets under
 // tool_rendering/<server>/ (shared driver: tool_rendering/screenshot/render.mjs).
@@ -15,9 +17,11 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  assertNetworkSettled,
   prepareDeterministicPage,
   screenshotElement,
   settle,
+  waitForStable,
 } from "../../../../util/testing/frontend_visual/capture.mjs";
 import {
   DISABLE_ANIMATIONS_CSS,
@@ -371,6 +375,7 @@ mkdirSync(outDir, { recursive: true });
 // ../../../../util/testing/frontend_visual/README.md for how to verify a scene is deterministic.
 const browser = await launchDeterministicBrowser();
 const assets = [];
+const sceneFailures = [];
 const mockHakuUi = readInput("MOCK_HAKU_UI", "mock_haku_ui.html");
 try {
   for (const colorScheme of COLOR_SCHEMES) {
@@ -388,109 +393,135 @@ try {
       typeInto,
     } of SCENES) {
       const page = await browser.newPage();
-      // Matches visual-test-lib.mjs's fixed epoch: harness.tsx's chromeProps feeds the real
-      // Date.now() into sampleRecentToolCalls, so without a frozen clock any date-relative text
-      // (e.g. formatAge) would drift between runs instead of rendering the same value every time.
-      await prepareDeterministicPage(page, { viewport: { ...viewport, deviceScaleFactor: 2 }, colorScheme });
-      page.on("console", (message) => console.log(`[${name}] browser: ${message.text()}`));
-      page.on("pageerror", (error) => console.error(`[${name}] browser error:`, error));
-      await page.setRequestInterception(true);
-      const html = pageHtml(css, harnessJs, name, colorScheme);
-      page.on("request", (request) => {
-        if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
-          void request.respond({ status: 200, contentType: "text/html", body: html });
-        } else if (request.url().startsWith("https://haku-ui.test/")) {
-          void request.respond({ status: 200, contentType: "text/html", body: mockHakuUi });
-        } else {
-          void request.continue();
-        }
-      });
-      await page.goto("https://haku-console.test/", { waitUntil: "load" });
-      await page.waitForSelector("#app > *", { timeout: 10_000 });
-      if (frame) {
-        const hakuFrame = page.frames().find((candidate) => candidate.url().startsWith("https://haku-ui.test/"));
-        if (!hakuFrame) throw new Error(`scene ${name}: mocked Haku UI iframe did not load`);
-        await hakuFrame.waitForSelector("main", { timeout: 10_000 });
-      }
-      // Let Mantine mount and layout settle, and outlast the approval buttons' 400ms arm
-      // delay so they render enabled (animations are reduced above).
-      await settle(700);
-      // Close the drawer BEFORE the clicks below, not after. The drawer renders its own tool-call
-      // cards, so while it is open its controls shadow the page's — `page.click` takes the first
-      // match in DOM order, and a scene meant to toggle a history row would silently toggle the
-      // drawer's card instead, then throw that state away when the drawer closed. No scene clicks
-      // anything inside the drawer, so establishing the closed baseline first is unambiguous.
-      if (closeApprovals) {
-        const drawerClose = await page.$('.haku-shell-drawer [aria-label="Close approvals"]');
-        if (drawerClose) await drawerClose.click();
-        await page.waitForSelector(".haku-shell-drawer", { hidden: true, timeout: 5_000 });
-      }
-      // A scene whose subject is what a control does with operator input has to supply that input
-      // first — a composer's Send stays disabled until something is typed.
-      if (typeInto) {
-        await page.type(typeInto.selector, typeInto.text);
-        await settle(150);
-      }
-      // Some scenes need clicks to reveal state internal to a component: a popover's open state
-      // (location-sharing control) or history rows toggled into their detailed view.
-      // Each click re-renders the DOM, so re-settle before the next one.
-      for (const selector of clicks ?? (click ? [click] : [])) {
-        await page.click(selector);
-        await settle(300);
-        // `page.click` leaves the cursor on the element it clicked, so any Tooltip attached to it
-        // opens and stays open into the capture — in the sync/session scenes that put a tooltip
-        // squarely over the panel heading it had just revealed. Park the cursor off-canvas so a
-        // scene captures its post-click state, not a hover state nobody asked for.
-        await page.mouse.move(0, 0);
-        await settle(150);
-      }
-      // A click that lands on the wrong element fails silently — `page.click` only throws when
-      // nothing matches at all — and so does one whose effect arrives asynchronously and never
-      // does. Either way the scene renders something plausible and the test passes. So a scene
-      // that clicks must also state what the clicks were for; `expectVisible` is its own proof.
-      if (expectVisible) {
-        await page.waitForSelector(expectVisible, { visible: true, timeout: 5_000 });
-      } else if (clicks ?? click) {
-        throw new Error(`scene ${name}: has clicks but no expectVisible — assert what they reveal`);
-      }
-      if (frame) {
-        // haku_ui_embed.tsx's refreshToolApprovals() fires on mount and increments syncsInFlight
-        // around a mocked fetch — same class of race as the MCP-server probes below, on the rail's
-        // sync-status icon. Only the real-shell (frame) scenes hit this; the isolated sync-* scenes
-        // force a specific state via clicks (sync-syncing deliberately wants "Syncing" left showing,
-        // so this must not run there).
-        await page.waitForSelector('[aria-label="Syncing"]', { hidden: true, timeout: 5_000 });
-      }
-      // The settings scene's MCP server list resolves through two chained async mock-fetch
-      // rounds (list, then a per-connection status probe) — occasionally still in flight past
-      // the fixed 700ms settle under RBE scheduling jitter, capturing a spinner instead of the
-      // resolved status. Waiting for these loaders to clear is a no-op on scenes that never had
-      // them: `hidden: true` is already satisfied for a selector that was never in the DOM.
-      await page.waitForSelector('[aria-label="Loading MCP servers"]', { hidden: true, timeout: 5_000 });
-      await page.waitForSelector('[aria-label="Loading Agents"]', { hidden: true, timeout: 5_000 });
-      await page.waitForSelector('[aria-label="Loading Agent enrollment"]', { hidden: true, timeout: 5_000 });
-      await page.waitForSelector('[aria-label="Checking connection status"]', { hidden: true, timeout: 5_000 });
-      // A scene whose subject is at the end of a long scroller (the history view's "Load older
-      // calls") captures the bottom of it. Scrolling is also what mounts the code blocks of the
-      // rows down there, since they build their editors only once near the viewport.
-      if (scrollToBottom) {
-        await page.$eval(scrollToBottom, (element) => {
-          element.scrollTop = element.scrollHeight;
+      // One scene must not hide the rest: a failure is recorded and the sweep continues, so a
+      // single run enumerates every broken scene (and every route its mocks are missing).
+      try {
+        // Matches visual-test-lib.mjs's fixed epoch: harness.tsx's chromeProps feeds the real
+        // Date.now() into sampleRecentToolCalls, so without a frozen clock any date-relative text
+        // (e.g. formatAge) would drift between runs instead of rendering the same value every time.
+        await prepareDeterministicPage(page, { viewport: { ...viewport, deviceScaleFactor: 2 }, colorScheme });
+        page.on("console", (message) => console.log(`[${name}] browser: ${message.text()}`));
+        page.on("pageerror", (error) => console.error(`[${name}] browser error:`, error));
+        await page.setRequestInterception(true);
+        const html = pageHtml(css, harnessJs, name, colorScheme);
+        // Everything this page may load is served right here; anything else escaping to the network
+        // is a hole in the harness's hermeticity and fails the scene by name below — in the test
+        // sandbox it could only fail asynchronously, racing the capture into a flaked shot.
+        const escapedRequests = [];
+        page.on("request", (request) => {
+          if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
+            void request.respond({ status: 200, contentType: "text/html", body: html });
+          } else if (request.url().startsWith("https://haku-ui.test/")) {
+            void request.respond({ status: 200, contentType: "text/html", body: mockHakuUi });
+          } else if (/^(?:data|about):/.test(request.url())) {
+            // Resolves inside the page — not network, so not a hermeticity hole.
+            void request.continue();
+          } else {
+            escapedRequests.push(`${request.resourceType()} ${request.url()}`);
+            void request.abort();
+          }
         });
-        await settle(400);
+        await page.goto("https://haku-console.test/", { waitUntil: "load" });
+        await page.waitForSelector("#app > *", { timeout: 10_000 });
+        if (frame) {
+          const hakuFrame = page.frames().find((candidate) => candidate.url().startsWith("https://haku-ui.test/"));
+          if (!hakuFrame) throw new Error(`scene ${name}: mocked Haku UI iframe did not load`);
+          await hakuFrame.waitForSelector("main", { timeout: 10_000 });
+        }
+        // Let Mantine mount and layout settle, and outlast the approval buttons' 400ms arm
+        // delay so they render enabled (animations are reduced above).
+        await settle(700);
+        // Close the drawer BEFORE the clicks below, not after. The drawer renders its own tool-call
+        // cards, so while it is open its controls shadow the page's — `page.click` takes the first
+        // match in DOM order, and a scene meant to toggle a history row would silently toggle the
+        // drawer's card instead, then throw that state away when the drawer closed. No scene clicks
+        // anything inside the drawer, so establishing the closed baseline first is unambiguous.
+        if (closeApprovals) {
+          const drawerClose = await page.$('.haku-shell-drawer [aria-label="Close approvals"]');
+          if (drawerClose) await drawerClose.click();
+          await page.waitForSelector(".haku-shell-drawer", { hidden: true, timeout: 5_000 });
+        }
+        // A scene whose subject is what a control does with operator input has to supply that input
+        // first — a composer's Send stays disabled until something is typed.
+        if (typeInto) {
+          await page.type(typeInto.selector, typeInto.text);
+          await settle(150);
+        }
+        // Some scenes need clicks to reveal state internal to a component: a popover's open state
+        // (location-sharing control) or history rows toggled into their detailed view.
+        // Each click re-renders the DOM, so re-settle before the next one.
+        for (const selector of clicks ?? (click ? [click] : [])) {
+          await page.click(selector);
+          await settle(300);
+          // `page.click` leaves the cursor on the element it clicked, so any Tooltip attached to it
+          // opens and stays open into the capture — in the sync/session scenes that put a tooltip
+          // squarely over the panel heading it had just revealed. Park the cursor off-canvas so a
+          // scene captures its post-click state, not a hover state nobody asked for.
+          await page.mouse.move(0, 0);
+          await settle(150);
+        }
+        // A click that lands on the wrong element fails silently — `page.click` only throws when
+        // nothing matches at all — and so does one whose effect arrives asynchronously and never
+        // does. Either way the scene renders something plausible and the test passes. So a scene
+        // that clicks must also state what the clicks were for; `expectVisible` is its own proof.
+        if (expectVisible) {
+          await page.waitForSelector(expectVisible, { visible: true, timeout: 5_000 });
+        } else if (clicks ?? click) {
+          throw new Error(`scene ${name}: has clicks but no expectVisible — assert what they reveal`);
+        }
+        if (frame) {
+          // haku_ui_embed.tsx's refreshToolApprovals() fires on mount and increments syncsInFlight
+          // around a mocked fetch — same class of race as the MCP-server probes below, on the rail's
+          // sync-status icon. Only the real-shell (frame) scenes hit this; the isolated sync-* scenes
+          // force a specific state via clicks (sync-syncing deliberately wants "Syncing" left showing,
+          // so this must not run there).
+          await page.waitForSelector('[aria-label="Syncing"]', { hidden: true, timeout: 5_000 });
+        }
+        // The settings scene's MCP server list resolves through two chained async mock-fetch
+        // rounds (list, then a per-connection status probe) — occasionally still in flight past
+        // the fixed 700ms settle under RBE scheduling jitter, capturing a spinner instead of the
+        // resolved status. Waiting for these loaders to clear is a no-op on scenes that never had
+        // them: `hidden: true` is already satisfied for a selector that was never in the DOM.
+        await page.waitForSelector('[aria-label="Loading MCP servers"]', { hidden: true, timeout: 5_000 });
+        await page.waitForSelector('[aria-label="Loading Agents"]', { hidden: true, timeout: 5_000 });
+        await page.waitForSelector('[aria-label="Loading Agent enrollment"]', { hidden: true, timeout: 5_000 });
+        await page.waitForSelector('[aria-label="Checking connection status"]', { hidden: true, timeout: 5_000 });
+        // A scene whose subject is at the end of a long scroller (the history view's "Load older
+        // calls") captures the bottom of it. Scrolling is also what mounts the code blocks of the
+        // rows down there, since they build their editors only once near the viewport.
+        if (scrollToBottom) {
+          await page.$eval(scrollToBottom, (element) => {
+            element.scrollTop = element.scrollHeight;
+          });
+          await settle(400);
+        }
+        // The capture gate: nothing in flight, nothing recorded against the mocks, nothing escaped
+        // to the real network, and fonts/images/paint stable — a violation fails the scene naming
+        // what happened rather than capturing a plausible-looking error or missing-data state.
+        await assertNetworkSettled(page, { context: `scene ${name}` });
+        if (escapedRequests.length > 0) {
+          throw new Error(`scene ${name}: requests escaped the harness mocks:\n  ${escapedRequests.join("\n  ")}`);
+        }
+        await waitForStable(page);
+        const file = `${name}-${colorScheme}.png`;
+        const shot = element
+          ? await screenshotElement(page, element, { context: `scene ${name}` })
+          : await page.screenshot({ fullPage });
+        writeFileSync(join(outDir, file), shot);
+        assets.push({ path: file, label: `${name} - ${colorScheme}` });
+        console.log(`wrote ${join(outDir, file)}`);
+      } catch (error) {
+        sceneFailures.push(`${name} (${colorScheme}): ${error.message}`);
+      } finally {
+        await page.close();
       }
-      const file = `${name}-${colorScheme}.png`;
-      const shot = element
-        ? await screenshotElement(page, element, { context: `scene ${name}` })
-        : await page.screenshot({ fullPage });
-      writeFileSync(join(outDir, file), shot);
-      assets.push({ path: file, label: `${name} - ${colorScheme}` });
-      console.log(`wrote ${join(outDir, file)}`);
-      await page.close();
     }
   }
 } finally {
   await browser.close();
+}
+if (sceneFailures.length > 0) {
+  throw new Error(`${sceneFailures.length} scene(s) failed:\n  ${sceneFailures.join("\n  ")}`);
 }
 writeVisualReviewManifest(outDir, {
   title: "Haku Console",

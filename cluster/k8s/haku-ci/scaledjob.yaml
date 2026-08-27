@@ -77,14 +77,10 @@ spec:
         # any more. Slightly above config.yaml's `shutdown_timeout: 30m` so a drained
         # node lets a build of up to that length finish instead of dropping it.
         terminationGracePeriodSeconds: 1830
-        # Pin to the ACTUAL OVH workers (ks_game_worker0/1), not the OVH control planes.
-        # The OVH CPs are schedulable (allowSchedulingOnControlPlanes) and region=hil, and
-        # are misleadingly keyed kimsufi_worker0/1 in tofu though their role is controlplane
-        # — so a plain region selector landed this runner on a control plane. That's wrong
-        # twice over: (1) this is agent-controlled build compute, which must stay off
-        # control-plane nodes, and (2) the user.max_user_namespaces sysctl rootless dind
-        # needs is set only on role==worker nodes (cluster/terraform/main/ovh-nodes.tf), so
-        # the runner must land there. Exclude any node carrying the control-plane label.
+        # This privileged, agent-controlled build compute runs only on approved always-on
+        # workers: non-control-plane HIL nodes and the home OptiPlex. Their Talos configs
+        # enable the user namespaces rootless dind needs; roaming and unrelated workers
+        # remain ineligible without introducing a separately reconciled capability label.
         affinity:
           nodeAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:
@@ -95,6 +91,22 @@ spec:
                       values: ["hil"]
                     - key: node-role.kubernetes.io/control-plane
                       operator: DoesNotExist
+                - matchExpressions:
+                    - key: kubernetes.io/hostname
+                      operator: In
+                      values: ["optiplex"]
+                    - key: node-role.kubernetes.io/control-plane
+                      operator: DoesNotExist
+        # Requests describe only the runner's idle footprint, so the default scheduler's
+        # resource scoring alone can co-locate an entire four-job burst. Prefer an even
+        # host spread, but keep CI available when only one capable worker is schedulable.
+        topologySpreadConstraints:
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: ScheduleAnyway
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: haku-runner
         initContainers:
           # dind is a NATIVE SIDECAR (an initContainer with restartPolicy: Always),
           # not an ordinary container. Two things depend on that, and both are

@@ -17,9 +17,9 @@ What is **not** built is named per item in _What this does not prove_ and _Open 
 are the live parts of this file.
 
 Companion to [runtime_options.md](runtime_options.md), which catalogues this as the
-"Runtime A variant — self-hosted Claude Code (Agent SDK)", and to
-[sandbox_run_runtime.md](sandbox_run_runtime.md), which moved where a run's _commands_
-execute. This plan moves the **agent loop itself** into the sandbox and puts a chat UI in
+"Runtime A variant — self-hosted Claude Code (Agent SDK)". The companion move of where a run's
+_commands_ execute landed (<../runtime/claude_web_env/run.md> § Commands run in the in-cluster
+sandbox); this plan moves the **agent loop itself** into the sandbox and puts a chat UI in
 front of it.
 
 ## The shape

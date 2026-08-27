@@ -10,7 +10,8 @@ would agree with whatever the code did:
 - a repeated transaction id really is refused as a second event
   (<../../../docs/chat_runtime_facts.md>);
 - `works.allegedly.haku` really does survive a round trip through the homeserver, including the
-  copy that rides inside `m.new_content`.
+  copy that rides inside `m.new_content` — and the correspondence reader really does get our own
+  sends, edits and redactions back off the same `/sync`.
 
 The room's other side is driven through the operator-side API (`testing/operator_room.py`), a
 second nio client that shares no code with `MatrixClient` — a test that checks the client against
@@ -204,7 +205,7 @@ async def test_an_unreadable_event_is_reported_and_the_report_cannot_become_one(
 
 async def test_a_tag_and_its_rendering_survive_the_homeserver(bot: Bot, joined_room: OperatorRoom) -> None:
     """The `works.allegedly.haku` key rides in `content`, so the homeserver is what it survives."""
-    tag = EventTag(kind=RoomEventKind.REPLY, session_id=uuid4(), message_id=uuid4(), agent_message_id="msg_01abc")
+    tag = EventTag(kind=RoomEventKind.REPLY, conversation_id=uuid4())
 
     event_id = await bot.client.send_text(
         bot.token, joined_room.room_id, "**bold** answer", txn_id=tag.transaction_id(), tag=tag
@@ -217,9 +218,43 @@ async def test_a_tag_and_its_rendering_survive_the_homeserver(bot: Bot, joined_r
         body="**bold** answer",  # the Markdown source stays the fallback
         formatted_body="<p><strong>bold</strong> answer</p>",
     )
-    # Off the raw content, because nothing in the console reads a tag back and a person in the room
-    # does not see one (`EventTag`).
+    # Off the raw content, because a person in the room does not see a tag (`EventTag`); what the
+    # console's own reader makes of one is the correspondence test below.
     assert (await joined_room.content_of(event_id))[HAKU_CONTENT_KEY] == tag.content()
+
+
+async def test_the_own_copy_reader_sees_sends_edits_and_redactions(bot: Bot, joined_room: OperatorRoom) -> None:
+    """The correspondence reader against a real homeserver.
+
+    Our tagged events come back through the same `/sync` ingress uses, with the source the writer
+    put on them readable; an edit surfaces naming the event it replaces; and a redaction — the
+    operator unsaying Haku's copy — is surfaced too. None of it is ever input.
+    """
+    watermark = (await bot.client.sync(bot.token, since=None)).next_batch
+    tag = EventTag(
+        kind=RoomEventKind.LIFECYCLE,
+        source=ConversationEventSource(attachment_id=uuid4(), conversation_id=uuid4(), event_seq=7),
+    )
+    event_id = await bot.client.send_notice(
+        bot.token, joined_room.room_id, "session ended", txn_id=tag.transaction_id(), tag=tag
+    )
+
+    seen = await bot.client.sync(bot.token, since=watermark)
+    [projected] = seen.projected
+    assert (projected.event_id, projected.source, projected.replaces_event_id) == (event_id, tag.source, None)
+    assert (seen.messages, seen.unmappable) == ((), ())
+
+    # A fresh transaction id: reusing the source-derived one would be refused as the send above.
+    await bot.client.edit_notice(
+        bot.token, joined_room.room_id, event_id, "session ended, edited", txn_id=uuid4().hex, tag=tag
+    )
+    edited = await bot.client.sync(bot.token, since=seen.next_batch)
+    [edit] = edited.projected
+    assert (edit.replaces_event_id, edit.source) == (event_id, tag.source)
+
+    await joined_room.redact(event_id, reason="unsaid by the operator")
+    redacted = await bot.client.sync(bot.token, since=edited.next_batch)
+    assert [redaction.redacts_event_id for redaction in redacted.redactions] == [event_id]
 
 
 async def test_the_same_outbox_row_cannot_post_twice(bot: Bot, joined_room: OperatorRoom) -> None:
@@ -264,7 +299,7 @@ async def test_the_same_projected_notice_cannot_post_twice(bot: Bot, joined_room
 async def test_an_edit_replaces_the_status_line_rather_than_adding_one(bot: Bot, joined_room: OperatorRoom) -> None:
     """One status line per turn, which is an `m.replace` and not a second notice."""
     room = joined_room.room_id
-    tag = EventTag(kind=RoomEventKind.STATUS, session_id=uuid4())
+    tag = EventTag(kind=RoomEventKind.STATUS, conversation_id=uuid4())
     event_id = await bot.client.send_notice(bot.token, room, "thinking", txn_id=tag.transaction_id(), tag=tag)
 
     await bot.client.edit_notice(bot.token, room, event_id, "running Bash", txn_id=tag.transaction_id(), tag=tag)
@@ -286,7 +321,7 @@ async def test_a_redacted_event_is_gone_from_the_room(bot: Bot, joined_room: Ope
     redaction is used for here, since a status line was never recorded in the first place.
     """
     room = joined_room.room_id
-    tag = EventTag(kind=RoomEventKind.REPLY, message_id=uuid4())
+    tag = EventTag(kind=RoomEventKind.REPLY)
     event_id = await bot.client.send_text(bot.token, room, "spent", txn_id=tag.transaction_id(), tag=tag)
 
     await bot.client.redact(bot.token, room, event_id, reason="turn finished")

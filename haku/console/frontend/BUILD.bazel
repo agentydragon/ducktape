@@ -875,6 +875,7 @@ ts_library(
         "//haku/console/frontend/tool_rendering/google_calendar:fixtures",
         "//haku/console/frontend/tool_rendering/grocy:fixtures",
         "//haku/console/frontend/tool_rendering/screenshot:mcp_mock",
+        "//haku/console/frontend/tool_rendering/screenshot:visual_network_ledger",
     ],
 )
 
