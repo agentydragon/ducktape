@@ -35,7 +35,7 @@ import datetime
 import logging
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import SecretStr
 from sqlalchemy import select, text
@@ -68,18 +68,15 @@ from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.channels.matrix.outbox import PendingReply, RoomOutbox, RoomOutboxDrain
 from haku.console.x.channels.matrix.outbox_wake import OutboxWakes
 from haku.console.x.channels.matrix.pacer import RoomPacer
-from haku.console.x.channels.matrix.revisions import RevisionLog
+from haku.console.x.channels.matrix.revisions import Revision, RevisionLog
 from haku.console.x.channels.matrix.room_copy import RoomCopy
+from haku.console.x.channels.matrix.spans import Span, SpanKind
 from haku.console.x.conversation_log import writer_for
 
 logger = logging.getLogger(__name__)
 
 # Distinct from the OAuth refresh lock in oauth_association_maintenance.
 _SYNC_ADVISORY_LOCK = 0x4D58_5359  # "MXSY"
-
-# What the room's one status line is called in `matrix_revision`. Unparameterised because the room
-# shows one at a time: retiring the line frees the subject, and the next turn's creates it again.
-STATUS_SUBJECT = "status"
 
 # How long a replica that lost the election waits before trying again.
 LEADER_RETRY = datetime.timedelta(seconds=30)
@@ -194,7 +191,6 @@ class MatrixSyncService:
         # Held here rather than by the composition root: it needs the credential that can speak
         # into the room and the pacer that decides when, which only this object has.
         self._outbox = RoomOutboxDrain(engine, outbox, self.pacer, self.post_reply, self.bound_room, outbox_wakes)
-        self._status_body: str | None = None
 
     async def _token(self) -> str:
         """A working access token, logging in only when the cached one is not.
@@ -259,87 +255,132 @@ class MatrixSyncService:
         binding = await self._conversations.bound_room()
         return None if binding is None else binding.room_id
 
-    async def show_status(self, body: str) -> None:
-        """Make the room's single status line say *body*, creating or editing it.
+    def _span_tag(self, attachment_id: UUID, span: Span) -> EventTag:
+        """The tag every event of a span carries: its kind, and the opening event as the source.
 
-        One line per turn rather than a notice per step: a room where every tool call is a message
-        is a room nobody reads. The turn loop says what the state is and never learns how it is
-        shown.
+        The source is what lets `room_copy` hold the editable copy's correspondence — the create,
+        every edit and the seal all name the same durable position — and what derives the create's
+        deterministic Matrix transaction id.
+        """
+        kind = RoomEventKind.STATUS if span.kind is SpanKind.TURN else RoomEventKind.LIFECYCLE
+        return EventTag(
+            kind=kind,
+            source=ConversationEventSource(
+                attachment_id=attachment_id, conversation_id=span.conversation_id, event_seq=span.opened_seq
+            ),
+        )
 
-        **Idempotent, and paced by the room rather than by this call.** The floor belongs to the
-        caller (`room_status.TurnStatus`), because what the line should say and when it may change
-        are one decision; the room's budget is `pacer`'s, where the status line is the one sender
-        allowed to overwrite what it has not yet said.
+    async def show_span(self, room_id: str, attachment_id: UUID, span: Span, body: str) -> None:
+        """Make one span's line say *body*, creating or editing it.
+
+        One line per span rather than a notice per step: a room where every tool call or setup line
+        is a message is a room nobody reads. The edit floor belongs to the caller
+        (`spans.LiveSpans.reconcile`), because what the line should say and when it may change are
+        one decision; the room's budget is `pacer`'s, where a span is the one sender allowed to
+        overwrite what it has not yet said.
 
         Create-or-edit is decided inside the queued send, because the create is what produces the
         event id the edit needs and may not have happened at queue time. The pacer is serial, so by
         the time an edit runs its create has.
 
         **Which event to edit comes from `matrix_revision`, not from this process.** The line
-        outlives the replica that posted it: whichever replica holds the session's lease drives the
-        status, and an adopting one would otherwise post a second line beside its predecessor's.
+        outlives the replica that posted it: an adopting replica edits the line its predecessor
+        posted instead of posting a second one beside it — and the create's transaction id is
+        derived from the span's source, so even a create replayed before its revision row committed
+        is refused by the homeserver rather than doubled.
         """
-        if body == self._status_body:
-            return
-        if (binding := await self._conversations.bound_room()) is None:
-            return
-        room_id = binding.room_id
-        if (attachment_id := await self._conversations.attachment(room_id)) is None:
-            logger.warning("Matrix: %s has no live attachment, leaving the status line alone", room_id)
-            return
-        self._status_body = body
-
-        tag = EventTag(kind=RoomEventKind.STATUS, conversation_id=binding.conversation_id)
+        tag = self._span_tag(attachment_id, span)
 
         async def post() -> None:
             token = await self._token()
-            if (showing := await self._revisions.live(attachment_id, STATUS_SUBJECT)) is None:
+            if (showing := await self._revisions.live(attachment_id, span.subject)) is None:
                 event_id = await self._client.send_notice(token, room_id, body, txn_id=tag.transaction_id(), tag=tag)
-                await self._revisions.record(attachment_id, STATUS_SUBJECT, event_id)
+                await self._revisions.record(attachment_id, span.subject, event_id)
                 return
-            await self._client.edit_notice(token, room_id, showing.event_id, body, txn_id=tag.transaction_id(), tag=tag)
+            # A fresh transaction id per edit: each edit is its own event, and a lost one is
+            # recomputed by the level-triggered reconciler rather than replayed.
+            await self._client.edit_notice(token, room_id, showing.event_id, body, txn_id=uuid4().hex, tag=tag)
 
-        self.pacer.set_status(post)
+        self.pacer.revise(span.subject, post)
 
-    async def set_typing(self, active: bool) -> None:
-        """Show or hide Haku's typing indicator in the live room.
+    async def seal_span(self, room_id: str, attachment_id: UUID, span: Span, body: str) -> None:
+        """Close one span's line with its final words, keeping it in scrollback.
+
+        Unlike `show_span`, this does not return while the effect exists only in the pacer's
+        memory: the subscriber advances its cursor after this returns, so a send failure or process
+        death leaves the closing event owed and the replay repeats the seal.
+
+        Three arms, decided inside the queued send: a live line is edited to the final body and its
+        revision retired (a replayed seal re-edits the same content, harmlessly); a span whose
+        source the room already shows with no live revision was sealed before the crash — or the
+        operator redacted the line, which is respected either way; and a span that never had a line
+        posts one, under the source-derived transaction id, which is exactly the sealed one-event
+        notice this generalises.
+        """
+        tag = self._span_tag(attachment_id, span)
+        self.pacer.drop(span.subject)
+
+        async def post() -> None:
+            token = await self._token()
+            if (showing := await self._revisions.live(attachment_id, span.subject)) is not None:
+                await self._client.edit_notice(token, room_id, showing.event_id, body, txn_id=uuid4().hex, tag=tag)
+                await self._revisions.retire(showing.revision_id)
+                return
+            if await self._room_copy.shows(attachment_id, span.opened_seq):
+                return
+            await self._client.send_notice(token, room_id, body, txn_id=tag.transaction_id(), tag=tag)
+
+        await self.pacer.send_and_wait(post)
+
+    async def retire_span(self, room_id: str, attachment_id: UUID, span: Span) -> None:
+        """Withdraw one span's line, if it was ever created.
+
+        Called when a span's live state is spent — a status line left saying "running Bash" after
+        the turn died is the stuck-typing-indicator bug in another costume.
+
+        A change still waiting to go out is dropped rather than sent and then redacted, which would
+        spend two of the room's ten sends showing something for a fraction of a second. Best effort
+        past that: a redact lost with its replica is repaired by the takeover sweep.
+        """
+        self.pacer.drop(span.subject)
+
+        async def retire() -> None:
+            if (showing := await self._revisions.live(attachment_id, span.subject)) is None:
+                return
+            await self._client.redact(await self._token(), room_id, showing.event_id, reason="live state spent")
+            await self._revisions.retire(showing.revision_id)
+
+        self.pacer.send(retire)
+
+    async def retire_stale_spans(self, room_id: str, attachment_id: UUID, keep: frozenset[str]) -> None:
+        """Redact every live revision no open span accounts for.
+
+        The takeover repair: a retirement that died with its replica, and lines under subjects this
+        release no longer writes — the pre-span singleton `"status"` included — are all the same
+        stale line to an operator. `keep` names the subjects the fold still owns.
+        """
+        for stale in await self._revisions.live_all(attachment_id):
+            if stale.subject in keep:
+                continue
+            revision = stale.revision
+
+            async def retire(revision: Revision = revision) -> None:
+                await self._client.redact(await self._token(), room_id, revision.event_id, reason="stale span line")
+                await self._revisions.retire(revision.revision_id)
+
+            self.pacer.send(retire)
+
+    async def set_typing(self, room_id: str, active: bool) -> None:
+        """Show or hide Haku's typing indicator in *room_id*.
 
         Best effort by construction: a failed typing notice is cosmetic, where a turn that died
         because the room could not be told it was thinking would not be. The homeserver expires the
         notice on its own, so a lost `False` is a stale indicator for seconds, not forever.
         """
-        if (binding := await self._conversations.bound_room()) is None:
-            return
         try:
-            await self._client.set_typing(await self._token(), binding.room_id, active=active)
+            await self._client.set_typing(await self._token(), room_id, active=active)
         except Exception:
             logger.warning("Matrix: typing notification failed (active=%s)", active, exc_info=True)
-
-    async def clear_status(self) -> None:
-        """Retire the status line, if one was ever created.
-
-        Called on every terminal path, including failure — a status line left saying "running Bash"
-        after the turn died is the stuck-typing-indicator bug in another costume.
-
-        A change still waiting to go out is dropped rather than sent and then redacted, which would
-        spend two of the room's ten sends showing something for a fraction of a second. Reading the
-        event id is left to the queued send for the same reason `show_status` does.
-        """
-        self._status_body = None
-        self.pacer.drop_status()
-        if (binding := await self._conversations.bound_room()) is None:
-            return
-        room_id = binding.room_id
-        if (attachment_id := await self._conversations.attachment(room_id)) is None:
-            return
-
-        async def retire() -> None:
-            if (showing := await self._revisions.live(attachment_id, STATUS_SUBJECT)) is None:
-                return
-            await self._client.redact(await self._token(), room_id, showing.event_id, reason="turn finished")
-            await self._revisions.retire(showing.revision_id)
-
-        self.pacer.send(retire)
 
     async def project_notice(
         self,
@@ -353,7 +394,7 @@ class MatrixSyncService:
         """Post one notice derived from a durable conversation event.
 
         Unlike `announce`, this call does not return while the effect exists only in the pacer's
-        memory. `RoomNotices` advances its cursor after this returns, so a send failure or process
+        memory. `ConversationSubscriber` advances its cursor after this returns, so a send failure or process
         death leaves the source event owed. Replaying it uses the same Matrix transaction id.
         """
         tag = EventTag(
@@ -398,7 +439,7 @@ class MatrixSyncService:
         the other — handed to the session, or rejected and said so — and what it decided is written
         with the watermark rather than after it.
 
-        **What was recorded, the room is not told here.** The row is the notice: `RoomNotices`
+        **What was recorded, the room is not told here.** The row is the notice: `ConversationSubscriber`
         renders it from the record at its own position, so this pass writes and stops. Every
         refusal reaches a row now — what a rejection is about is the conversation, which exists as
         soon as the room is bound — so a room with nowhere to record one is a room with nowhere to

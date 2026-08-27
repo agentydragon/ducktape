@@ -1,7 +1,7 @@
 """Contracts of a subscription: what a position addresses, and who keeps it.
 
 No channel is imported here. A durable cursor lives beneath a channel boundary and is tested there
-(<channels/matrix/test_room_subscription.py>); this file holds the stream itself and the
+(<channels/matrix/test_conversation_subscriber.py>); this file holds the stream itself and the
 client-held position, which every consumer shares.
 
 The events are the operator's own prompts, because a prompt item is the one thing a test can write

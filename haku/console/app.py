@@ -111,11 +111,11 @@ from haku.console.x import (
 # already talks about (the console's own conversation record, the index sweeps, the push queue).
 from haku.console.x.channels.matrix import (
     conversation as matrix_conversation,
+    conversation_subscriber as matrix_conversation_subscriber,
     ingress_ledger as matrix_ingress_ledger,
     outbox as matrix_outbox,
     outbox_wake as matrix_outbox_wake,
     revisions as matrix_revisions,
-    room_subscription as matrix_room_subscription,
     sync as matrix_sync,
 )
 from haku.console.x.channels.matrix.room_copy import RoomCopy
@@ -420,7 +420,7 @@ def create_app(
     # after the configured runtime catalog because it provisions sessions through that service.
     matrix_sync_service: matrix_sync.MatrixSyncService | None = None
     matrix_conversation_store: matrix_conversation.MatrixConversationStore | None = None
-    matrix_notices: matrix_room_subscription.RoomNotices | None = None
+    matrix_notices: matrix_conversation_subscriber.ConversationSubscriber | None = None
     if (matrix_config := settings.matrix) is not None and matrix_config.password is not None:
         matrix_conversation_store = matrix_conversation.MatrixConversationStore(db_sessions)
         matrix_ledger = matrix_ingress_ledger.IngressLedger(db_sessions)
@@ -450,7 +450,7 @@ def create_app(
         # The room as a subscriber to the conversation: it reads the record from a position it keeps
         # itself and says what the room has not been told, rather than being pushed at by whichever
         # replica happens to be running the turn.
-        matrix_notices = matrix_room_subscription.RoomNotices(
+        matrix_notices = matrix_conversation_subscriber.ConversationSubscriber(
             db_engine,
             db_sessions,
             subscription.ConversationStream(db_sessions),

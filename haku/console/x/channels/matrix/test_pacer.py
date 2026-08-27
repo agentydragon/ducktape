@@ -55,8 +55,8 @@ async def test_a_burst_beyond_the_budget_is_spread_rather_than_dropped() -> None
     assert elapsed >= 0.03, f"the burst was not paced ({elapsed=})"
 
 
-async def test_a_status_change_replaces_one_that_has_not_gone_out() -> None:
-    """The one sender allowed to overwrite itself: nobody needs the tool call the line showed
+async def test_a_revision_replaces_one_of_its_own_that_has_not_gone_out() -> None:
+    """The one sender allowed to overwrite itself: nobody needs the tool call a line showed
     four edits ago, and spending the room's budget on states already superseded is what leaves
     the *current* one waiting."""
     sent: list[str] = []
@@ -64,31 +64,47 @@ async def test_a_status_change_replaces_one_that_has_not_gone_out() -> None:
 
     async with pacer.run():
         pacer.send(recorder(sent, "answer"))  # takes the one token
-        pacer.set_status(recorder(sent, "running Bash"))
-        pacer.set_status(recorder(sent, "running Read"))
-        pacer.set_status(recorder(sent, "running Grep"))
+        pacer.revise("turn:1", recorder(sent, "running Bash"))
+        pacer.revise("turn:1", recorder(sent, "running Read"))
+        pacer.revise("turn:1", recorder(sent, "running Grep"))
         await pacer.flush()
 
     assert sent == ["answer", "running Grep"]
 
 
-async def test_a_status_change_keeps_the_place_it_was_first_given() -> None:
-    """Collapsing is not jumping the queue: a status edit that keeps overwriting itself must
-    not starve the answer queued behind it, nor arrive ahead of the notice queued before it."""
+async def test_each_subject_collapses_alone() -> None:
+    """Two spans are two lines: a session line's change must not eat a turn line's, however both
+    squash their own."""
+    sent: list[str] = []
+    pacer = RoomPacer(sends_per_second=100.0, burst=1)
+
+    async with pacer.run():
+        pacer.send(recorder(sent, "answer"))  # takes the one token
+        pacer.revise("session:1", recorder(sent, "provisioning"))
+        pacer.revise("turn:4", recorder(sent, "running Bash"))
+        pacer.revise("session:1", recorder(sent, "cloning haku-state"))
+        await pacer.flush()
+
+    assert sent == ["answer", "cloning haku-state", "running Bash"]
+
+
+async def test_a_revision_keeps_the_place_it_was_first_given() -> None:
+    """Collapsing is not jumping the queue: a line that keeps overwriting itself must not starve
+    the answer queued behind it, nor arrive ahead of the notice queued before it."""
     sent: list[str] = []
     pacer = RoomPacer(sends_per_second=100.0, burst=1)
 
     async with pacer.run():
         pacer.send(recorder(sent, "first"))  # takes the one token
-        pacer.set_status(recorder(sent, "status one"))
+        pacer.revise("turn:1", recorder(sent, "status one"))
         pacer.send(recorder(sent, "second"))
-        pacer.set_status(recorder(sent, "status two"))
+        pacer.revise("turn:1", recorder(sent, "status two"))
         await pacer.flush()
 
     assert sent == ["first", "status two", "second"]
 
 
-async def test_retiring_the_line_drops_a_change_that_never_went_out() -> None:
+async def test_retiring_a_line_drops_a_change_that_never_went_out() -> None:
     """A create-then-immediately-redact spends two of the room's ten sends to show something
     for a fraction of a second."""
     sent: list[str] = []
@@ -96,8 +112,8 @@ async def test_retiring_the_line_drops_a_change_that_never_went_out() -> None:
 
     async with pacer.run():
         pacer.send(recorder(sent, "answer"))  # takes the one token
-        pacer.set_status(recorder(sent, "running Bash"))
-        pacer.drop_status()
+        pacer.revise("turn:1", recorder(sent, "running Bash"))
+        pacer.drop("turn:1")
         await pacer.flush()
 
     assert sent == ["answer"]

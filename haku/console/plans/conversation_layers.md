@@ -41,8 +41,6 @@ Every line here is an edge the invariant still forbids after neutral runtime sup
 
 **A channel that knows a session.**
 
-- The editable status line's `EventTag.session_id` leaves a permanent, federated channel artifact
-  addressed by a runner incarnation that a replacement invalidates.
 - The SPA's raw-frame, abort, close and provisioning inspection remain correctly session-addressed;
   prompt admission itself now uses `POST /api/conversations/{conversation_id}/messages`.
 
@@ -106,11 +104,12 @@ single path from the record outward, and a channel differs only in two ways:
 The primitive is code: `Subscription.read()` over a `ConversationStream` in `x/subscription.py`,
 where "no position given" is the `Unstarted` arm rather than a zero, and
 `WS /api/conversations/{id}/follow` is the same contract over one socket — a snapshot, then the
-changes, with the conversation wake as what says to read again. Matrix's `RoomNotices` consumes
-that primitive: it queues completed answers in `matrix_outbox`, folds the stream into live
-status/typing, and projects the settled rejection, unreadable-input, setup, adoption, lease-expiry
-and operator-abort notices, checked against the room's own recorded copy before it sends. What is
-missing is not another stream but closing the direct paths and reconciling the editable copy.
+changes, with the conversation wake as what says to read again. Matrix's
+`ConversationSubscriber` consumes that primitive: it queues completed answers in `matrix_outbox`,
+folds the stream into the span lines and typing, and projects the settled rejection,
+unreadable-input, relay, silence and turn-abort/failure notices, checked against the room's own
+recorded copy before it sends. What is missing is not another stream but closing the last direct
+path — the room-binding notices — and attachment-scoping the loop.
 
 **The stream carries two kinds of message, and a delta is one of them** (operator, 2026-08-17).
 State changes are whole rows, merged by id. A **delta** is `{item_id, append}` — carried to a
@@ -173,18 +172,19 @@ wake on: an inbound event, a conversation wake, a freed send slot, or the fallba
 **Squashing is the semantics, not an optimization.** A queue under rate limiting delivers stale
 intermediate states late; a reconciler recomputes the difference when it gets a slot and sends the
 current truth, so ten notice updates collapse into one edit and the room never shows a state the
-conversation has moved past. `RoomPacer.set_status` already replaces a status change that has not
-gone out, and `drop_status` withdraws one — reconciliation for a single field, done imperatively
-inside a queue whose vocabulary (`Send = Callable[[], Awaitable[None]]`) cannot express it for any
-other.
+conversation has moved past. `RoomPacer.revise` already replaces a revisable subject's change that
+has not gone out, and `drop` withdraws one — reconciliation per subject, done imperatively inside a
+queue whose vocabulary (`Send = Callable[[], Awaitable[None]]`) cannot express it for anything
+else.
 
 ## 3. The room as the channel's own store
 
 `EventTag` (<../x/channels/matrix/client.py>) rides on every event the console sends: a `kind`, an
-optional `conversation_id`, and — on a sealed projected notice — one optional
-`ConversationEventSource {attachment_id, conversation_id, event_seq}`. The source's attachment
-prevents a conversation rebound to another room from reusing the old room's identity; its
-conversation and event position name the durable fact.
+optional `conversation_id`, and — on every record-derived event, sealed notices and span lines
+alike — one optional `ConversationEventSource {attachment_id, conversation_id, event_seq}`. The
+source's attachment prevents a conversation rebound to another room from reusing the old room's
+identity; its conversation and event position name the durable fact — for a span, the event that
+opened it.
 
 **The correspondence reader exists, and the reconciler consults it before sending.** The mirror of
 ingress — only our sender, parse the tag, never a prompt — feeds `matrix_room_copy` from the
@@ -198,9 +198,12 @@ lands inside it is redacted on observation. The standing guarantees are
   as absence. The cost is that **the room is not an audit log**: nothing can ask it what it used to
   show, so any fact that must survive its own retirement is recorded conversation-side or not at
   all.
-- **The editable copy is still unread.** A status tag names no durable event, so the store holds
-  nothing about the status line and a stale editable copy stays invisible until § 4's spans give
-  it a durable subject to correspond under.
+- **The editable copy corresponds, and its content is still not compared.** A span line's create,
+  edits and seal all tag the span's opening event, so the store holds the editable copy's identity
+  — replays are suppressed, duplicates repaired, an operator redaction respected. What no reader
+  does yet is compare the copy's _content_ against the fold's desired body (the tag carries ids,
+  never text), so an edit the homeserver lost stays stale until the next state change or takeover
+  sweep; step 2 of § 9 is where a content check would live if it earns its cost.
 - **The token cannot live in the room**, because it is what reads the room. So the channel keeps a
   private store whatever else moves; the only question is what else is in it.
 
@@ -251,19 +254,20 @@ Three things follow, and they are why this is worth requiring rather than merely
   to be holding is a body no other consumer can reproduce — the exact coupling that lets a fact
   reach a room and never reach a tab (§ 8).
 
-**The sealed-notice v0 has landed.** `project_notice` is a pure one-event fold for prompt rejection,
-unreadable input, session adoption, setup narration, lease expiry and an operator-aborted turn. It
-appends rather than edits, tags the durable source, waits for delivery and only then advances the
-cursor. That is the accepted lesser feature, not a different architecture. Relayed prompts and
-silent turns ride the same path, their bodies read from the record rather than folded from one
-event; reasoning, tool calls and full session lifecycle still need the bounded multi-event spans
-below.
+**Sealed notices and spans have both landed.** `project_notice` stays the pure one-event fold for
+prompt rejection, unreadable input and turn abort/failure — appended, source-tagged, delivered
+before the cursor advances — with relayed prompts and silent turns on the same path, their bodies
+read from the record. Everything else the room shows is one of two editable spans
+(`channels/matrix/spans.py`): a work line per turn folding reasoning and tool calls into a bounded
+activity-plus-tally, and a lifecycle line per session folding provisioning, narration and adoption,
+retired at the first turn and sealed by a lease expiry. The contract is
+<../x/channels/matrix/SPEC.md> § What the room shows while a turn runs.
 
 ### What a notice body may do
 
-- **Read the neutral vocabulary, never a backend's frames.** `coarse_status` (<../x/room_status.py>)
-  reads `ConversationEvent`; a notice that reached into Claude frames would weld the channel layer
-  to one backend.
+- **Read the neutral vocabulary, never a backend's frames.** The span fold
+  (<../x/channels/matrix/spans.py>) reads the stream's neutral bodies; a notice that reached into
+  Claude frames would weld the channel's rendering to one backend.
 - **Stay bounded independent of the span's length.** Forty tool calls summarise to a tally and the
   one in flight, not to forty lines: a room event is permanent and federated, and an edit
   re-publishes its whole body.
@@ -271,24 +275,6 @@ below.
   per-tool copy, no mapping table.
 - **Say that thinking happened, at most with its summary.** `Reasoning.summary` is the only
   renderable part, and a notice per `Reasoning` event is what the single line exists to avoid.
-
-### A candidate shape, with today's status line as its degenerate case
-
-**One work notice per turn.** While a turn is open the room shows at most one notice: what is
-happening now, plus a bounded tally of what has happened already. Today's status line is this with
-an empty tally, which makes the change additive rather than a replacement of built behaviour.
-
-**One notice per session for lifecycle.** Today each transition is its own `m.notice`, deduplicated
-by a per-process `_last_announced` and dropped entirely before a room is bound. The facts belong to
-the conversation as `conversation_event` rows; the room's rendering of them is the channel's own
-decision, and once the timeline is in the record, collapsing the room's copy into one edited line
-costs nothing that is not recoverable elsewhere. Under correspondence the live notice's tag is the
-dedup state, so a leader handover stops re-announcing.
-
-**Retire or seal is the open half of this.** A notice whose subject is live state should be
-redacted when the state is gone (a spent status line is clutter). A notice whose subject is a fact
-that happened should be sealed with a final edit instead — retiring it loses the account of what the
-agent did while working. Which notices exist, and which of the two each is, is left open (§ 7).
 
 ### What a notice does not need
 
@@ -440,9 +426,6 @@ version of it is **the point rather than the cost** (§ 7).
 
 **Still open.**
 
-- **Which editable spans exist, and what does each summarise?** The settled one-event notice set is
-  now code (§ 4). One work span per turn and one lifecycle span per session remain the candidate,
-  along with retire-or-seal for each.
 - **Which slash-command namespace survives the client?** Element consumes leading-slash verbs it
   recognises and errors on ones it does not — `/me`, `/html`, `/plain`, `/join`, `/invite`, `/op`
   and friends never reach the room — so the choice is a compatibility question rather than a taste
@@ -460,18 +443,17 @@ several mechanisms with different recovery properties.
 
 ### The channel is four mechanisms with three durabilities
 
-| What                                             | Driven by                                                             | Recovery today                                                                                                                     |
-| ------------------------------------------------ | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Assistant replies                                | `RoomNotices` queues `matrix_outbox`; `RoomOutboxDrain` sends         | Durable row, ordered retries, stable outbox transaction id                                                                         |
-| Sealed notices, relayed prompts and silent turns | `RoomNotices` → `project_notice`, suppressed by `matrix_room_copy`    | Durable source, post-send cursor and recorded correspondence; duplicate-safe past the transaction cache, with observed repair      |
-| Status line and typing                           | `RoomNotices` folds `LiveStatus`; `RevisionLog`/`RoomPacer` render it | Desired state is reconstructible; status event id is durable; the room's actual copy is not read back; typing deliberately expires |
-| Attachment narration                             | `_handle_invite` and room adoption call `_queue_notice`               | The room-binding facts have no row; delivery is process-local                                                                      |
+| What                                             | Driven by                                                                             | Recovery today                                                                                                                                                       |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Assistant replies                                | `ConversationSubscriber` queues `matrix_outbox`; `RoomOutboxDrain` sends              | Durable row, ordered retries, stable outbox transaction id                                                                                                           |
+| Sealed notices, relayed prompts and silent turns | `ConversationSubscriber` → `project_notice`, suppressed by `matrix_room_copy`         | Durable source, post-send cursor and recorded correspondence; duplicate-safe past the transaction cache, with observed repair                                        |
+| Span lines and typing                            | `ConversationSubscriber` folds `spans.LiveSpans`; `RevisionLog`/`RoomPacer` render it | Durable subject and revision; seals cursor-gated and copy-suppressed; edits and retires level-triggered, repaired by the takeover sweep; typing deliberately expires |
+| Attachment narration                             | `_handle_invite` and room adoption call `_queue_notice`                               | The room-binding facts have no row; delivery is process-local                                                                                                        |
 
-The replay-safe v0 removed the request/turn process from settled notice delivery, but it did not yet
-make one reconciler own the attachment. `MXSY` (ingress), `MXOB` (reply drain), `MXNT` (conversation
-reader) and `MXSE` (session supervisor) elect independently, while each replica has its own
-`RoomPacer`. A global `bound_room()` and one collapsing status slot also mean a second room would
-fail silently rather than merely run more slowly.
+The record-derived paths did not yet make one reconciler own the attachment. `MXSY` (ingress),
+`MXOB` (reply drain) and `MXNT` (conversation reader) elect independently, while each replica has
+its own `RoomPacer`. A global `bound_room()` and process-global pacer state also mean a second room
+would fail silently rather than merely run more slowly.
 
 ### What is already the right shape
 
@@ -483,8 +465,9 @@ fail silently rather than merely run more slowly.
   deduplicated by subject.
 - **A pure sealed-notice projector.** Its body is one neutral event in and Matrix prose out; the
   transport waits before the cursor advances.
-- **A reconstructible live-state fold.** `LiveStatus` demonstrates create/edit/retire semantics from
-  conversation events without a turn-process callback.
+- **A reconstructible span fold.** `spans.LiveSpans` derives the editable lines — create, edit,
+  seal or retire, bounded bodies, durable subjects — from conversation events alone, replay-safe by
+  position, without a turn-process callback.
 - **The correspondence key, and its reader.** `ConversationEventSource` names attachment,
   conversation and event position; `matrix_room_copy` holds what the room shows under it and the
   sealed-notice send consults it first.
@@ -493,12 +476,12 @@ fail silently rather than merely run more slowly.
 
 ### What is missing
 
-- Stable multi-event subjects and bounded folds for work and session-lifecycle spans — which is
-  also what would let the correspondence reader cover the editable copy, not only sealed sources.
-- A record-derived delivery path for relayed prompts and silent turns, plus a durable home for
-  Matrix-only attachment narration.
+- A durable home for Matrix-only attachment narration — the room-binding notices are the last
+  direct push.
 - One attachment owner coordinating cursor, outbox, revisions and send budget, followed by more than
   one live room.
+- A content check of the editable copy against the fold's desired body, if a lost edit ever proves
+  worth more than the next state change already repairs (§ 3).
 
 ## 9. The order
 
@@ -512,10 +495,11 @@ mixed into these PRs.
    a duplicate that lands inside it is redacted on observation. The editable copy stays unread
    until step 2 gives it a durable subject.
 
-2. **Turn notices into spans** (§ 4). Give the fold stable turn/session subjects and have it produce
-   bounded `(subject, body, lifecycle)` output. Generalise the `LiveStatus` create/edit/retire path;
-   seal facts that should remain in scrollback and redact live state that is spent. The pure fold and
-   the Matrix effect stay separate and are tested separately.
+2. **Completed — turn notices are spans** (§ 4). The fold (`channels/matrix/spans.py`) produces
+   bounded bodies under stable turn/session subjects — the opening event's position — and closes
+   each span by sealing scrollback facts and redacting spent live state; the subscriber reconciles
+   it beside the sealed notices, off one cursor, with a takeover sweep for lines nothing open
+   accounts for. The pure fold and the Matrix effect are tested separately.
 
 3. **Completed — session supervision is behind the conversation.** `ConversationRuntime` owns
    global lease expiry, terminal-claim cleanup and exactly-once idle-session creation under the
@@ -538,7 +522,7 @@ mixed into these PRs.
    with `matrix.to`; sessions and tool calls link both ways. This is independent of 1–5 once the
    route names are chosen to survive permanent, federated events.
 
-**Dependencies.** Steps 2 and 3 precede 4. Steps 5 and 6 can otherwise proceed independently. The
+**Dependencies.** Steps 5 and 6 can proceed independently of 4. The
 channel-neutral allocator is already complete and is not a step in this plan.
 
 **Independent runtime work.** The `provisioning` refinement (§ 10) and the duplicated read models
@@ -646,9 +630,8 @@ record (§ 5).
 
 **Mechanisms**
 
-- `RoomOutboxDrain` (`MXOB`) and `RoomNotices` (`MXNT`) as separate attachment owners — one
-  reconciler owns delivery instead.
-- Every remaining per-process latch that stands in for durable state: `_status_body`.
+- `RoomOutboxDrain` (`MXOB`) and `ConversationSubscriber` (`MXNT`) as separate attachment owners —
+  one reconciler owns delivery instead.
 - `RoomPacer` as a queue of opaque callables — a budget the reconciler spends, not a deque of
   closures it cannot inspect or squash.
 

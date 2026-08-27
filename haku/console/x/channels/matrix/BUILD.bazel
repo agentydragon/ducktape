@@ -101,20 +101,30 @@ py_library(
 )
 
 py_library(
-    name = "room_subscription",
-    srcs = ["room_subscription.py"],
+    name = "conversation_subscriber",
+    srcs = ["conversation_subscriber.py"],
     deps = [
         ":client",
         ":conversation",
         ":outbox",
         ":room_copy",
+        ":spans",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
-        "//haku/console/x:room_status",
         "//haku/console/x:session_events",
         "//haku/console/x:session_notifications",
         "//haku/console/x:subscription",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "spans",
+    srcs = ["spans.py"],
+    deps = [
+        "//haku/console:chat_models",
+        "//haku/console/x:session_events",
+        "//haku/console/x:subscription",
     ],
 )
 
@@ -130,6 +140,7 @@ py_library(
         ":pacer",
         ":revisions",
         ":room_copy",
+        ":spans",
         "//haku/console:chat_models",
         "//haku/console:config",
         "//haku/console:database_schema",
@@ -284,16 +295,17 @@ py_test(
 )
 
 py_test(
-    name = "test_room_subscription",
+    name = "test_conversation_subscriber",
     size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_room_subscription.py"],
+    srcs = ["test_conversation_subscriber.py"],
     deps = [
         ":client",
         ":conftest",
         ":conversation",
+        ":conversation_subscriber",
         ":outbox",
         ":room_copy",
-        ":room_subscription",
+        ":spans",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
@@ -311,6 +323,20 @@ py_test(
 )
 
 py_test(
+    name = "test_spans",
+    srcs = ["test_spans.py"],
+    deps = [
+        ":spans",
+        "//:conftest",
+        "//haku/console:chat_models",
+        "//haku/console/x:session_events",
+        "//haku/console/x:subscription",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_sync",
     size = "medium",  # provisions a Postgres database per test
     srcs = ["test_sync.py"],
@@ -323,6 +349,7 @@ py_test(
         ":pacer",
         ":revisions",
         ":room_copy",
+        ":spans",
         ":sync",
         "//:conftest",
         "//haku/console:chat_models",

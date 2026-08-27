@@ -1,7 +1,9 @@
-"""Contracts of the room's own position, and of what it says from it.
+"""Contracts of the room's own position, and of what it says and shows from it.
 
 The durable half of <../../subscription.py>: this is the only place a position outlives the process
-reading it, which is why the restart is asserted here rather than beside the abstraction.
+reading it, which is why the restart is asserted here rather than beside the abstraction. The span
+fold's own cases live in <test_spans.py>; what is asserted here is the subscriber driving it — the
+lines created, sealed, retired and swept off the same cursor the notices ride.
 """
 
 from __future__ import annotations
@@ -20,38 +22,41 @@ from haku.console.x import conversation_log, session_events
 from haku.console.x.channels.matrix.client import ConversationEventSource, ProjectedEvent, RoomEventKind
 from haku.console.x.channels.matrix.conftest import MATRIX_ROOM
 from haku.console.x.channels.matrix.conversation import MatrixConversationStore
-from haku.console.x.channels.matrix.outbox import RoomOutbox
-from haku.console.x.channels.matrix.room_copy import RoomCopy
-from haku.console.x.channels.matrix.room_subscription import (
+from haku.console.x.channels.matrix.conversation_subscriber import (
     ABORTED_BY_OPERATOR,
     NOTHING_SAID,
     RELAYED_PROMPT,
+    ConversationSubscriber,
     RoomCursor,
-    RoomNotices,
     project_notice,
 )
+from haku.console.x.channels.matrix.outbox import RoomOutbox
+from haku.console.x.channels.matrix.room_copy import RoomCopy
+from haku.console.x.channels.matrix.spans import PROVISIONING_STATUS, STATUS_EDIT_INTERVAL, Span
 from haku.console.x.session_events import TurnAbortedBody, TurnAnsweredBody, TurnFailedBody
 from haku.console.x.session_store import SessionStore
 from haku.console.x.subscription import START, ConversationStream, StreamedEvent, StreamPosition
 
 
 class Room:
-    """What the room was told, in the order it was told it."""
+    """What the room was told and shown, in the order it happened."""
 
     def __init__(self) -> None:
         self.said: list[str] = []
         self.kinds: list[RoomEventKind] = []
-        self.statuses: list[str] = []
-        self.cleared = 0
+        self.spans: list[tuple[str, str]] = []
+        self.sealed: list[tuple[str, str]] = []
+        self.retired: list[str] = []
+        self.swept: list[frozenset[str]] = []
         self.typing: list[bool] = []
         self.projected: list[tuple[UUID, int]] = []
         self.fail_project = False
 
-    async def announce(self, body: str, kind: RoomEventKind) -> None:
+    async def record(self, body: str, kind: RoomEventKind) -> None:
         self.said.append(body)
         self.kinds.append(kind)
 
-    async def project(
+    async def project_notice(
         self, room_id: str, attachment_id: UUID, body: str, kind: RoomEventKind, conversation_id: UUID, event_seq: int
     ) -> None:
         assert room_id == MATRIX_ROOM
@@ -59,19 +64,43 @@ class Room:
         self.projected.append((conversation_id, event_seq))
         if self.fail_project:
             raise RuntimeError("homeserver refused the projected notice")
-        await self.announce(body, kind)
+        await self.record(body, kind)
 
-    async def show_status(self, text: str) -> None:
-        self.statuses.append(text)
+    async def show_span(self, room_id: str, attachment_id: UUID, span: Span, body: str) -> None:
+        assert room_id == MATRIX_ROOM
+        self.spans.append((span.subject, body))
 
-    async def clear_status(self) -> None:
-        self.cleared += 1
+    async def seal_span(self, room_id: str, attachment_id: UUID, span: Span, body: str) -> None:
+        assert room_id == MATRIX_ROOM
+        self.sealed.append((span.subject, body))
 
-    async def set_typing(self, active: bool) -> None:
+    async def retire_span(self, room_id: str, attachment_id: UUID, span: Span) -> None:
+        self.retired.append(span.subject)
+
+    async def retire_stale_spans(self, room_id: str, attachment_id: UUID, keep: frozenset[str]) -> None:
+        self.swept.append(keep)
+
+    async def set_typing(self, room_id: str, active: bool) -> None:
         self.typing.append(active)
 
     async def bound(self) -> str | None:
         return MATRIX_ROOM
+
+
+class Clock:
+    """A clock the test winds, so span floors need not be waited out.
+
+    Seeded from the real clock because the fold compares it against rows' own `created_at`.
+    """
+
+    def __init__(self) -> None:
+        self.now = datetime.datetime.now(datetime.UTC)
+
+    def __call__(self) -> datetime.datetime:
+        return self.now
+
+    def tick(self, delta: datetime.timedelta) -> None:
+        self.now += delta
 
 
 @pytest.fixture
@@ -95,6 +124,11 @@ def room_copy(migrated_sessions: async_sessionmaker[AsyncSession]) -> RoomCopy:
 
 
 @pytest.fixture
+def clock() -> Clock:
+    return Clock()
+
+
+@pytest.fixture
 def notices(
     migrated_engine,
     migrated_sessions: async_sessionmaker[AsyncSession],
@@ -104,18 +138,20 @@ def notices(
     room: Room,
     outbox: RoomOutbox,
     room_copy: RoomCopy,
-) -> RoomNotices:
-    return RoomNotices(
+    clock: Clock,
+) -> ConversationSubscriber:
+    return ConversationSubscriber(
         migrated_engine,
         migrated_sessions,
         stream,
         conversations,
         notifications,
-        room.project,
+        room.project_notice,
         room,
         room.bound,
         outbox,
         room_copy,
+        clock=clock,
     )
 
 
@@ -257,13 +293,13 @@ async def test_a_restarted_reader_rebuilds_active_typing_from_the_stream(
     await notices.reconcile_once()
 
     successor_room = Room()
-    successor = RoomNotices(
+    successor = ConversationSubscriber(
         migrated_engine,
         migrated_sessions,
         stream,
         conversations,
         notifications,
-        successor_room.project,
+        successor_room.project_notice,
         successor_room,
         successor_room.bound,
         outbox,
@@ -305,13 +341,13 @@ async def test_a_restarted_reader_resumes_from_the_position_it_kept(
     await notices.reconcile_once()
 
     successor_room = Room()
-    successor = RoomNotices(
+    successor = ConversationSubscriber(
         migrated_engine,
         migrated_sessions,
         stream,
         conversations,
         notifications,
-        successor_room.project,
+        successor_room.project_notice,
         successor_room,
         successor_room.bound,
         outbox,
@@ -369,16 +405,20 @@ async def test_a_refused_prompt_is_said_from_its_row_rather_than_by_ingress(
     assert room.kinds == [RoomEventKind.REJECTED]
 
 
-async def test_setup_narration_is_said_from_its_row(
-    chat_store, operator_id, served, notices, room, migrated_sessions
+async def test_setup_narration_edits_the_session_line_rather_than_posting_a_notice(
+    chat_store, operator_id, served, notices, room, migrated_sessions, clock
 ) -> None:
+    """The bootstrap narration is the loudest sender the room used to have — one notice per line.
+    Folded into the session's span it is one line, edited."""
     await notices.reconcile_once()
     await author(migrated_sessions, chat_store, served, session_events.SetupNarrationBody(text="cloning haku-state"))
+    clock.tick(STATUS_EDIT_INTERVAL)
 
     await notices.reconcile_once()
 
-    assert room.said == ["cloning haku-state"]
-    assert room.kinds == [RoomEventKind.NARRATION]
+    assert room.said == []
+    assert [body for _, body in room.spans] == [PROVISIONING_STATUS, "cloning haku-state"]
+    assert len({subject for subject, _ in room.spans}) == 1, "one line, edited in place"
 
 
 async def test_something_haku_cannot_read_is_said_from_its_row(
@@ -393,11 +433,12 @@ async def test_something_haku_cannot_read_is_said_from_its_row(
     assert room.kinds == [RoomEventKind.UNREADABLE]
 
 
-async def test_the_room_is_told_when_its_session_changes_hands_or_ends(
+async def test_a_session_ending_is_sealed_into_the_line_its_life_was_shown_on(
     chat_store, operator_id, served, notices, room, migrated_sessions
 ) -> None:
     """Both are caused by a session and are conversation facts: what the operator needs is to know
-    why the room went quiet, which is the same question either way."""
+    why the room went quiet. Adoption edits the session's one line, and the lease expiry seals it —
+    a final edit that stays in scrollback — rather than each transition being its own notice."""
     await notices.reconcile_once()
     await author(
         migrated_sessions,
@@ -414,10 +455,57 @@ async def test_the_room_is_told_when_its_session_changes_hands_or_ends(
 
     await notices.reconcile_once()
 
-    assert room.said == [
-        "another console replica (pod-b) took this session over",
-        "the session ended — the console replica serving it went away",
-    ]
+    assert room.said == []
+    [(subject, body)] = room.sealed
+    assert (subject, body) == (room.spans[0][0], "the session ended — the console replica serving it went away")
+
+
+async def test_a_lease_expiry_with_no_line_up_is_sealed_as_its_own_span(
+    chat_store, operator_id, served, notices, room, migrated_sessions
+) -> None:
+    """The degenerate seal: the session line was retired when its first turn started, so the ending
+    posts as a one-event span — the sealed notice of the pre-span rendering, deduplicated the same
+    way."""
+    await notices.reconcile_once()
+    await abort_a_turn(chat_store, operator_id, served)
+    await notices.reconcile_once()
+    assert room.spans, "the session line was shown"
+    assert room.retired, "the turn retired the session line"
+    await author(
+        migrated_sessions,
+        chat_store,
+        served,
+        session_events.LeaseExpiredBody(reason=LeaseExpiryReason.UNADOPTED, last_holder="pod-a"),
+    )
+
+    await notices.reconcile_once()
+
+    [(subject, body)] = room.sealed
+    assert body == "the session ended — its sandbox went away and nothing took it back over"
+    assert subject not in {shown for shown, _ in room.spans}, "a span of its own, not the retired line"
+
+
+async def test_the_first_turn_retires_the_pre_turn_session_line(chat_store, operator_id, served, notices, room) -> None:
+    """A conversation that is moving is its own evidence of life, so the lifecycle line is spent
+    the moment the first turn opens."""
+    await notices.reconcile_once()
+    assert [body for _, body in room.spans] == [PROVISIONING_STATUS]
+    await chat_store.enqueue_prompt(operator_id, served, "go", MatrixOrigin(address=MATRIX_ROOM, refs=("$go",)))
+    assert await chat_store.next_prompt(served) is not None
+
+    await notices.reconcile_once()
+
+    assert room.retired == [room.spans[0][0]]
+
+
+async def test_stale_span_lines_are_swept_once_per_takeover(served, notices, room) -> None:
+    """The sweep is the takeover repair — a redact lost with its replica, a line under a subject
+    this release no longer writes — so it runs once per rebuilt fold, keeping what is open."""
+    await notices.reconcile_once()
+    await notices.reconcile_once()
+
+    [kept] = room.swept
+    assert kept == {room.spans[0][0]}
 
 
 async def test_a_prompt_sent_from_another_surface_is_posted_into_the_room(
@@ -603,13 +691,13 @@ async def test_a_replayed_projection_already_in_the_room_is_not_sent_again(
     )
 
     successor_room = Room()
-    successor = RoomNotices(
+    successor = ConversationSubscriber(
         migrated_engine,
         migrated_sessions,
         stream,
         conversations,
         notifications,
-        successor_room.project,
+        successor_room.project_notice,
         successor_room,
         successor_room.bound,
         outbox,
@@ -659,7 +747,6 @@ async def test_a_failed_projection_is_replayed_with_the_same_source_identity(
             "describe it in words and it will reach the session",
             RoomEventKind.UNREADABLE,
         ),
-        (session_events.SetupNarrationBody(text="cloning haku-state"), "cloning haku-state", RoomEventKind.NARRATION),
         (session_events.TurnAbortedBody(), ABORTED_BY_OPERATOR, RoomEventKind.LIFECYCLE),
         (
             session_events.TurnFailedBody(failure="the model provider is at capacity"),

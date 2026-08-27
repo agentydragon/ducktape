@@ -63,29 +63,21 @@ Design, the parity gaps it closes, and the traps in each:
 <plans/conversation_layers.md>.
 
 The channel-neutral allocator and conversation-runtime supervision are complete. Web and Matrix
-offer prompts by conversation; Matrix no longer creates, replaces or tends sessions. `RoomNotices`
-reads the one bound conversation for replies, live status and sealed notices; sealed notices use an
-attachment-scoped transaction id and the cursor advances only after the homeserver accepts the
-send. Prompts from another surface are also relayed into the room. What remains, in dependency
-order:
+offer prompts by conversation; Matrix no longer creates, replaces or tends sessions. The
+conversation subscriber reads the one bound conversation for replies, sealed notices — relayed
+prompts and silent turns included — and the two editable span lines, all off one cursor that
+advances only after the homeserver accepts what it is owed; the room's own copy suppresses
+replays. What remains, in dependency order:
 
-1. **Read Matrix's own copy.** Add the opposite-filter `/sync` reader for Haku-authored events and
-   parse `EventTag.source`. A transaction id covers only Synapse's cache window; durable
-   correspondence is what lets a restarted reconciler find the event already showing a source,
-   repair duplicates and reconcile edits or redactions.
-2. **Make notices spans, not queued moments.** Generalise the stream-derived `LiveStatus` pattern to
-   stable turn and session subjects whose bodies are pure, bounded folds: create, edit, then seal or
-   retire. Move relayed prompts, silent turns and supervisor lifecycle narration off `_queue_notice`
-   so advancing the cursor never outruns their delivery.
-3. **Make delivery attachment-scoped, then serve many rooms.** Keep one Matrix `/sync` owner for the
+1. **Make delivery attachment-scoped, then serve many rooms.** Keep one Matrix `/sync` owner for the
    user-wide token, dispatch its room events by attachment, and give each live attachment one owner
-   for its conversation cursor, reply outbox, status revisions and send budget. Only after the
-   remaining `bound_room()` and process-global pacer/supervisor state is gone can a second invite
+   for its conversation cursor, reply outbox, span revisions and send budget. Only after the
+   remaining `bound_room()` and process-global pacer state is gone can a second invite
    safely create and service another conversation.
-4. **Add Matrix commands**, beginning with abort, as ingress interception rather than an agent tool.
+2. **Add Matrix commands**, beginning with abort, as ingress interception rather than an agent tool.
    Prefer a prefix Element does not consume (for example `!haku stop`) over an assumed-free slash
    command.
-5. **Interlink the channels**: durable console-session links in Matrix, `matrix.to` links in the
+3. **Interlink the channels**: durable console-session links in Matrix, `matrix.to` links in the
    console, and session ↔ tool-call navigation. A posted Matrix event is permanent and federated, so
    mint only routes intended to survive.
 
@@ -247,13 +239,13 @@ exactly one timing — `session_ttl_seconds`. Every other number the runtime's b
 module-level constant, so changing one is a code edit, a CI build and a roll. The ones that are
 genuinely operational knobs should move onto the config model:
 
-- `x/room_status.py` — `STATUS_AFTER_SECONDS` (8s before a turn says anything, R6.2),
-  `STATUS_EDIT_INTERVAL_SECONDS` (5s edit floor, R6.5), `TYPING_REFRESH_SECONDS`.
+- `x/channels/matrix/spans.py` — `STATUS_AFTER` (8s before a turn says anything, R6.2),
+  `STATUS_EDIT_INTERVAL` (5s edit floor, R6.5), `TYPING_REFRESH`.
 - `x/session_store.py` — `LEASE_TTL` / `LEASE_RENEW_INTERVAL`, `PROVISION_LEASE`, `ADOPTION_GRACE`.
 - `x/channels/matrix/pacer.py` — `SENDS_PER_SECOND`, `SEND_BURST`, `MAX_QUEUED_SENDS`, `FLUSH_SECONDS`.
 - `x/channels/matrix/conversation.py` — `SUPERVISE_INTERVAL`, `PROVISION_BACKOFF`,
   `RE_AWAKENING_MESSAGES` (the N of R3.3a).
-- `x/channels/matrix/room_subscription.py` — `LEADER_RETRY`, `ERROR_BACKOFF`; and
+- `x/channels/matrix/conversation_subscriber.py` — `LEADER_RETRY`, `ERROR_BACKOFF`; and
   `MAX_BACKFILL_PAGES` / `TIMELINE_LIMIT` from `x/channels/matrix/client.py`.
 - `runtime/x/bridge/runner.py` — `MAX_DISCONNECTED_SECONDS`, `REPLAY_WINDOW`,
   `RECONNECT_{BASE,MAX}_DELAY`. **These live in the runner**, whose image is pinned at claim

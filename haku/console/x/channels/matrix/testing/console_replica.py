@@ -43,12 +43,12 @@ from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.channels.matrix.client import MatrixError
 from haku.console.x.channels.matrix.conversation import MatrixConversationStore, MatrixTurns
+from haku.console.x.channels.matrix.conversation_subscriber import ConversationSubscriber
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.channels.matrix.outbox import PendingReply, RoomOutbox
 from haku.console.x.channels.matrix.outbox_wake import OutboxWakes
 from haku.console.x.channels.matrix.revisions import RevisionLog
 from haku.console.x.channels.matrix.room_copy import RoomCopy
-from haku.console.x.channels.matrix.room_subscription import RoomNotices
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
 from haku.console.x.conversation_history import ConversationHistory
 from haku.console.x.conversation_runtime import ConversationRuntime
@@ -194,7 +194,7 @@ async def _serve() -> None:
     service = SessionService(runtimes, store, notifications, conversation_history=ConversationHistory(sessions))
     supervisor = ConversationRuntime(service, store, notifications, engine)
     allocator = SandboxAllocator(service, store, notifications, engine)
-    notices = RoomNotices(
+    notices = ConversationSubscriber(
         engine,
         sessions,
         ConversationStream(sessions),

@@ -43,6 +43,14 @@ class Revision:
     event_id: str
 
 
+@dataclass(frozen=True)
+class LiveRevision:
+    """A live revision beside its subject, for a reader that did not name one."""
+
+    subject: str
+    revision: Revision
+
+
 class RevisionLog:
     """The revisable subjects an attachment currently shows, and the retirement of one."""
 
@@ -59,6 +67,21 @@ class RevisionLog:
                 )
             )
             return None if row is None else Revision(revision_id=row.revision_id, event_id=row.event_id)
+
+    async def live_all(self, attachment_id: UUID) -> tuple[LiveRevision, ...]:
+        """Everything this attachment still shows — the takeover sweep's read."""
+        async with self._sessions() as db:
+            rows = (
+                await db.scalars(
+                    select(MatrixRevision).where(
+                        MatrixRevision.attachment_id == attachment_id, MatrixRevision.retired_at.is_(None)
+                    )
+                )
+            ).all()
+            return tuple(
+                LiveRevision(subject=row.subject, revision=Revision(revision_id=row.revision_id, event_id=row.event_id))
+                for row in rows
+            )
 
     async def record(self, attachment_id: UUID, subject: str, event_id: str) -> None:
         async with self._sessions() as db, db.begin():

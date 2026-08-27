@@ -1877,7 +1877,7 @@ async def test_an_aborted_turn_leaves_a_notice_and_no_reply(
     assert client.interrupted
     # The two messages, and nothing from the interrupt's own `result` frame ("stopped"). That the
     # stop itself is recorded is `test_session_store`'s; the room reads that row for itself
-    # (<channels/matrix/room_subscription.py>) rather than being told here.
+    # (<channels/matrix/conversation_subscriber.py>) rather than being told here.
     assert queued == ["Looking at the logs now.", "Found it: a bad config."]
 
 

@@ -1,26 +1,27 @@
-"""The room's position in the conversation, and the notices it owes from it.
+"""The Matrix channel's subscriber to the conversation record.
 
 The Matrix half of <../../subscription.py>: the channel reads the record from a position of its own
 instead of being handed events by whoever happens to be running the turn.
 
-- **`RoomCursor`** is the durable position, in `matrix_room_cursor`. The room holds a federated copy
+- **`RoomCursor`** is the durable position, in `channel_cursor`. The room holds a federated copy
   that outlives every console process, so after a restart the channel has to know what it already
-  put there. That durability is Matrix's own problem, kept in Matrix's own table below the channel
-  boundary and beside the outbox; the conversation layer has no cursor table at all.
-- **`RoomNotices`** is the subscriber. It wakes on the conversation's `update`, reads what the room
-  has not been told, says it, and keeps the position it reached.
+  put there. That durability is Matrix's own problem, kept beside the outbox below the channel
+  boundary; the conversation layer has no cursor table at all.
+- **`ConversationSubscriber`** is the subscriber. It wakes on the conversation's `update`, reads
+  what the room has not been told, says it, and keeps the position it reached.
 
-**Replies and notices, from one position.** A completed message becomes a `matrix_outbox` row the
-drain says into the room — with a transaction id, a retry budget and an ordering guarantee against
-other answers, none of which a notice needs — and everything else is said straight from here. Both
-come off the same cursor, so a notice can no longer overtake the answer it was about; what the turn
-loop used to write inside its own transaction is now something the channel decides for itself.
+**Replies, notices and spans, from one position.** A completed message becomes a `matrix_outbox`
+row the drain says into the room; a recorded fact becomes a sealed notice; and the editable lines —
+a turn's work, a session's pre-turn life — are spans (<spans.py>) whose folded state is reconciled
+after every batch. All of it comes off the same cursor, so a notice can no longer overtake the
+answer it was about.
 
-**Every kind the stream carries — which is not every kind the room shows.** What `notice` reads is
-what `conversation_event` records, and several things the room says have no row at all: a room being
-bound or adopted, an invite refused. Those still reach the room by being pushed at it.
+**Every kind the stream carries — which is not every kind the room shows.** What `project_notice`
+and the span fold read is what `conversation_event` records, and the room-binding notices — a room
+being bound or adopted, an invite refused — have no row at all. Those still reach the room by being
+pushed at it from the sync loop.
 
-**The position is kept after a sealed notice reaches the homeserver, never while it is merely
+**The position is kept after a sealed effect reaches the homeserver, never while it is merely
 queued.** A crash in that window derives the notice again on the next pass — and the replay asks
 the room's own copy first (`room_copy`): a source the room already shows is not sent at all,
 however long ago the crash was, so the event-derived Matrix transaction id only has to cover the
@@ -28,7 +29,9 @@ gap between a send and its `/sync` echo. The right way round either way: a repea
 refused, while a room never told is a message silently dropped. Relayed prompts and silent-turn
 narration ride the same path: their bodies read the record (the prompt item's text, the turn's
 items) rather than being pure functions of one event, and a replay recomputes them from the same
-rows.
+rows. Span edits and retirements are the exception — level-triggered desired state, repaired by the
+next pass or the takeover sweep rather than replayed, because an edit lost with a replica costs an
+update the fold recomputes anyway.
 """
 
 from __future__ import annotations
@@ -50,7 +53,6 @@ from haku.console.chat_models import (
     HarnessOrigin,
     ItemStatus,
     ItemType,
-    LeaseExpiryReason,
     MatrixOrigin,
     PromptOrigin,
     PromptRejection,
@@ -61,7 +63,7 @@ from haku.console.x.channels.matrix.client import RoomEventKind
 from haku.console.x.channels.matrix.conversation import MatrixConversationStore
 from haku.console.x.channels.matrix.outbox import BoundRoom, RoomOutbox
 from haku.console.x.channels.matrix.room_copy import RoomCopy
-from haku.console.x.room_status import LiveStatus, StatusFrontend
+from haku.console.x.channels.matrix.spans import LiveSpans, RetireSpan, RoomFrontend, SealSpan
 from haku.console.x.session_events import (
     LeaseExpiredBody,
     MessageCompletedBody,
@@ -86,14 +88,7 @@ from haku.console.x.session_events import (
     UnreadableInputBody,
 )
 from haku.console.x.session_notifications import ConversationWakeEvent, RecheckHeld, SessionNotifications
-from haku.console.x.subscription import (
-    START,
-    ConversationStream,
-    StreamedEvent,
-    StreamPosition,
-    Subscription,
-    Unstarted,
-)
+from haku.console.x.subscription import ConversationStream, StreamedEvent, StreamPosition, Subscription, Unstarted
 
 logger = logging.getLogger(__name__)
 
@@ -200,21 +195,6 @@ def _why_not(reason: PromptRejection) -> str:
             return "a message is already waiting to be answered"
 
 
-def _why_it_lapsed(reason: LeaseExpiryReason) -> str:
-    """The room's own words for a lease that ran out, not `session_store._expiry_detail`'s.
-
-    The holder is left out on purpose: a replica name is the console's own topology, and what the
-    operator can act on is that the session is gone.
-    """
-    match reason:
-        case LeaseExpiryReason.HOLDER_GONE:
-            return "the console replica serving it went away"
-        case LeaseExpiryReason.UNADOPTED:
-            return "its sandbox went away and nothing took it back over"
-        case LeaseExpiryReason.NEVER_ATTACHED:
-            return "its sandbox never came up"
-
-
 def _arrived_here(origin: PromptOrigin, room_id: str) -> bool:
     """Whether this prompt is already in this room because it was typed into it.
 
@@ -231,16 +211,17 @@ def _arrived_here(origin: PromptOrigin, room_id: str) -> bool:
 
 
 def project_notice(event: StreamedEvent, *, conversation_id: UUID, room_id: str) -> Notice | None:
-    """What this room says about *event*, or nothing where it says nothing.
+    """What this room seals about *event*, or nothing where it seals nothing.
 
     A match on the event's body rather than on its kind, and every shape spelled out rather than
     left to a wildcard, so a shape added to the stream lands here as a type error instead of being
     silently ignored.
 
     The shapes with a `None` arm are the ones the room shows some other way: an assistant message is
-    an answer `reconcile_once` queues on the outbox rather than announces, and reasoning and tool
-    calls fold into the turn's live status line (`room_status.coarse_status`) rather than getting a
-    line each.
+    an answer `reconcile_once` queues on the outbox rather than announces; reasoning and tool calls
+    fold into the turn's work span; and the session lifecycle — provisioning, setup narration,
+    adoption, endings — folds into the session's span (`spans.LiveSpans`), whose seal carries the
+    lease-expiry words that used to be an arm here.
 
     `UnknownEventBody` is on that arm too, and it is a different statement: a kind a **newer**
     release wrote, which this one has no words for. The room says nothing about it and the cursor
@@ -258,15 +239,6 @@ def project_notice(event: StreamedEvent, *, conversation_id: UUID, room_id: str)
                 "describe it in words and it will reach the session"
             )
             kind = RoomEventKind.UNREADABLE
-        case SessionAdoptedBody(holder=holder):
-            body = f"another console replica ({holder}) took this session over"
-            kind = RoomEventKind.LIFECYCLE
-        case SetupNarrationBody(text=text):
-            body = text
-            kind = RoomEventKind.NARRATION
-        case LeaseExpiredBody(reason=reason):
-            body = f"the session ended — {_why_it_lapsed(reason)}"
-            kind = RoomEventKind.LIFECYCLE
         case PromptStartedBody():
             # **The text is not on this row.** A prompt is an item and its prose is the segments
             # that follow, so the relay is said at the item's completion, where the whole of it is
@@ -274,7 +246,8 @@ def project_notice(event: StreamedEvent, *, conversation_id: UUID, room_id: str)
             return None
         case TurnAbortedBody():
             # An abort is a turn outcome now rather than an event of its own, so the room's line for
-            # it is said here — on the one outcome of three that the operator caused.
+            # it is said here — on the one outcome of three that the operator caused. The work
+            # span's line is retired beside it: the abort is the fact, the status was live state.
             body = ABORTED_BY_OPERATOR
             kind = RoomEventKind.LIFECYCLE
         case TurnFailedBody(failure=failure):
@@ -295,6 +268,9 @@ def project_notice(event: StreamedEvent, *, conversation_id: UUID, room_id: str)
             | TurnStartedBody()
             | TurnAnsweredBody()
             | SessionProvisioningBody()
+            | SessionAdoptedBody()
+            | SetupNarrationBody()
+            | LeaseExpiredBody()
             | SessionEndedBody()
             | UnknownEventBody()
         ):
@@ -302,12 +278,14 @@ def project_notice(event: StreamedEvent, *, conversation_id: UUID, room_id: str)
     return Notice(body=body, kind=kind, conversation_id=conversation_id, source_event_seq=event.position.event_seq)
 
 
-class RoomNotices:
-    """Says what the record has recorded and the room has not been told, from the room's position.
+class ConversationSubscriber:
+    """Brings the room into agreement with the record, from the room's own position.
 
     Answers included: a completed message is queued on the outbox rather than said from here, so it
     goes out under a transaction id with a retry budget, but the decision that the room is owed it
-    is made here, in this order, off this cursor.
+    is made here, in this order, off this cursor. The editable lines come off the same read: the
+    span fold's desired state is reconciled after the batch, and a span closed by a batch event is
+    sealed or retired where the closing event is read.
     """
 
     def __init__(
@@ -318,10 +296,11 @@ class RoomNotices:
         conversations: MatrixConversationStore,
         notifications: SessionNotifications,
         project: ProjectNotice,
-        status: StatusFrontend,
+        frontend: RoomFrontend,
         room: BoundRoom,
         outbox: RoomOutbox,
         room_copy: RoomCopy,
+        clock: Callable[[], datetime.datetime] | None = None,
     ) -> None:
         self._engine = engine
         self._sessions = sessions
@@ -329,22 +308,25 @@ class RoomNotices:
         self._conversations = conversations
         self._notifications = notifications
         self._project = project
-        self._status_frontend = status
+        self._frontend = frontend
         self._room = room
         self._outbox = outbox
         self._room_copy = room_copy
+        # Injectable because the span floors (`STATUS_AFTER`, `STATUS_EDIT_INTERVAL`) are wall-clock
+        # rules a test cannot wait out; production passes nothing.
+        self._clock = clock if clock is not None else _utc_now
         self._changed = asyncio.Event()
-        self._live_status = LiveStatus()
-        self._status_conversation: UUID | None = None
-        self._status_through = START
+        self._state: LiveSpans | None = None
+        self._swept = False
 
     async def reconcile_once(self) -> bool:
         """Say or queue what the room is owed. True when the read stopped at its limit.
 
         **The position is kept after the whole batch, never during it.** A crash part-way replays
-        the batch: a sealed notice is suppressed by the room's own copy once its echo has been
-        recorded and reuses its event-derived Matrix transaction until then, and a reply is
-        refused by the outbox's unique subject — which is the trade this reader is built around.
+        the batch: a sealed effect is suppressed by the room's own copy once its echo has been
+        recorded and reuses its event-derived Matrix transaction until then, a reply is refused by
+        the outbox's unique subject, and the span fold answers a replayed close from memory — which
+        is the trade this reader is built around.
         """
         if (room_id := await self._room()) is None:
             return False
@@ -353,23 +335,25 @@ class RoomNotices:
             # there is nothing recorded to be behind on.
             return False
         conversation_id, attachment_id = bound
-        await self._ensure_status(conversation_id)
         subscription = Subscription(self._stream, RoomCursor(self._sessions, attachment_id), conversation_id)
         read = await subscription.read(limit=NOTICE_BATCH)
         if isinstance(read, Unstarted):
             # Taken silently: the room already shows what was said in it for as long as it has been
-            # bound, so rendering the stream from the start would repeat all of it. The live-state
-            # fold still catches up to that head, because status and typing are present-tense rather
+            # bound, so rendering the stream from the start would repeat all of it. The span fold
+            # still catches up to that head, because its lines and typing are present-tense rather
             # than a replay into the timeline.
-            await self._catch_status(conversation_id, read.head)
-            await self._live_status.reconcile(self._status_frontend)
+            state = await self._rebuilt(conversation_id, read.head)
+            await state.reconcile(self._frontend, room_id, attachment_id, now=self._clock())
+            await self._sweep_once(state, room_id, attachment_id)
             await subscription.keep(read.head)
             return False
-        fresh = tuple(event for event in read.events if event.position > self._status_through)
-        self._live_status.apply(fresh)
-        if fresh:
-            self._status_through = fresh[-1].position
+        # The position this read started from, recovered from the events' own density — the first
+        # returned row is exactly one past it — so the fold is rebuilt to the cursor and every
+        # batch event is fresh to it.
+        start = StreamPosition(event_seq=read.events[0].position.event_seq - 1) if read.events else read.position
+        state = await self._rebuilt(conversation_id, start)
         for event in read.events:
+            closes = state.advance(event)
             match event.body:
                 case MessageCompletedBody():
                     # The item's own text, read by the outbox: what the room is owed is the whole
@@ -403,9 +387,58 @@ class RoomNotices:
                         await self._deliver(
                             room_id, attachment_id, conversation_id, said.body, said.kind, said.source_event_seq
                         )
-        await self._live_status.reconcile(self._status_frontend)
+            for close in closes:
+                match close:
+                    case SealSpan(span=span, body=body):
+                        # Sealed like a projected notice: awaited, so the cursor stays behind a
+                        # scrollback fact the homeserver has not accepted.
+                        await self._frontend.seal_span(room_id, attachment_id, span, body)
+                    case RetireSpan(span=span):
+                        await self._frontend.retire_span(room_id, attachment_id, span)
+        await state.reconcile(self._frontend, room_id, attachment_id, now=self._clock())
+        await self._sweep_once(state, room_id, attachment_id)
         await subscription.keep(read.position)
+        state.prune(read.position)
         return read.more
+
+    async def _rebuilt(self, conversation_id: UUID, through: StreamPosition) -> LiveSpans:
+        """The span fold for *conversation_id*, folded at least to *through* — the cursor.
+
+        Rebuilt from the log's start once per leader per conversation, without rendering anything:
+        the fold's output while catching up is present-tense state, and history is what the cursor
+        already covered. A fold this leader already holds is only folded *forward* — it can sit
+        ahead of the cursor after a pass whose keep failed, and never behind it except when the
+        cursor moved without a batch (an `Unstarted` read taking the head), where the gap is
+        history by the same rule.
+        """
+        state = self._state
+        if state is None or state.conversation_id != conversation_id:
+            state = LiveSpans(conversation_id)
+            self._state = state
+            self._swept = False
+        position = state.folded_through
+        while position < through:
+            batch = await self._stream.read(conversation_id, after=position)
+            events = tuple(event for event in batch.events if event.position <= through)
+            if not events:
+                break
+            for event in events:
+                state.advance(event)
+            position = events[-1].position
+        state.prune(through)
+        return state
+
+    async def _sweep_once(self, state: LiveSpans, room_id: str, attachment_id: UUID) -> None:
+        """Retire span lines nothing open accounts for, once per rebuilt fold.
+
+        The repairs this covers are the ones no replay reaches: a retirement lost with its replica
+        (the redact is best-effort), and a line whose subject vocabulary this release no longer
+        writes at all.
+        """
+        if self._swept:
+            return
+        await self._frontend.retire_stale_spans(room_id, attachment_id, state.open_subjects())
+        self._swept = True
 
     async def _deliver(
         self,
@@ -431,25 +464,6 @@ class RoomNotices:
             )
             return
         await self._project(room_id, attachment_id, body, kind, conversation_id, source_event_seq)
-
-    async def _ensure_status(self, conversation_id: UUID) -> None:
-        """Rebuild present-tense state once per leader/room from the durable stream."""
-        if self._status_conversation == conversation_id:
-            return
-        self._live_status = LiveStatus()
-        self._status_conversation = conversation_id
-        self._status_through = START
-        await self._catch_status(conversation_id, await self._stream.head(conversation_id))
-
-    async def _catch_status(self, conversation_id: UUID, through: StreamPosition) -> None:
-        """Fold every row through *through*, without rendering historical notices."""
-        while self._status_through < through:
-            batch = await self._stream.read(conversation_id, after=self._status_through)
-            events = tuple(event for event in batch.events if event.position <= through)
-            if not events:
-                return
-            self._live_status.apply(events)
-            self._status_through = events[-1].position
 
     async def _silent(self, turn_id: UUID) -> bool:
         """Whether *turn_id* ended answered without completing a non-empty assistant message."""
@@ -496,7 +510,8 @@ class RoomNotices:
                 # instead of being cleared away after it was already missed.
                 self._changed.clear()
                 if not await self.reconcile_once():
-                    delay = self._live_status.tick_seconds or POLL_INTERVAL.total_seconds()
+                    state = self._state
+                    delay = (state.tick_seconds if state is not None else None) or POLL_INTERVAL.total_seconds()
                     with contextlib.suppress(TimeoutError):
                         async with asyncio.timeout(delay):
                             await self._changed.wait()
@@ -534,3 +549,7 @@ class RoomNotices:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
+
+
+def _utc_now() -> datetime.datetime:
+    return datetime.datetime.now(datetime.UTC)

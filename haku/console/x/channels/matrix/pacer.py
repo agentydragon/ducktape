@@ -3,18 +3,19 @@
 Synapse limits how fast a user may send events into a room (`rc_message`), and
 <../../../../../cluster/k8s/matrix/app/helmrelease.yaml> does not override it, so the upstream
 defaults are the whole budget: a burst of ten sends, refilling at one every five seconds. Every
-sender the console has shares it — a turn's answer, the status line's edits, lifecycle notices, and
-the bootstrap narration, which is the loudest at one notice per line.
+sender the console has shares it — a turn's answer, the span lines' edits, and the sealed
+notices — the bootstrap narration folds into the session's one line rather than sending one per.
 
 **A queue, not a rate limiter.** A limiter makes the caller wait, and the loudest caller is the
 sandbox's progress reporter, which runs inside the loop draining the runner's output — blocking it
 five seconds a line stalls the socket carrying Claude's own frames. The room falls behind; the
 conversation does not.
 
-**FIFO, with one collapsing slot.** An answer, a bootstrap line and a rejection notice each lose
-information when dropped, so they queue. The status line genuinely is state — nobody needs the tool
-call it showed four edits ago — so it takes a single slot rewritten in place, keeping the position
-it was first given rather than jumping the queue on every change.
+**FIFO, with a collapsing slot per revisable subject.** An answer, a bootstrap line and a rejection
+notice each lose information when dropped, so they queue. A span's line genuinely is state — nobody
+needs the tool call it showed four edits ago — so each revisable subject takes a single slot
+rewritten in place, keeping the position it was first given rather than jumping the queue on every
+change.
 
 **Per replica, not per room globally.** The sync leader and the replica holding a session's lease
 need not be the same pod, so two of these can exist for one room, each believing it owns the whole
@@ -61,9 +62,11 @@ Send = Callable[[], Awaitable[None]]
 
 @dataclass
 class _Slot:
-    """One queued send, mutable so the status line can be rewritten where it stands."""
+    """One queued send, mutable so a revisable subject can be rewritten where it stands."""
 
     send: Send
+    # The revisable subject this slot collapses changes for, or None for an ordinary send.
+    key: str | None = None
 
 
 class RoomPacer:
@@ -75,7 +78,7 @@ class RoomPacer:
         self._tokens = float(burst)
         self._filled_at = time.monotonic()
         self._queue: deque[_Slot] = deque()
-        self._status: _Slot | None = None
+        self._revisable: dict[str, _Slot] = {}
         self._queued = asyncio.Event()
         self._idle = asyncio.Event()
         self._idle.set()
@@ -115,27 +118,26 @@ class RoomPacer:
             raise RuntimeError("Matrix room send queue is full")
         await completed
 
-    def set_status(self, send: Send) -> None:
-        """Queue a status-line change, replacing one that has not gone out yet."""
-        if self._status is not None:
-            self._status.send = send
+    def revise(self, key: str, send: Send) -> None:
+        """Queue a revisable subject's change, replacing one of its own that has not gone out yet."""
+        if (slot := self._revisable.get(key)) is not None:
+            slot.send = send
             return
-        self._status = slot = _Slot(send)
+        self._revisable[key] = slot = _Slot(send, key=key)
         self._queue.append(slot)
         self._queued.set()
         self._idle.clear()
 
-    def drop_status(self) -> None:
-        """Forget a status change still waiting to be sent.
+    def drop(self, key: str) -> None:
+        """Forget a revisable subject's change still waiting to be sent.
 
-        For retiring the line: a create-then-immediately-redact costs two of the room's ten sends
+        For retiring a line: a create-then-immediately-redact costs two of the room's ten sends
         to show something for a fraction of a second. A change already being sent has left the
         queue, which is why retiring is queued behind it rather than replacing it.
         """
-        if self._status is None:
+        if (slot := self._revisable.pop(key, None)) is None:
             return
-        self._queue.remove(self._status)
-        self._status = None
+        self._queue.remove(slot)
         if not self._queue:
             self._queued.clear()
             self._idle.set()
@@ -163,12 +165,12 @@ class RoomPacer:
     async def _drain(self) -> None:
         while True:
             await self._queued.wait()
-            # The token first, so a status change arriving during the wait still collapses
-            # into its slot rather than finding it already gone.
+            # The token first, so a revision arriving during the wait still collapses
+            # into its subject's slot rather than finding it already gone.
             await self._take_token()
             slot = self._queue.popleft()
-            if slot is self._status:
-                self._status = None
+            if slot.key is not None:
+                self._revisable.pop(slot.key, None)
             if not self._queue:
                 self._queued.clear()
             try:

@@ -346,8 +346,8 @@ channel. Everything else a channel keeps is its own rendering state, held in its
 second channel is a new table rather than a widened shared one.
 
 `matrix_revision` is narrowed to what a revision index is read for, and it is Matrix's: it holds the
-subjects that channel can **revise** — a status line it edits and retires — against the homeserver
-event ids it edits them at. Nothing outside Matrix reads it, and a channel that cannot edit what it
+subjects that channel can **revise** — the span lines it edits and then seals or retires — against
+the homeserver event ids it edits them at. Nothing outside Matrix reads it, and a channel that cannot edit what it
 sent has no use for the shape. It deliberately takes no row per delivered message: that is a
 flushed-up-to position materialised one row at a time, and the cursor holds it properly.
 

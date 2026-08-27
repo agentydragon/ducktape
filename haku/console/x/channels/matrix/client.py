@@ -143,16 +143,17 @@ class EventTag(BaseModel):
     def transaction_id(self) -> str:
         """What to send this event under.
 
-        A notice projected from a durable conversation row carries its attachment and source fields and gets a
-        deterministic transaction id. Re-reading that row before its cursor advances therefore
-        asks Synapse for the same send instead of posting a second event. The homeserver's
-        transaction cache bounds this to 30-to-60 minutes, which is only the window between a
-        successful send and its `/sync` echo reaching `room_copy` — past the echo, the reconciler
-        finds the durable correspondence and does not send at all.
+        An event that carries a `source` — a sealed notice, or a span line's create — gets a
+        deterministic transaction id. Re-deriving that send before its cursor or revision row
+        committed therefore asks Synapse for the same send instead of posting a second event. The
+        homeserver's transaction cache bounds this to 30-to-60 minutes, which is only the window
+        between a successful send and its `/sync` echo reaching `room_copy` — past the echo, the
+        reconciler finds the durable correspondence and does not send at all.
 
-        Everything else tagged this way — a status edit, room binding, or supervisor notice — has
-        no durable source to name and deliberately mints a fresh id. A reply uses its outbox row's
-        id instead (`outbox.PendingReply.transaction_id`).
+        A span line's *edits* pass an explicit fresh id instead — each edit is its own event, and a
+        lost one is recomputed rather than replayed. A tag with no source — a room-binding notice —
+        mints a fresh id here, and a reply uses its outbox row's id
+        (`outbox.PendingReply.transaction_id`).
 
         Rests on how Synapse keys and expires its transaction cache
         (<../../../docs/chat_runtime_facts.md>).

@@ -21,12 +21,12 @@ the CLI harness and the model behind it are different axes (operator, 2026-08-15
 
 The rule for placing a module is what it would take with it if the other axis were replaced: a
 second channel must be able to reuse everything at the runtime level unchanged, and a module that
-cannot compile without `matrix-nio` belongs under `channels/matrix/`. `room_status.py` is the case
-worth knowing: it reads as Matrix and is not — a status line is a channel affordance the console
-surface wants too, and the driver is handed two coroutines and never learns which room it speaks
-to. **Being at the right level is not the same as being neutral**: it reads `conversation_events.py`
-rather than Claude's own frame `type`, which is what lets a second harness get a status line from a
-module placed above harnesses. `sandbox_claims.py` is the mirror case: `claude-`-prefixed claim
+cannot compile without `matrix-nio` belongs under `channels/matrix/`. `channels/matrix/spans.py` is
+the case worth knowing on the other axis: it imports no `matrix-nio` and reads only
+`conversation_events.py` — never Claude's own frame `type`, so a second harness feeds it unchanged —
+yet it belongs to the channel, because what it folds the stream _into_ is Matrix's own rendering
+(the words on the line, what is sealed and what is redacted), and a second channel writes its own
+fold over the same stream. `sandbox_claims.py` is the mirror case: `claude-`-prefixed claim
 names, but it is Kubernetes provisioning and would serve any harness. The frame vocabulary is
 genuinely both, so it is two modules: the CLI's own top-level `type` values and the readers that
 pick a value out of one are `claude_code/frames.py`, while `setup_output.py` holds the bridge
@@ -122,7 +122,6 @@ them: the service calls it on every path, so that split is a seam and not a leaf
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `setup_output.py`  | The bridge envelope's `kind` and frame shape retained temporarily as the setup-narration compatibility copy.                                                   |
 | `session_views.py` | The read models the API returns for a session or a conversation, and the projection that assembles one out of the session row, its transcript and its rollout. |
-| `room_status.py`   | The per-turn status driver: what the room is shown while a turn runs, and when. It is handed two coroutines and never learns which room it speaks to.          |
 
 ### What a read hands back — `conversation_reads.py`
 
@@ -408,9 +407,13 @@ the test that reads it, as `test_diverse_session` has.
 - `outbox_wake.py` — the outbox's own wake wire (`matrix_outbox_wakes`): the enqueue's transaction
   waking the drain. Channel-internal because the fact is; the conversation channel never carries it.
 - `revisions.py` — which homeserver event the channel is currently editing for a revisable subject
-  (`matrix_revision`), which is what the status line is edited and retired through.
-- `room_subscription.py` — the room as a subscriber: its durable position in the conversation
-  (`channel_cursor`), the replies it queues from it, and the notices it says from it.
+  (`matrix_revision`), which is what the span lines are edited, sealed and retired through.
+- `spans.py` — the editable lines as spans of the conversation: the pure fold from the stream to
+  each span's bounded body, its close (seal or retire), and the reconcile latches over a
+  `RoomFrontend`.
+- `conversation_subscriber.py` — the Matrix channel's subscriber to the conversation record: its
+  durable position (`channel_cursor`), the replies it queues from it, the notices it seals from it,
+  and the span lines it reconciles beside them.
 - `room_copy.py` — the room's durable copy of projected events (`matrix_room_copy`): what the
   room shows of Haku's own sends, read off their `/sync` echoes, which the reconciler consults
   before sending and duplicate repair reads.
@@ -418,13 +421,15 @@ the test that reads it, as `test_diverse_session` has.
   (`matrix_ingress_event`).
 - `formatted_body.py` — Haku's Markdown into the HTML subset Matrix clients render.
 
-**The room reads the record; the turn loop never pushes at it.** `room_subscription.py` projects
-answers, aborts, silence, setup narration, refusals, unreadable input, session handoffs and lease
-losses, plus prompts arriving through another surface, from one cursor and in one order. Only facts
+**The room reads the record; the turn loop never pushes at it.** `conversation_subscriber.py`
+projects answers, aborts, silence, refusals, unreadable input and prompts arriving through another
+surface from one cursor and in one order, and folds the rest — the turn's work, the session's
+provisioning, narration, adoption and endings — into the two editable span lines. Only facts
 outside the conversation log — such as binding or adopting a room — are still announced directly.
 The position is kept after the batch, so a crash costs a replay rather than silence: a projected
-notice — relayed prompts and silent turns included — is suppressed by the room's own recorded copy,
-and a duplicate reply is refused by the outbox's unique subject.
+notice — relayed prompts, silent turns and span seals included — is suppressed by the room's own
+recorded copy, a duplicate reply is refused by the outbox's unique subject, and the span fold
+answers a replayed close from memory.
 
 **A prompt is a conversation fact, so every attached surface shows it.** The prompt item's origin
 names the surface it arrived through, and the room compares it against its own address: a prompt
@@ -446,10 +451,11 @@ Behaviours worth knowing before reading the code:
   (`outbox_wake.py`) — the only emission that cannot precede the row, since the conversation wake
   that made the subscriber read fired before the row existed; an outbox row is channel delivery
   state, so its wake stays below the channel boundary rather than riding the conversation channel.
-  A backstop covers lost wakes and retries coming due by clock. Everything else the console says —
-  the status line, lifecycle and rejection notices, bootstrap narration — stays on the pacer's
-  in-process queue, because a notice describing a moment is not worth redelivering ten minutes
-  later. Two rules the drain is deliberate about: a failed reply **halts** the queue for its backoff
+  A backstop covers lost wakes and retries coming due by clock. Span edits and retirements stay on
+  the pacer's in-process queue, because a line describing a moment is not worth redelivering ten
+  minutes later — the level-triggered reconcile and the takeover sweep are their repair; sealed
+  notices and span seals are awaited, so the cursor never outruns them. Two rules the drain is
+  deliberate about: a failed reply **halts** the queue for its backoff
   rather than being overtaken, and the one row stepped over is one out of `MAX_SEND_ATTEMPTS`, kept
   unsent with its `last_error` and logged loudly rather than deleted.
 
@@ -793,8 +799,6 @@ dependency:
 - `Session`, `Conversation`, `ChatAttachment`, `MatrixAccessToken` and `MatrixSyncWatermark` in
   <../database_schema.py>, plus their Alembic revisions — migrations are
   one lineage for the whole database.
-- `StatusFrontend` is declared beside the stream fold in `room_status.py`; Matrix's sync service
-  implements those ephemeral operations. The turn runtime has no channel port.
 
 ## Where the reasoning lives
 

@@ -1,7 +1,7 @@
 """The room's outbox: replies as rows, and the one task that says them.
 
 **The channel writes the row, reading the log forward from its own cursor**
-(`room_subscription.RoomNotices`), and this drains it. `sent_at` is written only once `room_send`
+(`conversation_subscriber.ConversationSubscriber`), and this drains it. `sent_at` is written only once `room_send`
 has returned, so every other outcome, the replica disappearing mid-send included, leaves the row
 claimable by whoever comes next.
 

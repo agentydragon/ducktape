@@ -116,18 +116,25 @@ over Matrix, and any write surface for the agent beyond its own replies.
   after the fact — refreshes it every ten seconds, and clears it on **every** terminal path
   including failure. The homeserver's own 30-second expiry is the backstop for the one path no code
   runs on, a console that dies mid-turn.
-- **For slow turns a status message reports what is happening now**, created lazily after a latency
+- **For slow turns one work line reports what is happening now**, created lazily after a latency
   threshold so short exchanges do not leave a status/answer pair behind. It is edited at most once
-  every five seconds and redacted on every terminal path.
+  every five seconds, **stays bounded however long the turn runs** — the running tools plus a tally
+  of the calls already done, never a line per step — and is redacted on every terminal path.
 - **Status is a coarse state, not a description of the work.** Where a tool is named, its identifier
   passes through verbatim: no per-tool copy, no mapping table to maintain as the tool surface grows.
   It is derived by the console from the neutral event stream it is already consuming — never by
   asking the model what it is doing, and never from one provider's own prose.
-- **Every transition is announced** — sandbox provisioning, ready, turn started and finished,
-  session compacted or rotated, sandbox lost, reconnecting, recovering. Verbosity is chosen
-  deliberately over tidiness: while this is new, a room that over-explains itself is the debugging
-  surface. System messages use `m.notice`, so clients render them distinctly and well-behaved bots
-  do not react to them.
+- **A session's pre-turn life is one edited line, and its ending stays in scrollback.** Sandbox
+  provisioning, setup narration and adoption edit one `m.notice` per session instead of posting one
+  each; the line is withdrawn once the first turn proves the session alive, and a lease expiry
+  seals the ending — as that line's final edit while it still shows, or as a one-event notice when
+  it does not. Rejections, unreadable input, aborts and failures stay notices of their own: those
+  are facts an operator scrolls back for. System messages use `m.notice`, so clients render them
+  distinctly and well-behaved bots do not react to them.
+- **Every editable line has a durable identity: the conversation event that opened its span.** The
+  tag every create, edit and seal carries names it, which is what lets a successor replica edit the
+  line its predecessor posted, the room's own copy hold correspondence for the editable lines, and
+  a takeover sweep redact a line whose span nothing open accounts for.
 - **The current session ID is visible in the room**, at minimum on startup and on rotation, so the
   operator can quote it when debugging without asking the agent or opening the console. The agent is
   told its own session ID in its prompt too.
