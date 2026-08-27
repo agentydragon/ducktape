@@ -51,6 +51,7 @@ class ToolCallStatus(StrEnum):
 
 class ToolCallPayloadField(StrEnum):
     ARGUMENTS = "arguments"
+    CALLER = "caller"
     RATIONALE = "rationale"
     RESULT = "result"
 

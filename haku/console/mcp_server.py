@@ -899,8 +899,8 @@ def build_console_mcp(
             list[ToolCallPayloadField],
             Field(
                 description=(
-                    "Whole payloads to include. Allowed values are `arguments`, `rationale`, and `result`. "
-                    "Defaults to [`result`]; pass [] for a compact status poll."
+                    "Whole payloads to include. Allowed values are `arguments`, `caller`, `rationale`, and "
+                    "`result`. Defaults to [`result`]; pass [] for a compact status poll."
                 ),
                 json_schema_extra={"default": [ToolCallPayloadField.RESULT]},
             ),
@@ -909,9 +909,10 @@ def build_console_mcp(
     ) -> McpToolCallResponse:
         """Read one tool call: status, selected payloads, terminal reason, and approval link.
 
-        By default this returns the downstream ``result`` but not the submitted arguments or
-        rationale. Pass ``fields=[]`` for a compact status poll. Payload fields are opaque whole
-        blobs; nested selectors are not supported.
+        By default this returns the downstream ``result`` but not the submitted arguments,
+        rationale, or caller. Pass ``fields=[]`` for a compact status poll, or add ``caller`` to see
+        who submitted the call. Payload fields are opaque whole blobs; nested selectors are not
+        supported.
         """
         try:
             record = await context.tool_calls.get(tool_call_id, actor=actor, fields=frozenset(fields))
@@ -944,8 +945,8 @@ def build_console_mcp(
             list[ToolCallPayloadField],
             Field(
                 description=(
-                    "Whole payloads to include. Allowed values are `arguments`, `rationale`, and `result`. "
-                    "Defaults to [] for compact status summaries."
+                    "Whole payloads to include. Allowed values are `arguments`, `caller`, `rationale`, and "
+                    "`result`. Defaults to [] for compact status summaries."
                 ),
                 json_schema_extra={"default": []},
             ),
@@ -959,8 +960,8 @@ def build_console_mcp(
         went through manual or no approval; omitted: no filter).
 
         The default response contains compact status summaries only. Request ``fields`` to include
-        whole opaque ``arguments``, ``rationale``, or ``result`` payloads; nested selectors are not
-        supported.
+        whole opaque ``arguments``, ``caller``, ``rationale``, or ``result`` payloads; nested
+        selectors are not supported.
         """
         records = await context.tool_calls.list_tool_calls(
             actor=actor,

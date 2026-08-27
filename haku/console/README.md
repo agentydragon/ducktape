@@ -174,7 +174,8 @@ near the viewport rather than for every retained row.
 
 Agent-facing reads are compact by default: `list_tool_calls` returns status summaries and
 `get_tool_call` returns the selected result. Their `fields` selector includes only whole opaque
-`arguments`, `rationale`, and `result` payloads; `get_tool_call(fields=[])` is the cheap status poll.
+`arguments`, `caller`, `rationale`, and `result` payloads; `get_tool_call(fields=[])` is the cheap
+status poll.
 
 ## Notifications — Web Push for pending approvals
 
