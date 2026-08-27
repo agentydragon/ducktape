@@ -12,6 +12,7 @@ before any TLS.
 from __future__ import annotations
 
 import asyncio
+import base64
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -24,9 +25,22 @@ from more_itertools import one
 
 from haku.egress.addon import DEFAULT_DECIDE_TIMEOUT_SECONDS
 from haku.egress.decide_client import DecideClient
-from haku.egress.decision import AllowDecision, Decision, DenyDecision, HeaderSubstitution, RequestMeta
+from haku.egress.decision import AllowDecision, Decision, DenyDecision, PlaceholderSubstitution, RequestMeta
 from haku.egress.runner import EgressProxy
 from haku.egress.static_decide_client import StaticDecideClient
+
+PLACEHOLDER = "proxy-github-placeholder"
+REAL_CREDENTIAL = "real-redeemed-credential"
+
+
+def allow_with_substitution() -> AllowDecision:
+    return AllowDecision(
+        substitutions=[
+            PlaceholderSubstitution(
+                placeholder=PLACEHOLDER, value=REAL_CREDENTIAL, match_headers=frozenset({"Authorization"})
+            )
+        ]
+    )
 
 
 @dataclass(frozen=True)
@@ -111,22 +125,67 @@ class MalformedDecideClient(DecideClient):
         return cast(Decision, {"kind": "allow", "substitutions": []})
 
 
-async def test_allow_forwards_and_substitutes_header(upstream: RecordingUpstream, tmp_path: Path) -> None:
-    decide = StaticDecideClient(
-        AllowDecision(substitutions=[HeaderSubstitution(name="Authorization", value="Bearer real-rendered-secret")])
-    )
+async def test_allow_substitutes_presented_placeholder(upstream: RecordingUpstream, tmp_path: Path) -> None:
+    decide = StaticDecideClient(allow_with_substitution())
     async with make_proxy(decide, tmp_path) as proxy:
         status, body = await proxied_get(
-            proxy, f"http://127.0.0.1:{upstream.port}/hello", headers={"Authorization": "Bearer placeholder-token"}
+            proxy, f"http://127.0.0.1:{upstream.port}/hello", headers={"Authorization": f"Bearer {PLACEHOLDER}"}
         )
     assert (status, body) == (200, "upstream ok")
     recorded = one(upstream.requests)
     assert recorded.method == "GET"
     assert recorded.path == "/hello"
-    assert recorded.headers["authorization"] == "Bearer real-rendered-secret"
+    assert recorded.headers["authorization"] == f"Bearer {REAL_CREDENTIAL}"
     assert decide.requests == [
         RequestMeta(method="GET", scheme="http", host="127.0.0.1", port=upstream.port, path="/hello")
     ]
+
+
+async def test_allow_substitutes_inside_basic_base64_payload(upstream: RecordingUpstream, tmp_path: Path) -> None:
+    """Git over HTTPS authenticates with ``Basic base64(user:token)``; the swap reaches inside the payload."""
+    decide = StaticDecideClient(allow_with_substitution())
+    presented = base64.b64encode(f"x-access-token:{PLACEHOLDER}".encode()).decode()
+    async with make_proxy(decide, tmp_path) as proxy:
+        status, _body = await proxied_get(
+            proxy, f"http://127.0.0.1:{upstream.port}/git", headers={"Authorization": f"Basic {presented}"}
+        )
+    assert status == 200
+    substituted = base64.b64encode(f"x-access-token:{REAL_CREDENTIAL}".encode()).decode()
+    assert one(upstream.requests).headers["authorization"] == f"Basic {substituted}"
+
+
+async def test_allow_without_placeholder_forwards_credential_free(upstream: RecordingUpstream, tmp_path: Path) -> None:
+    """A request that never presents the placeholder receives no credential anywhere."""
+    decide = StaticDecideClient(allow_with_substitution())
+    async with make_proxy(decide, tmp_path) as proxy:
+        status_bare, _ = await proxied_get(proxy, f"http://127.0.0.1:{upstream.port}/bare")
+        status_other, _ = await proxied_get(
+            proxy, f"http://127.0.0.1:{upstream.port}/other", headers={"Authorization": "Bearer something-else"}
+        )
+    assert (status_bare, status_other) == (200, 200)
+    bare, other = upstream.requests
+    assert "authorization" not in bare.headers
+    assert other.headers["authorization"] == "Bearer something-else"
+    for recorded in (bare, other):
+        assert REAL_CREDENTIAL not in recorded.path
+        assert all(REAL_CREDENTIAL not in value for value in recorded.headers.values())
+
+
+async def test_allow_passes_unscanned_placeholder_through_verbatim(upstream: RecordingUpstream, tmp_path: Path) -> None:
+    """Only ``match_headers`` are scanned: elsewhere the inert placeholder rides along unsubstituted."""
+    decide = StaticDecideClient(allow_with_substitution())
+    async with make_proxy(decide, tmp_path) as proxy:
+        status, _body = await proxied_get(
+            proxy,
+            f"http://127.0.0.1:{upstream.port}/lookup?q={PLACEHOLDER}",
+            headers={"X-Unscanned": f"Bearer {PLACEHOLDER}"},
+        )
+    assert status == 200
+    recorded = one(upstream.requests)
+    assert recorded.path == f"/lookup?q={PLACEHOLDER}"
+    assert recorded.headers["x-unscanned"] == f"Bearer {PLACEHOLDER}"
+    assert REAL_CREDENTIAL not in recorded.path
+    assert all(REAL_CREDENTIAL not in value for value in recorded.headers.values())
 
 
 async def test_deny_refuses_without_upstream_contact(upstream: RecordingUpstream, tmp_path: Path) -> None:

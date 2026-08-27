@@ -17,13 +17,15 @@ destinations the decision may deny.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import logging
 from typing import assert_never
 
 from mitmproxy import http
 
 from haku.egress.decide_client import DecideClient
-from haku.egress.decision import AllowDecision, DenyDecision, RequestMeta
+from haku.egress.decision import AllowDecision, DenyDecision, PlaceholderSubstitution, RequestMeta
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +36,35 @@ _FAIL_CLOSED_MESSAGE = "egress decision unavailable; refusing (fail closed)"
 
 def _refusal(status: int, message: str) -> http.Response:
     return http.Response.make(status, f"{message}\n".encode(), {"content-type": "text/plain; charset=utf-8"})
+
+
+def _swap_placeholder(header_value: str, substitution: PlaceholderSubstitution) -> str:
+    """Iron-proxy replace semantics: substring swap, reaching inside base64 ``Basic`` payloads."""
+    swapped = header_value.replace(substitution.placeholder, substitution.value)
+    if swapped != header_value:
+        return swapped
+    scheme, sep, payload = header_value.partition(" ")
+    if sep and scheme.lower() == "basic":
+        try:
+            decoded = base64.b64decode(payload, validate=True)
+        except binascii.Error:
+            return header_value  # not base64, so nothing recognizable to swap
+        swapped_payload = decoded.replace(substitution.placeholder.encode(), substitution.value.encode())
+        if swapped_payload != decoded:
+            return f"{scheme} {base64.b64encode(swapped_payload).decode()}"
+    return header_value
+
+
+def _apply_substitution(request: http.Request, substitution: PlaceholderSubstitution) -> bool:
+    """Swap the placeholder wherever a scanned header presents it; True if anything changed."""
+    applied = False
+    for name in substitution.match_headers:
+        values = request.headers.get_all(name)
+        swapped = [_swap_placeholder(value, substitution) for value in values]
+        if swapped != values:
+            request.headers.set_all(name, swapped)
+            applied = True
+    return applied
 
 
 class EgressGateAddon:
@@ -64,14 +95,16 @@ class EgressGateAddon:
                     logger.info("deny %s %s:%d: %s", meta.method, meta.host, meta.port, decision.reason)
                     flow.response = _refusal(403, f"egress denied: {decision.reason}")
                 case AllowDecision():
-                    for substitution in decision.substitutions:
-                        flow.request.headers[substitution.name] = substitution.value
+                    applied = sum(
+                        _apply_substitution(flow.request, substitution) for substitution in decision.substitutions
+                    )
                     logger.info(
-                        "allow %s %s:%d (substituted: %s)",
+                        "allow %s %s:%d (substitutions: %d of %d applied)",
                         meta.method,
                         meta.host,
                         meta.port,
-                        [substitution.name for substitution in decision.substitutions],
+                        applied,
+                        len(decision.substitutions),
                     )
                     flow.response = None  # cleared last: everything that can fail has already run
                 case _:
