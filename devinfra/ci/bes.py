@@ -5,7 +5,8 @@
 artifacts. The publish planners used to rebuild those in their own `bb remote`
 invocations; this reads what the first build already produced instead. What a
 `//...` sweep cannot cover — an external repository, a `manual` target, another
-configuration — is listed in devinfra/ci/TODO.md and takes the slow path.
+configuration — takes the slow path, and devinfra/ci/docs/publish_planning.md
+lists which rows those are.
 
 BuildBuddy serves the invocation's whole Build Event Protocol stream as JSON, and
 it carries three things at once: every output file with its content digest, the

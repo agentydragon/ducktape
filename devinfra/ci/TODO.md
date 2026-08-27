@@ -30,14 +30,3 @@ of re-running, which also gives per-target granularity rather than per-pattern.
 
 `devinfra/ci/bes.py` already parses them (`Invocation.test_status`); nothing
 consumes it yet.
-
-## Releases bazel-ci cannot prove
-
-Three rows always take the slow path, each for a principled reason. They are not
-bugs, but a reader hitting the fail-open warnings should know why:
-
-- `aw-importer` — `@ducktape_activitywatch//importer:aw_importer_bin` is in an
-  external repo, which `//...` does not reach.
-- `gterm-theme` — `//gnome/gterm_theme:*` is `tags = ["manual"]` (needs
-  libgirepository, libdbus), so wildcards skip it.
-- `debundle` — builds under `-c opt`, a different configuration from bazel-ci's.
