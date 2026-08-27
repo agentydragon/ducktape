@@ -41,7 +41,8 @@ spec:
 
     # Authentik server configuration
     authentik:
-      # Secret key will be available in the main authentik secret via ESO merge
+      # Empty: AUTHENTIK_SECRET_KEY arrives via envFrom from the SOPS-managed
+      # authentik-secret-key Secret (../secrets/secret-key.sops.yaml)
       secret_key: ""
 
       # Error reporting
@@ -59,11 +60,12 @@ spec:
       redis:
         host: ""
 
-      # Bootstrap configuration (password and token from ESO)
+      # Bootstrap configuration (password and token from SOPS-managed Secrets
+      # in ../secrets/)
       bootstrap:
-        # Password will be injected via extraEnvFrom (ESO-generated)
+        # Empty: AUTHENTIK_BOOTSTRAP_PASSWORD arrives via envFrom (authentik-admin-password)
         password: ""
-        # Token will be injected via extraEnvFrom (ESO-generated)
+        # Empty: AUTHENTIK_BOOTSTRAP_TOKEN arrives via envFrom (authentik-bootstrap)
         token: ""
 
       # Secrets now loaded per-component via server.envFrom and worker.envFrom
@@ -133,7 +135,8 @@ spec:
       readinessProbe:
         timeoutSeconds: 10
 
-      # Load ESO-generated secret key via envFrom (plus all global secrets)
+      # Load the SOPS-managed secrets (secret key, bootstrap password/token,
+      # user password) via envFrom
       envFrom:
         - configMapRef:
             name: authentik-host
@@ -199,7 +202,8 @@ spec:
                     app.kubernetes.io/instance: authentik
                 topologyKey: kubernetes.io/hostname
 
-      # Load ESO-generated secret key via envFrom (plus all global secrets)
+      # Load the SOPS-managed secrets (secret key, bootstrap password/token,
+      # user password) via envFrom
       envFrom:
         - configMapRef:
             name: authentik-host

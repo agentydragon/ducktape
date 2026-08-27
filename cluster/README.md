@@ -84,16 +84,17 @@ All storage is region-local — no cross-site synchronous replication. Key
 classes below (curated — SSOT is the `StorageClass` manifests under `k8s/`,
 e.g. `k8s/{local-path-provisioner,openebs-lvm}/`, plus CSI Helm values):
 
-| StorageClass         | Provisioner            | Region    | Notes                                                                                                |
-| -------------------- | ---------------------- | --------- | ---------------------------------------------------------------------------------------------------- |
-| `local-path-proxmox` | local-path-provisioner | `proxmox` | Proxmox-single CNPG DBs; node-pinned app data on Proxmox nodes                                       |
-| `local-path-ovh-hdd` | local-path-provisioner | `hil-ovh` | OVH KS-5 HDD tier: SeaweedFS bulk (`hdd`) volume servers, OVH-HA CNPG DBs, node-pinned bulk app data |
-| `local-path-ovh-ssd` | local-path-provisioner | `hil-ovh` | OVH KS-GAME NVMe tier: SeaweedFS hot (`ssd`) volume servers; SSD-pinned DBs                          |
-| `local-path-ovh`     | local-path-provisioner | `hil-ovh` | Deprecated alias, re-pinned to `local-path-ovh-hdd`                                                  |
-| `seaweedfs-ovh`      | SeaweedFS CSI          | `hil-ovh` | **Default for app data volumes** — not node-pinned, pods reschedule freely; POSIX/S3-backed (HDD)    |
-| `seaweedfs-ovh-ssd`  | SeaweedFS CSI          | `hil-ovh` | NVMe-backed SeaweedFS (`diskType: ssd`) — Forgejo git hot tier                                       |
-| `lvm-proxmox-ssd`    | OpenEBS LVM CSI        | `proxmox` | NVMe thin provisioning                                                                               |
-| `lvm-proxmox-hdd`    | OpenEBS LVM CSI        | `proxmox` | HDD thin provisioning                                                                                |
+| StorageClass          | Provisioner            | Region    | Notes                                                                                                                 |
+| --------------------- | ---------------------- | --------- | --------------------------------------------------------------------------------------------------------------------- |
+| `local-path-proxmox`  | local-path-provisioner | `proxmox` | Proxmox-single CNPG DBs; node-pinned app data on Proxmox nodes                                                        |
+| `local-path-ovh-hdd`  | local-path-provisioner | `hil-ovh` | OVH KS-5 HDD tier: SeaweedFS bulk (`hdd`) volume servers, OVH-HA CNPG DBs, node-pinned bulk app data                  |
+| `local-path-ovh-ssd`  | local-path-provisioner | `hil-ovh` | OVH KS-GAME NVMe tier: SeaweedFS hot (`ssd`) volume servers; SSD-pinned DBs                                           |
+| `local-path-home-ssd` | local-path-provisioner | `home`    | OptiPlex NVMe: hardware/LAN-pinned home state (Home Assistant, openclaw spike); VolSync copies it to SeaweedFS for DR |
+| `local-path-ovh`      | local-path-provisioner | `hil-ovh` | Deprecated alias, re-pinned to `local-path-ovh-hdd`                                                                   |
+| `seaweedfs-ovh`       | SeaweedFS CSI          | `hil-ovh` | **Default for app data volumes** — not node-pinned, pods reschedule freely; POSIX/S3-backed (HDD)                     |
+| `seaweedfs-ovh-ssd`   | SeaweedFS CSI          | `hil-ovh` | NVMe-backed SeaweedFS (`diskType: ssd`) — Forgejo git hot tier                                                        |
+| `lvm-proxmox-ssd`     | OpenEBS LVM CSI        | `proxmox` | NVMe thin provisioning                                                                                                |
+| `lvm-proxmox-hdd`     | OpenEBS LVM CSI        | `proxmox` | HDD thin provisioning                                                                                                 |
 
 OpenEBS LVM is constrained to nodes
 with the `openebs-proxmox-ssd` / `openebs-proxmox-hdd` volume groups (currently Proxmox nodes only).
@@ -147,7 +148,6 @@ cluster/
 │   ├── agents/             # Agent infra (public-coder-agent, airlock, agent-rbac-base, tana-mcp, ...)
 │   ├── authentik/          # SSO (app, blueprints, db, secrets, proxy-routes, ...)
 │   ├── monitoring/         # Observability (stack, loki, alloy, tempo, ...)
-│   ├── harbor/             # Registry (app, secrets, ci, webhook, ...)
 │   ├── <service>/          # Grouped: subdirs per flux-kustomization (namespace, secrets, app, db)
 │   ├── <service>/          # Flat: single flux-kustomization, all manifests at root
 │   └── flux-system/        # Flux controllers (auto-generated)

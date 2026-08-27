@@ -106,7 +106,7 @@ Enforced at PR time by `test_sops_decryption`.
 
 **Prevention**:
 
-- PG backend in the `tofu-state-db` CNPG cluster (automated offsite backup is a pending TODO — see <plan.md>)
+- PG backend in the `tofu-state-db-ovh` CNPG cluster (automated offsite backup is a pending TODO — see <plan.md>)
 - Age keypair also stored in `secrets/shared/cluster-secrets-age.yaml` (SOPS-encrypted
   with admin key) — survives tofu state loss
 

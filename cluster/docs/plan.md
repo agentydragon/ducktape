@@ -228,14 +228,20 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       domain as the DB, not actually offsite). Set up a real offsite backup of the
       `tfstate` DB — e.g. CNPG `barmanObjectStore` → SeaweedFS S3, or an
       always-on OVH-node CronJob streaming dumps to S3.
-- [ ] **Evaluate lighter registry to replace Harbor** — Harbor is only used for (a) pull-through
-      proxy cache (Docker Hub, GHCR, GCR, Quay, k8s.io) configured as Talos containerd mirrors,
-      and (b) props agent image storage. Candidates: [Zot](https://zotregistry.dev/) (single binary,
-      multi-upstream proxy + private images), or separate `registry:2` per upstream + GHCR for props.
-      Would drop the Harbor Helm chart, CNPG cluster, 32Gi HDD PVC, ~700Mi RAM, and all
-      Harbor-specific TF modules. Update 2026-07: phase 1 landed — `oci-cache` (Zot on
+- [ ] **Evaluate lighter registry to replace Harbor** — Harbor (parked 2026-06-02, manifests
+      archived under `k8s/x/harbor/`) was only used for (a) pull-through proxy cache (Docker Hub,
+      GHCR, GCR, Quay, k8s.io) configured as Talos containerd mirrors, and (b) props agent image
+      storage (props now pull from the Forgejo registry). Candidates: [Zot](https://zotregistry.dev/)
+      (single binary, multi-upstream proxy + private images), or separate `registry:2` per upstream +
+      GHCR for props. Would drop the Harbor Helm chart, CNPG cluster, 32Gi HDD PVC, ~700Mi RAM, and
+      all Harbor-specific TF modules. Update 2026-07: phase 1 landed — `oci-cache` (Zot on
       SeaweedFS S3 + Valkey dedupe, no PVC, unpinned) covers the pull-through role, see
-      <../k8s/oci-cache/README.md>. Still ClusterIP-only; the authenticated public endpoint + Talos containerd mirrors that would let Harbor's proxy-cache be retired are phase 2.
+      <../k8s/oci-cache/README.md>. The authenticated public endpoint is live too
+      (`https://oci-cache.allegedly.works`: HTTPRoute → htpasswd nginx sidecar). Remaining before
+      Harbor's proxy-cache role is fully retired: the Talos containerd mirrors
+      (`machine.registries.mirrors` in `terraform/main/infrastructure.tf`), deliberately deferred
+      because machine-config changes reboot nodes — see the oci-cache README § Node-level
+      pull-through.
 
 - [ ] Verify dmeventd thin pool monitoring after wyrm2 reboot: NixOS config changed
       `pkgs.lvm2` → `pkgs.lvm2_dmeventd` so `lvchange --monitor y` actually registers
@@ -521,8 +527,8 @@ Single-instance Proxmox CNPG clusters (inventree, matrix, tandoor) rely on Proxm
 for local reliability (checksums, snapshots). Off-site disaster recovery needed:
 
 (`harbor-db` moved to a single OVH instance and `props-db` to a 2-instance OVH-HA
-cluster — see <cnpg_conventions.md> Compliance table — so they're no longer part of
-this Proxmox-only gap.)
+cluster — see <cnpg_conventions.md> § Current Compliance — so they're no longer part
+of this Proxmox-only gap.)
 
 - [ ] Generalize the `tofu-state` pg_dump CronJob pattern to all Proxmox CNPG clusters
       (write dumps to OVH-hosted PVC or object storage)
