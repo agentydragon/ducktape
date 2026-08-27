@@ -42,7 +42,7 @@ def repo_for(name: str, registry: Registry) -> str:
     return f"{REGISTRY_PREFIX[registry]}/{name}"
 
 
-def published_digest(crane: Crane, repo: str) -> str | None:
+def registry_digest(crane: Crane, repo: str) -> str | None:
     """Content of the most recent publish to `repo`, or None if there has not been one.
 
     `latest` answers this, so nothing here has to know how Flux picks a tag. The

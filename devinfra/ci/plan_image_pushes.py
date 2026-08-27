@@ -45,7 +45,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from devinfra.ci.bes import BuildBuddyError, Invocation, Output, fetch_blob, merge, read
-from devinfra.ci.image_registry import DIGEST_SUFFIX, Registry, published_digest, repo_for
+from devinfra.ci.image_registry import DIGEST_SUFFIX, Registry, registry_digest, repo_for
 from util.crane import Crane
 
 
@@ -158,7 +158,7 @@ def decide(image: Image, digests: Mapping[str, str], crane: Crane) -> Decision:
     local_digest = digests.get(image.name)
     if local_digest is None:
         return Decision(image=image, local_digest=None, published_digest=None)
-    return Decision(image=image, local_digest=local_digest, published_digest=published_digest(crane, image.repo))
+    return Decision(image=image, local_digest=local_digest, published_digest=registry_digest(crane, image.repo))
 
 
 def plan(images: list[Image], decider: Callable[[Image], Decision], workers: int) -> list[Decision]:

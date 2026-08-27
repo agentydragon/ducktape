@@ -5,7 +5,7 @@ import pytest
 import pytest_bazel
 
 from devinfra.ci.bes import BuildBuddyError, Invocation, Output, merge
-from devinfra.ci.image_registry import REGISTRY_PREFIX, Registry
+from devinfra.ci.image_registry import Registry
 from devinfra.ci.plan_image_pushes import (
     Decision,
     Image,
@@ -174,8 +174,8 @@ def test_a_registry_error_fails_the_plan_rather_than_skipping() -> None:
 
 def test_repo_url_follows_the_registry() -> None:
     forgejo = Image(name="osm-mcp", target="//third_party/osmmcp:image", test=None, registry=Registry.FORGEJO)
-    assert image().repo.startswith(REGISTRY_PREFIX[Registry.GHCR])
-    assert forgejo.repo.startswith(REGISTRY_PREFIX[Registry.FORGEJO])
+    assert image().repo == "ghcr.io/agentydragon/airlock"
+    assert forgejo.repo == "git.allegedly.works/ducktape-ci/osm-mcp"
     assert image().repo.endswith("/airlock")
 
 

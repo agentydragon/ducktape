@@ -26,7 +26,7 @@ import os
 import sys
 from pathlib import Path
 
-from devinfra.ci.image_registry import DIGEST_SUFFIX, Registry, published_digest, repo_for
+from devinfra.ci.image_registry import DIGEST_SUFFIX, Registry, registry_digest, repo_for
 from util.crane import Crane
 
 
@@ -48,7 +48,7 @@ def push(oci_dir: Path, repo: str, tag: str, crane: Crane) -> bool:
     """
     local = oci_dir.with_name(oci_dir.name + DIGEST_SUFFIX).read_text().strip()
     try:
-        digest = published_digest(crane, repo)
+        digest = registry_digest(crane, repo)
     except RuntimeError as e:
         # Same rule as the planner's: unreadable is not unchanged. Reading is a
         # saving, not a precondition — a registry blip must not turn a push that

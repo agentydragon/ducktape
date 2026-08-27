@@ -119,9 +119,6 @@ class Crane:
                 return None
             raise
 
-    def ls(self, repo: str) -> list[str]:
-        return self._run("ls", repo).splitlines()
-
     def push(self, image_dir: Path, ref: str) -> None:
         self._run("push", str(image_dir), ref)
 

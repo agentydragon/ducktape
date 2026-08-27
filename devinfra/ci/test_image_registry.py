@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest_bazel
 
-from devinfra.ci.image_registry import REGISTRY_PREFIX, Registry, published_digest, repo_for
+from devinfra.ci.image_registry import REGISTRY_PREFIX, Registry, registry_digest, repo_for
 from util.crane import Crane
 
 
@@ -19,26 +19,30 @@ class FakeCrane(Crane):
         return self.digests.get(image_ref)
 
 
-def test_the_published_digest_is_whatever_latest_points_at() -> None:
+def test_the_registry_digest_is_whatever_latest_points_at() -> None:
     crane = FakeCrane({"r:latest": "sha256:current"})
-    assert published_digest(crane, "r") == "sha256:current"
+    assert registry_digest(crane, "r") == "sha256:current"
     assert crane.asked == ["r:latest"], "one round-trip, and no tag listing"
 
 
-def test_a_repository_never_pushed_to_has_no_published_digest() -> None:
-    assert published_digest(FakeCrane({}), "r") is None
+def test_a_repository_never_pushed_to_has_no_registry_digest() -> None:
+    assert registry_digest(FakeCrane({}), "r") is None
 
 
 def test_pinned_tags_are_not_consulted() -> None:
     """The publish check goes through the moving tag, so ImagePolicy's newest-first
     ordering over `devel-*` stays in the cluster rather than being restated here."""
     crane = FakeCrane({"r:devel-20260827054143-96b61f5": "sha256:pinned"})
-    assert published_digest(crane, "r") is None
+    assert registry_digest(crane, "r") is None
 
 
-def test_repo_url_follows_the_registry() -> None:
-    assert repo_for("airlock", Registry.GHCR) == f"{REGISTRY_PREFIX[Registry.GHCR]}/airlock"
-    assert repo_for("osm-mcp", Registry.FORGEJO) == f"{REGISTRY_PREFIX[Registry.FORGEJO]}/osm-mcp"
+def test_repo_url_is_the_one_the_cluster_pulls() -> None:
+    """Exact values, because they are an external contract: `cluster/k8s/**` pins
+    `ghcr.io/agentydragon/<name>` and `git.allegedly.works/ducktape-ci/<name>` in
+    its manifests, and Flux ImagePolicy watches those repositories. Building the
+    expectation from REGISTRY_PREFIX would restate the implementation instead."""
+    assert repo_for("airlock", Registry.GHCR) == "ghcr.io/agentydragon/airlock"
+    assert repo_for("cpap-gateway", Registry.FORGEJO) == "git.allegedly.works/ducktape-ci/cpap-gateway"
 
 
 def test_every_registry_has_a_prefix() -> None:
