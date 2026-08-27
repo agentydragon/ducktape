@@ -175,7 +175,11 @@ read-only.
 
 ### Canonical HTTP origin
 
-Version one grants exact origins:
+Version one grants exact origins, each optionally narrowed by an explicit
+method set and a fullmatch path regex evaluated against the request path plus
+query ([#4878](https://github.com/agentydragon/ducktape/pull/4878)
+`HttpGrantSpec`; ruled in
+[#4884](https://github.com/agentydragon/ducktape/issues/4884#issuecomment-5437484931)):
 
 ```json
 {
@@ -191,13 +195,13 @@ Normalization rules:
 - host is a lower-case IDNA A-label with no trailing dot;
 - port is explicit after applying the scheme default;
 - IP literals are rejected;
-- wildcard domains, regular expressions, paths and methods are not v1 grant
-  predicates.
+- wildcard domains and host regular expressions are not grant predicates.
 
 A redirect chain needs every origin in one atomic grant set. Method and path
-predicates may be added only for an adapter mode that demonstrably sees the
-inner decrypted request. Bare CONNECT authorization cannot claim those
-semantics.
+predicates carry authority only where the adapter demonstrably sees the inner
+decrypted request: a CONNECT tunnel the proxy cannot decrypt has no path, so
+path-scoped coverage applies to intercepted requests while opaque-tunnel
+reachability stays host-and-port-scoped by construction.
 
 ### Request-scoped API capabilities
 
@@ -450,7 +454,7 @@ The Agent never receives the real credential.
 
 An egress credential handle binds:
 
-- a high-entropy opaque placeholder, stored by fingerprint;
+- a deterministic, inert placeholder string such as `github-token-placeholder`;
 - one provider credential secret reference;
 - the Agent or Agents allowed to select it;
 - exact allowed origins;
@@ -458,14 +462,15 @@ An egress credential handle binds:
 - active lifetime and revocation state;
 - audit-safe label such as `github-personal` or `github-bot`.
 
-The placeholder is not a predictable database ID. Console generates it with a
-cryptographically secure random source, persists only its fingerprint, and
-returns the raw value once through the deploy-managed Agent provisioning or
-secret-delivery path. Rotation creates a new handle and bounded overlap before
-revoking the old one; there is no API for reading a raw placeholder later.
-Copying it to another Agent is insufficient because redemption is bound to the
-Agent identity authenticated from the fence credential. Presenting it at the
-wrong origin never causes substitution.
+The placeholder is not a secret
+([#4884](https://github.com/agentydragon/ducktape/issues/4884#issuecomment-5437501221)):
+it is worthless against external services, loggable, and committed in sandbox
+templates by design; only the redeemed real value is never-log material.
+Possession grants nothing. Copying a placeholder to another Agent is
+insufficient because redemption is bound to the Agent identity authenticated
+from the fence credential, and presenting it at the wrong origin never causes
+substitution. Rotating the provider credential happens entirely Console-side;
+the placeholder need not change.
 
 An Agent may receive several named placeholders for the same provider. This
 allows deliberate account selection, for example:
@@ -527,23 +532,26 @@ Denied and malformed requests are retained as well as successful requests.
 These records are intentionally sensitive and belong in a Console-controlled,
 access-restricted audit store with explicit retention and deletion policy. They
 must not be emitted to ordinary proxy logs, metrics or Agent-visible errors.
-Credential and placeholder values, cookies, authorization headers and other
-configured secret fields are always redacted. Request or response body capture
-is not required for the first implementation; a backend may add separately
-protected, size-bounded body capture when exact mutation debugging justifies its
-additional sensitivity.
+Credential values, cookies, authorization headers and other configured secret
+fields are always redacted; placeholders are inert and need no redaction.
+Request or response body capture is not required for the first implementation;
+a backend may add separately protected, size-bounded body capture when exact
+mutation debugging justifies its additional sensitivity.
 
-Console returns only the exact rendered replacement required for one request,
-not a reusable provider credential object. The adapter:
+Console returns the real credential value only inside a per-request
+substitution, not as a reusable provider credential object. The adapter:
 
-- keeps placeholder and replacement values out of ordinary and audit logs and
-  metrics;
-- does not write replacements into generated configuration, files or cache;
-- holds replacement bytes only for the request transformation;
-- strips a recognized placeholder if redemption fails, then denies the request;
-- scopes both the placeholder strip and the replacement add to the destination;
-- never substitutes based on placeholder match alone without destination and
-  Agent checks.
+- keeps real credential values out of ordinary and audit logs and metrics (the
+  placeholder itself is loggable by design);
+- does not write real values into generated configuration, files or cache;
+- holds real-value bytes only for the request transformation;
+- applies exactly the returned substitutions, scanning only the named headers;
+- forwards placeholder occurrences the substitutions do not cover verbatim —
+  no stripping and no unsubstituted-placeholder special case
+  ([#4884](https://github.com/agentydragon/ducktape/issues/4884#issuecomment-5437501221));
+- performs no destination or Agent scoping of its own: decisions are
+  per-request, so Console returns a substitution only for a request it has
+  already checked against destination and Agent policy.
 
 Version zero disables HTTP response caching entirely: the proxy is a
 non-caching forwarder, verified to store neither authenticated nor anonymous
@@ -560,9 +568,12 @@ control-plane requirement.
 
 One authenticated call carries the reachability verdict and the
 request-specific credential-substitution operations together. This section is
-the current proposal — the working shape the implementation PR will pin. It is
-an internal same-release contract (§ Topology): proxy and Console deploy from
-one commit, so there is no version negotiation and no versioning.
+the current proposal — the working shape the implementation
+([#4884](https://github.com/agentydragon/ducktape/issues/4884)) will pin; the
+substitution semantics are ruled and already implemented proxy-side
+([#4876](https://github.com/agentydragon/ducktape/pull/4876)). It is an
+internal same-release contract (§ Topology): proxy and Console deploy from one
+commit, so there is no version negotiation and no versioning.
 
 ```text
 POST /api/internal/http/decide        (bound on localhost)
@@ -574,8 +585,8 @@ constraint — authenticated, reachable only by the proxy, never routable from
 sandbox workloads — is defense in depth, not either/or.
 
 The request carries the caller's fence credential, the canonical origin, the
-pinned resolution and the credential presentations observed in the decrypted
-request:
+pinned resolution and the request metadata that grant coverage is evaluated
+against:
 
 ```json
 {
@@ -583,26 +594,30 @@ request:
   "origin": { "scheme": "https", "host": "api.github.com", "port": 443 },
   "resolved_ips": ["140.82.121.5", "2a01:4f8:c010::5"],
   "upstream_ip": "140.82.121.5",
-  "presentations": [
-    {
-      "kind": "bearer",
-      "slot": "authorization",
-      "placeholder_fingerprint": "sha256:9f2c..."
-    }
-  ]
+  "method": "GET",
+  "path": "/repos/agentydragon/ducktape/pulls?state=open"
 }
 ```
 
 - Console derives the Agent and access profile by authenticating
   `fence_credential`; the request carries no caller-asserted `agent_id`.
-- Placeholders travel as fingerprints, never as raw values; Console persists
-  and looks placeholders up by fingerprint only.
-- Method, path, query and body stay out of the call: none participates in v1
-  authority, each can carry sensitive application data, and Console sits on
-  the request-decision path, never the body path.
+- `method` and `path` — the path plus query exactly as the proxy will send it —
+  travel because grant coverage is evaluated against the concrete request:
+  host, port, method set, path regex
+  ([#4878](https://github.com/agentydragon/ducktape/pull/4878)
+  `HttpGrantSpec`; ruled in
+  [#4884](https://github.com/agentydragon/ducktape/issues/4884#issuecomment-5437484931)).
+  A CONNECT the proxy cannot decrypt has no path, so path-scoped coverage
+  applies to intercepted requests while opaque tunnels stay host:port-scoped.
+  The client-controlled Host header is never policy input.
+- Header values and bodies stay out of the call. The placeholder the sandbox
+  holds is inert (§ Credential model), so nothing about it needs to travel
+  inward — grant evaluation alone decides which substitutions come back.
+  Bodies can carry sensitive application data, and Console sits on the
+  request-decision path, never the body path.
 
 The allowed response carries the verdict, its audit linkage, the admission
-lifetime and the exact substitutions for this one request:
+lifetime and the substitutions for this one request:
 
 ```json
 {
@@ -610,7 +625,13 @@ lifetime and the exact substitutions for this one request:
   "source": "grant",
   "decision_id": "grant:018f...",
   "valid_until": "2026-08-26T02:30:00Z",
-  "substitutions": [{ "header": "authorization", "value": "Bearer <exact rendered value>" }]
+  "substitutions": [
+    {
+      "placeholder": "github-token-placeholder",
+      "value": "<real credential value>",
+      "match_headers": ["authorization"]
+    }
+  ]
 }
 ```
 
@@ -633,14 +654,23 @@ Semantics:
   admission. CONNECT, decrypted HTTP, WebSocket upgrade and HTTP/2 stream hooks
   map to the same origin semantics.
 - Reachability and credential redemption remain independent authorities inside
-  the one call: a presentation never expands reachability, and reachability
-  never unlocks credentials. A recognized placeholder that cannot be redeemed —
-  wrong Agent, wrong origin, revoked or expired — denies the request rather
-  than forwarding the placeholder.
-- Each substitution names an exact header and the exact rendered replacement
-  for this request only. The response model marks replacement values secret;
-  neither placeholder nor replacement values are ever logged or persisted on
-  either side.
+  the one call: holding a placeholder never expands reachability, and
+  reachability never unlocks credentials. On a route where no substitution
+  scope matches, the decision is either deny — grant policy — or allow with
+  the placeholder passing through verbatim; the placeholder is inert upstream,
+  the proxy performs no stripping and has no unsubstituted-placeholder special
+  case, and allow-without-substitutions is a normal outcome
+  ([#4884](https://github.com/agentydragon/ducktape/issues/4884#issuecomment-5437501221)).
+- A substitution is placeholder → real value plus the headers to scan —
+  `{placeholder, value, match_headers}`, proxy-side `PlaceholderSubstitution`
+  in `haku/egress/decision.py`
+  ([#4876](https://github.com/agentydragon/ducktape/pull/4876)). The proxy
+  replaces each occurrence of the placeholder inside the scanned header
+  values, reaching inside the base64 payload of Basic credentials — the shape
+  git over HTTPS sends — and touches nothing else; a request that never
+  presents the placeholder is forwarded untouched and receives no credential.
+  The response model marks real values secret; they are never logged or
+  persisted on either side, while placeholders are loggable by design.
 - `valid_until` is an exact admission deadline (§ Admission expiry and
   active-flow lifetime); an already admitted flow may overrun it only within
   the deployment-wide hard `max_flow_lifetime`.
@@ -664,15 +694,15 @@ any future replacement must also pass. The implementation must:
 6. enforce the deployment's finite hard flow lifetime;
 7. surface a useful denial reason without exposing credentials or policy
    internals;
-8. report observed credential presentations only from decrypted request
-   metadata, as presentation kind plus placeholder fingerprint, never raw
-   values;
+8. take the decision call's request metadata — method, scheme, host, port,
+   path with query — from the connection target and decrypted request, never
+   from the client-controlled Host header;
 9. apply exactly the returned substitution operations and never persist them;
-10. deny rather than forward when a recognized placeholder cannot be
-    substituted;
-11. keep method, path, query and body out of v1 decision calls while writing
-    exact non-secret request metadata to the restricted audit stream
-    independently of policy evaluation.
+10. forward placeholder occurrences the substitutions do not cover verbatim,
+    with no stripping and no unsubstituted-placeholder special case;
+11. keep header values and bodies out of decision calls while writing exact
+    non-secret request metadata to the restricted audit stream independently
+    of policy evaluation.
 
 ## Failure behavior
 
@@ -686,7 +716,6 @@ The system denies on:
 - destination denial or missing grants;
 - DNS resolution failure, oversized answers or prohibited addresses;
 - mismatch between selected and connected address;
-- credential placeholder mismatch or denied redemption;
 - credential substitution failure;
 - inability to enforce the configured hard flow lifetime.
 
@@ -759,12 +788,13 @@ adapter behavior without exposing sensitive values.
 - a managed credential slot containing an independently supplied credential
   increments the audit-safe unexpected-credential metric without exposing its
   value;
-- a newly issued raw placeholder is delivered once, cannot be read back, rotates
-  with bounded overlap and is looked up only by fingerprint;
-- Bearer and Git-over-HTTPS Basic forms substitute correctly;
-- denied redemption never forwards the placeholder;
-- request bodies, placeholders and replacements are absent from logs, metrics
-  and cache;
+- an allowed request whose route matches no substitution scope, or a
+  placeholder occurrence outside the scanned headers, passes through verbatim
+  rather than being stripped or denied;
+- Bearer and Git-over-HTTPS Basic forms substitute correctly, including inside
+  the base64 Basic payload;
+- request bodies and redeemed real values are absent from logs, metrics and
+  cache;
 - credential revocation affects the next request independently of reachability.
 
 ### Request capability enforcement
