@@ -78,7 +78,7 @@ near-ambiguous structural selectors from its `--source-file` pass.
 
 ## Shared CLI workflows
 
-@references/cli_basics.md
+@references/cli.md
 @references/selectors.md
 
 ## Setup
@@ -89,7 +89,7 @@ The per-selector loop is **binary-only**: `selector-debt` and
 a pipeline build, owner graph, or `DEBUNDLE_GRAPH`/`DEBUNDLE_OUT`. A built
 `debundle` binary (or the pinned released one) plus the upstream snapshot is
 their whole toolchain. Export `DEBUNDLE_MODULES` / `DEBUNDLE_SOURCE_ROOT` (see
-`cli_basics.md` above); `match-selector` can also be run with explicit
+`cli.md` above); `match-selector` can also be run with explicit
 `--source-file` / `--source-root --chunk` flags. Use a per-agent Bazel output
 base under `/tmp` to avoid lock contention, exactly as the other debundle
 skills do. In a consuming repo the CLI label is `@ducktape//...`; inside the

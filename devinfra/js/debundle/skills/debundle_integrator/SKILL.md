@@ -10,13 +10,12 @@ base branch.
 
 Shared CLI workflows land here for gate and `--dry-run` behavior:
 
-@references/cli_basics.md
+@references/cli.md
 @references/spec_editing.md
 
 Read other bundled references as needed:
 
 - `references/workflow.md` for orchestration and failure routing
-- `references/cli.md` for the full `debundle` command surface
 - `references/README.md` for the crate pitch + Comments
 
 ## Inputs

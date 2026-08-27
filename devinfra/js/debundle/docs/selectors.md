@@ -2,7 +2,7 @@
 
 How to write `source_matches[]` and `anonymous_statements[].source_match`
 selectors that stay valid across minified rebuilds. Operational base:
-`cli_basics.md`.
+`cli.md`.
 
 ## The contract and the ladder
 

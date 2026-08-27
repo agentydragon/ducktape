@@ -12,14 +12,13 @@ the architect.
 Shared CLI workflows land here for binding moves, renames, module merges, and
 atom-split recovery:
 
-@references/cli_basics.md
+@references/cli.md
 @references/selectors.md
 @references/spec_editing.md
 
 Read other bundled references as needed:
 
 - `references/workflow.md` for role boundaries and failure routing
-- `references/cli.md` for the full `debundle` command surface
 - `references/README.md` for the crate pitch + Comments
 - `references/module_shape.md` for seam and layer-ownership heuristics
 
@@ -38,7 +37,7 @@ The orchestrator or project adapter provides:
 1. Confirm the worktree is at the expected base before editing.
 2. Check the assignment against the current graph with `debundle describe`
    and `debundle show-source`; if needed, scan with `debundle atoms`,
-   `coverage`, or `cluster <sym>` (see `references/cli.md`).
+   `coverage`, or `cluster <sym>` (see the shared CLI guide above).
 3. Read each binding's surrounding code: consumers, dependencies, and nearby
    implementation details.
 4. Choose a module boundary that looks like a real JavaScript seam under the

@@ -79,7 +79,7 @@ require merge/manual work.
 - `peel/quotient.rs`: quotient kernel, seed contraction, greedy driver.
 - `peel/quotient_integration_test.rs`: seed, greedy, merge-output, and
   lazy-PQ equivalence coverage.
-- `docs/guide.md` and `docs/cli.md`: user-facing `modules propose` and
-  `bindings assign --batch` workflow.
+- `docs/cli.md` and `docs/spec_editing.md`: user-facing `modules propose`
+  and `bindings assign --batch` workflow.
 - `perf/proposer.md`: live proposer performance roadmap and profiling
   policy.

@@ -10,13 +10,12 @@ translates certified structural proposals into work packets for lane workers.
 
 Shared CLI workflows land here so proposal/batch semantics stay in one place:
 
-@references/cli_basics.md
+@references/cli.md
 @references/spec_editing.md
 
 Read other bundled references as needed:
 
 - `references/workflow.md` for handoffs and scratch-state conventions
-- `references/cli.md` for the full `debundle` command surface
 - `references/README.md` for the crate pitch + Comments
 - `references/module_shape.md` for destination and cohesion heuristics
 

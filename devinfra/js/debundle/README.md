@@ -6,8 +6,10 @@ drive later module extraction and naming work.
 
 ## CLI
 
-See `docs/cli.md` for the current command reference.
-See `docs/guide.md` for step-by-step workflows.
+`debundle <command> --help` is the per-command reference; `docs/cli.md`
+covers the cross-command semantics (env vars, output formats, batch
+atomicity, gate queries). Workflow docs: `docs/selectors.md` (portable
+selector authoring), `docs/spec_editing.md` (module/binding editing).
 
 Cheat sheet of the most-used commands:
 
@@ -174,7 +176,9 @@ annotations; these emit into generated JS on every rebuild, so RE
 notes survive `debundle run` invocations. The same places also accept
 `note:`: YAML-only scratch metadata that never emits (debt rationale,
 provenance; `modules merge` writes its `merged from: <sources>` provenance into
-the module-level `note:`, composing with any existing note). Per-binding
+the module-level `note:`, composing with any existing note, and concatenates
+source-module `comment:` fields into the target's with a `--- from <source>:`
+divider). Per-binding
 metadata belongs under `annotations.<export_name>` and may include `comment`,
 `note`, `purity`, `effect`, `pure_members`, or
 `no_sync_callback_members`. Edit module and member comments via

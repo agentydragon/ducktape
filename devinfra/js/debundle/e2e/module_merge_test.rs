@@ -317,9 +317,9 @@ fn merge_carries_source_matches_into_target() {
 
 #[test]
 fn merge_concatenates_module_comments_with_divider() {
-    // docs/cli.md promises: `modules merge` concatenates source-module
-    // comments into the target's module-level `comment:` with a
-    // `--- from <source>:` divider.
+    // README.md § "Comments" promises: `modules merge` concatenates
+    // source-module comments into the target's module-level `comment:`
+    // with a `--- from <source>:` divider.
     let dir = TempDir::new().unwrap();
     let root = dir.path();
     write_file(
