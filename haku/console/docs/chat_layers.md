@@ -93,7 +93,10 @@ that re-derived everything would silently delete every fact no frame carries.
   consumer — a room, a follow socket, the console socket a tab already holds — what it subscribes
   to is that pair. A new way to learn that a conversation moved is a second protocol, and the
   answer is to be a consumer of the one that exists; the runtime side is symmetric, learning of
-  conversation demand by the same wake rather than by a path of its own.
+  conversation demand by the same wake rather than by a path of its own. The protocol governs the
+  layer boundary, not the inside of a component: a signal that never crosses one — channel code
+  waking channel code about the channel's own delivery state — rides that component's own wiring,
+  below its boundary, and does not join this wire.
 - **An event kind** joins the record if any reader outside the session that produced it may need
   it, and takes its category from the route it arrived by, not from its subject. A kind that only
   a running turn reads is a session detail and needs no row; a kind a room or a tab renders is a

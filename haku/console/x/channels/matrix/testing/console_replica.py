@@ -45,6 +45,7 @@ from haku.console.x.channels.matrix.client import MatrixError
 from haku.console.x.channels.matrix.conversation import MatrixConversationStore, MatrixTurns
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.channels.matrix.outbox import PendingReply, RoomOutbox
+from haku.console.x.channels.matrix.outbox_wake import OutboxWakes
 from haku.console.x.channels.matrix.revisions import RevisionLog
 from haku.console.x.channels.matrix.room_copy import RoomCopy
 from haku.console.x.channels.matrix.room_subscription import RoomNotices
@@ -187,7 +188,7 @@ async def _serve() -> None:
         RevisionLog(sessions),
         ledger,
         room_copy,
-        notifications,
+        OutboxWakes(database_url),
         armed=Path(_environment("HAKU_E2E_REFUSE_NEXT_REPLY")),
     )
     service = SessionService(runtimes, store, notifications, conversation_history=ConversationHistory(sessions))

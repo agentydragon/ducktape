@@ -64,10 +64,21 @@ py_library(
     deps = [
         ":client",
         ":conversation",
+        ":outbox_wake",
         ":pacer",
         ":revisions",
         "//haku/console:database_schema",
+        "@pypi//sqlalchemy",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "outbox_wake",
+    srcs = ["outbox_wake.py"],
+    deps = [
         "//haku/console/x:session_notifications",
+        "@pypi//asyncpg",
         "@pypi//sqlalchemy",
     ],
 )
@@ -115,6 +126,7 @@ py_library(
         ":conversation",
         ":ingress_ledger",
         ":outbox",
+        ":outbox_wake",
         ":pacer",
         ":revisions",
         ":room_copy",
@@ -123,7 +135,6 @@ py_library(
         "//haku/console:database_schema",
         "//haku/console:operator_identity_store",
         "//haku/console/x:conversation_log",
-        "//haku/console/x:session_notifications",
         "@pypi//sqlalchemy",
     ],
 )
@@ -207,6 +218,7 @@ py_test(
         ":conftest",
         ":conversation",
         ":outbox",
+        ":outbox_wake",
         ":pacer",
         "//:conftest",
         "//haku/console:chat_models",
@@ -214,7 +226,6 @@ py_test(
         "//haku/console:database_schema",
         "//haku/console/x:conftest",
         "//haku/console/x:conversation_events",
-        "//haku/console/x:session_notifications",
         "//haku/console/x:session_store",
         "@pypi//more_itertools",
         "@pypi//pytest",

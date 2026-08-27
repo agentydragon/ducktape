@@ -112,6 +112,7 @@ from haku.console.x.channels.matrix import (
     conversation as matrix_conversation,
     ingress_ledger as matrix_ingress_ledger,
     outbox as matrix_outbox,
+    outbox_wake as matrix_outbox_wake,
     revisions as matrix_revisions,
     room_subscription as matrix_room_subscription,
     sync as matrix_sync,
@@ -442,7 +443,8 @@ def create_app(
             matrix_revisions.RevisionLog(db_sessions),
             matrix_ledger,
             matrix_room_copy,
-            session_notifications,
+            # The channel's own wake wire; the drain starts and stops it inside its `run()`.
+            matrix_outbox_wake.OutboxWakes(database_url),
         )
         # The room as a subscriber to the conversation: it reads the record from a position it keeps
         # itself and says what the room has not been told, rather than being pushed at by whichever

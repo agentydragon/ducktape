@@ -65,11 +65,11 @@ from haku.console.x.channels.matrix.conversation import (
 )
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.channels.matrix.outbox import PendingReply, RoomOutbox, RoomOutboxDrain
+from haku.console.x.channels.matrix.outbox_wake import OutboxWakes
 from haku.console.x.channels.matrix.pacer import RoomPacer
 from haku.console.x.channels.matrix.revisions import RevisionLog
 from haku.console.x.channels.matrix.room_copy import RoomCopy
 from haku.console.x.conversation_log import writer_for
-from haku.console.x.session_notifications import SessionNotifications
 
 logger = logging.getLogger(__name__)
 
@@ -172,7 +172,7 @@ class MatrixSyncService:
         revisions: RevisionLog,
         ledger: IngressLedger,
         room_copy: RoomCopy,
-        notifications: SessionNotifications,
+        outbox_wakes: OutboxWakes,
     ):
         # Taken separately from `config`, which carries it as optional: the service is only ever
         # constructed once the password is known to be there.
@@ -192,7 +192,7 @@ class MatrixSyncService:
         self.pacer = RoomPacer()
         # Held here rather than by the composition root: it needs the credential that can speak
         # into the room and the pacer that decides when, which only this object has.
-        self._outbox = RoomOutboxDrain(engine, outbox, self.pacer, self.post_reply, self.bound_room, notifications)
+        self._outbox = RoomOutboxDrain(engine, outbox, self.pacer, self.post_reply, self.bound_room, outbox_wakes)
         self._status_body: str | None = None
 
     async def _token(self) -> str:

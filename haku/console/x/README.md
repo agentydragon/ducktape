@@ -405,6 +405,8 @@ the test that reads it, as `test_diverse_session` has.
   not create, replace, resolve or tend runtime sessions.
 - `pacer.py` — one paced outbound queue per room, over Synapse's `rc_message` budget.
 - `outbox.py` — the room's outbox: replies as `matrix_outbox` rows, and the drain that says them.
+- `outbox_wake.py` — the outbox's own wake wire (`matrix_outbox_wakes`): the enqueue's transaction
+  waking the drain. Channel-internal because the fact is; the conversation channel never carries it.
 - `revisions.py` — which homeserver event the channel is currently editing for a revisable subject
   (`matrix_revision`), which is what the status line is edited and retired through.
 - `room_subscription.py` — the room as a subscriber: its durable position in the conversation
@@ -441,10 +443,11 @@ Behaviours worth knowing before reading the code:
 - **A produced reply is a row, not a call.** The subscriber writes it when it reads the message
   complete, and `RoomOutboxDrain` — one replica, under the `MXOB` advisory lock —
   claims the oldest, queues it into the pacer, and marks it `sent_at` only once `room_send` has
-  returned. The drain is woken by the enqueue's own transaction (`delivery_demand` on the
-  conversation channel) — the only emission that cannot precede the row, since the wake that made
-  the subscriber read fired before the row existed — with a backstop for lost wakes and retries
-  coming due by clock. Everything else the console says —
+  returned. The drain is woken by the enqueue's own transaction, over the channel's own wire
+  (`outbox_wake.py`) — the only emission that cannot precede the row, since the conversation wake
+  that made the subscriber read fired before the row existed; an outbox row is channel delivery
+  state, so its wake stays below the channel boundary rather than riding the conversation channel.
+  A backstop covers lost wakes and retries coming due by clock. Everything else the console says —
   the status line, lifecycle and rejection notices, bootstrap narration — stays on the pacer's
   in-process queue, because a notice describing a moment is not worth redelivering ten minutes
   later. Two rules the drain is deliberate about: a failed reply **halts** the queue for its backoff
@@ -601,9 +604,7 @@ the listener be written against psycopg3's API while running on an asyncpg engin
 layers, so their wakes do not share a wire. `session_events` carries `SessionEvent
 {kind, session_id}` (`prompt`, `update`, `abort`) for the runtime's own consumers; the
 `conversation_wakes` channel carries `ConversationWakeEvent {kind, conversation_id, position}`
-(`runtime_demand`, `update`, `delivery_demand`) for conversation subscribers, which never see a
-session id. `delivery_demand`'s emitter is a channel's own enqueue transaction — the one wake only
-the channel can send, because it announces a row only the channel writes. The
+(`runtime_demand`, `update`) for conversation subscribers, which never see a session id. The
 `position` is a hint — the log head as of the emitting write, letting a subscriber skip a read it
 can prove redundant — never content, and never required for correctness. The conversation channel
 is deliberately not named `conversation_events`: what travels on it is a level-triggered wake,
@@ -618,7 +619,7 @@ not need costs one query. `watch_session` hands one session's events to a consum
 edge-triggered and has no row to re-check (the abort watcher). `watch` hands over every session
 event, for the allocator, which has to hear about sessions nothing told it to expect.
 `watch_conversations` is the shape every conversation-scoped consumer
-registers with — the follow socket, the Matrix subscriber and its outbox drain, the runtime
+registers with — the follow socket, the Matrix subscriber, the runtime
 supervisor, the console-tab invalidation fan-out — and hands over
 the wake payload or `RecheckHeld` ("re-check what you hold"), which the wire never carries: a
 listener reconnect synthesizes it, because the notifications committed during the gap are gone.
