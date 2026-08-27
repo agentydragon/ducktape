@@ -819,9 +819,8 @@ tool either widens what the console shows or forces scoping into the surface des
 it. Three costs a plan should state rather than discover: the browser's argument shape would be
 downstream of an agent policy file (`_is_passthrough` reads the auto-approval registry, so dropping
 a tool from Haku's policy silently makes the console page need the `{input, rationale}` envelope);
-the MCP surface's prose is written for an LLM reader and `MAX_PAGE_BYTES` exists to protect a model's
-context; and a page moving to MCP trades a typed 404/409 for a joined-text error blob and loses the
-generated `paths` typing.
+the MCP surface's prose is written for an LLM reader; and a page moving to MCP trades a typed
+404/409 for a joined-text error blob and loses the generated `paths` typing.
 
 ## 14. The standing rules
 
