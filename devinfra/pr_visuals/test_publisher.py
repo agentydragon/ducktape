@@ -9,6 +9,7 @@ import pytest
 import pytest_bazel
 from PIL import Image
 
+from devinfra.ci.invocation_ids import invocation_id
 from devinfra.pr_visuals.publisher import (
     COMMENT_BUDGET,
     BaselinePointer,
@@ -21,6 +22,7 @@ from devinfra.pr_visuals.publisher import (
     download_visual_tests,
     error_comment_body,
     find_test_invocations,
+    list_ci_artifacts,
     list_ci_failures,
     main,
     no_visual_comment_body,
@@ -47,21 +49,38 @@ class FakeBaselineSource:
         return self.objects.get(key)
 
 
-def test_find_test_invocations_prefers_test_role_then_keeps_fallbacks(tmp_path: Path) -> None:
-    (tmp_path / "linkage.json").write_text(
-        json.dumps(
-            {
-                "buildbuddy": {
-                    "bazel_invocations": [
-                        {"role": "query", "invocation_id": "inv-query"},
-                        {"role": "test", "invocation_id": "inv-test"},
-                        {"role": "command-2", "invocation_id": "inv-real-test"},
-                    ]
-                }
-            }
-        )
+def test_find_test_invocations_is_stable_and_puts_the_test_invocation_first() -> None:
+    """Both sides of the handoff derive these IDs independently — `bazel-ci.yml` to name
+    the invocations, the publisher to find them — so the derivation must be a function of
+    the run's identity alone. Test first: it carries the undeclared outputs."""
+    first = find_test_invocations("33060467222", "1")
+    assert first == find_test_invocations("33060467222", "1")
+    assert first[0] == str(invocation_id(run_id="33060467222", attempt="1", role="test"))
+    assert first[1] == str(invocation_id(run_id="33060467222", attempt="1", role="build"))
+    # A re-run must not fold into the run it replaces: BuildBuddy merges two invocations
+    # claiming one ID rather than rejecting the second.
+    assert find_test_invocations("33060467222", "2") != first
+
+
+def test_an_invocation_that_never_existed_is_not_a_failure() -> None:
+    """A run cancelled before Bazel started names two invocations BuildBuddy has never
+    seen, because the IDs are assigned up front. That is a normal empty result — raising
+    would turn the quietest case into a red job."""
+    calls = subprocess.CompletedProcess(
+        args=[],
+        returncode=1,
+        stdout="",
+        stderr="Error: HTTP 500: rpc error: code = NotFound desc = invocation not found",
     )
-    assert find_test_invocations(tmp_path) == ["inv-test", "inv-query", "inv-real-test"]
+    assert list_ci_artifacts(["absent-a", "absent-b"], run=lambda *_a, **_k: calls) == []
+
+
+def test_a_genuine_query_failure_still_raises() -> None:
+    """A transport or auth failure must not read as 'this run had no visuals' — that
+    would publish an empty bundle over a commit that really did render something."""
+    broken = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="Error: HTTP 503: upstream timeout")
+    with pytest.raises(RuntimeError, match="all BuildBuddy artifact queries failed"):
+        list_ci_artifacts(["a", "b"], run=lambda *_a, **_k: broken)
 
 
 def test_download_visual_tests_groups_manifests_by_executed_target(tmp_path: Path) -> None:
@@ -408,27 +427,39 @@ def test_refresh_stale_pull_request_comment(
     assert created == []
 
 
-def test_a_cancelled_run_publishes_nothing_and_leaves_the_comment_alone(
+def test_a_superseded_run_publishes_its_bundle_but_leaves_the_comment_alone(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """`bazel-ci` cancels a superseded run, so a cancelled conclusion describes a head
-    the branch has already moved past. The comment is a singleton: speaking here would
-    replace the previous run's real review with a warning about an abandoned build."""
+    """Cancellation kills the workflow, not the Bazel invocation, so a superseded run
+    often holds a complete set of manifests — those get published, since the commit
+    bundle is immutable and is what lets a PR on this commit resolve an exact baseline.
+    It still says nothing: the comment is a singleton, and speaking here would replace
+    the previous run's real review with a warning about an abandoned build. Pointers are
+    left alone because they are mutable and unordered across concurrent publishes."""
     checks: list[dict[str, object]] = []
     monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", lambda **kwargs: checks.append(kwargs))
 
     def forbid(name: str) -> Callable[..., None]:
         return lambda **_kwargs: pytest.fail(f"a cancelled run must not reach {name}")
 
-    for forbidden in ("upsert_pull_request_comment", "refresh_stale_pull_request_comment", "download_visual_tests"):
+    for forbidden in ("upsert_pull_request_comment", "refresh_stale_pull_request_comment", "write_baseline_pointers"):
         monkeypatch.setattr(f"devinfra.pr_visuals.publisher.{forbidden}", forbid(forbidden))
+    downloaded: list[list[str]] = []
+
+    def record(invocations: list[str], _destination: Path) -> list[object]:
+        downloaded.append(invocations)
+        return []
+
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.download_visual_tests", record)
     monkeypatch.setenv("GITHUB_TOKEN", "token")
     monkeypatch.setattr(
         "sys.argv",
         [
             "publisher",
-            "--linkage-dir",
-            str(tmp_path / "linkage"),
+            "--ci-run-id",
+            "33060467222",
+            "--ci-run-attempt",
+            "1",
             "--work-dir",
             str(tmp_path / "work"),
             "--sha",
@@ -450,6 +481,9 @@ def test_a_cancelled_run_publishes_nothing_and_leaves_the_comment_alone(
 
     main()
 
+    assert downloaded == [find_test_invocations("33060467222", "1")], (
+        "a superseded run must still look for the artifacts its Bazel invocation left behind"
+    )
     assert len(checks) == 1, "the announced in-progress check must still be terminated"
     assert checks[0]["conclusion"] == "neutral"
     assert checks[0]["commit_sha"] == "0123456789abcdef0123456789abcdef01234567"

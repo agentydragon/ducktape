@@ -21,6 +21,7 @@ from github import Auth, Github
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import BaseModel, TypeAdapter
 
+from devinfra.ci.invocation_ids import invocation_id
 from devinfra.pr_visuals.check_run import upsert_check_run
 from util.visual_diff import compare_pngs
 from util.visual_review import MANIFEST_NAME, VisualReviewManifest
@@ -29,19 +30,6 @@ FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 COMMENT_MARKER = "<!-- pr-visuals -->"
 COMMENT_BUDGET = 6000
-
-
-class BazelInvocation(BaseModel):
-    role: str
-    invocation_id: str
-
-
-class BuildBuddyLinkage(BaseModel):
-    bazel_invocations: list[BazelInvocation]
-
-
-class LinkageRecord(BaseModel):
-    buildbuddy: BuildBuddyLinkage
 
 
 class BuildBuddyArtifact(BaseModel):
@@ -186,15 +174,21 @@ class ReviewBundleMetadata(BaseModel):
     tests: list[ReviewTest]
 
 
-def find_test_invocations(linkage_dir: Path) -> list[str]:
-    invocations: list[BazelInvocation] = []
-    for path in sorted(linkage_dir.glob("*.json")):
-        record = LinkageRecord.model_validate_json(path.read_text())
-        invocations.extend(record.buildbuddy.bazel_invocations)
-    if not invocations:
-        raise ValueError("no Bazel invocations found in BuildBuddy linkage")
-    ordered = sorted(invocations, key=lambda invocation: invocation.role != "test")
-    return list(dict.fromkeys(invocation.invocation_id for invocation in ordered))
+def find_test_invocations(run_id: str, run_attempt: str) -> list[str]:
+    """The Bazel invocations `bazel-ci.yml` named for this run, test first.
+
+    Derived rather than observed, so a run cancelled before `bb remote` returned is
+    still addressable — that is the whole point, see devinfra/ci/invocation_ids.py.
+    An ID for an invocation that never started simply lists no artifacts.
+    """
+    return [str(invocation_id(run_id=run_id, attempt=run_attempt, role=role)) for role in ("test", "build")]
+
+
+# BuildBuddy's reply for an invocation ID it has never seen. Invocation IDs are assigned
+# before the run (devinfra/ci/invocation_ids.py), so this is an ordinary state — a run
+# cancelled before Bazel started names two invocations that never existed — and must not
+# be confused with a query that genuinely failed.
+_INVOCATION_ABSENT = "invocation not found"
 
 
 def list_ci_artifacts(
@@ -204,15 +198,16 @@ def list_ci_artifacts(
     failures: list[str] = []
     for invocation in invocations:
         result = run([bbapi, "artifact", "list", invocation, "--json"], check=False, text=True, capture_output=True)
-        if result.returncode != 0:
-            failures.append(f"{invocation}: {result.stderr.strip()}")
+        if result.returncode != 0 or _INVOCATION_ABSENT in result.stderr:
+            if _INVOCATION_ABSENT not in result.stderr:
+                failures.append(f"{invocation}: {result.stderr.strip()}")
             continue
         parsed_artifacts: list[BuildBuddyArtifact] | None = TypeAdapter(list[BuildBuddyArtifact] | None).validate_json(
             result.stdout
         )
         artifacts: list[BuildBuddyArtifact] = parsed_artifacts or []
         listed.extend(ListedArtifact(invocation, artifact) for artifact in artifacts)
-    if not listed and len(failures) == len(invocations):
+    if failures and len(failures) == len(invocations):
         raise RuntimeError("all BuildBuddy artifact queries failed: " + "; ".join(failures))
     return listed
 
@@ -805,7 +800,8 @@ def current_workflow_url() -> str | None:
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser()
-    result.add_argument("--linkage-dir", type=Path, required=True)
+    result.add_argument("--ci-run-id", required=True)
+    result.add_argument("--ci-run-attempt", required=True)
     result.add_argument("--work-dir", type=Path, required=True)
     result.add_argument("--sha", required=True)
     result.add_argument("--base-sha")
@@ -818,6 +814,42 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--ci-conclusion", default="success")
     result.add_argument("--ci-details-url")
     return result
+
+
+def publish_only(args: argparse.Namespace, *, github_token: str, details_url: str | None) -> None:
+    """Upload a superseded run's commit bundle, saying nothing about it.
+
+    Deliberately does not call :func:`write_baseline_pointers`. Pointers are the
+    bucket's only mutable objects, `put_object` has no ordering guard, and the
+    publish workflow's concurrency group is keyed on `head_sha` — so a superseded
+    run and the run that superseded it do not serialize against each other, and a
+    slow superseded publish could walk a pointer backwards onto an older commit.
+    The immutable bundle is what makes an exact-baseline lookup succeed; the
+    superseding run advances the pointer moments later.
+    """
+    # Before publishing, not after: this terminates the check the `announce` job left
+    # `in_progress`, and a publish that then fails must not strand it there.
+    upsert_check_run(
+        repository=args.repository,
+        commit_sha=args.sha,
+        status="completed",
+        conclusion="neutral",
+        summary="Superseded by a newer commit before Bazel CI finished.",
+        details_url=details_url,
+        external_id=args.check_external_id,
+        token=github_token,
+    )
+    invocations = find_test_invocations(args.ci_run_id, args.ci_run_attempt)
+    tests = download_visual_tests(invocations, args.work_dir / "tests")
+    if tests:
+        s3 = boto3.client("s3", endpoint_url=args.endpoint)
+        bundle = build_bundle(
+            tests, args.work_dir / "site", commit_sha=args.sha, repository=args.repository, base_sha=None
+        )
+        upload_bundle(bundle, endpoint=args.endpoint, bucket=args.bucket, key=f"commits/{args.sha}", client=s3)
+        print(f"Superseded run on {args.sha}: published {len(tests)} visual target(s); pointers left alone.")
+    else:
+        print(f"Superseded run on {args.sha}: no visual artifacts had arrived; nothing to publish.")
 
 
 def main() -> None:
@@ -836,30 +868,24 @@ def main() -> None:
 
     if args.ci_conclusion == "cancelled":
         # `bazel-ci.yml` cancels a superseded run the instant a newer commit lands on
-        # the branch, so a cancelled run is one whose tests never finished on a head
-        # that is no longer current. It has no artifacts to publish and nothing true
-        # to say — and the comment is a singleton, so letting it speak would overwrite
-        # the previous run's real review with a warning about a build nobody wants.
-        # The run that superseded it is already on its way with the answer.
-        upsert_check_run(
-            repository=args.repository,
-            commit_sha=args.sha,
-            status="completed",
-            conclusion="neutral",
-            summary="Superseded by a newer commit before Bazel CI finished.",
-            details_url=details_url,
-            external_id=args.check_external_id,
-            token=github_token,
-        )
-        print(f"Bazel CI on {args.sha} was cancelled as superseded; nothing to publish.")
+        # the branch. Such a run still has nothing true to *say* — the comment is a
+        # singleton, so letting it speak would overwrite the previous run's real review
+        # with a warning about a build nobody wants, and the run that superseded it is
+        # already on its way with the answer.
+        #
+        # It does, however, often have artifacts. Cancellation kills the workflow, not
+        # the Bazel invocation, which frequently completed with a full set of manifests
+        # already streamed to BuildBuddy. Those are published: the commit bundle is
+        # immutable and additive, and it is what lets a PR based on this commit resolve
+        # an exact baseline instead of falling back to a pointer.
+        publish_only(args, github_token=github_token, details_url=details_url)
         return
 
     try:
-        linkage_files = list(args.linkage_dir.glob("*.json"))
-        invocations = find_test_invocations(args.linkage_dir) if linkage_files else []
+        invocations = find_test_invocations(args.ci_run_id, args.ci_run_attempt)
         if args.ci_conclusion != "success":
             ci_failures = list_ci_failures(invocations)
-        tests = download_visual_tests(invocations, args.work_dir / "tests") if invocations else []
+        tests = download_visual_tests(invocations, args.work_dir / "tests")
         github_output = os.environ.get("GITHUB_OUTPUT")
         if github_output:
             with Path(github_output).open("a") as output:

@@ -54,9 +54,12 @@ jobs:
             --details-url "${{ github.event.workflow_run.html_url }}" \
             --external-id "pr-visual-review:${{ github.event.workflow_run.id }}"
 
-  # A flaky non-visual test must not leave the base commit without a visual
-  # bundle. The publisher only advances pointers for manifests it actually
-  # receives, so an incomplete test run cannot manufacture one.
+  # Runs on every conclusion, cancelled included: cancellation kills the workflow,
+  # not the Bazel invocation, which has often already streamed a full set of
+  # manifests. A flaky non-visual test must not leave the base commit without a
+  # visual bundle either. The publisher only advances pointers for manifests it
+  # actually receives — and never from a superseded run at all — so an incomplete
+  # run cannot manufacture one.
   publish:
     if: >-
       github.event.action == 'completed' &&
@@ -84,16 +87,6 @@ jobs:
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
-      - name: Download BuildBuddy linkage
-        uses: actions/download-artifact@v5
-        continue-on-error: true
-        with:
-          github-token: ${{ github.token }}
-          run-id: ${{ github.event.workflow_run.id }}
-          pattern: bazel-ci-linkage-*
-          merge-multiple: true
-          path: linkage
-
       - name: Publish visual review
         id: visuals
         env:
@@ -118,7 +111,8 @@ jobs:
           CI_RUN_URL: ${{ github.event.workflow_run.html_url }}
         run: |
           args=(
-            --linkage-dir "$PWD/linkage"
+            --ci-run-id "${{ github.event.workflow_run.id }}"
+            --ci-run-attempt "${{ github.event.workflow_run.run_attempt }}"
             --work-dir "$RUNNER_TEMP/pr-visuals"
             --sha "$HEAD_SHA"
             --repository "$GITHUB_REPOSITORY"

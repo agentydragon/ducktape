@@ -2,8 +2,10 @@
 
 Trusted publisher for PR visual reviews. The "Publish PR visuals" workflow
 (`.github/workflows/pr-visuals-publish.yml`) runs `publisher.py` after
-every PR and `devel` Bazel CI run, including failed runs. It scans the run's
-test invocations for targets whose undeclared outputs contain a
+every PR and `devel` Bazel CI run, including failed and superseded ones. It
+names the run's Bazel invocations by deriving their IDs from the run's identity
+rather than observing them (<devinfra/ci/invocation_ids.py>), then scans them for
+targets whose undeclared outputs contain a
 `visual-review.json` manifest (schema:
 `util/visual_review.py`), downloads the referenced PNGs, publishes an immutable
 bundle to `s3.allegedly.works/pr-visuals`, and upserts a review comment on the
@@ -25,6 +27,13 @@ Use one of the shared harnesses and it's automatic:
 - Custom drivers write the manifest themselves via
   `writeVisualReviewManifest` / `write_visual_review_manifest`
   (e.g. haku's `tool_rendering/screenshot/render.mjs`).
+
+A run cancelled as superseded publishes its commit bundle and nothing else: it
+often holds a complete manifest set, because cancellation kills the workflow
+rather than the Bazel invocation. It stays silent — the PR comment is a
+singleton, and the run that superseded it is already on its way with the real
+review — and it does not advance the baseline pointers, which are mutable and
+unordered across concurrent publishes.
 
 ## Baseline resolution
 

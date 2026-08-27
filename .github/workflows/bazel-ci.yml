@@ -133,6 +133,18 @@ jobs:
       # push/dispatch, github.sha is the pushed/dispatched commit. See
       # devinfra/docs/bb_remote_internals.md §"Git state synchronization"
       # ("--run_from_commit disables patches").
+      # Bazel names its invocations from the run's identity rather than CI discovering
+      # them afterwards, so a consumer can find them even when this run is cancelled
+      # mid-flight. See devinfra/ci/invocation_ids.py.
+      - name: Derive BuildBuddy invocation IDs
+        id: invocation-ids
+        run: |
+          for role in test build; do
+            id=$(python3 devinfra/ci/invocation_ids.py \
+              --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --role "$role")
+            echo "$role=$id" >> "$GITHUB_OUTPUT"
+          done
+
       - name: Test + Build + lint
         id: bb-remote
         uses: ./.github/actions/bb-remote
@@ -149,6 +161,8 @@ jobs:
             GITHUB_EVENT_NAME=${{ github.event_name }}
             PR_HEAD_SHA=${{ inputs.pr_head_sha || github.event.pull_request.head.sha }}
             PR_BASE_SHA=${{ inputs.pr_base_sha || github.event.pull_request.base.sha }}
+            TEST_INVOCATION_ID=${{ steps.invocation-ids.outputs.test }}
+            BUILD_INVOCATION_ID=${{ steps.invocation-ids.outputs.build }}
           script: bash devinfra/ci/bazel_ci.sh
       - name: Upload BuildBuddy linkage
         if: always()

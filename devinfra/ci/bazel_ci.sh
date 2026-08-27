@@ -23,6 +23,10 @@
 #   PR_BASE_SHA        PR base at event time; advisory only (the real base is the merge
 #                      commit's ^1 parent).
 #   RBE_IMAGE          forwarded automatically by the bb-remote action itself.
+#   TEST_INVOCATION_ID BuildBuddy invocation ID for the `bazel test` below, and
+#   BUILD_INVOCATION_ID  likewise for `bazel build`. Derived from the run's identity by
+#                      devinfra/ci/invocation_ids.py so a consumer can name the invocation
+#                      without observing this script — see that module.
 
 set -euo pipefail
 # BuildBuddy's per-target history (`bbapi target {history,stats,flakes}`) is off for
@@ -211,7 +215,7 @@ echo "test targets in scope: $TEST_TARGET_COUNT"
 probe_bb_runner before-test
 if [ "$TEST_TARGET_COUNT" -eq 0 ]; then
   echo "No test targets in scope -- skipping bazel test."
-  bazel build --keep_going $RBE_FLAGS $TARGETS \
+  bazel build --invocation_id="$BUILD_INVOCATION_ID" --keep_going $RBE_FLAGS $TARGETS \
     && probe_bb_runner after-build
 else
   # `bazel test` still hard-fails with exit 4 ("no test targets were
@@ -222,7 +226,7 @@ else
   # ONLY on the PR affected-set path; on the full `//...` sweep it would
   # mean every test was filtered out -- a real problem we must not mask.
   test_rc=0
-  bazel test --keep_going $RBE_FLAGS $TARGETS || test_rc=$?
+  bazel test --invocation_id="$TEST_INVOCATION_ID" --keep_going $RBE_FLAGS $TARGETS || test_rc=$?
   if [ "$test_rc" -eq 4 ] && [ "$TARGETS" != "//..." ]; then
     echo "No runnable tests after tag filtering in the affected set; continuing to build."
     test_rc=0
@@ -231,6 +235,6 @@ else
     exit "$test_rc"
   fi
   probe_bb_runner after-test \
-    && bazel build --keep_going $RBE_FLAGS $TARGETS \
+    && bazel build --invocation_id="$BUILD_INVOCATION_ID" --keep_going $RBE_FLAGS $TARGETS \
     && probe_bb_runner after-build
 fi
