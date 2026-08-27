@@ -7,8 +7,10 @@ test invocations for targets whose undeclared outputs contain a
 `visual-review.json` manifest (schema:
 `util/visual_review.py`), downloads the referenced PNGs, publishes an immutable
 bundle to `s3.allegedly.works/pr-visuals`, and upserts a review comment on the
-PR. Cache-hit test targets don't republish artifacts, so each bundle carries
-only the visual tests the run invalidated.
+PR. A cache-hit test still reports its undeclared outputs, so a bundle carries
+every visual target the run covered rather than only the ones it re-executed —
+which takes a download-mode flag to hold
+(<devinfra/docs/bazel_caching.md> § Undeclared test outputs under BwoB).
 
 ## Opting a visual test in
 

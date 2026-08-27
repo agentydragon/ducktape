@@ -23,6 +23,11 @@ test:rbe --strategy=TestRunner=remote,local
 build:rbe --shell_executable=/bin/bash
 build:rbe --jobs=50
 build:rbe --remote_download_minimal
+# Deviation: minimal deliberately excludes a test runner action's outputs from
+# the download set, which empties `test.outputs/` out of the build event stream
+# on an action-cache hit. pr_visuals reads exactly those, so force them back in.
+# <devinfra/docs/bazel_caching.md> § Undeclared test outputs under BwoB
+test:rbe --remote_download_regex=bazel-out/.*/testlogs/.*/test.outputs(/.*)?
 build:rbe --bes_results_url=https://app.buildbuddy.io/invocation/
 build:rbe --bes_backend=grpcs://remote.buildbuddy.io
 common:rbe --remote_cache=grpcs://remote.buildbuddy.io
