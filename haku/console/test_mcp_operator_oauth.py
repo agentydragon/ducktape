@@ -30,7 +30,6 @@ from haku.console.mcp_operator_oauth import (
     _token_request_auth,
 )
 from haku.console.oauth_token_state import (
-    _REFRESH_RETRY_MAX,
     OAuthRefreshBlockedError,
     OAuthRefreshError,
     OAuthRefreshFailureAction,
@@ -541,9 +540,9 @@ def test_refresh_retry_delay_doubles_from_base_and_saturates_at_max() -> None:
         datetime.timedelta(minutes=2),
     ]
     assert _refresh_retry_delay(5) == datetime.timedelta(minutes=8)
-    assert _refresh_retry_delay(6) == _REFRESH_RETRY_MAX
-    assert _refresh_retry_delay(1024) == _REFRESH_RETRY_MAX
-    assert _refresh_retry_delay(1025) == _REFRESH_RETRY_MAX
+    assert _refresh_retry_delay(6) == datetime.timedelta(minutes=15)
+    assert _refresh_retry_delay(1024) == datetime.timedelta(minutes=15)
+    assert _refresh_retry_delay(1025) == datetime.timedelta(minutes=15)
 
 
 async def test_operator_oauth_failure_recording_survives_long_episodes(
@@ -607,7 +606,7 @@ async def test_operator_oauth_failure_recording_survives_long_episodes(
         assert state.refresh_failure_latest_at is not None
         assert state.refresh_failure_latest_at > now - datetime.timedelta(minutes=15)
         # Saturated backoff: the next retry stays scheduled at the cap rather than overflowing.
-        assert state.refresh_retry_at == state.refresh_failure_latest_at + _REFRESH_RETRY_MAX
+        assert state.refresh_retry_at == state.refresh_failure_latest_at + datetime.timedelta(minutes=15)
         assert state.refresh_claim_id is None
 
 

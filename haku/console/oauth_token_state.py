@@ -25,9 +25,7 @@ type RefreshToken = Callable[[str], Awaitable[OAuthToken]]
 
 _REFRESH_CLAIM_TTL = datetime.timedelta(seconds=30)
 _REFRESH_CLAIM_POLL_SECONDS = 0.05
-_REFRESH_RETRY_BASE = datetime.timedelta(seconds=30)
-_REFRESH_RETRY_MAX = datetime.timedelta(minutes=15)
-_REFRESH_RETRY_WAIT = wait_exponential(multiplier=_REFRESH_RETRY_BASE.total_seconds(), max=_REFRESH_RETRY_MAX)
+_REFRESH_RETRY_WAIT = wait_exponential(multiplier=30, max=datetime.timedelta(minutes=15))
 _FAILURE_MESSAGE_LIMIT = 1024
 
 
