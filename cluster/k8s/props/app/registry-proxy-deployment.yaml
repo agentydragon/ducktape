@@ -32,7 +32,7 @@ spec:
                     operator: DoesNotExist
       containers:
         - name: registry-proxy
-          image: ghcr.io/agentydragon/props-registry-proxy:devel-20260827004639-e17981e # {"$imagepolicy": "flux-system:props-registry-proxy"}
+          image: ghcr.io/agentydragon/props-registry-proxy:devel-20260827005515-ad9239c # {"$imagepolicy": "flux-system:props-registry-proxy"}
           imagePullPolicy: Always
           ports:
             - containerPort: 8000

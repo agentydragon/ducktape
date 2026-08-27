@@ -42,7 +42,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: proxy
-          image: ghcr.io/agentydragon/haku-kube-api-proxy:devel-20260827004720-e17981e # {"$imagepolicy": "flux-system:haku-kube-api-proxy"}
+          image: ghcr.io/agentydragon/haku-kube-api-proxy:devel-20260827010200-ad9239c # {"$imagepolicy": "flux-system:haku-kube-api-proxy"}
           env:
             # Public TLS keeps the original Agent bearer encrypted on the proxy-to-Console hop.
             # Redirects are rejected and any timeout/malformed response fails the request closed.

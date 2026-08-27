@@ -103,6 +103,7 @@ py_test(
 
 py_test(
     name = "test_bridge",
+    size = "medium",
     srcs = ["test_bridge.py"],
     data = ["//haku/console/x/codex_app_server/testing:stub_codex_bin"],
     deps = [

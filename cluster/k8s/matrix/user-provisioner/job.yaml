@@ -15,7 +15,7 @@ spec:
       containers:
         - name: provision
           # Script baked in via Bazel (//cluster/provisioners/matrix_user_provisioner:image).
-          image: ghcr.io/agentydragon/matrix-user-provisioner:devel-20260827004405-e17981e # {"$imagepolicy": "flux-system:matrix-user-provisioner"}
+          image: ghcr.io/agentydragon/matrix-user-provisioner:devel-20260827010203-ad9239c # {"$imagepolicy": "flux-system:matrix-user-provisioner"}
           imagePullPolicy: Always
           env:
             - name: REGISTRATION_SECRET

@@ -22,7 +22,7 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: manifold-mcp-server
-          image: ghcr.io/agentydragon/manifold-mcp-server:devel-20260827003628-e17981e # {"$imagepolicy": "flux-system:manifold-mcp-server"}
+          image: ghcr.io/agentydragon/manifold-mcp-server:devel-20260827011026-7e19b63 # {"$imagepolicy": "flux-system:manifold-mcp-server"}
           imagePullPolicy: Always
           ports:
             - name: bridge
@@ -49,7 +49,7 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 20
         - name: facade
-          image: ghcr.io/agentydragon/mcp-oauth-facade:devel-20260827003216-e17981e # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
+          image: ghcr.io/agentydragon/mcp-oauth-facade:devel-20260827005932-ad9239c # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
           imagePullPolicy: Always
           ports:
             - name: http

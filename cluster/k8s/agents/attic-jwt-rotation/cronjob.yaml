@@ -34,7 +34,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: rotate
-              image: ghcr.io/agentydragon/attic-jwt-rotation:devel-20260827004633-e17981e # {"$imagepolicy": "flux-system:attic-jwt-rotation"}
+              image: ghcr.io/agentydragon/attic-jwt-rotation:devel-20260827010154-ad9239c # {"$imagepolicy": "flux-system:attic-jwt-rotation"}
               args: ["rotate", "--config", "/config/rotators.yaml"]
               env:
                 - name: GIT_TOKEN

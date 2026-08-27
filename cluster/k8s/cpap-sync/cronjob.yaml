@@ -28,7 +28,7 @@ spec:
               emptyDir: {}
           containers:
             - name: sync
-              image: ghcr.io/agentydragon/cpap-sync:devel-20260827004204-e17981e # {"$imagepolicy": "flux-system:cpap-sync"}
+              image: ghcr.io/agentydragon/cpap-sync:devel-20260827010217-ad9239c # {"$imagepolicy": "flux-system:cpap-sync"}
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities:

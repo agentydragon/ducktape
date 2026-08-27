@@ -21,7 +21,7 @@ spec:
       terminationGracePeriodSeconds: 90
       containers:
         - name: litellm
-          image: ghcr.io/agentydragon/tana-litellm-proxy:devel-20260827004420-e17981e # {"$imagepolicy": "flux-system:tana-litellm-proxy"}
+          image: ghcr.io/agentydragon/tana-litellm-proxy:devel-20260827005108-ad9239c # {"$imagepolicy": "flux-system:tana-litellm-proxy"}
           imagePullPolicy: Always
           args: ["--config", "/etc/litellm/config.yaml"]
           ports:

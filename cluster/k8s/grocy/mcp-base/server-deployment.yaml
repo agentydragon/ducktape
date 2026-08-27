@@ -27,7 +27,7 @@ spec:
         topology.kubernetes.io/zone: hil-ovh
       containers:
         - name: server
-          image: ghcr.io/agentydragon/grocy-mcp:devel-20260827003744-e17981e # {"$imagepolicy": "flux-system:grocy-mcp-oidc-server"}
+          image: ghcr.io/agentydragon/grocy-mcp:devel-20260827005416-ad9239c # {"$imagepolicy": "flux-system:grocy-mcp-oidc-server"}
           imagePullPolicy: Always
           ports:
             - name: http

@@ -24,7 +24,7 @@ spec:
         - name: forgejo-images-creds
       containers:
         - name: osm-mcp
-          image: git.allegedly.works/ducktape-ci/osm-mcp:devel-20260827004523-e17981e # {"$imagepolicy": "flux-system:osm-mcp"}
+          image: git.allegedly.works/ducktape-ci/osm-mcp:devel-20260827010134-ad9239c # {"$imagepolicy": "flux-system:osm-mcp"}
           imagePullPolicy: Always
           ports:
             - name: http

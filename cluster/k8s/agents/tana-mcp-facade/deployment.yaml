@@ -31,7 +31,7 @@ spec:
     spec:
       containers:
         - name: server
-          image: ghcr.io/agentydragon/mcp-oauth-facade:devel-20260827003216-e17981e # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
+          image: ghcr.io/agentydragon/mcp-oauth-facade:devel-20260827005932-ad9239c # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
           imagePullPolicy: Always
           ports:
             - name: http
