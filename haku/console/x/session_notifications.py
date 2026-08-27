@@ -51,7 +51,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from util.sqlalchemy_types import UnknownValue
+from util.sqlalchemy_types import UnknownValue, member_or_unknown
 
 logger = logging.getLogger(__name__)
 
@@ -78,12 +78,6 @@ class ConversationWakeKind(StrEnum):
     """The conversation's record or its live session's view changed: subscribers should re-read."""
 
 
-# Membership, read once per enum. A `StrEnum` member hashes as its own string, so these answer for
-# the raw value off the wire without constructing anything.
-_SESSION_KINDS = frozenset(SessionEventKind)
-_CONVERSATION_KINDS = frozenset(ConversationWakeKind)
-
-
 class SessionEvent(BaseModel):
     """What travels on `CHANNEL`.
 
@@ -105,7 +99,7 @@ class SessionEvent(BaseModel):
     @field_validator("kind", mode="before")
     @classmethod
     def _a_kind_from_a_newer_release_is_a_value(cls, value: object) -> object:
-        return UnknownValue(value) if isinstance(value, str) and value not in _SESSION_KINDS else value
+        return member_or_unknown(SessionEventKind, value)
 
 
 class ConversationWakeEvent(BaseModel):
@@ -130,7 +124,7 @@ class ConversationWakeEvent(BaseModel):
     @field_validator("kind", mode="before")
     @classmethod
     def _a_kind_from_a_newer_release_is_a_value(cls, value: object) -> object:
-        return UnknownValue(value) if isinstance(value, str) and value not in _CONVERSATION_KINDS else value
+        return member_or_unknown(ConversationWakeKind, value)
 
 
 @dataclass(frozen=True, slots=True)

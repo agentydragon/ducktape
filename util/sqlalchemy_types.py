@@ -19,14 +19,26 @@ class UnknownValue:
     `isinstance`, so a vocabulary that grows cannot be read as a value that already existed, and
     every reader is made to say what it does with a value it has no words for.
 
-    Only a column that opted into tolerance ever produces one — see
-    `TolerantTextBackedStrEnumUnionColumn`.
+    Only a reader that opted into tolerance ever produces one — a column through
+    `TolerantTextBackedStrEnumUnionColumn`, a payload through `member_or_unknown`.
     """
 
     value: str
 
     def __str__(self) -> str:
         return self.value
+
+
+def member_or_unknown[E: StrEnum](enum_class: type[E], value: object) -> object:
+    """Decode one wire value against *enum_class*'s vocabulary, tolerantly.
+
+    The payload flavor of `TolerantTextBackedStrEnumUnionColumn`'s read side, for a cross-replica
+    payload whose writer may be a newer release: a string the vocabulary does not claim becomes a
+    named `UnknownValue` rather than a parse failure. Anything else — a member, an `UnknownValue`
+    on re-validation, a non-string the caller's own validation will refuse — passes through
+    unchanged. Shaped for a pydantic `mode="before"` validator on a `Member | UnknownValue` field.
+    """
+    return UnknownValue(value) if isinstance(value, str) and value not in enum_class else value
 
 
 def _union_members(enum_classes: Sequence[type[StrEnum]]) -> dict[str, StrEnum]:
