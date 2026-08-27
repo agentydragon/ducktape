@@ -59,8 +59,7 @@ instead, so they load on demand.
   the symbol.
 - **Reuse before minting**: before adding a helper, type, or mechanism, search for the
   existing one solving the same shape; a near-duplicate dedupes into the original
-  rather than landing beside it. Different semantics are not duplicates — unifying
-  them is worse than the repetition; state why they differ instead.
+  rather than landing beside it.
 - **A `typing.Protocol` needs plural implementers**: when one concrete type flows
   through, name that type — structural indirection over a single implementer hides the
   real type without buying substitution.
