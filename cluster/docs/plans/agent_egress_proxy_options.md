@@ -52,6 +52,13 @@ Rejected adapters, each with the constraint that killed it:
   MITM. Its open conformance questions (same-resolution address pinning,
   `client_lifetime` as a security control, helper no-cache semantics) die with
   the spike plan that was to answer them.
+- **ICAP as the Console↔proxy seam**: implemented to REQMOD depth
+  ([#4043](https://github.com/agentydragon/ducktape/pull/4043), closed
+  unmerged — the reference implementation if the constraint landscape ever
+  changes) so Console could serve as Squid's adaptation service. The seam
+  existed only for Squid and fell with it; the ruled seam is the single
+  decide call above — one wire protocol fewer, an internal same-release
+  contract instead of an ICAP conformance surface.
 - **Envoy**: no dynamic-certificate machinery to reuse, and forward-proxy
   CONNECT interception is still alpha; the earlier spike substituted
   credentials only in reverse-proxy mode. It remains the reference for
