@@ -17,12 +17,16 @@ fi
 
 git -C "$src" apply "$patch_dir/pr13067.patch"
 
-# The version genrule reads STABLE_CLI_VERSION_TAG from workspace status
-# (cli/version/BUILD); every other stamped genrule has an unset-value
-# fallback, so a minimal status command is sufficient and makes the binary
-# self-identify as patched.
+# Emit every STABLE_ key a genrule consumes (cli/version and server/version
+# BUILDs). server/version's genrules run under set -e -o pipefail without a
+# grep fallback, so a missing key fails the build rather than defaulting.
 status_script=$(mktemp)
-printf '#!/usr/bin/env bash\necho "STABLE_CLI_VERSION_TAG 5.0.387-pr13067"\n' >"$status_script"
+cat >"$status_script" <<EOF
+#!/usr/bin/env bash
+echo "STABLE_CLI_VERSION_TAG 5.0.387-pr13067"
+echo "STABLE_VERSION_TAG 5.0.387-pr13067"
+echo "STABLE_COMMIT_SHA $expected_sha"
+EOF
 chmod +x "$status_script"
 
 # Mirrors the linux-amd64 leg of upstream's .github/workflows/release-cli.yaml;
