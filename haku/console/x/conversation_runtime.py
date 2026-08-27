@@ -65,9 +65,9 @@ class ConversationRuntime:
             if created is not None:
                 logger.info("queued conversation %s opened idle session %s", demand.conversation_id, created.session_id)
 
-    def _wake(self, conversation_id: UUID) -> None:
+    def _wake(self, conversation_id: UUID | None) -> None:
         """Wake the durable sweep; the listener callback itself cannot await."""
-        del conversation_id
+        del conversation_id  # The sweep reads every durable demand row, including missed ids.
         self._demanded.set()
 
     async def _sweep(self) -> None:
@@ -104,7 +104,7 @@ class ConversationRuntime:
     @contextlib.asynccontextmanager
     async def run(self) -> AsyncIterator[None]:
         """Run the elected reconciler and register this replica's low-latency demand wake."""
-        with self._notifications.watch(SessionEventKind.RUNTIME_DEMAND, self._wake):
+        with self._notifications.watch_conversations(SessionEventKind.RUNTIME_DEMAND, self._wake):
             task = asyncio.create_task(self._run(), name="conversation-runtime")
             try:
                 yield

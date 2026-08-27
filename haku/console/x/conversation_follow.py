@@ -17,10 +17,10 @@ longer holds the position, and more having moved than one update should carry, r
 way, so the follower is simply sent the conversation whole again — which is why there is no 410 on
 this path and no repair branch in a client.
 
-**What crosses replicas is still an id.** `pg_notify` carries `{kind, session_id}` and nothing
-else, capped at 8000 bytes by Postgres and using about seventy. `LISTEN` is broadcast, so the
-replica holding a follower's socket hears every session's wake and reads that conversation's rows
-itself. Nothing about the payload rides the notification.
+**What crosses replicas is still an id.** `pg_notify` carries `{kind, session_id,
+conversation_id}` and nothing else, capped at 8000 bytes by Postgres and using about a hundred.
+`LISTEN` is broadcast, so the replica holding a follower's socket hears every conversation's wake
+and reads that conversation's rows itself. Nothing about the payload rides the notification.
 
 **Coalescing bounds the open message.** `session_messages.content` is mutated in place as prose
 arrives and a `TextDelta` is deliberately not a row, so every pass re-sends the message being
@@ -49,7 +49,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import logging
 from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 from datetime import timedelta
 from typing import Annotated, Protocol, cast
@@ -70,7 +69,6 @@ from haku.console.x.session_views import (
     ConversationView,
 )
 
-logger = logging.getLogger(__name__)
 router = APIRouter(tags=["conversations"])
 
 # How often a follower's operator session is re-checked. The socket is send-only, so nothing else
@@ -105,10 +103,10 @@ class ConversationReader(Protocol):
 
 
 class ConversationFollow:
-    """The follow operation, and this replica's map from a session's wake to its conversation.
+    """The follow operation: this replica's followers, woken by the conversation their wakes name.
 
     One per process, started with the app: it holds the `UPDATE` watch that every follower's wakes
-    come through, so a conversation nobody is following costs a set membership test.
+    come through, so a conversation nobody is following costs a dictionary miss.
     """
 
     def __init__(
@@ -126,20 +124,11 @@ class ConversationFollow:
         self._window = window
         self._sandbox_poll = sandbox_poll
         self._followers: dict[UUID, set[asyncio.Event]] = {}
-        self._woken: set[UUID] = set()
-        self._pending = asyncio.Event()
-        self._conversations: dict[UUID, UUID] = {}
 
     @contextlib.asynccontextmanager
     async def run(self) -> AsyncIterator[None]:
-        with self._notifications.watch(SessionEventKind.UPDATE, self._record):
-            dispatching = asyncio.create_task(self._dispatch_loop())
-            try:
-                yield
-            finally:
-                dispatching.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await dispatching
+        with self._notifications.watch_conversations(SessionEventKind.UPDATE, self._record):
+            yield
 
     async def follow(
         self, operator_id: UUID, conversation_id: UUID, *, after: int | None = None
@@ -233,47 +222,20 @@ class ConversationFollow:
                 if not followers:
                     del self._followers[conversation_id]
 
-    def _record(self, session_id: UUID) -> None:
-        """Note that this session moved. Runs on the listener's reader task: no awaiting here."""
-        self._woken.add(session_id)
-        self._pending.set()
+    def _record(self, conversation_id: UUID | None) -> None:
+        """Wake this conversation's followers. Runs on the listener's reader task: no awaiting here.
 
-    async def _dispatch_loop(self) -> None:
-        while True:
-            await self._pending.wait()
-            self._pending.clear()
-            woken, self._woken = self._woken, set()
-            try:
-                await self._dispatch(woken)
-            except Exception:
-                # One unresolvable id must not take the loop, and with it every other follower,
-                # down: a follower that is not woken is stale, not wrong.
-                logger.exception("failed to dispatch session wakes to followers")
-
-    async def _dispatch(self, woken: set[UUID]) -> None:
-        if not self._followers:
-            return
-        for session_id in woken:
-            try:
-                conversation_id = await self._conversation_of(session_id)
-            except KeyError:
-                # The id came off a broadcast channel, so it can name a session this database no
-                # longer has. There is nobody following what it belonged to.
-                logger.warning("a session update named an unknown session: %s", session_id)
-                continue
-            for follower in self._followers.get(conversation_id, ()):
-                follower.set()
-
-    async def _conversation_of(self, session_id: UUID) -> UUID:
-        """Which thread this session's wake belongs to.
-
-        Resolved once per session rather than once per wake, which is the other thing the window
-        above is worth: a streaming turn wakes this loop constantly and a session's conversation is
-        written when the row is created and never updated, so the cache needs no invalidation.
+        `None` is a wake that could not name its conversation — a payload from a release before
+        the field existed, or the listener reconnecting over a gap — so every follower re-reads.
+        The read that follows a wake is positional, so one a follower did not need costs one query.
         """
-        if (cached := self._conversations.get(session_id)) is None:
-            cached = self._conversations[session_id] = await self._store.conversation_of(session_id)
-        return cached
+        if conversation_id is None:
+            for followers in self._followers.values():
+                for woken in followers:
+                    woken.set()
+            return
+        for woken in self._followers.get(conversation_id, ()):
+            woken.set()
 
 
 def _still_coming_up(message: ConversationFollowMessage) -> bool:

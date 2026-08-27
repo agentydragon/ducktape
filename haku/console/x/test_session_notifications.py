@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import asyncpg
 import pytest_bazel
@@ -37,7 +37,7 @@ async def test_a_notify_wakes_the_waiter_for_that_session(notifications, migrate
 
     async with notifications.subscribe(SessionEventKind.UPDATE, session_id) as woken:
         async with migrated_sessions.begin() as db:
-            await notify(db, SessionEventKind.UPDATE, session_id)
+            await notify(db, SessionEventKind.UPDATE, session_id=session_id, conversation_id=uuid4())
         async with asyncio.timeout(30):
             await woken.wait()
 
@@ -47,7 +47,7 @@ async def test_a_notify_for_another_session_does_not_wake_this_one(notifications
 
     async with notifications.subscribe(SessionEventKind.UPDATE, mine) as woken:
         async with migrated_sessions.begin() as db:
-            await notify(db, SessionEventKind.UPDATE, theirs)
+            await notify(db, SessionEventKind.UPDATE, session_id=theirs, conversation_id=uuid4())
         assert not await _woken_within(woken, 2)
 
 
@@ -57,24 +57,48 @@ async def test_a_notify_of_another_kind_does_not_wake_this_one(notifications, mi
 
     async with notifications.subscribe(SessionEventKind.ABORT, session_id) as woken:
         async with migrated_sessions.begin() as db:
-            await notify(db, SessionEventKind.UPDATE, session_id)
+            await notify(db, SessionEventKind.UPDATE, session_id=session_id, conversation_id=uuid4())
         assert not await _woken_within(woken, 2)
 
 
 async def test_notify_puts_a_readable_event_on_the_channel(migrated_db_url, migrated_sessions) -> None:
-    session_id = uuid4()
+    session_id, conversation_id = uuid4(), uuid4()
     received: asyncio.Queue[str] = asyncio.Queue()
     connection = await asyncpg.connect(libpq_dsn(migrated_db_url))
     try:
         await connection.add_listener(CHANNEL, lambda _conn, _pid, _channel, payload: received.put_nowait(str(payload)))
         async with migrated_sessions.begin() as db:
-            await notify(db, SessionEventKind.ABORT, session_id)
+            await notify(db, SessionEventKind.ABORT, session_id=session_id, conversation_id=conversation_id)
         async with asyncio.timeout(30):
             payload = await received.get()
     finally:
         await connection.close(timeout=5)
 
-    assert SessionEvent.model_validate_json(payload) == SessionEvent(kind=SessionEventKind.ABORT, session_id=session_id)
+    assert SessionEvent.model_validate_json(payload) == SessionEvent(
+        kind=SessionEventKind.ABORT, session_id=session_id, conversation_id=conversation_id
+    )
+
+
+async def test_a_wake_with_no_session_fills_the_legacy_slot_with_its_conversation(
+    migrated_db_url, migrated_sessions
+) -> None:
+    """Readers that predate `conversation_id` require `session_id` to parse the payload at all, so
+    a `runtime_demand` wake — whose subject has no session — places its conversation id there."""
+    conversation_id = uuid4()
+    received: asyncio.Queue[str] = asyncio.Queue()
+    connection = await asyncpg.connect(libpq_dsn(migrated_db_url))
+    try:
+        await connection.add_listener(CHANNEL, lambda _conn, _pid, _channel, payload: received.put_nowait(str(payload)))
+        async with migrated_sessions.begin() as db:
+            await notify(db, SessionEventKind.RUNTIME_DEMAND, session_id=None, conversation_id=conversation_id)
+        async with asyncio.timeout(30):
+            payload = await received.get()
+    finally:
+        await connection.close(timeout=5)
+
+    assert SessionEvent.model_validate_json(payload) == SessionEvent(
+        kind=SessionEventKind.RUNTIME_DEMAND, session_id=conversation_id, conversation_id=conversation_id
+    )
 
 
 async def test_an_unreadable_payload_does_not_take_the_listener_down(notifications, migrated_sessions) -> None:
@@ -87,7 +111,7 @@ async def test_an_unreadable_payload_does_not_take_the_listener_down(notificatio
         assert not await _woken_within(woken, 2)
 
         async with migrated_sessions.begin() as db:
-            await notify(db, SessionEventKind.UPDATE, session_id)
+            await notify(db, SessionEventKind.UPDATE, session_id=session_id, conversation_id=uuid4())
         async with asyncio.timeout(30):
             await woken.wait()
 
@@ -123,9 +147,75 @@ async def test_a_kind_a_later_release_adds_wakes_nobody_and_costs_nothing(notifi
         assert not await _woken_within(woken, 2)
 
         async with migrated_sessions.begin() as db:
-            await notify(db, SessionEventKind.UPDATE, session_id)
+            await notify(db, SessionEventKind.UPDATE, session_id=session_id, conversation_id=uuid4())
         async with asyncio.timeout(30):
             await woken.wait()
+
+
+async def test_a_payload_without_a_conversation_still_wakes_the_sessions_waiter(
+    notifications, migrated_sessions
+) -> None:
+    """The other half of the roll: an older replica's payload has no `conversation_id`, and the
+    waiter is keyed by the field both releases write."""
+    session_id = uuid4()
+    from_an_earlier_release = f'{{"kind": "update", "session_id": "{session_id}"}}'
+
+    async with notifications.subscribe(SessionEventKind.UPDATE, session_id) as woken:
+        async with migrated_sessions.begin() as db:
+            await db.execute(
+                text("SELECT pg_notify(:channel, :payload)"), {"channel": CHANNEL, "payload": from_an_earlier_release}
+            )
+        async with asyncio.timeout(30):
+            await woken.wait()
+
+
+async def test_a_conversation_watcher_is_handed_the_conversation_the_wake_names(
+    notifications, migrated_sessions
+) -> None:
+    conversation_id = uuid4()
+    seen: asyncio.Queue[UUID | None] = asyncio.Queue()
+
+    with notifications.watch_conversations(SessionEventKind.UPDATE, seen.put_nowait):
+        async with migrated_sessions.begin() as db:
+            await notify(db, SessionEventKind.UPDATE, session_id=uuid4(), conversation_id=conversation_id)
+        async with asyncio.timeout(30):
+            assert await seen.get() == conversation_id
+
+
+async def test_a_payload_without_a_conversation_tells_watchers_to_recheck(notifications, migrated_sessions) -> None:
+    """A conversation watcher cannot be handed an id an earlier release never wrote. `None` is its
+    're-check what you hold' arm, so a follower behind it is over-woken for the length of the roll
+    rather than left stale."""
+    seen: asyncio.Queue[UUID | None] = asyncio.Queue()
+    from_an_earlier_release = f'{{"kind": "update", "session_id": "{uuid4()}"}}'
+
+    with notifications.watch_conversations(SessionEventKind.UPDATE, seen.put_nowait):
+        async with migrated_sessions.begin() as db:
+            await db.execute(
+                text("SELECT pg_notify(:channel, :payload)"), {"channel": CHANNEL, "payload": from_an_earlier_release}
+            )
+        async with asyncio.timeout(30):
+            assert await seen.get() is None
+
+
+async def test_a_reconnect_tells_conversation_watchers_to_recheck(notifications, migrated_sessions) -> None:
+    """Notifications committed while the listener was down are gone. A waiter is told to re-read
+    the session it already knows; a conversation watcher has no id to be handed back, so the same
+    answer arrives as `None` — and the follower behind it re-reads instead of staying stale until
+    the conversation next moves."""
+    poked: asyncio.Queue[UUID | None] = asyncio.Queue()
+
+    with notifications.watch_conversations(SessionEventKind.UPDATE, poked.put_nowait):
+        async with migrated_sessions.begin() as db:
+            await db.execute(
+                text(
+                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                    "WHERE datname = current_database() AND pid <> pg_backend_pid() "
+                    "AND query LIKE 'LISTEN%'"
+                )
+            )
+        async with asyncio.timeout(30):
+            assert await poked.get() is None
 
 
 async def test_wait_reports_a_timeout_rather_than_hanging(notifications) -> None:
@@ -158,7 +248,7 @@ async def test_the_listener_reconnects_and_wakes_its_waiters(notifications, migr
         async with asyncio.timeout(30):
             while not woken.is_set():
                 async with migrated_sessions.begin() as db:
-                    await notify(db, SessionEventKind.UPDATE, session_id)
+                    await notify(db, SessionEventKind.UPDATE, session_id=session_id, conversation_id=uuid4())
                 with contextlib.suppress(TimeoutError):
                     async with asyncio.timeout(1):
                         await woken.wait()

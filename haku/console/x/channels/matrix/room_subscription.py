@@ -7,8 +7,8 @@ instead of being handed events by whoever happens to be running the turn.
   that outlives every console process, so after a restart the channel has to know what it already
   put there. That durability is Matrix's own problem, kept in Matrix's own table below the channel
   boundary and beside the outbox; the conversation layer has no cursor table at all.
-- **`RoomNotices`** is the subscriber. It wakes on `session_changed`, reads what the room has not
-  been told, says it, and keeps the position it reached.
+- **`RoomNotices`** is the subscriber. It wakes on the conversation's `update`, reads what the room
+  has not been told, says it, and keeps the position it reached.
 
 **Replies and notices, from one position.** A completed message becomes a `matrix_outbox` row the
 drain says into the room — with a transaction id, a retry budget and an ordering guarantee against
@@ -120,9 +120,8 @@ RELAYED_PROMPT = "[sent from another surface] "
 # How many events one pass renders. Small, because each one it does render costs the room a send.
 NOTICE_BATCH = 50
 
-# The backstop for what no notification reaches us with: `SessionNotifications.watch` cannot replay
-# the ids that arrived while its listener was reconnecting, so a woken reader still has to look on
-# its own.
+# The backstop for what no notification reaches us with: delivery is at-most-once however the
+# listener fares, so a woken reader still has to look on its own.
 POLL_INTERVAL = datetime.timedelta(seconds=10)
 
 # How long a replica that lost the election waits before contending again.
@@ -437,8 +436,12 @@ class RoomNotices:
             origin = PromptStartedBody.model_validate({"item_type": ItemType.PROMPT, "origin": item.origin}).origin
             return None if _arrived_here(origin, room_id) else RELAYED_PROMPT + item.item_text
 
-    def _wake(self, _session_id: UUID) -> None:
-        """Note that some session's rows moved. Runs on the listener's reader task: no awaiting."""
+    def _wake(self, _conversation_id: UUID | None) -> None:
+        """Note that some conversation moved. Runs on the listener's reader task: no awaiting.
+
+        The id is not kept: which conversation this room owes work for is resolved from the
+        binding inside `reconcile_once`, so a wake for any conversation is only "go look".
+        """
         self._changed.set()
 
     async def _reconcile_as_leader(self) -> None:
@@ -479,7 +482,7 @@ class RoomNotices:
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator[None]:
-        with self._notifications.watch(SessionEventKind.UPDATE, self._wake):
+        with self._notifications.watch_conversations(SessionEventKind.UPDATE, self._wake):
             task = asyncio.create_task(self._run(), name="matrix-room-notices")
             try:
                 yield

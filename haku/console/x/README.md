@@ -598,18 +598,24 @@ writes, for one reason: a sandbox has to outlive the console for there to be an 
 repository answers questions about rows, and this wakes tasks. Merging the two is what let
 the listener be written against psycopg3's API while running on an asyncpg engine.
 
-**One channel, `session_events`, carrying a `SessionEvent`** — `{kind, session_id}`, where `kind` is
-`prompt`, `update`, or `abort`; waiters register on `(kind, session_id)`. `console_events.py` stays a
-separate channel and a separate connection: it is a different subsystem with a different payload and
-its own lifecycle, and the only thing the two share is the mechanism.
+**One channel, `session_events`, carrying a `SessionEvent`** — `{kind, session_id,
+conversation_id}`, where `kind` is `runtime_demand`, `prompt`, `update`, or `abort`. Every wake
+names its conversation. `session_id` is the legacy wire slot readers from before `conversation_id`
+require in order to parse the payload at all, so it stays filled: session-subject kinds put their
+session there, and `runtime_demand`, which has no session, places its conversation id there.
+`console_events.py` stays a separate channel and a separate connection: it is a different subsystem
+with a different payload and its own lifecycle, and the only thing the two share is the mechanism.
 
-**Waiters name a session; watchers cannot.** `wait`/`subscribe` register on `(kind, session_id)`,
-which is what the turn loop and the supervisor want. `watch` is the other shape — every event of a
-kind, whatever session it names — and exists for `session_live_updates.py`, which has to hear about
-sessions nothing has told it to expect. Its gotcha is the mirror of the waiters' one: a reconnect
-can be replayed to a waiter (`_wake_everyone` tells it to re-read the session it already knows
-about) and cannot be replayed to a watcher, so a watcher must be something a missed event only
-delays.
+**Waiters name a session; watchers register for a kind.** `wait`/`subscribe` register on
+`(kind, session_id)`, which is what the turn loop's prompt and abort waits want: a runner waiting
+about _its_ session. `watch` hands over every event's session id, for `session_live_updates.py`,
+which has to hear about sessions nothing has told it to expect. `watch_conversations` hands over
+every event's conversation id and is the shape every conversation-scoped consumer registers with —
+the follow socket, the Matrix subscriber, the runtime supervisor — so nothing channel-side keys a
+registration by session. The reconnect gotcha differs by shape: `_wake_everyone` tells each waiter
+to re-read the session it already knows about, pokes each conversation watcher with `None`
+("re-check what you hold"), and can replay nothing to a session watcher — whose id _is_ the
+payload — so a session watcher must be something a missed event only delays.
 
 `test_notify_puts_a_readable_event_on_the_channel` pins the wire format — channel name and
 envelope, read off a raw connection. Nothing else would notice if either drifted, because every
@@ -659,7 +665,7 @@ the session's owner is resolved once per session and kept (a session's owner nev
 
 ## `subscription.py` — reading a conversation from a position
 
-The wake above says _which_ session moved; this is what a woken consumer reads, and from where.
+The wake above says _which conversation_ moved; this is what a woken consumer reads, and from where.
 A conversation is an ordered stream of `conversation_event` rows addressed by `event_seq`, dense
 within the conversation, and a **subscription** is one consumer reading it from a position.
 `ConversationStream.read` is the shared half — everything after N, keyed by the thread rather than

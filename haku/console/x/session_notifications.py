@@ -17,11 +17,13 @@ on commit: emitting it anywhere else would announce work that a rollback then un
 
 **One channel, a typed payload.** Every event travels on `CHANNEL` as a `SessionEvent` rather than
 the kind being implicit in a channel name, which would need another LISTEN per kind. `pg_notify`
-allows 8000 bytes of payload; this uses about seventy.
+allows 8000 bytes of payload; this uses about a hundred.
 
-The historical payload field is `session_id`. New `runtime_demand` wakes place a conversation id
-there instead; retaining the field is what lets older rolling replicas parse and ignore the new
-kind without losing the kinds they already understand.
+**Every wake names its conversation.** A conversation-scoped consumer — a channel subscriber, the
+follow socket — registers by `conversation_id`; only a wait about one runner incarnation (a prompt
+or abort on *its* session) registers by `session_id`. The historical payload field stays spelled
+`session_id` because readers that predate `conversation_id` require it to parse the payload at
+all; `runtime_demand`, which has no session, places its conversation id there.
 """
 
 from __future__ import annotations
@@ -84,11 +86,20 @@ class SessionEvent(BaseModel):
 
     kind: SessionEventKind | UnknownValue
     session_id: UUID
-    """The subject of the wake.
+    """The legacy wire slot, and the session-scoped subject where one exists.
 
-    Historical kinds name a session. ``runtime_demand`` names a conversation instead. The field
-    stays spelled this way for the rolling wire contract: older replicas must be able to parse and
-    ignore the new kind rather than rejecting a renamed payload.
+    A kind whose subject is a session names it here. ``runtime_demand`` has no session and places
+    its conversation id here as well: readers that predate ``conversation_id`` require this field
+    to parse the payload at all, so it is always filled.
+    """
+
+    # CLEANUP(added 2026-08-27): make `conversation_id` required (drop `| None = None`) once the
+    #   deploy that writes it on every wake has converged (both haku-console replicas on an image
+    #   at or after this commit); a NOTIFY payload does not outlive its delivery.
+    conversation_id: UUID | None = None
+    """The conversation the wake is about — what a conversation-scoped consumer keys on.
+
+    `None` only off a payload written by a release from before this field existed.
     """
 
     @field_validator("kind", mode="before")
@@ -102,11 +113,23 @@ _CONNECT_TIMEOUT_SECONDS = 10
 _CLOSE_TIMEOUT_SECONDS = 2
 
 
-async def notify(db: AsyncSession, kind: SessionEventKind, session_id: UUID) -> None:
-    """Emit `pg_notify` inside the caller's transaction, so it fires on commit."""
+async def notify(db: AsyncSession, kind: SessionEventKind, *, session_id: UUID | None, conversation_id: UUID) -> None:
+    """Emit `pg_notify` inside the caller's transaction, so it fires on commit.
+
+    *session_id* is `None` for a wake whose subject has no session (`runtime_demand`); the wire's
+    legacy `session_id` slot is then filled with the conversation id, which readers that predate
+    `conversation_id` require in order to parse the payload at all.
+    """
     await db.execute(
         text("SELECT pg_notify(:channel, :payload)"),
-        {"channel": CHANNEL, "payload": SessionEvent(kind=kind, session_id=session_id).model_dump_json()},
+        {
+            "channel": CHANNEL,
+            "payload": SessionEvent(
+                kind=kind,
+                session_id=conversation_id if session_id is None else session_id,
+                conversation_id=conversation_id,
+            ).model_dump_json(),
+        },
     )
 
 
@@ -126,6 +149,19 @@ def _terminator(terminated: asyncio.Event) -> Callable[[object], None]:
     return lambda _connection: terminated.set()
 
 
+@contextmanager
+def _watching[C](registry: dict[SessionEventKind, set[C]], kind: SessionEventKind, callback: C) -> Iterator[None]:
+    """Register *callback* under *kind* for the duration, dropping a kind left with no watchers."""
+    watchers = registry.setdefault(kind, set())
+    watchers.add(callback)
+    try:
+        yield
+    finally:
+        watchers.discard(callback)
+        if not watchers:
+            registry.pop(kind, None)
+
+
 def libpq_dsn(database_url: str) -> str:
     """Drop the SQLAlchemy driver suffix, which a direct driver connection does not take."""
     return make_url(database_url).set(drivername="postgresql").render_as_string(hide_password=False)
@@ -134,14 +170,16 @@ def libpq_dsn(database_url: str) -> str:
 class SessionNotifications:
     """One LISTEN connection over the session channel, fanned out to waiters and watchers.
 
-    A waiter (`wait`, `subscribe`) is woken about the one session it named; a watcher (`watch`)
-    is handed every event of a kind, for a consumer that cannot name its sessions in advance.
+    A waiter (`wait`, `subscribe`) is woken about the one session it named; a watcher (`watch`,
+    `watch_conversations`) is handed every event of a kind, for a consumer that cannot name its
+    subjects in advance.
     """
 
     def __init__(self, database_url: str):
         self._dsn = libpq_dsn(database_url)
         self._waiters: dict[tuple[SessionEventKind, UUID], set[asyncio.Event]] = {}
         self._watchers: dict[SessionEventKind, set[Callable[[UUID], None]]] = {}
+        self._conversation_watchers: dict[SessionEventKind, set[Callable[[UUID | None], None]]] = {}
         self._task: asyncio.Task[None] | None = None
         self._listening = asyncio.Event()
 
@@ -213,20 +251,39 @@ class SessionNotifications:
         the ids notified during the gap are simply gone. A watcher must therefore be something a
         missed event only delays, never something a missed event loses.
         """
-        watchers = self._watchers.setdefault(kind, set())
-        watchers.add(on_session)
-        try:
+        with _watching(self._watchers, kind, on_session):
             yield
-        finally:
-            watchers.discard(on_session)
-            if not watchers:
-                self._watchers.pop(kind, None)
+
+    @contextmanager
+    def watch_conversations(
+        self, kind: SessionEventKind, on_conversation: Callable[[UUID | None], None]
+    ) -> Iterator[None]:
+        """Hand *on_conversation* every *kind* event's conversation id.
+
+        The shape a conversation-scoped consumer registers with: nothing session-shaped reaches
+        the callback. `None` is a wake that could not name its conversation — a payload from a
+        release before the field existed, or the listener reconnecting over a gap — and means
+        "re-check whatever you hold", the same answer `_wake_everyone` gives a waiter.
+
+        Like `watch`, the callback runs on asyncpg's reader task: record the id and do the work
+        elsewhere.
+        """
+        with _watching(self._conversation_watchers, kind, on_conversation):
+            yield
 
     def _wake_everyone(self) -> None:
-        """Notifications committed while reconnecting are gone; make every waiter re-check."""
+        """Notifications committed while reconnecting are gone; make every consumer re-check.
+
+        A conversation watcher is poked with `None` — its "re-check what you hold" arm. A session
+        watcher has no such arm to poke (the id *is* its payload), which is `watch`'s documented
+        gotcha.
+        """
         for events in self._waiters.values():
             for event in events:
                 event.set()
+        for conversation_watchers in self._conversation_watchers.values():
+            for watcher in conversation_watchers:
+                watcher(None)
 
     def _on_notification(self, _connection: object, _pid: int, _channel: str, payload: object) -> None:
         """asyncpg dispatches on its reader task, so this must not block or await.
@@ -248,6 +305,8 @@ class SessionNotifications:
             waiter.set()
         for watcher in self._watchers.get(event.kind, ()):
             watcher(event.session_id)
+        for conversation_watcher in self._conversation_watchers.get(event.kind, ()):
+            conversation_watcher(event.conversation_id)
 
     async def _listen_loop(self) -> None:
         while True:
