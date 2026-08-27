@@ -131,7 +131,9 @@ spec:
       # the separate data disk, which is why
       # <cluster/docs/lessons_learned/2026_06_19_etcd_hdd_io_contention.md> kept
       # SeaweedFS on /dev/sdb and pinned only ephemeral-write batch jobs off the
-      # control planes.
+      # control planes. Measured on ovh-ns103656: the mount pod writes ~0.8 KiB/s
+      # to the install disk (6.0 GiB over 85 days, logs + FUSE metadata) against
+      # the 490-988 KiB/s writers that RCA actually pinned off.
       tolerations:
         - key: node-role.kubernetes.io/control-plane
           operator: Exists
