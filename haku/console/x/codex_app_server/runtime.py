@@ -14,7 +14,7 @@ from pathlib import Path
 from haku.console.chat_models import RuntimeKind
 from haku.console.x.codex_app_server import frames, projection
 from haku.console.x.codex_app_server.client import CodexClientFactory, CodexThread, app_server_over_websocket
-from haku.console.x.codex_app_server.config import CodexReasoningEffort
+from haku.console.x.codex_app_server.config import ReasoningEffort
 from haku.console.x.conversation_events import TurnCompleted
 from haku.console.x.runtime import (
     EMPTY_TURN_PROJECTION_SEED,
@@ -50,7 +50,7 @@ class CodexRuntimeAdapter:
 
     client_factory: CodexClientFactory = app_server_over_websocket
     model: str | None = None
-    reasoning_effort: CodexReasoningEffort | None = None
+    reasoning_effort: ReasoningEffort | None = None
     model_provider: CodexModelProvider | None = None
 
     @property
@@ -93,10 +93,11 @@ class CodexRuntimeAdapter:
             name: HttpMcpServer(url=server.url, bearer_token_env_var=server.bearer_environment_variable)
             for name, server in launch.mcp_servers.items()
         }
+        cwd = Path(launch.cwd)
         return _NativeLaunch(
             harness=build_codex_launch(
                 CodexAppServerSession(
-                    cwd=Path(launch.cwd),
+                    cwd=cwd,
                     environment=launch.environment,
                     mcp_servers=native_servers,
                     model_provider=self.model_provider,
@@ -104,7 +105,7 @@ class CodexRuntimeAdapter:
                 resume_from=launch.resume_from,
             ),
             thread=CodexThread(
-                cwd=launch.cwd,
+                cwd=cwd,
                 model=self.model,
                 reasoning_effort=self.reasoning_effort,
                 developer_instructions=launch.appended_system_prompt,

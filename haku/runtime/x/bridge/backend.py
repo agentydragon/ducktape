@@ -24,6 +24,9 @@ BRIDGE_CREDENTIAL_VARIABLE = "HAKU_AGENT_SDK_RUNNER_TOKEN"
 # variable from children, but does not know this name; injecting both lets a new Console launch
 # Claude through either runner version without minting a second authority.
 MCP_CREDENTIAL_VARIABLE = "HAKU_MCP_BEARER_TOKEN"
+# Every name of that one bearer: the runner keeps these claim-owned values out of launch overlays,
+# and the console's deploy config refuses them as provider API-key names.
+SESSION_CREDENTIAL_VARIABLES = frozenset({BRIDGE_CREDENTIAL_VARIABLE, MCP_CREDENTIAL_VARIABLE})
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,11 +52,7 @@ def child_environment(launch: HarnessLaunch) -> dict[str, str]:
     """Overlay launch values while retaining the claim-owned exact-session credential."""
     return {
         **os.environ,
-        **{
-            key: value
-            for key, value in launch.environment.items()
-            if key not in {BRIDGE_CREDENTIAL_VARIABLE, MCP_CREDENTIAL_VARIABLE}
-        },
+        **{key: value for key, value in launch.environment.items() if key not in SESSION_CREDENTIAL_VARIABLES},
     }
 
 

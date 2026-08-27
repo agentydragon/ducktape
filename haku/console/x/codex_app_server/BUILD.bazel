@@ -24,6 +24,7 @@ py_library(
     deps = [
         "//haku/console:chat_models",
         "//haku/console:http_url",
+        "//haku/runtime/x/bridge:backend",
         "@pypi//pydantic",
     ],
 )

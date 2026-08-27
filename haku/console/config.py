@@ -14,7 +14,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
 from haku.console.chat_models import RuntimeKind
-from haku.console.http_url import uncredentialed_http_url
+from haku.console.http_url import UncredentialedHttpUrl
 from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
 from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
@@ -369,13 +369,8 @@ class RuntimeExecutionConfig(BaseModel):
     https_proxy: str
     ca_bundle: str
     no_proxy: str
-    mcp_url: str
+    mcp_url: UncredentialedHttpUrl
     system_prompt_template: Path
-
-    @field_validator("mcp_url")
-    @classmethod
-    def _uncredentialed_mcp_url(cls, value: str) -> str:
-        return uncredentialed_http_url(value, field_name="mcp_url")
 
     def proxy_environment(self, *, pip: bool = False) -> dict[str, str]:
         return _proxy_environment(proxy_url=self.https_proxy, no_proxy=self.no_proxy, ca_bundle=self.ca_bundle, pip=pip)
