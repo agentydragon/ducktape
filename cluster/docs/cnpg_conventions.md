@@ -88,10 +88,6 @@ Parked clusters (suspended Flux Kustomizations; R2/R3 bind again on revival):
   manifests still name `local-path`, the chart-default StorageClass retired
   2026-06-03 (`k8s/local-path-provisioner/helmrelease.yaml`) — re-point to
   `local-path-proxmox` when reviving.
-- `harbor-db` (`k8s/x/harbor/db/postgres-cluster.yaml`): interim single
-  instance on `local-path-ovh` pinned `region: hil` — moved off Proxmox
-  2026-06-03 but never bumped to the 2-instance OVH-HA shape before Harbor
-  was parked; see the manifest comment.
 - `wayback-archive-db` (`k8s/x/wayback-cache/db/`): OVH-HA shape, suspended
   with the rest of wayback-cache.
 - `haku-dispatch-db` (`k8s/x/haku/dispatch/db/`): OVH-HA shape; not wired

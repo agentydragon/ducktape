@@ -78,7 +78,7 @@ to the authentik shared proxy outpost pod (per AGENTS.md):
 agents-mitmproxy, proxmox.
 
 **Critical unprotected services** (no NetworkPolicy at all):
-external-secrets, forgejo, harbor.
+external-secrets, forgejo.
 
 ## VPA memory audit — are these limits really needed?
 

@@ -365,14 +365,6 @@ resources:
   - x/browsertrix/app/flux-kustomization.yaml
   - x/browsertrix/bucket/flux-kustomization.yaml
   - x/browsertrix/retained/flux-kustomization.yaml
-  - x/harbor/namespace/flux-kustomization.yaml
-  - x/harbor/secrets/flux-kustomization.yaml
-  - x/harbor/db/flux-kustomization.yaml
-  - x/harbor/oidc-config/flux-kustomization.yaml
-  - x/harbor/proxy-cache/flux-kustomization.yaml
-  - x/harbor/servicemonitor/flux-kustomization.yaml
-  - x/harbor/agent-rbac/flux-kustomization.yaml
-  - x/harbor/app/flux-kustomization.yaml
   - x/archivebox/namespace/flux-kustomization.yaml
   - x/archivebox/app/flux-kustomization.yaml
 

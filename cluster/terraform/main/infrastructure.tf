@@ -38,11 +38,13 @@ locals {
     [for k, v in data.ovh_dedicated_server.kimsufi_cp : v.ip],
   )
 
-  # Containerd registry mirrors — pull through Harbor proxy cache.
-  # Harbor runs in-cluster, so mirrors are unavailable during early bootstrap.
-  # Containerd falls back to upstream endpoints when mirror is unreachable.
+  # Containerd registry mirrors. The mirror endpoints still name the retired
+  # Harbor proxy cache (deleted 2026-08-27), so every pull currently falls back
+  # to the upstream endpoints; re-pointing the mirrors at oci-cache is deferred
+  # because machine-config changes reboot nodes — see
+  # k8s/oci-cache/README.md § Node-level pull-through.
   #
-  # overridePath: Harbor proxy cache serves images at /v2/<project>/<repo>/...,
+  # overridePath: the proxy cache serves images at /v2/<project>/<repo>/...,
   # so the endpoint path must replace containerd's default /v2/ prefix, not be
   # prepended to it. Without overridePath, containerd requests
   # /v2/<project>/v2/<repo>/... (double /v2/) which fails upstream.

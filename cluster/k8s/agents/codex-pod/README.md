@@ -127,4 +127,4 @@ this non-root image pod has not) and no boot-time render script:
   dev pod; revisit if the provider gains a user/org webhook resource.
 - **Generalize** — once proven, move other `ghcr.io/agentydragon` app images to
   Forgejo image-by-image (weigh the per-image pull-availability tradeoff — an
-  in-cluster registry outage means those pods can't pull), and retire Harbor.
+  in-cluster registry outage means those pods can't pull).

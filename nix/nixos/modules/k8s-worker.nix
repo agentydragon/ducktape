@@ -86,7 +86,7 @@ let
       # at startup because btrfs reports 0 inodes via statfs (dynamic allocation).
       # Harmless — image GC and eviction still work. Workaround if needed:
       # featureGates.LocalStorageCapacityIsolation = false;
-      # Default is 110; wyrm2 runs 113+ pods with harbor/inventree/ollama/monitoring.
+      # Default is 110; wyrm2 has run 113+ pods (inventree/ollama/monitoring/...).
       maxPods = 300;
       # NixOS uses systemd-resolved in stub mode, so /etc/resolv.conf has
       # nameserver 127.0.0.53. Point kubelet at the real upstream resolv.conf

@@ -245,6 +245,9 @@ See `cluster/k8s/agents/tana-mcp-facade/deployment.yaml` for a working example
   2023-12-06. Use Headlamp + `flux` CLI instead.
 - **ARC (GitHub Actions runner)**: decommissioned 2026-04-11; manifests deleted
   2026-08-05 (#3773).
+- **Harbor**: parked 2026-06-02 (#1822); manifests archived under `x/harbor/` (#3967);
+  deleted 2026-08-27 after #4856. Mostly a registry for props, which use the Forgejo
+  registry; the replacement track is the `oci-cache` lighter-registry item in <plan.md>.
 - **Kagent** (2026-07-21): Retired after noisy MCP results repeatedly exceeded the z.ai
   prompt limit and killed sessions. Kagent had no client-side tool-output budget, and its
   between-turn compaction could not prevent a single turn from overflowing context. See
@@ -306,11 +309,6 @@ the open question is unsuspending, not hardware.
 - **Firecrawl**: `firecrawl`, `firecrawl-{namespace,db}` — parked.
 - **gecko**: `gecko`, `gecko-namespace` — same legacy-VM retirement hold as agent-box.
 - **Google Workspace MCP**: `google-workspace-mcp` — parked 2026-05-13; resources + PVC deleted.
-- **Harbor**: parked 2026-06-02 (#1822); manifests archived under `x/harbor/` 2026-08-11 (#3967) and
-  still suspended in-repo
-  (`harbor{,-namespace,-secrets,-db,-oidc-config,-proxy-cache,-servicemonitor,-agent-rbac}`).
-  It was mostly a registry for props, which use the Forgejo registry; the replacement
-  track is the `oci-cache` lighter-registry item in <plan.md>.
 - **InvenTree**: `inventree`, `inventree-{namespace,secrets,db,token-provisioner}` —
   nice-to-have, parked under capacity pressure; Proxmox-pinned, so atlas/wyrm2
   being back removes that blocker. Before unsuspending: mint the SOPS admin/db

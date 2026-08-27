@@ -72,6 +72,6 @@ provisioned in code), host it in Forgejo. Reference implementation: `codex-pod`.
    `imagePullSecrets: [{name: forgejo-images-creds}]`; the app's Flux Kustomization
    `dependsOn: forgejo-images`.
 
-**Tradeoff**: unlike GHCR (external) or the Talos→Harbor pull-through mirror (which
-falls back upstream), a Forgejo outage means these pods can't pull. Fine for
-non-critical workloads (agent pods); weigh per-image before moving pull-critical ones.
+**Tradeoff**: unlike GHCR (external), a Forgejo outage means these pods can't pull.
+Fine for non-critical workloads (agent pods); weigh per-image before moving
+pull-critical ones.

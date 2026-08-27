@@ -391,7 +391,8 @@ enforced from the agent's own vantage (F16) — and it covers the git transport
 ours has never exercised. Against that it fails open on a missing secret, and it
 swaps a mature engine for a young one in the credential path. Our addon works,
 is smaller, and its engine is better established. Reach for iron-proxy when the
-addon becomes a maintenance burden; pin by digest and mirror to Harbor if so.
+addon becomes a maintenance burden; pin by digest and mirror to the Forgejo
+registry if so.
 
 **kloak got stronger once the path policy stopped counting against it.**
 

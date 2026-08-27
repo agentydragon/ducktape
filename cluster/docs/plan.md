@@ -229,19 +229,16 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       `tfstate` DB — e.g. CNPG `barmanObjectStore` → SeaweedFS S3, or an
       always-on OVH-node CronJob streaming dumps to S3.
 - [ ] **Evaluate lighter registry to replace Harbor** — Harbor (parked 2026-06-02, manifests
-      archived under `k8s/x/harbor/`) was only used for (a) pull-through proxy cache (Docker Hub,
+      deleted 2026-08-27 after #4856) was only used for (a) pull-through proxy cache (Docker Hub,
       GHCR, GCR, Quay, k8s.io) configured as Talos containerd mirrors, and (b) props agent image
-      storage (props now pull from the Forgejo registry). Candidates: [Zot](https://zotregistry.dev/)
-      (single binary, multi-upstream proxy + private images), or separate `registry:2` per upstream +
-      GHCR for props. Would drop the Harbor Helm chart, CNPG cluster, 32Gi HDD PVC, ~700Mi RAM, and
-      all Harbor-specific TF modules. Update 2026-07: phase 1 landed — `oci-cache` (Zot on
-      SeaweedFS S3 + Valkey dedupe, no PVC, unpinned) covers the pull-through role, see
-      <../k8s/oci-cache/README.md>. The authenticated public endpoint is live too
-      (`https://oci-cache.allegedly.works`: HTTPRoute → htpasswd nginx sidecar). Remaining before
-      Harbor's proxy-cache role is fully retired: the Talos containerd mirrors
-      (`machine.registries.mirrors` in `terraform/main/infrastructure.tf`), deliberately deferred
-      because machine-config changes reboot nodes — see the oci-cache README § Node-level
-      pull-through.
+      storage (props now pull from the Forgejo registry). Update 2026-07: phase 1 landed —
+      `oci-cache` (Zot on SeaweedFS S3 + Valkey dedupe, no PVC, unpinned) covers the pull-through
+      role, see <../k8s/oci-cache/README.md>. The authenticated public endpoint is live too
+      (`https://oci-cache.allegedly.works`: HTTPRoute → htpasswd nginx sidecar). Remaining: the
+      Talos containerd mirrors (`machine.registries.mirrors` in `terraform/main/infrastructure.tf`)
+      still name the retired Harbor endpoints (containerd falls back to upstream) and need
+      re-pointing at `oci-cache` — deliberately deferred because machine-config changes reboot
+      nodes — see the oci-cache README § Node-level pull-through.
 
 - [ ] Verify dmeventd thin pool monitoring after wyrm2 reboot: NixOS config changed
       `pkgs.lvm2` → `pkgs.lvm2_dmeventd` so `lvchange --monitor y` actually registers
@@ -412,7 +409,6 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
         Avoids cross-site traffic for log ingestion. Grafana queries both.
 - [ ] Re-enable MFA (TOTP/WebAuthn) once device enrollment is set up
 - [ ] Wire `cluster/scripts/check_authentik_login.py` into bootstrap/CI
-- [ ] Gatus: Harbor robot token for authenticated `/v2/` probe
 - [ ] Proxy outpost HA: shared session storage (1 replica limit, sessions in `/dev/shm`)
 - [ ] Airlock OAuth: upgrade Google scopes (requires new operator consent) — `calendar`, `gmail.send`,
       `gmail.compose`, `drive`, `spreadsheets`
@@ -433,9 +429,6 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       gate until the replacement topology is tested end to end.
 - [ ] Ollama: per-user auth (Authentik JWTs or LiteLLM proxy)
 - [ ] LiteLLM: `ollama/` provider drops `tool_calls` — use `openai-chat` variants for now
-- [ ] Harbor terraform: switch to robot accounts
-- [ ] Harbor CI robot: scope per-namespace pull secrets to read-only per project
-- [ ] Harbor proxy cache: add GHCR credentials for private repos (403 on `openclaw/openclaw`)
 - [ ] Verify ntfy.sh notifications
 - [ ] ActivityWatch: Gatus health check (`activitywatch-readonly:5600/api/0/info`)
 - [ ] ActivityWatch: replace reflected persistent agent OAuth credentials with
@@ -463,7 +456,7 @@ Deployed in Audit mode (`require-gitops` ClusterPolicy, 3 replicas).
 
 - [ ] Switch to `Enforce` after validation
 - [ ] Generic operator exclusion (skip resources with `ownerReferences`)
-- [ ] Image registry allowlist (`ghcr.io`, `docker.io`, `registry.allegedly.works`, `quay.io`)
+- [ ] Image registry allowlist (`ghcr.io`, `docker.io`, `git.allegedly.works`, `quay.io`)
 
 ### Flux HelmRelease Drift Detection
 
@@ -523,15 +516,18 @@ encryption to S3.
 
 ### CNPG Backup Strategy
 
-Single-instance Proxmox CNPG clusters (inventree, matrix, tandoor) rely on Proxmox ZFS
-for local reliability (checksums, snapshots). Off-site disaster recovery needed:
+Single-instance Proxmox CNPG clusters — firecrawl, inventree, tandoor — rely on
+Proxmox ZFS for local reliability (checksums, snapshots); all three are currently
+parked (suspended Flux Kustomizations). Off-site disaster recovery needed:
 
-(`harbor-db` moved to a single OVH instance and `props-db` to a 2-instance OVH-HA
-cluster — see <cnpg_conventions.md> § Current Compliance — so they're no longer part
-of this Proxmox-only gap.)
+(`matrix-db` and `props-db` moved to 2-instance OVH-HA clusters — see
+<cnpg_conventions.md> § Current Compliance — so they're no longer part of this
+Proxmox-only gap.)
 
-- [ ] Generalize the `tofu-state` pg_dump CronJob pattern to all Proxmox CNPG clusters
-      (write dumps to OVH-hosted PVC or object storage)
+- [ ] Set up a `pg_dump` CronJob pattern for Proxmox CNPG clusters, writing dumps to
+      OVH-hosted PVC or object storage. No such CronJob exists today — the one
+      precedent (tofu-state's) was deleted 2026-06-02; see "Set up offsite tofu-state
+      backup" in Next Actions.
 - [ ] Longer term: CNPG `ScheduledBackup` + Barman to S3-compatible store (SeaweedFS
       S3 gateway, or an external cloud bucket) for continuous WAL archiving and
       point-in-time recovery
@@ -539,7 +535,7 @@ of this Proxmox-only gap.)
 
 ### Velero PVC Backup
 
-Scheduled backups of PVCs (Harbor, Forgejo, Loki, Postgres). No backup strategy currently.
+Scheduled backups of PVCs (Forgejo, Loki, Postgres). No backup strategy currently.
 
 ### CiliumNetworkPolicy Rollout
 
@@ -549,7 +545,7 @@ Most services lack network policies. Goal: default-deny per namespace.
 
 **Priority 2 -- Application services**:
 
-- [ ] Harbor, Ollama, Grafana, Alertmanager, Forgejo, Tempo, Langfuse, Headlamp
+- [ ] Ollama, Grafana, Alertmanager, Forgejo, Tempo, Langfuse, Headlamp
 
 **Priority 3 -- Remaining**:
 
@@ -595,7 +591,7 @@ Start `warn`, promote to `enforce`.
 ### Scheduling Priorities
 
 Motivated by 2026-03-17 OOM cascade. Deploy PriorityClasses: `system-critical`
-(DNS/ingress/Authentik), `important` (Forgejo/Harbor/monitoring), `batch`
+(DNS/ingress/Authentik), `important` (Forgejo/monitoring), `batch`
 (OpenClaw/props/BuildBuddy). Plus Descheduler, PDBs, ResourceQuota + LimitRange.
 
 **TODO (basic-infra reliability sweep)**: do a deliberate pass over the core

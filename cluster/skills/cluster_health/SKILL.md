@@ -97,8 +97,8 @@ the cause before moving on:
   when needed, then classify it as active breakage, stale/wedged alert state,
   expected maintenance, or already-resolved-but-not-yet-cleared
 - Node problems: check node describe, kubelet conditions, recent events on the node
-- Image pull failures: check if the registry (Harbor) is up, if the image tag exists,
-  if pull secrets are configured
+- Image pull failures: check if the source registry is reachable, if the image tag
+  exists, if pull secrets are configured
 
 Include the root cause (or best hypothesis) in the report, not just "pod is failing."
 
@@ -106,11 +106,12 @@ Include the root cause (or best hypothesis) in the report, not just "pod is fail
 
 When images fail to pull, trace the full pipeline:
 
-- Check if the image exists in Harbor (`registry.allegedly.works`)
+- Check if the image exists in its registry (ghcr.io, or the Forgejo registry at
+  `git.allegedly.works`)
 - Check if the CI build that produces the image succeeded — look at GitHub Actions
   workflows (`gh run list`), BuildBuddy invocations, or the relevant `buildbuddy.yaml`
   / `.github/workflows/` pipeline
-- Check if the image push step succeeded (GitHub Actions logs, Harbor push events)
+- Check if the image push step succeeded (GitHub Actions logs)
 - Report where the pipeline broke (build failed, push failed, tag missing, auth issue)
 
 ### Anomaly Detection

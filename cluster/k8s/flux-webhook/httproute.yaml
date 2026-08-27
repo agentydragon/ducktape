@@ -1,6 +1,6 @@
 ---
 # Exposes the Flux notification-controller webhook-receiver service externally.
-# Handles both Harbor push webhooks and GitHub push webhooks.
+# Handles GitHub push webhooks.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:

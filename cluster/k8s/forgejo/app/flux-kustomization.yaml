@@ -44,4 +44,4 @@ spec:
     - name: authentik # Authentik must be running for OIDC
       namespace: ducktape-flux
     # Forgejo validates OIDC at init time (the configure init container fetches the discovery URL).
-    # Other SSO apps (Harbor, Matrix, Grafana) validate lazily at first login, so they don't need this.
+    # Other SSO apps (Matrix, Grafana) validate lazily at first login, so they don't need this.

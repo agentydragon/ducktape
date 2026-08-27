@@ -23,12 +23,12 @@ _DEPENDENCY_RULES: list[_DependencyRule] = [
     # is enforced dynamically by validate_operator_dependencies() using CRD_TO_OPERATOR from crd_layering.py.
     _DependencyRule(
         prerequisite="cert-manager",
-        must_come_before=["gateway", "authentik", "gitea", "harbor"],
+        must_come_before=["gateway", "authentik", "gitea"],
         reason="TLS certificates required for gateway and applications",
     ),
     _DependencyRule(
         prerequisite="gateway",
-        must_come_before=["authentik", "gitea", "harbor", "matrix"],
+        must_come_before=["authentik", "gitea", "matrix"],
         reason="Applications need gateway for external access",
     ),
 ]

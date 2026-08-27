@@ -1,9 +1,7 @@
 # Flux webhook token management
 #
 # Manages the GitHub webhook token and receiver registration for the Flux
-# github Receiver, independently of Harbor. Decoupled from harbor-ci so that
-# the Flux webhook receiver can reconcile without waiting for Harbor to be
-# healthy.
+# github Receiver.
 #
 # Creates:
 #   - github-webhook-token: K8s Secret in flux-system with the HMAC token
