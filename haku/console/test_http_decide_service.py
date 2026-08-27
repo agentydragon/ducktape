@@ -12,7 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import partial
-from ipaddress import IPv4Address
+from ipaddress import IPv4Address, IPv4Network, IPv6Address, IPv6Network
 from typing import Any, cast
 from uuid import UUID
 
@@ -46,6 +46,11 @@ _OTHER_FENCE = "other-agent-fence-credential"
 # Configured fence identity that owns no grants: isolation must come from principal filtering.
 _UNGRANTED_AGENT = UUID("10000000-0000-4000-8000-000000000099")
 _GITHUB_VALUE = "ghp-real-bot-token"
+# Genuinely global unicast addresses (example.com / Cloudflare DNS): the always-prohibited set
+# covers the RFC 5737/3849 documentation ranges (they are ``is_private``), so those cannot
+# stand in for public resolutions here.
+_PUBLIC_V4 = IPv4Address("93.184.216.34")
+_PUBLIC_V6 = IPv6Address("2606:4700::1111")
 
 _insert_http_source = partial(insert_approved_tool_call, server_id="http_grants")
 
@@ -71,7 +76,12 @@ class _Harness:
     binding_id: UUID
 
 
-def _harness(client: Any, *, credentials: Callable[[UUID], list[LoadedEgressCredential]] | None = None) -> _Harness:
+def _harness(
+    client: Any,
+    *,
+    credentials: Callable[[UUID], list[LoadedEgressCredential]] | None = None,
+    prohibited_cidrs: frozenset[IPv4Network | IPv6Network] = frozenset(),
+) -> _Harness:
     app = cast(FastAPI, client.app)
     sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
     assert client.portal is not None
@@ -89,6 +99,7 @@ def _harness(client: Any, *, credentials: Callable[[UUID], list[LoadedEgressCred
             ],
             credentials=credentials(agent_id) if credentials is not None else [],
         ),
+        prohibited_cidrs=prohibited_cidrs,
     )
     return _Harness(decide=decide, grants=grants, sessions=sessions, agent_id=agent_id, binding_id=binding_id)
 
@@ -120,12 +131,14 @@ def _request(
     host: str = "api.example",
     port: int = 443,
     path: str | None = "/",
+    resolved_ips: frozenset[IPv4Address | IPv6Address] = frozenset({_PUBLIC_V4}),
+    upstream_ip: IPv4Address | IPv6Address = _PUBLIC_V4,
 ) -> DecideRequest:
     return DecideRequest(
         fence_credential=SecretStr(fence_credential),
         request=RequestMeta(method=method, scheme=scheme, host=host, port=port, path=path),
-        resolved_ips=frozenset({IPv4Address("192.0.2.10")}),
-        upstream_ip=IPv4Address("192.0.2.10"),
+        resolved_ips=resolved_ips,
+        upstream_ip=upstream_ip,
     )
 
 
@@ -343,6 +356,92 @@ def test_ungrantable_metadata_denies_with_a_reason(make_client: Any) -> None:
             assert decision == DecideDenied(reason=reason, grant_scope=None), request.request
 
 
+def test_prohibited_resolved_answer_denies_each_class(make_client: Any) -> None:
+    """Every always-prohibited class denies with no grantable scope, despite a covering grant."""
+    with make_client() as client:
+        harness = _harness(client)
+        spec = HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}))
+        _create_grants(client, harness, spec, expires_at=_NOW + timedelta(minutes=30))
+        decide = partial(client.portal.call, harness.decide.decide)
+
+        assert decide(_request()).allowed  # the grant does admit a public resolution
+        prohibited_answers: list[tuple[IPv4Address | IPv6Address, str]] = [
+            (IPv4Address("127.0.0.1"), "loopback"),
+            (IPv6Address("::1"), "loopback"),
+            (IPv4Address("10.0.0.5"), "in a private range"),
+            (IPv4Address("172.16.0.9"), "in a private range"),
+            (IPv4Address("192.168.1.1"), "in a private range"),
+            (IPv4Address("169.254.169.254"), "link-local"),  # the cloud metadata address
+            (IPv6Address("fe80::1"), "link-local"),
+            (IPv6Address("fd00::1"), "in a private range"),  # ULA
+            (IPv4Address("0.0.0.0"), "unspecified"),
+            (IPv6Address("::"), "unspecified"),
+            (IPv4Address("224.0.0.1"), "multicast"),
+            (IPv6Address("ff02::1"), "multicast"),
+            (IPv6Address("::ffff:10.0.0.1"), "in a private range"),  # v4-mapped smuggling of RFC1918
+        ]
+        for prohibited, class_label in prohibited_answers:
+            decision = decide(_request(resolved_ips=frozenset({prohibited}), upstream_ip=prohibited))
+            assert decision == DecideDenied(reason=f"resolved address {prohibited} is {class_label}"), prohibited
+
+
+def test_mixed_public_and_prohibited_answer_denies_whole(make_client: Any) -> None:
+    """One prohibited member poisons the whole answer even when the pinned address is public.
+
+    A mixed answer is the DNS-rebinding signature (#4948), so it is refused outright rather
+    than filtered to its public members.
+    """
+    with make_client() as client:
+        harness = _harness(client)
+        spec = HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}))
+        _create_grants(client, harness, spec, expires_at=_NOW + timedelta(minutes=30))
+
+        decision = client.portal.call(
+            partial(
+                harness.decide.decide,
+                _request(resolved_ips=frozenset({_PUBLIC_V4, IPv4Address("10.0.0.5")}), upstream_ip=_PUBLIC_V4),
+            )
+        )
+
+        assert decision == DecideDenied(reason="resolved address 10.0.0.5 is in a private range")
+
+
+def test_configured_prohibited_cidrs_extend_the_always_on_classes(make_client: Any) -> None:
+    """Deploy CIDRs (cluster service/pod ranges) deny like a prohibited class.
+
+    100.64.0.0/10 and NAT64 space are the realistic examples: globally unrouted yet in no
+    always-prohibited class, so only the configured CIDR denies them — the baseline service
+    without the config admits the same answers.
+    """
+    with make_client() as client:
+        baseline = _harness(client)
+        fenced = _harness(
+            client, prohibited_cidrs=frozenset({IPv4Network("100.64.0.0/10"), IPv6Network("64:ff9b::/96")})
+        )
+        spec = HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}))
+        _create_grants(client, fenced, spec, expires_at=_NOW + timedelta(minutes=30))
+        cgnat = IPv4Address("100.64.9.9")
+        nat64 = IPv6Address("64:ff9b::a00:1")
+
+        for address in (cgnat, nat64):
+            allowed = client.portal.call(
+                partial(baseline.decide.decide, _request(resolved_ips=frozenset({address}), upstream_ip=address))
+            )
+            assert allowed.allowed, address
+        for address, network in ((cgnat, "100.64.0.0/10"), (nat64, "64:ff9b::/96")):
+            denied = client.portal.call(
+                partial(fenced.decide.decide, _request(resolved_ips=frozenset({address}), upstream_ip=address))
+            )
+            assert denied == DecideDenied(reason=f"resolved address {address} is in prohibited range {network}")
+        # A public answer — mixed-family included — still admits through the fenced service.
+        public = client.portal.call(
+            partial(
+                fenced.decide.decide, _request(resolved_ips=frozenset({_PUBLIC_V4, _PUBLIC_V6}), upstream_ip=_PUBLIC_V4)
+            )
+        )
+        assert public.allowed
+
+
 async def test_grant_authority_failure_raises_unavailable() -> None:
     # An unreachable database is the authority failure the service must convert into a refusal;
     # nothing here needs the container.
@@ -357,6 +456,7 @@ async def test_grant_authority_failure_raises_unavailable() -> None:
             proxy_token=SecretStr(_PROXY_TOKEN),
             fence_credentials=[LoadedFenceCredential(agent_id=_UNGRANTED_AGENT, token=SecretStr(_FENCE))],
         ),
+        prohibited_cidrs=frozenset(),
     )
 
     with pytest.raises(HttpDecideUnavailableError):

@@ -7,13 +7,16 @@ presents, the headers the proxy scans for it, the Agents allowed to redeem it, a
 origins it may be redeemed at. Secret values stay in env-var references like every other
 console-only bearer; handles, placeholders, and match headers are inert and committable by
 design (#4884 placeholder ruling). ``load_egress_decide`` reads the references once at startup
-and hands ``HttpDecideService`` the resolved values.
+and hands ``HttpDecideService`` the resolved values. The section also carries the deploy's
+``prohibited_cidrs`` — inert address policy the decide service enforces on resolved answers
+beyond its always-on prohibited classes (#4948).
 """
 
 from __future__ import annotations
 
 import os
 import re
+from ipaddress import IPv4Network, IPv6Network
 from uuid import UUID
 
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
@@ -110,6 +113,16 @@ class EgressDecideConfig(BaseModel):
     proxy_token_env_var: str = Field(min_length=1, pattern=_ENV_VAR_PATTERN)
     fence_credentials: list[EgressFenceCredentialEntry] = Field(default_factory=list)
     credentials: list[EgressCredentialEntry] = Field(default_factory=list)
+    prohibited_cidrs: frozenset[IPv4Network | IPv6Network] = Field(
+        default_factory=frozenset,
+        description=(
+            "Deploy-specific address ranges denied in resolved DNS answers on top of the "
+            "always-prohibited classes the decide service enforces (loopback, link-local, "
+            "multicast, unspecified, private/RFC1918/ULA): name the cluster's service/pod "
+            "CIDRs and any other reachable-but-internal ranges here. Inert and committable "
+            "— ranges, not secrets."
+        ),
+    )
 
     @model_validator(mode="after")
     def _distinct_env_references(self) -> EgressDecideConfig:

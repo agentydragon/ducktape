@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import secrets
 from dataclasses import dataclass
+from ipaddress import IPv4Address, IPv4Network, IPv6Address, IPv6Network
 
 from pydantic import SecretStr
 
@@ -44,6 +45,26 @@ CONNECT_METHOD = "CONNECT"
 
 class HttpDecideUnavailableError(RuntimeError):
     """The Console cannot make an authoritative egress decision."""
+
+
+def _prohibited_address_class(address: IPv4Address | IPv6Address) -> str | None:
+    """The always-prohibited class containing ``address``, or None for a public address.
+
+    ``is_private`` is deliberately the broad net: beyond RFC1918 and v6 ULA it covers the
+    whole IANA special-purpose registry (documentation/TEST-NET, benchmarking, reserved,
+    and v4-mapped v6 by delegation) — nothing in it is ever a legitimate egress destination.
+    """
+    if address.is_loopback:
+        return "loopback"
+    if address.is_link_local:
+        return "link-local"
+    if address.is_multicast:
+        return "multicast"
+    if address.is_unspecified:
+        return "unspecified"
+    if address.is_private:
+        return "in a private range"
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,16 +115,26 @@ def _canonicalize(meta: RequestMeta) -> _Tunnel | _InnerRequest | DecideDenied:
 class HttpDecideService:
     """Authenticate the proxy, bind the fence credential to its Agent, evaluate, fail closed.
 
-    Evaluation order is #4670's: standing HTTP policy first, then the principal's active temporary
-    grants after a clean standing denial. Deploy-managed standing HTTP destination policy is a
-    separate #4670 work item; until a deployment defines one, the standing step denies cleanly and
-    only grants admit.
+    The resolved answer is validated before any authority is consulted: an answer touching
+    prohibited address space — the always-on classes of ``_prohibited_address_class`` or a
+    deploy-configured prohibited CIDR — denies outright, whatever grants exist (#4948).
+    Evaluation order past that is #4670's: standing HTTP policy first, then the principal's
+    active temporary grants after a clean standing denial. Deploy-managed standing HTTP
+    destination policy is a separate #4670 work item; until a deployment defines one, the
+    standing step denies cleanly and only grants admit.
     """
 
-    def __init__(self, *, grants: HttpGrantService, credentials: LoadedEgressDecide) -> None:
+    def __init__(
+        self,
+        *,
+        grants: HttpGrantService,
+        credentials: LoadedEgressDecide,
+        prohibited_cidrs: frozenset[IPv4Network | IPv6Network],
+    ) -> None:
         self._grants = grants
         self._credentials = credentials
         self._egress_credentials = {credential.handle: credential for credential in credentials.credentials}
+        self._prohibited_cidrs = sorted(prohibited_cidrs, key=str)
 
     def authenticate_proxy(self, authorization: str) -> bool:
         """Whether ``Authorization`` presents exactly the configured proxy identity bearer."""
@@ -119,12 +150,40 @@ class HttpDecideService:
                 return RequestPrincipal(agent_id=credential.agent_id, session_id=None, access_profile_id=None)
         return None
 
+    def _prohibited_answer_reason(self, request: DecideRequest) -> str | None:
+        """Denial reason when the resolved answer touches prohibited address space; None when clean.
+
+        The complete answer is validated, not only the pinned address, and one prohibited member
+        denies the whole request: a mixed public+prohibited answer is the signature of a DNS
+        rebinding attempt, so it is refused outright rather than filtered to its public members
+        (#4948).
+        """
+        for address in sorted(request.resolved_ips, key=lambda address: (address.version, int(address))):
+            if class_label := _prohibited_address_class(address):
+                return f"resolved address {address} is {class_label}"
+            for network in self._prohibited_cidrs:
+                if address in network:
+                    return f"resolved address {address} is in prohibited range {network}"
+        return None
+
     async def decide(self, request: DecideRequest) -> DecideAllowed | DecideDenied:
         meta = request.request
         principal = self._resolve_fence_credential(request.fence_credential)
         if principal is None:
             logger.info("egress decision deny %s %s:%d: unknown fence credential", meta.method, meta.host, meta.port)
             return DecideDenied(reason="unknown fence credential")
+        if reason := self._prohibited_answer_reason(request):
+            logger.info(
+                "egress decision deny agent=%s %s %s:%d: %s",
+                principal.agent_id,
+                meta.method,
+                meta.host,
+                meta.port,
+                reason,
+            )
+            # No grant_scope: no grant may ever cover a prohibited resolution, so there is
+            # nothing to request.
+            return DecideDenied(reason=reason)
         canonical = _canonicalize(meta)
         if isinstance(canonical, DecideDenied):
             logger.info(

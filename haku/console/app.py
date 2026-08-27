@@ -543,7 +543,11 @@ def create_app(
         max_lifetime=datetime.timedelta(seconds=console_config.http_grant_max_lifetime_seconds),
     )
     http_decide = (
-        HttpDecideService(grants=http_grants, credentials=load_egress_decide(console_config.egress_decide))
+        HttpDecideService(
+            grants=http_grants,
+            credentials=load_egress_decide(console_config.egress_decide),
+            prohibited_cidrs=console_config.egress_decide.prohibited_cidrs,
+        )
         if console_config.egress_decide is not None
         else None
     )

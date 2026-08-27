@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from ipaddress import IPv4Network, IPv6Network
 from typing import Any
 from uuid import UUID
 
 import pytest
 import pytest_bazel
+from pydantic import ValidationError
 
 from haku.console.http_decide_config import (
     EgressCredentialEntry,
@@ -70,6 +72,16 @@ def test_credential_registry_requires_coherent_handles_and_placeholders() -> Non
                 _credential_entry(handle="github-bot-wide", placeholder="github-token-placeholder-wide", **other),
             ],
         )
+
+
+def test_prohibited_cidrs_parse_as_networks_and_default_empty() -> None:
+    config = EgressDecideConfig.model_validate(
+        {"proxy_token_env_var": "EGRESS_TOKEN", "prohibited_cidrs": ["10.96.0.0/12", "fd00:10::/64"]}
+    )
+    assert config.prohibited_cidrs == frozenset({IPv4Network("10.96.0.0/12"), IPv6Network("fd00:10::/64")})
+    assert EgressDecideConfig(proxy_token_env_var="EGRESS_TOKEN").prohibited_cidrs == frozenset()
+    with pytest.raises(ValidationError):  # host bits set: an address, not a range
+        EgressDecideConfig.model_validate({"proxy_token_env_var": "EGRESS_TOKEN", "prohibited_cidrs": ["10.96.0.1/12"]})
 
 
 def test_load_egress_decide_reads_env_references_and_fails_loud(monkeypatch: pytest.MonkeyPatch) -> None:
