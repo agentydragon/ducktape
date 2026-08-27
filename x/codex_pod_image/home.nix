@@ -137,14 +137,14 @@ in
   # static home-files and never runs activation — so we bake config.toml directly.
   # Codex reads it from its default CODEX_HOME (~/.codex).
   home.file.".codex/config.toml".source = (pkgs.formats.toml { }).generate "codex-config.toml" {
-    # Route Codex at LiteLLM's `*-chatgpt` (Codex-account) models instead of an
+    # Route Codex at LiteLLM's Codex-subscription models instead of an
     # interactive ChatGPT sign-in. `env_key` names the env var carrying the
     # LiteLLM virtual key (LITELLM_API_KEY, from the reflected litellm-key-codex-pod
     # secret; see deployment.yaml + tf/gitops/litellm-keys). wire_api=responses:
     # LiteLLM passes /v1/responses straight through to CLIProxyAPI's native
-    # Responses surface (no bridge), so the model must be a `*-chatgpt` entry —
-    # the `codex-*` ones are the Anthropic-wire lane for Claude Code.
-    model = "gpt-5.6-sol-chatgpt";
+    # Responses surface (no bridge), so the model must be a `chatgpt/oai-responses/*`
+    # entry — `chatgpt/ant-messages/*` is the Anthropic-wire lane for Claude Code.
+    model = "chatgpt/oai-responses/gpt-5.6-sol";
     model_provider = "litellm";
     model_providers.litellm = {
       name = "Cluster LiteLLM";
