@@ -32,11 +32,6 @@ genuinely both, so it is two modules: the CLI's own top-level `type` values and 
 pick a value out of one are `claude_code/frames.py`, while `setup_output.py` holds the bridge
 envelope's `kind` and the row the console authors under it.
 
-**One column still carries both**, which no placement fixes: `session_frames.kind` takes the CLI's
-`type` from `RolloutRecorder` and `setup_output` from the progress reporter, so `session_store.py`
-names two of the CLI's kinds in SQL predicates and imports them across that line. Giving the CLI's
-type its own column is what retires those predicates (<../plans/conversation_layers.md> § 13).
-
 ## `session_store.py` and `session_runtime.py` — the rows, and the turn loop over them
 
 The shared substrate: session, message and turn rows, Postgres `LISTEN`/`NOTIFY`, the
@@ -118,9 +113,6 @@ separate sandboxes — so a browser conversation and the Matrix conversation coe
 than contend. **Gotcha:** that also means two live sandboxes, and only the Matrix one
 announces itself, so the browser one is the easy one to forget you are paying for.
 
-Delta streaming (`StreamEvent`) exists for the SPA alone. The Matrix path forwards whole assistant
-messages, each as it completes, so if the SPA view is ever retired that machinery goes with it.
-
 ### What has been lifted out of it
 
 Each is a module nothing in `session_runtime.py` reaches into
@@ -151,8 +143,8 @@ level is the fix, not reinstating the models on the tool.
 
 `POST /api/sessions/{session_id}/messages` and `/abort` ask **who owns the session**, never which
 surface opened it: `enqueue_prompt` checks `operator_id`, `READY`, no open turn and no queued
-prompt, and no session records which surface opened it — `sessions.surface` is unmapped and
-awaiting its drop, and which channels hold a conversation is `chat_attachment`. So the conversation detail
+prompt, and no session records which surface opened it — which channels hold a conversation is
+`chat_attachment`. So the conversation detail
 view carries a composer (`frontend/x/conversation_composer.tsx`) for any session it can read,
 a room's included — the reply then goes wherever that session's channel sends replies, so a prompt
 typed in the browser also lands in the room.
@@ -762,8 +754,8 @@ dependency:
 - `MatrixConfig` and `Settings.matrix` in <../config.py>. Absent config, or a config whose
   reflected bot password has not landed yet, means the surface does not start and the console
   does.
-- `Session`, `SessionMessage`, `Conversation`, `ChatAttachment`, `MatrixAccessToken` and
-  `MatrixSyncWatermark` in <../database_schema.py>, plus their Alembic revisions — migrations are
+- `Session`, `Conversation`, `ChatAttachment`, `MatrixAccessToken` and `MatrixSyncWatermark` in
+  <../database_schema.py>, plus their Alembic revisions — migrations are
   one lineage for the whole database.
 - `StatusFrontend` is declared beside the stream fold in `room_status.py`; Matrix's sync service
   implements those ephemeral operations. The turn runtime has no channel port.
