@@ -74,9 +74,13 @@ ownership and execution contract: <devinfra/docs/bazel_configuration.md>.
 
 ## Terraform via Bazel
 
-Terraform/OpenTofu modules are managed by Bazel (`@rules_tf`): `tf_providers_versions` +
-`tf_module` rules per module. Bazel generates `terraform.tf`/`required_providers` —
-never write or suggest them by hand.
+Terraform/OpenTofu modules are managed by Bazel (`@rules_tf`): each module's BUILD
+declares `tf_providers_versions` + `tf_module`, validated against the Bazel-managed
+provider mirror. Declare provider versions in `tf_providers_versions` — never hand-edit
+a module's `terraform.tf`/`required_providers`, which mirrors that declaration.
+Execution differs by root: `tf/gitops/**` is reconciled by the in-cluster
+tofu-controller; the metal infra under `cluster/terraform/` is applied by
+`bazel run //cluster:bootstrap`, not the controller.
 
 ## Haku Forgejo Tokens
 
@@ -186,11 +190,16 @@ squash against `$(git merge-base HEAD origin/devel)`.
 
 ### Committing
 
-No test-invocation trailers in commit messages (`Bazel-Test-Invocations:` in old log
-entries is a dead pattern — link BuildBuddy runs in the PR body instead).
+Committing on `devel` trips the `no-commit-to-branch` hook. Skip it
+(`SKIP=no-commit-to-branch git commit …`) only when the user has explicitly approved a
+direct commit on `devel`.
 
-Committing on `devel` trips the `no-commit-to-branch` hook; when intentional, skip only
-that hook: `SKIP=no-commit-to-branch git commit …`.
+**A dirty checkout you started in is not yours.** Uncommitted changes in the working
+tree — especially in the user's own checkouts (`~/code/ducktape` on wyrm2, rugged, …),
+where a dirty `devel` serves as their staging playground — usually mean the dirt is
+theirs. Never switch branches there or commit on top of it unasked: judge whether the
+request builds on that dirty state; if not, do the work in a fresh worktree and send a
+PR from it; if genuinely ambiguous, ask.
 
 ## Conventions
 

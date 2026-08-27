@@ -51,7 +51,7 @@ instead, so they load on demand.
   provenance goes in inert `#` comments next to the data, not schema fields (`note:`);
   delete write-only fields that survived refactors.
 - **No redundant derived fields**: don't return a collection plus a trivially computable
-  function of it (a list and its `len()`). Exception: pagination `total_count`.
+  function of it (a list and its `len()`).
 - **No unnecessary aliasing**: no import renames, fixture re-assignment, or convenience
   re-exports (`AgentEvent = EventType`). Aliases only at public API boundaries
   (`__init__.py` re-exports) or to avoid collisions, with a comment.
@@ -244,7 +244,11 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
     declared container port), schemas/invariants that admit many valid inputs, and
     runtime behavior. Ask whether a plausible wrong edit would fail without updating
     expected values in lockstep.
-  - Generated-output snapshots are valid when the test runs the generator. Exact
+  - Generated-output snapshots are valid when the test runs the generator — including
+    the inverted form where the test _builds_ the artifact in code (loops and functions
+    beating repetitive YAML) and asserts the checked-in file equals it: there the test
+    is the source of truth and the file is generated output pinned to it (the LiteLLM
+    config pattern). Exact
     wire-format pins are valid only when an external contract or still-live consumer
     requires that value; name that contract in the test.
 - **No lint silencing without approval**: no ignore rules or per-line silencing unless
