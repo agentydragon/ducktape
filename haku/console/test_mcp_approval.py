@@ -192,7 +192,7 @@ def _build_execution_context_mcp_server() -> FastMCP:
     @server.tool()
     async def caller_id(execution: McpExecutionContext = _EXECUTION_CONTEXT_DEPENDENCY) -> str:
         caller = execution.caller
-        return str(caller.operator_id) if isinstance(caller, OperatorMcpExecutionCaller) else str(caller.agent_id)
+        return str(caller.operator_id if isinstance(caller, OperatorMcpExecutionCaller) else caller.principal.agent_id)
 
     return server
 
@@ -1979,7 +1979,12 @@ async def test_executor_dispatches_to_registered_in_process_server() -> None:
     server = McpServerEntry(
         id="google", backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace"))
     )
-    context = McpExecutionContext(caller=OperatorMcpExecutionCaller(operator_id=UUID(int=42)), tool_call_id="tc_test")
+    context = McpExecutionContext(
+        caller=OperatorMcpExecutionCaller(operator_id=UUID(int=42)),
+        tool_call_id="tc_test",
+        approving_operator_id=None,
+        approval_policy_id=None,
+    )
     result = await executor.execute(
         server, "echo", {"text": "hi"}, auth_token="operator-token", execution_context=context
     )
@@ -2002,7 +2007,10 @@ async def test_executor_injects_trusted_context_into_a_stable_in_process_server(
         {},
         auth_token=None,
         execution_context=McpExecutionContext(
-            caller=OperatorMcpExecutionCaller(operator_id=operator_id), tool_call_id="tc_test"
+            caller=OperatorMcpExecutionCaller(operator_id=operator_id),
+            tool_call_id="tc_test",
+            approving_operator_id=None,
+            approval_policy_id=None,
         ),
     )
 
@@ -2021,7 +2029,10 @@ async def test_executor_raises_when_in_process_backend_is_not_registered() -> No
             {},
             auth_token=None,
             execution_context=McpExecutionContext(
-                caller=OperatorMcpExecutionCaller(operator_id=UUID(int=42)), tool_call_id=None
+                caller=OperatorMcpExecutionCaller(operator_id=UUID(int=42)),
+                tool_call_id=None,
+                approving_operator_id=None,
+                approval_policy_id=None,
             ),
         )
 

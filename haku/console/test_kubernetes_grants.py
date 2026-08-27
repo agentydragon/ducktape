@@ -9,6 +9,7 @@ import pytest
 import pytest_bazel
 from pydantic import TypeAdapter, ValidationError
 
+from haku.console.grant_principal import AgentGrantPrincipal
 from haku.console.kubernetes_grant_models import (
     KubernetesAllNamespacesGrantScope,
     KubernetesClusterGrantScope,
@@ -100,7 +101,8 @@ def test_scope_is_a_discriminated_union_consistent_with_rule_kind() -> None:
 def test_grant_timestamps_require_timezone_awareness(field: str) -> None:
     payload = {
         "grant_id": UUID("00000000-0000-4000-8000-000000000001"),
-        "agent_id": UUID("00000000-0000-4000-8000-000000000002"),
+        "owner_agent_id": UUID("00000000-0000-4000-8000-000000000002"),
+        "principal": AgentGrantPrincipal(agent_id=UUID("00000000-0000-4000-8000-000000000002")),
         "source_tool_call_id": "tc_source",
         "scope": KubernetesNamespacesGrantScope(namespaces=("demo",)),
         "rules": (resource_rule(),),
@@ -114,6 +116,21 @@ def test_grant_timestamps_require_timezone_awareness(field: str) -> None:
 
     with pytest.raises(ValidationError, match=rf"{field} must be timezone-aware"):
         KubernetesGrant.model_validate(payload)
+
+
+def test_agent_grant_principal_must_belong_to_lifecycle_owner() -> None:
+    with pytest.raises(ValidationError, match="must belong to the lifecycle owner"):
+        KubernetesGrant(
+            grant_id=UUID(int=1),
+            owner_agent_id=UUID(int=2),
+            principal=AgentGrantPrincipal(agent_id=UUID(int=3)),
+            source_tool_call_id="tc_source",
+            scope=KubernetesNamespacesGrantScope(namespaces=("demo",)),
+            rules=(resource_rule(),),
+            status=KubernetesGrantStatus.ACTIVE,
+            created_at=datetime.datetime(2026, 8, 21, tzinfo=datetime.UTC),
+            expires_at=datetime.datetime(2026, 8, 21, 1, tzinfo=datetime.UTC),
+        )
 
 
 def test_matching_is_conservative_about_resource_names() -> None:

@@ -52,9 +52,12 @@ from haku.console.database_schema import (
     ConversationItem,
     ConversationPrompt,
     ConversationTurn,
+    KubernetesGrantRow,
     Session,
     SessionFrame,
 )
+from haku.console.grant_principal import GrantPrincipalKind
+from haku.console.kubernetes_grant_models import KubernetesGrantStatus
 from haku.console.x import conversation_log, session_events
 from haku.console.x.conversation_events import (
     ConversationEvent,
@@ -484,6 +487,27 @@ class SessionStore:
             db, chat.conversation_id, session_id=chat.session_id, turn_id=None, now=now
         )
         writer.authored(session_events.SessionEndedBody(status=status, error=error))
+        session_principal = (
+            KubernetesGrantRow.principal_kind == GrantPrincipalKind.SESSION,
+            KubernetesGrantRow.principal_session_id == chat.session_id,
+        )
+        # Exact-session authority never transfers to a replacement session. End it in the same
+        # transaction as the session's terminal event so authorization and the durable account
+        # cannot disagree. Expiration wins when the lease had already reached its time bound.
+        await db.execute(
+            update(KubernetesGrantRow)
+            .where(
+                *session_principal,
+                KubernetesGrantRow.status == KubernetesGrantStatus.ACTIVE,
+                KubernetesGrantRow.expires_at <= now,
+            )
+            .values(status=KubernetesGrantStatus.EXPIRED, ended_at=now, end_reason="expired")
+        )
+        await db.execute(
+            update(KubernetesGrantRow)
+            .where(*session_principal, KubernetesGrantRow.status == KubernetesGrantStatus.ACTIVE)
+            .values(status=KubernetesGrantStatus.REVOKED, ended_at=now, end_reason="principal_ended")
+        )
         chat.status = status
         chat.error = error
         chat.updated_at = now

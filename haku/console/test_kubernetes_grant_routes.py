@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from haku.console import operator_auth
 from haku.console.agents.enrollment import OperatorAgent
 from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
+from haku.console.grant_principal import AgentGrantPrincipal
 from haku.console.kubernetes_grant_models import (
     KubernetesGrant,
     KubernetesGrantNotFoundError,
@@ -50,7 +51,8 @@ def _grant(*, status: KubernetesGrantStatus = KubernetesGrantStatus.ACTIVE) -> K
     terminal = status is not KubernetesGrantStatus.ACTIVE
     return KubernetesGrant(
         grant_id=GRANT_ID,
-        agent_id=AGENT_ID,
+        owner_agent_id=AGENT_ID,
+        principal=AgentGrantPrincipal(agent_id=AGENT_ID),
         source_tool_call_id="tc_0123456789abcdef01234567",
         scope=KubernetesNamespacesGrantScope(namespaces={"public-coder-agent"}),
         rules=(KubernetesRule(api_groups={""}, resources={"pods/log"}, verbs={"get"}),),
@@ -78,23 +80,23 @@ class _FakeGrantService:
     revoked: list[tuple[UUID, UUID, str]] = field(default_factory=list)
     revoked_sets: list[tuple[UUID, str, str]] = field(default_factory=list)
 
-    async def list_grants(self, *, agent_id: UUID, include_terminal: bool = True) -> tuple[KubernetesGrant, ...]:
-        self.listed.append((agent_id, include_terminal))
-        return (self.current,) if agent_id == AGENT_ID else ()
+    async def list_grants(self, *, owner_agent_id: UUID, include_terminal: bool = True) -> tuple[KubernetesGrant, ...]:
+        self.listed.append((owner_agent_id, include_terminal))
+        return (self.current,) if owner_agent_id == AGENT_ID else ()
 
-    async def revoke_grant(self, *, agent_id: UUID, grant_id: UUID, reason: str) -> KubernetesGrant:
-        self.revoked.append((agent_id, grant_id, reason))
-        if agent_id != AGENT_ID or grant_id != GRANT_ID:
+    async def revoke_grant(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str) -> KubernetesGrant:
+        self.revoked.append((owner_agent_id, grant_id, reason))
+        if owner_agent_id != AGENT_ID or grant_id != GRANT_ID:
             raise KubernetesGrantNotFoundError(str(grant_id))
         self.current = _grant(status=KubernetesGrantStatus.REVOKED)
         return self.current
 
     async def revoke_grant_set(
-        self, *, agent_id: UUID, source_tool_call_id: str, reason: str
+        self, *, owner_agent_id: UUID, source_tool_call_id: str, reason: str
     ) -> tuple[KubernetesGrant, ...]:
-        if agent_id != AGENT_ID or source_tool_call_id != self.current.source_tool_call_id:
+        if owner_agent_id != AGENT_ID or source_tool_call_id != self.current.source_tool_call_id:
             raise KubernetesGrantNotFoundError(source_tool_call_id)
-        self.revoked_sets.append((agent_id, source_tool_call_id, reason))
+        self.revoked_sets.append((owner_agent_id, source_tool_call_id, reason))
         self.current = _grant(status=KubernetesGrantStatus.REVOKED)
         return (self.current,)
 
@@ -125,7 +127,8 @@ def test_lists_only_the_authenticated_operators_agents_with_provenance() -> None
                 "agent_display_name": "Public Coder",
                 "grant": {
                     "grant_id": str(GRANT_ID),
-                    "agent_id": str(AGENT_ID),
+                    "owner_agent_id": str(AGENT_ID),
+                    "principal": {"kind": "agent", "agent_id": str(AGENT_ID)},
                     "source_tool_call_id": "tc_0123456789abcdef01234567",
                     "scope": {"kind": "namespaces", "namespaces": ["public-coder-agent"]},
                     "rules": [

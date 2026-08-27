@@ -20,6 +20,7 @@ from uuid import UUID
 from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
 from haku.console.auto_approval.registry import AutoApprovalPolicyRegistry, PolicyDenial, auto_approve_tool_call
 from haku.console.config import Settings
+from haku.console.grant_principal import RequestPrincipal
 from haku.console.kubernetes_authorization import KubernetesAuthorizationService
 from haku.console.mcp_config import (
     InProcessBackend,
@@ -56,6 +57,15 @@ logger = logging.getLogger(__name__)
 TERMINAL_STATUSES = {ToolCallStatus.OK, ToolCallStatus.ERROR, ToolCallStatus.DENIED, ToolCallStatus.WITHDRAWN}
 
 _CURSOR_SEPARATOR = "~"
+
+
+def _execution_caller(actor: ToolCallActor) -> McpExecutionCaller:
+    """The trusted execution identity one revalidated actor executes as."""
+    match actor:
+        case AgentActor() as agent:
+            return AgentMcpExecutionCaller(principal=RequestPrincipal.from_source(agent))
+        case OperatorActor(operator_id=operator_id):
+            return OperatorMcpExecutionCaller(operator_id=operator_id)
 
 
 @dataclass(frozen=True, slots=True)
@@ -415,7 +425,12 @@ class ToolCallApplicationService:
             req.tool_name,
             req.arguments,
             auth_token,
-            McpExecutionContext(caller=OperatorMcpExecutionCaller(operator_id=operator.operator_id), tool_call_id=None),
+            McpExecutionContext(
+                caller=OperatorMcpExecutionCaller(operator_id=operator.operator_id),
+                tool_call_id=None,
+                approving_operator_id=None,
+                approval_policy_id=None,
+            ),
         )
 
     async def get(
@@ -560,15 +575,8 @@ class ToolCallApplicationService:
     ) -> McpExecutionContext:
         """Build trusted explicit execution identity after the repository revalidates the caller."""
 
-        caller: McpExecutionCaller
-        match execution.caller:
-            case AgentActor(agent_id=agent_id, access_profile_id=access_profile_id):
-                caller = AgentMcpExecutionCaller(agent_id=agent_id, access_profile_id=access_profile_id)
-            case OperatorActor(operator_id=operator_id):
-                caller = OperatorMcpExecutionCaller(operator_id=operator_id)
-
         return McpExecutionContext(
-            caller=caller,
+            caller=_execution_caller(execution.caller),
             tool_call_id=record.tool_call_id,
             approving_operator_id=deciding_actor.operator_id if isinstance(deciding_actor, OperatorActor) else None,
             approval_policy_id=record.approval_policy_id,

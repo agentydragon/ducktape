@@ -9,6 +9,7 @@ import pytest
 import pytest_bazel
 from fastmcp import Client
 
+from haku.console.grant_principal import RequestPrincipal
 from haku.console.mcp_config import AccessProfile
 from haku.console.mcp_execution import (
     AgentMcpExecutionCaller,
@@ -60,11 +61,17 @@ def _mcp(searcher: _Searcher):
 
 def _meta(actor: ToolCallActor = HAKU) -> dict[str, object]:
     caller = (
-        AgentMcpExecutionCaller(agent_id=actor.agent_id, access_profile_id=actor.access_profile_id)
+        AgentMcpExecutionCaller(
+            principal=RequestPrincipal(
+                agent_id=actor.agent_id, session_id=actor.session_id, access_profile_id=actor.access_profile_id
+            )
+        )
         if isinstance(actor, AgentActor)
         else OperatorMcpExecutionCaller(operator_id=actor.operator_id)
     )
-    return mcp_execution_request_meta(McpExecutionContext(caller=caller, tool_call_id="tc_test"))
+    return mcp_execution_request_meta(
+        McpExecutionContext(caller=caller, tool_call_id="tc_test", approving_operator_id=None, approval_policy_id=None)
+    )
 
 
 async def _call(client: Client, tool: str, arguments: dict, *, actor: ToolCallActor = HAKU, **kwargs):

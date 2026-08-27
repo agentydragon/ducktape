@@ -145,7 +145,7 @@ def generate_diff_report(work_dir: Path, live: dict[str, Entry], built: dict[str
             print(line)
 
 
-def main() -> int:
+def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
 
     parser = argparse.ArgumentParser(description="Build the Claude Code web container and generate a diff report.")
@@ -157,7 +157,7 @@ def main() -> int:
 
     if args.capture_binaries:
         capture_proprietary_binaries(work_dir)
-        return 0
+        return
 
     if not args.diff_only:
         capture_proprietary_binaries(work_dir)
@@ -167,8 +167,7 @@ def main() -> int:
         logger.info("Skipping build (--diff-only)")
         result = subprocess.run(["docker", "image", "inspect", IMAGE_NAME], check=False, capture_output=True)
         if result.returncode != 0:
-            logger.error("Image %s not found. Run without --diff-only first.", IMAGE_NAME)
-            return 1
+            raise RuntimeError(f"image {IMAGE_NAME} not found; run without --diff-only first")
 
     logger.info("Capturing version snapshot...")
     date_str = datetime.now(UTC).strftime("%Y-%m-%d")
@@ -181,8 +180,7 @@ def main() -> int:
     generate_diff_report(work_dir, live, built)
 
     logger.info("Done! Review diff_report.md and commit if changes are expected.")
-    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

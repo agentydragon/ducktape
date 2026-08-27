@@ -200,7 +200,7 @@ def _write_github_output(**values: str) -> None:
         f.writelines(f"{key}={value}\n" for key, value in values.items())
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifact-targets", type=Path, default=Path("devinfra/ci/artifact_targets.json"))
     parser.add_argument("--skills-registry", type=Path, default=Path("skills/skills_registry.json"))
@@ -222,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
     if "[skip ci]" in args.commit_subject:
         print("Commit is marked [skip ci]; releasing nothing.", file=sys.stderr)
         _write_github_output(matrix=json.dumps({"include": []}), count="0")
-        return 0
+        return
 
     # bazel-ci runs `bazel test` then `bazel build`, so it reports more than one
     # invocation; merge them rather than guess which one holds a given output.
@@ -246,8 +246,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"\n{len(include)} of {len(decided)} releases need publishing.", file=sys.stderr)
 
     _write_github_output(matrix=json.dumps({"include": include}), count=str(len(include)))
-    return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

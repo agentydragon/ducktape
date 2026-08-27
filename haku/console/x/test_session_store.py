@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import itertools
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import cast
 from unittest.mock import patch
 from uuid import UUID, uuid4
@@ -18,7 +18,7 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 from more_itertools import one
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -49,8 +49,14 @@ from haku.console.database_schema import (
     ConversationItem,
     ConversationPrompt,
     ConversationTurn,
+    KubernetesGrantRow,
+    McpToolCall,
+    McpToolCallPrincipal,
     Session,
 )
+from haku.console.grant_principal import GrantPrincipalKind
+from haku.console.kubernetes_grant_models import KubernetesGrantStatus, KubernetesNamespacesGrantScope, KubernetesRule
+from haku.console.tool_calls import ToolCallStatus
 from haku.console.x.claude_code.testing.wire import assistant, result, text_block, text_delta
 from haku.console.x.conftest import age_lease, answers, attach_channel, lease_of, make_idle
 from haku.console.x.conversation_events import (
@@ -241,6 +247,126 @@ async def test_failure_records_the_final_status_and_error_once(chat_store, migra
     assert ended.body == {"status": SessionStatus.FAILED, "error": "runner failed"}
     failed = await chat_store.get(operator_id, view.session_id)
     assert (failed.status, failed.error) == (SessionStatus.FAILED, "runner failed")
+
+
+async def test_session_end_terminalizes_exact_session_kubernetes_grants(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    agent_id = UUID("00000000-0000-4000-8000-000000000001")
+    reservation_id, binding_id = uuid4(), uuid4()
+    now = datetime.now(UTC)
+    async with migrated_sessions.begin() as db:
+        await db.execute(
+            text(
+                """
+                INSERT INTO agent_name_reservations (
+                    reservation_id, display_name, display_name_key, agent_id, created_at, activated_at
+                ) VALUES (:reservation_id, 'Session Grant Agent', 'session grant agent', :agent_id, :n, :n)
+                """
+            ),
+            {"reservation_id": reservation_id, "agent_id": agent_id, "n": now},
+        )
+        await db.execute(
+            text(
+                """
+                INSERT INTO agents (
+                    agent_id, owner_operator_id, current_name_reservation_id, status,
+                    created_at, updated_at, activated_at, access_profile_id
+                ) VALUES (
+                    :agent_id, :operator_id, :reservation_id, 'active', :n, :n, :n, 'no_auto_approval'
+                )
+                """
+            ),
+            {"agent_id": agent_id, "operator_id": operator_id, "reservation_id": reservation_id, "n": now},
+        )
+        await db.execute(
+            text(
+                """
+                INSERT INTO credential_bindings (
+                    binding_id, agent_id, kind, status, generation, created_at, updated_at,
+                    issued_at, activated_at
+                ) VALUES (:binding_id, :agent_id, 'static', 'active', 1, :n, :n, :n, :n)
+                """
+            ),
+            {"binding_id": binding_id, "agent_id": agent_id, "n": now},
+        )
+        await db.execute(
+            text(
+                """
+                INSERT INTO static_credentials (
+                    binding_id, secret_reference, credential_fingerprint, created_at
+                ) VALUES (:binding_id, :reference, :fingerprint, :n)
+                """
+            ),
+            {
+                "binding_id": binding_id,
+                "reference": f"env:SESSION_GRANT_{agent_id}",
+                "fingerprint": binding_id.bytes,
+                "n": now,
+            },
+        )
+    view, _ = await chat_store.create(operator_id, agent_id=agent_id, access_profile_id="no_auto_approval")
+    grant_id = uuid4()
+    async with migrated_sessions.begin() as db:
+        session = await db.get(Session, view.session_id)
+        assert session is not None
+        session.agent_binding_id = binding_id
+        session.status = SessionStatus.READY
+        session.lease_expires_at = datetime(2999, 1, 1, tzinfo=UTC)
+        await db.flush([session])
+        source_tool_call_id = f"tc_{uuid4().hex}"
+        db.add(
+            McpToolCall(
+                tool_call_id=source_tool_call_id,
+                server_id="kubernetes",
+                tool_name="create_grant",
+                status=ToolCallStatus.RUNNING,
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+                arguments_json={},
+                rationale="session grant terminalization test",
+                title=None,
+                result_json=None,
+                error=None,
+                denial_reason=None,
+                withdrawal_reason=None,
+                approval_policy_id=None,
+                auto_approval_evaluation=None,
+                approved_at=datetime.now(UTC),
+            )
+        )
+        db.add(
+            McpToolCallPrincipal(
+                tool_call_id=source_tool_call_id, operator_id=None, binding_id=binding_id, session_id=view.session_id
+            )
+        )
+        await db.flush()
+        db.add(
+            KubernetesGrantRow(
+                grant_id=grant_id,
+                owner_agent_id=agent_id,
+                principal_kind=GrantPrincipalKind.SESSION,
+                principal_agent_id=None,
+                principal_session_id=view.session_id,
+                source_tool_call_id=source_tool_call_id,
+                scope=KubernetesNamespacesGrantScope(namespaces=("public-coder-agent",)),
+                rules=[KubernetesRule(api_groups=("",), resources=("pods/log",), verbs=("get",))],
+                status=KubernetesGrantStatus.ACTIVE,
+                created_at=datetime.now(UTC),
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
+                ended_at=None,
+                end_reason=None,
+            )
+        )
+
+    await chat_store.fail(view.session_id, "runner failed")
+
+    async with migrated_sessions() as db:
+        grant = await db.get(KubernetesGrantRow, grant_id)
+        assert grant is not None
+        assert grant.status is KubernetesGrantStatus.REVOKED
+        assert grant.end_reason == "principal_ended"
+        assert grant.ended_at is not None
 
 
 async def test_the_cleanup_sweep_offers_ended_sessions_until_their_claim_is_recorded_gone(

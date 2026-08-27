@@ -324,7 +324,8 @@ export const SAMPLE_KUBERNETES_GRANTS = {
       agent_display_name: "Public Coder",
       grant: {
         grant_id: "50000000-0000-4000-8000-000000000005",
-        agent_id: "30000000-0000-4000-8000-000000000003",
+        owner_agent_id: "30000000-0000-4000-8000-000000000003",
+        principal: { kind: "agent", agent_id: "30000000-0000-4000-8000-000000000003" },
         source_tool_call_id: "tc_0123456789abcdef01234567",
         scope: { kind: "namespaces", namespaces: ["public-coder-agent"] },
         rules: [
@@ -354,7 +355,8 @@ export const SAMPLE_KUBERNETES_GRANTS = {
       agent_display_name: "Public Coder",
       grant: {
         grant_id: "50000000-0000-4000-8000-000000000007",
-        agent_id: "30000000-0000-4000-8000-000000000003",
+        owner_agent_id: "30000000-0000-4000-8000-000000000003",
+        principal: { kind: "agent", agent_id: "30000000-0000-4000-8000-000000000003" },
         source_tool_call_id: "tc_0123456789abcdef01234567",
         scope: { kind: "cluster" },
         rules: [
@@ -377,7 +379,11 @@ export const SAMPLE_KUBERNETES_GRANTS = {
       agent_display_name: "Public Coder",
       grant: {
         grant_id: "50000000-0000-4000-8000-000000000006",
-        agent_id: "30000000-0000-4000-8000-000000000003",
+        owner_agent_id: "30000000-0000-4000-8000-000000000003",
+        principal: {
+          kind: "session",
+          session_id: "60000000-0000-4000-8000-000000000006",
+        },
         source_tool_call_id: "tc_1123456789abcdef01234567",
         scope: { kind: "cluster" },
         rules: [

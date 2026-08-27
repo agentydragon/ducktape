@@ -19,7 +19,7 @@ import logging
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, AuthorizationV1Api
@@ -28,6 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from haku.console.agent_bearer_authority import AgentBearerAuthority
 from haku.console.config import KubernetesAuthorizationConfig, KubernetesAuthorizationSubject
+from haku.console.grant_principal import RequestPrincipal
 from haku.console.kubernetes_grant_models import (
     KubernetesAllNamespacesGrantScope,
     KubernetesClusterGrantScope,
@@ -246,22 +247,24 @@ class KubernetesAuthorizationService:
             raise KubernetesAuthorizationUnavailableError("Haku Agent authority is unavailable") from error
         if actor is None:
             raise KubernetesBearerRejectedError("Haku rejected the caller credential")
-        return await self.evaluate(agent_id=actor.agent_id, access_profile_id=actor.access_profile_id, request=request)
+        return await self.evaluate(request_principal=RequestPrincipal.from_source(actor), request=request)
 
     async def authorize_agent(
-        self, *, agent_id: UUID, access_profile_id: str | None, request: AuthorizationRequest
+        self, *, request_principal: RequestPrincipal, request: AuthorizationRequest
     ) -> AuthorizationResponse:
         """Evaluate identity already revalidated into trusted in-process execution metadata."""
 
-        return await self.evaluate(agent_id=agent_id, access_profile_id=access_profile_id, request=request)
+        return await self.evaluate(request_principal=request_principal, request=request)
 
     async def evaluate(
-        self, *, agent_id: UUID, access_profile_id: str | None, request: AuthorizationRequest
+        self, *, request_principal: RequestPrincipal, request: AuthorizationRequest
     ) -> AuthorizationResponse:
         """Evaluate one trusted Agent request without mutating grant state."""
 
         subject = (
-            self._config.subjects_by_access_profile.get(access_profile_id) if access_profile_id is not None else None
+            self._config.subjects_by_access_profile.get(request_principal.access_profile_id)
+            if request_principal.access_profile_id is not None
+            else None
         )
         if subject is None:
             raise KubernetesAuthorizationUnavailableError(
@@ -279,10 +282,9 @@ class KubernetesAuthorizationService:
         decision_id = f"sar:{uuid4()}"
         if request.attributes.resource_request:
             logger.info(
-                "Kubernetes standing-policy decision agent_id=%s access_profile_id=%s subject=%s "
+                "Kubernetes standing-policy decision request_principal=%s subject=%s "
                 "decision_id=%s allowed=%s verb=%s namespace=%s resource=%s subresource=%s name=%s",
-                agent_id,
-                access_profile_id,
+                request_principal,
                 subject.username,
                 decision_id,
                 result.allowed,
@@ -294,10 +296,9 @@ class KubernetesAuthorizationService:
             )
         else:
             logger.info(
-                "Kubernetes standing-policy decision agent_id=%s access_profile_id=%s subject=%s "
+                "Kubernetes standing-policy decision request_principal=%s subject=%s "
                 "decision_id=%s allowed=%s verb=%s path=%s",
-                agent_id,
-                access_profile_id,
+                request_principal,
                 subject.username,
                 decision_id,
                 result.allowed,
@@ -313,17 +314,17 @@ class KubernetesAuthorizationService:
         # Matching is read-only: the repository query excludes expired rows.
         try:
             grant = await self._grants.match_request(
-                agent_id=agent_id, required_scope=request.required_scope, required_rules=request.required_rules
+                request_principal=request_principal,
+                required_scope=request.required_scope,
+                required_rules=request.required_rules,
             )
         except Exception as error:
             raise KubernetesAuthorizationUnavailableError("Kubernetes grant authority is unavailable") from error
         if grant.allowed and grant.grant_id is not None:
             grant_decision_id = f"grant:{grant.grant_id}"
             logger.info(
-                "Kubernetes temporary-grant decision agent_id=%s access_profile_id=%s "
-                "decision_id=%s allowed=true valid_until=%s",
-                agent_id,
-                access_profile_id,
+                "Kubernetes temporary-grant decision request_principal=%s decision_id=%s allowed=true valid_until=%s",
+                request_principal,
                 grant_decision_id,
                 grant.expires_at,
             )

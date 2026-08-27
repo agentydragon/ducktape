@@ -88,6 +88,7 @@ py_library(
     name = "mcp_execution",
     srcs = ["mcp_execution.py"],
     deps = [
+        ":grant_principal",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],
@@ -151,6 +152,7 @@ py_library(
     name = "recall_index_access",
     srcs = ["recall_index_access.py"],
     deps = [
+        ":grant_principal",
         ":mcp_config",
         ":mcp_execution",
         ":tool_call_actor",
@@ -161,6 +163,7 @@ py_library(
     name = "in_process_server_access",
     srcs = ["in_process_server_access.py"],
     deps = [
+        ":grant_principal",
         ":mcp_config",
         ":mcp_execution",
         ":tool_call_actor",
@@ -232,6 +235,7 @@ py_library(
     srcs = ["database_schema.py"],
     deps = [
         ":chat_models",
+        ":grant_principal",
         ":kubernetes_grant_models",
         ":node_daemon_models",
         ":operator_identity",
@@ -245,9 +249,31 @@ py_library(
 )
 
 py_library(
+    name = "grant_principal",
+    srcs = ["grant_principal.py"],
+    deps = [
+        ":tool_call_actor",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_grant_principal",
+    srcs = ["test_grant_principal.py"],
+    deps = [
+        ":grant_principal",
+        ":tool_call_actor",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "kubernetes_grant_models",
     srcs = ["kubernetes_grant_models.py"],
     deps = [
+        ":grant_principal",
         "@pypi//pydantic",
     ],
 )
@@ -256,7 +282,9 @@ py_library(
     name = "kubernetes_grant_repository",
     srcs = ["kubernetes_grant_repository.py"],
     deps = [
+        ":chat_models",
         ":database_schema",
+        ":grant_principal",
         ":kubernetes_grant_models",
         "//haku/console/agents:models",
         "@ducktape_haku//haku/console:tool_calls",
@@ -268,6 +296,7 @@ py_library(
     name = "kubernetes_grant_service",
     srcs = ["kubernetes_grant_service.py"],
     deps = [
+        ":grant_principal",
         ":kubernetes_grant_models",
     ],
 )
@@ -289,6 +318,7 @@ py_test(
     name = "test_kubernetes_grant_routes",
     srcs = ["test_kubernetes_grant_routes.py"],
     deps = [
+        ":grant_principal",
         ":kubernetes_grant_models",
         ":kubernetes_grant_routes",
         ":operator_auth",
@@ -382,6 +412,7 @@ py_library(
     deps = [
         ":agent_bearer_authority",
         ":config",
+        ":grant_principal",
         ":kubernetes_grant_models",
         ":kubernetes_grant_service",
         "@pypi//kubernetes_asyncio",
@@ -745,6 +776,7 @@ py_library(
     srcs = ["tool_call_service.py"],
     deps = [
         ":config",
+        ":grant_principal",
         ":kubectl_passthrough_policy",
         ":kubernetes_authorization",
         ":mcp_config",
@@ -1312,14 +1344,17 @@ py_library(
         ":app",
         ":config",
         ":database_migrate",
+        ":database_schema",
         ":operator_auth",
         ":operator_identity",
         ":operator_identity_store",
         ":tool_call_actor",
+        "//haku/console/agents:authorization",
         "//third_party/containers:rlocations",
         "//util:oci",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
+        "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
         "@pypi//httpx",
         # SessionMiddleware (starlette) signs the operator session cookie with itsdangerous;
@@ -1462,6 +1497,7 @@ py_test(
     deps = [
         ":conftest",
         ":database_schema",
+        ":grant_principal",
         ":mcp_approval",
         ":mcp_config",
         ":oauth_token_state",
@@ -1497,6 +1533,7 @@ py_test(
         ":console_events",
         ":database_migrate",
         ":database_schema",
+        ":grant_principal",
         ":mcp_approval",
         ":mcp_config",
         ":mcp_operator_oauth",
@@ -1756,6 +1793,27 @@ py_test(
 )
 
 py_test(
+    name = "test_kubernetes_grant_principal_migration",
+    size = "medium",
+    srcs = ["test_kubernetes_grant_principal_migration.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":database_migrate",
+        "//:conftest",
+        "@pypi//alembic",
+        "@pypi//psycopg",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
     name = "test_conversation_agent_identity_migration",
     size = "medium",
     srcs = ["test_conversation_agent_identity_migration.py"],
@@ -1770,6 +1828,25 @@ py_test(
         "//:conftest",
         "@pypi//psycopg",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_turn_failure_reason_migration",
+    size = "medium",
+    srcs = ["test_turn_failure_reason_migration.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":database_migrate",
+        "//:conftest",
+        "@pypi//psycopg",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -1818,6 +1895,7 @@ py_test(
     name = "test_kube_proxy_authorization",
     srcs = ["test_kube_proxy_authorization.py"],
     deps = [
+        ":grant_principal",
         ":kube_proxy_authorization",
         ":kubernetes_authorization",
         ":tool_call_actor",
@@ -1851,6 +1929,7 @@ py_test(
     name = "test_kubernetes_grants",
     srcs = ["test_kubernetes_grants.py"],
     deps = [
+        ":grant_principal",
         ":kubernetes_grant_models",
         ":kubernetes_grant_service",
         "@pypi//pydantic",
@@ -1863,6 +1942,7 @@ py_test(
     name = "test_kubernetes_grant_service",
     srcs = ["test_kubernetes_grant_service.py"],
     deps = [
+        ":grant_principal",
         ":kubernetes_grant_models",
         ":kubernetes_grant_service",
         "@pypi//pytest",
@@ -1883,11 +1963,10 @@ py_test(
     deps = [
         ":conftest",
         ":database_schema",
+        ":grant_principal",
         ":kubernetes_grant_models",
         ":kubernetes_grant_repository",
         "//:conftest",
-        "//haku/console/agents:authorization",
-        "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

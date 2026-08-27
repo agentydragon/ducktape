@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from haku.console.config import KubernetesAuthorizationConfig, KubernetesAuthorizationSubject
+from haku.console.grant_principal import RequestPrincipal
 from haku.console.kube_proxy_authorization import router
 from haku.console.kubernetes_authorization import (
     AuthorizationRequest,
@@ -161,7 +162,7 @@ def _service(
 
 
 class EmptyGrantRepository:
-    async def active_for_agent(self, *, agent_id, now):
+    async def active_for_request_principal(self, *, request_principal, now):
         return ()
 
 
@@ -337,8 +338,34 @@ async def test_active_grant_is_consulted_only_after_clean_sar_denial() -> None:
     assert result.valid_until == datetime.datetime(2026, 8, 21, tzinfo=datetime.UTC)
     grants.match_request.assert_awaited_once()
     kwargs = grants.match_request.await_args.kwargs
+    assert kwargs["request_principal"] == RequestPrincipal(
+        agent_id=_agent().agent_id, session_id=None, access_profile_id="public-diagnostics"
+    )
     assert kwargs["required_scope"].kind is KubernetesGrantScopeKind.NAMESPACES
     assert kwargs["required_scope"].namespaces == {"demo"}
+
+
+@pytest.mark.asyncio
+async def test_session_bearer_passes_exact_session_to_grant_matching() -> None:
+    session_id = UUID("00000000-0000-4000-8000-000000000004")
+    actor = AgentActor(
+        agent_id=_agent().agent_id,
+        operator_id=_agent().operator_id,
+        binding_id=_agent().binding_id,
+        access_profile_id="public-diagnostics",
+        session_id=session_id,
+    )
+    grants = AsyncMock()
+    grants.match_request.return_value = KubernetesGrantDecision(allowed=False)
+    await _service(
+        FakeSarClient(result=SubjectAccessReviewResult(allowed=False, reason="RBAC denied")),
+        bearer_authority=FakeAgentBearerAuthority(actor),
+        grants=grants,
+    ).authorize(bearer="Bearer session-token", request=AuthorizationRequest.model_validate(REQUEST))
+
+    assert grants.match_request.await_args.kwargs["request_principal"] == RequestPrincipal(
+        agent_id=actor.agent_id, session_id=session_id, access_profile_id="public-diagnostics"
+    )
 
 
 @pytest.mark.asyncio

@@ -100,6 +100,9 @@ function CreateGrantPreview({ args, variant }: PreviewProps<CreateGrantArgs>) {
       <Group gap={6}>
         <PreviewTitle>{plural(args.grants.length, "temporary grant")}</PreviewTitle>
         <PreviewBadge variant="outline">for {formatDuration(args.duration_seconds)}</PreviewBadge>
+        <PreviewBadge variant="light">
+          applies to {args.applies_to === "session" ? "this session" : "the Agent"}
+        </PreviewBadge>
       </Group>
       <Stack gap="xs">
         {grants.map((grant, index) => (

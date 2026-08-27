@@ -71,8 +71,8 @@ py_library(
         "//props/registry_proxy:app",
         "//props/testing:constants",
         "//props/testing:fake_openai_server",
-        "//util:crane",
         "//util:net",
+        "//util:oci",
         "@pypi//aiodocker",
         "@pypi//fastapi",
         "@pypi//pytest",
@@ -92,7 +92,6 @@ py_library(
     deps = [
         "//props/db:models",
         "//third_party/containers:rlocations",
-        "//util:crane",
         "//util:oci",
         "@pypi//httpx",
         "@pypi//opentelemetry_api",

@@ -33,7 +33,6 @@ py_library(
     name = "push_images_lib",
     srcs = ["push_images.py"],
     deps = [
-        "//util:crane",
         "//util:env",
         "//util:oci",
         "//util/bazel:runfiles",

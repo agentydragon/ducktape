@@ -13,6 +13,7 @@ from fastmcp.client.client import CallToolResult
 from more_itertools import one
 
 from haku.console.chat_models import BridgeFrameKind, RuntimeKind
+from haku.console.grant_principal import RequestPrincipal
 from haku.console.in_process_server_access import InProcessServerAccessPolicy
 from haku.console.mcp_config import AccessProfile
 from haku.console.mcp_execution import (
@@ -176,11 +177,17 @@ def _mcp(reader: _Reader):
 
 def _meta(actor: ToolCallActor = HAKU) -> dict[str, object]:
     caller = (
-        AgentMcpExecutionCaller(agent_id=actor.agent_id, access_profile_id=actor.access_profile_id)
+        AgentMcpExecutionCaller(
+            principal=RequestPrincipal(
+                agent_id=actor.agent_id, session_id=actor.session_id, access_profile_id=actor.access_profile_id
+            )
+        )
         if isinstance(actor, AgentActor)
         else OperatorMcpExecutionCaller(operator_id=actor.operator_id)
     )
-    return mcp_execution_request_meta(McpExecutionContext(caller=caller, tool_call_id="tc_test"))
+    return mcp_execution_request_meta(
+        McpExecutionContext(caller=caller, tool_call_id="tc_test", approving_operator_id=None, approval_policy_id=None)
+    )
 
 
 async def _call(client: Client, tool: str, arguments: dict, *, actor: ToolCallActor = HAKU, **kwargs):

@@ -119,6 +119,7 @@ py_library(
 py_library(
     name = "oci",
     srcs = ["oci.py"],
+    data = ["@crane"],
     visibility = ["//visibility:public"],
     deps = [
         ":crane",
@@ -127,15 +128,13 @@ py_library(
     ],
 )
 
+# No deps and no runfiles on purpose: the CI publish planners import this as bare
+# `python3 -m` on a GitHub Actions runner, where Bazel and pypi do not exist. The
+# Bazel-facing half (resolving @crane, pushing a Bazel-built layout) is in :oci.
 py_library(
     name = "crane",
     srcs = ["crane.py"],
-    data = ["@crane"],
     visibility = ["//visibility:public"],
-    deps = [
-        "//util/bazel:runfiles",
-        "@pypi//opentelemetry_api",
-    ],
 )
 
 py_test(

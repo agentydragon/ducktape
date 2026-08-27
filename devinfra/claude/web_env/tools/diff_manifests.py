@@ -345,7 +345,7 @@ def _generate_pattern_section(hits: PatternHits, excl: Exclusions, total_exclude
     return "\n".join(lines)
 
 
-def main() -> int:
+def main() -> None:
     parser = argparse.ArgumentParser(description="Compare two filesystem manifests (NDJSON or TSV)")
     parser.add_argument("left", help="Left manifest (e.g., live container)")
     parser.add_argument("right", help="Right manifest (e.g., built container)")
@@ -383,8 +383,11 @@ def main() -> int:
     else:
         print(report)
 
-    return 1 if real_diffs > 0 else 0
+    if real_diffs:
+        # `diff(1)`'s contract, which a comparison tool is expected to honour: zero
+        # means the two sides matched, one means they did not. Callers gate on it.
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

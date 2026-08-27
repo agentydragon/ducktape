@@ -75,7 +75,7 @@ async def list_kubernetes_grants(
     records = [
         OperatorKubernetesGrant(grant=grant, agent_display_name=display_name)
         for agent_id, display_name in owned.items()
-        for grant in await grants.list_grants(agent_id=agent_id, include_terminal=True)
+        for grant in await grants.list_grants(owner_agent_id=agent_id, include_terminal=True)
     ]
     records.sort(key=lambda item: (item.grant.created_at, item.grant.grant_id), reverse=True)
     return KubernetesGrantListResponse(grants=tuple(records))
@@ -97,7 +97,7 @@ async def revoke_kubernetes_grant(
     if display_name is None:
         raise HTTPException(status_code=404, detail="Kubernetes grant not found")
     try:
-        grant = await grants.revoke_grant(agent_id=agent_id, grant_id=grant_id, reason=body.reason)
+        grant = await grants.revoke_grant(owner_agent_id=agent_id, grant_id=grant_id, reason=body.reason)
     except (KubernetesGrantNotFoundError, KubernetesGrantOwnershipError) as error:
         raise HTTPException(status_code=404, detail="Kubernetes grant not found") from error
     return OperatorKubernetesGrant(grant=grant, agent_display_name=display_name)
@@ -120,7 +120,7 @@ async def revoke_kubernetes_grant_set(
         raise HTTPException(status_code=404, detail="Kubernetes grant not found")
     try:
         revoked = await grants.revoke_grant_set(
-            agent_id=agent_id, source_tool_call_id=source_tool_call_id, reason=body.reason
+            owner_agent_id=agent_id, source_tool_call_id=source_tool_call_id, reason=body.reason
         )
     except (KubernetesGrantNotFoundError, KubernetesGrantOwnershipError) as error:
         raise HTTPException(status_code=404, detail="Kubernetes grant not found") from error

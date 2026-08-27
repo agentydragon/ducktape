@@ -21,26 +21,31 @@ import textwrap
 import time
 from collections.abc import AsyncGenerator, Callable, Generator, Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import itsdangerous
 import pytest
 import yaml
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
+from sqlalchemy import select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
+from haku.console.agents.authorization import fingerprint_static_token
 from haku.console.app import create_app
 from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig, Settings, WebPushConfig
 from haku.console.database_migrate import apply_migrations
+from haku.console.database_schema import Agent, CredentialBinding, McpToolCall, McpToolCallPrincipal, StaticCredential
 from haku.console.operator_auth import OPERATOR_SESSION_MAX_AGE_SECONDS, SESSION_USER_KEY
 from haku.console.operator_identity import OperatorIdentityTrust, ResolvedOperatorIdentity, VerifiedExternalIdentity
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import OperatorActor
+from haku.console.tool_calls import ToolCallStatus
 from third_party.containers.rlocations import PGVECTOR_PG18
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import start_postgres_container
@@ -50,6 +55,7 @@ from util.testing.postgres_fixtures import start_postgres_container
 # agent auth pass their own `config_file` naming the agents (and bearer) they need.
 _DEFAULT_AGENT_TOKEN_ENV = "HAKU_CONSOLE_DEFAULT_AGENT_TOKEN"
 _DEFAULT_AGENT_OPERATOR_ENV = "HAKU_CONSOLE_DEFAULT_AGENT_OPERATOR"
+_DEFAULT_AGENT_TOKEN = "default-agent-token"
 _DEFAULT_STATIC_AGENTS = [
     {
         "agent_id": "00000000-0000-4000-8000-000000000001",
@@ -186,6 +192,105 @@ async def resolve_operator_identity(
     return await store.resolve_verified_identity(VerifiedExternalIdentity(issuer=issuer, subject=subject))
 
 
+async def default_agent_binding(sessions: async_sessionmaker[AsyncSession]) -> tuple[UUID, UUID]:
+    """The ``(agent_id, binding_id)`` of the default static agent ``make_client`` seeds."""
+    async with sessions() as session:
+        result = await session.execute(
+            select(CredentialBinding.agent_id, CredentialBinding.binding_id)
+            .join(StaticCredential, StaticCredential.binding_id == CredentialBinding.binding_id)
+            .join(Agent, Agent.agent_id == CredentialBinding.agent_id)
+            .where(StaticCredential.credential_fingerprint == fingerprint_static_token(_DEFAULT_AGENT_TOKEN))
+        )
+        return cast(tuple[UUID, UUID], result.one())
+
+
+async def insert_approved_tool_call(
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    binding_id: UUID,
+    now: datetime,
+    server_id: str = "kubernetes",
+    tool_name: str = "create_grant",
+    approval_policy_id: str | None = None,
+    session_id: UUID | None = None,
+) -> str:
+    """Insert one approved, running ToolCall with its durable principal and return its id.
+
+    The defaults are the source provenance Kubernetes grant creation requires: a manually
+    approved ``kubernetes.create_grant`` call owned by ``binding_id``.
+    """
+    tool_call_id = f"tc_{uuid4().hex}"
+    async with sessions.begin() as session:
+        session.add(
+            McpToolCall(
+                tool_call_id=tool_call_id,
+                server_id=server_id,
+                tool_name=tool_name,
+                status=ToolCallStatus.RUNNING,
+                created_at=now,
+                updated_at=now,
+                arguments_json={"duration_seconds": 300},
+                rationale="temporary diagnostic access",
+                title="Kubernetes diagnostic grant",
+                result_json=None,
+                error=None,
+                denial_reason=None,
+                withdrawal_reason=None,
+                approval_policy_id=approval_policy_id,
+                auto_approval_evaluation=None,
+                approved_at=now,
+            )
+        )
+        session.add(
+            McpToolCallPrincipal(
+                tool_call_id=tool_call_id, operator_id=None, binding_id=binding_id, session_id=session_id
+            )
+        )
+    return tool_call_id
+
+
+async def insert_live_session(sessions: async_sessionmaker[AsyncSession], *, binding_id: UUID, now: datetime) -> UUID:
+    """Insert a ready conversation + session bound to ``binding_id`` and return the session id."""
+    session_id, conversation_id = uuid4(), uuid4()
+    async with sessions.begin() as session:
+        operator_id = await session.scalar(
+            select(Agent.owner_operator_id)
+            .join(CredentialBinding, CredentialBinding.agent_id == Agent.agent_id)
+            .where(CredentialBinding.binding_id == binding_id)
+        )
+        assert operator_id is not None
+        await session.execute(
+            text(
+                "INSERT INTO conversation (conversation_id, operator_id, runtime_kind, created_at) "
+                "VALUES (:conversation_id, :operator_id, 'claude_code', :n)"
+            ),
+            {"conversation_id": conversation_id, "operator_id": operator_id, "n": now},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO sessions (
+                    session_id, operator_id, conversation_id, agent_binding_id, status,
+                    bridge_token_fingerprint, lease_expires_at, created_at, updated_at
+                ) VALUES (
+                    :session_id, :operator_id, :conversation_id, :binding_id, 'ready',
+                    :fingerprint, :lease, :n, :n
+                )
+                """
+            ),
+            {
+                "session_id": session_id,
+                "operator_id": operator_id,
+                "conversation_id": conversation_id,
+                "binding_id": binding_id,
+                "fingerprint": session_id.bytes,
+                "lease": datetime(2999, 1, 1, tzinfo=UTC),
+                "n": now,
+            },
+        )
+    return session_id
+
+
 @pytest.fixture(scope="session")
 def postgres_container() -> Generator[PostgresContainer]:
     """Postgres **with pgvector**, overriding the shared stock-image fixture.
@@ -263,7 +368,7 @@ def migrated_identity_store(migrated_sessions: async_sessionmaker[AsyncSession])
 def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..., Any]:
     """Factory: a TestClient over the console app on a fresh migrated database, with optional
     ``Settings`` overrides (e.g. ``config_file=...``, ``mcp_oauth=...``)."""
-    monkeypatch.setenv(_DEFAULT_AGENT_TOKEN_ENV, "default-agent-token")
+    monkeypatch.setenv(_DEFAULT_AGENT_TOKEN_ENV, _DEFAULT_AGENT_TOKEN)
     monkeypatch.setenv(_DEFAULT_AGENT_OPERATOR_ENV, "default-op")
     default_config = write_config(
         tmp_path / "console_default.yaml",

@@ -15,6 +15,8 @@ from fastmcp import Context
 from fastmcp.dependencies import CurrentContext
 from pydantic import BaseModel, ConfigDict, Field
 
+from haku.console.grant_principal import RequestPrincipal
+
 _HAKU_EXECUTION_META_KEY = "haku_execution"
 _CURRENT_CONTEXT = CurrentContext()
 
@@ -23,10 +25,12 @@ class AgentMcpExecutionCaller(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     kind: Literal["agent"] = "agent"
-    agent_id: UUID
-    # Re-read from the durable Agent immediately before an approved call executes. ``None`` is
-    # the migration-safe, fail-closed value for profile-scoped in-process servers.
-    access_profile_id: str | None = None
+    # The complete trusted request principal, embedded whole rather than as scattered id fields.
+    # Re-read from the durable Agent immediately before an approved call executes: the profile is
+    # the fail-closed value for profile-scoped in-process servers, and the exact session is present
+    # only when the ToolCall was submitted with a session bearer — static credentials omit it and
+    # therefore cannot mint or use session principals.
+    principal: RequestPrincipal
 
 
 class OperatorMcpExecutionCaller(BaseModel):
@@ -46,8 +50,22 @@ class McpExecutionContext(BaseModel):
 
     caller: McpExecutionCaller
     tool_call_id: str | None
-    approving_operator_id: UUID | None = None
-    approval_policy_id: str | None = None
+    approving_operator_id: UUID | None
+    approval_policy_id: str | None
+
+    @property
+    def request_principal(self) -> RequestPrincipal:
+        """The trusted Agent principal this execution acts as.
+
+        Operator-direct execution carries no Agent principal, so for it this access is the
+        permission failure itself, not an absent value: a tool serving only Agents reads the
+        property and lets the error propagate, while a tool that also serves Operator-direct
+        execution dispatches on ``caller``.
+        """
+
+        if not isinstance(self.caller, AgentMcpExecutionCaller):
+            raise PermissionError("an Agent caller is required")
+        return self.caller.principal
 
 
 def mcp_execution_request_meta(context: McpExecutionContext) -> dict[str, object]:

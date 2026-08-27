@@ -2,8 +2,9 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//haku/console:__subpackages__"])
 
-# Deliberately no `//haku/console:conftest` on the tests below. These are leaf MCP servers and
-# their clients: every one builds its own `FastMCP` over a mock and uses none of the parent
+# Deliberately no `//haku/console:conftest` on the tests below (`test_kubernetes` excepted —
+# it runs against the parent conftest's real database). The rest are leaf MCP servers and
+# their clients: each builds its own `FastMCP` over a mock and uses none of the parent
 # conftest's fixtures. Shipping that file into the runfiles is not free even so — pytest imports
 # every ancestor-directory conftest at collection, and `haku/console/conftest.py` imports
 # `create_app`, i.e. the whole console composition root (kubernetes_asyncio, nio, sqlalchemy,
@@ -106,6 +107,7 @@ py_test(
     deps = [
         ":recall_index",
         "//:conftest",
+        "//haku/console:grant_principal",
         "//haku/console:mcp_config",
         "//haku/console:mcp_execution",
         "//haku/console:recall_index_access",
@@ -123,6 +125,7 @@ py_test(
     deps = [
         ":conversations",
         "//:conftest",
+        "//haku/console:grant_principal",
         "//haku/console:in_process_server_access",
         "//haku/console:mcp_config",
         "//haku/console:mcp_execution",
@@ -141,6 +144,7 @@ py_library(
     srcs = ["kubernetes.py"],
     visibility = ["//haku/console:__subpackages__"],
     deps = [
+        "//haku/console:grant_principal",
         "//haku/console:kubernetes_authorization",
         "//haku/console:kubernetes_grant_models",
         "//haku/console:kubernetes_grant_service",
@@ -181,18 +185,30 @@ py_test(
 
 py_test(
     name = "test_kubernetes",
+    size = "medium",
     srcs = ["test_kubernetes.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
     deps = [
         ":kubernetes",
         "//:conftest",
+        "//haku/console:agent_bearer_authority",
+        "//haku/console:config",
+        "//haku/console:conftest",
+        "//haku/console:grant_principal",
         "//haku/console:kubernetes_authorization",
         "//haku/console:kubernetes_grant_models",
+        "//haku/console:kubernetes_grant_service",
         "//haku/console:mcp_execution",
+        "@pypi//fastapi",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 

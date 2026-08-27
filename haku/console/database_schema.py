@@ -51,6 +51,7 @@ from haku.console.chat_models import (
     ToolOutcome,
     TurnOutcome,
 )
+from haku.console.grant_principal import GrantPrincipalKind
 from haku.console.kubernetes_grant_models import KubernetesGrantScope, KubernetesGrantStatus, KubernetesRule
 from haku.console.node_daemon_models import NodeDaemonExecutionStatus
 from haku.console.operator_identity import OperatorStatus
@@ -501,12 +502,13 @@ class AuthorizationGrant(Base):
 
 
 class KubernetesGrantRow(Base):
-    """One Agent-owned, time-bounded Kubernetes capability lease.
+    """One Agent-owned, principal-scoped, time-bounded Kubernetes capability lease.
 
     Scope and rules are intentionally JSONB: Kubernetes evolves its resource vocabulary, while
     the domain validates the stable namespace and RBAC-like shapes before writing.
     ``source_tool_call_id`` is retained as immutable provenance and must refer to the
-    Agent-authenticated source call.
+    Agent-authenticated source call. Lifecycle ownership and authorization applicability are
+    deliberately separate columns.
     """
 
     __tablename__ = "kubernetes_grants"
@@ -515,6 +517,13 @@ class KubernetesGrantRow(Base):
         CheckConstraint(
             "jsonb_typeof(rules) = 'array' AND jsonb_array_length(rules) > 0",
             name="ck_kubernetes_grants_rules_nonempty",
+        ),
+        CheckConstraint(
+            "(principal_kind = 'agent' AND principal_agent_id IS NOT NULL "
+            "AND principal_agent_id = owner_agent_id AND principal_session_id IS NULL) OR "
+            "(principal_kind = 'session' AND principal_agent_id IS NULL "
+            "AND principal_session_id IS NOT NULL)",
+            name="ck_kubernetes_grants_principal_shape",
         ),
         CheckConstraint(
             "jsonb_typeof(scope) = 'object' "
@@ -535,12 +544,23 @@ class KubernetesGrantRow(Base):
             name="ck_kubernetes_grants_status_shape",
         ),
         Index("idx_kubernetes_grants_source_tool_call", "source_tool_call_id"),
-        Index("idx_kubernetes_grants_agent_status_expiry", "agent_id", "status", "expires_at"),
+        Index("idx_kubernetes_grants_owner_status_expiry", "owner_agent_id", "status", "expires_at"),
+        Index("idx_kubernetes_grants_agent_principal_status_expiry", "principal_agent_id", "status", "expires_at"),
+        Index("idx_kubernetes_grants_session_principal_status_expiry", "principal_session_id", "status", "expires_at"),
     )
 
     grant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
-    agent_id: Mapped[UUID] = mapped_column(
+    owner_agent_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("agents.agent_id", ondelete="RESTRICT"), nullable=False
+    )
+    principal_kind: Mapped[GrantPrincipalKind] = mapped_column(
+        TextBackedStrEnumColumn(GrantPrincipalKind), nullable=False
+    )
+    principal_agent_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("agents.agent_id", ondelete="RESTRICT"), nullable=True
+    )
+    principal_session_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="RESTRICT"), nullable=True
     )
     source_tool_call_id: Mapped[str] = mapped_column(
         Text, ForeignKey("mcp_tool_calls.tool_call_id", ondelete="RESTRICT"), nullable=False
@@ -1340,6 +1360,21 @@ class ConversationItem(Base):
         ),
         Index("idx_conversation_item_conversation", "conversation_id", "opened_seq"),
         Index("idx_conversation_item_turn", "turn_id", "opened_seq"),
+        # The `read_items` keyset branches: a page of entries is served from the rows' defining
+        # stream positions, so each branch needs an index that already stands in that order —
+        # partial, because the branch's filter would otherwise make it a scan of the other rows.
+        Index(
+            "idx_conversation_item_tool_call_opened",
+            "conversation_id",
+            "opened_seq",
+            postgresql_where=sql_text("item_type = 'tool_call'"),
+        ),
+        Index(
+            "idx_conversation_item_completed",
+            "conversation_id",
+            "closed_seq",
+            postgresql_where=sql_text("status = 'complete'"),
+        ),
     )
 
 
@@ -1392,6 +1427,13 @@ class ConversationTurn(Base):
         ),
         Index("idx_conversation_turn_conversation", "conversation_id", "first_seq"),
         Index("idx_conversation_turn_session", "session_id", "first_seq"),
+        # The `read_items` turn-end branch, ordered by where each ended exchange closed.
+        Index(
+            "idx_conversation_turn_ended",
+            "conversation_id",
+            "last_seq",
+            postgresql_where=sql_text("last_seq IS NOT NULL"),
+        ),
     )
 
 

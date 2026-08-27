@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
+from haku.console.grant_principal import RequestPrincipal
 from haku.console.mcp_config import AccessProfile
 from haku.console.mcp_execution import AgentMcpExecutionCaller, McpExecutionCaller, OperatorMcpExecutionCaller
 from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
@@ -26,7 +27,7 @@ class RecallIndexAccessPolicy:
                 return self._operator_indexes
             case (
                 AgentActor(access_profile_id=access_profile_id)
-                | AgentMcpExecutionCaller(access_profile_id=access_profile_id)
+                | AgentMcpExecutionCaller(principal=RequestPrincipal(access_profile_id=access_profile_id))
             ):
                 pass
             case _:

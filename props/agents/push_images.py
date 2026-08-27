@@ -11,9 +11,8 @@ import logging
 import subprocess
 
 from util.bazel.runfiles import get_required_path
-from util.crane import Crane
 from util.env import get_required_env
-from util.oci import read_oci_layout_digest
+from util.oci import bazel_crane, read_oci_layout_digest
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +42,7 @@ def main() -> None:
     password = get_required_env("PROPS_REGISTRY_PASSWORD")
     sha = _git_sha()
 
-    crane = Crane(registry=registry, username=username, password=password)
+    crane = bazel_crane(registry=registry, username=username, password=password)
 
     for rlocation, repo_name, variant_tag in IMAGES:
         image_dir = get_required_path(rlocation)
