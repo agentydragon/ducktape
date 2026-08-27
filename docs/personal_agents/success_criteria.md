@@ -1,8 +1,8 @@
 # Personal Agents — Success Criteria
 
 Pass conditions for the first stand-up experiment. Each is a **test with an
-observable outcome**, not a judgment call, and each names the hazard that
-`findings.md` says is most likely to make it fail. An experiment that passes S1–S4
+observable outcome**, not a judgment call, and each names the hazard the
+[findings](findings/README.md) say is most likely to make it fail. An experiment that passes S1–S4
 justifies moving personal data onto the stack; one that doesn't tells us which
 seam to fix first.
 
@@ -50,7 +50,7 @@ end of this section is OpenClaw-with-OpenShell specific — how _that_ candidate
 is expected to fail the criterion — and should be ignored when scoring a
 different stack.
 
-**Hazard (OpenClaw/OpenShell)**: the retention bug (findings.md, C7/C8). A
+**Hazard (OpenClaw/OpenShell)**: the retention bug ([findings/openshell.md](findings/openshell.md) F1). A
 `git clone` that outruns `yieldMs` returns on yield, the post-`exec` sync
 captures a partial tree, and the next `exec` re-uploads that partial state.
 Separately, the mirrored workspace root is itself a git repo and root-level
@@ -60,7 +60,7 @@ loses its history in a way a clone in a subdirectory does not.
 **Options if it fails, in increasing order of departure from today's setup**:
 `mode: remote` (no per-turn sync, workspace stays put); OpenClaw's cloud-worker
 path, whose git-based sync already solves this properly and makes PR authorship
-first-class (findings.md, C8); or a different harness entirely.
+first-class ([verdicts.md](verdicts.md) § Still open); or a different harness entirely.
 
 ## S3 — A permanent instruction survives into a later session (hard requirement)
 
@@ -84,7 +84,8 @@ carried it is identifiable — which store holds it and which component wrote it
 **A path that _should_ work today, and needs no memory tools — UNVERIFIED, and
 the point of running S3 is to check it.** Read from the source, not observed:
 `MEMORY.md` is loaded as a workspace context file with its **content inlined into
-the system prompt** of every session (findings.md, C7/C8), which would make the
+the system prompt** of every session (read from OpenClaw source at `v2026.7.1`,
+`src/agents/system-prompt.ts`), which would make the
 loop: agent appends to `MEMORY.md` inside an `exec` → post-`exec` sync carries it
 to the gateway workspace (it is not on the sync exclusion list) → the next
 session's bootstrap inlines it, with no retrieval step and no `memory_*`.
@@ -180,7 +181,7 @@ ordinary pod that happens to delegate `exec`.
 S4 probes fail when run from the gateway itself, not only from the sandbox.
 
 **Status**: explicitly the fallback tier. It is weaker than a per-agent
-network-isolated exec model, and findings.md notes `AgentHarness` already targets
+network-isolated exec model, and [verdicts.md](verdicts.md) § Control planes notes `AgentHarness` already targets
 `openclaw`/`openshell`/`nemoclaw` with declarative `allowedDomains` — so it is
 cheap to try and worth knowing about, but settling here should be a deliberate
 sigh, not a default.

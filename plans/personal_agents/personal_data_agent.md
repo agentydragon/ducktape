@@ -1,6 +1,7 @@
 # The personal-data agent: how we would build it today
 
-Requirements: [requirements.md](requirements.md) § "Agent: personal-data agent(s)" —
+Requirements: <../../docs/personal_agents/requirements.md>
+§ "Agent: personal-data agent(s)" —
 H1 self-hosted runtime, H2 LLM-level rollouts, H3 network-isolated command execution,
 H4 durable memory, W2 (want) execution off the harness container.
 

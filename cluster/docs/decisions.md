@@ -254,14 +254,14 @@ See `cluster/k8s/agents/tana-mcp-facade/deployment.yaml` for a working example
   <../archive/2026_07_kagent/README.md>.
 - **OpenClaw gateway / OpenShell** (2026-07-31): manifests deleted rather than parked.
   The gateway was unused and wedged (no exec traffic, idle orphaned sandboxes), and the
-  operator could not be egress-confined (`plans/personal_agents/findings/` F3). OpenClaw
+  operator could not be egress-confined (`docs/personal_agents/findings/` F3). OpenClaw
   as an agent runtime is alive: `public-coder-agent` (the reference agent — same
   `ghcr.io/agentydragon/openclaw` image, plain Deployment, `sandbox.mode: "off"`) and
   `haku-openclaw-spike` (its own OpenClaw build) run today, and the `openclaw`
   ImageRepository/ImagePolicy are kept for that image. The former `openclaw-gateway` and
   `openclaw-sandbox` namespaces were retired after their retained credentials moved to
   `agents/shared-secrets`; see <../archive/2026_08_openclaw_namespace_retirement.md>.
-  Evaluated alternatives: `plans/personal_agents/verdicts.md`.
+  Evaluated alternatives: `docs/personal_agents/verdicts.md`.
 - **LiteLLM ChatGPT sub-instance** (`litellm-chatgpt`, deleted 2026-08-06): a second
   LiteLLM Deployment holding its own ChatGPT/Codex OAuth session on a PVC, serving the
   `*-chatgpt` models over the Responses API; superseded by

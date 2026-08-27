@@ -1,11 +1,9 @@
 # Personal Agents — Requirements
 
-Status: draft, gathering requirements + mapping to existing/candidate infra. Not yet
-actionable manifests. See `findings.md` for the requirements→implementation mapping and
-`README.md` for how this directory is organized.
-
-Requirements are grouped by scope: **cross-cutting** (applies to all agents), then
-per-agent-function.
+The stated wants for the programme, grouped by scope: **cross-cutting** (applies to
+all agents), then per-agent-function. What is deployed against them is summarized in
+[README.md](README.md); the observable pass conditions are
+[success_criteria.md](success_criteria.md).
 
 ## Cross-cutting
 
@@ -51,7 +49,7 @@ per-agent-function.
   choking or wedging a session when a single command (or several in one turn)
   produces a large result. This is a hard requirement for harness selection, not a
   nice-to-have: it's the exact failure mode that got kagent retired from this
-  cluster (see `findings.md`), and `docs/self_hosted_coding_agent_platforms.md`
+  cluster (see [verdicts.md](verdicts.md) § Harnesses), and `docs/self_hosted_coding_agent_platforms.md`
   already surveys this dimension across candidate platforms.
 
 ## Wants (not requirements)
@@ -65,8 +63,8 @@ not gating criteria on their own.
   Recorded as a want rather than a requirement: C5 (egress restriction) is the
   hard bar; credential substitution is a strictly-better-if-available property
   on top of it. Note this is _not_ what Haku's current mitmproxy does (that is
-  FQDN allowlisting only) — see `findings.md` for which components actually
-  offer it.
+  FQDN allowlisting only) — see [credential_proxy.md](credential_proxy.md) for
+  which components actually offer it.
 
 ## Agent: "public coder"
 
@@ -119,7 +117,7 @@ equivalent.
   [#115057](https://github.com/openclaw/openclaw/issues/115057) is a thinner
   duplicate, closed as `needs-info`/`needs-product-decision`, and is not where the
   fix lives. The retired OpenClaw/OpenShell deployment carried a CLI-boundary
-  shim tracking that same PR. Detail in `findings.md` and
+  shim tracking that same PR. Detail in
   <../../cluster/archive/2026_08_openclaw_namespace_retirement.md>.
 - **B2 — an option, not a blocker.** Nvidia's "NemoClaw" setup reportedly runs the
   _entire_ agent harness (not just the exec step) _inside_ OpenShell. This is an
@@ -155,7 +153,7 @@ equivalent.
   `openshell`/`openclaw`/`nemoclaw` with declarative `allowedDomains`, distinct
   from the `Agent` BYO/A2A path, so it can host a third-party harness rather than
   only kagent's own framework. Both are installed in this cluster today. Detail
-  and citations in `findings.md`.
+  in [verdicts.md](verdicts.md) § Control planes.
 
 ## Agent: knowledge-garden maintainer
 

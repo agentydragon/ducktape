@@ -68,8 +68,8 @@
   yielding clone did **not** reproduce the retention bug in the lab, so that
   model needs refining.
 - **S3 memory works, verified end to end** on `oc-plain`: written to `MEMORY.md`
-  in one session, recalled verbatim in a fresh one. The chain that findings.md
-  reasoned out from source is real.
+  in one session, recalled verbatim in a fresh one. The chain that
+  <../success_criteria.md> § S3 reasons out from source is real.
 - **S4 is achievable** (`oc-plain`), and requires leaving the operator behind.
 - **All four hard requirements pass together on one configuration**: `oc-plain`
   clears S1, S2, S3 and S4, plus the S5 want. That is the answer to "is there a
@@ -95,11 +95,12 @@
   means for a personal-data agent: with `sandbox.mode: "off"` there is no
   isolation _within_ the boundary, which is the acknowledged cost of this shape.
 - Whether the split topology (W2) can be had without the OpenShell relay —
-  cloud workers being the candidate (findings.md, C8).
+  cloud workers being the candidate (<../verdicts.md> § Still open).
 - Whether OpenClaw-inside-OpenShell (whole harness, NemoClaw-style) is
   declarable here: the `agents.x-k8s.io` `Sandbox` CRD has no network-policy
   field (`operatingMode`, `podTemplate`, `service`, `shutdownPolicy`,
   `shutdownTime`, `volumeClaimTemplates`), so that shape would still need its
   egress boundary from elsewhere.
-- Cloud workers as a topology — OpenClaw's mature git-based split (findings.md,
-  C8) — untested, and its bundled provider leases cloud VMs.
+- Cloud workers as a topology — OpenClaw's mature git-based split
+  (<../verdicts.md> § Still open) — untested, and its bundled provider leases
+  cloud VMs.

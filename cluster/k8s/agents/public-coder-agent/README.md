@@ -174,7 +174,7 @@ proxy environment handling.
 - With `sandbox.mode: "off"` there is no isolation _inside_ the boundary: the
   agent runs as the harness, with the GitHub token in its environment. That is
   the accepted cost of not using OpenShell — see
-  <../../../../plans/personal_agents/findings/openshell.md> F1 for why OpenShell was not
+  <../../../../docs/personal_agents/findings/openshell.md> F1 for why OpenShell was not
   used.
 - **PVC capacity enforcement.** `local-path-ovh-hdd` does not enforce requested
   PVC sizes, so workspace growth can consume the worker disk beyond its claim.

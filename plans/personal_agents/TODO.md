@@ -39,7 +39,7 @@ one process holding the GitHub credential.
 
 What remains is that the image now tracks a **moving tag** under Flux image
 automation, on that same process — see
-[requirements_status.md](requirements_status.md) § "Rough edges". Defensible because
+<../../docs/personal_agents/README.md> § "Rough edges". Defensible because
 the build is ours, but it should be a decision rather than a side effect of how the
 temporary fork was packaged. Fold it into the return to the official image that
 <../../cluster/k8s/agents/public-coder-agent/README.md> already schedules for
@@ -49,7 +49,8 @@ iron-proxy v0.50.0.
 
 The one hard-ish want still unmet is execution off the harness container, and the
 survey found a path to it that nothing else here records:
-[verdicts.md](verdicts.md) § "Still open". OpenClaw's **cloud workers** feature
+<../../docs/personal_agents/verdicts.md> § "Still open". OpenClaw's **cloud
+workers** feature
 already does git-backed workspace sync, and does it properly — staged result refs,
 three-way merge against the dispatch-time manifest, conflict handling — where the
 OpenShell mirror does a whole-tree destructive replace on yield. `WorkerProvider`
@@ -81,7 +82,8 @@ controller is inert YAML that reads like an available capability.
 
 Either remove them or write down why they are kept. `AgentHarness` is the one
 worth a deliberate decision rather than a sweep: it is the right shape for what we
-want (see [verdicts.md](verdicts.md) § Control planes), and keeping the CRD costs
+want (see <../../docs/personal_agents/verdicts.md> § Control planes), and
+keeping the CRD costs
 nothing if the reason is recorded. Right now it is neither kept nor cleaned.
 
 ## Use k3d, not production RBAC, for the next round of experiments
@@ -137,7 +139,8 @@ Still untested: whether a privileged DinD pod is admitted in our cluster at all.
 
 ## Revisit OpenShell for S5 only if the k8s operator gains an entrypoint _and_ ingress
 
-Tested and closed for now — full evidence in [lab_notes.md](lab_notes.md) F11.
+Tested and closed for now — full evidence in
+<../../docs/personal_agents/findings/openshell.md> F11.
 
 NemoClaw genuinely runs the harness inside a sandbox, so the shape is real. It
 works because the Docker driver persists `OPENSHELL_SANDBOX_COMMAND` (NemoClaw
@@ -193,8 +196,8 @@ against it with `jsonschema` — kills the class. `kubeconform` cannot, because 
 config is opaque JSON inside a ConfigMap.
 
 Until this exists, shape verification is a manual step and therefore skippable --
-see the rough edge in [lab_notes.md](lab_notes.md). The point of the TODO is to
-stop relying on remembering.
+see the rough edge in <../../docs/personal_agents/findings/rough_edges.md>.
+The point of the TODO is to stop relying on remembering.
 
 Scope: `cluster/k8s/agents/public-coder-agent/app/openclaw.json`. The retired
 operator-managed gateway also embedded config in a CRD field, but that second

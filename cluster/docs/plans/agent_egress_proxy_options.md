@@ -837,7 +837,7 @@ adapter behavior without exposing sensitive values.
   [#4051](https://github.com/agentydragon/ducktape/pull/4051): Squid and mitmproxy comparison
 - [#4113](https://github.com/agentydragon/ducktape/pull/4113): temporary Kubernetes grants
 - <../../../haku/kube_api_proxy/README.md>
-- <../../../plans/personal_agents/credential_proxy_options.md>
+- <../../../docs/personal_agents/credential_proxy.md>
 
 ## References
 

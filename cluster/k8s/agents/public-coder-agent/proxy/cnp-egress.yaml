@@ -16,7 +16,7 @@
 # higher-sensitivity material.** The confined list is kept verbatim below and is
 # one uncomment away — re-enabling it means uncommenting the allowlist transform
 # in iron.yaml too, so the two stay in step. Evidence that the confined shape
-# works: plans/personal_agents/findings/egress_and_tls.md F4, F15, F16.
+# works: docs/personal_agents/findings/egress_and_tls.md F4, F15, F16.
 #
 # NOT relaxed, and not relaxable without losing the credential boundary: the app's
 # own NetworkPolicy, which permits egress solely to this proxy. That is what makes

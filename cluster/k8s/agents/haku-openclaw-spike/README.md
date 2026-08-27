@@ -105,7 +105,7 @@ error.** `pypi.org` and `files.pythonhosted.org` are both on the egress
 allowlist, so before pip was pointed at the bundle its failures read as "no
 route to PyPI" — a wrong diagnosis that reached committed guidance before it was
 retested. Which CA variable each TLS backend actually honours was measured in
-<../../../../plans/personal_agents/findings/egress_and_tls.md>.
+<../../../../docs/personal_agents/findings/egress_and_tls.md>.
 
 ## Persistent workspace
 

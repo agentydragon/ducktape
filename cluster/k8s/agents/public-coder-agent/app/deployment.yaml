@@ -66,7 +66,7 @@ spec:
         # backup this file needs.
         #
         # Reproduction, the verified fix, and the upstream operator's identical
-        # exposure: plans/personal_agents/findings/harness_behaviour.md F19.
+        # exposure: docs/personal_agents/findings/harness_behaviour.md F19.
         - name: seed-config
           image: ghcr.io/agentydragon/openclaw:devel-20260827062202-7345e18 # {"$imagepolicy": "flux-system:openclaw"}
           command:
@@ -111,7 +111,7 @@ spec:
             #
             # Still not named `GITHUB_TOKEN`/`GH_TOKEN`: OpenClaw strips both from
             # the exec tool's environment via a hardcoded denylist, so the agent
-            # would never see it. See plans/personal_agents/findings/ F7, F10, F16.
+            # would never see it. See docs/personal_agents/findings/ F7, F10, F16.
             - name: GH_PAT
               value: "proxy-github-placeholder"
             # Non-secret Haku Console bearer placeholder. The real static-Agent credential exists

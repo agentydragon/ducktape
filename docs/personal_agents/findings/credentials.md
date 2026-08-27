@@ -184,6 +184,5 @@ through a `CONNECT` tunnel), `gh-aw-firewall`, Secretless, the hosted agent-auth
 platforms — and concluded nothing off-the-shelf fits. There is in fact a sizeable
 2026 ecosystem, including a Kubernetes-native option that injects via **eBPF at
 the TLS write path with no interception and no CA at all**, which would delete
-the F8 failure class outright. Corrected survey, the three-camp breakdown, and
-what it means for this shape:
-[../credential_proxy_options.md](../credential_proxy_options.md).
+the F8 failure class outright. The three-camp breakdown and what it means for
+this shape are distilled in [../credential_proxy.md](../credential_proxy.md).
