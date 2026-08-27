@@ -7,8 +7,9 @@ is the only thing the other two talk to:
 >
 > A **session** listens to and sends to the **conversation**, never to a channel.
 
-The tables that realise this, and the evidence that their vocabulary belongs to no one backend, are
-in <conversation_schema.md>.
+The tables that realise this are the chat half of <../database_schema.py>; the evidence that their
+vocabulary belongs to no one backend, and the invariants spanning them, are in
+<conversation_schema.md>.
 
 ## What each layer owns
 
