@@ -230,7 +230,7 @@ resource "litellm_team" "tana_clients" {
     fallbacks = [
       {
         model           = "*"
-        fallback_models = ["tana-claude-haiku-4-5"]
+        fallback_models = ["tana/ant-messages/claude-haiku-4-5"]
       }
     ]
   }
@@ -264,7 +264,7 @@ resource "litellm_team" "codex_clients" {
     fallbacks = [
       {
         model           = "*"
-        fallback_models = ["codex-gpt-5.6-luna"]
+        fallback_models = ["chatgpt/ant-messages/gpt-5.6-luna"]
       }
     ]
   }
@@ -320,7 +320,7 @@ resource "litellm_team" "gemini_clients" {
     fallbacks = [
       {
         model           = "*"
-        fallback_models = ["gemini-3.5-flash-lite"]
+        fallback_models = ["google/oai-chat/gemini-3.5-flash-lite"]
       }
     ]
   }
