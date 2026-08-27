@@ -6,7 +6,7 @@ Haku Console should control whether an authenticated Agent may initiate an
 outbound HTTP(S) connection and whether that Agent may use a Console-managed
 credential on the resulting request.
 
-The system must provide five capabilities behind one enforced egress fence:
+Behind one enforced egress fence, the system must provide:
 
 1. deploy-managed standing destination policy;
 2. time-boxed, operator-approved destination grants;
@@ -14,74 +14,142 @@ The system must provide five capabilities behind one enforced egress fence:
 4. versioned request-scoped API capabilities that can replace custom provider
    backends when their semantics can be expressed safely over HTTP.
 
-Console owns policy and grant state. The concrete proxy is replaceable. Squid is
-the first implementation candidate because it has already demonstrated TLS
-interception, credential substitution and the controls needed to disable unsafe
-caching, but Squid helper and ICAP protocols are adapters rather than
-control-plane contracts.
+Console owns policy and grant state. The adapter and endpoint shape were ruled
+on 2026-08-27 ([#4670](https://github.com/agentydragon/ducktape/issues/4670)
+§ Decision): mitmproxy embedded as a library, one shared proxy colocated with
+Console, and a single Console↔proxy decision call. This document records that
+decision and the remaining design.
 
 Tracking issue: [#4670](https://github.com/agentydragon/ducktape/issues/4670).
+
+## Decision record (ruled 2026-08-27)
+
+**mitmproxy is the adapter, embedded as a library.** Its intercepted-HTTP/2
+credential substitution is measured (§ Measured mitmproxy behavior) and its
+h2/gRPC MITM covers the hardest data-plane must-have: `bbr` → BuildBuddy is
+gRPC, so a fence that only tunnels CONNECT cannot serve it. Embedding, rather
+than running a `mitmdump` addon script, is what makes fail-closed a property of
+our code: stock addon exceptions fail open and `Flow.kill()` is unreliable
+mid-stream, whereas owning the process lets an error anywhere in the decision
+path terminate the connection.
+
+**The Console↔proxy API is ours to design.** With one adapter there is no
+cross-proxy line-protocol compromise, so one decision call — working name
+`POST /api/internal/http/decide` (§ Console decision API) — carries both the
+reachability verdict and the request-specific credential-substitution
+operations, replacing the earlier two-facade `/api/internal/http/authorize` +
+`/api/internal/http/credentials/redeem` split. The proxy stays a dumb executor
+of Console's instructions, and the hot path makes one round-trip instead of
+two.
+
+Rejected adapters, each with the constraint that killed it:
+
+- **iron-proxy**: no per-request hook mechanism, so it cannot ask Console
+  anything. It remains today's static fence and retires at the one-proxy end
+  state.
+- **Squid**: its only differentiator was mature response caching — a v1
+  non-goal, since v0 disables response caching entirely — and it lacks h2
+  MITM. Its open conformance questions (same-resolution address pinning,
+  `client_lifetime` as a security control, helper no-cache semantics) die with
+  the spike plan that was to answer them.
+- **Envoy**: no dynamic-certificate machinery to reuse, and forward-proxy
+  CONNECT interception is still alpha; the earlier spike substituted
+  credentials only in reverse-proxy mode. It remains the reference for
+  stream-lifetime controls (`max_stream_duration`, `max_connection_duration`).
+- **Purpose-built broker**: the fallback for the case where no existing proxy
+  could be made conforming. Embedding mitmproxy provides the same process
+  ownership without building TLS interception from scratch.
+
+### Measured mitmproxy behavior
+
+From the addon spike
+([#4046](https://github.com/agentydragon/ducktape/pull/4046),
+[#4051](https://github.com/agentydragon/ducktape/pull/4051)) and upstream
+documentation; these constrain the implementation:
+
+- intercepted HTTP/2 requests support credential substitution;
+- streaming remains incremental only when enabled before any body access;
+- an addon exception forwards the request by default, and `Flow.kill()`
+  documents that flows already in transit cannot be killed reliably — the
+  embedded adapter therefore needs two independent layers: the
+  policy/transformation path and a structural deny backstop that drops every
+  flow not affirmatively marked allowed;
+- callbacks may need thread-safe scheduling onto mitmproxy's event loop.
 
 ## Architecture
 
 ```text
 Agent workload
   │
-  │ HTTP_PROXY / HTTPS_PROXY
-  │ Cilium denies every alternative egress path
+  │ HTTP_PROXY / HTTPS_PROXY (convention; Cilium denies
+  │ every alternative egress path)
   ▼
-per-Agent proxy pod
-  ├─ authenticates to Console with an Agent-bound proxy credential
-  ├─ asks Console about destination admission
-  ├─ for request-scoped capabilities, asks about the canonical API operation
-  ├─ asks Console about recognized credential placeholders
-  ├─ validates and pins the selected upstream address
-  └─ optionally intercepts TLS and substitutes credentials
+shared egress proxy — mitmproxy embedded as a library,
+colocated with Console
+  ├─ authenticates the caller's Agent-bound fence credential
+  ├─ resolves, validates and pins the upstream address
+  ├─ intercepts TLS and reads the decrypted request
+  ├─ POST /api/internal/http/decide (localhost) → verdict + substitutions
+  └─ applies the substitutions and forwards, or terminates
   │
   ▼
-upstream permitted by both Console and Cilium
+upstream permitted by both Console and the proxy pod's Cilium ceiling
 (temporary grants remain public-origin-only)
 ```
 
+### Topology
+
+One shared proxy fences every Agent —
+[#4670](https://github.com/agentydragon/ducktape/issues/4670) § Enforcement
+topology holds the shared-fence reasoning — and that proxy is colocated with
+Console: a sidecar container in the Console pod, or the same container /
+in-process with the Console router. The decision endpoint binds on localhost.
+
+- **The oracle constraint becomes structural.** The decision endpoint converts
+  placeholder tokens into real credentials, so it must be authenticated,
+  reachable only by the proxy and never routable from sandbox workloads.
+  Localhost binding inside the Console pod yields sandbox unreachability by
+  construction rather than by NetworkPolicy.
+- **The API needs no versioning.** Proxy and Console roll as one release unit,
+  so the decision call is an internal same-release contract. A separate proxy
+  Deployment would need endpoint authentication plus a NetworkPolicy fencing
+  the oracle plus a roll-safe versioned contract.
+- **The trade, honestly:** a Console roll severs in-flight tunnels, and the
+  TLS-interception data plane shares pod CPU with Console. Colocation is the
+  default unless data-plane load argues otherwise.
+
 ### Trust boundaries
 
-- Each Agent has a separate proxy deployment and pod. The Agent pod is not
-  co-located with the proxy because Cilium enforcement is pod-scoped.
+- One proxy fences all Agents, so every fenced pod reaches the one listener and
+  caller separation is purely the Agent-bound fence credential. Agent identity
+  and access profile derive from authenticating that credential, never from
+  request JSON, client IP or proxy-supplied identity fields.
 - The Agent pod may reach its proxy and required cluster infrastructure, but may
   not open direct Internet connections. Proxy environment variables are
   convenience, not enforcement.
-- The proxy pod may reach the Console authorization Services directly without
-  sending those calls through itself. Agent workloads do not inherit that route.
-- The proxy authenticates with a Console-minted credential bound to one Agent and
-  narrow internal HTTP-policy audiences. Request JSON, client IP and proxy fields
-  never select `agent_id` or access profile.
-- Console policy is an authority within the proxy pod's Cilium ceiling. It cannot
-  override NetworkPolicy, TLS validation or credential-redemption restrictions.
-- TLS interception uses one deploy-managed shared egress-interception CA trusted
-  by Agent workloads behind the fence. The CA and private key remain available
-  only to the proxy deployment and its provisioning path, never to Agent pods.
-  Each proxy independently validates the real upstream certificate and fails
+- The proxy reaches the Console decision endpoint directly on localhost, never
+  through itself. No sandbox workload has a route to that endpoint.
+- The fence credential is endpoint-scoped: accepted only by the decision
+  endpoint, invalid for MCP, Agent session and operator APIs. The general
+  `AgentBearerAuthority` has no audience parameter, so this needs a separate
+  credential kind and resolver path.
+- Console policy is an authority within the proxy pod's Cilium ceiling. It
+  cannot override NetworkPolicy, TLS validation or credential-redemption
+  restrictions.
+- TLS interception uses one deploy-managed shared egress-interception CA
+  trusted by Agent workloads behind the fence. The CA private key remains
+  available only to the proxy and its provisioning path, never to Agent pods.
+  The proxy independently validates the real upstream certificate and fails
   closed; temporary grants never weaken either trust path. Rotation distributes
-  the next CA before proxies begin issuing from it and removes the old trust root
-  after a bounded overlap.
-- A proxy deployment may contain helper containers or processes. The prohibited
-  sidecar arrangement is placing the security proxy in the Agent workload pod.
-
-### Why one proxy per Agent
-
-A shared proxy would require reliable caller attribution across every protocol
-and would combine credential blast radii. A per-Agent proxy makes the fence
-identity deploy-managed and constant:
-
-- one Agent-bound Console credential per proxy;
-- one Cilium-selected fence per Agent;
-- one credential transit boundary per Agent;
-- fail-closed lifetime coupling: deleting the proxy removes the Agent's external
-  egress rather than exposing a fallback path.
-
-Sandbox provisioning derives the proxy selection from the authenticated Agent.
-The caller cannot request a different Agent's fence. Workload labels select the
-fence and sandbox workloads have no authority to change those labels.
+  the next CA before the proxy begins issuing from it and removes the old trust
+  root after a bounded overlap.
+- The prohibited sidecar arrangement is the security proxy in the _Agent_ pod:
+  those containers share a network namespace, so pod-scoped Cilium enforcement
+  cannot separate agent traffic from proxy traffic. Colocating with _Console_
+  is the opposite arrangement — Console is trusted.
+- Sandbox provisioning fences every workload uniformly; identity arrives with
+  the fence credential injected at claim time, and sandbox workloads have no
+  authority over the labels that fence them.
 
 ## Policy model
 
@@ -164,7 +232,7 @@ Agent instructions. This can be less code and consume fewer model-context tokens
 than mounting a provider-specific MCP server. Where schemas, pagination,
 response compaction or discoverability justify them, a provider-specific MCP
 implementation may instead become a generated or thin tool surface over the
-same HTTP executor, authorization and credential-redemption services. Typed
+same HTTP executor, authorization and credential-redemption machinery. Typed
 tools are optional ergonomics, not a required architectural layer.
 
 Request rules are structured, deploy-reviewed data. They are not arbitrary
@@ -187,7 +255,7 @@ calibration for such an Agent.
 
 A conforming request-scoped adapter must:
 
-- authenticate the same Agent-bound proxy credential used for origin admission;
+- authenticate the same Agent-bound fence credential used for origin admission;
 - bind the request decision to an already allowed canonical origin and pinned
   upstream address;
 - parse the request target exactly as the upstream service will, rejecting
@@ -351,7 +419,7 @@ The domain provides create, list, get, release and operator revocation. Reads ar
 Agent-scoped. Release and revocation are terminal and idempotent. Expiry uses the
 same durable expiry/reaper pattern as Kubernetes grants.
 
-The authorization service returns the matched grant's earliest expiry as
+The decision response carries the matched grant's earliest expiry as
 `valid_until`. Standing-policy decisions omit it unless the standing rule itself
 has a deadline.
 
@@ -367,11 +435,11 @@ Version one does not require every byte of an admitted connection to stop at the
 exact grant expiry. The deployment imposes a small hard `max_flow_lifetime`, so
 an already admitted flow may overrun expiry or revocation only by that fixed
 amount. Protocols requiring unbounded WebSockets, downloads or tunnels do not
-use temporary grants; they need standing policy or a later adapter with exact
-per-flow deadline and revalidation support.
+use temporary grants; they need standing policy or a later adapter extension
+with exact per-flow deadline and revalidation support.
 
-A proxy that can terminate at `valid_until` may provide that stronger property,
-but it is not a portable v1 requirement.
+Exact termination at `valid_until` may be added later as a stronger property;
+it is not a v1 requirement.
 
 ## Console-owned credential handles
 
@@ -395,9 +463,9 @@ cryptographically secure random source, persists only its fingerprint, and
 returns the raw value once through the deploy-managed Agent provisioning or
 secret-delivery path. Rotation creates a new handle and bounded overlap before
 revoking the old one; there is no API for reading a raw placeholder later.
-Copying it to another Agent is insufficient because Console also authenticates
-the proxy's Agent identity. Presenting it at the wrong origin never causes
-substitution.
+Copying it to another Agent is insufficient because redemption is bound to the
+Agent identity authenticated from the fence credential. Presenting it at the
+wrong origin never causes substitution.
 
 An Agent may receive several named placeholders for the same provider. This
 allows deliberate account selection, for example:
@@ -430,7 +498,9 @@ the placeholder or redemption contract.
 
 ### Separate reachability and credential authority
 
-Destination admission and credential redemption are independent decisions:
+Destination admission and credential redemption are independent authorities.
+One decision call carries both outcomes (§ Console decision API), but they are
+evaluated separately:
 
 - a reachability grant does not unlock every credential valid for that origin;
 - a credential-use grant cannot expand HTTP or Cilium reachability;
@@ -471,43 +541,76 @@ not a reusable provider credential object. The adapter:
 - does not write replacements into generated configuration, files or cache;
 - holds replacement bytes only for the request transformation;
 - strips a recognized placeholder if redemption fails, then denies the request;
+- scopes both the placeholder strip and the replacement add to the destination;
 - never substitutes based on placeholder match alone without destination and
   Agent checks.
 
-Version zero disables HTTP response caching entirely. This removes cache-key,
-privacy and secret-persistence questions from the authorization milestone.
-Credential and authorization values are never persisted regardless of whether a
-later response-cache design is added.
+Version zero disables HTTP response caching entirely: the proxy is a
+non-caching forwarder, verified to store neither authenticated nor anonymous
+responses. This removes cache-key, privacy and secret-persistence questions
+from the authorization milestone; credential and authorization values are never
+persisted regardless of whether a later response-cache design is added. Any
+later cache proposal must separately define cache keys after normalization,
+privacy boundaries, authenticated and credential-substituted exclusions,
+response directives, size limits and purge behavior. This is independent of the
+prohibition on proxy-local authorization-decision caching, which is a permanent
+control-plane requirement.
 
-## Stable Console APIs
+## Console decision API
 
-### Destination authorization
+One authenticated call carries the reachability verdict and the
+request-specific credential-substitution operations together. This section is
+the current proposal — the working shape the implementation PR will pin. It is
+an internal same-release contract (§ Topology): proxy and Console deploy from
+one commit, so there is no version negotiation and no versioning.
 
 ```text
-POST /api/internal/http/authorize
-Authorization: Bearer <Agent-bound proxy credential>
+POST /api/internal/http/decide        (bound on localhost)
+Authorization: Bearer <proxy identity credential>
 ```
 
-Request:
+The call is authenticated even though it is localhost-bound: the oracle
+constraint — authenticated, reachable only by the proxy, never routable from
+sandbox workloads — is defense in depth, not either/or.
+
+The request carries the caller's fence credential, the canonical origin, the
+pinned resolution and the credential presentations observed in the decrypted
+request:
 
 ```json
 {
-  "scheme": "https",
-  "host": "files.pythonhosted.org",
-  "port": 443,
-  "resolved_ips": ["151.101.0.223", "2a04:4e42::223"],
-  "upstream_ip": "151.101.0.223"
+  "fence_credential": "<Agent-bound fence credential>",
+  "origin": { "scheme": "https", "host": "api.github.com", "port": 443 },
+  "resolved_ips": ["140.82.121.5", "2a01:4f8:c010::5"],
+  "upstream_ip": "140.82.121.5",
+  "presentations": [
+    {
+      "kind": "bearer",
+      "slot": "authorization",
+      "placeholder_fingerprint": "sha256:9f2c..."
+    }
+  ]
 }
 ```
 
-Allowed response:
+- Console derives the Agent and access profile by authenticating
+  `fence_credential`; the request carries no caller-asserted `agent_id`.
+- Placeholders travel as fingerprints, never as raw values; Console persists
+  and looks placeholders up by fingerprint only.
+- Method, path, query and body stay out of the call: none participates in v1
+  authority, each can carry sensitive application data, and Console sits on
+  the request-decision path, never the body path.
+
+The allowed response carries the verdict, its audit linkage, the admission
+lifetime and the exact substitutions for this one request:
 
 ```json
 {
   "allowed": true,
   "source": "grant",
   "decision_id": "grant:018f...",
-  "valid_until": "2026-08-26T02:30:00Z"
+  "valid_until": "2026-08-26T02:30:00Z",
+  "substitutions": [{ "header": "authorization", "value": "Bearer <exact rendered value>" }]
 }
 ```
 
@@ -518,225 +621,73 @@ Denied response:
   "allowed": false,
   "source": "none",
   "reason": "temporary_grant_required",
-  "grant_scope": {
-    "scheme": "https",
-    "host": "files.pythonhosted.org",
-    "port": 443
-  }
+  "grant_scope": { "scheme": "https", "host": "api.github.com", "port": 443 }
 }
 ```
 
-This endpoint authorizes an origin admission. It deliberately omits HTTP method,
-path and body. CONNECT, decrypted HTTP, WebSocket upgrade and HTTP/2 stream hooks
-must map to the same origin semantics.
+Semantics:
 
-### Credential redemption
+- The proxy calls decide for every admission — each decrypted request, each
+  CONNECT it cannot decrypt, each reconnect — with proxy-local decision caching
+  disabled, so approval, release, revocation and expiry affect the next
+  admission. CONNECT, decrypted HTTP, WebSocket upgrade and HTTP/2 stream hooks
+  map to the same origin semantics.
+- Reachability and credential redemption remain independent authorities inside
+  the one call: a presentation never expands reachability, and reachability
+  never unlocks credentials. A recognized placeholder that cannot be redeemed —
+  wrong Agent, wrong origin, revoked or expired — denies the request rather
+  than forwarding the placeholder.
+- Each substitution names an exact header and the exact rendered replacement
+  for this request only. The response model marks replacement values secret;
+  neither placeholder nor replacement values are ever logged or persisted on
+  either side.
+- `valid_until` is an exact admission deadline (§ Admission expiry and
+  active-flow lifetime); an already admitted flow may overrun it only within
+  the deployment-wide hard `max_flow_lifetime`.
+- `decision_id` links the restricted audit stream's request records to their
+  policy provenance.
 
-```text
-POST /api/internal/http/credentials/redeem
-Authorization: Bearer <Agent-bound proxy credential>
-```
+## Conformance properties
 
-The v1 request contains only the canonical origin, the recognized credential
-slot/presentation kind and the opaque placeholder. It omits method, path, query
-and body because none participates in v1 authority and each can contain
-sensitive application data. A representative shape is:
-
-```json
-{
-  "scheme": "https",
-  "host": "api.github.com",
-  "port": 443,
-  "presentation": {
-    "kind": "bearer",
-    "slot": "authorization",
-    "placeholder": "haku-egress-placeholder-v1-..."
-  }
-}
-```
-
-An allowed response carries an audit decision ID and the exact replacement for
-the credential slot. The response model marks replacement fields as secret and
-all access logging redacts them.
-
-The proxy credential is accepted only for `http-authorize` and
-`http-credential-redeem`; it is invalid for MCP, Agent session and operator APIs.
-The current general `AgentBearerAuthority` has no audience parameter, so the HTTP
-implementation needs a separate credential kind and resolver path rather than a
-copy of the Kubernetes proxy route.
-
-## Proxy adapter contract
-
-Every supported proxy adapter must demonstrate the same conformance properties:
+Requirements on the mitmproxy implementation, proven by conformance tests that
+any future replacement must also pass. The implementation must:
 
 1. authenticate to Console without caller-selectable Agent identity;
-2. call destination authorization for every admission with proxy-local decision
+2. call the decision endpoint for every admission with proxy-local decision
    caching disabled;
 3. fail closed on timeout, malformed response, denied decision or authority
-   failure;
+   failure — an error anywhere in the decision path terminates the connection,
+   never forwards;
 4. validate and pin DNS resolution for the actual upstream connection;
 5. validate upstream TLS independently and issue intercepted certificates only
    from the deploy-managed shared egress-interception CA;
 6. enforce the deployment's finite hard flow lifetime;
-7. surface a useful denial reason without exposing credentials or policy internals;
-8. call credential redemption only after a recognized placeholder is present and
-   decrypted request metadata is available;
-9. apply only the returned credential replacement and never persist it;
-10. deny on credential-adapter failure rather than forwarding the placeholder;
-11. keep method, path, query and body out of v1 Console authorization and
-    redemption calls while writing exact non-secret request metadata to the
-    restricted audit stream independently of policy evaluation.
-
-Proxy-specific protocols remain implementation details:
-
-| Proxy     | Admission hook                      | Credential transformation                    |
-| --------- | ----------------------------------- | -------------------------------------------- |
-| Squid     | `external_acl_type` helper          | REQMOD adapter or another tested helper path |
-| mitmproxy | addon request/connection hooks      | addon request-header transformation          |
-| Envoy     | `ext_authz` HTTP or gRPC            | requires a compatible decrypted-request path |
-| custom    | native call before upstream connect | native request-header transformation         |
-
-## First adapter: Squid composition
-
-Squid remains the first candidate because the existing spike proves the hardest
-combined data-plane properties: dynamic TLS certificates, destination-scoped
-Bearer and Basic substitution, and reliable authenticated-response cache denial.
-
-### Admission helper
-
-A concurrent `external_acl_type` helper maps version-verified Squid origin and
-address fields to the stable Console JSON request and maps an affirmative
-response to `OK`; denial and every internal failure map to `ERR`. Client address
-is never identity. Security does not depend on Squid's `BH` behavior.
-
-The spike must select the exact helper format tokens supported by the deployed
-Squid version and prove that they describe the same selected upstream address
-used for the connection. The exact no-cache spelling must also be verified.
-If `ttl=0` does not disable the result cache, the adapter needs another mechanism
-before it is conforming.
-
-The helper is never asked to create grants or wait for human approval. A denied
-request returns immediately. Console downtime denies all external HTTP,
-including standing destinations, because Console is authoritative.
-
-### Credential transformation
-
-`external_acl_type` cannot rewrite arbitrary origin headers. Squid therefore
-needs a separate transformation adapter. REQMOD is one candidate, but the stable
-credential contract is ordinary Console JSON, not ICAP.
-
-A proxy-local REQMOD adapter can receive Squid's request, extract only canonical
-metadata and the placeholder, call Console redemption, and apply the returned
-replacement. It must not forward the body to Console. A mitmproxy replacement
-would implement the same JSON contract directly in an addon.
-
-Static Squid `request_header_replace` rules remain useful only as experimental
-evidence. They are not the target because generated per-Agent credential config
-would put real secrets at rest in the proxy.
-
-### DNS and address enforcement
-
-The admission helper alone cannot prove that Squid connects to the same address
-Console checked. The spike must determine whether Squid destination ACLs and its
-DNS cache can provide a same-resolution guarantee. A conforming composition
-must deny prohibited address classes and pin the validated selected address. If
-Squid cannot demonstrate this, use a tested relay/broker or another proxy rather
-than weakening the requirement.
-
-### Flow lifetime
-
-Squid documents `client_lifetime` as the maximum time a client may remain
-connected to the cache process. Configure a small value and test it against an
-active CONNECT tunnel. Reconnection must cause a fresh Console authorization.
-
-The directive is documented as socket-resource protection rather than a security
-control, so the test is load-bearing. If it does not bound active tunnels, move
-to another existing stream-lifetime primitive or compose a small broker.
-
-### Response caching
-
-Response caching is deferred. Version zero configures the selected proxy as a
-non-caching forwarder and verifies that neither authenticated nor anonymous
-responses are stored. This is independent of the prohibition on proxy-local
-authorization-decision caching, which is a permanent control-plane requirement.
-
-A later cache proposal must separately define cache keys after normalization,
-privacy boundaries, authenticated and credential-substituted exclusions,
-response directives, size limits and purge behavior. It is not part of the
-initial grant or capability-gateway implementation.
-
-## Existing implementation options
-
-### Squid
-
-Strengths:
-
-- mature forward-proxy cache;
-- dynamic TLS interception and certificate generation;
-- native ACL and helper protocols;
-- measured Bearer and Git Basic substitution semantics.
-
-Open requirements:
-
-- same-resolution address pinning;
-- verified hard CONNECT lifetime through `client_lifetime` or composition;
-- dynamic Console credential redemption without sending bodies to Console;
-- verified no-cache helper semantics.
-
-### mitmproxy
-
-Strengths:
-
-- Python addon API;
-- HTTP/2 support through intercepted connections;
-- direct request-header transformation;
-- easier ordinary JSON integration than implementing an ICAP server.
-
-Risks:
-
-- addon exceptions fail open unless a later independent hook denies every flow
-  not affirmatively marked;
-- streaming must be enabled before any body read;
-- `Flow.kill()` documents that flows already in transit cannot be killed
-  reliably;
-- no mature shared HTTP cache.
-
-Mitmproxy is viable only with a fail-closed backstop and bounded connection
-lifetime tested independently from the policy addon.
-
-### Envoy
-
-Envoy provides mature `ext_authz`, `max_stream_duration` and
-`max_connection_duration`. Those are useful existing primitives for admission
-and bounded flows.
-
-Envoy did not substitute credentials in the earlier forward-proxy spike because
-HTTPS remained an opaque CONNECT tunnel; the reverse-proxy test proved the
-credential filter itself worked. Dynamic forward-proxy CONNECT support is still
-alpha and Envoy has no Squid-like dynamic certificate machinery. It is therefore
-not a complete replacement by itself, though a composed design may reuse its
-stream controls.
-
-### Purpose-built broker
-
-A small admission/CONNECT broker is the fallback after existing controls are
-tested. It should own only the missing pieces — authorization, address pinning
-and bounded tunnelling — and compose with a proven credential transformer where
-possible. Building a complete TLS-intercepting proxy from scratch is out of
-scope; adding response caching is separately deferred.
+7. surface a useful denial reason without exposing credentials or policy
+   internals;
+8. report observed credential presentations only from decrypted request
+   metadata, as presentation kind plus placeholder fingerprint, never raw
+   values;
+9. apply exactly the returned substitution operations and never persist them;
+10. deny rather than forward when a recognized placeholder cannot be
+    substituted;
+11. keep method, path, query and body out of v1 decision calls while writing
+    exact non-secret request metadata to the restricted audit stream
+    independently of policy evaluation.
 
 ## Failure behavior
 
 The system denies on:
 
-- missing, invalid, expired or wrong-audience proxy credentials;
-- Console timeout or unavailability;
-- malformed or incomplete authorization responses;
+- missing, invalid, expired or wrong-audience fence or proxy credentials;
+- Console timeout or unavailability — denying all external HTTP including
+  standing destinations, because Console is authoritative and the proxy holds
+  no policy copy;
+- malformed or incomplete decision responses;
 - destination denial or missing grants;
 - DNS resolution failure, oversized answers or prohibited addresses;
 - mismatch between selected and connected address;
 - credential placeholder mismatch or denied redemption;
-- credential adapter error or unavailable transformation service;
+- credential substitution failure;
 - inability to enforce the configured hard flow lifetime.
 
 The authorization path never waits for an operator. Retries are explicit and
@@ -750,26 +701,27 @@ adapter behavior without exposing sensitive values.
    service by following the Kubernetes grant implementation.
 3. Add Agent create/list/get/release tools and operator inspection/revocation.
 4. Define deploy-managed standing destination policy.
-5. Mint endpoint-scoped Agent proxy credentials and a dedicated resolver.
-6. Implement `POST /api/internal/http/authorize` as a read-only facade.
+5. Mint endpoint-scoped Agent-bound fence credentials and a dedicated resolver.
+6. Implement `POST /api/internal/http/decide` as a read-only reachability
+   facade with an empty substitution set.
 7. Define Console-owned egress credential handles and credential-use grants.
-8. Implement `POST /api/internal/http/credentials/redeem` with mandatory secret
-   redaction.
+8. Extend the decide response with substitution operations and mandatory
+   secret redaction.
 9. Decide the proxy-pod Cilium ceiling for grantable public origins.
-10. Spike Squid DNS pinning, helper no-cache behavior and `client_lifetime` with
-    active CONNECT traffic.
-11. Implement the smallest conforming adapter or composition.
-12. Run end-to-end grant, credential-selection, failure and rebinding tests.
-13. Roll out one experimental Agent before generalizing the deployment.
-14. Define a versioned structured request-capability model and bind credential
+10. Embed mitmproxy as a library adapter colocated with Console (§ Topology)
+    and prove the conformance properties, including the structural deny
+    backstop, by test.
+11. Run end-to-end grant, credential-selection, failure and rebinding tests.
+12. Roll out one experimental Agent before generalizing the deployment.
+13. Define a versioned structured request-capability model and bind credential
     redemption to its decision IDs.
-15. Expose one read-only Grocy or similarly conventional API directly through
+14. Expose one read-only Grocy or similarly conventional API directly through
     instructions and an opaque placeholder; add generated tools only if their
     ergonomics justify the additional surface.
-16. Model broad Gmail list/get coverage for an Agent whose existing policy
+15. Model broad Gmail list/get coverage for an Agent whose existing policy
     allows all Gmail reads, using Google Discovery operation IDs, least-scope
     OAuth tokens and explicit route/query constraints.
-17. Route direct Kubernetes HTTP through the existing canonical
+16. Route direct Kubernetes HTTP through the existing canonical
     `RequestAttributes` authorizer without replacing typed Kubernetes grants
     with generic URL rules.
 
@@ -784,7 +736,8 @@ adapter behavior without exposing sensitive values.
 - redirect succeeds only when every origin is covered;
 - expiry, release and revocation deny later admissions;
 - an existing flow cannot exceed `max_flow_lifetime`;
-- Console timeout, invalid JSON and invalid proxy credential deny;
+- Console timeout, invalid JSON and an invalid fence or proxy-identity
+  credential deny;
 - proxy-local decision caching is absent.
 
 ### Address safety
@@ -836,61 +789,11 @@ adapter behavior without exposing sensitive values.
 ### Fence enforcement
 
 - removing proxy environment variables does not create direct egress;
-- the Agent cannot reach another Agent's proxy;
-- a provisioned sandbox inherits its authenticated caller's fence;
-- removing the proxy fails closed;
-- the Agent cannot mutate the label selecting its fence.
-
-## Evidence retained from proxy experiments
-
-Only observations that constrain implementation are retained here. Detailed
-chronology belongs in Git history and the linked pull requests.
-
-### Squid 7.6
-
-The in-cluster spike demonstrated:
-
-- TLS bump with dynamic origin certificates;
-- destination-scoped Bearer placeholder replacement;
-- base64 Basic replacement for Git over HTTPS;
-- no-placeholder and unrelated-credential pass-through;
-- destination matching must apply to both stripping and adding the header;
-- `cache deny has_auth` prevents storage of authenticated responses;
-- Debian `squid-openssl` provides the required OpenSSL and ICAP build features;
-- one cache/process per Agent avoids unsafe cross-Agent cache and credential
-  sharing.
-
-The placeholder must never be sufficient by itself. Substitution is always the
-conjunction of authenticated Agent, recognized placeholder, allowed destination
-and active credential policy.
-
-### Squid ICAP REQMOD
-
-The REQMOD spike demonstrated:
-
-- decrypted requests can be modified or blocked;
-- service disconnect with `bypass=0` fails closed;
-- explicit `icap_io_timeout` is required, and Squid retries once so observed
-  denial latency is approximately twice the configured timeout;
-- Squid sent complete POST bodies despite the service advertising `Preview: 0`;
-- REQMOD ran before Squid's static header replacement.
-
-These results rule out sending raw ICAP requests directly to Console. A
-proxy-local adapter may use ICAP while sending only bounded metadata to the
-Console JSON endpoints.
-
-### Measured mitmproxy behavior
-
-The addon spike demonstrated:
-
-- intercepted HTTP/2 requests support credential substitution;
-- streaming remains incremental only when enabled before body access;
-- an addon exception forwards the request by default;
-- a later fail-closed backstop can deny flows not marked by the policy addon;
-- callbacks may need thread-safe scheduling onto mitmproxy's event loop.
-
-A mitmproxy adapter therefore needs two independent layers: policy/transformation
-and a structural deny backstop.
+- the decision endpoint is unreachable from every sandbox workload;
+- a provisioned sandbox is fenced uniformly; its identity comes only from its
+  injected fence credential, never from network position;
+- removing the proxy fails closed rather than exposing a fallback path;
+- the Agent cannot mutate the labels selecting its fence.
 
 ## Related work
 
@@ -908,14 +811,9 @@ and a structural deny backstop.
 
 ## References
 
-- <https://www.squid-cache.org/Doc/config/external_acl_type/>
-- <https://www.squid-cache.org/Doc/config/client_lifetime/>
-- <https://www.squid-cache.org/Doc/config/request_header_replace/>
 - <https://docs.mitmproxy.org/stable/api/events.html>
 - <https://github.com/mitmproxy/mitmproxy/blob/main/mitmproxy/flow.py>
-- <https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/ext_authz_filter>
 - <https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/core/v3/protocol.proto>
-- <https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/route/v3/route_components.proto>
 - <https://developers.google.com/workspace/gmail/api/reference/rest>
 - <https://kubernetes.io/docs/reference/access-authn-authz/authorization/>
 - <https://agentgateway.dev/blog/2026-07-27-credential-injection-ai-agent-egress-cb4a/>
