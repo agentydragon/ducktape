@@ -100,8 +100,8 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
 - **Harbor**: **removed 2026-08-11** (#3967) after two months parked — it was mostly a
   registry for props, which use the Forgejo registry; the replacement track is the
   lighter-registry item under Next Actions (`oci-cache`).
-- **InvenTree**: `inventree-{namespace,secrets,token-provisioner}`,
-  `authentik-blueprint-inventree-secret` — nice-to-have, parked under capacity pressure.
+- **InvenTree**: `inventree`, `inventree-{namespace,secrets,db,token-provisioner}` —
+  nice-to-have, parked under capacity pressure.
 - **OpenClaw / OpenShell**: **removed 2026-07-31**, manifests deleted rather than
   parked. The gateway was unused and wedged (no exec traffic, idle orphaned
   sandboxes), the operator could not be egress-confined
