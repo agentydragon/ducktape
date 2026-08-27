@@ -41,6 +41,11 @@ from haku.console.chat_models import (
     RuntimeKind,
     SessionStatus,
 )
+from haku.console.conversation_read_access import (
+    ConversationAccessDeniedError,
+    ConversationReadScope,
+    ProfileScopedReads,
+)
 
 # The ORM row and the neutral vocabulary's union share a name; the row is aliased so both can
 # be named here, as `session_events` does.
@@ -200,6 +205,35 @@ async def _live_attachments(db: AsyncSession, conversations: set[UUID]) -> dict[
             ChannelAttachment(surface=row.surface, address=row.address, attached_at=row.attached_at)
         )
     return attachments
+
+
+async def _require_readable_conversation(db: AsyncSession, conversation_id: UUID, scope: ConversationReadScope) -> None:
+    """Refuse a point read of a conversation outside *scope*'s readable profiles.
+
+    A conversation that does not exist passes: the read it guards then returns its natural empty
+    page, exactly as before scoping, so absence and emptiness stay one shape. Only a row that
+    exists and pins a profile outside the scope — or predates pinned identity, for a non-Operator
+    scope — is refused, loudly, so a future grant misconfiguration reads as a denial rather than
+    as an inexplicably empty transcript.
+    """
+    row = (
+        await db.execute(select(Conversation.access_profile_id).where(Conversation.conversation_id == conversation_id))
+    ).one_or_none()
+    if row is not None and not scope.allows(row.access_profile_id):
+        raise ConversationAccessDeniedError(f"{conversation_id=}")
+
+
+async def _require_readable_session(db: AsyncSession, session_id: UUID, scope: ConversationReadScope) -> None:
+    """`_require_readable_conversation`, resolved through the session that names it."""
+    row = (
+        await db.execute(
+            select(Conversation.access_profile_id)
+            .join(Session, Session.conversation_id == Conversation.conversation_id)
+            .where(Session.session_id == session_id)
+        )
+    ).one_or_none()
+    if row is not None and not scope.allows(row.access_profile_id):
+        raise ConversationAccessDeniedError(f"{session_id=}")
 
 
 async def _item_counts(db: AsyncSession, conversations: set[UUID]) -> dict[UUID, int]:
@@ -1533,7 +1567,9 @@ class SessionStore:
                     position=writer.conversation.next_event_seq - 1,
                 )
 
-    async def list_turns(self, session_id: UUID, *, cursor: TurnCursor | None, limit: int) -> list[TurnRecord]:
+    async def list_turns(
+        self, session_id: UUID, *, cursor: TurnCursor | None, limit: int, scope: ConversationReadScope
+    ) -> list[TurnRecord]:
         """A session's exchanges from *cursor*, newest first, for the `haku_conversations` tools.
 
         Keyset on `(started_at, turn_id)`: two turns of one session can share a start instant, and
@@ -1548,6 +1584,7 @@ class SessionStore:
                 <= tuple_(literal(cursor.started_at), literal(cursor.turn_id))
             )
         async with self._sessions() as db:
+            await _require_readable_session(db, session_id, scope)
             rows = (
                 await db.scalars(
                     query.order_by(ConversationTurn.started_at.desc(), ConversationTurn.turn_id.desc()).limit(limit)
@@ -1688,7 +1725,9 @@ class SessionStore:
                 select(func.max(SessionFrame.runner_seq)).where(SessionFrame.session_id == session_id)
             )
 
-    async def list_sessions(self, *, cursor: SessionCursor | None, limit: int) -> list[SessionRecord]:
+    async def list_sessions(
+        self, *, cursor: SessionCursor | None, limit: int, scope: ConversationReadScope
+    ) -> list[SessionRecord]:
         """Past sessions from *cursor*, newest first, for the `haku_conversations` read tools.
 
         Keyset paging on `(created_at, session_id)`: an offset counts from the top of an order that
@@ -1696,7 +1735,8 @@ class SessionStore:
         row across a page boundary. `session_id` is in the key because `created_at` alone is not a
         total order.
 
-        Deliberately unscoped: every session, whichever room it served. Inclusive of the row the
+        Cross-room and cross-session on purpose — the fence is *scope*, the caller's profile-DAG
+        read closure, applied inside the query so a page stays a page. Inclusive of the row the
         cursor names, which is the first row the previous page did not return.
         """
         query = (
@@ -1704,6 +1744,8 @@ class SessionStore:
             .join(Conversation, Conversation.conversation_id == Session.conversation_id)
             .order_by(Session.created_at.desc(), Session.session_id.desc())
         )
+        if isinstance(scope, ProfileScopedReads):
+            query = query.where(Conversation.access_profile_id.in_(sorted(scope.readable_profile_ids)))
         if cursor is not None:
             query = query.where(
                 tuple_(Session.created_at, Session.session_id)
@@ -1728,7 +1770,13 @@ class SessionStore:
         ]
 
     async def read_frames(
-        self, session_id: UUID, *, cursor: int | None, limit: int, kinds: Sequence[BridgeFrameKind] | None = None
+        self,
+        session_id: UUID,
+        *,
+        cursor: int | None,
+        limit: int,
+        scope: ConversationReadScope,
+        kinds: Sequence[BridgeFrameKind] | None = None,
     ) -> list[FrameRecord]:
         """One page of a session's frame log, in wire order, from the start of the log onwards.
 
@@ -1741,11 +1789,12 @@ class SessionStore:
         if cursor is not None:
             query = query.where(SessionFrame.frame_seq >= cursor)
         async with self._sessions() as db:
+            await _require_readable_session(db, session_id, scope)
             rows = (await db.scalars(query.order_by(SessionFrame.frame_seq).limit(limit))).all()
         return [_frame_record(row) for row in rows]
 
     async def read_item_rows(
-        self, conversation_id: UUID, *, after_seq: int | None, limit: int
+        self, conversation_id: UUID, *, after_seq: int | None, limit: int, scope: ConversationReadScope
     ) -> list[ConversationPageRow]:
         """One page of the rows that define the conversation's settled entries, oldest first.
 
@@ -1765,6 +1814,7 @@ class SessionStore:
         to on the wire is the reader's business (`item_entries.entry_of`), not this store's.
         """
         async with self._sessions() as db:
+            await _require_readable_conversation(db, conversation_id, scope)
             return await _conversation_page_rows(db, conversation_id, after_seq=after_seq, limit=limit, view=False)
 
     async def read_conversation_view_rows(

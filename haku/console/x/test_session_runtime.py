@@ -42,6 +42,7 @@ from haku.console.chat_models import (
 )
 from haku.console.config import ChatRuntimesConfig, ClaudeCodeImplementationConfig, RuntimeRegistrationConfig
 from haku.console.conftest import console_sessions
+from haku.console.conversation_read_access import UnrestrictedReads
 from haku.console.database_schema import (
     Agent,
     Conversation,
@@ -651,7 +652,7 @@ async def test_a_failed_turn_alone_leaves_the_session_usable(chat_store, notific
     """
     session_id = await _one_failed_turn(chat_store, notifications, operator_id, unusable=False)
 
-    [record] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
+    [record] = await chat_store.list_turns(str(session_id), cursor=None, limit=5, scope=UnrestrictedReads())
     assert record.end == TurnFailedEnd(failure="the provider gave up")
     assert await chat_store.status(session_id) != SessionStatus.FAILED
 
@@ -693,7 +694,7 @@ async def test_generic_turn_loop_is_opaque_to_a_discriminator_free_harness(
     await service._run_turn(client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event())
 
     assert await answers(migrated_sessions, view.session_id) == ["你好!"]
-    raw = await chat_store.read_frames(view.session_id, cursor=None, limit=25)
+    raw = await chat_store.read_frames(view.session_id, cursor=None, limit=25, scope=UnrestrictedReads())
     assert [frame.payload for frame in raw] == [
         {"动作": "输入", "正文": "say hello"},
         {"阶段": "碎片", "正文": "你"},
@@ -1346,7 +1347,7 @@ async def test_adoption_closes_a_turn_whose_result_nobody_projected(
             abort_event=asyncio.Event(),
         )
 
-    [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
+    [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5, scope=UnrestrictedReads())
     assert turn.end == TurnAnsweredEnd()
 
 
@@ -1383,7 +1384,7 @@ async def test_adoption_reads_a_failed_result_as_a_failed_turn(
             abort_event=asyncio.Event(),
         )
 
-    [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
+    [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5, scope=UnrestrictedReads())
     assert isinstance(turn.end, TurnFailedEnd)
     # Claude states nothing about the session on a failed result, and its CLI answers the next
     # prompt like any other, so the exchange failing leaves the session usable.
@@ -1418,7 +1419,7 @@ async def test_a_turn_whose_cursor_is_behind_it_is_failed_rather_than_resumed(
 
     assert await chat_store.adopt_open_turn(session_id) is None
 
-    [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
+    [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5, scope=UnrestrictedReads())
     assert isinstance(turn.end, TurnFailedEnd)
 
 
@@ -1702,7 +1703,7 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     assert await answers(migrated_sessions, session_id) == ["because the disk was full"], "not the answer twice"
     said = [item for item in await session_items(migrated_sessions, session_id) if item.item_type is ItemType.MESSAGE]
     assert [item.item_id for item in said] == [half_answered], "continued, rather than forked into a second"
-    [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5)
+    [turn] = await chat_store.list_turns(str(session_id), cursor=None, limit=5, scope=UnrestrictedReads())
     assert (turn.turn_id, turn.end) == (started.turn_id, TurnAnsweredEnd())
 
 
@@ -1820,7 +1821,7 @@ async def test_a_turn_the_cli_ended_badly_fails_even_though_is_error_says_it_did
         client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event()
     )
 
-    [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=5)
+    [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=5, scope=UnrestrictedReads())
     assert record.end == TurnFailedEnd(failure="error_max_turns: end_turn")
     assert await chat_store.status(view.session_id) != SessionStatus.FAILED
 
@@ -1952,7 +1953,7 @@ async def test_a_turn_brackets_the_frames_it_produced(chat_store, chat_service, 
         client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event()
     )
 
-    [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=10)
+    [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=10, scope=UnrestrictedReads())
     assert record.end == TurnAnsweredEnd()
     assert (record.first_frame_seq, record.last_frame_seq) == (recorded_answer.frame_seq, recorded_ending.frame_seq)
     assert record.ended_at is not None
@@ -1983,7 +1984,7 @@ async def test_a_turn_ends_at_its_own_result_rather_than_at_what_the_cli_logs_af
         client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event()
     )
 
-    [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=10)
+    [record] = await chat_store.list_turns(view.session_id, cursor=None, limit=10, scope=UnrestrictedReads())
     assert record.last_frame_seq == recorded.frame_seq
 
 
@@ -2067,12 +2068,14 @@ async def test_runner_survives_an_idle_wait_against_a_real_database(
             for _ in range(75):
                 if [
                     turn
-                    for turn in await chat_store.list_turns(str(view.session_id), cursor=None, limit=2)
+                    for turn in await chat_store.list_turns(
+                        str(view.session_id), cursor=None, limit=2, scope=UnrestrictedReads()
+                    )
                     if turn.ended_at
                 ]:
                     break
                 await asyncio.sleep(0.2)
-            [turn] = await chat_store.list_turns(str(view.session_id), cursor=None, limit=2)
+            [turn] = await chat_store.list_turns(str(view.session_id), cursor=None, limit=2, scope=UnrestrictedReads())
             assert turn.end == TurnAnsweredEnd(), "the turn never completed"
         finally:
             runner.cancel()
@@ -2622,7 +2625,9 @@ async def test_a_harness_initiated_exchange_becomes_an_ordinary_turn(
             )
         ).all()
     assert [turn.outcome for turn in turns] == [TurnOutcome.ANSWERED, TurnOutcome.ANSWERED]
-    entries = await chat_store.read_item_rows(await chat_store.conversation_of(session_id), after_seq=None, limit=100)
+    entries = await chat_store.read_item_rows(
+        await chat_store.conversation_of(session_id), after_seq=None, limit=100, scope=UnrestrictedReads()
+    )
     prompts = [entry for entry in map(entry_of, entries) if isinstance(entry, PromptEntry)]
     assert [(prompt.text, prompt.origin) for prompt in prompts] == [
         ("start the fetch", PromptOriginKind.SPA),

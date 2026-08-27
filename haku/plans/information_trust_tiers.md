@@ -138,21 +138,19 @@ index; production carries `haku-state`, `haku-conversations`, and public `duckta
 implementation and operational contract live in <../recall_index/README.md>; this plan no longer
 repeats them.
 
-What is deliberately **not** built is the trust boundary:
+The conversation-read boundary is also built, in profile terms rather than tier terms (#4431
+stage 5): per-profile `recall_index_ids` grants are enforced once in the console, chat
+occurrences link to their `conversation_id`, and one profile-DAG authorizer
+(`haku/console/conversation_read_access.py` over `can_read_profiles`) fences `haku_conversations`
+drilldowns and `haku_index` chat search identically against the conversation's pinned
+`access_profile_id` — unknown or unpinned data fails closed for agents. The conversation's pinned
+profile is the label; a future tier is a change of how the label is derived (room tier, agent
+kind), not of the seam that enforces it.
 
-- Assign a tier to each agent kind and conversation. Matrix room tier is authoritative when a
-  conversation has a room; pre-tier data reads as highest trust.
-- Route chat occurrences to tier-specific indexes. Keep `chunks` as the shared,
-  content-addressed embedding cache; access follows occurrence/index membership, not the vector.
-- Give each agent an explicit set of readable index ids and enforce it once in
-  <../console/recall_index_reader.py>. Omitted `index_ids` means all **granted** indexes, not all
-  configured indexes; naming an ungranted or unknown index fails closed.
-- Apply the same tier decision to `haku_conversations` drilldowns so semantic discovery and direct
-  transcript reads have one boundary.
-- Replace the single `haku_recall_reads` authority with per-index grants in policy/configuration.
-
-These are tracked as one ordered item in <../console/TODO.md> § Scope conversation reads to the
-reader's trust tier. The RLS alternative and read-surface inventory remain in
+What is deliberately **not** built is the tier half itself — tiers on agent kinds and Matrix
+rooms, tier derivation for conversations, and tier-specific chat indexes if the label ever needs
+to move off the pinned profile — tracked in <../console/TODO.md> § Scope conversation reads to
+the reader's trust tier. The RLS alternative and read-surface inventory remain in
 <../recall_index/README.md> § Read scoping.
 
 ## Running more than one agent at once

@@ -47,6 +47,7 @@ py_library(
     ],
     deps = [
         "//haku/console:chat_models",
+        "//haku/console:conversation_read_access",
         "//haku/console:database_schema",
         "//haku/console/x:session_store",
         "//haku/console/x/testing:waiting",

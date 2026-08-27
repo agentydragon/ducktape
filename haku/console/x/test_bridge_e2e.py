@@ -27,6 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.console.chat_models import OPEN_SESSION_STATUSES, SPA_ORIGIN, SessionStatus
+from haku.console.conversation_read_access import UnrestrictedReads
 from haku.console.database_schema import SessionFrame
 from haku.console.x import conversation_reads
 from haku.console.x.conftest import configured_runtimes, runtime_config
@@ -141,7 +142,7 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
     )
 
     async def finished_turns() -> list[conversation_reads.TurnEnd | None]:
-        turns = await chat_store.list_turns(session_id, cursor=None, limit=10)
+        turns = await chat_store.list_turns(session_id, cursor=None, limit=10, scope=UnrestrictedReads())
         return [turn.end for turn in sorted(turns, key=lambda turn: turn.started_at) if turn.ended_at]
 
     async def bridge_connected() -> bool:
@@ -170,7 +171,9 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
         # holding an answer, which is the whole reason the runner outlives a connection.
         assert await chat_store.status(session_id) in OPEN_SESSION_STATUSES, "a roll is not a session ending"
         [in_flight] = [
-            turn for turn in await chat_store.list_turns(session_id, cursor=None, limit=10) if turn.ended_at is None
+            turn
+            for turn in await chat_store.list_turns(session_id, cursor=None, limit=10, scope=UnrestrictedReads())
+            if turn.ended_at is None
         ]
 
         async with serve_app(_console_app(migrated_db_url, workspace), port=port):
@@ -183,9 +186,14 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
             await runner.wait()
 
     assert await finished_turns() == [TurnAnsweredEnd(), TurnAnsweredEnd()]
-    turns = sorted(await chat_store.list_turns(session_id, cursor=None, limit=10), key=lambda turn: turn.started_at)
+    turns = sorted(
+        await chat_store.list_turns(session_id, cursor=None, limit=10, scope=UnrestrictedReads()),
+        key=lambda turn: turn.started_at,
+    )
     assert turns[1].turn_id == in_flight.turn_id, "the second console finished that turn rather than opening its own"
-    rows = await chat_store.read_item_rows(await chat_store.conversation_of(session_id), after_seq=None, limit=100)
+    rows = await chat_store.read_item_rows(
+        await chat_store.conversation_of(session_id), after_seq=None, limit=100, scope=UnrestrictedReads()
+    )
     assert [
         (entry.kind, entry.text) for entry in map(entry_of, rows) if isinstance(entry, PromptEntry | MessageEntry)
     ] == [
@@ -199,7 +207,9 @@ async def test_a_real_runner_finishes_a_turn_the_console_that_started_it_never_s
     # The sandbox's own account of itself, durable only because it is in the rollout: the pod's log
     # is reaped with the sandbox. Whole path — the CLI's stderr, the runner's forwarding, the
     # `setup_output` frame, and the transport reassembling it into a line.
-    narration = await chat_store.read_frames(session_id, cursor=None, limit=10, kinds=[SETUP_OUTPUT_KIND])
+    narration = await chat_store.read_frames(
+        session_id, cursor=None, limit=10, kinds=[SETUP_OUTPUT_KIND], scope=UnrestrictedReads()
+    )
     assert [frame.text for frame in narration if isinstance(frame, SetupOutputRecord)] == [GREETING]
     assert len(narration) == 1
     # The resume cursor, end to end. The second console computed it from the rows the first left

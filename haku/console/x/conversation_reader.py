@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from uuid import UUID
 
 from haku.console.chat_models import BridgeFrameKind
+from haku.console.conversation_read_access import ConversationReadScope
 from haku.console.x.conversation_reads import (
     ConversationEntry,
     FrameRecord,
@@ -28,19 +29,29 @@ class ConversationReads:
     def __init__(self, store: SessionStore) -> None:
         self._store = store
 
-    async def list_sessions(self, *, cursor: SessionCursor | None, limit: int) -> list[SessionRecord]:
-        return await self._store.list_sessions(cursor=cursor, limit=limit)
+    async def list_sessions(
+        self, *, cursor: SessionCursor | None, limit: int, scope: ConversationReadScope
+    ) -> list[SessionRecord]:
+        return await self._store.list_sessions(cursor=cursor, limit=limit, scope=scope)
 
     async def read_frames(
-        self, session_id: UUID, *, cursor: int | None, limit: int, kinds: Sequence[BridgeFrameKind] | None = None
+        self,
+        session_id: UUID,
+        *,
+        cursor: int | None,
+        limit: int,
+        scope: ConversationReadScope,
+        kinds: Sequence[BridgeFrameKind] | None = None,
     ) -> list[FrameRecord]:
-        return await self._store.read_frames(session_id, cursor=cursor, limit=limit, kinds=kinds)
+        return await self._store.read_frames(session_id, cursor=cursor, limit=limit, scope=scope, kinds=kinds)
 
-    async def list_turns(self, session_id: UUID, *, cursor: TurnCursor | None, limit: int) -> list[TurnRecord]:
-        return await self._store.list_turns(session_id, cursor=cursor, limit=limit)
+    async def list_turns(
+        self, session_id: UUID, *, cursor: TurnCursor | None, limit: int, scope: ConversationReadScope
+    ) -> list[TurnRecord]:
+        return await self._store.list_turns(session_id, cursor=cursor, limit=limit, scope=scope)
 
     async def read_conversation_items(
-        self, conversation_id: UUID, *, cursor: int | None, limit: int
+        self, conversation_id: UUID, *, cursor: int | None, limit: int, scope: ConversationReadScope
     ) -> list[ConversationEntry]:
-        rows = await self._store.read_item_rows(conversation_id, after_seq=cursor, limit=limit)
+        rows = await self._store.read_item_rows(conversation_id, after_seq=cursor, limit=limit, scope=scope)
         return [entry_of(row) for row in rows]

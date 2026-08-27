@@ -151,6 +151,11 @@ class ChatChunk(Base):
     index_id: Mapped[str] = mapped_column(Text, ForeignKey(f"{SCHEMA}.indexes.index_id"), primary_key=True)
     session_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     window_no: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # The thread the window's session ran, copied from the console at materialization. Search joins
+    # it to the console's `conversation` row and its pinned `access_profile_id` — the occurrence
+    # links to the conversation and never duplicates a profile label. By value like `session_id`:
+    # this schema deliberately holds no foreign key into the console's tables.
+    conversation_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
     content_sha: Mapped[str] = mapped_column(Text, ForeignKey(f"{SCHEMA}.contents.content_sha"), nullable=False)
     first_message_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_message_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)

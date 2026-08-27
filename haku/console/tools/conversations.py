@@ -48,8 +48,12 @@ session, a frame, a turn, a conversation entry, and the cursors that walk them â
 beside the store that produces it (`haku/console/x/conversation_reads.py`). What is here is how
 those reads are handed out: the `Page` envelope.
 
-**Reads require the configured in-process-server grant.** The outer Console MCP boundary places
-the revalidated caller in trusted request metadata; it is never supplied by tool arguments.
+**Reads require the configured in-process-server grant, and rows require the profile-DAG scope.**
+The outer Console MCP boundary places the revalidated caller in trusted request metadata; it is
+never supplied by tool arguments. The server grant admits the caller at all; which conversations
+it then sees is `conversation_read_access`'s decision, the same one semantic Recall applies â€”
+`list_sessions` is filtered to the caller's readable profiles, and naming a session or
+conversation outside them is refused as `conversation access denied`.
 """
 
 from __future__ import annotations
@@ -63,6 +67,11 @@ from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, Field
 
 from haku.console.chat_models import BridgeFrameKind
+from haku.console.conversation_read_access import (
+    ConversationAccessDeniedError,
+    ConversationReadAccessPolicy,
+    ConversationReadScope,
+)
 from haku.console.in_process_server_access import InProcessServerAccessPolicy
 from haku.console.mcp_execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext
 from haku.console.x.conversation_reads import (
@@ -131,16 +140,26 @@ class ConversationReader(Protocol):
     to happen above it; doing it the same way for all of them is what keeps one shape.
     """
 
-    async def list_sessions(self, *, cursor: SessionCursor | None, limit: int) -> list[SessionRecord]: ...
+    async def list_sessions(
+        self, *, cursor: SessionCursor | None, limit: int, scope: ConversationReadScope
+    ) -> list[SessionRecord]: ...
 
     async def read_frames(
-        self, session_id: UUID, *, cursor: int | None, limit: int, kinds: Sequence[BridgeFrameKind] | None = None
+        self,
+        session_id: UUID,
+        *,
+        cursor: int | None,
+        limit: int,
+        scope: ConversationReadScope,
+        kinds: Sequence[BridgeFrameKind] | None = None,
     ) -> list[FrameRecord]: ...
 
-    async def list_turns(self, session_id: UUID, *, cursor: TurnCursor | None, limit: int) -> list[TurnRecord]: ...
+    async def list_turns(
+        self, session_id: UUID, *, cursor: TurnCursor | None, limit: int, scope: ConversationReadScope
+    ) -> list[TurnRecord]: ...
 
     async def read_conversation_items(
-        self, conversation_id: UUID, *, cursor: int | None, limit: int
+        self, conversation_id: UUID, *, cursor: int | None, limit: int, scope: ConversationReadScope
     ) -> list[ConversationEntry]: ...
 
 
@@ -153,7 +172,9 @@ def split_page[ItemT](rows: Sequence[ItemT], *, limit: int) -> tuple[list[ItemT]
     return list(rows[:limit]), rows[limit] if len(rows) > limit else None
 
 
-def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy) -> FastMCP:
+def build_mcp(
+    reader: ConversationReader, *, access: InProcessServerAccessPolicy, conversation_reads: ConversationReadAccessPolicy
+) -> FastMCP:
     mcp: FastMCP = FastMCP(
         name=HAKU_CONVERSATIONS_SERVER_ID,
         instructions=(
@@ -164,9 +185,11 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
         ),
     )
 
-    def require_conversation_access(execution: McpExecutionContext) -> None:
+    def read_scope(execution: McpExecutionContext) -> ConversationReadScope:
+        """The server grant admits the caller; the profile-DAG scope decides which rows it sees."""
         if not access.allows(execution.caller, HAKU_CONVERSATIONS_SERVER_ID):
             raise ToolError("in-process server access denied")
+        return conversation_reads.scope_for(execution.caller)
 
     @mcp.tool
     async def list_sessions(
@@ -178,8 +201,10 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
         execution: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
     ) -> SessionPage:
         """List past sessions, newest first. Use `conversation_id` to group continuations."""
-        require_conversation_access(execution)
-        sessions, more = split_page(await reader.list_sessions(cursor=cursor, limit=limit + 1), limit=limit)
+        scope = read_scope(execution)
+        sessions, more = split_page(
+            await reader.list_sessions(cursor=cursor, limit=limit + 1, scope=scope), limit=limit
+        )
         return SessionPage(items=sessions, next_cursor=SessionCursor.of(more) if more is not None else None)
 
     @mcp.tool
@@ -195,8 +220,12 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
         execution: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
     ) -> TurnPage:
         """List a session's exchanges with cost, duration, outcome, and frame range."""
-        require_conversation_access(execution)
-        turns, more = split_page(await reader.list_turns(session_id, cursor=cursor, limit=limit + 1), limit=limit)
+        scope = read_scope(execution)
+        try:
+            rows = await reader.list_turns(session_id, cursor=cursor, limit=limit + 1, scope=scope)
+        except ConversationAccessDeniedError:
+            raise ToolError("conversation access denied") from None
+        turns, more = split_page(rows, limit=limit)
         return TurnPage(items=turns, next_cursor=TurnCursor.of(more) if more is not None else None)
 
     @mcp.tool
@@ -221,10 +250,12 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
         calls and results are separate entries joined by `call_id`. A `prompt` entry says who asked
         in its `origin`: `harness` is the agent resuming its own session, which nobody typed.
         """
-        require_conversation_access(execution)
-        entries, more = split_page(
-            await reader.read_conversation_items(conversation_id, cursor=cursor, limit=limit + 1), limit=limit
-        )
+        scope = read_scope(execution)
+        try:
+            rows = await reader.read_conversation_items(conversation_id, cursor=cursor, limit=limit + 1, scope=scope)
+        except ConversationAccessDeniedError:
+            raise ToolError("conversation access denied") from None
+        entries, more = split_page(rows, limit=limit)
         return ItemPage(items=entries, next_cursor=more.seq if more is not None else None)
 
     @mcp.tool
@@ -250,16 +281,18 @@ def build_mcp(reader: ConversationReader, *, access: InProcessServerAccessPolicy
         ] = None,
     ) -> FramePage:
         """Read a session's native harness frames in order, rather than its normalized items."""
-        require_conversation_access(execution)
-        frames, more = split_page(
-            await reader.read_frames(
+        scope = read_scope(execution)
+        try:
+            rows = await reader.read_frames(
                 session_id,
                 cursor=cursor,
                 limit=limit + 1,
+                scope=scope,
                 kinds=None if kinds is None else [BridgeFrameKind(kind) for kind in kinds],
-            ),
-            limit=limit,
-        )
+            )
+        except ConversationAccessDeniedError:
+            raise ToolError("conversation access denied") from None
+        frames, more = split_page(rows, limit=limit)
         return FramePage(items=frames, next_cursor=more.frame_seq if more is not None else None)
 
     return mcp

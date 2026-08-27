@@ -8,6 +8,7 @@ an empty result rather than an error, which reads as "never discussed".
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,6 +46,7 @@ async def query_chat(
     *,
     index_id: str,
     limit: int,
+    readable_profiles: Sequence[str] | None,
     session_id: UUID | None = None,
     budget: ChunkBudget = DEFAULT_CHUNK_BUDGET,
 ) -> list[ChatSearchHit]:
@@ -54,6 +56,7 @@ async def query_chat(
         index_id=index_id,
         model_key=embedder.model_key,
         limit=limit,
+        readable_profiles=readable_profiles,
         session_id=session_id,
         budget=budget,
     )

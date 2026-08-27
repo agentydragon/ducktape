@@ -112,6 +112,7 @@ async def sync_chat(
             shape.session_id,
             chunks,
             index_id=index_id,
+            conversation_id=shape.conversation_id,
             message_count=shape.message_count,
             last_message_at=shape.last_message_at,
             chunker_key=regime,

@@ -300,18 +300,19 @@ verbosity in a dedicated follow-up, with client-facing token budgets and semanti
 indexes its tier grants. The fence is the tier, not the room, so cross-room and cross-session
 reads remain open within a tier.
 
-Named logical indexes, multi-index search, and the public `ducktape-public` index are built. The
-remaining boundary is ordered work:
+Most of the boundary is built: named logical indexes with per-profile `recall_index_ids` grants
+enforced server-side, and one profile-DAG read authorizer (`conversation_read_access.py`, #4431
+stage 5) that fences both `haku_conversations` drilldowns and `haku_index` chat search on the
+conversation's pinned `access_profile_id` — semantic discovery and direct drilldown share one
+boundary, and unknown/unpinned data fails closed for agents.
 
-1. Add a tier to agent kinds and conversations. Matrix room tier is authoritative; data predating
-   the field reads as highest trust.
-2. Route chat occurrences to tier-specific indexes while keeping `chunks` as the shared embedding
-   cache.
-3. Give each agent explicit readable index ids and enforce them in <recall_index_reader.py>.
-   Omitted `index_ids` means all granted indexes; unknown or ungranted names fail closed.
-4. Apply the same decision to `haku_conversations` (`list_sessions`, `list_turns`, and transcript/
-   rollout reads), so semantic discovery and direct drilldown share one boundary.
-5. Replace the single `haku_recall_reads` authority with per-index grants.
+What remains is the tier generalization, when several agent kinds and shared rooms arrive:
+
+1. Add a tier to agent kinds and Matrix rooms, derive each conversation's label from them (room
+   tier authoritative where both exist) instead of equating label with the launch profile; data
+   predating any label keeps reading as highest trust.
+2. Decide whether tier-specific chat indexes replace the per-conversation profile join, keeping
+   `chunks` as the shared embedding cache either way.
 
 Full trust design: <../plans/information_trust_tiers.md>. Current index operation and the RLS
 alternative: <../recall_index/README.md> § Read scoping.

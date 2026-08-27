@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import ItemStatus, ItemType, RuntimeKind
 from haku.console.config import ChatRecallIndexDefinition, GitRecallIndexDefinition, RecallIndexSettings
+from haku.console.conversation_read_access import UnrestrictedReads
 from haku.console.database_schema import Conversation, ConversationItem, Operator, Session
 from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.operator_identity import OperatorStatus
@@ -224,8 +225,12 @@ async def test_every_configured_index_is_synchronized_and_individually_searchabl
     await synchronize_and_embed(migrated_engine, migrated_sessions, embedder, *indexes)
 
     searcher = PostgresIndexSearcher(migrated_sessions, embedder, indexes=indexes)
-    git_results = await searcher.search("egress", index_id="haku-state", limit=5, session_id=None)
-    chat_results = await searcher.search("egress", index_id="console-chat", limit=5, session_id=None)
+    git_results = await searcher.search(
+        "egress", index_id="haku-state", limit=5, session_id=None, scope=UnrestrictedReads()
+    )
+    chat_results = await searcher.search(
+        "egress", index_id="console-chat", limit=5, session_id=None, scope=UnrestrictedReads()
+    )
     assert {hit.source.kind for hit in git_results.hits} == {"git"}
     assert {hit.source.index_id for hit in git_results.hits} == {"haku-state"}
     assert {hit.source.kind for hit in chat_results.hits} == {"chat"}
@@ -284,7 +289,9 @@ async def test_source_current_but_embedding_pending_reports_the_remote_tip_and_p
     assert git.indexed_commit == git.remote_commit
     assert git.branch == "main"
     assert git.pending_chunks == 1
-    results = await searcher.search("egress", index_id=haku_state.index_id, limit=5, session_id=None)
+    results = await searcher.search(
+        "egress", index_id=haku_state.index_id, limit=5, session_id=None, scope=UnrestrictedReads()
+    )
     assert results.hits == []
     assert results.index is not None
 

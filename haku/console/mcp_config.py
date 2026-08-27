@@ -316,8 +316,11 @@ class AccessProfile(BaseModel):
     # Chat runtime launch authority is configuration-owned.  The durable Agent row supplies the
     # selected profile; callers never get to supply this field.
     allowed_chat_runtimes: set[RuntimeKind] = Field(default_factory=set)
-    # Future read authorization is represented as a reviewed, acyclic graph here.  This release
-    # validates and stores the graph only; no Recall/conversation read path consults it yet.
+    # Conversation-history visibility: which other profiles' conversations this one may read,
+    # acyclic and transitive with self-read implicit. `conversation_read_access` derives the one
+    # read scope both `haku_conversations` drilldowns and `haku_index` chat search enforce. The
+    # graph grants information visibility only — never tool authority, approvals, credentials, or
+    # runtime grants.
     can_read_profiles: set[str] = Field(default_factory=set)
 
 

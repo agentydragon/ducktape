@@ -75,6 +75,19 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_conversation_read_access",
+    srcs = ["test_conversation_read_access.py"],
+    deps = [
+        ":conversation_read_access",
+        ":grant_principal",
+        ":mcp_config",
+        ":mcp_execution",
+        ":tool_call_actor",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "mcp_config",
     srcs = ["mcp_config.py"],
@@ -143,6 +156,7 @@ py_library(
     srcs = ["recall_index_reader.py"],
     deps = [
         ":config",
+        ":conversation_read_access",
         ":database_schema",
         ":mcp_config",
         "//haku/console/tools:recall_index",
@@ -169,6 +183,17 @@ py_library(
 )
 
 py_library(
+    name = "conversation_read_access",
+    srcs = ["conversation_read_access.py"],
+    deps = [
+        ":grant_principal",
+        ":mcp_config",
+        ":mcp_execution",
+        ":tool_call_actor",
+    ],
+)
+
+py_library(
     name = "in_process_server_access",
     srcs = ["in_process_server_access.py"],
     deps = [
@@ -184,6 +209,7 @@ py_library(
     srcs = ["in_process_servers.py"],
     deps = [
         ":config",
+        ":conversation_read_access",
         ":in_process_server_access",
         ":mcp_config",
         ":recall_index_access",
@@ -1764,6 +1790,7 @@ py_test(
         ":chat_models",
         ":config",
         ":conftest",
+        ":conversation_read_access",
         ":database_schema",
         ":operator_identity",
         ":recall_index_reader",

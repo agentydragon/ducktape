@@ -13,6 +13,12 @@ from fastmcp.client.client import CallToolResult
 from more_itertools import one
 
 from haku.console.chat_models import BridgeFrameKind, RuntimeKind
+from haku.console.conversation_read_access import (
+    ConversationAccessDeniedError,
+    ConversationReadAccessPolicy,
+    ConversationReadScope,
+    ProfileScopedReads,
+)
 from haku.console.grant_principal import RequestPrincipal
 from haku.console.in_process_server_access import InProcessServerAccessPolicy
 from haku.console.mcp_config import AccessProfile
@@ -57,9 +63,17 @@ CODER = AgentActor(
     binding_id=UUID("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
     access_profile_id="public-coder",
 )
-ACCESS = InProcessServerAccessPolicy(
-    (AccessProfile(id="haku", auto_approval_policy="manual", in_process_server_ids={"haku_conversations"}),)
+PROFILES = (
+    AccessProfile(
+        id="haku",
+        auto_approval_policy="manual",
+        in_process_server_ids={"haku_conversations"},
+        can_read_profiles={"public-coder"},
+    ),
+    AccessProfile(id="public-coder", auto_approval_policy="manual"),
 )
+ACCESS = InProcessServerAccessPolicy(PROFILES)
+READS = ConversationReadAccessPolicy(PROFILES)
 
 # Every tool that pages, and how a page of it is asked for. The point of the surface is that this
 # list can be walked with one loop, so the tests below walk it.
@@ -130,15 +144,25 @@ def _tool_result(seq: int, *, structured: object) -> ToolResultEntry:
 class _Reader:
     """A `ConversationReader` over lists, recording how it was queried."""
 
-    def __init__(self, *frames: HarnessFrameRecord, entries: Sequence[ConversationEntry] = ()):
+    def __init__(self, *frames: HarnessFrameRecord, entries: Sequence[ConversationEntry] = (), denies: bool = False):
         self._frames: list[FrameRecord] = list(frames)
         self._entries = list(entries)
+        self._denies = denies
         self.queries: list[dict] = []
         self.session_cursors: list[SessionCursor | None] = []
+        self.scopes: list[ConversationReadScope] = []
         # Newest first, the order the store lists them in.
         self._sessions = [_session(SESSION, NOW), _session(OLDER_SESSION, NOW - datetime.timedelta(hours=1))]
 
-    async def list_sessions(self, *, cursor: SessionCursor | None, limit: int) -> list[SessionRecord]:
+    def _point_read(self, scope: ConversationReadScope) -> None:
+        self.scopes.append(scope)
+        if self._denies:
+            raise ConversationAccessDeniedError("out of scope")
+
+    async def list_sessions(
+        self, *, cursor: SessionCursor | None, limit: int, scope: ConversationReadScope
+    ) -> list[SessionRecord]:
+        self.scopes.append(scope)
         self.session_cursors.append(cursor)
         return [
             session
@@ -147,15 +171,25 @@ class _Reader:
         ][:limit]
 
     async def read_frames(
-        self, session_id: UUID, *, cursor: int | None, limit: int, kinds: Sequence[BridgeFrameKind] | None = None
+        self,
+        session_id: UUID,
+        *,
+        cursor: int | None,
+        limit: int,
+        scope: ConversationReadScope,
+        kinds: Sequence[BridgeFrameKind] | None = None,
     ) -> list[FrameRecord]:
+        self._point_read(scope)
         self.queries.append({"session_id": session_id, "cursor": cursor, "limit": limit, "kinds": kinds})
         selected = [frame for frame in self._frames if kinds is None or frame.kind in kinds]
         if cursor is not None:
             selected = [frame for frame in selected if frame.frame_seq >= cursor]
         return selected[:limit]
 
-    async def list_turns(self, session_id: UUID, *, cursor: TurnCursor | None, limit: int) -> list[TurnRecord]:
+    async def list_turns(
+        self, session_id: UUID, *, cursor: TurnCursor | None, limit: int, scope: ConversationReadScope
+    ) -> list[TurnRecord]:
+        self._point_read(scope)
         self.queries.append({"session_id": session_id, "cursor": cursor, "limit": limit})
         return [
             TurnRecord(
@@ -164,15 +198,16 @@ class _Reader:
         ][:limit]
 
     async def read_conversation_items(
-        self, conversation_id: UUID, *, cursor: int | None, limit: int
+        self, conversation_id: UUID, *, cursor: int | None, limit: int, scope: ConversationReadScope
     ) -> list[ConversationEntry]:
+        self._point_read(scope)
         self.queries.append({"conversation_id": conversation_id, "cursor": cursor, "limit": limit})
         selected = self._entries if cursor is None else [entry for entry in self._entries if entry.seq >= cursor]
         return selected[:limit]
 
 
 def _mcp(reader: _Reader):
-    return build_mcp(reader, access=ACCESS)
+    return build_mcp(reader, access=ACCESS, conversation_reads=READS)
 
 
 def _meta(actor: ToolCallActor = HAKU) -> dict[str, object]:
@@ -226,6 +261,31 @@ async def test_unprofiled_unknown_and_operator_actors_cannot_read_conversations(
         result = await _call(client, "list_sessions", {}, actor=actor, raise_on_error=False)
     assert result.is_error
     assert reader.session_cursors == []
+
+
+async def test_every_read_carries_the_callers_profile_dag_scope() -> None:
+    """The row fence rides on every read: the caller's profile plus its transitive
+    `can_read_profiles` closure, computed by the one authorizer Recall also uses."""
+    reader = _Reader(_frame(1), entries=[_message(2, first_frame_seq=1)])
+
+    async with Client(_mcp(reader)) as client:
+        for tool, arguments in PAGED_TOOLS:
+            await _call(client, tool, arguments)
+
+    assert reader.scopes == [ProfileScopedReads(readable_profile_ids=frozenset({"haku", "public-coder"}))] * len(
+        PAGED_TOOLS
+    )
+
+
+async def test_a_read_outside_the_scope_is_refused_as_denied() -> None:
+    """Loud, not empty: a denied session must not read as an exhausted or absent one."""
+    reader = _Reader(_frame(1), entries=[_message(2, first_frame_seq=1)], denies=True)
+
+    async with Client(_mcp(reader)) as client:
+        for tool, arguments in PAGED_TOOLS[1:]:  # every point read; the listing filters instead
+            result = await _call(client, tool, arguments, raise_on_error=False)
+            assert result.is_error, tool
+            assert "conversation access denied" in str(result.content), tool
 
 
 async def test_every_listing_answers_in_the_same_shape() -> None:

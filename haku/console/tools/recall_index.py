@@ -19,6 +19,7 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, Field
 
+from haku.console.conversation_read_access import ConversationReadAccessPolicy, ConversationReadScope
 from haku.console.mcp_execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext
 from haku.console.recall_index_access import RecallIndexAccessPolicy
 
@@ -45,6 +46,9 @@ class ChatSource(BaseModel):
     kind: Literal["chat"] = "chat"
     index_id: str
     session_id: UUID = Field(description="Pass to `haku_conversations` to read the session around this.")
+    conversation_id: UUID = Field(
+        description="The thread the window's session ran — `read_conversation_items` takes it directly."
+    )
     room_id: str | None = Field(description="The Matrix room this session served, if it served one.")
     message_ids: list[UUID] = Field(description="The messages this window holds, in order.")
     first_message_at: datetime.datetime
@@ -112,12 +116,16 @@ class SearchResults(BaseModel):
 
 
 class IndexSearcher(Protocol):
-    async def search(self, query: str, *, index_id: str, limit: int, session_id: UUID | None) -> SearchResults: ...
+    async def search(
+        self, query: str, *, index_id: str, limit: int, session_id: UUID | None, scope: ConversationReadScope
+    ) -> SearchResults: ...
 
     async def status(self, *, index_ids: tuple[str, ...]) -> IndexStatus: ...
 
 
-def build_mcp(searcher: IndexSearcher, *, access: RecallIndexAccessPolicy) -> FastMCP:
+def build_mcp(
+    searcher: IndexSearcher, *, access: RecallIndexAccessPolicy, conversation_reads: ConversationReadAccessPolicy
+) -> FastMCP:
     mcp: FastMCP = FastMCP(name=HAKU_INDEX_SERVER_ID, instructions="Semantic recall over configured logical indexes.")
 
     @mcp.tool
@@ -147,7 +155,16 @@ def build_mcp(searcher: IndexSearcher, *, access: RecallIndexAccessPolicy) -> Fa
         """
         if not access.allows(execution.caller, index_id):
             raise ToolError("recall index access denied")
-        results = await searcher.search(query, index_id=index_id, limit=limit, session_id=session_id)
+        # Chat hits are additionally fenced by the caller's profile-DAG read scope — the same
+        # authorizer `haku_conversations` applies to direct reads, so ranked retrieval cannot
+        # surface a conversation the drilldown would refuse.
+        results = await searcher.search(
+            query,
+            index_id=index_id,
+            limit=limit,
+            session_id=session_id,
+            scope=conversation_reads.scope_for(execution.caller),
+        )
         return results if include_content else results.without_content()
 
     @mcp.tool

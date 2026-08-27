@@ -78,6 +78,7 @@ py_library(
     srcs = ["conversations.py"],
     visibility = ["//haku/console:__subpackages__"],
     deps = [
+        "//haku/console:conversation_read_access",
         "//haku/console:in_process_server_access",
         "//haku/console:mcp_execution",
         "//haku/console:tool_call_actor",
@@ -92,6 +93,7 @@ py_library(
     srcs = ["recall_index.py"],
     visibility = ["//haku/console:__subpackages__"],
     deps = [
+        "//haku/console:conversation_read_access",
         "//haku/console:mcp_config",
         "//haku/console:mcp_execution",
         "//haku/console:recall_index_access",
@@ -107,6 +109,7 @@ py_test(
     deps = [
         ":recall_index",
         "//:conftest",
+        "//haku/console:conversation_read_access",
         "//haku/console:grant_principal",
         "//haku/console:mcp_config",
         "//haku/console:mcp_execution",
@@ -125,6 +128,7 @@ py_test(
     deps = [
         ":conversations",
         "//:conftest",
+        "//haku/console:conversation_read_access",
         "//haku/console:grant_principal",
         "//haku/console:in_process_server_access",
         "//haku/console:mcp_config",

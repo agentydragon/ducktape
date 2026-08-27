@@ -29,6 +29,7 @@ class SessionShape:
     """What a session looks like in the source, which is what decides whether to re-index it."""
 
     session_id: UUID
+    conversation_id: UUID
     message_count: int
     last_message_at: datetime.datetime
 
@@ -37,11 +38,13 @@ async def session_shapes(source: AsyncSession) -> list[SessionShape]:
     """Every session with something to index, and the shape the sync compares against.
 
     One grouped scan rather than a query per session: the common run finds nothing changed, and
-    that should cost one round trip for the whole corpus.
+    that should cost one round trip for the whole corpus. A session's items all carry its one
+    conversation, so grouping by the pair still yields one row per session.
     """
     result = await source.execute(
         select(
             ConversationItem.session_id,
+            ConversationItem.conversation_id,
             func.count().label("message_count"),
             func.max(ConversationItem.created_at).label("last_message_at"),
         )
@@ -50,7 +53,7 @@ async def session_shapes(source: AsyncSession) -> list[SessionShape]:
             ConversationItem.item_type.in_(_SAID),
             ConversationItem.status == ItemStatus.COMPLETE,
         )
-        .group_by(ConversationItem.session_id)
+        .group_by(ConversationItem.session_id, ConversationItem.conversation_id)
     )
     return [SessionShape(**row) for row in result.mappings()]
 

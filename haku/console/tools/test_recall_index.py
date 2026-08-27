@@ -9,6 +9,12 @@ import pytest
 import pytest_bazel
 from fastmcp import Client
 
+from haku.console.conversation_read_access import (
+    ConversationReadAccessPolicy,
+    ConversationReadScope,
+    ProfileScopedReads,
+    UnrestrictedReads,
+)
 from haku.console.grant_principal import RequestPrincipal
 from haku.console.mcp_config import AccessProfile
 from haku.console.mcp_execution import (
@@ -33,6 +39,7 @@ from haku.console.tools.recall_index import (
 
 NOW = datetime.datetime(2026, 8, 14, 9, 0, tzinfo=datetime.UTC)
 SESSION = UUID("11111111-1111-1111-1111-111111111111")
+CONVERSATION = UUID("44444444-4444-4444-4444-444444444444")
 MESSAGES = [UUID("22222222-2222-2222-2222-222222222222"), UUID("33333333-3333-3333-3333-333333333333")]
 HAKU = AgentActor(
     agent_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
@@ -46,17 +53,21 @@ CODER = AgentActor(
     binding_id=UUID("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
     access_profile_id="public-coder",
 )
-ACCESS = RecallIndexAccessPolicy(
-    (
-        AccessProfile(id="haku", auto_approval_policy="manual", recall_index_ids={"haku-state", "haku-conversations"}),
-        AccessProfile(id="public-coder", auto_approval_policy="manual", recall_index_ids={"ducktape-public"}),
+PROFILES = (
+    AccessProfile(
+        id="haku",
+        auto_approval_policy="manual",
+        recall_index_ids={"haku-state", "haku-conversations"},
+        can_read_profiles={"public-coder"},
     ),
-    configured_index_ids=("haku-state", "haku-conversations", "ducktape-public"),
+    AccessProfile(id="public-coder", auto_approval_policy="manual", recall_index_ids={"ducktape-public"}),
 )
+ACCESS = RecallIndexAccessPolicy(PROFILES, configured_index_ids=("haku-state", "haku-conversations", "ducktape-public"))
+READS = ConversationReadAccessPolicy(PROFILES)
 
 
 def _mcp(searcher: _Searcher):
-    return build_mcp(searcher, access=ACCESS)
+    return build_mcp(searcher, access=ACCESS, conversation_reads=READS)
 
 
 def _meta(actor: ToolCallActor = HAKU) -> dict[str, object]:
@@ -100,6 +111,7 @@ def _chat_hit(score: float) -> SearchHit:
         source=ChatSource(
             index_id="haku-conversations",
             session_id=SESSION,
+            conversation_id=CONVERSATION,
             room_id="!room:allegedly.works",
             message_ids=MESSAGES,
             first_message_at=NOW,
@@ -115,8 +127,12 @@ class _Searcher:
         self.queries: list[dict] = []
         self.status_queries: list[tuple[str, ...]] = []
 
-    async def search(self, query: str, *, index_id: str, limit: int, session_id: UUID | None) -> SearchResults:
-        self.queries.append({"query": query, "index_id": index_id, "limit": limit, "session_id": session_id})
+    async def search(
+        self, query: str, *, index_id: str, limit: int, session_id: UUID | None, scope: ConversationReadScope
+    ) -> SearchResults:
+        self.queries.append(
+            {"query": query, "index_id": index_id, "limit": limit, "session_id": session_id, "scope": scope}
+        )
         return SearchResults(hits=self.hits, index=await self.status(index_ids=(index_id,)) if self.behind else None)
 
     async def status(self, *, index_ids: tuple[str, ...]) -> IndexStatus:
@@ -163,12 +179,13 @@ async def test_a_git_hit_carries_the_index_and_exact_file_pointer() -> None:
     )
 
 
-async def test_a_chat_hit_carries_its_index_session_room_and_messages() -> None:
+async def test_a_chat_hit_carries_its_index_session_conversation_room_and_messages() -> None:
     async with Client(_mcp(_Searcher(_chat_hit(0.8)))) as client:
         (hit,) = (await _call(client, "search", {"query": "egress fence", "index_id": "haku-conversations"})).data.hits
-    assert (hit.source["index_id"], hit.source["session_id"], hit.source["room_id"]) == (
+    assert (hit.source["index_id"], hit.source["session_id"], hit.source["conversation_id"], hit.source["room_id"]) == (
         "haku-conversations",
         str(SESSION),
+        str(CONVERSATION),
         "!room:allegedly.works",
     )
     assert hit.source["message_ids"] == [str(message_id) for message_id in MESSAGES]
@@ -200,6 +217,23 @@ async def test_authorized_index_and_session_filter_reach_the_searcher() -> None:
         await _call(client, "search", {"query": "intake", "index_id": "haku-conversations", "session_id": str(SESSION)})
     query = searcher.queries[-1]
     assert (query["index_id"], query["session_id"]) == ("haku-conversations", SESSION)
+
+
+async def test_search_rides_on_the_callers_profile_dag_read_scope() -> None:
+    """An Agent's chat hits are fenced by the same closure the drilldown applies; the Operator's
+    scope is the whole corpus."""
+    searcher = _Searcher()
+    async with Client(_mcp(searcher)) as client:
+        await _call(client, "search", {"query": "intake", "index_id": "haku-conversations"})
+        await _call(
+            client,
+            "search",
+            {"query": "public", "index_id": "ducktape-public"},
+            actor=OperatorActor(operator_id=HAKU.operator_id),
+        )
+    agent_query, operator_query = searcher.queries
+    assert agent_query["scope"] == ProfileScopedReads(readable_profile_ids=frozenset({"haku", "public-coder"}))
+    assert operator_query["scope"] == UnrestrictedReads()
 
 
 async def test_ungranted_index_fails_before_embedding_or_querying() -> None:

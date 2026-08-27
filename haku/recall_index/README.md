@@ -323,51 +323,40 @@ inventory below stays because the reasoning does not: the moment a second operat
 should not see exists, ranked retrieval is where that leaks first, and this is the list of what
 would have to change.
 
-**The chat corpus is unscoped: every session, whichever room or operator it served.**
-That inherits the Matrix channel's own rule (<../console/x/channels/matrix/SPEC.md> § The agent's
-own view), which leaves the policy deliberately open for `list_sessions`/`read_frames` — the
-eventual policy about which Haku may read which past conversation is not settled, and guessing at
-one here would be a scoping rule nobody stated.
+**The chat corpus is fenced per conversation.** Two layers, decided at two times:
 
-Semantic search is not the same exposure as that drilldown, and the difference is why this is
-written down rather than left inherited. A keyword drilldown makes reading another room's
-conversation a deliberate act: you have to name the session. Ranked retrieval surfaces it
-**by accident**, at the top of the results, in response to an innocent question. Same data, same
-policy gap, materially different odds of tripping over it.
+- **Which indexes a caller may search at all** is the per-profile `recall_index_ids` grant,
+  enforced server-side in the console (`recall_index_access.py`). The gate is the named logical
+  index, not a predicate every read path has to remember.
+- **Which conversations a caller's chat hits may come from** (#4431 stage 5): every chat
+  occurrence names its `conversation_id`, search joins it to the conversation's pinned
+  `access_profile_id`, and candidates outside the caller's profile-DAG read closure
+  (`haku/console/conversation_read_access.py` over `can_read_profiles`) are excluded in the same
+  materialized CTE that already filters chunker and model — **before** the distance operator, so
+  an unauthorized window loses by exclusion, never by rank. `search_chat` therefore requires a
+  `readable_profiles` decision from every caller; `None` is the browser Operator's whole-corpus
+  scope, and conversations predating pinned identity match no profile list.
 
-Nothing was blocked on it while there was one operator and one agent. It is the prerequisite for
-exposing the corpus through `/mcp` to a **second** agent.
+The drilldown shares the fence: `haku_conversations`'s `list_sessions`, `list_turns`,
+`read_conversation_items` and `read_frames` apply the same scope, because scoping search but not
+the drilldown it hands off to would be theatre — the ids in a hit are exactly what those reads
+take. Why ranked retrieval was the urgent half is worth keeping: a drilldown makes reading
+another conversation a deliberate act (you have to name the session), while ranked retrieval
+surfaces it **by accident**, at the top of the results, in answer to an innocent question.
 
-**The trigger condition has since arrived, and the intended answer is not a filter.** Several
-agent kinds at several information trust levels (<../plans/information_trust_tiers.md>) is exactly
-the "a room Haku should not see" case above. The direction chosen there: `IndexType` is the
-**type** (`git`/`chat` — how content is chunked and addressed) and gains named **instances**
-configured per repo and per tier, so the gate is which indexes a caller may search rather than a
-predicate every read path has to remember.
+Globally-addressed `contents` and `content_embeddings` are deliberately outside the fence: two
+indexes, or two conversations, can share exact content and its vector, while identity and access
+policy live on source occurrences — the rows a hit hands back. The occurrence links to the
+conversation and never duplicates a profile label, so revoking or re-pinning reads requires no
+re-index.
 
-Consequences for this package, and note where they do **not** land: globally-addressed
-`contents` and `content_embeddings` are unchanged by source-instance scoping. Two instances can
-share the same exact content and its semantic representation, while identity and access policy
-live on source occurrences — the rows a hit hands back. `git_tip` becomes keyed `(index, path)`,
-`git_sync_state` gains a row per index (retiring its `id = 1` singleton CHECK), chat occurrences
-derive their instance from the session, and the permitted-instance join belongs in the same
-materialized CTE that already filters the current chunker and model before the distance operator.
+What remains open here is the trust-tier generalization
+(<../plans/information_trust_tiers.md>): tier labels for Matrix rooms and agent kinds, and
+per-tier chat indexes if the label ever needs to move off the conversation's pinned profile.
+`cluster/k8s/haku/console/config.yaml` still decides which agents get the tools at all and under
+which auto-approval policy — an unscoped read tool on the unconditional auto-approve list is the
+configuration this section exists to prevent.
 
-What settling it touches:
-
-- **`haku/recall_index/store.py`** — `search_chat` takes an optional `session_id` and nothing
-  else. A scope is a `WHERE` over `sessions.operator_id`, or over the address of the
-  `chat_attachment` on the session's conversation, which means the search joins those tables (or
-  `chat_chunks` denormalizes both).
-- **`haku/console/tools/conversations.py`** — `list_sessions`, `list_turns`,
-  `read_conversation_items` and `read_frames` are unscoped by the same open decision. Scoping search but not the drilldown it
-  hands off to would be theatre: the message ids in a hit are exactly what `read_frames` takes.
-- **Whatever identity the scope keys on.** An Agent's canonical identity and owning Operator come
-  from `haku/console/agents/authorization.py` and `mcp_agent_auth.py`; a room-scoped rule instead
-  needs the calling session's own conversation, which the in-process server would have to be told.
-- **`cluster/k8s/haku/console/config.yaml`** — which agents get the tool at all, and under which
-  auto-approval policy. An unscoped read tool on the unconditional auto-approve list is the
-  configuration this section exists to prevent.
 - **<../plans/information_trust_tiers.md>** — where the decision belongs once made, since the fence
   that replaces "unscoped" is the information tier rather than the room. The alternative worth
   weighing against it is an RLS-scoped Postgres role, which pushes scoping into the database

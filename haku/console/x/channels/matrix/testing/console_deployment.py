@@ -22,6 +22,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import ItemType, SessionStatus
+from haku.console.conversation_read_access import UnrestrictedReads
 from haku.console.database_schema import ConversationItem, MatrixSyncWatermark
 from haku.console.x.session_store import SessionStore
 from haku.console.x.testing.waiting import BUDGET_SECONDS, WedgedError, wait_until
@@ -231,7 +232,15 @@ class Deployment:
     async def wait_for_finished_turns(self, session_id: UUID, count: int) -> None:
         async def finished() -> bool:
             return (
-                len([turn for turn in await self._store.list_turns(session_id, cursor=None, limit=50) if turn.ended_at])
+                len(
+                    [
+                        turn
+                        for turn in await self._store.list_turns(
+                            session_id, cursor=None, limit=50, scope=UnrestrictedReads()
+                        )
+                        if turn.ended_at
+                    ]
+                )
                 >= count
             )
 

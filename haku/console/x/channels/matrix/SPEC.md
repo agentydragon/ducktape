@@ -227,11 +227,12 @@ over Matrix, and any write surface for the agent beyond its own replies.
   none of it in the sandbox. The cost to settle first is that the secrets transform is
   **host**-scoped, so fencing off send, join and admin needs a path allowlist it may not have.
 
-- **Reads are unscoped across rooms and past conversations**, deliberately and for now. The fence
-  that replaces this is the information tier, not the room
-  (<../../../../plans/information_trust_tiers.md>) — a decision function at one console call site,
-  not scoping smeared through the transport, which is a second reason to keep the tools plain HTTP
-  entries rather than closures over a session.
+- **Reads cross rooms and past conversations; the fence is the reader's profile closure, not the
+  room.** One decision function at the console (`conversation_read_access.py`, the profile DAG
+  over each conversation's pinned profile) scopes the drilldown and semantic recall alike — not
+  scoping smeared through the transport, which is a second reason to keep the tools plain HTTP
+  entries rather than closures over a session. The tier generalization of that label remains
+  planned (<../../../../plans/information_trust_tiers.md>).
 - **IDs are given, not guessed.** Nothing renders one into a prompt, so the only ones the agent holds
   are what the operator pasted; a permalink is accepted as input, since that is what a client
   produces on "copy link". A finding drawn from a room message cites the message, in a form the

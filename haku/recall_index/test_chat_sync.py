@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import uuid
+from collections.abc import Sequence
 from uuid import UUID
 
 import pytest
@@ -57,13 +58,21 @@ async def new_operator(source: AsyncSession) -> UUID:
     return operator_id
 
 
-async def new_session(source: AsyncSession, operator_id: UUID) -> UUID:
+async def new_session(source: AsyncSession, operator_id: UUID, *, access_profile_id: str | None = None) -> UUID:
     session_id = uuid.uuid4()
     conversation_id = uuid.uuid4()
+    agent_id: UUID | None = None
+    if access_profile_id is not None:
+        # A pinned profile requires its pinned agent (`ck_conversation_agent_profile_pair`); the
+        # stub `agents` table the fixture creates satisfies the foreign key.
+        agent_id = uuid.uuid4()
+        await source.execute(text("INSERT INTO agents (agent_id) VALUES (:agent_id)"), {"agent_id": agent_id})
     source.add(
         Conversation(
             conversation_id=conversation_id,
             operator_id=operator_id,
+            agent_id=agent_id,
+            access_profile_id=access_profile_id,
             runtime_kind=RuntimeKind.CLAUDE_CODE,
             created_at=_NOW,
         )
@@ -152,11 +161,14 @@ async def find(
     *,
     index_id: str = _CHAT_INDEX,
     session_id: UUID | None = None,
+    readable_profiles: Sequence[str] | None = None,
 ) -> list[ChatSearchHit]:
-    return await query_chat(session, embedder, query, index_id=index_id, limit=5, session_id=session_id)
+    return await query_chat(
+        session, embedder, query, index_id=index_id, limit=5, readable_profiles=readable_profiles, session_id=session_id
+    )
 
 
-async def test_a_hit_names_the_session_and_the_messages_it_holds(
+async def test_a_hit_names_the_session_its_conversation_and_the_messages_it_holds(
     chat_source: AsyncSession, operator_id: UUID, embedder: FakeEmbedder
 ) -> None:
     session_id = await new_session(chat_source, operator_id)
@@ -166,7 +178,37 @@ async def test_a_hit_names_the_session_and_the_messages_it_holds(
 
     (hit,) = await find(chat_source, embedder, "alpha")
     assert hit.session_id == session_id
+    assert hit.conversation_id == await chat_source.scalar(
+        select(Session.conversation_id).where(Session.session_id == session_id)
+    )
     assert hit.message_ids == [asked, answered]
+
+
+async def test_search_excludes_conversations_outside_the_readable_profiles(
+    chat_source: AsyncSession, operator_id: UUID, embedder: FakeEmbedder
+) -> None:
+    """The profile fence applies before ranking: an unauthorized window is excluded, not outranked.
+
+    A conversation predating pinned identity (`access_profile_id IS NULL`) matches no profile list
+    — only the unfenced (`None`) search reaches it — and an empty list matches nothing at all.
+    """
+    haku_session = await new_session(chat_source, operator_id, access_profile_id="haku")
+    coder_session = await new_session(chat_source, operator_id, access_profile_id="public-coder")
+    legacy_session = await new_session(chat_source, operator_id)
+    for session_id in (haku_session, coder_session, legacy_session):
+        await say(chat_source, session_id, "theta rollout plan", minute=0)
+    await run_sync(chat_source, embedder)
+
+    def found(hits: list[ChatSearchHit]) -> set[UUID]:
+        return {hit.session_id for hit in hits}
+
+    assert found(await find(chat_source, embedder, "theta")) == {haku_session, coder_session, legacy_session}
+    assert found(await find(chat_source, embedder, "theta", readable_profiles=("haku", "public-coder"))) == {
+        haku_session,
+        coder_session,
+    }
+    assert found(await find(chat_source, embedder, "theta", readable_profiles=("public-coder",))) == {coder_session}
+    assert await find(chat_source, embedder, "theta", readable_profiles=()) == []
 
 
 async def test_a_second_conversation_index_has_its_own_windows(
