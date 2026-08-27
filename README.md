@@ -88,29 +88,29 @@ Lockfile and generated manifest workflows: <devinfra/docs/lockfiles.md>.
 
 ### `plans/`
 
-`<dir>/plans/` holds future work and work-in-progress design notes. Delete a plan once it is fully
-done; keep a short tombstone only when an active compatibility or deprecation boundary still needs
-a pointer.
+`<dir>/plans/` holds future work and work-in-progress design notes; a component with one
+central plan uses `<dir>/PLAN.md` instead (e.g. `loom/PLAN.md`, `haku/PLAN.md`).
 
-When a component has one central plan, put it at `<dir>/PLAN.md` instead of a single-file `plans/` directory (e.g. `loom/PLAN.md`, `haku/PLAN.md`). Same lifecycle: delete or tombstone once fully done.
+**A plan is a burn-down**: an entry _leaves_ when its work lands (never parked as done),
+and the whole plan is deleted once fully done — at most a short tombstone while an
+active compatibility boundary needs a pointer.
 
-**A plan is a burn-down, so it must be able to empty out.** An entry _leaves_ when its work lands, rather than staying behind marked done — a plan that accumulates completed items stops being a list of what to do next and becomes archaeology.
+**Nothing outside a plan may cite one** — no code comment, `SPEC.md`, or doc pointing at
+a plan's numbered requirement or step. A citation pins the entry permanently; needing a
+stable identifier is the signal the content is not plan content.
 
-**So nothing outside a plan may cite one.** No code comment, no `SPEC.md`, no other document pointing at a plan's numbered requirement, stage or step. A citation pins that entry in place permanently: it can no longer be deleted without breaking the reference, and the numbers outlive the work they described. Something needing a stable identifier is the signal that the content is not plan content.
-
-**Durable requirements and design go somewhere durable.** State the invariant at the code site if one place depends on it, in the component's `SPEC.md` if it is part of what that component guarantees, or as a design doc under `<dir>/docs/` if several places reason from it. Then the plan entry is free to disappear when the work does.
-
-**But the goal a plan exists to reach is plan content.** A rule the code does not hold to yet — stated so every step can be checked against it — belongs in the plan, and leaves with the last step that achieves it. Naming the target is what a plan is for, and a plan whose steps cannot be checked against anything is a list of chores.
-
-The test is whether the statement outlives the work. A rule the finished system still needs stated is durable and goes above; a rule that becomes unremarkable once the work lands is the plan's own. A design doc describing the target architecture is the usual companion: it says how the finished thing is meant to work, the plan says what is left before that is true, and the plan may point at the doc.
+**Durable content goes somewhere durable**: the invariant at the code site, the
+guarantee in `SPEC.md`, the design in a doc under `<dir>/docs/`. The goal the plan
+exists to reach _is_ plan content — a rule the code does not hold to yet leaves with the
+last step that achieves it. The test is whether the statement outlives the work.
 
 ### `debug/`
 
 `<dir>/debug/<topic>.md` holds an active investigation, RCA work in progress, or a reproducible
 diagnostic procedure. Delete it when resolved, or promote its durable lesson to the current docs.
-The `cluster/` subproject uses `cluster/docs/lessons_learned/` instead.
-
-A note belongs here because it is a multi-step debugging story or an investigation still in progress — not because it is long. Length is a consequence of that content, never a licence: a `debug/` note is held to the same standard as any other prose (<STYLE.md> § Documentation), and padding or after-the-fact justification gets cut here too.
+The `cluster/` subproject uses `cluster/docs/lessons_learned/` instead. A `debug/` note is held
+to the same prose standard as everything else (<STYLE.md> § Documentation) — being an
+investigation is not a licence for padding or after-the-fact justification.
 
 ### `archive/`
 

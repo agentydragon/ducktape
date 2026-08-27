@@ -34,7 +34,6 @@ instead, so they load on demand.
 
 ## General
 
-- **Modern Python**: `|` unions, `:=`, `match`.
 - **Enter async early**: a single `asyncio.run(async_main(...))` at the top of `main()`;
   never scattered or nested deeper in the call stack.
 - **No large code blobs in YAML/JSON**: any embedded script/config block longer than ~5
@@ -48,40 +47,33 @@ instead, so they load on demand.
 - **No footgun defaults**: require a parameter when every correct production caller must
   supply real configuration or dependency wiring. A fallback value must represent a valid
   omission in the contract, not merely spare callers from plumbing the authoritative value.
-- **No dead code**: remove unused code and historical comments (ruff F401 catches
-  unused imports).
-- **No redundant derived fields**: don't return a collection plus a trivially computable
-  function of it (a list and its `len()`). Exception: pagination `total_count`.
 - **Every field needs a reader**: a set-but-never-read field is dead payload. Authoring
   provenance goes in inert `#` comments next to the data, not schema fields (`note:`);
   delete write-only fields that survived refactors.
-- **No unnecessary aliasing**: no import renames, fixture re-assignment, trivial
-  parameter aliasing, or convenience re-exports (`AgentEvent = EventType`). Aliases only
-  at public API boundaries (`__init__.py` re-exports) or to avoid collisions, with a
-  comment.
+- **No redundant derived fields**: don't return a collection plus a trivially computable
+  function of it (a list and its `len()`). Exception: pagination `total_count`.
+- **No unnecessary aliasing**: no import renames, fixture re-assignment, or convenience
+  re-exports (`AgentEvent = EventType`). Aliases only at public API boundaries
+  (`__init__.py` re-exports) or to avoid collisions, with a comment.
 - **Import from the defining module**, never from a module that happens to re-export
   the symbol.
 - **No dynamic attribute probing** (`getattr`/`hasattr`/`setattr`) unless justified and
   documented; in tests, assert attributes directly.
 - **Exceptions**:
-  - **Never swallow**: no bare/broad `except` as a silent fallback, no defaulting to
-    empty values on parse/IO errors — real errors must surface. Broad catch is fine
-    only for cleanup-then-`raise` (e.g. `__exit__`).
-  - **Degrade loud, not silent**: where a fallback genuinely is correct (best-effort
-    cache write, optional prefill, non-critical fetch, graceful UI degradation), the
-    `catch` still **logs the exception** at `warning`/`error` via a module-level logger.
-    No empty `catch {}`, comment-only catch, or `.catch(() => {})` — unless the failure
-    already surfaces elsewhere (the caller re-throws with the detail), where a second
-    log is noise.
+  - **No silent fallbacks**: no bare/broad `except` swallowing, no defaulting to empty
+    values on parse/IO errors. Broad catch only for cleanup-then-`raise` (e.g. `__exit__`).
+  - **Degrade loud**: where a fallback genuinely is correct (best-effort cache write,
+    optional prefill, graceful UI degradation), the `catch` still **logs the exception**
+    at `warning`/`error` via a module-level logger — no empty or comment-only `catch` —
+    unless the failure already surfaces elsewhere (caller re-throws with the detail).
   - **Raise, don't return error lists**, from validation/precondition checks.
   - **Let them propagate** to the single error boundary (CLI wrapper, request
     middleware, FastMCP handler — FastMCP already converts unhandled exceptions to MCP
-    errors). Catch only to transform, add context, or genuinely handle.
-  - **Don't restate parser/IO exceptions**: no wrappers that just say "invalid file" —
-    the original `OSError`/parser error/`ValidationError` already carries the details.
+    errors). Catch only to transform, add context, or genuinely handle. Don't wrap
+    parser/IO exceptions in "invalid file" restatements — the original carries the
+    details.
   - **Not control flow**: query preconditions first and execute without catch; don't
     execute-catch-and-parse-the-fault for foreseeable states.
-  - **Bugs crash**: don't catch errors that indicate programming bugs.
 - **Express code concisely**: every line does work; inline single-use subexpressions;
   no no-op short-circuits; no single-use intermediate variables.
 - **Strict data mapping**: invalid enum/typed inputs raise early; never `continue`
@@ -94,11 +86,6 @@ instead, so they load on demand.
   writer of a new value still waits a release wherever ignoring it is not the correct
   answer. Which readers those are, and how to tell: <haku/console/README.md>
   § Vocabularies across a roll.
-- **Prefer functional style**: comprehensions and idiomatic patterns over loop-and-append.
-- **Functions over classes** when there's no state to manage.
-- **Use framework features** (e.g. typer `exists=True`) over manual checks.
-- **Precise types**: discriminated unions, Protocols, TypedDicts, concrete models.
-  `Any`/`object` only when truly anything is allowed; document such cases.
 - **Make invalid states unrepresentable**: a union of variant types over flag+optional
   combos that permit nonsense (`hook_installed=False, pid=42`). Dispatch on variants
   with `isinstance` (mypy narrows), not discriminator-string compares — except in
@@ -108,10 +95,10 @@ instead, so they load on demand.
 - **Dataclasses for internal types, Pydantic at boundaries**: `@dataclass` for purely
   internal typed objects; `BaseModel` where you need (de)serialization, validation,
   JSON schema, or Field validators.
-- **Pydantic as typed objects**: direct attribute access (`model.field`), parse dicts
-  into models at the boundary; `dict.get(...)` only for truly untyped external payloads.
-  Construct models, not schema-shaped dicts, in tests; never `Mock()` a Pydantic model;
-  no `model_dump()` except at I/O boundaries.
+- **Pydantic as typed objects**: direct attribute access, parse dicts into models at
+  the boundary; `dict.get(...)` only for truly untyped external payloads. Construct
+  models, not schema-shaped dicts, in tests; never `Mock()` a Pydantic model; no
+  `model_dump()` except at I/O boundaries.
 - **`Field(description=...)`** for per-field docs, not a class docstring listing fields.
 - **Explicit keyword arguments** when arguments are known; `Model.model_validate(data)`
   over `TypeAdapter(...)` unless adapter semantics are needed.
@@ -122,17 +109,15 @@ instead, so they load on demand.
 - **`f"{x=}"`** in error/log/debug strings, not `f"x={x!r}"`.
 - **Logging**: module-level `logger = logging.getLogger(__name__)` only — never inside
   functions or stored on `self`.
-- **`pathlib.Path`** throughout; `str(path)` only when an external API requires it.
 - **No string forward references**: reorder/split files to remove cycles; for
   cross-module cycles use `if TYPE_CHECKING:` with real symbols, not quoted names or
   `model_rebuild()`.
 - **No unnecessary `__init__.py`**: Bazel auto-generates stubs via `imports = [...]`;
-  create one only to expose a public API or configure the namespace.
-- **No `__all__`** without a specific need (public `import *` surface, `__init__.py`
-  re-export lint).
+  create one only to expose a public API or configure the namespace. **No `__all__`**
+  without a specific need.
 - **No grab-bag modules** (`core.py`, `utils.py`, `constants.py`): name modules by what
-  they do; organize by domain, not by role.
-- **Flat over nested**: a subdirectory with <3 files gets flattened.
+  they do; organize by domain, not by role. **Flat over nested**: a subdirectory with
+  <3 files gets flattened.
 - **Sets for unordered collections** (`set[T]`); lists only when order or duplicates
   matter.
 - **Prefer `more_itertools`**: `one()` when more than one match is a bug, `first()`
@@ -184,9 +169,9 @@ py_binary(
 
 ### TypeScript: one `ts_library` per module
 
-**`ts_library` (`//devinfra/js:ts_library.bzl`) is how TypeScript is built here.** One target
-per module, `srcs` listing that module's file(s), `tsconfig` naming the package tree's shared
-`ts_config`:
+**`ts_library` (`//devinfra/js:ts_library.bzl`) is how TypeScript is built here.** One
+target per module, `srcs` listing that module's file(s), `tsconfig` naming the package
+tree's shared `ts_config`:
 
 ```python
 ts_library(
@@ -197,36 +182,24 @@ ts_library(
 )
 ```
 
-It wraps `ts_project`: tsc emits the `.js` and `.d.ts` in the same action that type-checks them,
-so **the type check is the build step** — `bazel build` fails on a type error, and a module's
-dependencies are what it declares. Bundlers (`spa_bundle`, `esbuild`) take the emitted `.js`, so
-their `entry_point` is `main.js`, not `main.tsx`. vitest runs the emitted `.test.js`, so every
-spec is its own `ts_library` too and `vitest.config.ts`'s `include` is `["**/*.test.js"]`.
+It wraps `ts_project`: the type check is the build step, and a module's dependencies are
+what it declares. Bundlers (`spa_bundle`, `esbuild`) take the emitted `.js` (entry point
+`main.js`, not `main.tsx`); vitest runs the emitted `.test.js`, so every spec is its own
+`ts_library` and `vitest.config.ts` includes `["**/*.test.js"]`.
 
-**Never `js_library` for `.ts`/`.tsx`, and never a whole-project `tsc_test`.** `js_library` only
-stages files; a codebase built from it needs a second target re-listing every file to check it,
-the two lists drift, and what falls through is checked by nothing — silently, which is how three
-haku-console fixtures rendered as raw JSON (#3599, #3604, #3610). `js_library` remains right for
-`.mjs`/`.js` and for staging generated declarations.
+**Never `js_library` for `.ts`/`.tsx`, and never a whole-project `tsc_test`** — files
+fall through the second hand-maintained list and end up checked by nothing, silently.
+`js_library` remains right for `.mjs`/`.js` and staging generated declarations.
 
-Three consequences worth knowing before they surprise you:
+Gotchas: a generated `.ts` needs compiling like any other (macros that emit TypeScript
+take a `tsconfig` and emit a `ts_library`); every `.tsx` needs
+`//:node_modules/@types/react` even without importing a React symbol (TS2742);
+whole-program tools (type-aware ESLint) need a `filegroup` glob of the sources plus
+`no_copy_to_bin`, since `ts_library` does not propagate `.ts`.
 
-- **A generated `.ts` needs compiling like any other.** rules_js classifies it as a source, not a
-  type, and `ts_project` pulls only its deps' types into the compile — so a `js_library`-wrapped
-  generated module reads as "cannot find module". Macros that emit TypeScript
-  (`js_openapi_zod`, `data_uri_module`) take a `tsconfig` and emit a `ts_library`.
-- **Every `.tsx` needs `//:node_modules/@types/react`**, including a file that imports no React
-  symbol itself — JSX element types and inferred component types come from there (TS2742).
-- **A whole-program tool still needs the sources.** Type-aware ESLint reads `.ts`, which a
-  `ts_library` does not propagate. Feed it a `filegroup` glob and set `no_copy_to_bin` on the
-  test, or `ts_project`'s copy-to-bin and the staging copy become two actions writing one path.
-  A glob is right here: the tool runs over the whole directory, and unlike a hand-written list it
-  cannot fall behind a new file.
-
-**Svelte packages keep `svelte_check_test`.** `ts_project` cannot process `.svelte`, and
-`svelte_check` already type-checks components and their `.ts` as one program driven by the
-tsconfig's globs off the `:app` library graph — there is no second hand-maintained list, so the
-drift this pattern prevents does not arise there.
+**Svelte packages keep `svelte_check_test`** — `ts_project` cannot process `.svelte`,
+and `svelte_check` already checks components and their `.ts` as one program with no
+second hand-maintained list.
 
 ### System CA certificates in distroless images
 
@@ -249,41 +222,31 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
 - **Concise test bodies**: assertions in tests, setup in fixtures.
 - **Update tests with production code**: signature/behavior changes propagate to the
   tests that use them, in the same change.
-- **Use the real test environment, not local platform shims**: when code depends on
-  standard browser or runtime APIs, configure the test runner with an implementation
-  that provides them. Mock only test-specific behavior or genuine external boundaries;
-  do not reimplement the expected platform piecemeal inside a spec.
+- **Use the real test environment, not local platform shims**: configure the test
+  runner with an implementation of the platform APIs the code depends on. Mock only
+  test-specific behavior or genuine external boundaries; do not reimplement the
+  platform piecemeal inside a spec.
 - **Test externally meaningful behavior, not implementation text**: assert observable
   behavior, public API contracts, schemas, and durable invariants — never inspect
-  implementation source text, count or forbid source fragments, or pin method identity
-  and source signatures. A user-facing source-inspection feature may be exercised
-  through its public boundary, but must not pin the inspected source's contents.
-  Negative coding guidance belongs in this file, a module/file header comment, or a
-  linter/static-analysis rule when it is genuinely enforceable; clever source-pattern
-  tests are brittle and are not a substitute for design.
-- **No pure change-detector tests**: every expectation must encode a durable rule, not
-  duplicate the artifact's current state. Reading a checked-in YAML/JSON/XML file and copying
-  its current values, shape, roster, or whole contents into assertions is not coverage — an
-  intentional edit must change the test in exactly the same way, so the test can distinguish
-  no correct state from an incorrect one. Moving the duplicate into a fixture or test constant
+  implementation source text, count or forbid source fragments, or pin method identity.
+  Negative coding guidance belongs in this file, a header comment, or a lint rule when
+  genuinely enforceable; source-pattern tests are brittle and not a substitute for
+  design.
+- **No pure change-detector tests**: every expectation encodes a durable rule, not the
+  artifact's current state. Copying a checked-in file's values, shape, or roster into
+  assertions is not coverage — an intentional edit changes the test in lockstep, so it
+  cannot distinguish correct from incorrect state; moving the duplicate into a fixture
   does not help.
-  - Independence is **semantic, not physical**. The source of truth may be another artifact,
-    an external contract, or an invariant authored in the test about relationships within the
-    same file. A test that says two LiteLLM routes must name the same downstream model and key
-    enforces a real rule even though both routes live in one YAML file; a test that copies the
-    current route roster into Python does not.
-  - Prefer relations (a configured path names a mounted file; paired fields stay equal; a
-    Service targets a declared container port), schemas or invariants that admit many valid
-    inputs, and logic/runtime behavior. Ask whether a plausible wrong edit would fail without
-    updating expected values in lockstep.
-  - Generated-output snapshots are valid when the test runs the generator. Exact wire-format
-    or compatibility pins are valid only when an external specification or still-live consumer
-    independently requires that value; name that contract in the test.
-  - Delete or rewrite assertions such as `config["session_ttl_seconds"] == 7200`, a copied
-    manifest dict, a copied enum/roster, or `version_num == "0011"`. Prefer, respectively, a
-    timeout behavior test, semantic correspondence within or across manifests, behavior for
-    each mode, or migrating a fresh database to ORM parity and proving head re-application
-    idempotent.
+  - Independence is **semantic, not physical**: an invariant about relationships within
+    one file ("two LiteLLM routes name the same downstream model") is a real rule; a
+    copied roster is not.
+  - Prefer relations (a configured path names a mounted file; a Service targets a
+    declared container port), schemas/invariants that admit many valid inputs, and
+    runtime behavior. Ask whether a plausible wrong edit would fail without updating
+    expected values in lockstep.
+  - Generated-output snapshots are valid when the test runs the generator. Exact
+    wire-format pins are valid only when an external contract or still-live consumer
+    requires that value; name that contract in the test.
 - **No lint silencing without approval**: no ignore rules or per-line silencing unless
   explicitly approved.
 - **Use pre-commit**: `pre-commit run --all-files` over invoking individual tools.
@@ -293,60 +256,48 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
 ## Documentation
 
 **Remove**: docstrings/comments that restate the name, signature, or next line; Args/
-Returns sections echoing types; trivial class docstrings; obvious docstrings longer than
-one line; historical "used to" comments; **prose arguing that the current code is correct** —
-what was here before, why the change was right, what alternative was rejected; `# === Section ===`
-banners; changelog comments; self-referential counts of an adjacent list ("the three steps
-below") — they drift silently as rows are added, so let the list speak or derive the count;
-**process narration** — the order the work landed in, which step or milestone a change belongs
-to, what it replaced, what it is waiting on. An actionable transition is a **tombstone** (above);
-nothing else about the sequence earns a line.
+Returns sections echoing types; trivial class docstrings; historical "used to"
+comments; **prose arguing that the current code is correct** — what was here before,
+why the change was right, what alternative was rejected; `# === Section ===` banners;
+changelog comments; self-referential counts of an adjacent list ("the three steps
+below") — they drift as rows change; **process narration** — the order work landed in,
+what it replaced, what it is waiting on. An actionable transition is a **tombstone**
+(above); nothing else about the sequence earns a line. That justifying register belongs
+in the commit message or PR — where someone is deciding whether to accept the change —
+not in the file, where nobody is deciding any more.
 
-That justifying register belongs in the commit message, the PR, or the reply handed back with the
-work — wherever someone is deciding whether to accept it. It does not survive into the file,
-because once the change has landed nobody is deciding any more.
+**Keep**: TODOs/FIXMEs near their context; non-obvious behavior (edge cases,
+invariants, preconditions, contracts); why-comments; system/integration context not
+visible locally (action at a distance, shared-state mutation); disambiguation of
+ambiguous names ("container-side path" vs "host-side"); test intent comments naming the
+edge case under test.
 
-**What ships is the artifact, not an account of building it.** A television leaves the factory
-with a service sticker inside, not a book about designing televisions. A reader arriving at a file
-wants the system as it works now, and every sentence about how it came to work that way is one
-they must read and discard first. Git already holds that story for the rare reader who wants it,
-which is exactly why the file does not have to.
+**A past state earns a comment only when a future editor has to act on it** — a
+migration still in flight, a compatibility requirement that still binds, a roll-safety
+constraint that still holds. Those are instructions wearing a historical tense.
 
-**Keep**: TODOs/FIXMEs near their context; non-obvious behavior (edge cases, invariants,
-preconditions, contracts); why-comments; system/integration context not visible locally
-(action at a distance, shared-state mutation); disambiguation of ambiguous names
-("container-side path" vs "host-side"); test intent comments naming the edge case under
-test.
-
-**A past state earns a comment only when a future editor has to act on it** — a migration still
-in flight, a compatibility requirement that still binds, a roll-safety constraint that still
-holds. Those are instructions wearing a historical tense. A past state that only explains why
-the present code is right is not: the present code being right is not news.
-
-**Heuristics**: if deleting it loses zero information, delete it. "Why" earns its place;
-"what" rarely does. Public API boundaries tolerate more verbosity than internal code. Judge the
-file and not only the line: every comment can pass the test above while the file still reads as
-narration with some code in it. If prose is most of what a reader scrolls past, keep cutting.
+**Heuristics**: if deleting it loses zero information, delete it. "Why" earns its
+place; "what" rarely does. Judge the file and not only the line: every comment can pass
+the test above while the file still reads as narration with some code in it. If prose
+is most of what a reader scrolls past, keep cutting.
 
 ### Documentation lifecycle
 
-- Live docs describe the present, active work, durable invariants, and lessons a future maintainer
-  needs. Git already records superseded behavior, completed plans, and incident timelines.
-- Delete resolved `debug/` notes and completed plans only after moving any surviving workaround,
-  required option combination, fragility warning, or recurrence clue beside the current code,
-  contract, or design. Keep that note short and link the upstream bug or fixing commit when it helps
-  a future maintainer recognize the same failure.
-- If an upstream fix made the workaround unnecessary, retain at most a one- or two-line warning when
-  the area remains unusually fragile. Keep a tombstone only while an active compatibility or
-  deprecation boundary needs a pointer; do not create archives or indexes merely to preserve history.
+- Live docs describe the present, active work, durable invariants, and lessons a future
+  maintainer needs. Git already records superseded behavior, completed plans, and
+  incident timelines.
+- Delete resolved `debug/` notes and completed plans only after moving any surviving
+  workaround, fragility warning, or recurrence clue beside the current code, contract,
+  or design — short, with a link to the upstream bug or fixing commit when it helps
+  recognize the same failure.
+- If an upstream fix made a workaround unnecessary, retain at most a one- or two-line
+  warning where the area remains unusually fragile. No archives or indexes merely to
+  preserve history.
 
-**Then say what is left in fewer words.** Deletion is not the only edit: prose that carries real
-information can still take more clauses and more sentence structure than the information needs,
-and that survives the test above because nothing would be lost by keeping it. Prefer the
-parsimonious, to-the-point form over the elaborate one — plain sentences over stacked subordinate
-clauses, one em-dash aside rather than three. When tightening, the information content must be
-unchanged; dropping a caveat to shorten a sentence is a deletion and needs a deletion's
-justification.
+**Then say what is left in fewer words.** Prose that survives the deletion test can
+still take more clauses than the information needs — prefer the parsimonious form.
+When tightening, the information content must be unchanged; dropping a caveat is a
+deletion and needs a deletion's justification.
 
 ### Deviations, Not Re-explanations
 
@@ -375,10 +326,8 @@ special characters (`*` → `\*`).
 - **Always specify a language** on fenced blocks (markdownlint MD040 enforces it):
   ` ```python `, ` ```bash `, ` ```yaml `; use ` ```text ` for ASCII art/diagrams.
 - **Split logically separate content** (different tools, APIs, or categories) into
-  separate fenced blocks under markdown headings — don't mix categories or use prose
-  headers as lines inside one block.
-- Wrap structured output (JSON/YAML/command output) in a fenced block with the right
-  language; never leave raw JSON bare in prose.
+  separate fenced blocks under markdown headings; wrap structured output in a fenced
+  block with the right language — never raw JSON bare in prose.
 
 ### Brace-Expansion Shorthand for Lists
 

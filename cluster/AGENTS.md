@@ -34,14 +34,9 @@ applies the previous state and reads as a failed change.
 `tf/gitops/sso-providers/` (Authentik OAuth2 providers) and `tf/gitops/forgejo-props/`
 (Forgejo registry user) both manage objects inside another stateful system whose IDs
 they record in tfstate. Wiping the backing DB without also clearing the tofu state
-triggers `Unable to read … not found with id N` failures on the next plan.
-
-State now lives in the `tofu-state-db` CNPG cluster (one schema per `Terraform` CR),
-not in the old `tfstate-default-*` k8s secrets (those were retired with the
-kubernetes-backend migration). Recovery procedure for both this and the historical
-secret-based variant: <docs/troubleshooting.md> § "Resource ID Desync After Wiping a
-Backing Datastore". Original incident write-up:
-<docs/lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md>.
+triggers `Unable to read … not found with id N` failures on the next plan. State lives
+in the `tofu-state-db` CNPG cluster (one schema per `Terraform` CR). Recovery:
+<docs/troubleshooting.md> § "Resource ID Desync After Wiping a Backing Datastore".
 
 ### DNS and website must survive OVH-only
 
@@ -59,12 +54,6 @@ Invariants".
 4. Done = bootstrap->verify passes
 5. SSO required for all in-scope applications
 
-### Debugging Broken Bootstrap
-
-Investigate root cause (events, describe, flux kustomization status) and fix declarative config.
-Common patterns: missing `dependsOn`, CRD not installed before instance, secret not deployed
-before consumer.
-
 ## Bootstrap Script
 
 **Only supported method**: `bazel run //cluster:bootstrap`
@@ -73,10 +62,7 @@ Handles preflight validation, targeted applies against `terraform/main/` (persis
 infrastructure -> full apply), SOPS age key deployment. Requires `dangerouslyDisableSandbox: true`
 and `timeout: 600000` (10 min). Takes ~15-20 min.
 
-## Testing
-
-Includes validation scripts, Helm lint, Terraform format/lint/validate. When adding new
-Terraform modules, create BUILD.bazel targets for format, lint, and validate.
+New Terraform modules get BUILD.bazel targets for format, lint, and validate.
 
 ## Operational Context
 
@@ -87,20 +73,15 @@ Terraform modules, create BUILD.bazel targets for format, lint, and validate.
 ## Cilium Gateway Status
 
 The public `cluster-gateway` intentionally uses Cilium Gateway API in
-`gatewayAPI.hostNetwork.enabled` mode. Envoy binds ports 80/443 directly on the
-OVH Kubernetes nodes, and Route 53 wildcard/apex records point at those node IPs.
-There is no provider-managed `LoadBalancer`/VIP object for Cilium to report as a
-Gateway address.
-
-Because of that exposure model, `gateway-system/cluster-gateway` can report
-`Programmed=False` with `AddressNotAssigned` / `Address not ready yet` even while
-HTTPRoutes are accepted, Envoy listeners are serving traffic, and public probes
-succeed. Do not treat that condition alone as an outage or try to "fix" it by
-adding static `Gateway.spec.addresses`; that would not create provider-level
-failover. Check HTTPRoute `Accepted`/`ResolvedRefs`, Cilium/Envoy programming,
-and blackbox probes against the public node IPs instead. See <docs/plan.md>
-"Cilium Gateway API `Programmed=False`" for the full rationale and migration
-options.
+`gatewayAPI.hostNetwork.enabled` mode: Envoy binds 80/443 directly on the OVH nodes and
+Route 53 records point at those node IPs, so there is no provider `LoadBalancer`/VIP for
+Cilium to report as a Gateway address. `gateway-system/cluster-gateway` can therefore
+report `Programmed=False` (`AddressNotAssigned`) even while HTTPRoutes are accepted and
+public probes succeed. Do not treat that condition alone as an outage or "fix" it by
+adding static `Gateway.spec.addresses` (that would not create provider-level failover) —
+check HTTPRoute `Accepted`/`ResolvedRefs`, Cilium/Envoy programming, and blackbox probes
+against the public node IPs instead. Full rationale and migration options:
+<docs/plan.md> "Cilium Gateway API `Programmed=False`".
 
 ## Key Files
 
@@ -136,17 +117,13 @@ SOPS files, tofu resources, or external credential requirements.
 
 ### Annotating a SOPS-encrypted Secret
 
-Adding annotations/labels to a `*.sops.yaml` Secret needs **no manual re-MAC** —
-encrypting recomputes the MAC. But these files set no `mac_only_encrypted`, so
-the document MAC covers metadata too: a **raw text edit** of the ciphertext
-(without re-encrypting) fails decryption with a `MAC mismatch` (verified —
-adding one annotation to a real `*.sops.yaml` Secret breaks `sops -d`). Go
-through `sops`: with the cluster age key, `sops <file>` edits and re-MACs in one
-step. An **agent** that lacks the key can still _encrypt_ to a rule's recipients
-(encryption only needs their public keys), so it authors the whole Secret as
-plaintext and `sops -e -i`s it — minting a fresh value for any opaque field it
-can't recover (i.e. rotate). Example: `k8s/wayback-cache/token.sops.yaml` carries
-the emberstack reflector annotations inline and was (re)authored that way.
+These files set no `mac_only_encrypted`, so the document MAC covers metadata: a **raw
+text edit** of the ciphertext (adding an annotation without re-encrypting) fails
+decryption with `MAC mismatch`. Go through `sops`: with the cluster age key,
+`sops <file>` edits and re-MACs in one step. An agent without the key can still
+_encrypt_ to a rule's recipients, so it authors the whole Secret as plaintext and
+`sops -e -i`s it — minting a fresh value for any opaque field it can't recover (i.e.
+rotate).
 
 ### Description Annotations
 
@@ -168,21 +145,15 @@ re-reds on every image update. Use block style in those files.
 
 When adding agent read access to a new service namespace, create a new `agent-rbac/`
 directory — never add RoleBindings to `agent-rbac-base` or `shared-rbac`. The full
-three-layer split, permission scopes, and the sandbox quota live once in the agent RBAC base
-README, transcluded here:
-
-@k8s/agents/agent-rbac-base/README.md
+three-layer split, permission scopes, and the sandbox quota:
+<k8s/agents/agent-rbac-base/README.md>.
 
 ## Storage Selection
 
-**Prefer replicated/distributed storage (`seaweedfs-ovh`) over node-local storage
-(`local-path-*`) for app PVCs.** A SeaweedFS volume is served from the SeaweedFS
-cluster, not the consuming pod's node, so the pod can reschedule across nodes (drain,
-node loss, rebalance) and keep its data. `local-path-*` pins the pod to the one node
-that owns the directory — a node failure strands the volume. New OVH-hosted apps default
-to `seaweedfs-ovh` for document/media/state volumes.
-
-Use `local-path-*` only when:
+**Prefer replicated storage (`seaweedfs-ovh`) over node-local (`local-path-*`) for app
+PVCs** — SeaweedFS volumes are not node-pinned, so pods reschedule across drain, node
+loss, and rebalance. New OVH-hosted apps default to `seaweedfs-ovh` for
+document/media/state volumes. Use `local-path-*` only when:
 
 - The workload does its **own** replication and must own a raw local disk — **CNPG
   Postgres** (follow <docs/cnpg_conventions.md>; never put a DB on SeaweedFS) and similar
@@ -190,30 +161,24 @@ Use `local-path-*` only when:
 - A benchmark shows SeaweedFS latency/throughput is inadequate for the workload
   (see <docs/seaweedfs_csi_bench.md>) — record the finding before falling back.
 
-Storage-class table and region notes live in <README.md> § Storage.
+## Flux Kustomization Wiring
 
-## Flux Kustomization Layering
+Flux `Kustomization` resources (`flux-kustomization.yaml`) are applied from the **root**
+`cluster/k8s/kustomization.yaml`. A directory's own `kustomization.yaml` lists only the
+manifests Flux applies at `spec.path` — **never its `flux-kustomization.yaml`**, which
+would apply it redundantly.
 
 **Never mix HelmReleases with CRD instances in the same Kustomization.**
-
-Layer 1 (CRD operators) → Layer 2 (secrets with ESO) → Layer 3 (app with HelmRelease).
-Each layer's `flux-kustomization.yaml` has `dependsOn` on previous.
-Violations are caught by the Bazel test `//cluster/validation:test_crd_layering`
-(part of the `//cluster/validation:test_*` suite that validates the cluster in CI).
+Layer 1 (CRD operators) → Layer 2 (secrets with ESO) → Layer 3 (app with HelmRelease),
+each layer's `flux-kustomization.yaml` with `dependsOn` on the previous. Violations are
+caught by `//cluster/validation:test_crd_layering`.
 
 - Flat example: `k8s/scanner/` — single flux-kustomization, all manifests at root
 - Grouped example: `k8s/langfuse/{namespace,secrets,db,app}/` — multi-layer with dependsOn
 
 ## Reference Documentation
 
-Read these on demand when the task requires them:
+Read on demand:
 
-- <docs/plan.md> — cluster roadmap, TODO list, suspended services, future directions
-- <docs/secrets.md> — SOPS procedures, adding/rotating secrets, age key management
-- <docs/bootstrap_dependencies.md> — full dependency graph for bootstrap recovery
-- <docs/cnpg_conventions.md> — CloudNativePG rules (2 profiles, storage, region pinning)
 - <docs/cilium_network_policy.md> — CiliumNetworkPolicy patterns for Gateway API backends (`fromEntities: [ingress]`, not host/remote-node)
-- <docs/troubleshooting.md> — diagnosis recipes for Talos, Cilium, tofu-controller,
-  secrets, DNS, and log retrieval (use Loki for logs of pods that no longer exist —
-  `kubectl logs` can't)
 - <docs/lessons_learned/> — past incident postmortems (ESO desync, MTU, hostname loss, etc.)
