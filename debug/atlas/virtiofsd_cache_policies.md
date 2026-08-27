@@ -1,4 +1,17 @@
-# virtiofsd Cache Policies
+# virtiofsd Cache Policies (atlas VMs)
+
+Applies to every virtiofs mount on atlas VMs — wyrm2 (wyrm's successor)
+still carries them. **Operational lesson** (from the wyrm VM 100 OOM saga,
+which recurred on wyrm2 when the fix wasn't carried over): `cache=auto` /
+`cache=metadata` grow FDs and shared memory unboundedly under
+directory-scanning workloads (git, indexers, language servers) — 450k FDs /
+tens of GB shmem until the host OOM-kills the KVM process. `cache=never` on
+all mounts fixed it both times.
+
+**Diagnose growth** (on atlas): `pgrep virtiofsd`, then per worker PID check
+`ls /proc/<pid>/fd | wc -l` and `ps -p <pid> -o rss=`. Healthy mounts sit at
+tens of FDs; >10k means the leak is back (check `qm config <vmid> | grep
+virtiofs` for the cache policy).
 
 **Source**: virtiofsd v1.13.3 (`/code/gitlab.com/virtio-fs/virtiofsd`)
 
@@ -120,7 +133,8 @@ Use `cache=metadata` if:
 
 Use NFS instead of virtiofs if:
 
-- Need MAP_SHARED mmap support (devenv, Nix)
+- Need MAP_SHARED mmap support (devenv, Nix) — NFS and the CephFS kernel
+  client support it fully; FUSE-based transports (virtiofs, ceph-fuse) do not
 - Want predictable memory usage
 - Can accept slightly higher latency (~50µs vs ~10µs)
 
