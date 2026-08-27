@@ -13,11 +13,12 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.console.chat_models import (
+    PROMPT_ORIGIN,
     BridgeFrameKind,
     FrameDirection,
     ItemStatus,
@@ -420,10 +421,6 @@ async def setup_narration(db: AsyncSession, session_id: UUID) -> list[SetupNarra
     ]
 
 
-# A union parse, which is what TypeAdapter exists for; the arms discriminate on `kind`.
-_PROMPT_ORIGIN = TypeAdapter[PromptOrigin](PromptOrigin)
-
-
 def item_view(item: ConversationItem) -> ConversationItemView:
     """One stored item, as a reader sees it. A projection of the row and nothing more."""
     return ConversationItemView(
@@ -437,7 +434,7 @@ def item_view(item: ConversationItem) -> ConversationItemView:
         outcome=item.outcome,
         structured=item.structured,
         disclosure=item.disclosure,
-        origin=None if item.origin is None else _PROMPT_ORIGIN.validate_python(item.origin),
+        origin=None if item.origin is None else PROMPT_ORIGIN.validate_python(item.origin),
         created_at=item.created_at,
         updated_at=item.updated_at,
     )

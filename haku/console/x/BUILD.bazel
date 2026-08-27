@@ -432,7 +432,9 @@ py_test(
         ":session_notifications",
         "//:conftest",
         "//haku/console:conftest",
+        "//util:sqlalchemy_types",
         "@pypi//asyncpg",
+        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

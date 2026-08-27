@@ -120,11 +120,10 @@ async def test_the_event_says_only_which_session_changed(
     """The wire shape is the contract: an invalidation, never the transcript itself, which would
     make the socket a second source of truth for what a session holds."""
     view, _ = await chat_store.create(operator_id)
-    conversation_id = await chat_store.conversation_of(view.session_id)
     socket = await _tab(hub, operator_id)
 
     async with migrated_sessions.begin() as db:
-        await notify(db, SessionEventKind.UPDATE, session_id=view.session_id, conversation_id=conversation_id)
+        await notify(db, SessionEventKind.UPDATE, view.session_id)
 
     assert [set(event) for event in await socket.session_events(within=WINDOW * 3)] == [{"event_type", "session_id"}]
 
@@ -139,12 +138,11 @@ async def test_a_burst_of_changes_becomes_one_invalidation(
     """A streaming turn changes a session per delta, and each event costs a tab a whole
     transcript — so coalescing is what keeps the notification cheaper than what it triggers."""
     view, _ = await chat_store.create(operator_id)
-    conversation_id = await chat_store.conversation_of(view.session_id)
     socket = await _tab(hub, operator_id)
 
     async with migrated_sessions.begin() as db:
         for _ in range(20):
-            await notify(db, SessionEventKind.UPDATE, session_id=view.session_id, conversation_id=conversation_id)
+            await notify(db, SessionEventKind.UPDATE, view.session_id)
 
     assert len(await socket.session_events(within=WINDOW * 3)) == 1
 
@@ -162,18 +160,8 @@ async def test_two_sessions_changing_together_are_invalidated_separately(
     socket = await _tab(hub, operator_id)
 
     async with migrated_sessions.begin() as db:
-        await notify(
-            db,
-            SessionEventKind.UPDATE,
-            session_id=first.session_id,
-            conversation_id=await chat_store.conversation_of(first.session_id),
-        )
-        await notify(
-            db,
-            SessionEventKind.UPDATE,
-            session_id=second.session_id,
-            conversation_id=await chat_store.conversation_of(second.session_id),
-        )
+        await notify(db, SessionEventKind.UPDATE, first.session_id)
+        await notify(db, SessionEventKind.UPDATE, second.session_id)
 
     events = await socket.session_events(within=WINDOW * 3)
     assert {event["session_id"] for event in events} == {str(first.session_id), str(second.session_id)}
@@ -190,12 +178,11 @@ async def test_an_update_is_not_delivered_to_another_operators_tab(
     """`SessionEvent` carries no operator, so the routing rests entirely on the session's row."""
     other_operator = await migrated_identity_store.resolve_configured_external_user_key("another-authentik-user-id")
     view, _ = await chat_store.create(operator_id)
-    conversation_id = await chat_store.conversation_of(view.session_id)
     mine = await _tab(hub, operator_id)
     theirs = await _tab(hub, other_operator)
 
     async with migrated_sessions.begin() as db:
-        await notify(db, SessionEventKind.UPDATE, session_id=view.session_id, conversation_id=conversation_id)
+        await notify(db, SessionEventKind.UPDATE, view.session_id)
 
     assert len(await mine.session_events(within=WINDOW * 3)) == 1
     assert await theirs.session_events(within=timedelta(0)) == []
@@ -211,7 +198,7 @@ async def test_a_session_this_database_does_not_have_is_dropped(
     socket = await _tab(hub, operator_id)
 
     async with migrated_sessions.begin() as db:
-        await notify(db, SessionEventKind.UPDATE, session_id=uuid4(), conversation_id=uuid4())
+        await notify(db, SessionEventKind.UPDATE, uuid4())
 
     assert await socket.session_events(within=WINDOW * 3) == []
 
@@ -229,16 +216,15 @@ async def test_a_failed_flush_does_not_stop_the_next_one(
     flaky = FlakyHub(migrated_db_url, operator_identity_store=migrated_identity_store)
     await flaky.start()
     view, _ = await chat_store.create(operator_id)
-    conversation_id = await chat_store.conversation_of(view.session_id)
     socket = await _tab(flaky, operator_id)
     try:
         async with SessionLiveUpdates(notifications, flaky, migrated_sessions, window=WINDOW).run():
             async with migrated_sessions.begin() as db:
-                await notify(db, SessionEventKind.UPDATE, session_id=view.session_id, conversation_id=conversation_id)
+                await notify(db, SessionEventKind.UPDATE, view.session_id)
             assert await socket.session_events(within=WINDOW * 3) == []
 
             async with migrated_sessions.begin() as db:
-                await notify(db, SessionEventKind.UPDATE, session_id=view.session_id, conversation_id=conversation_id)
+                await notify(db, SessionEventKind.UPDATE, view.session_id)
             assert len(await socket.session_events(within=WINDOW * 3)) == 1
     finally:
         await flaky.aclose()

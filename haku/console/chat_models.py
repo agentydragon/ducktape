@@ -7,7 +7,7 @@ surfaces that read and write them live in `x/` — an enum here cannot invert th
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 
 class SessionStatus(StrEnum):
@@ -114,6 +114,10 @@ class HarnessOrigin(BaseModel):
 
 
 type PromptOrigin = SpaOrigin | MatrixOrigin | HarnessOrigin
+
+# The one parse for a stored origin value — a union parse, which is what TypeAdapter exists for;
+# the arms discriminate on `kind`.
+PROMPT_ORIGIN = TypeAdapter[PromptOrigin](PromptOrigin)
 
 # The console's own surface, as one value rather than one per call: `SpaOrigin` carries nothing, so
 # every instance is the same statement and a shared frozen one says so.

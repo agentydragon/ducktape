@@ -43,6 +43,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import (
+    PROMPT_ORIGIN,
     HarnessOrigin,
     ItemStatus,
     ItemType,
@@ -80,7 +81,7 @@ from haku.console.x.session_events import (
     UnknownEventBody,
     UnreadableInputBody,
 )
-from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
+from haku.console.x.session_notifications import ConversationWakeEvent, RecheckHeld, SessionNotifications
 from haku.console.x.subscription import (
     START,
     ConversationStream,
@@ -433,14 +434,14 @@ class RoomNotices:
             item = await db.get(ConversationItem, item_id)
             if item is None or item.origin is None:
                 return None
-            origin = PromptStartedBody.model_validate({"item_type": ItemType.PROMPT, "origin": item.origin}).origin
+            origin = PROMPT_ORIGIN.validate_python(item.origin)
             return None if _arrived_here(origin, room_id) else RELAYED_PROMPT + item.item_text
 
-    def _wake(self, _conversation_id: UUID | None) -> None:
+    def _wake(self, _change: ConversationWakeEvent | RecheckHeld) -> None:
         """Note that some conversation moved. Runs on the listener's reader task: no awaiting.
 
-        The id is not kept: which conversation this room owes work for is resolved from the
-        binding inside `reconcile_once`, so a wake for any conversation is only "go look".
+        The wake is not inspected: which conversation this room owes work for is resolved from the
+        binding inside `reconcile_once`, so any conversation wake is only "go look".
         """
         self._changed.set()
 
@@ -482,7 +483,7 @@ class RoomNotices:
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator[None]:
-        with self._notifications.watch_conversations(SessionEventKind.UPDATE, self._wake):
+        with self._notifications.watch_conversations(self._wake):
             task = asyncio.create_task(self._run(), name="matrix-room-notices")
             try:
                 yield
