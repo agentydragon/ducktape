@@ -7,14 +7,15 @@
 #   plan  — builds nothing. bazel-ci already built every image's `.digest` sibling
 #           on this commit, so this asks that invocation's build event stream where
 #           each `<name>.json.sha256` is and fetches it (~70 bytes apiece), then
-#           compares against the newest `devel-*` tag — the tag Flux ImagePolicy
-#           picks. Emits a `matrix.include` of just the images that differ.
+#           compares against what `latest` holds — the content of the most recent
+#           publish. Emits a `matrix.include` of just the images that differ.
 #           See devinfra/ci/plan_image_pushes.py.
 #
-#   push  — per changed image: run its tests, `bb remote build` the OCI layout,
-#           `crane push` a new pinned tag and move `latest`. A failing test fails
-#           that image loudly and skips its push; other images are unaffected
-#           (`fail-fast: false`).
+#   push  — per changed image: run its tests, `bb remote build` the OCI layout, and
+#           push a new pinned tag unless the digest it just built is already the
+#           newest published one — the planner fails open, so "in the matrix" means
+#           unproven, not changed. A failing test fails that image loudly and skips
+#           its push; other images are unaffected (`fail-fast: false`).
 #
 # Typically nothing changed and the push matrix is empty, so a merge costs one job
 # instead of forty-three. Previously every image got its own runner to rediscover
@@ -52,8 +53,8 @@ on:
 # rollouts for ~2.5h on a busy merge day (#2759): do not "fix" this flag.
 #
 # Skipping the superseded commits is safe because publishing is content-addressed. Every
-# image's digest is compared against the newest `devel-*` tag in its registry, so whichever
-# run gets there publishes everything still outstanding — an image whose change landed in a
+# image's digest is compared against what its registry last published, so whichever run
+# gets there publishes everything still outstanding — an image whose change landed in a
 # coalesced commit still differs from the registry and is picked up by the next run.
 concurrency:
   group: push-images-${{ github.ref }}
@@ -204,6 +205,11 @@ jobs:
           fi
           echo "oci_dir=${DIGEST_FILES[0]%.json.sha256}" >> "$GITHUB_OUTPUT"
 
+      # Re-decides what the planner could only guess. The planner fails open, so an
+      # image it could not prove unchanged is here on suspicion; this job built the
+      # image and holds the digest it lacked, so it compares before minting a tag.
+      # Skipping that check costs a Flux commit and a rollout per merge for every
+      # image the `//...` sweep cannot see. See devinfra/ci/push_image.py.
       - name: Push image
         shell: bash
         env:
@@ -212,18 +218,8 @@ jobs:
           REGISTRY: ${{ matrix.registry }}
         run: |
           set -euo pipefail
-
-          if [ "$REGISTRY" = "forgejo" ]; then
-            REPO="git.allegedly.works/ducktape-ci/$IMAGE_NAME"
-          else
-            REPO="ghcr.io/agentydragon/$IMAGE_NAME"
-          fi
-
-          LOCAL_DIGEST=$(cat "${OCI_DIR}.json.sha256")
-          PINNED="devel-$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA::7}"
-          echo "$REPO: pushing $LOCAL_DIGEST as :$PINNED"
-          crane push "$OCI_DIR" "$REPO:$PINNED"
-          crane tag "$REPO:$PINNED" latest
+          python3 -m devinfra.ci.push_image \
+            --name "$IMAGE_NAME" --registry "$REGISTRY" --oci-dir "$OCI_DIR"
 
   # Props agent images go to the props registry (not GHCR): the props backend's
   # registry proxy fronts Forgejo, and the orchestrator + critic-dev flow pull

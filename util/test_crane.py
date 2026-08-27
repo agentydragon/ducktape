@@ -107,32 +107,6 @@ def test_digest_or_none_reraises_real_errors() -> None:
         crane.digest_or_none("repo:latest")
 
 
-def test_ls_or_none_returns_tags_when_the_repository_exists() -> None:
-    crane = Crane(path=Path("/nonexistent/crane"))
-    done = subprocess.CompletedProcess(args=["crane", "ls"], returncode=0, stdout="latest\ndevel-1\n", stderr="")
-    with patch("subprocess.run", return_value=done):
-        assert crane.ls_or_none("repo") == ["latest", "devel-1"]
-
-
-def test_ls_or_none_returns_none_for_a_repository_never_pushed_to() -> None:
-    crane = Crane(path=Path("/nonexistent/crane"))
-    fake_error = subprocess.CalledProcessError(
-        returncode=1, cmd=["crane", "ls", "repo"], stderr="NAME_UNKNOWN: repository name not known\n"
-    )
-    with patch("subprocess.run", side_effect=fake_error):
-        assert crane.ls_or_none("repo") is None
-
-
-def test_ls_or_none_reraises_real_errors() -> None:
-    """Same rule as digest_or_none: only crane's 'never pushed' answer is absence."""
-    crane = Crane(path=Path("/nonexistent/crane"))
-    fake_error = subprocess.CalledProcessError(
-        returncode=1, cmd=["crane", "ls", "repo"], stderr="unexpected status code 500\n"
-    )
-    with patch("subprocess.run", side_effect=fake_error), pytest.raises(RuntimeError):
-        crane.ls_or_none("repo")
-
-
 def test_find_crane_raises_when_the_binary_is_not_on_path() -> None:
     """The CI planners have crane on PATH; a caller without one must hear about it
     at construction, not as a confusing failure inside the first subprocess."""

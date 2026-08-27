@@ -5,13 +5,10 @@ import pytest
 import pytest_bazel
 
 from devinfra.ci.bes import BuildBuddyError, Invocation, Output, merge
+from devinfra.ci.image_registry import REGISTRY_PREFIX, Registry
 from devinfra.ci.plan_image_pushes import (
-    DEVEL_TAG_RE,
-    REGISTRY_PREFIX,
-    Crane,
     Decision,
     Image,
-    NotPublishedError,
     decide,
     digest_uri,
     load_images,
@@ -19,12 +16,13 @@ from devinfra.ci.plan_image_pushes import (
     matrix_include,
     plan,
 )
+from util.crane import Crane
 
 BIN = "bazel-out/k8-fastbuild/bin"
 
 
 def image(name: str = "airlock", target: str = "//airlock:image", test: str | None = None) -> Image:
-    return Image(name=name, target=target, test=test, registry="ghcr")
+    return Image(name=name, target=target, test=test, registry=Registry.GHCR)
 
 
 def digest_output(label: str, path: str, uri: str = "bytestream://h/blobs/x/72") -> Output:
@@ -35,20 +33,19 @@ def invocation(*outputs: Output) -> Invocation:
     return Invocation(outputs=list(outputs), test_status={})
 
 
-class FakeCrane:
-    """Registry stub: repo -> {tag: digest}. A missing repo has never been pushed."""
+class FakeCrane(Crane):
+    """Registry stub: repo -> {tag: digest}. A repo with no `latest` was never pushed.
+
+    A real `Crane` with the subprocess replaced, as `util/test_crane.py` does — the
+    binary is never resolved because nothing reaches `_run`.
+    """
 
     def __init__(self, repos: dict[str, dict[str, str]]) -> None:
+        super().__init__(Path("/nonexistent/crane"))
         self.repos = repos
 
-    def latest_devel_tag(self, repo: str) -> str | None:
-        tags = self.repos.get(repo)
-        if tags is None:
-            return None
-        return max((t for t in tags if DEVEL_TAG_RE.match(t)), default=None)
-
-    def digest(self, ref: str) -> str | None:
-        repo, _, tag = ref.rpartition(":")
+    def digest_or_none(self, image_ref: str) -> str | None:
+        repo, _, tag = image_ref.rpartition(":")
         return self.repos.get(repo, {}).get(tag)
 
 
@@ -126,7 +123,7 @@ def test_no_invocation_means_no_digests_and_so_everything_pushes() -> None:
 
 def test_unchanged_digest_is_not_pushed() -> None:
     subject = image(test="//airlock/...")
-    crane = FakeCrane({subject.repo: {"devel-20260826120000-abc1234": "sha256:same"}})
+    crane = FakeCrane({subject.repo: {"latest": "sha256:same"}})
     decision = decide(subject, {"airlock": "sha256:same"}, crane)
     assert not decision.needs_push
     assert matrix_include([decision]) == []
@@ -134,7 +131,7 @@ def test_unchanged_digest_is_not_pushed() -> None:
 
 def test_changed_digest_is_pushed() -> None:
     subject = image(test="//airlock/...")
-    crane = FakeCrane({subject.repo: {"devel-20260826120000-abc1234": "sha256:old"}})
+    crane = FakeCrane({subject.repo: {"latest": "sha256:old"}})
     decision = decide(subject, {"airlock": "sha256:new"}, crane)
     assert decision.needs_push
     assert matrix_include([decision]) == [
@@ -142,31 +139,27 @@ def test_changed_digest_is_pushed() -> None:
     ]
 
 
+def test_the_matrix_serializes_the_registry_as_the_name_the_workflow_compares() -> None:
+    """`push-images.yml` gates its credential step on `matrix.registry == 'forgejo'`,
+    so the enum must reach GitHub as its bare value, not its member name."""
+    forgejo = Image(name="osm-mcp", target="//third_party/osmmcp:image", test=None, registry=Registry.FORGEJO)
+    decision = decide(forgejo, {"osm-mcp": "sha256:new"}, FakeCrane({}))
+    assert json.loads(json.dumps(matrix_include([decision])))[0]["registry"] == "forgejo"
+
+
 def test_never_published_image_is_pushed() -> None:
     decision = decide(image(), {"airlock": "sha256:new"}, FakeCrane({}))
     assert decision.needs_push
-    assert decision.published_tag is None
+    assert decision.published_digest is None
     assert matrix_include([decision])[0]["test_target"] == ""
 
 
-def test_only_devel_shaped_tags_decide_the_comparison() -> None:
-    """`latest` and hand-made tags must not stand in for the tag Flux tracks."""
+def test_content_matching_an_older_publish_is_still_pushed() -> None:
+    """Only the most recent publish counts. An image whose content reverts to what
+    some earlier tag holds is a change from what is deployed, so it must go out."""
     subject = image()
-    crane = FakeCrane({subject.repo: {"latest": "sha256:new", "scratch": "sha256:new"}})
-    assert decide(subject, {"airlock": "sha256:new"}, crane).needs_push
-
-
-def test_newest_devel_tag_wins() -> None:
-    subject = image()
-    crane = FakeCrane(
-        {
-            subject.repo: {
-                "devel-20260101000000-aaaaaaa": "sha256:ancient",
-                "devel-20260826120000-bbbbbbb": "sha256:newest",
-            }
-        }
-    )
-    assert not decide(subject, {"airlock": "sha256:newest"}, crane).needs_push
+    crane = FakeCrane({subject.repo: {"latest": "sha256:current", "devel-20260101000000-aaaaaaa": "sha256:reverted"}})
+    assert decide(subject, {"airlock": "sha256:reverted"}, crane).needs_push
 
 
 def test_a_registry_error_fails_the_plan_rather_than_skipping() -> None:
@@ -180,10 +173,19 @@ def test_a_registry_error_fails_the_plan_rather_than_skipping() -> None:
 
 
 def test_repo_url_follows_the_registry() -> None:
-    forgejo = Image(name="osm-mcp", target="//third_party/osmmcp:image", test=None, registry="forgejo")
-    assert image().repo.startswith(REGISTRY_PREFIX["ghcr"])
-    assert forgejo.repo.startswith(REGISTRY_PREFIX["forgejo"])
+    forgejo = Image(name="osm-mcp", target="//third_party/osmmcp:image", test=None, registry=Registry.FORGEJO)
+    assert image().repo.startswith(REGISTRY_PREFIX[Registry.GHCR])
+    assert forgejo.repo.startswith(REGISTRY_PREFIX[Registry.FORGEJO])
     assert image().repo.endswith("/airlock")
+
+
+def test_load_images_rejects_a_field_it_does_not_understand(tmp_path: Path) -> None:
+    """A misspelt key used to be ignored, which dropped an image's test gate or sent
+    it to the wrong registry — silently, and only visible once it had published."""
+    spec = tmp_path / "image_targets.json"
+    spec.write_text(json.dumps({"images": {"a": {"target": "//a:image", "tests": "//a:test"}}}))
+    with pytest.raises(ValueError, match="unknown field"):
+        load_images(spec)
 
 
 def test_load_images_rejects_an_unknown_registry(tmp_path: Path) -> None:
@@ -202,24 +204,6 @@ def test_every_checked_in_image_declares_a_usable_target() -> None:
         assert subject.digest_label.endswith(".digest")
         assert "//" in subject.target, subject.name
         assert subject.repo.endswith(f"/{subject.name}")
-
-
-def test_absent_repo_is_reported_as_not_published() -> None:
-    """crane's NAME_UNKNOWN is a defined absent state; other failures must raise."""
-
-    class Stub(Crane):
-        def __init__(self, stderr: str) -> None:
-            super().__init__("crane")
-            self.stderr = stderr
-
-        def _run(self, *args: str) -> str:
-            if any(m in self.stderr for m in ("NAME_UNKNOWN", "MANIFEST_UNKNOWN")):
-                raise NotPublishedError(self.stderr)
-            raise RuntimeError(self.stderr)
-
-    assert Stub("NAME_UNKNOWN: repository name not known").latest_devel_tag("r") is None
-    with pytest.raises(RuntimeError):
-        Stub("unexpected status code 500").latest_devel_tag("r")
 
 
 if __name__ == "__main__":

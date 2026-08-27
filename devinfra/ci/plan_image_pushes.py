@@ -40,28 +40,13 @@ import concurrent.futures
 import dataclasses
 import json
 import os
-import re
-import subprocess
 import sys
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Protocol
 
 from devinfra.ci.bes import BuildBuddyError, Invocation, Output, fetch_blob, merge, read
-
-DIGEST_SUFFIX = ".json.sha256"
-
-REGISTRY_PREFIX = {"ghcr": "ghcr.io/agentydragon", "forgejo": "git.allegedly.works/ducktape-ci"}
-
-# Flux ImagePolicy filters tags on exactly this shape and picks newest-alphabetical,
-# so the newest matching tag is the one currently deployed — and the one whose digest
-# decides whether this commit's image is already published.
-DEVEL_TAG_RE = re.compile(r"^devel-\d{14}-[0-9a-f]{7}$")
-
-# crane's way of saying "that repository has never been pushed to". Distinct from a
-# transport or auth failure, which must not be read as "absent" — that would churn a
-# fresh tag past Flux on every network blip.
-ABSENT_MARKERS = ("NAME_UNKNOWN", "MANIFEST_UNKNOWN")
+from devinfra.ci.image_registry import DIGEST_SUFFIX, Registry, published_digest, repo_for
+from util.crane import Crane
 
 
 @dataclasses.dataclass(frozen=True)
@@ -69,11 +54,11 @@ class Image:
     name: str
     target: str
     test: str | None
-    registry: str
+    registry: Registry
 
     @property
     def repo(self) -> str:
-        return f"{REGISTRY_PREFIX[self.registry]}/{self.name}"
+        return repo_for(self.name, self.registry)
 
     @property
     def digest_label(self) -> str:
@@ -81,14 +66,32 @@ class Image:
         return f"{self.target}.digest"
 
 
+#: The keys an entry in `image_targets.json` may carry, which are `Image`'s own
+#: fields minus the one the surrounding dict supplies.
+IMAGE_SPEC_FIELDS = {field.name for field in dataclasses.fields(Image)} - {"name"}
+
+
 def load_images(path: Path) -> list[Image]:
+    """Parse the roster, rejecting anything it does not fully understand.
+
+    A hand-written strict parse rather than a Pydantic model, because this module is
+    imported as bare `python3 -m` on a GitHub Actions runner where the only Python is
+    the system one — the `citools` closure is bb, bbapi and sops, with no interpreter
+    of its own. Strictness is the part that matters and cannot be dropped: an
+    unrecognised key used to be ignored, so `tests:` for `test:` silently published an
+    image with no test gate, and a misspelt `registry:` silently published it to GHCR.
+    """
     doc = json.loads(path.read_text())
     images = []
     for name, spec in doc["images"].items():
-        registry = spec.get("registry", "ghcr")
-        if registry not in REGISTRY_PREFIX:
+        if unknown := set(spec) - IMAGE_SPEC_FIELDS:
+            raise ValueError(
+                f"image {name!r} has unknown field(s) {sorted(unknown)}; known: {sorted(IMAGE_SPEC_FIELDS)}"
+            )
+        registry = spec.get("registry", Registry.GHCR)
+        if registry not in Registry:
             raise ValueError(f"unknown registry for image {name!r}: {registry=}")
-        images.append(Image(name=name, target=spec["target"], test=spec.get("test"), registry=registry))
+        images.append(Image(name=name, target=spec["target"], test=spec.get("test"), registry=Registry(registry)))
     return images
 
 
@@ -130,53 +133,10 @@ def local_digests(images: list[Image], invocation: Invocation | None, fetch: Cal
     return digests
 
 
-class RegistryReader(Protocol):
-    """The registry reads a plan needs. `Crane` is the production implementation."""
-
-    def latest_devel_tag(self, repo: str) -> str | None: ...
-
-    def digest(self, ref: str) -> str | None: ...
-
-
-class NotPublishedError(Exception):
-    """The repository or tag does not exist yet — a valid state, not a failure."""
-
-
-class Crane:
-    """The `ls` and `digest` subset of crane this planner needs."""
-
-    def __init__(self, binary: str = "crane") -> None:
-        self._binary = binary
-
-    def _run(self, *args: str) -> str:
-        result = subprocess.run([self._binary, *args], check=False, capture_output=True, text=True)
-        if result.returncode != 0:
-            stderr = result.stderr.strip()
-            if any(marker in stderr for marker in ABSENT_MARKERS):
-                raise NotPublishedError(stderr)
-            raise RuntimeError(f"crane {' '.join(args)} failed (exit {result.returncode}):\n{stderr}")
-        return result.stdout.strip()
-
-    def latest_devel_tag(self, repo: str) -> str | None:
-        """Newest `devel-*` tag in `repo`, or None if the repo has none yet."""
-        try:
-            tags = self._run("ls", repo).splitlines()
-        except NotPublishedError:
-            return None
-        return max((t for t in tags if DEVEL_TAG_RE.match(t)), default=None)
-
-    def digest(self, ref: str) -> str | None:
-        try:
-            return self._run("digest", ref)
-        except NotPublishedError:
-            return None
-
-
 @dataclasses.dataclass(frozen=True)
 class Decision:
     image: Image
     local_digest: str | None
-    published_tag: str | None
     published_digest: str | None
 
     @property
@@ -188,25 +148,17 @@ class Decision:
     def reason(self) -> str:
         if self.local_digest is None:
             return "digest not known from the build; pushing to be safe"
-        if self.published_tag is None:
-            return "no devel tag published yet"
         if self.published_digest is None:
-            return f"{self.published_tag} vanished from the registry"
-        return "digest unchanged" if not self.needs_push else f"digest changed since {self.published_tag}"
+            return "nothing published yet"
+        return "digest unchanged" if not self.needs_push else "digest changed"
 
 
-def decide(image: Image, digests: Mapping[str, str], crane: RegistryReader) -> Decision:
+def decide(image: Image, digests: Mapping[str, str], crane: Crane) -> Decision:
     """Whether `image` needs a push, given the digests read out of the build."""
     local_digest = digests.get(image.name)
     if local_digest is None:
-        return Decision(image=image, local_digest=None, published_tag=None, published_digest=None)
-    published_tag = crane.latest_devel_tag(image.repo)
-    return Decision(
-        image=image,
-        local_digest=local_digest,
-        published_tag=published_tag,
-        published_digest=crane.digest(f"{image.repo}:{published_tag}") if published_tag else None,
-    )
+        return Decision(image=image, local_digest=None, published_digest=None)
+    return Decision(image=image, local_digest=local_digest, published_digest=published_digest(crane, image.repo))
 
 
 def plan(images: list[Image], decider: Callable[[Image], Decision], workers: int) -> list[Decision]:
@@ -263,7 +215,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--invocations", default="", help="comma-separated bazel-ci invocation ids; empty pushes everything (fail open)"
     )
-    parser.add_argument("--crane", default="crane", help="crane binary")
+    parser.add_argument("--crane", type=Path, default=None, help="crane binary (default: the one on PATH)")
     parser.add_argument("--workers", type=int, default=8, help="concurrent registry queries")
 
     args = parser.parse_args(argv)
