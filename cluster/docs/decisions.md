@@ -13,13 +13,14 @@ routing fails. The full network layering and MTU model (pod 1370 → Cilium VXLA
 
 ## Storage Strategy
 
-Use OVH-local storage for public-critical services and Proxmox storage for
-storage-heavy services that tolerate home downtime.
+Public-critical services run on distributed services (SeaweedFS, CNPG
+Postgres) backed by OVH storage; storage-heavy services that tolerate home
+downtime use Proxmox storage.
 
 | Location | Services                                                               | Rationale                         |
 | -------- | ---------------------------------------------------------------------- | --------------------------------- |
 | OVH      | Authentik, Grafana, Gateway, DNS, cert-mgr                             | Always-on, critical path          |
-| Home     | Harbor, Ollama                                                         | Storage-heavy, tolerates downtime |
+| Home     | Ollama                                                                 | Storage-heavy, tolerates downtime |
 | OVH      | SeaweedFS, attic-db, Forgejo, Nix cache chunks + Loki/Mimir/Tempo (S3) | Replicated across 2 kimsufi nodes |
 
 CNPG: individual clusters per app. Two profiles: OVH-HA (2 instances, OVH
@@ -46,8 +47,8 @@ workloads.
 3. Can schedule on OVH nodes
 4. All upstream dependencies also pass 1-3
 
-**Proxmox-dependent services** (tolerate downtime by design): Harbor,
-Nix cache, BuildBuddy, Ollama, InvenTree, ActivityWatch.
+**Proxmox-dependent services** (tolerate downtime by design): Nix cache,
+BuildBuddy, Ollama, InvenTree, ActivityWatch.
 
 ### Proxmox CSI removed (2026-07-16)
 
