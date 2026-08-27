@@ -24,7 +24,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from haku.console.conftest import default_agent_binding, insert_approved_tool_call
 from haku.console.grant_principal import AgentGrantPrincipal
-from haku.console.http_decide_config import LoadedEgressCredential, LoadedEgressDecide, LoadedFenceCredential
+from haku.console.http_decide_config import (
+    EgressStandingPolicyEntry,
+    LoadedEgressCredential,
+    LoadedEgressDecide,
+    LoadedFenceCredential,
+)
 from haku.console.http_decide_service import HttpDecideService, HttpDecideUnavailableError
 from haku.console.http_grant_models import HttpGrantSpec, HttpMethod, HttpOrigin, HttpScheme
 from haku.console.http_grant_repository import PostgresHttpGrantRepository
@@ -67,6 +72,16 @@ def _github_credential(agent_id: UUID, **overrides: Any) -> LoadedEgressCredenti
     return LoadedEgressCredential(**{**fields, **overrides})
 
 
+def _standing_entry(agent_id: UUID, **overrides: Any) -> EgressStandingPolicyEntry:
+    fields: dict[str, Any] = {
+        "id": "api-standing",
+        "agent_ids": frozenset({agent_id}),
+        "origins": frozenset({_ORIGIN}),
+        "methods": frozenset({HttpMethod.GET}),
+    }
+    return EgressStandingPolicyEntry(**{**fields, **overrides})
+
+
 @dataclass(frozen=True)
 class _Harness:
     decide: HttpDecideService
@@ -80,6 +95,7 @@ def _harness(
     client: Any,
     *,
     credentials: Callable[[UUID], list[LoadedEgressCredential]] | None = None,
+    standing: Callable[[UUID], list[EgressStandingPolicyEntry]] | None = None,
     prohibited_cidrs: frozenset[IPv4Network | IPv6Network] = frozenset(),
 ) -> _Harness:
     app = cast(FastAPI, client.app)
@@ -98,6 +114,7 @@ def _harness(
                 LoadedFenceCredential(agent_id=_UNGRANTED_AGENT, token=SecretStr(_OTHER_FENCE)),
             ],
             credentials=credentials(agent_id) if credentials is not None else [],
+            standing_policies=standing(agent_id) if standing is not None else [],
         ),
         prohibited_cidrs=prohibited_cidrs,
     )
@@ -227,6 +244,202 @@ def test_connect_tunnel_admission(make_client: Any) -> None:
         # A tunnel transports TLS, so a cleartext-origin grant cannot admit one.
         cleartext = decide(_request(method="CONNECT", scheme=None, path=None, host="plain.example", port=80))
         assert isinstance(cleartext, DecideDenied)
+
+
+def test_standing_allowance_admits_with_provenance_and_no_deadline(make_client: Any) -> None:
+    """A standing match allows before any grant is consulted: `standing:<entry id>` provenance,
+    no deadline (the policy outlives any admission window; only a redeploy changes it), and the
+    same coverage semantics as grants — the path pin sees path plus query exactly as sent."""
+    with make_client() as client:
+        exact_origin = HttpOrigin(scheme=HttpScheme.HTTPS, host="exact.example", port=443)
+        harness = _harness(
+            client,
+            standing=lambda agent_id: [
+                _standing_entry(agent_id, path_regex="/api/.*"),
+                _standing_entry(
+                    agent_id, id="exact-standing", origins=frozenset({exact_origin}), path_regex="/api/items"
+                ),
+            ],
+        )
+        decide = partial(client.portal.call, harness.decide.decide)
+
+        allowed = decide(_request(path="/api/items?state=open"))
+        assert allowed == DecideAllowed(
+            source=DecisionSource.STANDING, decision_id="standing:api-standing", valid_until=None, substitutions=[]
+        )
+
+        # Ruled in #4884 for grants and identical here: the regex sees path plus query, so an
+        # exact-path pin does not admit the same path with a query string appended.
+        assert decide(_request(host="exact.example", path="/api/items")).allowed
+        exact_miss = decide(_request(host="exact.example", path="/api/items?state=open"))
+        assert isinstance(exact_miss, DecideDenied)
+
+        # No standing match falls through to grants — none exist, so the grant evaluator's clean
+        # denial comes back unchanged. The other configured fence identity shares the origin but
+        # not the allowance: standing policy is per-Agent.
+        for miss in (
+            _request(method="POST", path="/api/items"),
+            _request(path="/elsewhere"),
+            _request(host="other.example", path="/api/items"),
+            _request(fence_credential=_OTHER_FENCE, path="/api/items"),
+        ):
+            decision = decide(miss)
+            assert isinstance(decision, DecideDenied), miss.request
+            assert decision.reason == "no active HTTP grant covers the request"
+
+
+def test_standing_wins_over_a_matching_grant(make_client: Any) -> None:
+    with make_client() as client:
+        harness = _harness(client, standing=lambda agent_id: [_standing_entry(agent_id)])
+        (grant_id,) = _create_grants(
+            client,
+            harness,
+            HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET, HttpMethod.POST})),
+            expires_at=_NOW + timedelta(minutes=30),
+        )
+        decide = partial(client.portal.call, harness.decide.decide)
+
+        # Both authorities cover GET; standing is evaluated first and provenance says so.
+        covered_by_both = decide(_request())
+        assert isinstance(covered_by_both, DecideAllowed)
+        assert covered_by_both.source is DecisionSource.STANDING
+        assert covered_by_both.decision_id == "standing:api-standing"
+        assert covered_by_both.valid_until is None
+
+        # Outside standing coverage the grant path is untouched: same verdict it always gave.
+        grant_only = decide(_request(method="POST"))
+        assert isinstance(grant_only, DecideAllowed)
+        assert grant_only.source is DecisionSource.GRANT
+        assert grant_only.decision_id == f"grant:{grant_id}"
+        assert grant_only.valid_until == _NOW + timedelta(minutes=30)
+
+
+def test_prohibited_resolved_answer_denies_despite_standing_policy(make_client: Any) -> None:
+    # Address validation precedes every authority (#4948): standing policy cannot admit a
+    # prohibited resolution any more than a grant can.
+    with make_client() as client:
+        harness = _harness(client, standing=lambda agent_id: [_standing_entry(agent_id)])
+        loopback = IPv4Address("127.0.0.1")
+
+        decision = client.portal.call(
+            partial(harness.decide.decide, _request(resolved_ips=frozenset({loopback}), upstream_ip=loopback))
+        )
+
+        assert decision == DecideDenied(reason="resolved address 127.0.0.1 is loopback")
+
+
+def test_standing_allowance_redeems_the_registry_credential(make_client: Any) -> None:
+    with make_client() as client:
+        harness = _harness(
+            client,
+            credentials=lambda agent_id: [_github_credential(agent_id)],
+            standing=lambda agent_id: [_standing_entry(agent_id, credential_handle="github-bot")],
+        )
+
+        allowed = client.portal.call(partial(harness.decide.decide, _request(path="/repos/agentydragon/ducktape")))
+
+        assert allowed == DecideAllowed(
+            source=DecisionSource.STANDING,
+            decision_id="standing:api-standing",
+            valid_until=None,
+            substitutions=[
+                PlaceholderSubstitution(
+                    placeholder="github-token-placeholder",
+                    value=_GITHUB_VALUE,
+                    match_headers=frozenset({"authorization"}),
+                )
+            ],
+        )
+
+
+def test_overlapping_standing_entries_union_credentials_and_keep_first_provenance(make_client: Any) -> None:
+    """Declaration order is the provenance tiebreak; redemption unions every matching entry's
+    handle, mirroring how overlapping grants report all their credentials."""
+    with make_client() as client:
+        harness = _harness(
+            client,
+            credentials=lambda agent_id: [_github_credential(agent_id)],
+            standing=lambda agent_id: [
+                _standing_entry(agent_id, id="broad"),
+                _standing_entry(agent_id, id="credentialed", credential_handle="github-bot"),
+            ],
+        )
+
+        allowed = client.portal.call(partial(harness.decide.decide, _request()))
+
+        assert isinstance(allowed, DecideAllowed)
+        assert allowed.decision_id == "standing:broad"
+        assert [substitution.value for substitution in allowed.substitutions] == [_GITHUB_VALUE]
+
+
+def test_standing_connect_tunnel_admission(make_client: Any) -> None:
+    with make_client() as client:
+        cleartext_origin = HttpOrigin(scheme=HttpScheme.HTTP, host="plain.example", port=80)
+        harness = _harness(
+            client,
+            credentials=lambda agent_id: [_github_credential(agent_id)],
+            standing=lambda agent_id: [
+                # Method and path pins bind each decrypted inner request, not the tunnel itself.
+                _standing_entry(agent_id, path_regex="/api/.*", credential_handle="github-bot"),
+                _standing_entry(agent_id, id="cleartext", origins=frozenset({cleartext_origin})),
+            ],
+        )
+        decide = partial(client.portal.call, harness.decide.decide)
+
+        allowed = decide(_request(method="CONNECT", scheme=None, path=None))
+        assert isinstance(allowed, DecideAllowed)
+        assert allowed.source is DecisionSource.STANDING
+        assert allowed.decision_id == "standing:api-standing"
+        # A tunnel has no inner request yet: nothing to substitute into, even credentialed.
+        assert allowed.substitutions == []
+
+        # A tunnel transports TLS, so a cleartext-origin standing entry cannot admit one.
+        cleartext = decide(_request(method="CONNECT", scheme=None, path=None, host="plain.example", port=80))
+        assert isinstance(cleartext, DecideDenied)
+
+        unknown = decide(_request(method="CONNECT", scheme=None, path=None, host="other.example"))
+        assert isinstance(unknown, DecideDenied)
+
+
+def test_standing_unresolvable_credential_degrades(make_client: Any, caplog: pytest.LogCaptureFixture) -> None:
+    """Same #4951 redemption path as grants: a handle the registry does not back for this request
+    admits without substitution and warns naming only the handle. Config validation refuses an
+    unknown handle at load time, so the not-configured branch is exercised through a directly
+    constructed loaded view."""
+    locked_origin = HttpOrigin(scheme=HttpScheme.HTTPS, host="exact.example", port=443)
+    ghost_origin = HttpOrigin(scheme=HttpScheme.HTTPS, host="third.example", port=443)
+    with make_client() as client:
+        harness = _harness(
+            client,
+            credentials=lambda agent_id: [
+                # Assigned to a different Agent than the one whose fence credential decides here.
+                _github_credential(_UNGRANTED_AGENT),
+                _github_credential(
+                    agent_id, handle="origin-locked", placeholder="origin-locked-placeholder"
+                ),  # redeemable only at _ORIGIN
+            ],
+            standing=lambda agent_id: [
+                _standing_entry(agent_id, credential_handle="github-bot"),
+                _standing_entry(
+                    agent_id, id="locked", origins=frozenset({locked_origin}), credential_handle="origin-locked"
+                ),
+                _standing_entry(agent_id, id="ghost", origins=frozenset({ghost_origin}), credential_handle="ghost"),
+            ],
+        )
+        decide = partial(client.portal.call, harness.decide.decide)
+
+        with caplog.at_level("WARNING"):
+            for request, warning in [
+                (_request(), "not assigned"),
+                (_request(host="exact.example"), "not redeemable"),
+                (_request(host="third.example"), "not configured"),
+            ]:
+                decision = decide(request)
+                assert isinstance(decision, DecideAllowed), request.request
+                assert decision.source is DecisionSource.STANDING
+                assert decision.substitutions == []
+                assert warning in caplog.text
+        assert _GITHUB_VALUE not in caplog.text
 
 
 def test_credentialed_grant_redeems_the_substitution(make_client: Any) -> None:

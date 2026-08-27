@@ -96,6 +96,16 @@ def test_verdicts_parse_by_their_allowed_discriminant() -> None:
     (substitution,) = allowed.substitutions
     assert substitution.match_headers == frozenset({"authorization"})
 
+    # A standing admission carries no deadline: the Console route omits the None field
+    # (response_model_exclude_none), and the parse restores it.
+    standing = adapter.validate_json(
+        json.dumps({"allowed": True, "source": "standing", "decision_id": "standing:haku-github-api"})
+    )
+    assert isinstance(standing, DecideAllowed)
+    assert standing.source is DecisionSource.STANDING
+    assert standing.valid_until is None
+    assert standing.substitutions == []
+
     denied = adapter.validate_json(json.dumps({"allowed": False, "source": "none", "reason": "no grant"}))
     assert isinstance(denied, DecideDenied)
     assert denied.grant_scope is None

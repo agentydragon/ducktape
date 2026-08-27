@@ -111,25 +111,14 @@ class HttpOrigin(BaseModel):
         return canonical
 
 
-class HttpGrantSpec(BaseModel):
-    """One requested coverage item: an exact origin, its permitted methods, an optional path pin,
-    and optionally the Console-owned credential the grant redeems there."""
+class HttpRequestCoverage(BaseModel):
+    """The request-matching half of an allowance at an already-matched origin: a method set plus
+    an optional path pin. Shared by temporary grants and deploy-managed standing policy entries
+    (`http_decide_config.EgressStandingPolicyEntry`) so both speak one matcher vocabulary."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    origin: HttpOrigin
-    methods: HttpMethods = Field(description="Request methods the grant permits at the origin.")
-    credential_handle: str | None = Field(
-        default=None,
-        max_length=64,
-        pattern=CREDENTIAL_HANDLE_PATTERN,
-        description=(
-            "Console-owned egress credential this grant redeems at its origin, named by its "
-            "deploy-config handle (`egress_decide.credentials`). The sandbox holds only the "
-            "credential's inert placeholder; the real value is substituted at the egress proxy "
-            "and never reaches the Agent. Absent, the grant is pure reachability."
-        ),
-    )
+    methods: HttpMethods = Field(description="Request methods the allowance permits at its origin.")
     path_regex: str | None = Field(
         default=None,
         min_length=1,
@@ -157,6 +146,24 @@ class HttpGrantSpec(BaseModel):
         if method not in self.methods:
             return False
         return self.path_regex is None or re.fullmatch(self.path_regex, path) is not None
+
+
+class HttpGrantSpec(HttpRequestCoverage):
+    """One requested coverage item: an exact origin, its permitted methods, an optional path pin,
+    and optionally the Console-owned credential the grant redeems there."""
+
+    origin: HttpOrigin
+    credential_handle: str | None = Field(
+        default=None,
+        max_length=64,
+        pattern=CREDENTIAL_HANDLE_PATTERN,
+        description=(
+            "Console-owned egress credential this grant redeems at its origin, named by its "
+            "deploy-config handle (`egress_decide.credentials`). The sandbox holds only the "
+            "credential's inert placeholder; the real value is substituted at the egress proxy "
+            "and never reaches the Agent. Absent, the grant is pure reachability."
+        ),
+    )
 
 
 def derive_status(

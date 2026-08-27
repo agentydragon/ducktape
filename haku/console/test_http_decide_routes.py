@@ -120,6 +120,21 @@ def test_allow_wire_shape_carries_provenance_lifetime_and_substitutions() -> Non
     assert decided.fence_credential.get_secret_value() == _FENCE
 
 
+def test_standing_allow_wire_shape_omits_the_absent_deadline() -> None:
+    # A standing-policy admission has no deadline (None), so the field stays off the wire; the
+    # client-side default restores None on parse (haku/egress/test_decision.py).
+    service = _FakeDecideService(DecideAllowed(source=DecisionSource.STANDING, decision_id="standing:haku-github-api"))
+    with _client(service) as client:
+        response = _post(client)
+    assert response.status_code == 200
+    assert response.json() == {
+        "allowed": True,
+        "source": "standing",
+        "decision_id": "standing:haku-github-api",
+        "substitutions": [],
+    }
+
+
 def test_deny_wire_shape_carries_reason_and_canonical_grant_scope() -> None:
     service = _FakeDecideService(
         DecideDenied(

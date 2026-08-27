@@ -2081,6 +2081,7 @@ py_test(
         ":http_decide_config",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 

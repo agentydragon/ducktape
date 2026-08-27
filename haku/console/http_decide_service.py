@@ -117,11 +117,12 @@ class HttpDecideService:
 
     The resolved answer is validated before any authority is consulted: an answer touching
     prohibited address space — the always-on classes of ``_prohibited_address_class`` or a
-    deploy-configured prohibited CIDR — denies outright, whatever grants exist (#4948).
+    deploy-configured prohibited CIDR — denies outright, whatever allowances exist (#4948).
     Evaluation order past that is #4670's: standing HTTP policy first, then the principal's
-    active temporary grants after a clean standing denial. Deploy-managed standing HTTP
-    destination policy is a separate #4670 work item; until a deployment defines one, the
-    standing step denies cleanly and only grants admit.
+    active temporary grants after a clean standing denial. Standing policy is the deploy-managed
+    ``egress_decide.standing_policies`` config (#4941): reviewed durable allowances whose
+    admissions carry ``standing:<entry id>`` provenance and no deadline, since only a redeploy —
+    which restarts Console and proxy together — changes them.
     """
 
     def __init__(
@@ -134,6 +135,7 @@ class HttpDecideService:
         self._grants = grants
         self._credentials = credentials
         self._egress_credentials = {credential.handle: credential for credential in credentials.credentials}
+        self._standing_policies = credentials.standing_policies
         self._prohibited_cidrs = sorted(prohibited_cidrs, key=str)
 
     def authenticate_proxy(self, authorization: str) -> bool:
@@ -196,6 +198,9 @@ class HttpDecideService:
             )
             return canonical
         origin = canonical.origin
+        standing = self._standing_decision(principal=principal, canonical=canonical)
+        if standing is not None:
+            return standing
         try:
             if isinstance(canonical, _Tunnel):
                 decision = await self._grants.match_tunnel(request_principal=principal, origin=origin)
@@ -246,23 +251,65 @@ class HttpDecideService:
             reason=decision.reason, grant_scope=GrantScope(scheme=origin.scheme, host=origin.host, port=origin.port)
         )
 
+    def _standing_decision(
+        self, *, principal: RequestPrincipal, canonical: _Tunnel | _InnerRequest
+    ) -> DecideAllowed | None:
+        """Evaluate deploy-managed standing policy; ``None`` is the clean denial grants follow.
+
+        Entries may overlap: the first declared match names the decision — declaration order in
+        the reviewed config is the one stable, reviewable tiebreak — and every matching entry's
+        credential redeems, mirroring how overlapping grants union their handles. A tunnel is
+        admitted by an origin match alone (its ``https`` scheme is structural, so cleartext-origin
+        entries can never admit one) with method/path pins binding each decrypted inner request;
+        it carries no substitutions because no inner request exists yet.
+        """
+        origin = canonical.origin
+        matching = [
+            entry
+            for entry in self._standing_policies
+            if principal.agent_id in entry.agent_ids
+            and origin in entry.origins
+            and (isinstance(canonical, _Tunnel) or entry.covers(method=canonical.method, path=canonical.path))
+        ]
+        if not matching:
+            return None
+        decision_id = f"standing:{matching[0].id}"
+        handles = frozenset(entry.credential_handle for entry in matching if entry.credential_handle is not None)
+        substitutions = (
+            []
+            if isinstance(canonical, _Tunnel)
+            else self._substitutions_for(principal=principal, origin=origin, handles=handles)
+        )
+        logger.info(
+            "egress decision allow agent=%s %s %s://%s:%d decision_id=%s credential_handles=%s",
+            principal.agent_id,
+            CONNECT_METHOD if isinstance(canonical, _Tunnel) else canonical.method,
+            origin.scheme,
+            origin.host,
+            origin.port,
+            decision_id,
+            sorted(handles),
+        )
+        return DecideAllowed(source=DecisionSource.STANDING, decision_id=decision_id, substitutions=substitutions)
+
     def _substitutions_for(
         self, *, principal: RequestPrincipal, origin: HttpOrigin, handles: frozenset[str]
     ) -> list[PlaceholderSubstitution]:
-        """Resolve the credential handles named by matching grants into this request's substitutions.
+        """Resolve the credential handles named by the matching allowances — temporary grants or
+        standing entries — into this request's substitutions.
 
         Credential redemption is an authority separate from reachability (#4670): a handle that is
         not configured, not assigned to the Agent, or not redeemable at this origin yields no
-        substitution while the grant's admission stands — the inert placeholder then passes through
+        substitution while the admission stands — the inert placeholder then passes through
         verbatim and is worthless upstream (#4884 placeholder ruling). Each such refusal is an
-        operator-visible mismatch between a durable grant and the deploy config, hence the
+        operator-visible mismatch between a durable allowance and the deploy config, hence the
         warnings; they name only inert handles, never values.
         """
         substitutions: list[PlaceholderSubstitution] = []
         for handle in sorted(handles):
             credential = self._egress_credentials.get(handle)
             if credential is None:
-                logger.warning("egress credential %s named by a matched grant is not configured", handle)
+                logger.warning("egress credential %s named by a matched allowance is not configured", handle)
                 continue
             if principal.agent_id not in credential.agent_ids:
                 logger.warning("egress credential %s is not assigned to agent %s", handle, principal.agent_id)

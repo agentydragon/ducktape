@@ -143,11 +143,15 @@ class DecideAllowed(BaseModel):
     decision_id: str = Field(
         min_length=1, description="Links audit records to the decision's policy provenance, e.g. 'grant:<grant UUID>'."
     )
-    valid_until: AwareDatetime = Field(
+    valid_until: AwareDatetime | None = Field(
+        default=None,
         description=(
             "Exact admission deadline: a later request, CONNECT, or reconnect needs a fresh decision. "
-            "An already admitted flow may overrun it only within the deployment's hard flow lifetime."
-        )
+            "An already admitted flow may overrun it only within the deployment's hard flow lifetime. "
+            "None for a standing-policy admission, which has no deadline short of a config change — "
+            "and a config change redeploys Console and proxy together; the hard flow lifetime still "
+            "bounds admitted flows."
+        ),
     )
     substitutions: list[PlaceholderSubstitution] = Field(
         default_factory=list,
