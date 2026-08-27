@@ -128,12 +128,13 @@ class EgressGateAddon:
         until the upstream finished serving it, and the proxy's memory would track the body size
         (#4914).
 
-        Response-direction only. Request-body streaming is deliberately not enabled here: mitmproxy
-        dials the upstream and streams the request body from ``start_request_stream`` *before* the
-        ``request`` hook fires, so a streamed request to an already-pinned destination would reach
-        the upstream ahead of its own per-request decision. Enabling it safely requires moving the
-        gate to ``requestheaders`` (before the dial); that is a separate change, so large request
-        bodies stay buffered and gated as today.
+        Response-direction only, set per-flow rather than via the global ``stream_large_bodies``
+        option. Request-body streaming is deliberately not enabled here: mitmproxy dials the
+        upstream and streams the request body from ``start_request_stream`` *before* the ``request``
+        hook fires, so a streamed request to an already-pinned destination would reach the upstream
+        ahead of its own per-request decision — fail open (#4670). Enabling it safely requires first
+        moving the gate to ``requestheaders`` (before the dial); that is a separate change (see
+        haku/egress/TODO.md), so large request bodies stay buffered and gated as today.
 
         Synthetic gate refusals already carry materialized content and are sent directly, so setting
         ``stream`` on them is a no-op — only real upstream responses take the streaming path.
