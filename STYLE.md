@@ -101,8 +101,10 @@ instead, so they load on demand.
   class, and table share the concept-name; representation-role suffixes (`…Row`,
   `…Body`, `…View`) only where two representations of one concept must coexist in a
   namespace, and the concept half stays identical.
-- **Identifiers carry their type**: a UUID travels as `UUID` end to end, not `str`;
-  string-typed identifiers only at I/O boundaries.
+- **Identifiers carry their type**: a UUID travels as `UUID` end to end, the
+  conversions absorbed by boundary adapters (Pydantic validators, ORM column types) —
+  no scattered `UUID(x)`/`str(y)` in code. Where a str-typed library surface can't be
+  adapter-absorbed, keeping `str` beats conversion churn.
 - **Typed concurrency messages**: dataclasses/models for actor/mailbox messages and
   results, never `dict[str, T]`.
 - **Dataclasses for internal types, Pydantic at boundaries**: `@dataclass` for purely
