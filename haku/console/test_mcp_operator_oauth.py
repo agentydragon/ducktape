@@ -36,6 +36,7 @@ from haku.console.oauth_token_state import (
     OAuthRefreshFailureAction,
     OAuthRefreshFailureKind,
     PostgresOAuthTokenStateStore,
+    _refresh_retry_delay,
     new_oauth_token_state,
 )
 from haku.console.operator_identity import InactiveOperatorError, OperatorStatus
@@ -528,6 +529,21 @@ async def test_operator_oauth_retryable_failure_backs_off_and_clears_after_succe
     ).associations[0]
     assert isinstance(status.state, McpOperatorAuthConnected)
     assert attempts == 2
+
+
+def test_refresh_retry_delay_doubles_from_base_and_saturates_at_max() -> None:
+    """The persisted backoff sequence is operator-visible policy: 30s after the first failure,
+    doubling to the 15-minute cap from the sixth on, and saturated — never overflowed — for
+    arbitrarily long episodes (2**1024 exceeds float range; attempt 1025 froze episodes before)."""
+    assert [_refresh_retry_delay(attempt) for attempt in (1, 2, 3)] == [
+        datetime.timedelta(seconds=30),
+        datetime.timedelta(minutes=1),
+        datetime.timedelta(minutes=2),
+    ]
+    assert _refresh_retry_delay(5) == datetime.timedelta(minutes=8)
+    assert _refresh_retry_delay(6) == _REFRESH_RETRY_MAX
+    assert _refresh_retry_delay(1024) == _REFRESH_RETRY_MAX
+    assert _refresh_retry_delay(1025) == _REFRESH_RETRY_MAX
 
 
 async def test_operator_oauth_failure_recording_survives_long_episodes(
