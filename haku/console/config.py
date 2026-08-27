@@ -358,7 +358,11 @@ class MatrixConfig(BaseModel):
 
 
 class RuntimeExecutionConfig(BaseModel):
-    """Provider-neutral placement, session, network, and prompt wiring."""
+    """Provider-neutral placement, session, and network wiring.
+
+    Deliberately no prompt here: prompts belong to launchable Agents
+    (`launchable_agents[].system_prompt_template` plus the shared `chat_prompt_fragment`).
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -370,7 +374,6 @@ class RuntimeExecutionConfig(BaseModel):
     ca_bundle: str
     no_proxy: str
     mcp_url: UncredentialedHttpUrl
-    system_prompt_template: Path
 
     def proxy_environment(self, *, pip: bool = False) -> dict[str, str]:
         return _proxy_environment(proxy_url=self.https_proxy, no_proxy=self.no_proxy, ca_bundle=self.ca_bundle, pip=pip)

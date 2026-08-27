@@ -15,9 +15,11 @@ from haku.console.x.system_prompt import HistoryMessage, HistorySender, SessionI
 
 SESSION = UUID("11111111-2222-4333-8444-555555555555")
 
-# The file the ConfigMap mounts. Rendering the real one is the point: a fixture copy would let the
-# shipped template break while the test stayed green.
+# The files the ConfigMap mounts. Rendering the real ones is the point: a fixture copy would let
+# the shipped templates break while the test stayed green.
 DEPLOYED_TEMPLATE = Path("cluster/k8s/haku/console/chat_system_prompt.md.j2")
+DEPLOYED_CODER_TEMPLATE = Path("cluster/k8s/haku/console/public_coder_system_prompt.md.j2")
+DEPLOYED_FRAGMENT = Path("cluster/k8s/haku/console/chat_prompt_fragment.md.j2")
 
 
 def introduction(*messages: HistoryMessage) -> SessionIntroduction:
@@ -48,7 +50,29 @@ def test_message_bodies_are_not_html_escaped():
 
 @pytest.fixture
 def deployed() -> SystemPromptTemplate:
-    return SystemPromptTemplate.from_path(DEPLOYED_TEMPLATE)
+    """Haku's prompt as the console composes it: identity template plus the shared chat fragment."""
+    return SystemPromptTemplate.compose_paths(DEPLOYED_TEMPLATE, DEPLOYED_FRAGMENT)
+
+
+def test_composition_appends_the_fragment_and_digests_the_whole_source():
+    composed = SystemPromptTemplate.compose("I am {{ session_id }}", "How this surface works.")
+    assert composed.render(introduction()) == f"I am {SESSION}\n\nHow this surface works."
+    assert (
+        composed.source_digest == SystemPromptTemplate("I am {{ session_id }}\n\nHow this surface works.").source_digest
+    )
+    assert (
+        composed.source_digest
+        != SystemPromptTemplate.compose("I am {{ session_id }}", "Different contract.").source_digest
+    )
+
+
+def test_deployed_coder_composition_renders_identity_and_shared_contract():
+    """The other launchable Agent composes with the same fragment; nothing Haku-only leaks in."""
+    rendered = SystemPromptTemplate.compose_paths(DEPLOYED_CODER_TEMPLATE, DEPLOYED_FRAGMENT).render(introduction())
+    assert "public-coder-agent" in rendered
+    assert "Replies are automatic" in rendered
+    assert "no earlier conversation" in rendered
+    assert "haku-state" not in rendered.lower()
 
 
 def test_deployed_template_renders_a_fresh_chat(deployed: SystemPromptTemplate):

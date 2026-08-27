@@ -881,6 +881,27 @@ async def test_reads_are_fenced_by_the_conversations_pinned_profile(chat_store, 
     assert await chat_store.read_item_rows(uuid4(), after_seq=None, limit=5, scope=coder_reads) == []
 
 
+async def test_prompt_provenance_is_stamped_once_and_first_render_wins(
+    chat_store, migrated_sessions, operator_id
+) -> None:
+    """The audit fact is the prompt the runner *started* with: a reconnect re-renders, but the
+    surviving CLI process keeps its original prompt, so a later render must not overwrite."""
+    view, _ = await chat_store.create(operator_id)
+
+    await chat_store.record_prompt_provenance(view.session_id, template_digest=b"t1", rendered_digest=b"r1")
+    await chat_store.record_prompt_provenance(view.session_id, template_digest=b"t2", rendered_digest=b"r2")
+
+    async with migrated_sessions() as db:
+        row = (
+            await db.execute(
+                select(Session.system_prompt_template_digest, Session.system_prompt_rendered_digest).where(
+                    Session.session_id == view.session_id
+                )
+            )
+        ).one()
+    assert row == (b"t1", b"r1")
+
+
 async def test_a_prompt_records_the_channel_events_it_was_folded_from(
     chat_store, operator_id, migrated_sessions
 ) -> None:

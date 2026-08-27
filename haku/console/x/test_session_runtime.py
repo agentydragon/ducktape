@@ -270,7 +270,10 @@ def _console_config(**overrides: object) -> dict[str, object]:
                 "access_profile_id": "manual",
             }
         ],
-        "launchable_agents": [{"agent_id": "00000000-0000-4000-8000-000000000001"}],
+        "launchable_agents": [
+            {"agent_id": "00000000-0000-4000-8000-000000000001", "system_prompt_template": "/prompt"}
+        ],
+        "chat_prompt_fragment": "/fragment",
         "default_chat_agent_id": "00000000-0000-4000-8000-000000000001",
     }
     config.update(overrides)
@@ -370,7 +373,6 @@ def _codex_runtime_config(**overrides: Any) -> RuntimeRegistrationConfig:
         "ca_bundle": "/ca/bundle.pem",
         "no_proxy": ".svc,.svc.cluster.local",
         "mcp_url": "http://haku-console:9090/mcp",
-        "system_prompt_template": "/config/public-coder.md.j2",
         "implementation": implementation,
     }
     values.update(overrides)
@@ -413,7 +415,6 @@ def test_claude_registration_uses_the_shared_discriminated_model() -> None:
         "ca_bundle",
         "no_proxy",
         "mcp_url",
-        "system_prompt_template",
         "implementation",
     }
     assert wire["implementation"] == {"kind": "claude_code", "oauth_placeholder": "not-a-secret"}

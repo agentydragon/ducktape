@@ -330,8 +330,10 @@ async def test_a_replacement_session_wakes_from_our_transcript_rather_than_from_
 
     `two` is what tells the copies apart, and it is the load-bearing case anyway. The killed
     sandbox is how a replacement session gets made at all; `two` is accepted by the dying session
-    and never answered by it, so it sits past the sync watermark and the only thing that can carry
-    it into the replacement is our own transcript.
+    and never answered by it, so it sits past the sync watermark and only our own record can carry
+    it into the replacement — re-offered as the replacement's first prompt, while the rendered
+    history deliberately stops before it (`ConversationHistory.recent` excludes the wakened
+    session's own queued prompt) so the replacement is not told the same message twice.
 
     Form no longer distinguishes them: the event ids ingress once wrote inline ride on the prompt's
     own event now, so both copies carry the same text and only position separates them.
@@ -353,7 +355,11 @@ async def test_a_replacement_session_wakes_from_our_transcript_rather_than_from_
     assert len(launched) >= 2, "no replacement session was ever started"
     woken = launched[-1]
     assert "re: one" in woken, "half a conversation is not context — Haku's own reply is there too"
-    assert "two" in woken, "the message its predecessor accepted and never answered"
+    # `re: two` above proves the accepted-and-unanswered message reached the replacement — as its
+    # re-offered first prompt. The rendered history therefore must NOT repeat it: one copy, as the
+    # prompt. (The old wording "the two of you were saying" used to satisfy a `"two" in woken`
+    # here whatever the history held.)
+    assert "two" not in woken, "the re-offered prompt must not also be rendered as history"
 
 
 if __name__ == "__main__":

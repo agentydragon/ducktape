@@ -153,7 +153,6 @@ async def _serve() -> None:
         ca_bundle="/egress-proxy-ca/ca-certificates.crt",
         no_proxy="127.0.0.1,localhost",
         mcp_url="http://haku-console.test:9090/mcp",
-        system_prompt_template=Path(_environment("HAKU_E2E_SYSTEM_PROMPT_TEMPLATE")),
         implementation={"kind": "claude_code", "oauth_placeholder": "not-a-secret"},
     )
 
@@ -164,7 +163,11 @@ async def _serve() -> None:
     claims = FileSandboxClaims(Path(_environment("HAKU_E2E_CLAIMS_DIR")))
     runtimes = execution_registry(
         runtime_registration(
-            runtime, claims, system_prompt=SystemPromptTemplate.from_path(runtime.system_prompt_template)
+            runtime,
+            claims,
+            system_prompt=SystemPromptTemplate.compose_paths(
+                Path(_environment("HAKU_E2E_SYSTEM_PROMPT_TEMPLATE")), Path(_environment("HAKU_E2E_PROMPT_FRAGMENT"))
+            ),
         )
     )
     store = SessionStore(sessions, runtimes)

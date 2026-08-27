@@ -1,10 +1,12 @@
-"""The system prompt a Claude chat session is started with.
+"""The system prompt a chat session is started with.
 
-The template is **deploy config, not code and not haku-state**: it is mounted into the console's
-ConfigMap and named by an absolute path in `chat_runtimes.claude_code.system_prompt_template`. A system prompt
-is the one instruction surface the agent cannot edit at all, so the facts whose whole value is that
-Haku did not choose them belong here; everything Haku authors for itself stays in haku-state (see
-<../../base/README.md>).
+Prompts belong to Agents: each launchable Agent names its own identity template
+(`launchable_agents[].system_prompt_template`), composed with the shared attached-chat fragment
+(`chat_prompt_fragment`) that states the surface mechanics every Console-launched Agent shares.
+The templates are **deploy config, not code and not haku-state**: they are mounted into the
+console's ConfigMap. A system prompt is the one instruction surface the agent cannot edit at all,
+so the facts whose whole value is that the agent did not choose them belong here; everything an
+agent authors for itself stays in its own workspace (see <../../base/README.md>).
 
 Rendering is Jinja2 rather than `str.format` because the interesting parts are conditional: a fresh
 conversation has no recent messages, and "here is where the conversation was" has to disappear rather than
@@ -17,6 +19,7 @@ oddly a week later.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -81,10 +84,26 @@ class SystemPromptTemplate:
             lstrip_blocks=True,
         )
         self._template = environment.from_string(source)
+        # The audit identity of what this deploy instructs: recorded on each session beside the
+        # rendered prompt's digest, so "which template said that" survives ConfigMap edits.
+        self.source_digest = hashlib.sha256(source.encode("utf-8")).digest()
 
     @classmethod
     def from_path(cls, path: Path) -> SystemPromptTemplate:
         return cls(path.read_text(encoding="utf-8"))
+
+    @classmethod
+    def compose(cls, identity_source: str, fragment_source: str) -> SystemPromptTemplate:
+        """One Agent's identity template followed by the shared attached-chat fragment.
+
+        Source-level concatenation into one compiled template, so both halves render with the
+        same context and one digest names the composition.
+        """
+        return cls(f"{identity_source.rstrip()}\n\n{fragment_source.lstrip()}")
+
+    @classmethod
+    def compose_paths(cls, identity_path: Path, fragment_path: Path) -> SystemPromptTemplate:
+        return cls.compose(identity_path.read_text(encoding="utf-8"), fragment_path.read_text(encoding="utf-8"))
 
     def render(self, introduction: SessionIntroduction) -> str:
         return self._template.render(

@@ -52,7 +52,6 @@ def runtime_config(**overrides: object) -> RuntimeRegistrationConfig:
         "ca_bundle": "/egress-proxy-ca/ca-certificates.crt",
         "no_proxy": "127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8",
         "mcp_url": "http://haku-console.test:9090/mcp",
-        "system_prompt_template": "cluster/k8s/haku/console/chat_system_prompt.md.j2",
         "implementation": {"kind": "claude_code", "oauth_placeholder": "not-a-secret"},
     }
     values.update(overrides)

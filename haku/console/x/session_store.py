@@ -1254,6 +1254,23 @@ class SessionStore:
         )
         return None
 
+    async def record_prompt_provenance(
+        self, session_id: UUID, *, template_digest: bytes, rendered_digest: bytes
+    ) -> None:
+        """Stamp which prompt this session's runner was launched with, once.
+
+        First render wins: a runner reconnect re-renders the appended prompt, but the CLI process
+        that survives the reconnect keeps the prompt it started with, and that is the audit fact
+        these columns record (#4431 stage 6). Both digests land together
+        (`ck_sessions_prompt_digest_pair`).
+        """
+        async with self._sessions.begin() as db:
+            await db.execute(
+                update(Session)
+                .where(Session.session_id == session_id, Session.system_prompt_rendered_digest.is_(None))
+                .values(system_prompt_template_digest=template_digest, system_prompt_rendered_digest=rendered_digest)
+            )
+
     async def claim_cleanup_candidates(self) -> list[UUID]:
         """Terminal sessions whose sandbox claim has not been recorded as deleted."""
         async with self._sessions() as db:

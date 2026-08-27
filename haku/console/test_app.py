@@ -69,8 +69,10 @@ def test_config_advertises_codex_and_explicit_launch_preserves_public_coder_isol
     monkeypatch.setenv("TEST_CODER_OPERATOR", "operator-sub")
     claude_prompt = tmp_path / "claude.md.j2"
     coder_prompt = tmp_path / "coder.md.j2"
+    chat_fragment = tmp_path / "fragment.md.j2"
     claude_prompt.write_text("Haku session {{ session_id }} in {{ workspace }}", encoding="utf-8")
     coder_prompt.write_text("Public coder session {{ session_id }} in {{ workspace }}", encoding="utf-8")
+    chat_fragment.write_text("Replies are automatic.", encoding="utf-8")
     codex_runtime = {
         "agent_id": coder_id,
         "namespace": "codex",
@@ -83,7 +85,6 @@ def test_config_advertises_codex_and_explicit_launch_preserves_public_coder_isol
         "ca_bundle": "/coder-ca.pem",
         "no_proxy": "localhost",
         "mcp_url": "https://console.test/mcp",
-        "system_prompt_template": str(coder_prompt),
         "implementation": {
             "kind": "codex_app_server",
             "model": "codex-test",
@@ -108,7 +109,6 @@ def test_config_advertises_codex_and_explicit_launch_preserves_public_coder_isol
                 "ca_bundle": "/claude-ca.pem",
                 "no_proxy": "localhost",
                 "mcp_url": "https://console.test/mcp",
-                "system_prompt_template": str(claude_prompt),
                 "implementation": {"kind": "claude_code", "oauth_placeholder": "placeholder"},
             },
             "codex_app_server": codex_runtime,
@@ -135,7 +135,11 @@ def test_config_advertises_codex_and_explicit_launch_preserves_public_coder_isol
                 "access_profile_id": "public-coder",
             },
         ],
-        "launchable_agents": [{"agent_id": haku_id}, {"agent_id": coder_id}],
+        "launchable_agents": [
+            {"agent_id": haku_id, "system_prompt_template": str(claude_prompt)},
+            {"agent_id": coder_id, "system_prompt_template": str(coder_prompt)},
+        ],
+        "chat_prompt_fragment": str(chat_fragment),
         "default_chat_agent_id": haku_id,
     }
     config_file = write_config(tmp_path / "console.yaml", shared_config)

@@ -128,16 +128,19 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     general_injection = (k8s_dir / "kyverno/policies/inject-haku-egress-proxy.yaml").read_text()
     assert "haku-claude-sandbox" not in general_injection
 
-    # The system prompt is read at startup, so a path that names nothing the ConfigMap carries
+    # The prompt templates are read at startup, so a path that names nothing the ConfigMap carries
     # is a pod that never becomes Ready. Tie the three places that must agree — the configured
     # path, the mount point, and the generated file — together here rather than in a rollout.
+    # Prompts belong to launchable Agents plus the shared chat fragment (#4431 stage 6).
     kustomization = yaml.safe_load((k8s_dir / "haku/console/kustomization.yaml").read_text())
     generated = next(entry for entry in kustomization["configMapGenerator"] if entry["name"] == "haku-console-config")
     config_mount = next(mount for mount in server["volumeMounts"] if mount["name"] == "config")
-    template_path = PurePosixPath(runtime["system_prompt_template"])
-    assert str(template_path.parent) == config_mount["mountPath"]
-    assert template_path.name in generated["files"]
-    assert (k8s_dir / "haku/console" / template_path.name).is_file()
+    prompt_paths = [PurePosixPath(entry["system_prompt_template"]) for entry in console_config["launchable_agents"]]
+    prompt_paths.append(PurePosixPath(console_config["chat_prompt_fragment"]))
+    for template_path in prompt_paths:
+        assert str(template_path.parent) == config_mount["mountPath"]
+        assert template_path.name in generated["files"]
+        assert (k8s_dir / "haku/console" / template_path.name).is_file()
 
     env_names = {entry["name"] for entry in deployment["spec"]["template"]["spec"]["containers"][0]["env"]}
     assert not any(name.startswith("HAKU_CONSOLE_CLAUDE_RUNTIME__") for name in env_names)
@@ -835,19 +838,26 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
     assert runtime_profiles == {"haku", "public-coder"}
     assert {obj["metadata"]["name"] for obj in kube_objects if obj["kind"] == "Deployment"} == {"haku-kube-api-proxy"}
 
-    prompt_path = PurePosixPath(codex["system_prompt_template"])
+    # Prompts belong to launchable Agents: the codex Agent's identity template plus the shared
+    # fragment, neither leaking anything Haku-only.
+    coder_entry = one(entry for entry in shared_config["launchable_agents"] if entry["agent_id"] == codex["agent_id"])
+    prompt_path = PurePosixPath(coder_entry["system_prompt_template"])
+    fragment_path = PurePosixPath(shared_config["chat_prompt_fragment"])
     generated = one(
         entry
         for entry in yaml.safe_load((k8s_dir / "haku/console/kustomization.yaml").read_text())["configMapGenerator"]
         if entry["name"] == "haku-console-config"
     )
     assert prompt_path.name in generated["files"]
+    assert fragment_path.name in generated["files"]
     assert "codex-feature-gate.conf" not in generated["files"]
     prompt = (k8s_dir / "haku/console" / prompt_path.name).read_text()
     assert "public-coder-agent" in prompt
     assert "public GitHub repositories" in prompt
     assert "workspace starts empty and ephemeral" in prompt
     assert "haku-state" not in prompt.lower()
+    fragment = (k8s_dir / "haku/console" / fragment_path.name).read_text()
+    assert "haku-state" not in fragment.lower()
 
     workspaces_flux = yaml.safe_load((k8s_dir / "haku/workspaces/app/flux-kustomization.yaml").read_text())
     workspace_dependencies = {entry["name"] for entry in workspaces_flux["spec"]["dependsOn"]}

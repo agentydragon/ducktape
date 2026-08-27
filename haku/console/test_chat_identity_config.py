@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from uuid import UUID
 
 import pytest
@@ -27,7 +28,6 @@ def _runtime() -> dict[str, object]:
         "ca_bundle": "/ca.pem",
         "no_proxy": "localhost",
         "mcp_url": "https://console.example/mcp",
-        "system_prompt_template": "/prompt",
         "implementation": {"kind": "claude_code", "oauth_placeholder": "placeholder"},
     }
 
@@ -54,7 +54,7 @@ def _config(**overrides: object) -> dict[str, object]:
                 "access_profile_id": "chat",
             }
         ],
-        "launchable_agents": [{"agent_id": str(_AGENT)}],
+        "launchable_agents": [{"agent_id": str(_AGENT), "system_prompt_template": "/prompt"}],
         "default_chat_agent_id": str(_AGENT),
     }
     value.update(overrides)
@@ -82,7 +82,11 @@ def test_profile_read_graph_rejects_cycles() -> None:
 def test_launchable_agent_must_be_a_configured_static_agent() -> None:
     with pytest.raises(ValidationError, match="not configured static Agents"):
         ConsoleConfigFile.model_validate(
-            _config(launchable_agents=[{"agent_id": "00000000-0000-0000-0000-000000000099"}])
+            _config(
+                launchable_agents=[
+                    {"agent_id": "00000000-0000-0000-0000-000000000099", "system_prompt_template": "/prompt"}
+                ]
+            )
         )
 
 
@@ -97,6 +101,17 @@ def test_configured_runtime_requires_a_launchable_default_and_runtime_enabled_pr
                 access_profiles=[{"id": "chat", "auto_approval_policy": "manual"}],
             )
         )
+
+
+def test_configured_runtime_requires_the_shared_chat_prompt_fragment() -> None:
+    runtime = _runtime()
+    with pytest.raises(ValidationError, match="require a chat prompt fragment"):
+        ConsoleConfigFile.model_validate(_config(chat_runtimes={"claude_code": runtime}))
+    parsed = ConsoleConfigFile.model_validate(
+        _config(chat_runtimes={"claude_code": runtime}, chat_prompt_fragment="/fragment")
+    )
+    assert parsed.launchable_agents[0].system_prompt_template == Path("/prompt")
+    assert parsed.chat_prompt_fragment == Path("/fragment")
 
 
 def test_launchable_agent_requires_its_own_runtime_registration() -> None:
@@ -118,7 +133,10 @@ def test_launchable_agent_requires_its_own_runtime_registration() -> None:
                         "access_profile_id": "chat",
                     },
                 ],
-                launchable_agents=[{"agent_id": str(_AGENT)}, {"agent_id": str(second)}],
+                launchable_agents=[
+                    {"agent_id": str(_AGENT), "system_prompt_template": "/prompt"},
+                    {"agent_id": str(second), "system_prompt_template": "/second-prompt"},
+                ],
             )
         )
 

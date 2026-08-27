@@ -54,10 +54,6 @@ chat_runtimes:
     # immutable Agent/profile identity, so the runtime is not bound to one static Agent and the Agent
     # may use the same token through curl or another MCP client.
     mcp_url: http://haku-console.haku-console.svc.cluster.local:9090/mcp
-    # Temporarily runtime-owned until the later Agent prompt migration in #4431. Mounted from this
-    # same ConfigMap: Haku's identity and the attached-chat contract; the craft it authors for
-    # itself lives in haku-state, which it can write and this it cannot.
-    system_prompt_template: /etc/haku-console/config/chat_system_prompt.md.j2
     implementation:
       kind: claude_code
       oauth_placeholder: sk-ant-oat01-placeholder
@@ -75,7 +71,6 @@ chat_runtimes:
     # least-credential runner proxy.
     no_proxy: 127.0.0.1,localhost,haku-console.haku-console.svc.cluster.local,haku-kube-api-proxy.haku-console.svc.cluster.local
     mcp_url: http://haku-console.haku-console.svc.cluster.local:9090/mcp
-    system_prompt_template: /etc/haku-console/config/public_coder_system_prompt.md.j2
     implementation:
       kind: codex_app_server
       # The runner pins wire_api=responses, so this must be a `chatgpt/oai-responses/*`
@@ -504,9 +499,16 @@ static_agents:
     # the Operator. Everything else remains approval-wrapped, and Coder cannot approve its own
     # requests.
     access_profile_id: public-coder
+# Prompts belong to Agents (#4431 stage 6): each launchable Agent names its identity template,
+# composed with the shared attached-chat fragment below. All three files are mounted from this
+# same ConfigMap. Haku's identity and what only Haku is told stay in its template; the craft it
+# authors for itself lives in haku-state, which it can write and these it cannot.
 launchable_agents:
   - agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
+    system_prompt_template: /etc/haku-console/config/chat_system_prompt.md.j2
   - agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e
+    system_prompt_template: /etc/haku-console/config/public_coder_system_prompt.md.j2
+chat_prompt_fragment: /etc/haku-console/config/chat_prompt_fragment.md.j2
 default_chat_agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
 operator_connection_providers:
   google_mail:

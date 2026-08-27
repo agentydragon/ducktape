@@ -106,6 +106,7 @@ filegroup(
         "haku-ci/namespace.yaml",
         "haku-ci/scaledjob.yaml",
         "haku/console/agent-diagnostics-rbac.yaml",
+        "haku/console/chat_prompt_fragment.md.j2",
         "haku/console/chat_system_prompt.md.j2",
         "haku/console/config.yaml",
         "haku/console/deployment.yaml",
@@ -241,8 +242,12 @@ filegroup(
 
 filegroup(
     name = "haku_console_system_prompt",
-    srcs = ["haku/console/chat_system_prompt.md.j2"],
-    # `__subpackages__`: the template is rendered by the session runtime and read back by
+    srcs = [
+        "haku/console/chat_prompt_fragment.md.j2",
+        "haku/console/chat_system_prompt.md.j2",
+        "haku/console/public_coder_system_prompt.md.j2",
+    ],
+    # `__subpackages__`: the templates are rendered by the session runtime and read back by
     # the Matrix channel's full-stack test, which is a package below it.
     visibility = ["//haku/console/x:__subpackages__"],
 )

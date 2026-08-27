@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from datetime import UTC, datetime, timedelta
@@ -579,6 +580,14 @@ class SessionService:
             await self._cleanup_terminal_claim(session_id)
             await websocket.close(code=1011, reason="system prompt failed to render")
             return
+        if appended is not None:
+            # Audit provenance for the prompt this runner launches with; first render wins, so a
+            # reconnect of the surviving CLI process cannot rewrite what the session started as.
+            await self._store.record_prompt_provenance(
+                session_id,
+                template_digest=resources.system_prompt.source_digest,
+                rendered_digest=hashlib.sha256(appended.encode("utf-8")).digest(),
+            )
         # Launch assembly is deploy/config interpretation, so keep it on the admission side of
         # `accept()` too. A malformed endpoint must fail and release the claim rather than accept
         # the runner, escape the lifecycle handler below, and leave the session leased until its
