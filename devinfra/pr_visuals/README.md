@@ -34,15 +34,19 @@ per target:
 2. otherwise the mutable pointer `baselines/<slug>.json`, naming the newest
    devel commit whose immutable bundle carries the target.
 
-Devel pushes publish every visual artifact emitted by the completed Bazel
-run, including cached tests, even when an unrelated target fails. A failed
-visual target that produces no manifest cannot advance its pointer. This keeps
-an otherwise-valid visual result from being dropped solely because CI has a
-flake elsewhere. Devel-push publications advance the pointers after the commit
-bundle upload completes; targets resolved through a pointer are marked
-`baseline_fallback` in the bundle metadata and the PR comment warns that those
-differences may predate the PR. If neither source carries the target, every
-asset classifies as `new`.
+Devel pushes publish the visual artifacts of every target the completed Bazel
+run re-executed, even when an unrelated target fails; a failed visual target
+that produces no manifest cannot advance its pointer. This keeps an
+otherwise-valid visual result from being dropped solely because CI has a flake
+elsewhere. Cache-hit tests re-expose nothing, so a fully cached devel run —
+the norm when the merged PR's own CI already tested the identical tree —
+skips publication and advances no pointers; a pointer heals at the first
+devel run that re-executes its target, typically forced by the next
+cache-busting commit (e.g. an rbe-worker image pin bump). Devel-push
+publications advance the pointers after the commit bundle upload completes;
+targets resolved through a pointer are marked `baseline_fallback` in the
+bundle metadata and the PR comment warns that those differences may predate
+the PR. If neither source carries the target, every asset classifies as `new`.
 
 ## Check-runs
 
