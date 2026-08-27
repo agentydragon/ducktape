@@ -35,7 +35,7 @@ import { SettingsPanel } from "./settings_panel";
 import { AgentEnrollmentPanel, type EnrollmentChoice } from "./agent_enrollment_panel";
 import { toastError, toastSuccess } from "./toast";
 import { useToolCallDecision } from "./tool_call_decision";
-import { changedSessionId, useConsoleEvents } from "./console_events";
+import { changedConversationId, useConsoleEvents } from "./console_events";
 import { redirectToOperatorLogin } from "./operator_login";
 import { useOperatorSessionDeadline, useSessionExpiringSoon } from "./operator_session";
 import { ToolCallsPage } from "./tool_calls_page";
@@ -366,11 +366,11 @@ export function HakuUiEmbed({
 
   // Live tool-call signal: initial fetch on mount plus a refetch on every server WS event
   // (which the server also broadcasts to every other tab, so they refresh too). Its status
-  // drives the shell's live-channel warning when the socket is down. Session invalidations are
-  // skipped: they say nothing about the approval queue, and a streaming turn emits one of them
-  // every coalescing window.
+  // drives the shell's live-channel warning when the socket is down. Conversation invalidations
+  // are skipped: they say nothing about the approval queue, and a streaming turn emits one of
+  // them every coalescing window.
   const liveStatus = useConsoleEvents((event) => {
-    if (changedSessionId(event) === null) refreshToolApprovals();
+    if (changedConversationId(event) === null) refreshToolApprovals();
   });
 
   const pendingApprovalCount = toolApprovals.length + geolocationApprovals.length + screenshotApprovals.length;

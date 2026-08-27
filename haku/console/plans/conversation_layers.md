@@ -43,8 +43,6 @@ Every line here is an edge the invariant still forbids after neutral runtime sup
 
 - The editable status line's `EventTag.session_id` leaves a permanent, federated channel artifact
   addressed by a runner incarnation that a replacement invalidates.
-- **The wake itself is session-keyed.** `pg_notify` carries `{kind, session_id}`, so a subscriber to
-  a conversation subscribes by session.
 - The SPA's raw-frame, abort, close and provisioning inspection remain correctly session-addressed;
   prompt admission itself now uses `POST /api/conversations/{conversation_id}/messages`.
 
@@ -108,7 +106,7 @@ single path from the record outward, and a channel differs only in two ways:
 The primitive is code: `Subscription.read()` over a `ConversationStream` in `x/subscription.py`,
 where "no position given" is the `Unstarted` arm rather than a zero, and
 `WS /api/conversations/{id}/follow` is the same contract over one socket — a snapshot, then the
-changes, with `session_changed` as the wake that says to read again. Matrix's `RoomNotices` consumes
+changes, with the conversation wake as what says to read again. Matrix's `RoomNotices` consumes
 that primitive: it queues completed answers in `matrix_outbox`, folds the stream into live
 status/typing, and projects the settled rejection, unreadable-input, setup, adoption, lease-expiry
 and operator-abort notices, checked against the room's own recorded copy before it sends. What is
@@ -139,11 +137,12 @@ without it costs a follow-up, not a redesign.
 
 - **The address is `conversation_event.event_seq`**, dense within the conversation, so a subscriber
   reading "everything after N" can tell a gap from an end.
-- **The wake carries no payload**, and names the wrong layer. `session_changed` names a session and
-  nothing else, so a channel subscribing to a conversation subscribes by session (§ 1); it carries
-  the conversation resolved from that session. Level-triggered, edge-scheduled — <../x/session_live_updates.py>
-  builds this half: `LISTEN`/`NOTIFY` is broadcast, each replica fans out to the sockets it holds, and changes
-  coalesce to at most one per session per half-second.
+- **The wake carries no payload beyond its address**, and the address is the conversation:
+  `pg_notify` names `conversation_id` and a conversation subscriber keys on it. Level-triggered,
+  edge-scheduled — `LISTEN`/`NOTIFY` is broadcast, each replica wakes the followers it holds, and
+  changes coalesce per window. The browser-facing invalidation
+  (<../x/conversation_live_updates.py>) names the conversation too — one more subscriber, with the
+  console socket as its transport.
 - **The position belongs to whoever needs it, and its shape follows from what they hold.** A tab
   holds no copy that outlives it, so its position is a query parameter and the server keeps
   nothing. A room holds its own copy, so its position is a durable cursor: a position behind the
@@ -162,7 +161,7 @@ own transaction.
 conversation behind the room, send what can be sent both ways, otherwise wait:
 
 ```text
-wake on: an inbound event, a session_changed, a freed send slot, or the fallback timer
+wake on: an inbound event, a conversation wake, a freed send slot, or the fallback timer
   1. read the conversation from the cursor: events, the live turn, the open message
   2. read the room's own state: our tagged events (§ 3)
   3. inbound  — offer what the transport holds, if the conversation will admit it;
@@ -768,7 +767,7 @@ The boundary, stated as a rule:
   reflection and semantic recall (`haku_index.search`), which has no REST twin and should never grow
   one.
 - **`/api/events/ws` says _what changed_; the read surface says _what it is_.** A
-  `SessionChangedEvent {session_id}` is an invalidation, not a payload.
+  `ConversationChangedEvent {conversation_id}` is an invalidation, not a payload.
 - **Mutations, the WebSocket, and anything the service worker touches stay REST**, always.
 
 Two things are left, neither of which needs a transport decision:

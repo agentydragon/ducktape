@@ -833,6 +833,27 @@ def main() -> None:
     refresh_stale_comment_body: str | None = None
     details_url: str | None = args.ci_details_url or workflow_url
     ci_failures: list[str] = []
+
+    if args.ci_conclusion == "cancelled":
+        # `bazel-ci.yml` cancels a superseded run the instant a newer commit lands on
+        # the branch, so a cancelled run is one whose tests never finished on a head
+        # that is no longer current. It has no artifacts to publish and nothing true
+        # to say — and the comment is a singleton, so letting it speak would overwrite
+        # the previous run's real review with a warning about a build nobody wants.
+        # The run that superseded it is already on its way with the answer.
+        upsert_check_run(
+            repository=args.repository,
+            commit_sha=args.sha,
+            status="completed",
+            conclusion="neutral",
+            summary="Superseded by a newer commit before Bazel CI finished.",
+            details_url=details_url,
+            external_id=args.check_external_id,
+            token=github_token,
+        )
+        print(f"Bazel CI on {args.sha} was cancelled as superseded; nothing to publish.")
+        return
+
     try:
         linkage_files = list(args.linkage_dir.glob("*.json"))
         invocations = find_test_invocations(args.linkage_dir) if linkage_files else []

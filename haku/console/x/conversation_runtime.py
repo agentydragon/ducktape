@@ -16,12 +16,16 @@ import contextlib
 import logging
 from collections.abc import AsyncIterator
 from datetime import timedelta
-from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
+from haku.console.x.session_notifications import (
+    ConversationWakeEvent,
+    ConversationWakeKind,
+    RecheckHeld,
+    SessionNotifications,
+)
 from haku.console.x.session_runtime import SessionService
 from haku.console.x.session_store import REPLICA, SessionStore
 
@@ -65,10 +69,18 @@ class ConversationRuntime:
             if created is not None:
                 logger.info("queued conversation %s opened idle session %s", demand.conversation_id, created.session_id)
 
-    def _wake(self, conversation_id: UUID) -> None:
-        """Wake the durable sweep; the listener callback itself cannot await."""
-        del conversation_id
-        self._demanded.set()
+    def _wake(self, wake: ConversationWakeEvent | RecheckHeld) -> None:
+        """Wake the durable sweep on demand; the listener callback itself cannot await.
+
+        Only `runtime_demand` (and a gap's `RecheckHeld`) wakes it: `update` fires per streaming
+        delta, and sweeping on those would run the reconciler continuously. The sweep reads every
+        durable demand row, so which conversation the wake named does not matter.
+        """
+        match wake:
+            case ConversationWakeEvent(kind=ConversationWakeKind.RUNTIME_DEMAND) | RecheckHeld():
+                self._demanded.set()
+            case ConversationWakeEvent():
+                pass
 
     async def _sweep(self) -> None:
         while True:
@@ -104,7 +116,7 @@ class ConversationRuntime:
     @contextlib.asynccontextmanager
     async def run(self) -> AsyncIterator[None]:
         """Run the elected reconciler and register this replica's low-latency demand wake."""
-        with self._notifications.watch(SessionEventKind.RUNTIME_DEMAND, self._wake):
+        with self._notifications.watch_conversations(self._wake):
             task = asyncio.create_task(self._run(), name="conversation-runtime")
             try:
                 yield

@@ -80,7 +80,7 @@ from haku.console.x.conversation_records import (
 )
 from haku.console.x.runtime import RuntimeAdapter, RuntimeRegistry
 from haku.console.x.session_events import PromptStartedBody, TurnAbortedBody, TurnAnsweredBody, TurnFailedBody
-from haku.console.x.session_notifications import SessionEventKind
+from haku.console.x.session_notifications import SessionEvent, SessionEventKind
 from haku.console.x.session_store import (
     ADOPTION_GRACE,
     REPLICA,
@@ -1282,10 +1282,11 @@ async def test_abort_reaches_the_replica_running_the_turn(
             async_sessionmaker(other_engine, expire_on_commit=False),
             RuntimeRegistry({RuntimeKind.CLAUDE_CODE: cast(RuntimeAdapter, _AlternateFrameVocabulary())}),
         )
-        async with notifications.subscribe(SessionEventKind.ABORT, view.session_id) as aborted:
+        received: asyncio.Queue[SessionEvent] = asyncio.Queue()
+        with notifications.watch_session(view.session_id, received.put_nowait):
             assert await requesting.request_abort(view.session_id) is True
             async with asyncio.timeout(30):
-                await aborted.wait()
+                assert (await received.get()).kind is SessionEventKind.ABORT
     finally:
         await other_engine.dispose()
 

@@ -80,7 +80,13 @@ from haku.console.x.conversation_records import (
 )
 from haku.console.x.launch_identity import LaunchAgentRejectedError, LaunchAuthorizer
 from haku.console.x.runtime import RuntimeAdapter, RuntimeRegistry
-from haku.console.x.session_notifications import SessionEventKind, notify
+from haku.console.x.session_notifications import (
+    ConversationWakeKind,
+    SessionEventKind,
+    notify,
+    notify_conversation,
+    notify_update,
+)
 from haku.console.x.session_views import (
     ConversationCursor,
     ConversationItemView,
@@ -732,7 +738,7 @@ class SessionStore:
                 .values(session_id=session_id, updated_at=now)
             )
             await notify(db, SessionEventKind.PROMPT, session_id)
-            await notify(db, SessionEventKind.UPDATE, session_id)
+            await notify_update(db, session_id=session_id, conversation_id=conversation_id)
         return SandboxDemand(operator_id=operator_id, session_id=session_id)
 
     async def _create_provisioning_for_test(
@@ -829,7 +835,12 @@ class SessionStore:
                 db, chat.conversation_id, session_id=session_id, turn_id=None, now=now
             )
             writer.authored(session_events.SessionProvisioningBody())
-            await notify(db, SessionEventKind.UPDATE, session_id)
+            await notify_update(
+                db,
+                session_id=session_id,
+                conversation_id=chat.conversation_id,
+                position=writer.conversation.next_event_seq - 1,
+            )
             return SessionAllocation(session_id=session_id, bridge_token=bridge_token)
 
     async def sessions_awaiting_sandbox(self) -> tuple[SandboxDemand, ...]:
@@ -1287,7 +1298,7 @@ class SessionStore:
             chat.claim_cleaned_at = now
             if chat.status == SessionStatus.CLOSING:
                 await self._end_session(db, chat, error=None, now=now)
-                await notify(db, SessionEventKind.UPDATE, session_id)
+                await notify_update(db, session_id=session_id, conversation_id=chat.conversation_id)
             else:
                 chat.updated_at = now
 
@@ -1388,13 +1399,12 @@ class SessionStore:
                 chat.updated_at = now
             if records is not None:
                 await records(db, item_id)
-            # A neutral supervisor consumes conversation demand. Once a session exists, the
-            # historical prompt/update wakes retain their exact meaning for allocators, runners,
-            # followers and older rolling replicas.
-            await notify(db, SessionEventKind.RUNTIME_DEMAND, conversation_id)
+            # A neutral supervisor consumes conversation demand; once a session exists, the
+            # session channel's prompt wake reaches its runner and the allocator directly.
+            await notify_conversation(db, ConversationWakeKind.RUNTIME_DEMAND, conversation_id)
             if chat is not None:
                 await notify(db, SessionEventKind.PROMPT, chat.session_id)
-                await notify(db, SessionEventKind.UPDATE, chat.session_id)
+                await notify_update(db, session_id=chat.session_id, conversation_id=conversation_id)
         return item_id
 
     async def next_prompt(self, session_id: UUID) -> TurnStart | None:
@@ -1430,7 +1440,7 @@ class SessionStore:
                 select(func.max(SessionFrame.frame_seq)).where(SessionFrame.session_id == session_id)
             )
             chat.projected_frame_seq = highest or 0
-            turn, _ = await conversation_log.open_turn(db, chat.conversation_id, session_id=session_id, now=now)
+            turn, writer = await conversation_log.open_turn(db, chat.conversation_id, session_id=session_id, now=now)
             turn.first_frame_seq = (highest or 0) + 1
             queued.claimed_at = now
             queued.claimed_by_session_id = session_id
@@ -1441,7 +1451,12 @@ class SessionStore:
             item.turn_id = turn.turn_id
             item.updated_at = now
             chat.updated_at = now
-            await notify(db, SessionEventKind.UPDATE, session_id)
+            await notify_update(
+                db,
+                session_id=session_id,
+                conversation_id=chat.conversation_id,
+                position=writer.conversation.next_event_seq - 1,
+            )
             return TurnStart(turn_id=turn.turn_id, item_id=item.item_id, prompt=item.item_text)
 
     async def open_wake_turn(self, session_id: UUID, description: str, *, first_frame_seq: int) -> WakeTurn | None:
@@ -1467,7 +1482,12 @@ class SessionStore:
             assert item is not None
             item.turn_id = turn.turn_id
             chat.updated_at = now
-            await notify(db, SessionEventKind.UPDATE, session_id)
+            await notify_update(
+                db,
+                session_id=session_id,
+                conversation_id=chat.conversation_id,
+                position=writer.conversation.next_event_seq - 1,
+            )
             return WakeTurn(turn_id=turn.turn_id)
 
     async def turn_state(self, turn_id: UUID) -> TurnState:
@@ -1544,7 +1564,12 @@ class SessionStore:
                 # state and the SPA has to be told.
                 _advance_cursor(chat, projected_frame_seq)
                 chat.updated_at = now
-                await notify(db, SessionEventKind.UPDATE, turn.session_id)
+                await notify_update(
+                    db,
+                    session_id=turn.session_id,
+                    conversation_id=turn.conversation_id,
+                    position=writer.conversation.next_event_seq - 1,
+                )
 
     async def list_turns(self, session_id: UUID, *, cursor: TurnCursor | None, limit: int) -> list[TurnRecord]:
         """A session's exchanges from *cursor*, newest first, for the `haku_conversations` tools.
@@ -1678,7 +1703,12 @@ class SessionStore:
                 db, chat.conversation_id, session_id=session_id, turn_id=None, now=now
             )
             writer.authored(session_events.SetupNarrationBody(text=text))
-            await notify(db, SessionEventKind.UPDATE, session_id)
+            await notify_update(
+                db,
+                session_id=session_id,
+                conversation_id=chat.conversation_id,
+                position=writer.conversation.next_event_seq - 1,
+            )
 
     async def highest_runner_seq(self, session_id: UUID) -> int | None:
         """The resume cursor for one session: the highest number a runner gave a frame in it.
@@ -1885,7 +1915,12 @@ class SessionStore:
                 await writer.append(event)
             _advance_cursor(chat, frame_seq)
             chat.updated_at = now
-            await notify(db, SessionEventKind.UPDATE, session_id)
+            await notify_update(
+                db,
+                session_id=session_id,
+                conversation_id=turn.conversation_id,
+                position=writer.conversation.next_event_seq - 1,
+            )
 
     async def complete_frame(
         self,
@@ -1950,7 +1985,12 @@ class SessionStore:
             writer.authored(ended, turn_id=turn_id)
             _advance_cursor(chat, frame_seq)
             chat.updated_at = now
-            await notify(db, SessionEventKind.UPDATE, session_id)
+            await notify_update(
+                db,
+                session_id=session_id,
+                conversation_id=turn.conversation_id,
+                position=writer.conversation.next_event_seq - 1,
+            )
             return said
 
     async def close_answer(self, session_id: UUID, turn_id: UUID, *, final_text: str, frame_seq: int) -> bool:
@@ -1994,7 +2034,12 @@ class SessionStore:
                 said = True
             else:
                 said = False
-            await notify(db, SessionEventKind.UPDATE, session_id)
+            await notify_update(
+                db,
+                session_id=session_id,
+                conversation_id=turn.conversation_id,
+                position=writer.conversation.next_event_seq - 1,
+            )
             return said
 
     async def fail(self, session_id: UUID, error: str) -> None:
@@ -2011,7 +2056,7 @@ class SessionStore:
                 SessionStatus.FAILED,
             }:
                 await self._end_session(db, chat, error=error, now=now)
-                await notify(db, SessionEventKind.UPDATE, session_id)
+                await notify_update(db, session_id=session_id, conversation_id=chat.conversation_id)
             # An item still open when the session died says so on its own row: `failed` is one of
             # the three lifecycle states, so a half-written answer is neither lost nor shown as if
             # it had finished.
@@ -2045,7 +2090,7 @@ class SessionStore:
                 chat.close_requested_at = datetime.now(UTC)
             chat.updated_at = datetime.now(UTC)
             await notify(db, SessionEventKind.PROMPT, session_id)
-            await notify(db, SessionEventKind.UPDATE, session_id)
+            await notify_update(db, session_id=session_id, conversation_id=chat.conversation_id)
 
     async def attached(self, session_id: UUID) -> bool:
         """Whether a channel holds a copy of the thread this session runs.
@@ -2220,7 +2265,7 @@ class SessionStore:
                 )
                 writer.authored(session_events.LeaseExpiredBody(reason=reason, last_holder=chat.lease_holder))
                 await self._end_session(db, chat, error=f"console session ended: {detail}", now=now)
-                await notify(db, SessionEventKind.UPDATE, session_id)
+                await notify_update(db, session_id=session_id, conversation_id=chat.conversation_id)
             return len(expired)
 
     async def closed(self, session_id: UUID) -> None:
@@ -2229,7 +2274,7 @@ class SessionStore:
             if chat is not None and chat.status not in {SessionStatus.CLOSED, SessionStatus.FAILED}:
                 now = datetime.now(UTC)
                 await self._end_session(db, chat, error=None, now=now)
-                await notify(db, SessionEventKind.UPDATE, session_id)
+                await notify_update(db, session_id=session_id, conversation_id=chat.conversation_id)
 
     async def session_exists(self, operator_id: UUID, session_id: UUID) -> bool:
         async with self._sessions() as db:

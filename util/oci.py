@@ -1,4 +1,9 @@
-"""OCI container image utilities: auth, digest reading, image loading."""
+"""OCI container image utilities: auth, digest reading, image loading.
+
+Also the Bazel-facing half of crane: `util/crane.py` is deliberately standard
+library only so the CI publish planners can import it without Bazel, so
+resolving crane and Bazel-built images out of runfiles lives here instead.
+"""
 
 from __future__ import annotations
 
@@ -6,10 +11,13 @@ import base64
 import contextlib
 import fcntl
 import hashlib
+import io
 import json
 import logging
 import os
+import shutil
 import subprocess
+import tarfile
 import tempfile
 import time
 from collections.abc import Iterator
@@ -19,9 +27,38 @@ from pathlib import Path
 from opentelemetry import trace
 
 from util.bazel import runfiles
-from util.crane import push_to_daemon
+from util.crane import Crane, parse_pushed_digest
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
+
+_CRANE_RLOCATION = "crane/crane"
+
+
+def bazel_crane(*, registry: str | None = None, username: str | None = None, password: str | None = None) -> Crane:
+    """A `Crane` on the binary Bazel staged in runfiles (`data = ["@crane"]`)."""
+    return Crane(runfiles.get_required_path(_CRANE_RLOCATION), registry=registry, username=username, password=password)
+
+
+@dataclass(frozen=True)
+class BazelImage:
+    """OCI image built by Bazel, available as an OCI layout directory."""
+
+    repo_name: str
+    image_rlocation: str
+
+
+async def push_bazel_image(
+    crane: Crane, image: BazelImage, registry_url: str, tag: str, *, insecure: bool = False
+) -> str:
+    """Push a Bazel-built OCI image to a registry. Returns the digest."""
+    image_path = runfiles.get_required_path(image.image_rlocation)
+    dest = f"{registry_url}/{image.repo_name}:{tag}"
+    logger.info("Pushing %s -> %s via crane", image_path, dest)
+    stdout = await crane.apush(image_path, dest, insecure=insecure)
+    digest = parse_pushed_digest(stdout, dest)
+    logger.info("Pushed %s: %s", dest, digest)
+    return digest
 
 
 @dataclass(frozen=True)
@@ -72,8 +109,6 @@ def read_oci_layout_digest(image_dir: Path) -> str:
 # ---------------------------------------------------------------------------
 # Image loading via crane
 # ---------------------------------------------------------------------------
-
-tracer = trace.get_tracer(__name__)
 
 
 def _lock_path(tag: str) -> Path:
@@ -167,3 +202,54 @@ def load_oci_image(image: OciImage) -> str:
         _loaded_marker(image.tag).write_text(f"{wanted} {daemon_image_id(image.tag)}")
         logger.info("Loaded %s in %.1fs", image.tag, time.monotonic() - started)
     return image.tag
+
+
+def push_to_daemon(oci_layout: Path, tag: str) -> None:
+    """Load an OCI layout directory into the local Docker daemon.
+
+    Converts the OCI layout to a Docker-format tarball and pipes it to
+    ``docker load``. This is equivalent to what rules_oci's oci_load does.
+
+    TODO: The Docker daemon has no API for loading OCI layouts directly —
+    every path (crane, skopeo, regctl, rules_oci's oci_load) ends up
+    building a Docker-format tarball and piping it to ``docker load``.
+    If Docker ever adds native OCI layout loading, replace this.
+    """
+    index = json.loads((oci_layout / "index.json").read_text())
+    manifest_digest: str = index["manifests"][0]["digest"]
+    manifest_blob = oci_layout / "blobs" / manifest_digest.replace(":", "/")
+    manifest = json.loads(manifest_blob.read_text())
+
+    config_digest: str = manifest["config"]["digest"]
+    config_blob_rel = "blobs/" + config_digest.replace(":", "/")
+    layer_rels = ["blobs/" + layer["digest"].replace(":", "/") for layer in manifest["layers"]]
+
+    docker_manifest = [{"Config": config_blob_rel, "RepoTags": [tag], "Layers": layer_rels}]
+
+    buf = io.BytesIO()
+    # dereference=True: Bazel runfiles are symlinks into the execroot. Without
+    # dereferencing, tar records them as symlink entries with absolute target
+    # paths. Docker extracts the tarball and tries to follow those symlinks,
+    # which fail when the daemon runs outside Bazel's sandbox.
+    with tracer.start_as_current_span("oci_build_tarball") as span:
+        with tarfile.open(fileobj=buf, mode="w", dereference=True) as tar:
+            # Add manifest.json
+            manifest_data = json.dumps(docker_manifest).encode()
+            info = tarfile.TarInfo(name="manifest.json")
+            info.size = len(manifest_data)
+            tar.addfile(info, io.BytesIO(manifest_data))
+            # Add config blob
+            tar.add(oci_layout / config_blob_rel, arcname=config_blob_rel)
+            # Add layer blobs
+            for layer_rel in layer_rels:
+                tar.add(oci_layout / layer_rel, arcname=layer_rel)
+        span.set_attribute("tarball_bytes", buf.tell())
+
+    docker = shutil.which("docker") or shutil.which("podman")
+    if not docker:
+        raise RuntimeError("Neither docker nor podman CLI found")
+    buf.seek(0)
+    with tracer.start_as_current_span("docker_load"):
+        result = subprocess.run([docker, "load"], input=buf.read(), check=False, capture_output=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"docker load failed: {result.stderr.decode()}")
