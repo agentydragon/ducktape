@@ -1208,6 +1208,13 @@ class Session(Base):
     # **`0` is "nothing here has ever projected"**, which no frame's `frame_seq` can be, so the
     # bound needs no absent state; it arrives by the server default.
     projected_frame_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default=text("0"))
+    # How far this session's neutral-operation journal has committed (#4667): the highest
+    # `runner_batch_seq` whose batch is durably applied. `BatchAck` and `ConsoleResume` are
+    # computed from it, and it advances in the same transaction as the batch's effects — so
+    # committed and acknowledged cannot disagree, and whichever replica answers a reconnect
+    # answers from this row. **`0` is "no batch has ever committed"**, which no batch's seq can be
+    # (they number from 1), exactly as `projected_frame_seq` spells its own zero.
+    acked_batch_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default=text("0"))
     # The operator asked this session to end. Stamped once and never cleared — ending is one-way —
     # which is what derives `closing` until `ended_at` lands.
     close_requested_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -1440,6 +1447,11 @@ class ConversationItem(Base):
     # What the backend called this item. Provenance, never identity — Claude Code omits it on many
     # rows and on every delta, which is why the console mints its own.
     backend_item_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The runner's own stable id for this item under the neutral-operation journal (#4667): the
+    # key every `item.segment` and `item.completed` names, scoped to the session whose runner
+    # minted it (`uq_conversation_item_runner`). NULL on every row the old fold or the console
+    # authored — prompts included, which the journal cannot open.
+    runner_item_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
     # Prompt only: which attachment or surface sent it.
     origin: Mapped[PromptOrigin | None] = mapped_column(PydanticColumn(PromptOrigin), nullable=True)
     call_id: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -1498,6 +1510,15 @@ class ConversationItem(Base):
             unique=True,
             postgresql_where=sql_text("call_id IS NOT NULL"),
         ),
+        # The journal consumer's addressing path: a runner id resolves to one row within its
+        # session, or the batch naming it is rejected.
+        Index(
+            "uq_conversation_item_runner",
+            "session_id",
+            "runner_item_id",
+            unique=True,
+            postgresql_where=sql_text("runner_item_id IS NOT NULL"),
+        ),
         Index("idx_conversation_item_conversation", "conversation_id", "opened_seq"),
         Index("idx_conversation_item_turn", "turn_id", "opened_seq"),
         # The `read_items` keyset branches: a page of entries is served from the rows' defining
@@ -1541,6 +1562,10 @@ class ConversationTurn(Base):
     )
     first_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
     last_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # The runner's own stable id for this exchange under the neutral-operation journal (#4667),
+    # the key `turn.ended` and `item.opened` name, scoped to the session whose runner minted it
+    # (`uq_conversation_turn_runner`). NULL on every turn the old fold opened.
+    runner_turn_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
     # Bounds into this session's wire log, so an operator can appeal the folded text to the frames.
     # Absent on a turn that opened or closed on no frame at all.
     first_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
@@ -1564,6 +1589,13 @@ class ConversationTurn(Base):
         CheckConstraint("last_seq IS NULL OR last_seq >= first_seq", name="ck_conversation_turn_seq_order"),
         Index(
             "uq_conversation_turn_open", "conversation_id", unique=True, postgresql_where=sql_text("ended_at IS NULL")
+        ),
+        Index(
+            "uq_conversation_turn_runner",
+            "session_id",
+            "runner_turn_id",
+            unique=True,
+            postgresql_where=sql_text("runner_turn_id IS NOT NULL"),
         ),
         Index("idx_conversation_turn_conversation", "conversation_id", "first_seq"),
         Index("idx_conversation_turn_session", "session_id", "first_seq"),
@@ -1625,6 +1657,61 @@ class ConversationPrompt(Base):
             postgresql_where=sql_text("claimed_at IS NULL"),
         ),
         Index("idx_conversation_prompt_conversation", "conversation_id", "queued_at"),
+    )
+
+
+class SubmittedPrompt(Base):
+    """A prompt the Console accepted and still owes a runner — the durable inbox (#4667 stage 3).
+
+    **Text and origin are authoritative here.** Under the neutral-operation journal a prompt is a
+    durable command first and a transcript item only later: the runner echoes nothing but
+    `prompt_id` in `prompt.admitted`, and the Console materialises the authored `prompt` item from
+    this row at the admitted position. Who said what never rides the wire.
+
+    Distinct from `conversation_prompt`, whose row can only exist once the prompt *item* does —
+    this row precedes the item, which is the point. The old queue serves the Console-side fold and
+    retires with it at the generation cut.
+
+    **State is derived** (root STYLE.md § SQLAlchemy): pending is neither stamp, and the stamps —
+    `admitted_at` with the item it materialised, or `withdrawn_at` — are the two terminal facts.
+    Deliberately no one-pending-per-conversation index: admission order is the runner's decision,
+    and encoding "one at a time" here would bake the current runner's queueing into the schema
+    (#4667 § Prompt ordering).
+    """
+
+    __tablename__ = "submitted_prompt"
+
+    prompt_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    conversation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("conversation.conversation_id", ondelete="CASCADE"), nullable=False
+    )
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    origin: Mapped[PromptOrigin] = mapped_column(PydanticColumn(PromptOrigin), nullable=False)
+    submitted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    withdrawn_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    admitted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The `prompt` item the admission materialised. CASCADE because an item is only ever deleted
+    # with its whole conversation, which takes this row through its own foreign key anyway.
+    admitted_item_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("conversation_item.item_id", ondelete="CASCADE"), nullable=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint("admitted_item_id", name="uq_submitted_prompt_admitted_item"),
+        CheckConstraint("btrim(text) <> ''", name="ck_submitted_prompt_text_nonempty"),
+        # The state machine, as the table states it: pending may become admitted or withdrawn,
+        # never both, and admission always names what it materialised.
+        CheckConstraint("admitted_at IS NULL OR withdrawn_at IS NULL", name="ck_submitted_prompt_single_outcome"),
+        CheckConstraint(
+            "(admitted_at IS NULL) = (admitted_item_id IS NULL)", name="ck_submitted_prompt_admission_pair"
+        ),
+        CheckConstraint(
+            "admitted_at IS NULL OR admitted_at >= submitted_at", name="ck_submitted_prompt_admit_after_submit"
+        ),
+        CheckConstraint(
+            "withdrawn_at IS NULL OR withdrawn_at >= submitted_at", name="ck_submitted_prompt_withdraw_after_submit"
+        ),
+        Index("idx_submitted_prompt_conversation", "conversation_id", "submitted_at"),
     )
 
 

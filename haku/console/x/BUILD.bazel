@@ -122,6 +122,30 @@ py_library(
         ":session_events",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
+        "//haku/runtime/x/bridge:neutral_operations",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "journal_consumer",
+    srcs = ["journal_consumer.py"],
+    deps = [
+        ":conversation_log",
+        ":session_events",
+        ":session_notifications",
+        "//haku/console:database_schema",
+        "//haku/runtime/x/bridge:neutral_operations",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "prompt_inbox",
+    srcs = ["prompt_inbox.py"],
+    deps = [
+        "//haku/console:chat_models",
+        "//haku/console:database_schema",
         "@pypi//sqlalchemy",
     ],
 )
@@ -573,6 +597,29 @@ py_test(
         "//haku/console/x/claude_code/testing:wire",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_journal_consumer",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_journal_consumer.py"],
+    data = ["//haku/runtime/x/bridge:neutral_operations_testdata"],
+    deps = [
+        ":conftest",
+        ":journal_consumer",
+        ":prompt_inbox",
+        ":session_store",
+        "//:conftest",
+        "//haku/console:chat_models",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "//haku/runtime/x/bridge:neutral_operations",
+        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
