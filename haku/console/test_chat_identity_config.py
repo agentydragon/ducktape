@@ -64,6 +64,7 @@ def _config(**overrides: object) -> dict[str, object]:
 def test_launchable_agents_and_runtime_edges_are_deploy_config() -> None:
     config = ConsoleConfigFile.model_validate(_config())
     assert config.launchable_agents[0].agent_id == _AGENT
+    assert config.launchable_agents[0].system_prompt_template == Path("/prompt")
     assert config.access_profiles[0].allowed_chat_runtimes == {RuntimeKind.CLAUDE_CODE}
 
 
@@ -101,17 +102,6 @@ def test_configured_runtime_requires_a_launchable_default_and_runtime_enabled_pr
                 access_profiles=[{"id": "chat", "auto_approval_policy": "manual"}],
             )
         )
-
-
-def test_configured_runtime_requires_the_shared_chat_prompt_fragment() -> None:
-    runtime = _runtime()
-    with pytest.raises(ValidationError, match="require a chat prompt fragment"):
-        ConsoleConfigFile.model_validate(_config(chat_runtimes={"claude_code": runtime}))
-    parsed = ConsoleConfigFile.model_validate(
-        _config(chat_runtimes={"claude_code": runtime}, chat_prompt_fragment="/fragment")
-    )
-    assert parsed.launchable_agents[0].system_prompt_template == Path("/prompt")
-    assert parsed.chat_prompt_fragment == Path("/fragment")
 
 
 def test_launchable_agent_requires_its_own_runtime_registration() -> None:

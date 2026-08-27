@@ -1,10 +1,11 @@
 """The system prompt a chat session is started with.
 
 Prompts belong to Agents: each launchable Agent names its own identity template
-(`launchable_agents[].system_prompt_template`), composed with the shared attached-chat fragment
-(`chat_prompt_fragment`) that states the surface mechanics every Console-launched Agent shares.
-The templates are **deploy config, not code and not haku-state**: they are mounted into the
-console's ConfigMap. A system prompt is the one instruction surface the agent cannot edit at all,
+(`launchable_agents[].system_prompt_template`). Templates load with a Jinja loader rooted at the
+template's own directory, so an identity template pulls the shared attached-chat contract in with
+a plain `{% include %}` — the fragment is a fact of the templates, not of the config schema. The
+templates are **deploy config, not code and not haku-state**: they are mounted into the console's
+ConfigMap. A system prompt is the one instruction surface the agent cannot edit at all,
 so the facts whose whole value is that the agent did not choose them belong here; everything an
 agent authors for itself stays in its own workspace (see <../../base/README.md>).
 
@@ -19,7 +20,6 @@ oddly a week later.
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -27,7 +27,7 @@ from enum import StrEnum
 from pathlib import Path
 from uuid import UUID
 
-from jinja2 import Environment, StrictUndefined
+from jinja2 import BaseLoader, Environment, FileSystemLoader, StrictUndefined
 
 from haku.console.mcp_guidance import SERVER_INSTRUCTIONS
 
@@ -62,6 +62,9 @@ class SessionIntroduction:
     workspace: str
     # Oldest first, so the template renders them in reading order.
     recent_messages: Sequence[HistoryMessage]
+    # The conversation's earlier sessions, oldest first — rendered so the agent can name them to
+    # the conversation-history read tools. Empty for a conversation this session starts.
+    earlier_session_ids: Sequence[UUID] = ()
 
 
 class SystemPromptTemplate:
@@ -73,7 +76,7 @@ class SystemPromptTemplate:
     previous version serving. That only holds if the parse is at construction.
     """
 
-    def __init__(self, source: str):
+    def __init__(self, source: str, *, loader: BaseLoader | None = None):
         # No autoescaping: the output is markdown handed to a model, never a browser, and
         # HTML-escaping an operator's message body would corrupt what the agent reads.
         environment = Environment(
@@ -82,33 +85,47 @@ class SystemPromptTemplate:
             keep_trailing_newline=True,
             trim_blocks=True,
             lstrip_blocks=True,
+            loader=loader,
         )
         self._template = environment.from_string(source)
-        # The audit identity of what this deploy instructs: recorded on each session beside the
-        # rendered prompt's digest, so "which template said that" survives ConfigMap edits.
-        self.source_digest = hashlib.sha256(source.encode("utf-8")).digest()
 
     @classmethod
     def from_path(cls, path: Path) -> SystemPromptTemplate:
-        return cls(path.read_text(encoding="utf-8"))
+        """Load one template, resolving `{% include %}` against the template's own directory.
 
-    @classmethod
-    def compose(cls, identity_source: str, fragment_source: str) -> SystemPromptTemplate:
-        """One Agent's identity template followed by the shared attached-chat fragment.
-
-        Source-level concatenation into one compiled template, so both halves render with the
-        same context and one digest names the composition.
+        The include root is the identity template's directory rather than a second configured
+        path: the template and the fragments it names ship in one ConfigMap directory, so there
+        is no separate root to drift from the files it is supposed to describe.
         """
-        return cls(f"{identity_source.rstrip()}\n\n{fragment_source.lstrip()}")
+        return cls(path.read_text(encoding="utf-8"), loader=FileSystemLoader(path.parent))
 
-    @classmethod
-    def compose_paths(cls, identity_path: Path, fragment_path: Path) -> SystemPromptTemplate:
-        return cls.compose(identity_path.read_text(encoding="utf-8"), fragment_path.read_text(encoding="utf-8"))
+    def verify_renders(self) -> None:
+        """Render representative introductions, so a broken template fails at startup.
+
+        `{% include %}` and `StrictUndefined` both resolve at render, not at parse, and a mistake
+        inside a conditional branch only surfaces when that branch executes — so this renders both
+        history branches and discards the output. With `configMapGenerator` content-hashing the
+        ConfigMap name, a template edit rolls the Deployment, and a pod that cannot render never
+        becomes Ready while the previous version keeps serving.
+        """
+        probe = UUID(int=0)
+        self.render(SessionIntroduction(session_id=probe, workspace="/", recent_messages=()))
+        self.render(
+            SessionIntroduction(
+                session_id=probe,
+                workspace="/",
+                recent_messages=(
+                    HistoryMessage(sender=HistorySender.OPERATOR, body="probe", sent_at=datetime(2000, 1, 1)),
+                ),
+                earlier_session_ids=(probe,),
+            )
+        )
 
     def render(self, introduction: SessionIntroduction) -> str:
         return self._template.render(
             session_id=introduction.session_id,
             workspace=introduction.workspace,
             recent_messages=list(introduction.recent_messages),
+            earlier_session_ids=list(introduction.earlier_session_ids),
             haku_console_mcp_guidance=SERVER_INSTRUCTIONS,
         ).strip()

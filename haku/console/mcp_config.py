@@ -332,9 +332,10 @@ class LaunchableAgent(BaseModel):
 
     agent_id: UUID
     system_prompt_template: Path = Field(
-        description="This Agent's identity template, composed with the shared `chat_prompt_fragment` "
-        "at startup. Prompts belong to Agents, not runtimes: a runtime is how a session executes, "
-        "while who the session is speaking as is the launched Agent's."
+        description="This Agent's identity template. Prompts belong to Agents, not runtimes: a "
+        "runtime is how a session executes, while who the session is speaking as is the launched "
+        "Agent's. Templates may `{% include %}` siblings from their own directory — the shared "
+        "attached-chat fragment rides in that way rather than through a config key."
     )
 
 
@@ -396,10 +397,6 @@ class ConsoleConfigFile(BaseModel):
     # Surface fallback only. Runtime implementations are not Agent identities: an explicit launch
     # may choose any allowlisted Agent whose profile permits the requested runtime.
     default_chat_agent_id: UUID | None = None
-    # The attached-chat contract every Console-launched Agent shares — surface mechanics, the
-    # approval boundary, and the conversation-resume block — composed after each Agent's own
-    # identity template. Required whenever chat runtimes are configured.
-    chat_prompt_fragment: Path | None = None
     # The `hostexec` in-process server's in-scope machines + token-exchange scope. Non-secret deploy
     # topology, so it lives here beside the `hostexec` catalog entry rather than in an env var. Unset
     # → the server is not offered, no offline_access is requested at operator login, and no operator
@@ -622,8 +619,6 @@ class ConsoleConfigFile(BaseModel):
             for agent_id in launchable_ids:
                 if not any(identity_agent_id == agent_id for identity_agent_id, _kind in configured_identities):
                     raise ValueError(f"launchable Agent {agent_id} has no configured chat runtime registration")
-            if self.chat_prompt_fragment is None:
-                raise ValueError("configured chat runtimes require a chat prompt fragment")
         for profile in profiles.values():
             unknown_read_profiles = profile.can_read_profiles - profiles.keys()
             if unknown_read_profiles:

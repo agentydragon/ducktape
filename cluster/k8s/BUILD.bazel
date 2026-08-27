@@ -107,11 +107,11 @@ filegroup(
         "haku-ci/scaledjob.yaml",
         "haku/console/agent-diagnostics-rbac.yaml",
         "haku/console/chat_prompt_fragment.md.j2",
-        "haku/console/chat_system_prompt.md.j2",
         "haku/console/config.yaml",
         "haku/console/deployment.yaml",
         "haku/console/flux-kustomization.yaml",
         "haku/console/haku-console-github-mcp-client-credentials.sops.yaml",
+        "haku/console/haku_system_prompt.md.j2",
         "haku/console/httproute.yaml",
         "haku/console/kube-api-proxy.yaml",
         "haku/console/kubernetes-authorization-rbac.yaml",
@@ -244,7 +244,7 @@ filegroup(
     name = "haku_console_system_prompt",
     srcs = [
         "haku/console/chat_prompt_fragment.md.j2",
-        "haku/console/chat_system_prompt.md.j2",
+        "haku/console/haku_system_prompt.md.j2",
         "haku/console/public_coder_system_prompt.md.j2",
     ],
     # `__subpackages__`: the templates are rendered by the session runtime and read back by

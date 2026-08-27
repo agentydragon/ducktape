@@ -8,7 +8,7 @@ from uuid import UUID
 
 import pytest
 import pytest_bazel
-from jinja2 import Environment, StrictUndefined, UndefinedError
+from jinja2 import UndefinedError
 
 from haku.console.mcp_guidance import SERVER_INSTRUCTIONS
 from haku.console.x.system_prompt import HistoryMessage, HistorySender, SessionIntroduction, SystemPromptTemplate
@@ -17,13 +17,14 @@ SESSION = UUID("11111111-2222-4333-8444-555555555555")
 
 # The files the ConfigMap mounts. Rendering the real ones is the point: a fixture copy would let
 # the shipped templates break while the test stayed green.
-DEPLOYED_TEMPLATE = Path("cluster/k8s/haku/console/chat_system_prompt.md.j2")
+DEPLOYED_TEMPLATE = Path("cluster/k8s/haku/console/haku_system_prompt.md.j2")
 DEPLOYED_CODER_TEMPLATE = Path("cluster/k8s/haku/console/public_coder_system_prompt.md.j2")
-DEPLOYED_FRAGMENT = Path("cluster/k8s/haku/console/chat_prompt_fragment.md.j2")
 
 
-def introduction(*messages: HistoryMessage) -> SessionIntroduction:
-    return SessionIntroduction(session_id=SESSION, workspace="/workspace", recent_messages=messages)
+def introduction(*messages: HistoryMessage, earlier: tuple[UUID, ...] = ()) -> SessionIntroduction:
+    return SessionIntroduction(
+        session_id=SESSION, workspace="/workspace", recent_messages=messages, earlier_session_ids=earlier
+    )
 
 
 def history(sender: HistorySender, body: str) -> HistoryMessage:
@@ -50,28 +51,16 @@ def test_message_bodies_are_not_html_escaped():
 
 @pytest.fixture
 def deployed() -> SystemPromptTemplate:
-    """Haku's prompt as the console composes it: identity template plus the shared chat fragment."""
-    return SystemPromptTemplate.compose_paths(DEPLOYED_TEMPLATE, DEPLOYED_FRAGMENT)
+    """Haku's prompt as the console loads it — the identity template `{% include %}`s the fragment."""
+    return SystemPromptTemplate.from_path(DEPLOYED_TEMPLATE)
 
 
-def test_composition_appends_the_fragment_and_digests_the_whole_source():
-    composed = SystemPromptTemplate.compose("I am {{ session_id }}", "How this surface works.")
-    assert composed.render(introduction()) == f"I am {SESSION}\n\nHow this surface works."
-    assert (
-        composed.source_digest == SystemPromptTemplate("I am {{ session_id }}\n\nHow this surface works.").source_digest
-    )
-    assert (
-        composed.source_digest
-        != SystemPromptTemplate.compose("I am {{ session_id }}", "Different contract.").source_digest
-    )
-
-
-def test_deployed_coder_composition_renders_identity_and_shared_contract():
-    """The other launchable Agent composes with the same fragment; nothing Haku-only leaks in."""
-    rendered = SystemPromptTemplate.compose_paths(DEPLOYED_CODER_TEMPLATE, DEPLOYED_FRAGMENT).render(introduction())
+def test_deployed_coder_template_includes_the_shared_contract():
+    """The other launchable Agent includes the same fragment; nothing Haku-only leaks in."""
+    rendered = SystemPromptTemplate.from_path(DEPLOYED_CODER_TEMPLATE).render(introduction())
     assert "public-coder-agent" in rendered
     assert "Replies are automatic" in rendered
-    assert "no earlier conversation" in rendered
+    assert "the start of it" in rendered
     assert "haku-state" not in rendered.lower()
 
 
@@ -80,9 +69,21 @@ def test_deployed_template_renders_a_fresh_chat(deployed: SystemPromptTemplate):
     assert str(SESSION) in rendered
     assert "!room:allegedly.works" not in rendered
     assert "@rai:allegedly.works" not in rendered
-    assert "no earlier conversation" in rendered
+    assert "the start of it" in rendered
     # The re-awakening section must be gone, not present-and-empty.
     assert "Where the conversation was" not in rendered
+
+
+def test_deployed_template_names_earlier_sessions_and_how_to_read_them(deployed: SystemPromptTemplate):
+    """The prior-sessions block is rendered context the agent can act on: the ids the
+    conversation-history tools take. Absent for a conversation this session starts."""
+    earlier = UUID("99999999-8888-4777-8666-555555555555")
+    rendered = deployed.render(introduction(earlier=(earlier,)))
+    assert str(earlier) in rendered
+    assert "read_conversation_items" in rendered
+    fresh = deployed.render(introduction())
+    assert str(earlier) not in fresh
+    assert "earlier sessions" not in fresh
 
 
 def test_deployed_template_carries_both_sides_of_the_history(deployed: SystemPromptTemplate):
@@ -97,7 +98,7 @@ def test_deployed_template_carries_both_sides_of_the_history(deployed: SystemPro
     # Haku's own replies are context, not noise: a prompt with only Rai's half reads as a
     # monologue and invites the agent to answer questions it already answered.
     assert "you booked it for Monday" in rendered
-    assert "no earlier conversation" not in rendered
+    assert "the start of it" not in rendered
 
 
 def test_deployed_template_includes_mcp_guidance_for_clients_that_hide_server_instructions(
@@ -109,17 +110,6 @@ def test_deployed_template_includes_mcp_guidance_for_clients_that_hide_server_in
     assert "pending_approval" in rendered
     assert "get_mcp_server_status" in rendered
     assert "https://github.com/agentydragon/ducktape" in rendered
-
-
-def test_deployed_template_tolerates_the_previous_renderer_during_config_rollout() -> None:
-    """The ConfigMap may reach current replicas before the follow-up image supplies guidance."""
-    rendered = (
-        Environment(undefined=StrictUndefined)
-        .from_string(DEPLOYED_TEMPLATE.read_text())
-        .render(session_id=SESSION, workspace="/workspace", recent_messages=[])
-    )
-    assert "Haku Console MCP" not in rendered
-    assert SERVER_INSTRUCTIONS not in rendered
 
 
 def test_deployed_template_points_at_the_index_whether_or_not_history_was_replayed(deployed: SystemPromptTemplate):

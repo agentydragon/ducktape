@@ -331,18 +331,16 @@ def create_app(
         if settings.runner_kubernetes_proxy_url is None
         else {KUBERNETES_PROXY_URL_ENV: settings.runner_kubernetes_proxy_url}
     )
-    # Prompts belong to launchable Agents: each runtime registration composes its Agent's identity
-    # template with the shared attached-chat fragment. Parsed at construction, so a broken deploy
-    # template prevents readiness rather than failing the first attached chat session hours later.
+    # Prompts belong to launchable Agents: each runtime registration loads its Agent's identity
+    # template, whose own `{% include %}` pulls in the shared attached-chat fragment. Rendered here
+    # at startup for every launchable Agent, so a broken include or name prevents readiness rather
+    # than failing the first attached chat session hours later.
     launchable_by_id = {entry.agent_id: entry for entry in console_config.launchable_agents}
 
     def agent_system_prompt(agent_id: UUID) -> SystemPromptTemplate:
-        # Config validation guarantees every chat-runtime Agent is launchable and that a fragment
-        # is configured whenever chat runtimes are.
-        assert console_config.chat_prompt_fragment is not None
-        return SystemPromptTemplate.compose_paths(
-            launchable_by_id[agent_id].system_prompt_template, console_config.chat_prompt_fragment
-        )
+        template = SystemPromptTemplate.from_path(launchable_by_id[agent_id].system_prompt_template)
+        template.verify_renders()
+        return template
 
     if claude_runtime is not None:
         try:

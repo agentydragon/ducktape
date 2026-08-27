@@ -33,8 +33,7 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 CONSOLE_BIN = "_main/haku/console/x/channels/matrix/testing/console_replica_bin"
 RUNNER_BIN = "_main/haku/runtime/x/bridge/runner_bin"
 STUB_CLAUDE = "_main/haku/console/x/claude_code/testing/stub_claude_bin"
-SYSTEM_PROMPT_TEMPLATE = "_main/cluster/k8s/haku/console/chat_system_prompt.md.j2"
-PROMPT_FRAGMENT = "_main/cluster/k8s/haku/console/chat_prompt_fragment.md.j2"
+SYSTEM_PROMPT_TEMPLATE = "_main/cluster/k8s/haku/console/haku_system_prompt.md.j2"
 
 
 async def _exists(path: Path) -> bool:
@@ -93,7 +92,6 @@ class Deployment:
             "HAKU_E2E_CLAIMS_DIR": str(self._claims),
             "HAKU_E2E_REFUSE_NEXT_REPLY": str(self._refusal),
             "HAKU_E2E_SYSTEM_PROMPT_TEMPLATE": str(get_required_path(SYSTEM_PROMPT_TEMPLATE)),
-            "HAKU_E2E_PROMPT_FRAGMENT": str(get_required_path(PROMPT_FRAGMENT)),
             # The nested binaries need the test's RUNFILES_* to find their own, and the stub
             # inherits this environment in turn (`backend.child_environment`), which is how
             # it learns where to leave its handshake files.

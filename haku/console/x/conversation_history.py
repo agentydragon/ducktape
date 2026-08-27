@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import ItemStatus, ItemType
-from haku.console.database_schema import ConversationItem
+from haku.console.database_schema import ConversationItem, Session
 
 
 @dataclass(frozen=True)
@@ -31,6 +31,16 @@ class ConversationHistory:
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession]):
         self._sessions = sessions
+
+    async def earlier_sessions(self, conversation_id: UUID, *, before_session: UUID) -> tuple[UUID, ...]:
+        """The conversation's other sessions, oldest first, for the prompt's prior-session ids."""
+        listed = (
+            select(Session.session_id)
+            .where(Session.conversation_id == conversation_id, Session.session_id != before_session)
+            .order_by(Session.created_at, Session.session_id)
+        )
+        async with self._sessions() as db:
+            return tuple((await db.scalars(listed)).all())
 
     async def recent(self, conversation_id: UUID, *, before_session: UUID, limit: int) -> tuple[RecordedMessage, ...]:
         """The last *limit* spoken items, oldest first, excluding *before_session*'s queued prompt."""

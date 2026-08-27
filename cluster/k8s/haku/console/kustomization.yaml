@@ -25,6 +25,6 @@ configMapGenerator:
   - name: haku-console-config
     files:
       - config.yaml
-      - chat_system_prompt.md.j2
+      - haku_system_prompt.md.j2
       - public_coder_system_prompt.md.j2
       - chat_prompt_fragment.md.j2

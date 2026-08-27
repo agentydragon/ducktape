@@ -1208,13 +1208,6 @@ class Session(Base):
     # **`0` is "nothing here has ever projected"**, which no frame's `frame_seq` can be, so the
     # bound needs no absent state; it arrives by the server default.
     projected_frame_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default=text("0"))
-    # Prompt provenance for audit (#4431 stage 6): SHA-256 of the composed identity+fragment
-    # template source this session's runner was launched with, and of the exact rendered appended
-    # prompt. Stamped once at the first successful render and never overwritten — a runner
-    # reconnect re-renders but the same CLI process keeps its original prompt. Both NULL together:
-    # a session that never rendered an appended prompt (unattached, or predating the columns).
-    system_prompt_template_digest: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
-    system_prompt_rendered_digest: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     # The operator asked this session to end. Stamped once and never cleared — ending is one-way —
     # which is what derives `closing` until `ended_at` lands.
     close_requested_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -1259,12 +1252,6 @@ class Session(Base):
         ),
         # Claim cleanup is only ever recorded against a session that has ended.
         CheckConstraint("claim_cleaned_at IS NULL OR ended_at IS NOT NULL", name="ck_sessions_claim_cleanup_ended"),
-        # Prompt provenance is one fact recorded whole: a template digest with no rendered digest
-        # (or the reverse) would be a half-written audit row.
-        CheckConstraint(
-            "(system_prompt_template_digest IS NULL) = (system_prompt_rendered_digest IS NULL)",
-            name="ck_sessions_prompt_digest_pair",
-        ),
         Index("idx_sessions_operator", "operator_id", "created_at"),
         Index("idx_sessions_conversation", "conversation_id", "created_at"),
         Index(

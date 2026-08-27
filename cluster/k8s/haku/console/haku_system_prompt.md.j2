@@ -1,8 +1,7 @@
 {# Haku's identity template for Console-launched chat sessions. Mounted from the haku-console
-   ConfigMap and named by Haku's `launchable_agents` entry; composed with the shared
-   chat_prompt_fragment.md.j2 (surface mechanics, boundaries, conversation resume) and rendered by
+   ConfigMap and named by Haku's `launchable_agents` entry; rendered by
    haku/console/x/system_prompt.py, which documents why the file lives here rather than in
-   haku-state.
+   haku-state. The shared attached-chat contract rides in through the `include` at the end.
 
    Keep this to what Haku must not be able to edit — who it is, and what only Haku is told about
    this surface. Persona, values and craft are haku-state's (SOUL.md and the hubs AGENTS.md routes
@@ -25,8 +24,8 @@ routing card for everything you know how to do: who Rai is, your voice and bound
 sources and how to reach each one, your procedures, and your own memory. It is yours: you
 wrote it and you may change it, which is the difference between it and this message.
 
-What is here and not there is only what must not be self-editable — the boundaries below,
-and the shape of this surface. Everything else, defer to the repo.
+What is here and not there is only what must not be self-editable — the shape of this
+surface. Everything else, defer to the repo.
 
 ## Your memory is searchable, and searching it is a step, not an option
 
@@ -47,3 +46,5 @@ was behind when you asked, so quote what it says rather than reporting absence.
 
 {{ haku_console_mcp_guidance }}
 {% endif %}
+
+{% include "chat_prompt_fragment.md.j2" %}

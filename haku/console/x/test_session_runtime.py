@@ -273,7 +273,6 @@ def _console_config(**overrides: object) -> dict[str, object]:
         "launchable_agents": [
             {"agent_id": "00000000-0000-4000-8000-000000000001", "system_prompt_template": "/prompt"}
         ],
-        "chat_prompt_fragment": "/fragment",
         "default_chat_agent_id": "00000000-0000-4000-8000-000000000001",
     }
     config.update(overrides)

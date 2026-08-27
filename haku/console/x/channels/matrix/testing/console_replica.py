@@ -165,9 +165,7 @@ async def _serve() -> None:
         runtime_registration(
             runtime,
             claims,
-            system_prompt=SystemPromptTemplate.compose_paths(
-                Path(_environment("HAKU_E2E_SYSTEM_PROMPT_TEMPLATE")), Path(_environment("HAKU_E2E_PROMPT_FRAGMENT"))
-            ),
+            system_prompt=SystemPromptTemplate.from_path(Path(_environment("HAKU_E2E_SYSTEM_PROMPT_TEMPLATE"))),
         )
     )
     store = SessionStore(sessions, runtimes)
