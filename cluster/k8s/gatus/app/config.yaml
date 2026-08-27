@@ -34,13 +34,6 @@ endpoints:
     conditions:
       - "[STATUS] == 200"
 
-  - name: Harbor Registry
-    group: core
-    url: https://registry.allegedly.works/v2/
-    interval: 60s
-    conditions:
-      - "[STATUS] == 401" # 401 = registry up and enforcing auth
-
   - name: Grafana
     group: core
     url: https://grafana.allegedly.works/api/health
@@ -71,14 +64,6 @@ endpoints:
     conditions:
       - "[STATUS] == 200"
       - "[BODY].flows[0].type == m.login.sso"
-
-  - name: Harbor OIDC redirect
-    group: sso
-    url: https://registry.allegedly.works/c/oidc/login
-    interval: 120s
-    conditions:
-      - "[STATUS] == 200"
-      - "[BODY] == pat(*authentik*)"
 
   # ── ai ───────────────────────────────────────────────────────────────
 

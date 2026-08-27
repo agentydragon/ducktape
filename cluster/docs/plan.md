@@ -542,7 +542,6 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
         Avoids cross-site traffic for log ingestion. Grafana queries both.
 - [ ] Re-enable MFA (TOTP/WebAuthn) once device enrollment is set up
 - [ ] Wire `cluster/scripts/check_authentik_login.py` into bootstrap/CI
-- [ ] Gatus: Harbor robot token for authenticated `/v2/` probe
 - [ ] Proxy outpost HA: shared session storage (1 replica limit, sessions in `/dev/shm`)
 - [ ] Airlock OAuth: upgrade Google scopes (requires new operator consent) — `calendar`, `gmail.send`,
       `gmail.compose`, `drive`, `spreadsheets`
