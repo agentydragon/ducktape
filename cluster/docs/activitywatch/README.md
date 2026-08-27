@@ -48,7 +48,7 @@ read-only proxy and, for public access, Authentik. The write path is bearer-gate
   `topology.kubernetes.io/zone: hil-ovh`, and receiving into
   `activitywatch-sync-inbox` (`seaweedfs-ovh`, RWX, 10Gi). The cluster Syncthing
   folder is receive-only. Syncthing's index lives separately on
-  `activitywatch-syncthing-state` (`local-path-ovh`, RWO, 1Gi); losing that index while
+  `activitywatch-syncthing-state` (deprecated `local-path-ovh` alias, RWO, 1Gi); losing that index while
   retaining the inbox makes Syncthing treat the existing files as untracked local changes
   and create conflict copies when peers reconnect. OVH nodes have `region: hil` and
   `zone: hil-ovh`; do not use `region: hil-ovh`, which matches no node.

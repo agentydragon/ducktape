@@ -61,7 +61,8 @@ Slot ↔ Nebula identity is fixed in code (`cluster/terraform/main/ovh-nodes.tf`
 `data_disk_match` becomes a Talos `UserVolumeConfig` disk selector; it mounts at
 `/var/mnt/seaweedfs-data` (legacy name) or `/var/mnt/local-path-ovh-<tier>` on nodes
 that have gone through the OVH storage-tiering rename (see `ovh-nodes.tf`'s
-`data_disk_mount_renamed_nodes`) — `local-path-ovh` uses whichever path applies on
+`data_disk_mount_renamed_nodes`) — `local-path-ovh` (now the deprecated hdd-tier
+alias) uses whichever path applies on
 each listed node.
 
 ## 2. Set the service name

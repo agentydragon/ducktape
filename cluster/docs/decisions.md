@@ -39,8 +39,11 @@ workloads.
 | DNS       | OK     | None in-cluster    | Zone is AWS Route 53; records reconciled by the `dns-records` Terraform CR (state in CNPG `tofu-state-db-ovh`) |
 | Website   | OK     | None (stateless)   |                                                                                                                |
 | Ingress   | OK     | None (hostNetwork) | Cilium Gateway on OVH                                                                                          |
-| Authentik | OK     | `local-path-ovh`   | CNPG `authentik-db-ovh` (OVH-HA); server + worker pinned to OVH                                                |
-| Grafana   | OK     | `local-path-ovh`   | CNPG `grafana-db-ovh` (OVH-HA); grafana-operator managed, JWT auth, no admin creds dependency                  |
+| Authentik | OK     | OVH hdd tier       | CNPG `authentik-db-ovh` (OVH-HA); server + worker pinned to OVH                                                |
+| Grafana   | OK     | OVH hdd tier       | CNPG `grafana-db-ovh` (OVH-HA); grafana-operator managed, JWT auth, no admin creds dependency                  |
+
+The DB manifests still name `local-path-ovh` — the deprecated alias re-pinned to
+the hdd tier (<cnpg_conventions.md> § R2).
 
 **Compliance checklist** for critical-path changes:
 
@@ -191,7 +194,8 @@ would not work. TLS passthrough preserves client certificates for x509 auth.
 ## OpenTofu State Backend
 
 All 6 former TF roots consolidated into a single root at `cluster/terraform/main/` with
-PG backend (CNPG `tofu-state-db-ovh`, schema `main`, OVH `local-path-ovh`). State
+PG backend (CNPG `tofu-state-db-ovh`, schema `main`, OVH hdd tier via the
+deprecated `local-path-ovh` alias). State
 backups have been absent since the backup CronJob's removal 2026-06-01; restoring them
 (CNPG replication or scheduled backups) is
 [#4900](https://github.com/agentydragon/ducktape/issues/4900).

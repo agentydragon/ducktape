@@ -7,7 +7,8 @@ metadata and a SeaweedFS S3 bucket for NAR chunk storage. Manifests in
 ## Architecture
 
 - **Server**: `ghcr.io/zhaofengli/attic:latest` (busybox-based Rust image)
-- **Database**: CNPG cluster `attic-db` (2 instances, OVH-HA, `local-path-ovh`)
+- **Database**: CNPG cluster `attic-db` (2 instances, OVH-HA, hdd tier via the
+  deprecated `local-path-ovh` alias)
 - **Cache storage**: SeaweedFS S3 bucket `attic` (`seaweedfs-s3.seaweedfs:8333`), replicated `001` across OVH volume servers
 - **Caches** (priority 41, server-generated ED25519 keypairs):
   - `main` — private; ducktape CI's general-purpose cache (flake outputs)
