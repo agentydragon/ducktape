@@ -364,13 +364,12 @@ C0 and C0b are this PR — the first no-collision chunks.
   path (`mcp/tools/recall/`). Not a bare rename: the §5 exclusion — worker deps physically unable to
   reach console — must already hold when the tree appears, so the console edges sever in place first,
   each step an atomic sweep with no shims, beside every other lane. The shared recall-index/embedder
-  config lives in `haku/recall_index/config.py`; remaining, in order:
-  1. a worker-owned narrow config read (the `recall_indexes` + `git_ca_bundle` slice of the shared
-     YAML) and sync-URL helper, dropping the worker's `mcp_config` and `database_migrate` deps;
-  2. a shared home for `ConversationItem` and the item enums (**operator decision, pending** — the
+  config lives in `haku/recall_index/config.py` and the worker reads only its own
+  `IndexerConfigFile` slice of the shared YAML; remaining, in order:
+  1. a shared home for `ConversationItem` and the item enums (**operator decision, pending** — the
      gating semantic piece): `haku/recall_index/chat_source.py` imports
      `haku.console.{chat_models,database_schema}` today, the §5 violation this step removes;
-  3. the mechanical move, retargeting `devinfra/ci/image_targets.json` and BUILD — the GHCR name
+  2. the mechanical move, retargeting `devinfra/ci/image_targets.json` and BUILD — the GHCR name
      `haku-indexer` keys off the JSON key, not the Bazel path, so Flux image automation is untouched.
 
 ### Conversation / session lane — the #4772 core, behind the #4667 cutover

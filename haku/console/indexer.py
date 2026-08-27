@@ -33,12 +33,11 @@ from pathlib import Path
 from openai import AsyncOpenAI
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, make_url, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from haku.console.database_migrate import sync_database_url
 from haku.console.database_schema import ConversationItem
-from haku.console.mcp_config import load_console_config
+from haku.console.indexer_config import load_indexer_config
 from haku.console.recall_index_sync import RecallEmbeddingMaintenance, RecallIndexMaintenance
 from haku.recall_index.config import EmbedderConfig, GitRecallIndexDefinition, RecallIndexSettings
 from haku.recall_index.git_tree import configure_ca_trust
@@ -87,6 +86,15 @@ class EmbedSettings(_WorkerSettings):
     embedder: EmbedderConfig
 
 
+def _sync_database_url(database_url: str) -> str:
+    """Render the async application URL for the synchronous psycopg schema probe.
+
+    Deliberately duplicates ``database_migrate.sync_database_url`` rather than importing it: the
+    import would carry the whole console ORM into the worker (<docs/naming_and_layout.md> §5).
+    """
+    return make_url(database_url).set(drivername="postgresql+psycopg").render_as_string(hide_password=False)
+
+
 def verify_worker_schema(database_url: str) -> None:
     """Fail startup if this image cannot read the tables its role may touch. Never applies DDL.
 
@@ -96,7 +104,7 @@ def verify_worker_schema(database_url: str) -> None:
     on schema compatibility. An incompatible image therefore crash-loops here and the previous
     ReplicaSet keeps maintaining the index.
     """
-    engine = create_engine(sync_database_url(database_url))
+    engine = create_engine(_sync_database_url(database_url))
     try:
         with engine.connect() as conn:
             for table in RecallIndexBase.metadata.tables.values():
@@ -112,18 +120,16 @@ async def async_main(settings: ChunkSettings | EmbedSettings) -> None:
         sessions = async_sessionmaker(engine, expire_on_commit=False)
         stage: AbstractAsyncContextManager[None]
         if isinstance(settings, ChunkSettings):
-            console_config = load_console_config(settings.config_file)
+            config = load_indexer_config(settings.config_file)
             if any(
                 isinstance(index, GitRecallIndexDefinition) and index.repo_url.startswith("https://")
-                for index in console_config.recall_indexes
+                for index in config.recall_indexes
             ):
-                configure_ca_trust(console_config.git_ca_bundle)
+                configure_ca_trust(config.git_ca_bundle)
             stage = RecallIndexMaintenance(
-                engine, sessions, indexes=console_config.recall_indexes, budget=settings.recall_index.chunk_budget
+                engine, sessions, indexes=config.recall_indexes, budget=settings.recall_index.chunk_budget
             ).run()
-            logger.info(
-                "haku-indexer chunking %s", ", ".join(index.index_id for index in console_config.recall_indexes)
-            )
+            logger.info("haku-indexer chunking %s", ", ".join(index.index_id for index in config.recall_indexes))
         else:
             stage = RecallEmbeddingMaintenance(
                 sessions,

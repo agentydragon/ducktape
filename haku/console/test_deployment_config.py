@@ -8,6 +8,7 @@ from pydantic import SecretStr
 
 from haku.console.config import ClaudeCodeImplementationConfig, OperatorIdentityConfig, OperatorOidcConfig, Settings
 from haku.console.indexer import ChunkSettings, EmbedSettings, IndexerRole
+from haku.console.indexer_config import load_indexer_config
 from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
 from util.bazel.runfiles import get_required_path
@@ -119,6 +120,15 @@ def test_deployed_chunk_role_env_satisfies_its_settings(monkeypatch: pytest.Monk
     # The one secret env the manifest binds by reference rather than value.
     monkeypatch.setenv("HAKU_INDEXER_DATABASE_URL", "postgresql+asyncpg://haku_indexer@db.test/approval_store")
     assert ChunkSettings().config_file.name == "config.yaml"
+
+
+def test_deployed_config_reads_identically_for_console_and_indexer() -> None:
+    """Two parsers, one mounted file: the worker's narrow slice must agree with the console's read."""
+    config_path = get_required_path("ducktape/cluster/k8s/haku/console/config.yaml")
+    console = ConsoleConfigFile.model_validate(yaml.safe_load(config_path.read_text()))
+    indexer = load_indexer_config(config_path)
+    assert indexer.recall_indexes == console.recall_indexes
+    assert indexer.git_ca_bundle == console.git_ca_bundle
 
 
 def test_deployed_embed_role_env_satisfies_its_settings(monkeypatch: pytest.MonkeyPatch) -> None:

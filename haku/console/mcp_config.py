@@ -674,7 +674,7 @@ def server_tool_prefix(server_id: str) -> MCPMountPrefix:
 
 
 def load_console_config(path: Path) -> ConsoleConfigFile:
-    """Parse the deploy-owned console config file. Also the haku-indexer worker's registry read."""
+    """Parse the deploy-owned console config file."""
     if not path.is_file():
         raise RuntimeError(f"haku-console config file does not exist: {path}")
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
