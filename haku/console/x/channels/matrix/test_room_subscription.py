@@ -17,10 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from haku.console.chat_models import LeaseExpiryReason, MatrixOrigin, PromptRejection, SpaOrigin
 from haku.console.database_schema import ChannelCursor
 from haku.console.x import conversation_log, session_events
-from haku.console.x.channels.matrix.client import RoomEventKind
+from haku.console.x.channels.matrix.client import ConversationEventSource, ProjectedEvent, RoomEventKind
 from haku.console.x.channels.matrix.conftest import MATRIX_ROOM
 from haku.console.x.channels.matrix.conversation import MatrixConversationStore
 from haku.console.x.channels.matrix.outbox import RoomOutbox
+from haku.console.x.channels.matrix.room_copy import RoomCopy
 from haku.console.x.channels.matrix.room_subscription import (
     ABORTED_BY_OPERATOR,
     NOTHING_SAID,
@@ -89,6 +90,11 @@ def outbox(migrated_sessions: async_sessionmaker[AsyncSession]) -> RoomOutbox:
 
 
 @pytest.fixture
+def room_copy(migrated_sessions: async_sessionmaker[AsyncSession]) -> RoomCopy:
+    return RoomCopy(migrated_sessions)
+
+
+@pytest.fixture
 def notices(
     migrated_engine,
     migrated_sessions: async_sessionmaker[AsyncSession],
@@ -97,6 +103,7 @@ def notices(
     notifications,
     room: Room,
     outbox: RoomOutbox,
+    room_copy: RoomCopy,
 ) -> RoomNotices:
     return RoomNotices(
         migrated_engine,
@@ -109,6 +116,7 @@ def notices(
         room,
         room.bound,
         outbox,
+        room_copy,
     )
 
 
@@ -261,6 +269,7 @@ async def test_a_restarted_reader_rebuilds_active_typing_from_the_stream(
         successor_room,
         successor_room.bound,
         outbox,
+        RoomCopy(migrated_sessions),
     )
     await successor.reconcile_once()
 
@@ -309,6 +318,7 @@ async def test_a_restarted_reader_resumes_from_the_position_it_kept(
         successor_room,
         successor_room.bound,
         outbox,
+        RoomCopy(migrated_sessions),
     )
     await successor.reconcile_once()
     assert successor_room.said == []
@@ -487,6 +497,73 @@ async def test_keeping_an_older_position_cannot_rewind_the_room(migrated_session
     await cursor.keep(StreamPosition(event_seq=3))
 
     assert await cursor.position() == StreamPosition(event_seq=17)
+
+
+async def test_a_replayed_projection_already_in_the_room_is_not_sent_again(
+    chat_store,
+    operator_id,
+    served,
+    notices,
+    room,
+    room_copy,
+    conversations,
+    migrated_engine,
+    migrated_sessions,
+    stream,
+    notifications,
+    outbox,
+) -> None:
+    """Restart after Synapse's transaction cache would have expired.
+
+    The send reached the homeserver and the crash ate everything after it, so the cursor still
+    names the event. The replay finds the room already showing the source — via the tag its own
+    echo carried — and sends nothing at all, which is what makes the cache's 30-to-60-minute
+    lifetime not load-bearing: a send that never happens needs no deduplication.
+    """
+    await notices.reconcile_once()
+    room.fail_project = True  # the send reached the homeserver; what died was everything after it
+    await abort_a_turn(chat_store, operator_id, served)
+    with pytest.raises(RuntimeError, match="homeserver refused"):
+        await notices.reconcile_once()
+    [(conversation_id, seq)] = room.projected
+    attachment_id = await conversations.attachment(MATRIX_ROOM)
+    assert attachment_id is not None
+    # The send's own echo, as the sync loop records it observing the room.
+    await room_copy.record(
+        [
+            ProjectedEvent(
+                room_id=MATRIX_ROOM,
+                event_id="$echoed",
+                source=ConversationEventSource(
+                    attachment_id=attachment_id, conversation_id=conversation_id, event_seq=seq
+                ),
+                origin_server_ts=1,
+                replaces_event_id=None,
+            )
+        ],
+        [],
+    )
+
+    successor_room = Room()
+    successor = RoomNotices(
+        migrated_engine,
+        migrated_sessions,
+        stream,
+        conversations,
+        notifications,
+        successor_room.announce,
+        successor_room.project,
+        successor_room,
+        successor_room.bound,
+        outbox,
+        room_copy,
+    )
+    await successor.reconcile_once()
+
+    assert (successor_room.projected, successor_room.said) == ([], [])
+    assert await stored_position(migrated_sessions) == await stream.head(conversation_id), (
+        "the suppressed event is finished with, not deferred"
+    )
 
 
 async def test_a_failed_projection_is_replayed_with_the_same_source_identity(

@@ -21,10 +21,13 @@ what `conversation_event` records, and several things the room says have no row 
 bound or adopted, an invite refused. Those still reach the room by being pushed at it.
 
 **The position is kept after a sealed notice reaches the homeserver, never while it is merely
-queued.** A crash in that window derives the notice again on the next pass under the same Matrix
-transaction id — the right way round: a cached repeat is refused, while a room never told is a
-message silently dropped. Relayed prompts and silent-turn narration still use the older queued
-path because their bodies require store queries rather than this PR's pure one-event projection.
+queued.** A crash in that window derives the notice again on the next pass — and the replay asks
+the room's own copy first (`room_copy`): a source the room already shows is not sent at all,
+however long ago the crash was, so the event-derived Matrix transaction id only has to cover the
+gap between a send and its `/sync` echo. The right way round either way: a repeat is suppressed or
+refused, while a room never told is a message silently dropped. Relayed prompts and silent-turn
+narration still use the older queued path because their bodies require store queries rather than
+this PR's pure one-event projection.
 """
 
 from __future__ import annotations
@@ -56,6 +59,7 @@ from haku.console.database_schema import ChannelCursor, ConversationItem
 from haku.console.x.channels.matrix.client import RoomEventKind
 from haku.console.x.channels.matrix.conversation import MatrixConversationStore
 from haku.console.x.channels.matrix.outbox import BoundRoom, RoomOutbox
+from haku.console.x.channels.matrix.room_copy import RoomCopy
 from haku.console.x.room_status import LiveStatus, StatusFrontend
 from haku.console.x.session_events import (
     LeaseExpiredBody,
@@ -323,6 +327,7 @@ class RoomNotices:
         status: StatusFrontend,
         room: BoundRoom,
         outbox: RoomOutbox,
+        room_copy: RoomCopy,
     ) -> None:
         self._engine = engine
         self._sessions = sessions
@@ -334,6 +339,7 @@ class RoomNotices:
         self._status_frontend = status
         self._room = room
         self._outbox = outbox
+        self._room_copy = room_copy
         self._changed = asyncio.Event()
         self._live_status = LiveStatus()
         self._status_conversation: UUID | None = None
@@ -343,7 +349,8 @@ class RoomNotices:
         """Say or queue what the room is owed. True when the read stopped at its limit.
 
         **The position is kept after the whole batch, never during it.** A crash part-way replays
-        the batch: a sealed notice reuses its event-derived Matrix transaction, and a reply is
+        the batch: a sealed notice is suppressed by the room's own copy once its echo has been
+        recorded and reuses its event-derived Matrix transaction until then, and a reply is
         refused by the outbox's unique subject — which is the trade this reader is built around.
         """
         if (room_id := await self._room()) is None:
@@ -386,9 +393,26 @@ class RoomNotices:
                         await self._announce(NOTHING_SAID, RoomEventKind.NARRATION)
                 case _:
                     if (said := project_notice(event, conversation_id=conversation_id, room_id=room_id)) is not None:
-                        await self._project(
-                            room_id, attachment_id, said.body, said.kind, said.conversation_id, said.source_event_seq
-                        )
+                        # Correspondence first, then send: a source the room already shows — found
+                        # via its own tag — is a replay of a send that succeeded before the cursor
+                        # could record it, and re-sending it is exactly the duplicate Synapse's
+                        # expired transaction cache would no longer refuse.
+                        if await self._room_copy.shows(attachment_id, said.source_event_seq):
+                            logger.info(
+                                "Matrix: %s already shows event %d of %s; not sending it again",
+                                room_id,
+                                said.source_event_seq,
+                                conversation_id,
+                            )
+                        else:
+                            await self._project(
+                                room_id,
+                                attachment_id,
+                                said.body,
+                                said.kind,
+                                said.conversation_id,
+                                said.source_event_seq,
+                            )
         await self._live_status.reconcile(self._status_frontend)
         await subscription.keep(read.position)
         return read.more

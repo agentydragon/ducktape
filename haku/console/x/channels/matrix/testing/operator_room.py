@@ -46,6 +46,7 @@ from nio import (
     RoomMessagesResponse,
     RoomMessageText,
     RoomPreset,
+    RoomRedactResponse,
     RoomSendResponse,
     SyncResponse,
     TypingNoticeEvent,
@@ -242,6 +243,10 @@ class OperatorRoom:
         """
         sent = await self._client.room_send(self.room_id, message_type="m.room.message", content=content)
         return _ok(sent, RoomSendResponse).event_id
+
+    async def redact(self, event_id: str, reason: str | None = None) -> None:
+        """Unsay an event as the operator, who holds the power level to redact anybody's."""
+        _ok(await self._client.room_redact(self.room_id, event_id, reason=reason), RoomRedactResponse)
 
     async def timeline(self) -> list[RoomEvent]:
         """Everything in the room, oldest first."""

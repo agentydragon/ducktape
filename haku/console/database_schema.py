@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     ARRAY,
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -1633,6 +1634,47 @@ class MatrixRevision(Base):
             unique=True,
             postgresql_where=text("retired_at IS NULL"),
         ),
+    )
+
+
+class MatrixRoomCopy(Base):
+    """One Haku-authored room event whose tag names the conversation event it projects.
+
+    **The room's copy, as durable correspondence.** Written by the sync loop from the events'
+    own `/sync` echoes — never by the send path — and read by the room's reconciler before it
+    sends: a source already showing in the room is not sent again, however long ago the send was,
+    which is what outlives Synapse's 30-to-60-minute transaction cache. Nothing outside the Matrix
+    channel reads it.
+
+    `redacted` marks a copy the room no longer shows. The row stays: correspondence answers "did
+    this projection reach the room", and a redaction does not unsend — it only removes the copy
+    from duplicate repair, which considers live originals alone.
+
+    `replaces_event_id` marks an `m.replace` revision of an earlier event. An edit is a content
+    change to a copy the room already shows, so it satisfies correspondence without ever being a
+    second copy to repair.
+    """
+
+    __tablename__ = "matrix_room_copy"
+
+    # The homeserver's id for the event, globally unique by construction.
+    event_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    # The attachment named by the event's own tag: a rebound room's old events keep naming the
+    # attachment they were projected under, so the new attachment starts with no correspondence.
+    attachment_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("chat_attachment.attachment_id", ondelete="CASCADE"), nullable=False
+    )
+    source_event_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    replaces_event_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The homeserver's ordering, which is what decides the copy to keep when repairing duplicates.
+    origin_server_ts: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    redacted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("btrim(event_id) <> ''", name="ck_matrix_room_copy_event_nonempty"),
+        CheckConstraint("source_event_seq > 0", name="ck_matrix_room_copy_source_positive"),
+        # What both readers ask: does this source show, and which copies share it.
+        Index("idx_matrix_room_copy_source", "attachment_id", "source_event_seq"),
     )
 
 

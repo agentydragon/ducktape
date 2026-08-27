@@ -165,6 +165,20 @@ over Matrix, and any write surface for the agent beyond its own replies.
   text; and **external images** are dropped, since `src` must be `mxc://`, so an image becomes its
   alt text.
 
+## The room's own copy
+
+- **Haku's own events are read back, and are still never input.** The same `/sync` ingress reads
+  carries the console's own sends; ingress keeps dropping them by sender, and a mirror reader keeps
+  what their tags say, durably and per attachment.
+- **A sealed notice posts once, however the console dies.** A notice projected from a durable
+  conversation event is not sent again when the room already shows an event tagged with that
+  source, no matter how long the console was down — Synapse's transaction-cache deduplication only
+  has to cover the window between a send and its echo becoming visible. In that window's one losing
+  case, the echo itself dying with the console, the duplicate that lands is redacted once both
+  copies have been observed, keeping the earliest.
+- **A redaction is respected, not fought.** The operator unsaying Haku's copy removes it from the
+  room; the console neither re-posts it nor treats the redacted copy as a duplicate to repair.
+
 ## Credentials and identity
 
 - **No Matrix access token is present in the sandbox.** The console holds the single Matrix

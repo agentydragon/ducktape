@@ -116,6 +116,7 @@ from haku.console.x.channels.matrix import (
     room_subscription as matrix_room_subscription,
     sync as matrix_sync,
 )
+from haku.console.x.channels.matrix.room_copy import RoomCopy
 from haku.console.x.conversation_history import ConversationHistory
 from haku.console.x.launch_identity import ChatLaunchAuthorizer
 from haku.console.x.session_live_updates import SessionLiveUpdates
@@ -423,6 +424,9 @@ def create_app(
         # One object, because the two halves of the queue are two ends of it: the notice reader
         # writes rows off the conversation's log and the sync service's drain says them.
         matrix_room_outbox = matrix_outbox.RoomOutbox(db_sessions)
+        # Shared the same way: the sync loop records what the room shows and the notice reader
+        # asks it before sending.
+        matrix_room_copy = RoomCopy(db_sessions)
         matrix_sync_service = matrix_sync.MatrixSyncService(
             matrix_config,
             matrix_config.password,
@@ -436,6 +440,7 @@ def create_app(
             matrix_room_outbox,
             matrix_revisions.RevisionLog(db_sessions),
             matrix_ledger,
+            matrix_room_copy,
         )
         # The room as a subscriber to the conversation: it reads the record from a position it keeps
         # itself and says what the room has not been told, rather than being pushed at by whichever
@@ -451,6 +456,7 @@ def create_app(
             matrix_sync_service,
             matrix_sync_service.bound_room,
             matrix_room_outbox,
+            matrix_room_copy,
         )
     # Execution exists only when a launch-capable adapter was configured. Read-only replicas keep
     # the same registry in their store above but expose no session-creation runtime service.

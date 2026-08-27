@@ -111,8 +111,8 @@ where "no position given" is the `Unstarted` arm rather than a zero, and
 changes, with `session_changed` as the wake that says to read again. Matrix's `RoomNotices` consumes
 that primitive: it queues completed answers in `matrix_outbox`, folds the stream into live
 status/typing, and projects the settled rejection, unreadable-input, setup, adoption, lease-expiry
-and operator-abort notices. What is missing is not another stream but closing the direct paths and
-reconciling Matrix's own copy.
+and operator-abort notices, checked against the room's own recorded copy before it sends. What is
+missing is not another stream but closing the direct paths and reconciling the editable copy.
 
 **The stream carries two kinds of message, and a delta is one of them** (operator, 2026-08-17).
 State changes are whole rows, merged by id. A **delta** is `{item_id, append}` — carried to a
@@ -181,33 +181,27 @@ other.
 
 ## 3. The room as the channel's own store
 
-`EventTag` (<../x/channels/matrix/client.py>) rides on every event the console sends. It carries a
-`kind`, an optional legacy `session_id` for the editable status line, and — on a sealed projected
-notice — one optional `ConversationEventSource {attachment_id, conversation_id, event_seq}`.
-**The reconciler is the source field's reader**: correspondence between the record and the room is
-exactly what step 2 of the loop needs.
+`EventTag` (<../x/channels/matrix/client.py>) rides on every event the console sends: a `kind`, an
+optional `conversation_id`, and — on a sealed projected notice — one optional
+`ConversationEventSource {attachment_id, conversation_id, event_seq}`. The source's attachment
+prevents a conversation rebound to another room from reusing the old room's identity; its
+conversation and event position name the durable fact.
 
-The source value landed with the replay-safe v0, but it is write-only. Its attachment prevents a
-conversation rebound to another room from reusing the old room's transaction identity; its
-conversation and event position name the durable fact. `session_id` still comes off the status tag
-when live status becomes an ordinary span: a room event is permanent and federated, so a runner
-incarnation is the shortest-lived identity it could keep.
+**The correspondence reader exists, and the reconciler consults it before sending.** The mirror of
+ingress — only our sender, parse the tag, never a prompt — feeds `matrix_room_copy` from the
+events' own `/sync` echoes; a sealed notice is projected only when no event already shows its
+source, the deterministic transaction id covers just the send-to-echo window, and a duplicate that
+lands inside it is redacted on observation. The standing guarantees are
+<../x/channels/matrix/SPEC.md> § The room's own copy.
 
-- **Two readers of one `/sync`, with opposite filters.** Ingress excludes Haku's own sender, and
-  `MatrixClient._read` drops those events before anything else sees them. The correspondence reader
-  is the mirror — only our sender, parse the tag, never a prompt. That constrains what may become
-  input, not what may be read, so this is a new path at the client rather than a change of policy.
 - **Redaction strips the tag**, since it lives in `content`. For a level-triggered reader that is
   the right behaviour — a retired status line's desired state is "none", and a redacted event reads
   as absence. The cost is that **the room is not an audit log**: nothing can ask it what it used to
   show, so any fact that must survive its own retirement is recorded conversation-side or not at
   all.
-- **Idempotence currently has only the transaction window.** A projected notice derives one
-  transaction id from its attachment and source event, and `RoomNotices` keeps the cursor only after
-  `room_send` returns. A crash in that window safely retries while Synapse remembers the id, but
-  after the 30-to-60 minute cache expires the room can still gain a duplicate
-  (<../docs/chat_runtime_facts.md>). The correspondence reader closes that bound: find the tagged
-  event already showing the source, then repair any duplicate or stale editable copy.
+- **The editable copy is still unread.** A status tag names no durable event, so the store holds
+  nothing about the status line and a stale editable copy stays invisible until § 4's spans give
+  it a durable subject to correspond under.
 - **The token cannot live in the room**, because it is what reads the room. So the channel keeps a
   private store whatever else moves; the only question is what else is in it.
 
@@ -470,7 +464,7 @@ several mechanisms with different recovery properties.
 | What                             | Driven by                                                             | Recovery today                                                                                                                     |
 | -------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Assistant replies                | `RoomNotices` queues `matrix_outbox`; `RoomOutboxDrain` sends         | Durable row, ordered retries, stable outbox transaction id                                                                         |
-| Sealed notices                   | `RoomNotices` → `project_notice`                                      | Durable source and post-send cursor; duplicate-safe only inside Synapse's transaction-cache window                                 |
+| Sealed notices                   | `RoomNotices` → `project_notice`, suppressed by `matrix_room_copy`    | Durable source, post-send cursor and recorded correspondence; duplicate-safe past the transaction cache, with observed repair      |
 | Status line and typing           | `RoomNotices` folds `LiveStatus`; `RevisionLog`/`RoomPacer` render it | Desired state is reconstructible; status event id is durable; the room's actual copy is not read back; typing deliberately expires |
 | Relayed prompts and silent turns | `RoomNotices` queries the completed item/turn, then calls `announce`  | Fact is durable; queued Matrix effect is not tied to the cursor and has no stable identity                                         |
 | Session and attachment narration | `MatrixSessionSupervisor` and `_handle_invite` call `_queue_notice`   | Some underlying facts are durable; delivery and process-local dedup are not                                                        |
@@ -493,16 +487,16 @@ fail silently rather than merely run more slowly.
   transport waits before the cursor advances.
 - **A reconstructible live-state fold.** `LiveStatus` demonstrates create/edit/retire semantics from
   conversation events without a turn-process callback.
-- **The correspondence key.** `ConversationEventSource` names attachment, conversation and event
-  position. It is written today and deliberately unread.
+- **The correspondence key, and its reader.** `ConversationEventSource` names attachment,
+  conversation and event position; `matrix_room_copy` holds what the room shows under it and the
+  sealed-notice send consults it first.
 - **Cross-surface prompt provenance.** A prompt typed in the SPA already appears in Matrix with its
   origin distinguished; only its delivery path remains non-reconciling.
 
 ### What is missing
 
-- A reader of Haku-authored Matrix events, so source correspondence survives beyond the transaction
-  cache and edits/redactions can be compared with the room's actual state.
-- Stable multi-event subjects and bounded folds for work and session-lifecycle spans.
+- Stable multi-event subjects and bounded folds for work and session-lifecycle spans — which is
+  also what would let the correspondence reader cover the editable copy, not only sealed sources.
 - A record-derived delivery path for relayed prompts and silent turns, plus a durable home for
   Matrix-only attachment narration.
 - One attachment owner coordinating cursor, outbox, revisions and send budget, followed by more than
@@ -514,11 +508,11 @@ Each step is independently reviewable. The dependency order below is the channel
 backend-neutral runtime/Agent-selection work in #4431 is a parallel review track and must not be
 mixed into these PRs.
 
-1. **Read Matrix's own copy** (§ 3). Add an own-sender `/sync` projection that parses
-   `EventTag.source` without admitting those events as prompts. Reconciliation first finds an
-   existing source, then sends; the deterministic transaction id remains the short window between a
-   successful send and its echo becoming visible. Test restart after that cache expires, duplicate
-   discovery and redaction/edit visibility.
+1. **Completed — Matrix's own copy is read** (§ 3). The own-sender `/sync` projection feeds
+   `matrix_room_copy` without admitting anything as a prompt; reconciliation finds an existing
+   source before sending, the deterministic transaction id covers only the send-to-echo window, and
+   a duplicate that lands inside it is redacted on observation. The editable copy stays unread
+   until step 2 gives it a durable subject.
 
 2. **Turn notices into spans** (§ 4). Give the fold stable turn/session subjects and have it produce
    bounded `(subject, body, lifecycle)` output. Generalise the `LiveStatus` create/edit/retire path;
@@ -547,9 +541,8 @@ mixed into these PRs.
    with `matrix.to`; sessions and tool calls link both ways. This is independent of 1–5 once the
    route names are chosen to survive permanent, federated events.
 
-**Dependencies.** 1 precedes fully reconcilable edits in 2. Steps 2 and 3 precede 4. Steps 5 and 6
-can otherwise proceed independently. The channel-neutral allocator is already complete and is not a
-step in this plan.
+**Dependencies.** Steps 2 and 3 precede 4. Steps 5 and 6 can otherwise proceed independently. The
+channel-neutral allocator is already complete and is not a step in this plan.
 
 **Independent runtime work.** `sessions.status` (§ 10) and the duplicated read models (§ 13) are
 not channel dependencies. Bridge v3 already made the frame payload harness-neutral; any remaining

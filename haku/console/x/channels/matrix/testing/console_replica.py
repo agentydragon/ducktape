@@ -46,6 +46,7 @@ from haku.console.x.channels.matrix.conversation import MatrixConversationStore,
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.channels.matrix.outbox import PendingReply, RoomOutbox
 from haku.console.x.channels.matrix.revisions import RevisionLog
+from haku.console.x.channels.matrix.room_copy import RoomCopy
 from haku.console.x.channels.matrix.room_subscription import RoomNotices
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
 from haku.console.x.conversation_history import ConversationHistory
@@ -170,6 +171,7 @@ async def _serve() -> None:
     conversations = MatrixConversationStore(sessions)
     ledger = IngressLedger(sessions)
     outbox = RoomOutbox(sessions)
+    room_copy = RoomCopy(sessions)
     identities = PostgresOperatorIdentityStore(
         sessions, OperatorIdentityTrust(trust_domain=TRUST_DOMAIN, trusted_issuers=frozenset({TRUSTED_ISSUER}))
     )
@@ -184,6 +186,7 @@ async def _serve() -> None:
         outbox,
         RevisionLog(sessions),
         ledger,
+        room_copy,
         armed=Path(_environment("HAKU_E2E_REFUSE_NEXT_REPLY")),
     )
     service = SessionService(runtimes, store, notifications, conversation_history=ConversationHistory(sessions))
@@ -200,6 +203,7 @@ async def _serve() -> None:
         sync,
         sync.bound_room,
         outbox,
+        room_copy,
     )
 
     @asynccontextmanager

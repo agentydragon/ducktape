@@ -410,6 +410,9 @@ the test that reads it, as `test_diverse_session` has.
   (`matrix_revision`), which is what the status line is edited and retired through.
 - `room_subscription.py` — the room as a subscriber: its durable position in the conversation
   (`channel_cursor`), the replies it queues from it, and the notices it says from it.
+- `room_copy.py` — the room's durable copy of projected events (`matrix_room_copy`): what the
+  room shows of Haku's own sends, read off their `/sync` echoes, which the reconciler consults
+  before sending and duplicate repair reads.
 - `ingress_ledger.py` — which inbound events a prompt in the record carries
   (`matrix_ingress_event`).
 - `formatted_body.py` — Haku's Markdown into the HTML subset Matrix clients render.
@@ -418,8 +421,10 @@ the test that reads it, as `test_diverse_session` has.
 answers, aborts, silence, setup narration, refusals, unreadable input, session handoffs and lease
 losses, plus prompts arriving through another surface, from one cursor and in one order. Only facts
 outside the conversation log — such as binding or adopting a room — are still announced directly.
-The position is kept after the batch, so a crash costs a repeat rather than silence: a notice may be
-said twice, while the outbox's unique subject refuses a duplicate reply.
+The position is kept after the batch, so a crash costs a replay rather than silence: a sealed
+notice is suppressed by the room's own recorded copy, a duplicate reply is refused by the outbox's
+unique subject, and only the direct `announce` path — relayed prompts, silent turns — can still say
+a thing twice.
 
 **A prompt is a conversation fact, so every attached surface shows it.** The prompt item's origin
 names the surface it arrived through, and the room compares it against its own address: a prompt
