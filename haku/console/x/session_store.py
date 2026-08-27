@@ -57,10 +57,11 @@ from haku.console.database_schema import (
     KubernetesGrantRow,
     Session,
     SessionFrame,
+    SubmittedPrompt,
 )
 from haku.console.grant_principal import GrantPrincipalKind
 from haku.console.kubernetes_grant_models import KubernetesGrantStatus
-from haku.console.x import conversation_log, session_events
+from haku.console.x import conversation_log, prompt_inbox, runtime_control, session_events
 from haku.console.x.conversation_events import (
     ConversationEvent,
     FrameRange,
@@ -140,16 +141,18 @@ def _bridge_frames(
 
 
 class PromptRecords(Protocol):
-    """What a caller needs written in the prompt's own transaction, given the item it minted.
+    """What a caller needs written in the prompt's own transaction, given the inbox id it minted.
 
     A channel's record of which of its own inbound events a prompt carries. It has to commit with
     the prompt or not at all: written afterwards it is lost by a crash in between, and the channel
     then cannot tell a message the record already holds from one it has never been offered.
 
-    The store adds it and never reads it — what these rows mean is the caller's business.
+    The store adds it and never reads it — what these rows mean is the caller's business. The id it
+    hands over is the `submitted_prompt` id (#4667), the durable command the prompt is before it is
+    any transcript item.
     """
 
-    async def __call__(self, db: AsyncSession, item_id: UUID) -> None: ...
+    async def __call__(self, db: AsyncSession, prompt_id: UUID) -> None: ...
 
 
 class PromptRefusedError(RuntimeError):
@@ -430,6 +433,14 @@ class ConversationDemand:
     conversation_id: UUID
 
 
+@dataclass(frozen=True, slots=True)
+class DispatchablePrompt:
+    """One pending inbox prompt the runner is owed, as `protocol.PromptDispatch` carries it."""
+
+    prompt_id: UUID
+    text: str
+
+
 class PositionUnusableError(Exception):
     """An update cannot be served from a follower's position; it must be sent the conversation whole.
 
@@ -446,6 +457,12 @@ class SessionStore:
     def __init__(self, sessions: async_sessionmaker[AsyncSession], runtime_registry: RuntimeRegistry):
         self._sessions = sessions
         self._runtime_registry = runtime_registry
+
+    @property
+    def sessionmaker(self) -> async_sessionmaker[AsyncSession]:
+        """The store's session factory, for a collaborator committing in its own transaction —
+        the journal consumer (#4667), whose commits are the store's transactions by another name."""
+        return self._sessions
 
     @staticmethod
     def _fingerprint(token: str) -> bytes:
@@ -648,7 +665,7 @@ class SessionStore:
         open_session = (
             select(Session.session_id)
             .where(
-                Session.conversation_id == ConversationPrompt.conversation_id, Session.status.in_(OPEN_SESSION_STATUSES)
+                Session.conversation_id == SubmittedPrompt.conversation_id, Session.status.in_(OPEN_SESSION_STATUSES)
             )
             .exists()
         )
@@ -656,13 +673,13 @@ class SessionStore:
             rows = await db.execute(
                 select(
                     Conversation.operator_id,
-                    ConversationPrompt.conversation_id,
-                    func.min(ConversationPrompt.queued_at).label("oldest_prompt"),
+                    SubmittedPrompt.conversation_id,
+                    func.min(SubmittedPrompt.submitted_at).label("oldest_prompt"),
                 )
-                .join(Conversation, Conversation.conversation_id == ConversationPrompt.conversation_id)
-                .where(ConversationPrompt.claimed_at.is_(None), ~open_session)
-                .group_by(Conversation.operator_id, ConversationPrompt.conversation_id)
-                .order_by("oldest_prompt", ConversationPrompt.conversation_id)
+                .join(Conversation, Conversation.conversation_id == SubmittedPrompt.conversation_id)
+                .where(SubmittedPrompt.admitted_at.is_(None), SubmittedPrompt.withdrawn_at.is_(None), ~open_session)
+                .group_by(Conversation.operator_id, SubmittedPrompt.conversation_id)
+                .order_by("oldest_prompt", SubmittedPrompt.conversation_id)
             )
             return tuple(
                 ConversationDemand(operator_id=row.operator_id, conversation_id=row.conversation_id) for row in rows
@@ -689,7 +706,7 @@ class SessionStore:
             )
             if conversation is None:
                 return None
-            if await _queued_prompt(db, conversation_id) is None:
+            if not await _has_pending_inbox(db, conversation_id):
                 return None
             if (
                 await db.scalar(
@@ -732,18 +749,9 @@ class SessionStore:
                 )
             )
             await db.flush([session])
-            await db.execute(
-                update(ConversationItem)
-                .where(
-                    ConversationItem.item_id.in_(
-                        select(ConversationPrompt.item_id).where(
-                            ConversationPrompt.conversation_id == conversation_id,
-                            ConversationPrompt.claimed_at.is_(None),
-                        )
-                    )
-                )
-                .values(session_id=session_id, updated_at=now)
-            )
+            # No item to re-point at the new session: under the neutral-operation generation the
+            # prompt is an inbox row until the runner admits it, and the inbox is keyed by the
+            # conversation, so the replacement's runner dispatches it without any attach here.
             await notify(db, SessionEventKind.PROMPT, session_id)
             await notify_update(db, session_id=session_id, conversation_id=conversation_id)
         return SandboxDemand(operator_id=operator_id, session_id=session_id)
@@ -832,7 +840,7 @@ class SessionStore:
             )
             if chat is None:
                 raise KeyError(session_id)
-            if chat.status != SessionStatus.IDLE or await _queued_prompt(db, chat.conversation_id) is None:
+            if chat.status != SessionStatus.IDLE or not await _has_pending_inbox(db, chat.conversation_id):
                 return None
             bridge_token = secrets.token_urlsafe(32)
             chat.bridge_token_fingerprint = self._fingerprint(bridge_token)
@@ -855,7 +863,7 @@ class SessionStore:
 
         The prompt belongs to the conversation, so a replacement idle session sees work its
         predecessor never claimed. The result deliberately names no surface: SPA and Matrix
-        prompts leave the same conversation-prompt row and follow the same allocation rule.
+        prompts leave the same inbox row and follow the same allocation rule.
 
         This read does not lock. It is a work hint for the reconciler; ``allocate`` locks the
         session and repeats both predicates before minting a credential.
@@ -863,9 +871,13 @@ class SessionStore:
         async with self._sessions() as db:
             rows = await db.execute(
                 select(Session.operator_id, Session.session_id)
-                .join(ConversationPrompt, ConversationPrompt.conversation_id == Session.conversation_id)
-                .where(Session.status == SessionStatus.IDLE, ConversationPrompt.claimed_at.is_(None))
-                .order_by(ConversationPrompt.queued_at, Session.created_at, Session.session_id)
+                .join(SubmittedPrompt, SubmittedPrompt.conversation_id == Session.conversation_id)
+                .where(
+                    Session.status == SessionStatus.IDLE,
+                    SubmittedPrompt.admitted_at.is_(None),
+                    SubmittedPrompt.withdrawn_at.is_(None),
+                )
+                .order_by(SubmittedPrompt.submitted_at, Session.created_at, Session.session_id)
             )
             return tuple(SandboxDemand(operator_id=row.operator_id, session_id=row.session_id) for row in rows)
 
@@ -1340,6 +1352,10 @@ class SessionStore:
             )
             if conversation is None:
                 raise KeyError(conversation_id)
+            # The maintenance-window gate, checked inside the accepting transaction so a prompt is
+            # never half-admitted across an operator closing admission (#4667 generation cut).
+            if await runtime_control.admission_closed(db):
+                raise PromptRefusedError(PromptRejection.ADMISSION_CLOSED)
             if required_session_id is None:
                 chat = await db.scalar(
                     select(Session)
@@ -1381,6 +1397,90 @@ class SessionStore:
                 await notify(db, SessionEventKind.PROMPT, chat.session_id)
                 await notify_update(db, session_id=chat.session_id, conversation_id=conversation_id)
         return item_id
+
+    async def submit_prompt(
+        self,
+        operator_id: UUID,
+        conversation_id: UUID,
+        prompt_text: str,
+        origin: PromptOrigin,
+        records: PromptRecords | None = None,
+    ) -> UUID:
+        """Accept a prompt into the durable inbox for the neutral-operation generation (#4667).
+
+        A prompt is a durable command first and a transcript item only when the runner admits it:
+        this writes the `submitted_prompt` row that is authoritative for text and origin, and the
+        journal consumer materialises the item on `prompt.admitted`. Returns the `prompt_id` the
+        runner will echo back verbatim.
+
+        No busy/queued refusals: the runner accepts prompts while working and orders admission
+        itself (#4667 § Prompt ordering), so the inbox deliberately queues where the v3 path
+        refused. The one gate is the maintenance switch. Demand and the runner's dispatch are woken
+        the same way the v3 queue was.
+        """
+        now = datetime.now(UTC)
+        async with self._sessions.begin() as db:
+            conversation = await db.scalar(
+                select(Conversation)
+                .where(Conversation.conversation_id == conversation_id, Conversation.operator_id == operator_id)
+                .with_for_update()
+            )
+            if conversation is None:
+                raise KeyError(conversation_id)
+            if await runtime_control.admission_closed(db):
+                raise PromptRefusedError(PromptRejection.ADMISSION_CLOSED)
+            row = await prompt_inbox.submit(
+                db, conversation_id=conversation_id, text=prompt_text, origin=origin, now=now
+            )
+            if records is not None:
+                await records(db, row.prompt_id)
+            chat = await db.scalar(
+                select(Session)
+                .where(Session.conversation_id == conversation_id, Session.status.in_(OPEN_SESSION_STATUSES))
+                .order_by(Session.created_at.desc(), Session.session_id.desc())
+                .limit(1)
+            )
+            # RUNTIME_DEMAND provisions a session for a conversation that has none; PROMPT wakes the
+            # runner bridge of a live one to dispatch what it now owes.
+            await notify_conversation(db, ConversationWakeKind.RUNTIME_DEMAND, conversation_id)
+            if chat is not None:
+                await notify(db, SessionEventKind.PROMPT, chat.session_id)
+        return row.prompt_id
+
+    async def pending_dispatch(self, session_id: UUID) -> tuple[DispatchablePrompt, ...]:
+        """The inbox prompts this session's runner is owed, oldest first (#4667 dispatch).
+
+        Keyed by the session's conversation, so a replacement session dispatches what its
+        predecessor never got admitted, exactly as the durable inbox intends.
+        """
+        async with self._sessions() as db:
+            conversation_id = await db.scalar(select(Session.conversation_id).where(Session.session_id == session_id))
+            if conversation_id is None:
+                raise KeyError(session_id)
+            return tuple(
+                DispatchablePrompt(prompt_id=row.prompt_id, text=row.text)
+                for row in await prompt_inbox.pending(db, conversation_id)
+            )
+
+    async def withdraw_prompt(self, operator_id: UUID, conversation_id: UUID, prompt_id: UUID) -> None:
+        """Take a pending inbox prompt back, if this Operator owns its conversation.
+
+        The withdraw half of the inbox state machine, preserved from the v3 unqueue: whichever of
+        withdrawal and admission stamps the row first wins, and the loser is told the state it lost
+        to (`prompt_inbox.PromptNotPendingError`).
+        """
+        now = datetime.now(UTC)
+        async with self._sessions.begin() as db:
+            owned = await db.scalar(
+                select(Conversation.conversation_id).where(
+                    Conversation.conversation_id == conversation_id, Conversation.operator_id == operator_id
+                )
+            )
+            if owned is None:
+                raise KeyError(conversation_id)
+            row = await prompt_inbox.withdraw(db, prompt_id, now=now)
+            if row.conversation_id != conversation_id:
+                raise KeyError(prompt_id)
 
     async def next_prompt(self, session_id: UUID) -> TurnStart | None:
         """Take the queued prompt and open the turn that will answer it, or None if there is none.
@@ -2094,6 +2194,25 @@ class SessionStore:
         outcome = await self.outcome(session_id)
         return outcome.status if outcome is not None else None
 
+    async def active_generation(self) -> str | None:
+        """The active runtime transport generation, or None pre-cut (#4667 generation gate).
+
+        Read at bridge admission: a Console built for the neutral-operation generation serves a
+        runner only once the cutover migration has named its generation active.
+        """
+        async with self._sessions() as db:
+            return await runtime_control.active_generation(db)
+
+    async def admission_open(self) -> bool:
+        """Whether new prompt admission is currently open — the operator's drain switch, read out."""
+        async with self._sessions() as db:
+            return not await runtime_control.admission_closed(db)
+
+    async def set_admission_open(self, *, open_admission: bool) -> None:
+        """Open or close prompt admission for the maintenance window. Raises pre-cut."""
+        async with self._sessions.begin() as db:
+            await runtime_control.set_admission(db, closed=not open_admission)
+
     async def runtime_kind_of(self, session_id: UUID) -> RuntimeKind:
         """Return the immutable runtime discriminator of a session's conversation."""
         async with self._sessions() as db:
@@ -2339,6 +2458,26 @@ async def _queued_prompt(db: AsyncSession, conversation_id: UUID, *, lock: bool 
     )
     prompt: ConversationPrompt | None = await db.scalar(query.with_for_update(skip_locked=True) if lock else query)
     return prompt
+
+
+async def _has_pending_inbox(db: AsyncSession, conversation_id: UUID) -> bool:
+    """Whether this conversation has an inbox prompt still owed a runner (#4667 demand signal).
+
+    The neutral-operation generation's demand: a conversation with a pending `submitted_prompt` and
+    no session needs one provisioned. Unlocked — a work hint the reconciler repeats under the
+    conversation row lock, exactly as it did for the v3 queue.
+    """
+    return (
+        await db.scalar(
+            select(SubmittedPrompt.prompt_id)
+            .where(
+                SubmittedPrompt.conversation_id == conversation_id,
+                SubmittedPrompt.admitted_at.is_(None),
+                SubmittedPrompt.withdrawn_at.is_(None),
+            )
+            .limit(1)
+        )
+    ) is not None
 
 
 async def _open_item(db: AsyncSession, turn_id: UUID, item_type: ItemType) -> OpenItem | None:

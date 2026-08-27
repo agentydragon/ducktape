@@ -233,9 +233,9 @@ class ConversationFacts:
 
 @dataclass(frozen=True)
 class PromptAccepted:
-    """The batch is a prompt item on the live session, and a turn will answer it."""
+    """The batch is a durable inbox prompt on the conversation; a runner will admit it (#4667)."""
 
-    item_id: UUID
+    prompt_id: UUID
 
 
 @dataclass(frozen=True)
@@ -294,7 +294,7 @@ class MatrixTurns:
     async def _enqueue(self, binding: RoomAttachment, prompt_text: str, event_ids: tuple[str, ...]) -> Admission:
         operator_id = await self._identities.resolve_configured_external_user_key(self._config.operator_subject)
         try:
-            item_id = await self._session_store.enqueue_conversation_prompt(
+            prompt_id = await self._session_store.submit_prompt(
                 operator_id,
                 binding.conversation_id,
                 prompt_text,
@@ -305,11 +305,11 @@ class MatrixTurns:
             logger.info("Matrix: bound conversation %s is gone, rejecting the batch", binding.conversation_id)
             return self._refused(binding, None, PromptRejection.NO_SESSION, prompt_text)
         except PromptRefusedError as refusal:
-            # Admission is `enqueue_prompt`'s alone, decided under `SELECT … FOR UPDATE`: a status
+            # Admission is `submit_prompt`'s alone, decided under `SELECT … FOR UPDATE`: a status
             # read here could only agree with a decision that had not been made yet.
             logger.info("Matrix: conversation %s rejected the batch: %s", binding.conversation_id, refusal.reason)
             return self._refused(binding, None, refusal.reason, prompt_text)
-        return PromptAccepted(item_id=item_id)
+        return PromptAccepted(prompt_id=prompt_id)
 
     def _refused(
         self, binding: RoomAttachment, session_id: UUID | None, reason: PromptRejection, prompt_text: str

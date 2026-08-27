@@ -58,7 +58,7 @@ from typing import Any
 from haku.cli_protocol.frame_identity import frame_uid
 from haku.console.x.claude_code.frames import frame_kind
 
-_DIRECTIVE = re.compile(r"\s*\[(hold|silent|narrate=\d+)\]")
+_DIRECTIVE = re.compile(r"\s*\[(hold|silent|narrate=\d+|tool=\w+)\]")
 
 
 def _send(frame: dict[str, Any]) -> None:
@@ -95,6 +95,42 @@ def _answer(state: Path, prompt: str, answered: int) -> None:
     for narrate in (int(each.split("=")[1]) for each in directives if each.startswith("narrate=")):
         for line in range(narrate):
             print(f"narration {answered}.{line}", file=sys.stderr, flush=True)
+
+    # `[tool=NAME]` runs one tool round trip before the answer: the CLI declares a call in an
+    # assistant block and its result arrives as a `user` frame, which is exactly the pair the
+    # runner-side projector opens and completes a tool-call item from (#4667). It is how the
+    # generation-cut health gate exercises the tool path over the journal.
+    for tool_name in (each.split("=")[1] for each in directives if each.startswith("tool=")):
+        call_id = f"toolu_{answered}"
+        _speak(
+            {
+                "type": "assistant",
+                "message": {
+                    "id": f"msg_{answered}_tool",
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "id": call_id, "name": tool_name, "input": {"answered": answered}}
+                    ],
+                },
+            }
+        )
+        _speak(
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": call_id,
+                            "content": f"{tool_name} ran",
+                            "is_error": False,
+                        }
+                    ],
+                },
+                "tool_use_result": {"ok": True},
+            }
+        )
 
     if "silent" not in directives:
         _speak(

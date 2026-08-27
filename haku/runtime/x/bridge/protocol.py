@@ -1,4 +1,4 @@
-"""Envelope framing for the incompatible v3 bridge between Console and a harness runner.
+"""Envelope framing for the incompatible v4 bridge between Console and a harness runner.
 
 Two protocols share this socket: the CLI's own newline-delimited JSON
 (<../../../cli_protocol/README.md>), and the small control protocol Haku needs around it — what
@@ -6,14 +6,27 @@ to launch, when input ends, and what the sandbox is doing before a harness exist
 Native harness frames are opaque to this module and always travel in ``HarnessFrame.frame``. The
 outer ``kind`` is backend-neutral: the complete inner frame (including its own discriminator) is
 never flattened into the bridge vocabulary or the database's ``kind`` column.
+
+**v4 is the neutral-operation generation** (#4667). The runner interprets native frames and the
+conversation crosses this envelope as the acknowledged journal of <neutral_operations.py>, ridden
+in ``RunnerJournal``/``ConsoleJournal``; the Console dispatches prompts by durable id
+(``PromptDispatch``) instead of writing native input, and native frames still travel — as the
+durable record (`session_frames`), no longer as a projection input. v3 peers fail closed here, at
+the version negotiation both ends already enforce: ``SUPPORTED_VERSIONS`` holds only 4, so an old
+runner and a new Console (or the reverse) find no common version and refuse the connection —
+which is the exact-generation peering the maintenance-gated cutover relies on, doubled inside the
+journal handshake by `RunnerHello.generation` against the migration-set active generation.
 """
 
 from __future__ import annotations
 
 import json
 from typing import Annotated, Any, Final, Literal, Protocol
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
+
+from haku.runtime.x.bridge.neutral_operations import BatchAck, ConsoleResume, OperationBatch, RunnerHello
 
 FINE_GRAINED_TOOL_STREAMING_ENV = "CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING"
 KUBERNETES_PROXY_URL_ENV = "HAKU_KUBERNETES_PROXY_URL"
@@ -21,12 +34,13 @@ RUNNER_SETUP_ENV = "HAKU_RUNNER_SETUP"
 
 # Carried on the ``start`` frame only: the version is a property of the connection that its first
 # frame settles.
-PROTOCOL_VERSION: Final = 3
+PROTOCOL_VERSION: Final = 4
 
 # Every version this image can speak, not the one it prefers. A runner's image is fixed when its
 # claim is created and a live session may outlast several console releases, so console and runner
-# sit on different numbers for hours at a time.
-SUPPORTED_VERSIONS: Final = (3,)
+# sit on different numbers for hours at a time. Deliberately only 4: the generation cut carries no
+# dual-protocol period, and the empty intersection with a v3 peer is the fail-closed gate.
+SUPPORTED_VERSIONS: Final = (4,)
 
 # What ending the socket means. **The runner redials after every disconnection except a refusal**,
 # which is the console rejecting *this runner* — a consumed credential, a session already over — and
@@ -115,6 +129,12 @@ class HarnessFrame(_Frame):
     # and end every session in flight. `extra="ignore"` drops it for a peer that predates it, and
     # None is what a console reading an older runner sees.
     seq: int | None = None
+    # **True for the runner's numbered echo of native input it wrote to the CLI itself** — the
+    # dispatched prompt's user frame, the interrupt control request. Under v4 the Console composes
+    # no native input, so the durable record's `to_agent` half has to come from the end that wrote
+    # it; the echo travels runner → console like everything else the runner numbers, and the
+    # Console records it with the direction this flag names instead of `from_agent`.
+    injected: bool = False
 
 
 class EndInput(_Frame):
@@ -163,11 +183,64 @@ class SetupOutput(_Frame):
     seq: int | None = None
 
 
+class RunnerJournal(_Frame):
+    """Runner → console: one message of the neutral-operation journal, in the bridge envelope.
+
+    A wrapper kind rather than flattening the journal's own messages into this union, because the
+    two vocabularies collide (`RunnerHello` and `Hello` both discriminate on ``hello``) and because
+    the journal is its own versioned contract (<neutral_operations.py>): what rides here is decided
+    by the hello/resume negotiation inside it, not by `PROTOCOL_VERSION`.
+
+    The first journal message on every connection is the `RunnerHello`; after the Console's
+    `ConsoleResume` comes back, every further one is an `OperationBatch`.
+    """
+
+    kind: Literal["journal"] = "journal"
+    message: Annotated[RunnerHello | OperationBatch, Field(discriminator="kind")]
+
+
+class ConsoleJournal(_Frame):
+    """Console → runner: the journal's answers — the resume on every connection, then ACKs."""
+
+    kind: Literal["journal"] = "journal"
+    message: Annotated[ConsoleResume | BatchAck, Field(discriminator="kind")]
+
+
+class PromptDispatch(_Frame):
+    """Console → runner: inject this pending prompt at the runner's native-input fence.
+
+    The whole authority split in one frame: the text rides here so the runner can compose the
+    native input, but the durable truth stays the Console's `submitted_prompt` row — the runner
+    echoes only `prompt_id` back in `prompt.admitted`, and the Console materialises the transcript
+    item from its own row. Idempotent by `prompt_id`: the Console re-dispatches
+    dispatched-but-unadmitted prompts after a reconnect, and the runner ignores an id it has
+    already taken.
+    """
+
+    kind: Literal["prompt"] = "prompt"
+    prompt_id: UUID
+    text: str = Field(min_length=1)
+
+
+class Interrupt(_Frame):
+    """Console → runner: the operator asked the running exchange to stop.
+
+    The runner interrupts the CLI in the CLI's own vocabulary and, because it asked, ends the open
+    turn `aborted` whatever the harness calls the result — the journal's `TurnAborted` is minted by
+    the side that knows an abort happened, which under v4 is the runner.
+    """
+
+    kind: Literal["interrupt"] = "interrupt"
+
+
 # The two directions carry different frames. Not request/response: both ends speak unprompted and
 # nothing at this layer pairs a reply with a call. (The CLI's own control_request/control_response
 # do correlate, by an id that rides inside `HarnessFrame.frame` and is opaque here.)
-ConsoleToRunner = HarnessLaunch | HarnessFrame | EndInput
-RunnerToConsole = HarnessFrame | Hello | SetupOutput
+#
+# `HarnessFrame` stays writable console → runner for the legacy Console fold still in-tree behind
+# the generation gate; the journal path never sends one. It leaves with that fold (#4667 stage 5).
+ConsoleToRunner = HarnessLaunch | HarnessFrame | EndInput | ConsoleJournal | PromptDispatch | Interrupt
+RunnerToConsole = HarnessFrame | Hello | SetupOutput | RunnerJournal
 
 # Read with the adapter for the direction you are reading; write with the model's own
 # `model_dump_json`.

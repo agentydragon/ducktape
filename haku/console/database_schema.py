@@ -1156,6 +1156,43 @@ class ChannelCursor(Base):
     __table_args__ = (CheckConstraint("event_seq >= 0", name="ck_channel_cursor_event_seq"),)
 
 
+class RuntimeControl(Base):
+    """The one global switch pair the maintenance-gated generation cut turns (#4667).
+
+    A single row — `ck_runtime_control_singleton` pins `id` to 1 — set once by the cutover
+    migration and read on every launch and every bridge admission. Two facts:
+
+    - `generation`: the active runtime transport generation, e.g. ``runner_projection_v1``. The
+      migration sets it inside the freeze transaction; a runner presents its own build's generation
+      on the journal hello (`neutral_operations.RunnerHello.generation`) and the Console admits only
+      an exact match. **Its presence is the cut**: no row means pre-cut, and a Console built for the
+      neutral-operation generation refuses to serve any session until the row names its generation —
+      the fail-safe against an image that rolled ahead of its migration.
+    - `admission_closed`: the operator's drain switch. Closed refuses new prompt admission
+      (channels, SPA, inbox) so the post-roll health gate can run before general traffic resumes.
+      The cut lands it open — the exact-generation peering, not this flag, is what makes the cut
+      atomic — and the operator closes it through the API for the health-gate window.
+
+    Deliberately not a config value: both must be transactional with the freeze assertions and
+    readable by every replica the same way, which a per-pod ConfigMap is not.
+    """
+
+    __tablename__ = "runtime_control"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, server_default=text("1"))
+    # NOT NULL: the row exists only post-cut, and it always names the generation it cut to. A
+    # Console reading no row is pre-cut; a Console reading a generation other than its build's is
+    # mismatched — both refuse rather than guess.
+    generation: Mapped[str] = mapped_column(Text, nullable=False)
+    admission_closed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_runtime_control_singleton"),
+        CheckConstraint("btrim(generation) <> ''", name="ck_runtime_control_generation_nonempty"),
+    )
+
+
 class Session(Base):
     """One Operator-owned agent conversation and its Agent Sandbox rendezvous.
 
@@ -1759,11 +1796,10 @@ class SessionFrame(Base):
     __table_args__ = (
         CheckConstraint("direction IN ('to_agent','from_agent')", name="ck_session_frames_direction"),
         CheckConstraint("kind IN ('harness_frame','setup_output')", name="ck_session_frames_kind"),
-        # The runner numbers what *it* puts on the wire, so a number on a frame this console sent
-        # would be one nobody assigned.
-        CheckConstraint(
-            "runner_seq IS NULL OR direction = 'from_agent'", name="ck_session_frames_runner_seq_direction"
-        ),
+        # No runner_seq-by-direction constraint: under the neutral-operation generation the runner
+        # numbers the native input it injects itself (the dispatched prompt, the interrupt) and
+        # echoes it back as a `to_agent` frame carrying its own seq, so a runner number now rides
+        # both directions and the dense sequence spans them. Uniqueness is `uq_session_frames_runner_seq`.
         Index("idx_session_frames_session", "session_id", "frame_seq"),
         # Reading a session by kind is otherwise a filter over its whole log, and the log holds
         # deltas — so the frame inspector, the narration read, and the MCP transcript fold would
@@ -2008,15 +2044,15 @@ class MatrixIngressEvent(Base):
     The dedupe key for ingress, and the Matrix channel's own table: an `event_id` is this
     channel's address for a message and nothing above the channel boundary reads it.
 
-    **A row is written in the prompt's own transaction** (`session_store.enqueue_prompt`'s
-    `records` hook), which is the whole point of the table. The watermark commits separately and
-    afterwards, so a crash between the two re-delivers a batch the session already holds; a row
-    written beside the watermark instead would be missing in exactly that case.
+    **A row is written in the prompt's own transaction** (`session_store.submit_prompt`'s `records`
+    hook), which is the whole point of the table. The watermark commits separately and afterwards,
+    so a crash between the two re-delivers a batch the session already holds; a row written beside
+    the watermark instead would be missing in exactly that case.
 
     **Presence therefore means the record carries the event, not that the loop saw it.** That is
-    what makes suppressing a re-delivered event safe: the prompt is in the transcript, queued on the
-    conversation rather than on the session that accepted it, so whichever session runs next claims
-    it.
+    what makes suppressing a re-delivered event safe: the prompt is in the durable inbox, queued on
+    the conversation rather than on the session that accepted it, so whichever session runs next
+    dispatches it.
 
     Rejected and unreadable events are deliberately absent: both are recorded in the transaction
     that advances the watermark, so a crash before it leaves neither the acknowledgement nor the
@@ -2026,10 +2062,11 @@ class MatrixIngressEvent(Base):
     __tablename__ = "matrix_ingress_event"
 
     event_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    # The `prompt` item this event became. A prompt is an item like any other now, so this points
-    # at the transcript rather than at a separate message table.
-    item_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("conversation_item.item_id", ondelete="CASCADE"), nullable=False
+    # The inbox prompt this event became (#4667). Under the neutral-operation generation a prompt is
+    # a durable `submitted_prompt` command before it is any transcript item, so ingress dedup points
+    # at the inbox row it created rather than at an item that does not exist until admission.
+    prompt_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("submitted_prompt.prompt_id", ondelete="CASCADE"), nullable=False
     )
 
-    __table_args__ = (Index("idx_matrix_ingress_event_item", "item_id"),)
+    __table_args__ = (Index("idx_matrix_ingress_event_prompt", "prompt_id"),)

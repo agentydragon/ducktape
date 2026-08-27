@@ -176,6 +176,10 @@ class PromptRejection(StrEnum):
     SESSION_NOT_READY = "session_not_ready"
     TURN_IN_FLIGHT = "turn_in_flight"
     PROMPT_QUEUED = "prompt_queued"
+    # The operator closed admission for a maintenance window (#4667 generation cut). Distinct from
+    # the busy states above: nothing about this conversation refused the prompt — the whole runtime
+    # is draining or being cut over, and the sender is told to try again once the window ends.
+    ADMISSION_CLOSED = "admission_closed"
 
 
 class ItemType(StrEnum):

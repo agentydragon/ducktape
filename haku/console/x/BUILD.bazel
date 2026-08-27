@@ -68,6 +68,7 @@ py_library(
         ":conversation_events",
         ":conversation_history",
         ":conversation_views",
+        ":journal_consumer",
         ":launch_identity",
         ":runtime",
         ":sandbox_claims",
@@ -81,6 +82,7 @@ py_library(
         "//haku/console/agents:authorization",
         "//haku/console/x/claude_code:frames",
         "//haku/runtime/x/bridge:backend",
+        "//haku/runtime/x/bridge:neutral_operations",
         "//haku/runtime/x/bridge:protocol",
         "@pypi//fastapi",
         "@pypi//pydantic",
@@ -151,6 +153,15 @@ py_library(
 )
 
 py_library(
+    name = "runtime_control",
+    srcs = ["runtime_control.py"],
+    deps = [
+        "//haku/console:database_schema",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "session_events",
     srcs = ["session_events.py"],
     deps = [
@@ -183,8 +194,10 @@ py_library(
         ":conversation_wakes",
         ":item_entries",
         ":launch_identity",
+        ":prompt_inbox",
         ":runtime",
         ":runtime_catalog",
+        ":runtime_control",
         ":session_events",
         ":session_wakes",
         ":setup_output",
@@ -731,9 +744,9 @@ py_test(
 )
 
 py_test(
-    name = "test_bridge_e2e",
+    name = "test_generation_cutover_e2e",
     size = "large",  # a Postgres database, a uvicorn console and a runner subprocess per test
-    srcs = ["test_bridge_e2e.py"],
+    srcs = ["test_generation_cutover_e2e.py"],
     data = [
         "//haku/console/x/claude_code/testing:stub_claude_bin",
         "//haku/runtime/x/bridge:runner_bin",
@@ -747,8 +760,6 @@ py_test(
         ":item_entries",
         ":session_runtime",
         ":session_store",
-        ":session_wakes",
-        ":setup_output",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",

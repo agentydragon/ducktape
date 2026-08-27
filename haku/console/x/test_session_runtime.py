@@ -603,6 +603,9 @@ class _UnrelatedRuntimeAdapter:
     def wake_watcher(self) -> None:
         return None
 
+    def build_launch(self, launch):
+        raise AssertionError("this projection-only test must not build a runner launch")
+
     def client(self, websocket, launch, progress, frames_to):
         raise AssertionError("this projection-only test must not construct a runner client")
 

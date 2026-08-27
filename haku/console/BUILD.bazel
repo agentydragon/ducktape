@@ -2060,6 +2060,27 @@ py_test(
 )
 
 py_test(
+    name = "test_generation_cutover_migration",
+    size = "medium",
+    srcs = ["test_generation_cutover_migration.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":database_migrate",
+        "//:conftest",
+        "//haku/runtime/x/bridge:neutral_operations",
+        "@pypi//psycopg",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
     name = "test_kubernetes_grant_principal_migration",
     size = "medium",
     srcs = ["test_kubernetes_grant_principal_migration.py"],

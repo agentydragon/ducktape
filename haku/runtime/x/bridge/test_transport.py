@@ -82,6 +82,7 @@ def test_every_frame_kind_round_trips() -> None:
         "kind": "harness_frame",
         "frame": {"type": "user", "message": {"role": "user", "content": "hi"}},
         "seq": None,
+        "injected": False,
     }
 
 
