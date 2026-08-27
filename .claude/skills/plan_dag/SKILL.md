@@ -19,6 +19,15 @@ Their downstream nodes simply become roots. A completed non-PR node (a ruled
 gate, a finished recon phase) may outlive its moment, but only while it anchors
 fresh in-flight work; flush it once its outgoing edges stop explaining anything.
 
+**Flush and restore against the primary source, never memory.** Before the
+board asserts a PR's state — flushing it as merged, restoring it as open —
+read the actual state (the API's `merged` field, or the squash commit on the
+base branch). A remembered "delivered", a summary, and a stale listing all
+lie, in both directions, and a board that mis-states PR state loses the only
+thing it has. Corollary: review comments can materialize long after their
+timestamps (a pending review is invisible until submitted), so an empty
+thread listing never proves no review round is in flight.
+
 ## Node taxonomy
 
 Four classes, styled explicitly (see gotchas), plus one hard shape rule:
@@ -69,12 +78,13 @@ principals · PR</a>"]` (single quotes inside the double-quoted label). Anchors
 
 ## Graph structure
 
-- **No lane subgraphs.** Side-by-side subgraph boxes force one wide row and the
-  whole SVG shrink-to-fits until text is unreadable. Leave workstreams as
-  disconnected chains — dagre stacks components vertically on its own.
-- **Lanes as glyphs, not boxes.** Where lane identity is worth showing, prefix
-  each chain's node labels with a small per-lane icon (🔐 💬 🗂 🤖 📸 …) and put
-  the icon key in the legend — the grouping survives without the layout cost.
+- **No workstream subgraphs.** Side-by-side subgraph boxes force one wide row
+  and the whole SVG shrink-to-fits until text is unreadable. Leave workstreams
+  as disconnected chains — dagre stacks components vertically on its own.
+- **Workstreams as glyphs, not boxes.** Where workstream identity is worth
+  showing, prefix each chain's node labels with a small per-workstream icon
+  (🔐 💬 🗂 🤖 📸 …) and put the icon key in the legend — the grouping survives
+  without the layout cost.
 - Keep labels ≤ ~30 characters; `flowchart LR`; tighten with
   `%%{init: {"flowchart": {"nodeSpacing": 26, "rankSpacing": 40, "padding": 7}}}%%` — halving the default node padding is what gets the natural width under the container and the effective scale to 1.0.
 
@@ -127,6 +137,12 @@ principals · PR</a>"]` (single quotes inside the double-quoted label). Anchors
     height: auto;
   }
   ```
+
+  If the card centers the diagram with flex, use `justify-content: safe
+center` — plain `center` pushes an overflowing SVG's left edge into
+  unscrollable space. And when the DAG outgrows the page column, raise the
+  page `max-width` rather than letting the tail hide behind the card scroll:
+  a node nobody sees is a node the board doesn't have.
 
 - **Look at the render before shipping.** Locally: `npm i mermaid
 playwright-core`, load the fragment plus
