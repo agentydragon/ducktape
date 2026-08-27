@@ -112,7 +112,16 @@ attention past that.
 - **One concept, one name across representations**: a concept's Pydantic model, ORM
   class, and table share the concept-name; representation-role suffixes (`…Row`,
   `…Body`, `…View`) only where two representations of one concept must coexist in a
-  namespace, and the concept half stays identical.
+  namespace, and the concept half stays identical. The disambiguating suffix lives **on
+  the definition**, never re-minted per import (no `X as XRow` repeated across sites).
+- **Directory-as-namespace, no redundant prefix**: inside a domain package the package
+  name is the namespace — drop it from both filenames and the entities they define
+  (`grants/kubernetes/models.py` defines `Grant`, not `kubernetes_grant_models.py` /
+  `KubernetesGrant`). Two seams keep meaningful names, never by rebaking the prefix: at a
+  cross-package collision, module-qualify (`kubernetes.Grant` vs `http.Grant`) or
+  alias-with-comment; cross-cutting primitives (`HttpMethod`, `RequestAttributes`) live in
+  a shared home, they are not domain-specific entities. Worked example and the console
+  reorg it governs: <haku/console/docs/naming_and_layout.md>.
 - **Identifiers carry their type**: a UUID travels as `UUID` end to end, the
   conversions absorbed by boundary adapters (Pydantic validators, ORM column types) —
   no scattered `UUID(x)`/`str(y)` in code. Where a str-typed library surface can't be
