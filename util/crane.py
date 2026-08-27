@@ -1,46 +1,45 @@
 """Crane (go-containerregistry) CLI wrapper.
 
-Resolves the crane binary from Bazel runfiles (@crane) and provides sync/async
-push helpers. Auth is passed via a temporary DOCKER_CONFIG directory, never
-written to ~/.docker.
+Sync and async wrappers over the subset of the CLI this repository uses. Auth is
+passed via a temporary DOCKER_CONFIG directory, never written to ~/.docker.
+
+Standard library only, and it takes the binary rather than finding one: the
+callers do not agree on where crane comes from. Under Bazel it is a runfile
+(`util/oci.py` resolves that one); on a GitHub Actions runner the publish
+planners import this module as bare `python3 -m`, with crane on PATH from the
+workflow's setup-crane step and no Bazel, no pypi and no runfiles in sight.
 """
 
 from __future__ import annotations
 
 import asyncio
 import base64
-import io
 import json
 import logging
 import os
 import shutil
 import subprocess
-import tarfile
 import tempfile
-from dataclasses import dataclass
+from collections.abc import Callable
 from pathlib import Path
-
-from opentelemetry import trace
-
-from util.bazel import runfiles
+from typing import TypeVar
 
 logger = logging.getLogger(__name__)
-tracer = trace.get_tracer(__name__)
 
-_CRANE_RLOCATION = "crane/crane"
+T = TypeVar("T")
+
+# crane's way of saying "that repository/tag has never been pushed to". Distinct
+# from a transport or auth failure, which must not be read as "absent": callers
+# use absence to mean "nothing published yet, go ahead", so a network blip read
+# as absence churns a fresh push past whatever watches the registry.
+ABSENT_MARKERS = ("NAME_UNKNOWN", "MANIFEST_UNKNOWN")
 
 
-def get_crane() -> Path:
-    """Resolve the crane binary from Bazel runfiles."""
-    return runfiles.get_required_path(_CRANE_RLOCATION)
-
-
-@dataclass(frozen=True)
-class BazelImage:
-    """OCI image built by Bazel, available as an OCI layout directory."""
-
-    repo_name: str
-    image_rlocation: str
+def find_crane() -> Path:
+    """The crane on PATH — how a shell or a CI runner gets one."""
+    if found := shutil.which("crane"):
+        return Path(found)
+    raise RuntimeError("crane is not on PATH")
 
 
 def _format_crane_error(args: tuple[str, ...], returncode: int | None, stderr: str, stdout: str) -> str:
@@ -74,7 +73,7 @@ class Crane:
         username: str | None = None,
         password: str | None = None,
     ) -> None:
-        self._path = path or get_crane()
+        self._path = path or find_crane()
         self._env: dict[str, str] | None = None
         self._config_dir: tempfile.TemporaryDirectory[str] | None = None
         if registry and username and password:
@@ -111,22 +110,29 @@ class Crane:
         return self._run("digest", image_ref)
 
     def digest_or_none(self, image_ref: str) -> str | None:
-        """Remote digest of `image_ref`, or None when the tag/repo doesn't exist yet.
-
-        For content-dedup before a push: an unpublished tag (`MANIFEST_UNKNOWN`)
-        or repo (`NAME_UNKNOWN`) means "nothing there, push it". Any other crane
-        failure (auth, transport, 5xx) re-raises — a real error must not be
-        mistaken for "absent" and silently turned into a churny re-push.
-        """
-        try:
-            return self._run("digest", image_ref)
-        except RuntimeError as e:
-            if "MANIFEST_UNKNOWN" in str(e) or "NAME_UNKNOWN" in str(e):
-                return None
-            raise
+        """Remote digest of `image_ref`, or None when the tag/repo doesn't exist yet."""
+        return self._absent_as_none(lambda: self._run("digest", image_ref))
 
     def ls(self, repo: str) -> list[str]:
         return self._run("ls", repo).splitlines()
+
+    def ls_or_none(self, repo: str) -> list[str] | None:
+        """Tags in `repo`, or None when the repository doesn't exist yet."""
+        return self._absent_as_none(lambda: self._run("ls", repo).splitlines())
+
+    @staticmethod
+    def _absent_as_none(read: Callable[[], T]) -> T | None:
+        """`read()`, with crane's "never pushed" answer as None rather than an error.
+
+        Every other crane failure (auth, transport, 5xx) propagates — see
+        ABSENT_MARKERS for why that distinction has to hold.
+        """
+        try:
+            return read()
+        except RuntimeError as e:
+            if any(marker in str(e) for marker in ABSENT_MARKERS):
+                return None
+            raise
 
     def push(self, image_dir: Path, ref: str) -> None:
         self._run("push", str(image_dir), ref)
@@ -141,69 +147,9 @@ class Crane:
     def tag(self, ref: str, tag: str) -> None:
         self._run("tag", ref, tag)
 
-    async def push_bazel_image(self, image: BazelImage, registry_url: str, tag: str, *, insecure: bool = False) -> str:
-        """Push a Bazel-built OCI image to a registry. Returns the digest."""
-        image_path = runfiles.get_required_path(image.image_rlocation)
-        dest = f"{registry_url}/{image.repo_name}:{tag}"
-        logger.info("Pushing %s -> %s via crane", image_path, dest)
-        stdout = await self.apush(image_path, dest, insecure=insecure)
-        digest = _parse_crane_digest(stdout, dest)
-        logger.info("Pushed %s: %s", dest, digest)
-        return digest
 
-
-def _parse_crane_digest(stdout: str, dest: str) -> str:
+def parse_pushed_digest(stdout: str, dest: str) -> str:
+    """The digest crane reports after a push, from its `repo@sha256:...` output."""
     if "@sha256:" in stdout:
         return "sha256:" + stdout.split("@sha256:", 1)[1].split(maxsplit=1)[0]
     raise RuntimeError(f"crane push did not return digest for {dest}: {stdout!r}")
-
-
-def push_to_daemon(oci_layout: Path, tag: str) -> None:
-    """Load an OCI layout directory into the local Docker daemon.
-
-    Converts the OCI layout to a Docker-format tarball and pipes it to
-    ``docker load``. This is equivalent to what rules_oci's oci_load does.
-
-    TODO: The Docker daemon has no API for loading OCI layouts directly —
-    every path (crane, skopeo, regctl, rules_oci's oci_load) ends up
-    building a Docker-format tarball and piping it to ``docker load``.
-    If Docker ever adds native OCI layout loading, replace this.
-    """
-    index = json.loads((oci_layout / "index.json").read_text())
-    manifest_digest: str = index["manifests"][0]["digest"]
-    manifest_blob = oci_layout / "blobs" / manifest_digest.replace(":", "/")
-    manifest = json.loads(manifest_blob.read_text())
-
-    config_digest: str = manifest["config"]["digest"]
-    config_blob_rel = "blobs/" + config_digest.replace(":", "/")
-    layer_rels = ["blobs/" + layer["digest"].replace(":", "/") for layer in manifest["layers"]]
-
-    docker_manifest = [{"Config": config_blob_rel, "RepoTags": [tag], "Layers": layer_rels}]
-
-    buf = io.BytesIO()
-    # dereference=True: Bazel runfiles are symlinks into the execroot. Without
-    # dereferencing, tar records them as symlink entries with absolute target
-    # paths. Docker extracts the tarball and tries to follow those symlinks,
-    # which fail when the daemon runs outside Bazel's sandbox.
-    with tracer.start_as_current_span("oci_build_tarball") as span:
-        with tarfile.open(fileobj=buf, mode="w", dereference=True) as tar:
-            # Add manifest.json
-            manifest_data = json.dumps(docker_manifest).encode()
-            info = tarfile.TarInfo(name="manifest.json")
-            info.size = len(manifest_data)
-            tar.addfile(info, io.BytesIO(manifest_data))
-            # Add config blob
-            tar.add(oci_layout / config_blob_rel, arcname=config_blob_rel)
-            # Add layer blobs
-            for layer_rel in layer_rels:
-                tar.add(oci_layout / layer_rel, arcname=layer_rel)
-        span.set_attribute("tarball_bytes", buf.tell())
-
-    docker = shutil.which("docker") or shutil.which("podman")
-    if not docker:
-        raise RuntimeError("Neither docker nor podman CLI found")
-    buf.seek(0)
-    with tracer.start_as_current_span("docker_load"):
-        result = subprocess.run([docker, "load"], input=buf.read(), check=False, capture_output=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"docker load failed: {result.stderr.decode()}")

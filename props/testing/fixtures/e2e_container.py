@@ -71,8 +71,8 @@ from props.orchestration.docker_executor import DockerExecutor
 from props.registry_proxy.app import create_app as create_registry_proxy_app
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fake_openai_server import FakeOpenAIServer
-from util.crane import BazelImage, Crane
 from util.net import pick_free_port
+from util.oci import BazelImage, bazel_crane, push_bazel_image
 
 logger = logging.getLogger(__name__)
 
@@ -251,10 +251,10 @@ async def _make_stack(
 
             try:
                 proxy_url = f"localhost:{registry_proxy_port}"
-                crane = Crane(registry=proxy_url, username=db.config.user, password=db.config.password)
+                crane = bazel_crane(registry=proxy_url, username=db.config.user, password=db.config.password)
                 resolved_images: dict[str, ResolvedImage] = {}
                 for image in images:
-                    digest = await crane.push_bazel_image(image, proxy_url, BUILTIN_TAG, insecure=True)
+                    digest = await push_bazel_image(crane, image, proxy_url, BUILTIN_TAG, insecure=True)
                     oci_ref = registry_proxy_config.build_oci_reference(AgentType(image.repo_name), digest)
                     resolved_images[image.repo_name] = ResolvedImage(digest=digest, oci_ref=oci_ref)
                 yield E2EStack(registry=registry, model=model, resolved_images=resolved_images)
