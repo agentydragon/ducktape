@@ -105,8 +105,8 @@ class HarnessFrame(_Frame):
     # This is what makes a reconnect "send me everything after N": the number is the peer's, so the
     # peer can act on a cursor built from it, and it is dense, so a hole in it is evidence of loss
     # rather than of a gap an `Identity` was always free to leave. The console records it and still
-    # orders its log by its own `frame_seq`; the release that swaps those two over is
-    # <../../../console/plans/conversation_layers.md> § 13.
+    # orders its log by its own `frame_seq`; swapping those two over is planned
+    # conversation-layers work (<../../../console/plans/conversation_layers.md>).
     #
     # Assigned where the frame is put on the wire, not where it is built, so a frame re-sent from
     # the replay window keeps the number it first went out under.
