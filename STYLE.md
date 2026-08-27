@@ -57,6 +57,13 @@ instead, so they load on demand.
   (`__init__.py` re-exports) or to avoid collisions, with a comment.
 - **Import from the defining module**, never from a module that happens to re-export
   the symbol.
+- **Reuse before minting**: before adding a helper, type, or mechanism, search for the
+  existing one solving the same shape; a near-duplicate dedupes into the original
+  rather than landing beside it. Different semantics are not duplicates — unifying
+  them is worse than the repetition; state why they differ instead.
+- **A `typing.Protocol` needs plural implementers**: when one concrete type flows
+  through, name that type — structural indirection over a single implementer hides the
+  real type without buying substitution.
 - **No dynamic attribute probing** (`getattr`/`hasattr`/`setattr`) unless justified and
   documented; in tests, assert attributes directly.
 - **Exceptions**:
@@ -90,6 +97,12 @@ instead, so they load on demand.
   combos that permit nonsense (`hook_installed=False, pid=42`). Dispatch on variants
   with `isinstance` (mypy narrows), not discriminator-string compares — except in
   Mako/Jinja templates, where `kind` strings are acceptable.
+- **One concept, one name across representations**: a concept's Pydantic model, ORM
+  class, and table share the concept-name; representation-role suffixes (`…Row`,
+  `…Body`, `…View`) only where two representations of one concept must coexist in a
+  namespace, and the concept half stays identical.
+- **Identifiers carry their type**: a UUID travels as `UUID` end to end, not `str`;
+  string-typed identifiers only at I/O boundaries.
 - **Typed concurrency messages**: dataclasses/models for actor/mailbox messages and
   results, never `dict[str, T]`.
 - **Dataclasses for internal types, Pydantic at boundaries**: `@dataclass` for purely
@@ -120,8 +133,11 @@ instead, so they load on demand.
   <3 files gets flattened.
 - **Sets for unordered collections** (`set[T]`); lists only when order or duplicates
   matter.
-- **Prefer `more_itertools`**: `one()` when more than one match is a bug, `first()`
-  when many are valid and you want the first; `itertools.batched` over manual slicing.
+- **Prefer maintained mechanisms**: a solved problem uses the library the repo already
+  carries, never hand-rolled arithmetic — retry/backoff is `tenacity`; iteration
+  shapes are `more_itertools` (`one()` when more than one match is a bug, `first()`
+  when many are valid and you want the first) or `itertools.batched` over manual
+  slicing.
 
 ## Tombstones
 
@@ -151,6 +167,11 @@ old_field: str | None = None
 **ORM over raw SQL.** Raw SQL only for DB-specific features the ORM handles poorly
 (window functions, recursive CTEs, LATERAL joins), performance-critical queries,
 administrative DDL, or when the ORM equivalent would be markedly less readable.
+
+**Store facts, derive state.** A status column computable from stored facts
+(`revoked_at`, `valid_until`) is derived in queries or properties, never stored — a
+materialized status is a cache that can lie and demands a sweeper. Materialize only for
+a measured query-cost reason, stated where it happens.
 
 ## Build System (Bazel)
 
