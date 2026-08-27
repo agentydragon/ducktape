@@ -397,23 +397,28 @@ the test that reads it, as `test_diverse_session` has.
 ## Matrix chat surface — `channels/matrix/`
 
 - `client.py` — the client-API calls the loop makes, over `matrix-nio`.
-- `sync.py` — logs in as `@haku`, long-polls `/sync`, binds the one room Haku services, and hands
-  what the operator types to its attached conversation. Holds the only Matrix credential, so
-  everything that speaks into the room speaks through it.
-- `conversation.py` — the room's attachment to a conversation and ingress (`MatrixTurns`). It does
+- `sync.py` — logs in as `@haku`, long-polls `/sync` (one owner for the user-wide token), binds
+  each room the operator invites Haku into, and dispatches inbound events by room to their
+  attached conversations. Holds the only Matrix credential, so everything that speaks into a room
+  speaks through it; hosts the per-attachment reconcilers on the sync leader.
+- `conversation.py` — each room's attachment to a conversation and ingress (`MatrixTurns`). It does
   not create, replace, resolve or tend runtime sessions.
-- `pacer.py` — one paced outbound queue per room, over Synapse's `rc_message` budget.
-- `outbox.py` — the room's outbox: replies as `matrix_outbox` rows, and the drain that says them.
+- `attachment_reconciler.py` — one owner per live attachment, coordinating its conversation
+  cursor, reply outbox, span revisions and send budget; the sync leader sweeps the set per pass.
+- `pacer.py` — one paced outbound queue per room, over Synapse's `rc_message` budget, addressed by
+  the attachment (`RoomPacers`).
+- `outbox.py` — the rooms' outbox: replies as `matrix_outbox` rows, and one drain per attachment
+  that says them.
 - `outbox_wake.py` — the outbox's own wake wire (`matrix_outbox_wakes`): the enqueue's transaction
-  waking the drain. Channel-internal because the fact is; the conversation channel never carries it.
+  waking the drains. Channel-internal because the fact is; the conversation channel never carries it.
 - `revisions.py` — which homeserver event the channel is currently editing for a revisable subject
   (`matrix_revision`), which is what the span lines are edited, sealed and retired through.
 - `spans.py` — the editable lines as spans of the conversation: the pure fold from the stream to
   each span's bounded body, its close (seal or retire), and the reconcile latches over a
   `RoomFrontend`.
-- `conversation_subscriber.py` — the Matrix channel's subscriber to the conversation record: its
-  durable position (`channel_cursor`), the replies it queues from it, the notices it seals from it,
-  and the span lines it reconciles beside them.
+- `conversation_subscriber.py` — the Matrix channel's subscriber to the conversation record, one
+  per attachment: its durable position (`channel_cursor`), the replies it queues from it, the
+  notices it seals from it, and the span lines it reconciles beside them.
 - `room_copy.py` — the room's durable copy of projected events (`matrix_room_copy`): what the
   room shows of Haku's own sends, read off their `/sync` echoes, which the reconciler consults
   before sending and duplicate repair reads.
@@ -444,10 +449,11 @@ half.
 
 Behaviours worth knowing before reading the code:
 
-- **A produced reply is a row, not a call.** The subscriber writes it when it reads the message
-  complete, and `RoomOutboxDrain` — one replica, under the `MXOB` advisory lock —
-  claims the oldest, queues it into the pacer, and marks it `sent_at` only once `room_send` has
-  returned. The drain is woken by the enqueue's own transaction, over the channel's own wire
+- **A produced reply is a row, not a call.** The attachment's subscriber writes it when it reads
+  the message complete, and its `RoomOutboxDrain` — one per attachment, on the sync leader —
+  claims the oldest, queues it into the attachment's pacer, and marks it `sent_at` only once
+  `room_send` has returned. The drains are woken by the enqueue's own transaction, over the
+  channel's own wire
   (`outbox_wake.py`) — the only emission that cannot precede the row, since the conversation wake
   that made the subscriber read fired before the row existed; an outbox row is channel delivery
   state, so its wake stays below the channel boundary rather than riding the conversation channel.
@@ -455,7 +461,7 @@ Behaviours worth knowing before reading the code:
   the pacer's in-process queue, because a line describing a moment is not worth redelivering ten
   minutes later — the level-triggered reconcile and the takeover sweep are their repair; sealed
   notices and span seals are awaited, so the cursor never outruns them. Two rules the drain is
-  deliberate about: a failed reply **halts** the queue for its backoff
+  deliberate about: a failed reply **halts** its attachment's queue for its backoff
   rather than being overtaken, and the one row stepped over is one out of `MAX_SEND_ATTEMPTS`, kept
   unsent with its `last_error` and logged loudly rather than deleted.
 
@@ -495,9 +501,13 @@ Behaviours worth knowing before reading the code:
   unreadable-event lines go out under, and excluding it from any sender is the second of two
   independent guards — the first being the sender rule — against a notice about an event being
   itself an event.
-- **One replica syncs.** The loop holds a Postgres advisory lock (`MXSY`) for its lifetime —
+- **One replica syncs, and it hosts the reconcilers.** The loop holds a Postgres advisory lock
+  (`MXSY`) for its lifetime —
   `/sync` is a long poll, so releasing between passes would let two replicas double-process a batch.
-  Conversation runtime supervision is a channel-neutral sibling under `CRUN`; it creates or
+  The leader also sweeps one reconciler per live attachment (subscriber, drain, budget), which is
+  what makes each of them singular cluster-wide without an election of its own and puts every
+  sender of a room on one replica. Conversation runtime supervision is a channel-neutral sibling
+  under `CRUN`; it creates or
   replaces the one idle session durable prompt demand needs and performs global lease/claim
   maintenance. Sandbox allocation is another neutral sibling under `SBOX`. They are elected
   independently and can land on different replicas, so a stalled claim cannot wedge ingress or

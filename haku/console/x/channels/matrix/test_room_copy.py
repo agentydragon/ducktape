@@ -14,7 +14,7 @@ import pytest_bazel
 from haku.console.x.channels.matrix.client import ConversationEventSource, ProjectedEvent, Redaction
 from haku.console.x.channels.matrix.conftest import MATRIX_ROOM
 from haku.console.x.channels.matrix.conversation import MatrixConversationStore
-from haku.console.x.channels.matrix.room_copy import RoomCopy
+from haku.console.x.channels.matrix.room_copy import RedundantCopy, RoomCopy
 
 
 @pytest.fixture
@@ -67,14 +67,18 @@ async def test_a_second_live_copy_is_the_one_reported(copy, attached) -> None:
     """The duplicate a replay past the transaction cache leaves: the later copy is redundant."""
     assert await copy.record([_echo("$first", attached, seq=7, ts=1)], []) == ()
 
-    assert await copy.record([_echo("$again", attached, seq=7, ts=2)], []) == ("$again",)
+    assert await copy.record([_echo("$again", attached, seq=7, ts=2)], []) == (
+        RedundantCopy(attachment_id=attached[1], event_id="$again"),
+    )
 
 
 async def test_the_earliest_copy_is_kept_whatever_order_the_echoes_arrive(copy, attached) -> None:
     """Backfill can show the copies newest-first; the room's own order decides, not ours."""
     assert await copy.record([_echo("$later", attached, seq=7, ts=2)], []) == ()
 
-    assert await copy.record([_echo("$earliest", attached, seq=7, ts=1)], []) == ("$later",)
+    assert await copy.record([_echo("$earliest", attached, seq=7, ts=1)], []) == (
+        RedundantCopy(attachment_id=attached[1], event_id="$later"),
+    )
 
 
 async def test_sources_are_independent(copy, attached) -> None:
@@ -100,7 +104,9 @@ async def test_a_redacted_copy_is_out_of_repair_but_still_shows(copy, attached) 
     """
     _, attachment_id = attached
     await copy.record([_echo("$first", attached, seq=7, ts=1)], [])
-    assert await copy.record([_echo("$again", attached, seq=7, ts=2)], []) == ("$again",)
+    assert await copy.record([_echo("$again", attached, seq=7, ts=2)], []) == (
+        RedundantCopy(attachment_id=attachment_id, event_id="$again"),
+    )
 
     assert await copy.record([], [Redaction(room_id=MATRIX_ROOM, redacts_event_id="$again")]) == ()
 

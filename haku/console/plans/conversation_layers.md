@@ -105,11 +105,12 @@ The primitive is code: `Subscription.read()` over a `ConversationStream` in `x/s
 where "no position given" is the `Unstarted` arm rather than a zero, and
 `WS /api/conversations/{id}/follow` is the same contract over one socket — a snapshot, then the
 changes, with the conversation wake as what says to read again. Matrix's
-`ConversationSubscriber` consumes that primitive: it queues completed answers in `matrix_outbox`,
+`ConversationSubscriber` consumes that primitive, one instance per attachment: it queues completed
+answers in `matrix_outbox`,
 folds the stream into the span lines and typing, and projects the settled rejection,
 unreadable-input, relay, silence and turn-abort/failure notices, checked against the room's own
 recorded copy before it sends. What is missing is not another stream but closing the last direct
-path — the room-binding notices — and attachment-scoping the loop.
+path — the room-binding notices.
 
 **The stream carries two kinds of message, and a delta is one of them** (operator, 2026-08-17).
 State changes are whole rows, merged by id. A **delta** is `{item_id, append}` — carried to a
@@ -354,9 +355,9 @@ they are conversation facts (<../docs/chat_layers.md>); the session they name is
 key. Identity-only is a statement about the `conversation` row, not about the record: the log is
 keyed to the conversation and the conversation table still holds nothing but an id.
 
-`chat_attachment` is authoritative for which room the bot holds, so the rule its `user_id` primary
-key enforced — one bot user, one room, ever — is now `bind_room`'s refusal. Losing the schema's
-version of it is **the point rather than the cost** (§ 7).
+`chat_attachment` is authoritative for which rooms the bot holds, and the rule its `user_id`
+primary key enforced — one bot user, one room, ever — is gone entirely: every operator-invited
+room binds beside the others, which was **the point rather than the cost** (§ 7).
 
 ## 7. Settled, and still open
 
@@ -411,8 +412,8 @@ version of it is **the point rather than the cost** (§ 7).
 
 - **One bot serves many rooms, and that is what parallel sessions are.** `chat_attachment`'s partial
   unique index expresses the rule that is actually wanted: **one live conversation per address**,
-  which permits a bot in many rooms at once. What holds the bot to one room today is `bind_room`'s
-  refusal and a deterministic ordering behind it, not the schema.
+  which permits a bot in many rooms at once — and `bind_room` now binds each invited room beside
+  the others rather than refusing the second.
 
   "Only one session holds a conversation at a time" is unchanged and is a **per-conversation** rule.
   What changes is that the console now runs N of them, one per attached room. Only the operator's
@@ -450,10 +451,10 @@ several mechanisms with different recovery properties.
 | Span lines and typing                            | `ConversationSubscriber` folds `spans.LiveSpans`; `RevisionLog`/`RoomPacer` render it | Durable subject and revision; seals cursor-gated and copy-suppressed; edits and retires level-triggered, repaired by the takeover sweep; typing deliberately expires |
 | Attachment narration                             | `_handle_invite` and room adoption call `_queue_notice`                               | The room-binding facts have no row; delivery is process-local                                                                                                        |
 
-The record-derived paths did not yet make one reconciler own the attachment. `MXSY` (ingress),
-`MXOB` (reply drain) and `MXNT` (conversation reader) elect independently, while each replica has
-its own `RoomPacer`. A global `bound_room()` and process-global pacer state also mean a second room
-would fail silently rather than merely run more slowly.
+One reconciler owns each attachment: the sync leader (`MXSY`) sweeps an `AttachmentReconciler`
+per live binding — that room's subscriber, outbox drain and `RoomPacer` — so every sender of a
+room runs on one replica, `bound_room()` and the process-global pacer are gone, and a second
+operator invite creates a second conversation and starts its reconciler beside the first.
 
 ### What is already the right shape
 
@@ -478,8 +479,6 @@ would fail silently rather than merely run more slowly.
 
 - A durable home for Matrix-only attachment narration — the room-binding notices are the last
   direct push.
-- One attachment owner coordinating cursor, outbox, revisions and send budget, followed by more than
-  one live room.
 - A content check of the editable copy against the fold's desired body, if a lost edit ever proves
   worth more than the next state change already repairs (§ 3).
 
@@ -507,22 +506,23 @@ mixed into these PRs.
    supervisor, lifecycle latch or `MXSE` lock. The runtime identity seam from #4431 may later inform
    which session implementation is created, but no provider choice leaks into the channel.
 
-4. **Make reconciliation attachment-scoped, then serve many rooms.** Keep one Matrix `/sync` owner
-   for the user-wide token and dispatch its room events by attachment. One owner per attachment then
-   coordinates the conversation cursor, reply outbox, revisions and room budget. Replace
-   `bound_room()` and the process-global status/pacer state with attachment-addressed state; then an
-   operator invite may create another conversation and start another reconciler. Steps 2 and 3
-   remove the direct and session-shaped state that would otherwise cross rooms.
+4. **Completed — reconciliation is attachment-scoped, and rooms are served in parallel.** One
+   Matrix `/sync` owner keeps the user-wide token and dispatches its room events by attachment; the
+   sync leader sweeps one reconciler per live attachment
+   (`channels/matrix/attachment_reconciler.py`) owning that room's conversation cursor, reply
+   outbox, revisions and send budget, so an operator invite creates another conversation and
+   starts another reconciler. `bound_room()` and the process-global pacer state are gone;
+   `RoomPacers` addresses the budgets by attachment.
 
 5. **Add Matrix commands.** Abort first, then new/close session semantics once step 3 makes them
    conversation operations. Commands are ingress interception, never agent tools or approval
    gestures. Use a namespace Element does not consume (for example `!haku stop`).
 
 6. **Interlink the channels.** Matrix events link to durable console routes; the console links back
-   with `matrix.to`; sessions and tool calls link both ways. This is independent of 1–5 once the
-   route names are chosen to survive permanent, federated events.
+   with `matrix.to`; sessions and tool calls link both ways. This is independent of the others once
+   the route names are chosen to survive permanent, federated events.
 
-**Dependencies.** Steps 5 and 6 can proceed independently of 4. The
+**Dependencies.** Steps 5 and 6 are independent of each other. The
 channel-neutral allocator is already complete and is not a step in this plan.
 
 **Independent runtime work.** The `provisioning` refinement (§ 10) and the duplicated read models
@@ -630,8 +630,6 @@ record (§ 5).
 
 **Mechanisms**
 
-- `RoomOutboxDrain` (`MXOB`) and `ConversationSubscriber` (`MXNT`) as separate attachment owners —
-  one reconciler owns delivery instead.
 - `RoomPacer` as a queue of opaque callables — a budget the reconciler spends, not a deque of
   closures it cannot inspect or squash.
 

@@ -161,29 +161,19 @@ reader's trust tier. The RLS alternative and read-surface inventory remain in
 Matrix surface run as ordinary separate sessions, separate rows, separate sandboxes. Nothing about
 several agents needs the turn loop, the store or the bridge to change.
 
-What enforces "one Matrix session, one room" is two specific things, neither of them a migration.
-The schema no longer enforces it at all: `chat_attachment` admits a live row per address, and
-nothing reads `matrix_conversation`'s one-room-per-bot primary key any more.
+Nothing enforces "one Matrix session, one room" any more: **two rooms on one bot account — what
+the operator asked for — work today.** `chat_attachment` admits a live row per address, ingress
+resolves each inbound message's attachment from its room (adopting operator traffic in unbound
+joined rooms), and one reconciler per live attachment owns that room's cursor, outbox, revisions
+and send budget, swept under the sync leader's one `MXSY` lock — one loop on one account serves N
+rooms. `matrix_sync_watermark` is keyed by `user_id` already, so even the two-bot-accounts version
+— which distinct agent kinds eventually need, since the room-tier policy keys on membership and
+membership needs distinct MXIDs — costs a second credential and a per-account sync lock rather
+than a schema change.
 
-1. **The supervisor and ingress take the one bound room** (`bound_room`, deterministically ordered)
-   and assume it is the only one. They become "iterate the live attachments" and "resolve the
-   attachment from the inbound message's room".
-2. **Both advisory locks are single global constants.** One leader supervising every attachment is
-   enough for two, and is far simpler than a lock per attachment — take that only if a stalled
-   provision must not delay another room.
-
-**The cheap increment is two rooms on one bot account**, which is what the operator asked for. The
-sync loop needs no change at all: `/sync` on one account already returns events for every joined
-room, so one loop and one `MXSY` lock serve N rooms. `matrix_sync_watermark` is keyed by `user_id`
-already, so even the two-bot-accounts version — which distinct agent kinds eventually need, since
-the room-tier policy keys on membership and membership needs distinct MXIDs — costs a second
-credential and a per-account sync lock rather than a schema change.
-
-**Budget for the sandboxes before doing this.** Sessions are always-up, so N rooms hold N sandboxes
-continuously — at ~1 CPU / 2Gi against an 8 CPU / 16Gi quota, two idle rooms is a quarter of it
-doing nothing. <../console/plans/conversation_layers.md> § 9's conversation-owned prompt queue —
-a sandbox because there is something to do — is what makes this scale, and it is worth landing
-with multi-session rather than after it.
+**The sandbox budget is answered by on-demand allocation**: a room nobody is talking to holds no
+sandbox — `SandboxAllocator` buys a claim only for durable prompt demand — so N idle rooms cost
+rows, not quota.
 
 ### Talking to a particular agent: one Matrix account each
 

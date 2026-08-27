@@ -63,21 +63,17 @@ Design, the parity gaps it closes, and the traps in each:
 <plans/conversation_layers.md>.
 
 The channel-neutral allocator and conversation-runtime supervision are complete. Web and Matrix
-offer prompts by conversation; Matrix no longer creates, replaces or tends sessions. The
-conversation subscriber reads the one bound conversation for replies, sealed notices — relayed
-prompts and silent turns included — and the two editable span lines, all off one cursor that
-advances only after the homeserver accepts what it is owed; the room's own copy suppresses
-replays. What remains, in dependency order:
+offer prompts by conversation; Matrix no longer creates, replaces or tends sessions. Delivery is
+attachment-scoped: each bound room's subscriber reads its own conversation for replies, sealed
+notices — relayed prompts and silent turns included — and the two editable span lines, all off its
+own cursor that advances only after the homeserver accepts what it is owed; the room's own copy
+suppresses replays, and a second invite binds and serves a second room beside the first. What
+remains, in dependency order:
 
-1. **Make delivery attachment-scoped, then serve many rooms.** Keep one Matrix `/sync` owner for the
-   user-wide token, dispatch its room events by attachment, and give each live attachment one owner
-   for its conversation cursor, reply outbox, span revisions and send budget. Only after the
-   remaining `bound_room()` and process-global pacer state is gone can a second invite
-   safely create and service another conversation.
-2. **Add Matrix commands**, beginning with abort, as ingress interception rather than an agent tool.
+1. **Add Matrix commands**, beginning with abort, as ingress interception rather than an agent tool.
    Prefer a prefix Element does not consume (for example `!haku stop`) over an assumed-free slash
    command.
-3. **Interlink the channels**: durable console-session links in Matrix, `matrix.to` links in the
+2. **Interlink the channels**: durable console-session links in Matrix, `matrix.to` links in the
    console, and session ↔ tool-call navigation. A posted Matrix event is permanent and federated, so
    mint only routes intended to survive.
 
@@ -245,7 +241,7 @@ genuinely operational knobs should move onto the config model:
 - `x/channels/matrix/pacer.py` — `SENDS_PER_SECOND`, `SEND_BURST`, `MAX_QUEUED_SENDS`, `FLUSH_SECONDS`.
 - `x/channels/matrix/conversation.py` — `SUPERVISE_INTERVAL`, `PROVISION_BACKOFF`,
   `RE_AWAKENING_MESSAGES` (the N of R3.3a).
-- `x/channels/matrix/conversation_subscriber.py` — `LEADER_RETRY`, `ERROR_BACKOFF`; and
+- `x/channels/matrix/conversation_subscriber.py` — `POLL_INTERVAL`, `ERROR_BACKOFF`; and
   `MAX_BACKFILL_PAGES` / `TIMELINE_LIMIT` from `x/channels/matrix/client.py`.
 - `runtime/x/bridge/runner.py` — `MAX_DISCONNECTED_SECONDS`, `REPLAY_WINDOW`,
   `RECONNECT_{BASE,MAX}_DELAY`. **These live in the runner**, whose image is pinned at claim

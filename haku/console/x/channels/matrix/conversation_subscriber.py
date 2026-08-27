@@ -1,4 +1,4 @@
-"""The Matrix channel's subscriber to the conversation record.
+"""The Matrix channel's subscriber to the conversation record, one per live attachment.
 
 The Matrix half of <../../subscription.py>: the channel reads the record from a position of its own
 instead of being handed events by whoever happens to be running the turn.
@@ -7,8 +7,9 @@ instead of being handed events by whoever happens to be running the turn.
   that outlives every console process, so after a restart the channel has to know what it already
   put there. That durability is Matrix's own problem, kept beside the outbox below the channel
   boundary; the conversation layer has no cursor table at all.
-- **`ConversationSubscriber`** is the subscriber. It wakes on the conversation's `update`, reads
-  what the room has not been told, says it, and keeps the position it reached.
+- **`ConversationSubscriber`** is the subscriber, constructed for one attachment and run by that
+  attachment's reconciler on the sync leader. It wakes on its conversation's `update`, reads what
+  the room has not been told, says it, and keeps the position it reached.
 
 **Replies, notices and spans, from one position.** A completed message becomes a `matrix_outbox`
 row the drain says into the room; a recorded fact becomes a sealed notice; and the editable lines —
@@ -45,9 +46,9 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import (
     HarnessOrigin,
@@ -60,8 +61,8 @@ from haku.console.chat_models import (
 )
 from haku.console.database_schema import ChannelCursor, ConversationItem
 from haku.console.x.channels.matrix.client import RoomEventKind
-from haku.console.x.channels.matrix.conversation import MatrixConversationStore
-from haku.console.x.channels.matrix.outbox import BoundRoom, RoomOutbox
+from haku.console.x.channels.matrix.conversation import RoomAttachment
+from haku.console.x.channels.matrix.outbox import RoomOutbox
 from haku.console.x.channels.matrix.room_copy import RoomCopy
 from haku.console.x.channels.matrix.spans import LiveSpans, RetireSpan, RoomFrontend, SealSpan
 from haku.console.x.session_events import (
@@ -92,9 +93,6 @@ from haku.console.x.subscription import ConversationStream, StreamedEvent, Strea
 
 logger = logging.getLogger(__name__)
 
-# Distinct from the sync loop's lock, the runtime reconciler's, the outbox drain's and the OAuth sweep's.
-_NOTICES_ADVISORY_LOCK = 0x4D58_4E54  # "MXNT"
-
 # A sealed notice said under a durable conversation event's identity. Returning means the
 # homeserver accepted the effect, so the caller may advance its cursor.
 ProjectNotice = Callable[[str, UUID, str, RoomEventKind, UUID, int], Awaitable[None]]
@@ -118,9 +116,6 @@ NOTICE_BATCH = 50
 # The backstop for what no notification reaches us with: delivery is at-most-once however the
 # listener fares, so a woken reader still has to look on its own.
 POLL_INTERVAL = datetime.timedelta(seconds=10)
-
-# How long a replica that lost the election waits before contending again.
-LEADER_RETRY = datetime.timedelta(seconds=30)
 
 # Backoff after a failed pass, so a database outage does not become a hot loop.
 ERROR_BACKOFF = datetime.timedelta(seconds=10)
@@ -279,7 +274,7 @@ def project_notice(event: StreamedEvent, *, conversation_id: UUID, room_id: str)
 
 
 class ConversationSubscriber:
-    """Brings the room into agreement with the record, from the room's own position.
+    """Brings one attachment's room into agreement with the record, from the room's own position.
 
     Answers included: a completed message is queued on the outbox rather than said from here, so it
     goes out under a transaction id with a retry budget, but the decision that the room is owed it
@@ -290,26 +285,22 @@ class ConversationSubscriber:
 
     def __init__(
         self,
-        engine: AsyncEngine,
         sessions: async_sessionmaker[AsyncSession],
         stream: ConversationStream,
-        conversations: MatrixConversationStore,
         notifications: SessionNotifications,
         project: ProjectNotice,
         frontend: RoomFrontend,
-        room: BoundRoom,
+        binding: RoomAttachment,
         outbox: RoomOutbox,
         room_copy: RoomCopy,
         clock: Callable[[], datetime.datetime] | None = None,
     ) -> None:
-        self._engine = engine
         self._sessions = sessions
         self._stream = stream
-        self._conversations = conversations
         self._notifications = notifications
         self._project = project
         self._frontend = frontend
-        self._room = room
+        self._binding = binding
         self._outbox = outbox
         self._room_copy = room_copy
         # Injectable because the span floors (`STATUS_AFTER`, `STATUS_EDIT_INTERVAL`) are wall-clock
@@ -328,13 +319,8 @@ class ConversationSubscriber:
         the outbox's unique subject, and the span fold answers a replayed close from memory — which
         is the trade this reader is built around.
         """
-        if (room_id := await self._room()) is None:
-            return False
-        if (bound := await self._conversations.attachment_of_room(room_id)) is None:
-            # A room this console holds no conversation for — never bound, or detached since — so
-            # there is nothing recorded to be behind on.
-            return False
-        conversation_id, attachment_id = bound
+        room_id = self._binding.room_id
+        conversation_id, attachment_id = self._binding.conversation_id, self._binding.attachment_id
         subscription = Subscription(self._stream, RoomCursor(self._sessions, attachment_id), conversation_id)
         read = await subscription.read(limit=NOTICE_BATCH)
         if isinstance(read, Unstarted):
@@ -404,15 +390,15 @@ class ConversationSubscriber:
     async def _rebuilt(self, conversation_id: UUID, through: StreamPosition) -> LiveSpans:
         """The span fold for *conversation_id*, folded at least to *through* — the cursor.
 
-        Rebuilt from the log's start once per leader per conversation, without rendering anything:
-        the fold's output while catching up is present-tense state, and history is what the cursor
-        already covered. A fold this leader already holds is only folded *forward* — it can sit
+        Rebuilt from the log's start once per subscriber, without rendering anything: the fold's
+        output while catching up is present-tense state, and history is what the cursor already
+        covered. A fold this subscriber already holds is only folded *forward* — it can sit
         ahead of the cursor after a pass whose keep failed, and never behind it except when the
         cursor moved without a batch (an `Unstarted` read taking the head), where the gap is
         history by the same rule.
         """
         state = self._state
-        if state is None or state.conversation_id != conversation_id:
+        if state is None:
             state = LiveSpans(conversation_id)
             self._state = state
             self._swept = False
@@ -494,16 +480,23 @@ class ConversationSubscriber:
                 return None
             return None if _arrived_here(item.origin, room_id) else RELAYED_PROMPT + item.item_text
 
-    def _wake(self, _change: ConversationWakeEvent | RecheckHeld) -> None:
-        """Note that some conversation moved. Runs on the listener's reader task: no awaiting.
+    def _wake(self, change: ConversationWakeEvent | RecheckHeld) -> None:
+        """Note that this subscriber's conversation may have moved. Runs on the listener's reader
+        task: no awaiting.
 
-        The wake is not inspected: which conversation this room owes work for is resolved from the
-        binding inside `reconcile_once`, so any conversation wake is only "go look".
+        A wake naming another conversation is a sibling room's and is dropped; `RecheckHeld` names
+        nothing and every subscriber looks, because the notifications a reconnect lost are gone.
         """
+        match change:
+            case ConversationWakeEvent(conversation_id=conversation_id):
+                if conversation_id != self._binding.conversation_id:
+                    return
+            case RecheckHeld():
+                pass
         self._changed.set()
 
-    async def _reconcile_as_leader(self) -> None:
-        """Reconcile until cancelled. Only ever entered holding the advisory lock."""
+    async def _run(self) -> None:
+        """Reconcile until cancelled."""
         while True:
             try:
                 # Cleared before the pass, so a change committed while it runs wakes the next one
@@ -516,33 +509,13 @@ class ConversationSubscriber:
                         async with asyncio.timeout(delay):
                             await self._changed.wait()
             except Exception:
-                logger.exception("Matrix: reconciling the room's notices failed")
+                logger.exception("Matrix: reconciling the notices of %s failed", self._binding.room_id)
                 await asyncio.sleep(ERROR_BACKOFF.total_seconds())
-
-    async def _run(self) -> None:
-        while True:
-            async with self._engine.connect() as leader:
-                if not await leader.scalar(
-                    text("SELECT pg_try_advisory_lock(:lock)"), {"lock": _NOTICES_ADVISORY_LOCK}
-                ):
-                    await asyncio.sleep(LEADER_RETRY.total_seconds())
-                    continue
-                logger.info("Matrix: this replica says the room's notices")
-                try:
-                    await self._reconcile_as_leader()
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    logger.exception("Matrix: the room's notice reader exited, retrying")
-                    await asyncio.sleep(ERROR_BACKOFF.total_seconds())
-                finally:
-                    with contextlib.suppress(Exception):
-                        await leader.scalar(text("SELECT pg_advisory_unlock(:lock)"), {"lock": _NOTICES_ADVISORY_LOCK})
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator[None]:
         with self._notifications.watch_conversations(self._wake):
-            task = asyncio.create_task(self._run(), name="matrix-room-notices")
+            task = asyncio.create_task(self._run(), name=f"matrix-room-notices-{self._binding.attachment_id}")
             try:
                 yield
             finally:

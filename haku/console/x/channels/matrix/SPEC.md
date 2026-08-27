@@ -1,9 +1,10 @@
 # The Matrix channel — what it guarantees
 
-Matrix is one channel onto a chat session: a transport for prose, plus the notices that make a run
-legible from a phone. The console remains the session owner, the credential holder and the approval
-authority; nothing here is a store of record. Active redesign work — one subscription, one
-reconciler per attachment — lives in <../../../plans/conversation_layers.md>.
+Matrix is one channel onto the chat runtime: a transport for prose, plus the notices that make a
+run legible from a phone. The console remains the session owner, the credential holder and the
+approval authority; nothing here is a store of record. Delivery is reconciled per attachment — one
+owner per bound room for its cursor, outbox, revisions and send budget; the redesign work still
+open lives in <../../../plans/conversation_layers.md>.
 
 Out of scope by decision, so it is not re-litigated: end-to-end encryption, federation, approvals
 over Matrix, and any write surface for the agent beyond its own replies.
@@ -80,9 +81,13 @@ over Matrix, and any write surface for the agent beyond its own replies.
 
 ## The room and the session behind it
 
-- **A DM, not a room.** The conversation is a direct chat between the operator and Haku. Nobody else
-  can speak in it, which is why mention gating, per-room sender allowlists and multi-bot loop
+- **A DM, not a room.** Each conversation is a direct chat between the operator and Haku. Nobody
+  else can speak in it, which is why mention gating, per-room sender allowlists and multi-bot loop
   protection are absent here rather than overlooked.
+- **One bot serves many rooms.** Every room the operator invites Haku into binds a conversation of
+  its own, served beside the others: per attachment, its own cursor, reply outbox, editable-line
+  revisions and send budget, so one room's backlog or refusals never reorder or starve another's.
+  Nothing crosses rooms except the `/sync` stream and the credential.
 - **The room is created by invitation, and Haku joins itself.** The operator starts a DM from any
   client; the harness sees the invite in `/sync`'s `rooms.invite` and joins — **only invites from
   the operator's own MXID**, the one mapped to an operator identity. An invite from anyone else is

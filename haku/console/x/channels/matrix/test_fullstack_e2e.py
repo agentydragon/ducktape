@@ -119,6 +119,30 @@ async def test_a_quiet_run_replies_once_to_every_message(deployment: Deployment,
     assert await room.replies() == ["re: one", "re: two", "re: three"]
 
 
+async def test_a_second_room_is_served_as_its_own_conversation(
+    deployment: Deployment, room: OperatorRoom, operator: AsyncClient
+) -> None:
+    """Attachment-scoped delivery, end to end: a second invite is joined and served beside the
+    first, each room answered from its own conversation by its own session — and neither room ever
+    shows the other's traffic, which is what per-attachment cursors, outboxes and budgets exist to
+    guarantee.
+    """
+    await deployment.start_console("console-1")
+    await room.wait_for_notice("joined — this is now Haku's room")
+    second = await OperatorRoom.invite(operator, bot_user_id=deployment.bot_user_id, check_alive=deployment.check_alive)
+    await second.wait_for_notice("joined — this is now Haku's room")
+
+    await room.say("one")
+    await second.say("uno")
+    await room.wait_for_reply("re: one")
+    await second.wait_for_reply("re: uno")
+    await room.say("two")
+    await room.wait_for_reply("re: two")
+
+    assert await room.replies() == ["re: one", "re: two"]
+    assert await second.replies() == ["re: uno"]
+
+
 async def test_a_reply_whose_send_is_refused_is_said_on_a_later_attempt(
     deployment: Deployment, room: OperatorRoom
 ) -> None:

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 from itertools import groupby
 from uuid import UUID
 
@@ -34,20 +35,34 @@ from haku.console.x.channels.matrix.client import ProjectedEvent, Redaction
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class RedundantCopy:
+    """A live original past the first for one source — a duplicate its room is owed a redaction for.
+
+    The attachment rides along because the duplicate need not be an event of the batch that
+    revealed it, so its room is found through the copy's own attachment rather than assumed.
+    """
+
+    attachment_id: UUID
+    event_id: str
+
+
 class RoomCopy:
     """The `matrix_room_copy` table, read and written by the Matrix channel alone."""
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession]):
         self._sessions = sessions
 
-    async def record(self, projected: Sequence[ProjectedEvent], redactions: Sequence[Redaction]) -> tuple[str, ...]:
+    async def record(
+        self, projected: Sequence[ProjectedEvent], redactions: Sequence[Redaction]
+    ) -> tuple[RedundantCopy, ...]:
         """Fold one pass's own-sender observations in; return the copies now redundant.
 
         Idempotent, so the caller may record before acknowledging the batch and a crash between
         the two re-records rather than forgets — which is what makes "the watermark is past the
         echo" imply "the correspondence is durable".
 
-        The returned event ids are live original posts that share a source with an earlier one:
+        The returned copies are live original posts that share a source with an earlier one:
         the duplicate a send past the transaction-cache window can leave behind, which the caller
         owes the room a redaction for. An edit (`m.replace`) revises an event the room already
         shows and is never one of them.
@@ -121,7 +136,7 @@ class RoomCopy:
                 )
         return [event for event in projected if event.source.attachment_id in known]
 
-    async def _redundant(self, db: AsyncSession, touched: set[tuple[UUID, int]]) -> tuple[str, ...]:
+    async def _redundant(self, db: AsyncSession, touched: set[tuple[UUID, int]]) -> tuple[RedundantCopy, ...]:
         """Among the sources this pass touched, every live original past the first."""
         if not touched:
             return ()
@@ -144,7 +159,7 @@ class RoomCopy:
             )
         ).all()
         return tuple(
-            copy.event_id
+            RedundantCopy(attachment_id=copy.attachment_id, event_id=copy.event_id)
             for _, group in groupby(copies, key=lambda copy: (copy.attachment_id, copy.source_event_seq))
             for copy in list(group)[1:]
         )

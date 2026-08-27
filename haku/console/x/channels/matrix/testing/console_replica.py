@@ -43,7 +43,6 @@ from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.channels.matrix.client import MatrixError
 from haku.console.x.channels.matrix.conversation import MatrixConversationStore, MatrixTurns
-from haku.console.x.channels.matrix.conversation_subscriber import ConversationSubscriber
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.channels.matrix.outbox import PendingReply, RoomOutbox
 from haku.console.x.channels.matrix.outbox_wake import OutboxWakes
@@ -171,8 +170,6 @@ async def _serve() -> None:
     store = SessionStore(sessions, runtimes)
     conversations = MatrixConversationStore(sessions)
     ledger = IngressLedger(sessions)
-    outbox = RoomOutbox(sessions)
-    room_copy = RoomCopy(sessions)
     identities = PostgresOperatorIdentityStore(
         sessions, OperatorIdentityTrust(trust_domain=TRUST_DOMAIN, trusted_issuers=frozenset({TRUSTED_ISSUER}))
     )
@@ -183,35 +180,26 @@ async def _serve() -> None:
         MatrixSyncStore(sessions),
         conversations,
         identities,
-        MatrixTurns(matrix, conversations, store, identities, ledger),
-        outbox,
+        MatrixTurns(matrix, store, identities, ledger),
+        RoomOutbox(sessions),
         RevisionLog(sessions),
         ledger,
-        room_copy,
+        RoomCopy(sessions),
         OutboxWakes(database_url),
+        sessions,
+        ConversationStream(sessions),
+        notifications,
         armed=Path(_environment("HAKU_E2E_REFUSE_NEXT_REPLY")),
     )
     service = SessionService(runtimes, store, notifications, conversation_history=ConversationHistory(sessions))
     supervisor = ConversationRuntime(service, store, notifications, engine)
     allocator = SandboxAllocator(service, store, notifications, engine)
-    notices = ConversationSubscriber(
-        engine,
-        sessions,
-        ConversationStream(sessions),
-        conversations,
-        notifications,
-        sync.project_notice,
-        sync,
-        sync.bound_room,
-        outbox,
-        room_copy,
-    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         del app
         try:
-            async with sync.run(), supervisor.run(), allocator.run(), notices.run():
+            async with sync.run(), supervisor.run(), allocator.run():
                 yield
         finally:
             await service.aclose()

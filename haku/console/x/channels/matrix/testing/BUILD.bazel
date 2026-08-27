@@ -75,7 +75,6 @@ py_library(
         "//haku/console/x:system_prompt",
         "//haku/console/x/channels/matrix:client",
         "//haku/console/x/channels/matrix:conversation",
-        "//haku/console/x/channels/matrix:conversation_subscriber",
         "//haku/console/x/channels/matrix:ingress_ledger",
         "//haku/console/x/channels/matrix:outbox",
         "//haku/console/x/channels/matrix:outbox_wake",

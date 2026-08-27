@@ -39,16 +39,18 @@ from haku.console.x.channels.matrix.conversation import (
     MatrixConversationStore,
     PromptAccepted,
     PromptRejected,
+    RoomAttachment,
 )
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.channels.matrix.outbox import PendingReply
-from haku.console.x.channels.matrix.pacer import RoomPacer
+from haku.console.x.channels.matrix.pacer import RoomPacers
 from haku.console.x.channels.matrix.revisions import RevisionLog
 from haku.console.x.channels.matrix.room_copy import RoomCopy
 from haku.console.x.channels.matrix.spans import Span, SpanKind
 from haku.console.x.channels.matrix.sync import MatrixSyncService, MatrixSyncStore
 from haku.console.x.session_events import PromptRejectedBody, UnreadableInputBody
 from haku.console.x.session_store import BridgeAuthentication, SessionStore
+from haku.console.x.subscription import ConversationStream
 
 
 @dataclass
@@ -106,34 +108,35 @@ class _FakeMatrix:
 class _FakeTurns:
     """Ingress as the loop sees it: it accepts or rejects a batch, and says what to record.
 
-    What it hands back are bodies and the conversation they belong to, because an authored row's
-    position is allocated under that conversation's lock — so what the loop does with them is append
-    them where it moves the watermark. `conversation_id = None` is the room bound to nothing, where
-    there is nowhere to record and nowhere to say it either.
+    What it hands back are bodies and the conversation they belong to — read off the binding the
+    loop dispatched the batch with, the way the real ingress does — because an authored row's
+    position is allocated under that conversation's lock, so what the loop does with them is append
+    them where it moves the watermark.
     """
 
-    conversation_id: UUID | None
     session_id: UUID | None = None
     accepts: bool = True
     reason: PromptRejection = PromptRejection.TURN_IN_FLIGHT
     offered: list[list[str]] = field(default_factory=list)
+    offered_to: list[tuple[str, UUID]] = field(default_factory=list)
 
-    async def offer(self, messages: Sequence[InboundMessage]) -> Admission:
+    async def offer(self, binding: RoomAttachment, messages: Sequence[InboundMessage]) -> Admission:
         self.offered.append([message.body for message in messages])
+        self.offered_to.append((binding.room_id, binding.conversation_id))
         if self.accepts:
             return PromptAccepted(item_id=uuid4())
         return PromptRejected(
             reason=self.reason,
-            facts=self._facts(PromptRejectedBody(reason=self.reason, text="\n".join(self.offered[-1]))),
+            facts=self._facts(binding, PromptRejectedBody(reason=self.reason, text="\n".join(self.offered[-1]))),
         )
 
-    async def unreadable(self, events: Sequence[UnmappableEvent]) -> ConversationFacts | None:
-        return self._facts(*(UnreadableInputBody(media_type=event.msgtype) for event in events))
+    async def unreadable(self, binding: RoomAttachment, events: Sequence[UnmappableEvent]) -> ConversationFacts:
+        return self._facts(binding, *(UnreadableInputBody(media_type=event.msgtype) for event in events))
 
-    def _facts(self, *bodies: PromptRejectedBody | UnreadableInputBody) -> ConversationFacts | None:
-        if self.conversation_id is None:
-            return None
-        return ConversationFacts(conversation_id=self.conversation_id, session_id=self.session_id, bodies=tuple(bodies))
+    def _facts(self, binding: RoomAttachment, *bodies: PromptRejectedBody | UnreadableInputBody) -> ConversationFacts:
+        return ConversationFacts(
+            conversation_id=binding.conversation_id, session_id=self.session_id, bodies=tuple(bodies)
+        )
 
 
 @pytest.fixture
@@ -142,10 +145,9 @@ def sync_store(migrated_sessions) -> MatrixSyncStore:
 
 
 @pytest.fixture
-async def turns(chat_store: SessionStore, operator_id: UUID) -> _FakeTurns:
-    """Ingress over a real conversation, since what it hands the loop is appended to one."""
-    view, _ = await chat_store.create(operator_id)
-    return _FakeTurns(await chat_store.conversation_of(view.session_id), view.session_id)
+def turns() -> _FakeTurns:
+    """Ingress as the loop drives it: which conversation a fact lands on is the binding's."""
+    return _FakeTurns()
 
 
 @pytest.fixture
@@ -168,31 +170,35 @@ def _replica(sync_store, conversations, identities, turns, matrix, migrated_sess
         conversations=conversations,
         identities=identities,
         turns=cast(Any, turns),
-        # Answers are outbox rows, drained by a task `run()` starts; these tests drive one sync
-        # pass and assert the narration, which never touches the table (`test_outbox` does).
+        # Answers are outbox rows, drained by the reconcilers `run()` sweeps up; these tests drive
+        # one sync pass and assert the narration, which never touches the table (`test_outbox` does).
         outbox=cast(Any, None),
         revisions=RevisionLog(migrated_sessions),
         ledger=ledger,
         room_copy=RoomCopy(migrated_sessions),
-        # The drain starts its wake wire in `run()`, which these tests never enter (see `outbox`).
+        # The sync leader starts the wake wire with its reconcilers, inside `run()` (see `outbox`).
         outbox_wakes=cast(Any, None),
+        sessions=migrated_sessions,
+        stream=ConversationStream(migrated_sessions),
+        # Consumed only by the reconcilers' subscribers, which these single-pass tests never start.
+        notifications=cast(Any, None),
     )
     service._client = cast(Any, matrix)
-    service.pacer = RoomPacer(sends_per_second=1e6, burst=1_000)
+    service.pacers = RoomPacers(sends_per_second=1e6, burst=1_000)
     return service
 
 
 @pytest.fixture
 async def service(sync_store, conversations, migrated_identity_store, turns, matrix, migrated_sessions, ledger):
-    """The service with its outbound queue running, because every send goes through it."""
+    """The service with its outbound queues running, because every send goes through them."""
     service = _replica(sync_store, conversations, migrated_identity_store, turns, matrix, migrated_sessions, ledger)
-    async with service.pacer.run():
+    async with service.pacers.run():
         yield service
 
 
 async def settled(service: MatrixSyncService) -> None:
     """Wait for what the service queued to actually reach the homeserver."""
-    await service.pacer.flush()
+    await service.pacers.flush()
 
 
 @pytest.fixture
@@ -221,9 +227,6 @@ async def recorded(sessions) -> list[tuple[StoredEventKind, dict[str, Any]]]:
             )
         ).all()
     return [(row.kind, row.body) for row in rows]
-
-
-SESSION = UUID("11111111-2222-3333-4444-555555555555")
 
 
 def _queued(body: str, *, item_id: UUID | None = None) -> PendingReply:
@@ -338,7 +341,7 @@ async def test_a_recording_that_cannot_be_written_takes_the_watermark_with_it(sy
     )
 
     with pytest.raises(KeyError):
-        await sync_store.advance(MATRIX_USER, "s2", orphan)
+        await sync_store.advance(MATRIX_USER, "s2", (orphan,))
 
     assert await watermark(sync_store) is None
     assert await recorded(migrated_sessions) == []
@@ -404,7 +407,6 @@ async def test_a_rejection_with_no_session_behind_the_room_is_still_recorded(
     matrix.result = SyncResult("s2", (_message("hello"),), ())
     turns.accepts = False
     turns.reason = PromptRejection.NO_SESSION
-    turns.session_id = None
 
     await service.sync_once("tok")
     await settled(service)
@@ -460,7 +462,8 @@ async def test_the_text_of_a_mixed_batch_is_serviced_and_the_rest_recorded(
 async def test_an_unreadable_event_from_an_unserviced_room_reaches_nothing(
     service, matrix, migrated_sessions, bound_room
 ):
-    """Only the bound room is serviced, so a stray room's event is neither recorded nor said."""
+    """Only rooms holding a conversation are serviced, and an unreadable event adopts none — there
+    is no prose in it to answer — so a stray room's screenshot is neither recorded nor said."""
     matrix.result = SyncResult("s2", (), (), (_unreadable(room_id="!stray:allegedly.works"),))
 
     await service.sync_once("tok")
@@ -477,18 +480,21 @@ async def test_joins_an_invite_from_the_operator(service, matrix):
     assert matrix.joined == [MATRIX_ROOM]
 
 
-async def test_refuses_a_second_room_and_says_so_in_the_first(service, matrix, bound_room):
-    """Joining would put Haku in a room nothing services, which reads as listening."""
+async def test_a_second_invite_joins_and_binds_a_conversation_of_its_own(service, matrix, conversations, bound_room):
+    """One bot serves many rooms: a second invite is joined and bound beside the first, each room
+    its own conversation."""
     other = "!other:allegedly.works"
     matrix.result = SyncResult("s2", (), (Invite(room_id=other, inviter=MATRIX_OPERATOR),))
 
     await service.sync_once("tok")
 
     await settled(service)
-    assert matrix.joined == []
+    assert matrix.joined == [other]
     [(room_id, body)] = matrix.notices
-    assert room_id == MATRIX_ROOM
-    assert "still serving" in body
+    assert (room_id, "joined" in body) == (other, True)
+    bindings = await conversations.live_attachments()
+    assert [binding.room_id for binding in bindings] == [MATRIX_ROOM, other]
+    assert bindings[0].conversation_id != bindings[1].conversation_id
 
 
 async def test_leaves_an_invite_from_anybody_else_pending(service, matrix):
@@ -526,13 +532,42 @@ async def test_does_not_adopt_from_a_sender_who_is_not_the_operator(service, mat
     assert matrix.notices == []
 
 
-async def test_ignores_messages_from_a_room_that_is_not_the_live_one(service, matrix, turns, bound_room):
+async def test_operator_traffic_in_an_unbound_room_is_adopted_beside_the_existing_binding(
+    service, matrix, turns, bound_room
+):
+    """Adoption is per room, not only for a console with nothing bound: a joined room the operator
+    is speaking in gets its own binding beside the live one, and its batch is serviced."""
     stray = InboundMessage("!stray:allegedly.works", "$e", MATRIX_OPERATOR, "hi", 1)
     matrix.result = SyncResult("s2", (stray,), ())
 
     await service.sync_once("tok")
 
-    assert turns.offered == []
+    await settled(service)
+    assert [room for room, _ in turns.offered_to] == ["!stray:allegedly.works"]
+    assert turns.offered == [["hi"]]
+
+
+async def test_each_rooms_messages_are_offered_to_its_own_conversation(
+    service, matrix, turns, conversations, operator_id, bound_room
+):
+    """The dispatch itself: one batch carrying two rooms' messages becomes one offer per room, each
+    against the conversation its attachment names, in the order the rooms appear in the batch."""
+    other = (await conversations.bind_room("!other:allegedly.works", operator_id)).room_id
+    matrix.result = SyncResult(
+        "s2",
+        (
+            _message("first here", event_id="$a"),
+            InboundMessage(other, "$b", MATRIX_OPERATOR, "and there", 2),
+            _message("more here", event_id="$c"),
+        ),
+        (),
+    )
+
+    await service.sync_once("tok")
+
+    bindings = {binding.room_id: binding.conversation_id for binding in await conversations.live_attachments()}
+    assert turns.offered == [["first here", "more here"], ["and there"]]
+    assert turns.offered_to == [(MATRIX_ROOM, bindings[MATRIX_ROOM]), (other, bindings[other])]
 
 
 async def test_posting_a_queued_reply_says_it_as_text(service, matrix, sync_store, bound_room):
@@ -700,7 +735,7 @@ async def test_a_replica_that_adopts_the_session_edits_the_line_it_inherits(
     await settled(service)
 
     successor = _replica(sync_store, conversations, migrated_identity_store, turns, matrix, migrated_sessions, ledger)
-    async with successor.pacer.run():
+    async with successor.pacers.run():
         await successor.show_span(MATRIX_ROOM, attachment_id, span, "running Read")
         await settled(successor)
 
@@ -853,11 +888,10 @@ def _projected(
 
 
 @pytest.fixture
-async def attached(conversations: MatrixConversationStore, bound_room: str) -> tuple[UUID, UUID]:
+async def attached(conversations: MatrixConversationStore, operator_id: UUID, bound_room: str) -> tuple[UUID, UUID]:
     """The bound room's conversation and attachment, which its own events' tags name."""
-    found = await conversations.attachment_of_room(bound_room)
-    assert found is not None
-    return found
+    binding = await conversations.bind_room(bound_room, operator_id)
+    return binding.conversation_id, binding.attachment_id
 
 
 async def test_an_own_echo_is_recorded_and_is_not_input(

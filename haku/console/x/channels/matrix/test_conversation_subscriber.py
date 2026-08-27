@@ -21,7 +21,7 @@ from haku.console.database_schema import ChannelCursor
 from haku.console.x import conversation_log, session_events
 from haku.console.x.channels.matrix.client import ConversationEventSource, ProjectedEvent, RoomEventKind
 from haku.console.x.channels.matrix.conftest import MATRIX_ROOM
-from haku.console.x.channels.matrix.conversation import MatrixConversationStore
+from haku.console.x.channels.matrix.conversation import MatrixConversationStore, RoomAttachment
 from haku.console.x.channels.matrix.conversation_subscriber import (
     ABORTED_BY_OPERATOR,
     NOTHING_SAID,
@@ -39,9 +39,10 @@ from haku.console.x.subscription import START, ConversationStream, StreamedEvent
 
 
 class Room:
-    """What the room was told and shown, in the order it happened."""
+    """What one room was told and shown, in the order it happened."""
 
-    def __init__(self) -> None:
+    def __init__(self, expected_room: str = MATRIX_ROOM) -> None:
+        self._expected_room = expected_room
         self.said: list[str] = []
         self.kinds: list[RoomEventKind] = []
         self.spans: list[tuple[str, str]] = []
@@ -59,7 +60,7 @@ class Room:
     async def project_notice(
         self, room_id: str, attachment_id: UUID, body: str, kind: RoomEventKind, conversation_id: UUID, event_seq: int
     ) -> None:
-        assert room_id == MATRIX_ROOM
+        assert room_id == self._expected_room
         assert attachment_id
         self.projected.append((conversation_id, event_seq))
         if self.fail_project:
@@ -67,11 +68,11 @@ class Room:
         await self.record(body, kind)
 
     async def show_span(self, room_id: str, attachment_id: UUID, span: Span, body: str) -> None:
-        assert room_id == MATRIX_ROOM
+        assert room_id == self._expected_room
         self.spans.append((span.subject, body))
 
     async def seal_span(self, room_id: str, attachment_id: UUID, span: Span, body: str) -> None:
-        assert room_id == MATRIX_ROOM
+        assert room_id == self._expected_room
         self.sealed.append((span.subject, body))
 
     async def retire_span(self, room_id: str, attachment_id: UUID, span: Span) -> None:
@@ -82,9 +83,6 @@ class Room:
 
     async def set_typing(self, room_id: str, active: bool) -> None:
         self.typing.append(active)
-
-    async def bound(self) -> str | None:
-        return MATRIX_ROOM
 
 
 class Clock:
@@ -129,37 +127,31 @@ def clock() -> Clock:
 
 
 @pytest.fixture
+async def binding(conversations: MatrixConversationStore, operator_id: UUID) -> RoomAttachment:
+    """The room's live binding, which is what a subscriber is constructed for."""
+    return await conversations.bind_room(MATRIX_ROOM, operator_id)
+
+
+@pytest.fixture
 def notices(
-    migrated_engine,
     migrated_sessions: async_sessionmaker[AsyncSession],
     stream: ConversationStream,
-    conversations: MatrixConversationStore,
     notifications,
     room: Room,
+    binding: RoomAttachment,
     outbox: RoomOutbox,
     room_copy: RoomCopy,
     clock: Clock,
 ) -> ConversationSubscriber:
     return ConversationSubscriber(
-        migrated_engine,
-        migrated_sessions,
-        stream,
-        conversations,
-        notifications,
-        room.project_notice,
-        room,
-        room.bound,
-        outbox,
-        room_copy,
-        clock=clock,
+        migrated_sessions, stream, notifications, room.project_notice, room, binding, outbox, room_copy, clock=clock
     )
 
 
 @pytest.fixture
-async def served(chat_store: SessionStore, operator_id: UUID, conversations: MatrixConversationStore) -> UUID:
+async def served(chat_store: SessionStore, operator_id: UUID, binding: RoomAttachment) -> UUID:
     """A ready session serving the bound room, on the conversation the room is attached to."""
-    conversation_id = (await conversations.bind_room(MATRIX_ROOM, operator_id)).conversation_id
-    view, token = await chat_store.create(operator_id, conversation_id=conversation_id)
+    view, token = await chat_store.create(operator_id, conversation_id=binding.conversation_id)
     await chat_store.authenticate_bridge(view.session_id, token)
     return view.session_id
 
@@ -273,17 +265,7 @@ async def test_turn_typing_is_derived_by_the_room_subscriber(chat_store, operato
 
 
 async def test_a_restarted_reader_rebuilds_active_typing_from_the_stream(
-    chat_store,
-    operator_id,
-    served,
-    notices,
-    room,
-    migrated_engine,
-    migrated_sessions,
-    stream,
-    conversations,
-    notifications,
-    outbox,
+    chat_store, operator_id, served, notices, room, migrated_sessions, stream, binding, notifications, outbox
 ) -> None:
     await notices.reconcile_once()
     await chat_store.enqueue_prompt(
@@ -294,14 +276,12 @@ async def test_a_restarted_reader_rebuilds_active_typing_from_the_stream(
 
     successor_room = Room()
     successor = ConversationSubscriber(
-        migrated_engine,
         migrated_sessions,
         stream,
-        conversations,
         notifications,
         successor_room.project_notice,
         successor_room,
-        successor_room.bound,
+        binding,
         outbox,
         RoomCopy(migrated_sessions),
     )
@@ -321,17 +301,7 @@ async def test_what_the_room_has_been_told_is_not_told_again(chat_store, operato
 
 
 async def test_a_restarted_reader_resumes_from_the_position_it_kept(
-    chat_store,
-    operator_id,
-    served,
-    notices,
-    room,
-    migrated_engine,
-    migrated_sessions,
-    stream,
-    conversations,
-    notifications,
-    outbox,
+    chat_store, operator_id, served, notices, room, migrated_sessions, stream, binding, notifications, outbox
 ) -> None:
     """The whole reason this position is durable: the room's copy outlives the process that wrote
     into it, so a replica that goes away mid-conversation must not re-say what its predecessor did
@@ -342,14 +312,12 @@ async def test_a_restarted_reader_resumes_from_the_position_it_kept(
 
     successor_room = Room()
     successor = ConversationSubscriber(
-        migrated_engine,
         migrated_sessions,
         stream,
-        conversations,
         notifications,
         successor_room.project_notice,
         successor_room,
-        successor_room.bound,
+        binding,
         outbox,
         RoomCopy(migrated_sessions),
     )
@@ -359,16 +327,6 @@ async def test_a_restarted_reader_resumes_from_the_position_it_kept(
     await abort_a_turn(chat_store, operator_id, served)
     await successor.reconcile_once()
     assert successor_room.said == [ABORTED_BY_OPERATOR]
-
-
-async def test_a_room_with_no_conversation_behind_it_is_not_behind_on_anything(
-    notices, room, migrated_sessions
-) -> None:
-    """A room this console holds no conversation for: nothing recorded, nothing owed, and no
-    position taken — the next pass, once it has one, still starts at its head rather than at
-    zero."""
-    assert await notices.reconcile_once() is False
-    assert (room.said, await stored_position(migrated_sessions)) == ([], None)
 
 
 async def author(
@@ -553,7 +511,7 @@ async def test_a_prompt_from_a_sibling_room_is_posted_because_the_address_differ
 
 
 async def test_a_relayed_prompt_the_room_already_shows_is_not_posted_again(
-    chat_store, operator_id, served, notices, room, room_copy, conversations
+    chat_store, operator_id, served, notices, room, room_copy, binding
 ) -> None:
     """The relay rides the projection path now: its delivery is tied to the cursor and keyed by the
     prompt-completed event, so a crash replay finds the room's own copy instead of saying the
@@ -564,15 +522,13 @@ async def test_a_relayed_prompt_the_room_already_shows_is_not_posted_again(
     with pytest.raises(RuntimeError, match="homeserver refused"):
         await notices.reconcile_once()
     [(conversation_id, seq)] = room.projected
-    attachment_id = await conversations.attachment(MATRIX_ROOM)
-    assert attachment_id is not None
     await room_copy.record(
         [
             ProjectedEvent(
                 room_id=MATRIX_ROOM,
                 event_id="$echoed",
                 source=ConversationEventSource(
-                    attachment_id=attachment_id, conversation_id=conversation_id, event_seq=seq
+                    attachment_id=binding.attachment_id, conversation_id=conversation_id, event_seq=seq
                 ),
                 origin_server_ts=1,
                 replaces_event_id=None,
@@ -618,14 +574,47 @@ async def test_an_unread_room_has_no_position_at_all(migrated_sessions) -> None:
     assert await RoomCursor(migrated_sessions, uuid4()).position() is None
 
 
-async def test_keeping_a_position_twice_moves_it_rather_than_failing(
-    migrated_sessions, operator_id, conversations
+async def test_a_sibling_rooms_subscriber_reads_only_its_own_conversation(
+    chat_store,
+    operator_id,
+    conversations,
+    served,
+    notices,
+    room,
+    migrated_sessions,
+    stream,
+    notifications,
+    outbox,
+    room_copy,
 ) -> None:
-    """Whichever replica holds the notices lock writes this row, and leadership changes hands."""
-    await conversations.bind_room(MATRIX_ROOM, operator_id)
-    attachment_id = await conversations.attachment(MATRIX_ROOM)
-    assert attachment_id is not None
-    cursor = RoomCursor(migrated_sessions, attachment_id)
+    """Attachment-scoped reconciliation: each room's subscriber folds its own conversation off its
+    own cursor, so a fact recorded on one thread reaches only that thread's room."""
+    sibling_binding = await conversations.bind_room("!second:allegedly.works", operator_id)
+    sibling_room = Room("!second:allegedly.works")
+    sibling = ConversationSubscriber(
+        migrated_sessions,
+        stream,
+        notifications,
+        sibling_room.project_notice,
+        sibling_room,
+        sibling_binding,
+        outbox,
+        room_copy,
+    )
+    await notices.reconcile_once()
+    await sibling.reconcile_once()
+
+    await abort_a_turn(chat_store, operator_id, served)
+    await notices.reconcile_once()
+    await sibling.reconcile_once()
+
+    assert room.said == [ABORTED_BY_OPERATOR]
+    assert sibling_room.said == []
+
+
+async def test_keeping_a_position_twice_moves_it_rather_than_failing(migrated_sessions, binding) -> None:
+    """Whichever replica leads the sync loop writes this row, and leadership changes hands."""
+    cursor = RoomCursor(migrated_sessions, binding.attachment_id)
 
     await cursor.keep(START)
     await cursor.keep(StreamPosition(event_seq=17))
@@ -633,11 +622,8 @@ async def test_keeping_a_position_twice_moves_it_rather_than_failing(
     assert await cursor.position() == StreamPosition(event_seq=17)
 
 
-async def test_keeping_an_older_position_cannot_rewind_the_room(migrated_sessions, operator_id, conversations) -> None:
-    await conversations.bind_room(MATRIX_ROOM, operator_id)
-    attachment_id = await conversations.attachment(MATRIX_ROOM)
-    assert attachment_id is not None
-    cursor = RoomCursor(migrated_sessions, attachment_id)
+async def test_keeping_an_older_position_cannot_rewind_the_room(migrated_sessions, binding) -> None:
+    cursor = RoomCursor(migrated_sessions, binding.attachment_id)
 
     await cursor.keep(StreamPosition(event_seq=17))
     await cursor.keep(StreamPosition(event_seq=3))
@@ -646,18 +632,7 @@ async def test_keeping_an_older_position_cannot_rewind_the_room(migrated_session
 
 
 async def test_a_replayed_projection_already_in_the_room_is_not_sent_again(
-    chat_store,
-    operator_id,
-    served,
-    notices,
-    room,
-    room_copy,
-    conversations,
-    migrated_engine,
-    migrated_sessions,
-    stream,
-    notifications,
-    outbox,
+    chat_store, operator_id, served, notices, room, room_copy, binding, migrated_sessions, stream, notifications, outbox
 ) -> None:
     """Restart after Synapse's transaction cache would have expired.
 
@@ -672,8 +647,6 @@ async def test_a_replayed_projection_already_in_the_room_is_not_sent_again(
     with pytest.raises(RuntimeError, match="homeserver refused"):
         await notices.reconcile_once()
     [(conversation_id, seq)] = room.projected
-    attachment_id = await conversations.attachment(MATRIX_ROOM)
-    assert attachment_id is not None
     # The send's own echo, as the sync loop records it observing the room.
     await room_copy.record(
         [
@@ -681,7 +654,7 @@ async def test_a_replayed_projection_already_in_the_room_is_not_sent_again(
                 room_id=MATRIX_ROOM,
                 event_id="$echoed",
                 source=ConversationEventSource(
-                    attachment_id=attachment_id, conversation_id=conversation_id, event_seq=seq
+                    attachment_id=binding.attachment_id, conversation_id=conversation_id, event_seq=seq
                 ),
                 origin_server_ts=1,
                 replaces_event_id=None,
@@ -692,14 +665,12 @@ async def test_a_replayed_projection_already_in_the_room_is_not_sent_again(
 
     successor_room = Room()
     successor = ConversationSubscriber(
-        migrated_engine,
         migrated_sessions,
         stream,
-        conversations,
         notifications,
         successor_room.project_notice,
         successor_room,
-        successor_room.bound,
+        binding,
         outbox,
         room_copy,
     )

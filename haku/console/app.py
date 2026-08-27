@@ -115,7 +115,6 @@ from haku.console.x import (
 # already talks about (the console's own conversation record, the index sweeps, the push queue).
 from haku.console.x.channels.matrix import (
     conversation as matrix_conversation,
-    conversation_subscriber as matrix_conversation_subscriber,
     ingress_ledger as matrix_ingress_ledger,
     outbox as matrix_outbox,
     outbox_wake as matrix_outbox_wake,
@@ -424,16 +423,12 @@ def create_app(
     # after the configured runtime catalog because it provisions sessions through that service.
     matrix_sync_service: matrix_sync.MatrixSyncService | None = None
     matrix_conversation_store: matrix_conversation.MatrixConversationStore | None = None
-    matrix_notices: matrix_conversation_subscriber.ConversationSubscriber | None = None
     if (matrix_config := settings.matrix) is not None and matrix_config.password is not None:
         matrix_conversation_store = matrix_conversation.MatrixConversationStore(db_sessions)
         matrix_ledger = matrix_ingress_ledger.IngressLedger(db_sessions)
-        # One object, because the two halves of the queue are two ends of it: the notice reader
-        # writes rows off the conversation's log and the sync service's drain says them.
-        matrix_room_outbox = matrix_outbox.RoomOutbox(db_sessions)
-        # Shared the same way: the sync loop records what the room shows and the notice reader
-        # asks it before sending.
-        matrix_room_copy = RoomCopy(db_sessions)
+        # The sync service hosts one reconciler per live attachment — each room's subscriber to the
+        # conversation record and the drain of its reply outbox — so the record readers, the
+        # correspondence store and the outbox are all composed into it.
         matrix_sync_service = matrix_sync.MatrixSyncService(
             matrix_config,
             matrix_config.password,
@@ -441,30 +436,16 @@ def create_app(
             matrix_sync.MatrixSyncStore(db_sessions),
             matrix_conversation_store,
             operator_identity_store,
-            matrix_conversation.MatrixTurns(
-                matrix_config, matrix_conversation_store, session_store, operator_identity_store, matrix_ledger
-            ),
-            matrix_room_outbox,
+            matrix_conversation.MatrixTurns(matrix_config, session_store, operator_identity_store, matrix_ledger),
+            matrix_outbox.RoomOutbox(db_sessions),
             matrix_revisions.RevisionLog(db_sessions),
             matrix_ledger,
-            matrix_room_copy,
-            # The channel's own wake wire; the drain starts and stops it inside its `run()`.
+            RoomCopy(db_sessions),
+            # The channel's own wake wire; the sync leader starts and stops it with its reconcilers.
             matrix_outbox_wake.OutboxWakes(database_url),
-        )
-        # The room as a subscriber to the conversation: it reads the record from a position it keeps
-        # itself and says what the room has not been told, rather than being pushed at by whichever
-        # replica happens to be running the turn.
-        matrix_notices = matrix_conversation_subscriber.ConversationSubscriber(
-            db_engine,
             db_sessions,
             subscription.ConversationStream(db_sessions),
-            matrix_conversation_store,
             session_notifications,
-            matrix_sync_service.project_notice,
-            matrix_sync_service,
-            matrix_sync_service.bound_room,
-            matrix_room_outbox,
-            matrix_room_copy,
         )
     # Execution exists only when a launch-capable adapter was configured. Read-only replicas keep
     # the same registry in their store above but expose no session-creation runtime service.
@@ -744,9 +725,6 @@ def create_app(
         # channel and of sandbox allocation, so browser-only and unattached conversations receive
         # the same maintenance as Matrix-bound ones.
         supervising = runtime_supervisor.run() if runtime_supervisor is not None else contextlib.nullcontext()
-        # Its own lock and its own task, like the two above: what it does is bounded by the room's
-        # send budget, and a room that is refusing sends must not hold up ingress or provisioning.
-        noticing = matrix_notices.run() if matrix_notices is not None else contextlib.nullcontext()
         # Prompt demand is channel-neutral and durable. Start its elected reconciler only after
         # the notification listener is live; the first sweep is also the restart backstop.
         allocating = sandbox_allocator.run() if sandbox_allocator is not None else contextlib.nullcontext()
@@ -757,7 +735,6 @@ def create_app(
             oauth_maintenance.run(),
             catalogs.run(),
             matrix_running,
-            noticing,
             indexing,
             embedding,
         ):

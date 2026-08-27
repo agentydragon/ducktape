@@ -17,11 +17,13 @@ needs the tool call it showed four edits ago — so each revisable subject takes
 rewritten in place, keeping the position it was first given rather than jumping the queue on every
 change.
 
-**Per replica, not per room globally.** The sync leader and the replica holding a session's lease
-need not be the same pod, so two of these can exist for one room, each believing it owns the whole
-budget. The bucket is therefore an estimate; the homeserver's own correction is a 429's
-`retry_after_ms`, and `_penalise` is where that lands — which is also why nio's unlimited
-in-request 429 retry is bounded (`client.MAX_RATE_LIMIT_RETRIES`).
+**One queue per attachment, addressed through `RoomPacers`.** Everything that sends into a room
+runs on the sync leader — its own binding notices, and each attachment's reconciler — so one
+process holds one bucket per room. The bucket is still an estimate: Synapse keys `rc_message` by
+sender, so N rooms of one bot share the homeserver's real budget, and a leadership change hands
+the bucket over unfilled. The homeserver's own correction is a 429's `retry_after_ms`, and
+`_penalise` is where that lands — which is also why nio's unlimited in-request 429 retry is
+bounded (`client.MAX_RATE_LIMIT_RETRIES`).
 """
 
 from __future__ import annotations
@@ -32,8 +34,9 @@ import logging
 import time
 from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
+from uuid import UUID
 
 from haku.console.x.channels.matrix.client import MatrixError
 
@@ -200,3 +203,50 @@ class RoomPacer:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+
+
+class RoomPacers:
+    """The per-attachment send budgets: one `RoomPacer` per live attachment, made on first use.
+
+    This is what replaced the process-global pacer — the send budget is addressed by the
+    attachment, so a second room queues against its own bucket instead of sharing (and silently
+    starving on) the first room's. The rates are the registry's so a test can make every room's
+    queue unthrottled at once.
+
+    A pacer exists for as long as the registry runs; nothing retires one when its attachment
+    detaches, because an idle pacer is a drained queue and an empty bucket refilling.
+    """
+
+    def __init__(self, *, sends_per_second: float = SENDS_PER_SECOND, burst: int = SEND_BURST):
+        self._sends_per_second = sends_per_second
+        self._burst = burst
+        self._pacers: dict[UUID, RoomPacer] = {}
+        self._stack: AsyncExitStack | None = None
+
+    async def for_attachment(self, attachment_id: UUID) -> RoomPacer:
+        """This attachment's queue, started under the registry's own lifetime."""
+        if (pacer := self._pacers.get(attachment_id)) is not None:
+            return pacer
+        assert self._stack is not None, "RoomPacers.run() is not active"
+        pacer = RoomPacer(sends_per_second=self._sends_per_second, burst=self._burst)
+        # Registered before the await below, so a concurrent caller shares this pacer rather than
+        # making a second one; a send queued in that window waits for the drain task to start.
+        self._pacers[attachment_id] = pacer
+        await self._stack.enter_async_context(pacer.run())
+        return pacer
+
+    async def flush(self) -> None:
+        """Wait until everything queued on every pacer has been sent."""
+        for pacer in list(self._pacers.values()):
+            await pacer.flush()
+
+    @asynccontextmanager
+    async def run(self) -> AsyncIterator[None]:
+        """Hold every pacer's drain task; exiting flushes and stops each in turn."""
+        async with AsyncExitStack() as stack:
+            self._stack = stack
+            try:
+                yield
+            finally:
+                self._stack = None
+                self._pacers.clear()

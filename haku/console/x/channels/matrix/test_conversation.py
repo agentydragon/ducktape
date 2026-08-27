@@ -9,13 +9,12 @@ their cross-session threads; the reader itself is channel-neutral.
 
 from __future__ import annotations
 
-import datetime
 from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
 from sqlalchemy import delete, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.chat_models import (
@@ -37,6 +36,7 @@ from haku.console.x.channels.matrix.conversation import (
     MatrixTurns,
     PromptAccepted,
     PromptRejected,
+    RoomAttachment,
 )
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.x.conversation_events import (
@@ -118,28 +118,20 @@ def transcript(migrated_sessions) -> ConversationHistory:
 
 
 @pytest.fixture
-async def thread(conversations: MatrixConversationStore, operator_id: UUID) -> UUID:
-    """The conversation the room holds a copy of, opened the way an invite opens it."""
-    return (await conversations.bind_room(MATRIX_ROOM, operator_id)).conversation_id
+async def binding(conversations: MatrixConversationStore, operator_id: UUID) -> RoomAttachment:
+    """The room's live binding, made the way an invite makes it."""
+    return await conversations.bind_room(MATRIX_ROOM, operator_id)
 
 
-async def another_thread(sessions: async_sessionmaker[AsyncSession], operator_id: UUID) -> UUID:
-    """A second conversation, inserted directly rather than bound.
+@pytest.fixture
+def thread(binding: RoomAttachment) -> UUID:
+    """The conversation the room holds a copy of."""
+    return binding.conversation_id
 
-    `bind_room` refuses a second room by design, so a test about two threads cannot ask for one
-    through it — which is the point being made below.
-    """
-    conversation_id = uuid4()
-    async with sessions.begin() as db:
-        db.add(
-            Conversation(
-                conversation_id=conversation_id,
-                operator_id=operator_id,
-                runtime_kind=RuntimeKind.CLAUDE_CODE,
-                created_at=datetime.datetime.now(datetime.UTC),
-            )
-        )
-    return conversation_id
+
+async def another_thread(conversations: MatrixConversationStore, operator_id: UUID) -> UUID:
+    """A second conversation, bound the way a second invited room binds one."""
+    return (await conversations.bind_room("!second:allegedly.works", operator_id)).conversation_id
 
 
 async def serving_session(chat_store: SessionStore, operator_id: UUID, conversation_id: UUID) -> UUID:
@@ -283,14 +275,13 @@ async def test_what_the_room_was_never_told_is_not_in_the_history(
 
 async def test_another_thread_is_not_this_thread(
     transcript: ConversationHistory,
-    migrated_sessions: async_sessionmaker[AsyncSession],
+    conversations: MatrixConversationStore,
     chat_store: SessionStore,
     operator_id: UUID,
     thread: UUID,
 ) -> None:
-    """Threads are read apart even though the console services one room at a time, which is what a
-    second attached room will need on the day one bot holds several."""
-    elsewhere = await serving_session(chat_store, operator_id, await another_thread(migrated_sessions, operator_id))
+    """Threads are read apart: one bot holds several rooms, and each reads only its own."""
+    elsewhere = await serving_session(chat_store, operator_id, await another_thread(conversations, operator_id))
 
     await exchange(chat_store, operator_id, elsewhere, "hi", "hello")
 
@@ -310,19 +301,21 @@ async def test_the_limit_takes_the_tail(
 
 
 @pytest.fixture
-def turns(
-    conversations: MatrixConversationStore, chat_store: SessionStore, migrated_identity_store, ledger: IngressLedger
-) -> MatrixTurns:
+def turns(chat_store: SessionStore, migrated_identity_store, ledger: IngressLedger) -> MatrixTurns:
     """Ingress over the real stores — only the homeserver's events are handed in by the test."""
-    return MatrixTurns(MATRIX_CONFIG, conversations, chat_store, migrated_identity_store, ledger)
+    return MatrixTurns(MATRIX_CONFIG, chat_store, migrated_identity_store, ledger)
 
 
-async def serving_room(conversations: MatrixConversationStore, operator_id: UUID) -> None:
-    """Bind the room, the way an invite does before the supervisor provisions anything.
+async def test_each_room_binds_its_own_conversation(
+    conversations: MatrixConversationStore, operator_id: UUID, binding: RoomAttachment
+) -> None:
+    """One bot serves many rooms: a second room binds beside the first, and re-binding a room is
+    idempotent rather than a refusal."""
+    second = await conversations.bind_room("!second:allegedly.works", operator_id)
 
-    Which session then serves it is read off the thread, so binding is all there is to arrange.
-    """
-    assert (await conversations.bind_room(MATRIX_ROOM, operator_id)).room_id == MATRIX_ROOM
+    assert second.conversation_id != binding.conversation_id
+    assert await conversations.bind_room(MATRIX_ROOM, operator_id) == binding
+    assert await conversations.live_attachments() == (binding, second)
 
 
 def operator_message(body: str, *, event_id: str, at: int) -> InboundMessage:
@@ -337,18 +330,13 @@ def _unmappable(msgtype: str) -> UnmappableEvent:
 
 
 async def test_a_batch_a_ready_session_takes_becomes_its_prompt(
-    turns: MatrixTurns,
-    conversations: MatrixConversationStore,
-    chat_store: SessionStore,
-    operator_id: UUID,
-    thread: UUID,
+    turns: MatrixTurns, binding: RoomAttachment, chat_store: SessionStore, operator_id: UUID, thread: UUID
 ) -> None:
     """The accepted case, and what "one batch, one prompt" means: two events, one transcript row."""
     session_id = await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations, operator_id)
 
     admitted = await turns.offer(
-        [operator_message("hi", event_id="$1", at=1), operator_message("and this", event_id="$2", at=2)]
+        binding, [operator_message("hi", event_id="$1", at=1), operator_message("and this", event_id="$2", at=2)]
     )
 
     assert isinstance(admitted, PromptAccepted)
@@ -358,25 +346,19 @@ async def test_a_batch_a_ready_session_takes_becomes_its_prompt(
 
 
 async def test_a_batch_offered_mid_turn_is_rejected_with_the_reason_and_the_text(
-    turns: MatrixTurns,
-    conversations: MatrixConversationStore,
-    chat_store: SessionStore,
-    operator_id: UUID,
-    thread: UUID,
+    turns: MatrixTurns, binding: RoomAttachment, chat_store: SessionStore, operator_id: UUID, thread: UUID
 ) -> None:
     """A message sent while Haku is working is answered rather than queued behind the turn, and the
     row it hands back is the only copy of what was said — the homeserver will not offer it again
     once the caller acknowledges the batch."""
     session_id = await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations, operator_id)
     await chat_store.enqueue_prompt(operator_id, session_id, "first", SPA_ORIGIN)
     assert await chat_store.next_prompt(session_id) is not None
 
-    admitted = await turns.offer([operator_message("and another thing", event_id="$2", at=2)])
+    admitted = await turns.offer(binding, [operator_message("and another thing", event_id="$2", at=2)])
 
     assert isinstance(admitted, PromptRejected)
     assert admitted.reason is PromptRejection.TURN_IN_FLIGHT
-    assert admitted.facts is not None
     assert (admitted.facts.conversation_id, admitted.facts.session_id) == (thread, None)
     assert admitted.facts.bodies == (
         session_events.PromptRejectedBody(reason=PromptRejection.TURN_IN_FLIGHT, text="and another thing"),
@@ -384,23 +366,21 @@ async def test_a_batch_offered_mid_turn_is_rejected_with_the_reason_and_the_text
 
 
 async def test_a_batch_offered_before_a_session_exists_becomes_conversation_demand(
-    turns: MatrixTurns, conversations: MatrixConversationStore, migrated_sessions, operator_id: UUID
+    turns: MatrixTurns, binding: RoomAttachment, migrated_sessions, operator_id: UUID
 ) -> None:
     """Binding a room creates no session; its first prompt is still accepted durably."""
-    bound = await conversations.bind_room(MATRIX_ROOM, operator_id)
-
-    admitted = await turns.offer([operator_message("hi", event_id="$1", at=1)])
+    admitted = await turns.offer(binding, [operator_message("hi", event_id="$1", at=1)])
 
     assert isinstance(admitted, PromptAccepted)
     async with migrated_sessions() as db:
         prompt = await db.get(ConversationItem, admitted.item_id)
     assert prompt is not None
-    assert (prompt.conversation_id, prompt.session_id, prompt.item_text) == (bound.conversation_id, None, "hi")
+    assert (prompt.conversation_id, prompt.session_id, prompt.item_text) == (binding.conversation_id, None, "hi")
 
 
 async def test_a_batch_offered_after_a_session_is_gone_becomes_replacement_demand(
     turns: MatrixTurns,
-    conversations: MatrixConversationStore,
+    binding: RoomAttachment,
     chat_store: SessionStore,
     migrated_sessions,
     operator_id: UUID,
@@ -408,18 +388,17 @@ async def test_a_batch_offered_after_a_session_is_gone_becomes_replacement_deman
 ) -> None:
     """The room offers to its conversation, so a vanished session is not an ingress outage."""
     session_id = await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations, operator_id)
     async with migrated_sessions.begin() as db:
         await db.execute(delete(Session).where(Session.session_id == session_id))
 
-    admitted = await turns.offer([operator_message("hi", event_id="$1", at=1)])
+    admitted = await turns.offer(binding, [operator_message("hi", event_id="$1", at=1)])
 
     assert isinstance(admitted, PromptAccepted)
 
 
 async def test_an_accepted_batch_records_its_events_against_the_prompt_it_became(
     turns: MatrixTurns,
-    conversations: MatrixConversationStore,
+    binding: RoomAttachment,
     chat_store: SessionStore,
     ledger: IngressLedger,
     operator_id: UUID,
@@ -431,34 +410,34 @@ async def test_an_accepted_batch_records_its_events_against_the_prompt_it_became
     homeserver re-offering it is the outcome we want.
     """
     await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations, operator_id)
 
-    await turns.offer([operator_message("hi", event_id="$1", at=1), operator_message("more", event_id="$2", at=2)])
+    await turns.offer(
+        binding, [operator_message("hi", event_id="$1", at=1), operator_message("more", event_id="$2", at=2)]
+    )
 
     assert await ledger.carried(["$1", "$2", "$3"]) == frozenset({"$1", "$2"})
 
 
 async def test_a_rejected_batch_records_nothing_for_the_homeserver_to_be_deduped_against(
     turns: MatrixTurns,
-    conversations: MatrixConversationStore,
+    binding: RoomAttachment,
     chat_store: SessionStore,
     ledger: IngressLedger,
     operator_id: UUID,
     thread: UUID,
 ) -> None:
     session_id = await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations, operator_id)
     await chat_store.enqueue_prompt(operator_id, session_id, "first", SPA_ORIGIN)
     assert await chat_store.next_prompt(session_id) is not None
 
-    assert isinstance(await turns.offer([operator_message("hi", event_id="$1", at=1)]), PromptRejected)
+    assert isinstance(await turns.offer(binding, [operator_message("hi", event_id="$1", at=1)]), PromptRejected)
 
     assert await ledger.carried(["$1"]) == frozenset()
 
 
 async def test_a_prompt_its_session_never_answered_is_taken_by_the_replacement(
     turns: MatrixTurns,
-    conversations: MatrixConversationStore,
+    binding: RoomAttachment,
     chat_store: SessionStore,
     ledger: IngressLedger,
     operator_id: UUID,
@@ -472,8 +451,7 @@ async def test_a_prompt_its_session_never_answered_is_taken_by_the_replacement(
     and a channel that asked the live session the dead one's question.
     """
     doomed = await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations, operator_id)
-    await turns.offer([operator_message("did you see this", event_id="$1", at=1)])
+    await turns.offer(binding, [operator_message("did you see this", event_id="$1", at=1)])
     await chat_store.closed(doomed)
     replacement = await serving_session(chat_store, operator_id, thread)
 
@@ -485,18 +463,13 @@ async def test_a_prompt_its_session_never_answered_is_taken_by_the_replacement(
 
 
 async def test_an_unreadable_event_is_a_fact_per_event_on_the_live_conversation(
-    turns: MatrixTurns,
-    conversations: MatrixConversationStore,
-    chat_store: SessionStore,
-    operator_id: UUID,
-    thread: UUID,
+    turns: MatrixTurns, binding: RoomAttachment, chat_store: SessionStore, operator_id: UUID, thread: UUID
 ) -> None:
     """One fact per event, for the caller to append in the transaction that acknowledges the batch
     (the channel must derive it from the durable conversation record)."""
     await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations, operator_id)
 
-    facts = await turns.unreadable([_unmappable("m.image"), _unmappable("m.audio")])
+    facts = await turns.unreadable(binding, [_unmappable("m.image"), _unmappable("m.audio")])
 
     assert facts == ConversationFacts(
         conversation_id=thread,
@@ -509,17 +482,14 @@ async def test_an_unreadable_event_is_a_fact_per_event_on_the_live_conversation(
 
 
 async def test_an_unreadable_event_with_no_session_behind_the_room_is_still_recorded(
-    turns: MatrixTurns, conversations: MatrixConversationStore, operator_id: UUID
+    turns: MatrixTurns, binding: RoomAttachment
 ) -> None:
     """Same terms as a refusal: the conversation is what it is about, and it exists from the moment
-    the room is bound. Only a room bound to nothing has nowhere to record it — and nowhere to say
-    it either, which makes the two absences the same one."""
-    bound = await conversations.bind_room(MATRIX_ROOM, operator_id)
-
-    facts = await turns.unreadable([_unmappable("m.image")])
+    the room is bound."""
+    facts = await turns.unreadable(binding, [_unmappable("m.image")])
 
     assert facts == ConversationFacts(
-        conversation_id=bound.conversation_id,
+        conversation_id=binding.conversation_id,
         session_id=None,
         bodies=(session_events.UnreadableInputBody(media_type="m.image"),),
     )
@@ -527,7 +497,7 @@ async def test_an_unreadable_event_with_no_session_behind_the_room_is_still_reco
 
 async def test_a_batch_records_the_room_events_it_was_folded_from(
     turns: MatrixTurns,
-    conversations: MatrixConversationStore,
+    binding: RoomAttachment,
     chat_store: SessionStore,
     migrated_sessions,
     operator_id: UUID,
@@ -536,13 +506,12 @@ async def test_a_batch_records_the_room_events_it_was_folded_from(
     """The prompt is what was said; which events said it rides on the prompt's own event, in the
     order they were folded. Nothing puts an event id in the text any more, so this is the
     only copy — and it names the room as well as the event, which is what a reader comparing
-    origins needs once one bot serves more than one.
+    origins needs while one bot serves more than one.
     """
     await serving_session(chat_store, operator_id, thread)
-    await serving_room(conversations, operator_id)
 
     offered = await turns.offer(
-        [operator_message("first", event_id="$a", at=1), operator_message("second", event_id="$b", at=2)]
+        binding, [operator_message("first", event_id="$a", at=1), operator_message("second", event_id="$b", at=2)]
     )
 
     assert isinstance(offered, PromptAccepted)
