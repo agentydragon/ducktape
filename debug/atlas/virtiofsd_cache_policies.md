@@ -133,10 +133,30 @@ Use `cache=metadata` if:
 
 Use NFS instead of virtiofs if:
 
-- Need MAP_SHARED mmap support (devenv, Nix) — NFS and the CephFS kernel
+- Need MAP_SHARED mmap support (see below) — NFS and the CephFS kernel
   client support it fully; FUSE-based transports (virtiofs, ceph-fuse) do not
 - Want predictable memory usage
 - Can accept slightly higher latency (~50µs vs ~10µs)
+
+## mmap and the transport choice (tankshare)
+
+Investigated for running git/devenv workloads on the share: MAP_SHARED mmap —
+what devenv/Nix and libgit2-based tooling hit — fails on virtiofs with
+`ENODEV`, because FUSE rejects `VM_MAYSHARE` mappings unless the server opts
+in (`FUSE_DIRECT_IO_ALLOW_MMAP`); virtiofsd doesn't. The constraint is the
+transport class, not the filesystem:
+
+| Transport              | Type          | MAP_SHARED |
+| ---------------------- | ------------- | ---------- |
+| NFS                    | native kernel | ✅         |
+| CephFS (kernel client) | native kernel | ✅         |
+| CephFS (ceph-fuse)     | FUSE          | ❌         |
+| virtiofs               | FUSE          | ❌         |
+
+tankshare is still exported over virtiofs today. If it ever needs to serve
+MAP_SHARED consumers, NFS is the simplest working replacement (full POSIX mmap
+via `generic_file_mmap_prepare`), the CephFS kernel client also works, and
+ceph-fuse would trade one FUSE limitation for the same one.
 
 ## Proxmox Configuration
 
