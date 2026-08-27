@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from enum import StrEnum
 from typing import Annotated, Literal
 
 from pydantic import (
@@ -21,12 +20,7 @@ from finance.augur.model.series import SecuritySymbol
 from finance.augur.product.asset_key import AssetKey
 from finance.augur.sim.fixed_point import validate_currency_quantum
 
-
-class SpendIndex(StrEnum):
-    NONE = "none"
-    INFLATION = "inflation"
-
-
+SpendIndex = Literal["none", "inflation"]
 PrivateEquityEventKind = Literal[
     "tender",
     "admin_mark_update",

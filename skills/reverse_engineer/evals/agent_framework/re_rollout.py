@@ -31,8 +31,8 @@ import os
 import shutil
 import sys
 import time
-from enum import StrEnum
 from pathlib import Path
+from typing import Literal
 
 from agent_framework import Agent, AgentSession, FunctionTool, Message
 from pydantic import BaseModel, Field
@@ -66,16 +66,10 @@ _SKILL_BY_ARM: dict[str, SkillSpec] = {"on": REVERSE_ENGINEER_SKILL_SPEC, "off":
 # -- Run summary --
 
 
-class EndReason(StrEnum):
-    SUBMIT = "submit"
-    AGENT_RETURNED = "agent_returned"
-    WALL_TIMEOUT = "wall_timeout"
-
-
 class RunSummary(BaseModel):
     model: str
     skill_on: bool
-    end_reason: EndReason
+    end_reason: Literal["submit", "agent_returned", "wall_timeout"]
     wall_seconds: float
     submit_summary: str | None = None
 
@@ -181,7 +175,7 @@ async def _async_main(args: argparse.Namespace) -> None:
         strict_tools=True,
     )
     t_start = time.monotonic()
-    end_reason: EndReason
+    end_reason: Literal["submit", "agent_returned", "wall_timeout"]
 
     with JsonlTranscriptProvider.opened(transcript_path) as transcript:
         async with eval_sandbox(skill=staged, workspace=workspace, inputs=inputs_dir) as exec_tool:
@@ -209,9 +203,9 @@ async def _async_main(args: argparse.Namespace) -> None:
                 # stopped emitting tool calls, AF auto-stopped after consecutive
                 # tool errors, or `max_iterations` was reached -- AF doesn't
                 # surface that distinction. Inspect the transcript to tell.
-                end_reason = EndReason.SUBMIT if submit_state.summary is not None else EndReason.AGENT_RETURNED
+                end_reason = "submit" if submit_state.summary is not None else "agent_returned"
             except TimeoutError:
-                end_reason = EndReason.WALL_TIMEOUT
+                end_reason = "wall_timeout"
 
     summary = RunSummary(
         model=args.model,
