@@ -47,12 +47,9 @@ upstream queries there, which loops back to itself.
 
 ## Fix
 
-1. Added `restartTriggers = [ kubeletConfigYaml ]` to the kubelet systemd
-   service in `k8s-worker.nix`. This makes `nixos-rebuild switch` restart
-   kubelet whenever the config file content changes.
-
-2. The existing `resolvConf` setting is correct — it just wasn't taking
-   effect because kubelet wasn't restarted.
+Added `restartTriggers = [ kubeletConfigYaml ]` to the kubelet systemd
+service in `k8s-worker.nix`. This makes `nixos-rebuild switch` restart
+kubelet whenever the config file content changes.
 
 ## Lessons
 

@@ -20,9 +20,6 @@ ${include_doc("props/agents/docs/db/ground_truth.md.mako")}  ## includes describ
 
 The grader would see the `true_positives` schema twice.
 
-**Correct approach:** Only call `describe_relation()` for tables unique to the current template.
-Let included docs handle their own tables.
-
 ## Mako Patterns
 
 Templates use these helpers (defined in `props/agents/runtime.py`):

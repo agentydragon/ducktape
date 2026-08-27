@@ -80,7 +80,7 @@ The first attempt at "is it already loaded" compared the daemon's `.Id` for the 
 digest and so no state need be written down. It is not, here: Docker's classic image store rewrites
 an OCI config on load, so `.Id` is the digest of the rewritten one.
 
-The failure mode is what makes this worth a note. A comparison that never matches does not fail
+A comparison that never matches does not fail
 visibly — it silently reloads every image on every target, serialised behind the new lock, which is
 **slower than doing nothing**. It went out and two more specimen targets and an editor-agent test
 timed out on the next run.
@@ -100,14 +100,10 @@ a pin bump or a rebuild reloads, the daemon id so a prune or an out-of-band reta
 
 ## What not to do
 
-Bump `size`. It converts "red at 60s" into "red at 300s" — the same failure, five minutes later,
-having spent five minutes of RBE per occurrence to reach the same place, with the evidence buried
-one tier deeper. This is exactly the case AGENTS.md's "test timeouts mean hangs, not slowness — do
-NOT bump `size`/`timeout`" is written for; the measurements above are what that rule asks for before
-reaching for the knob, and they say hang.
-
-`size` was therefore not bumped anywhere. If a target still times out after this, that is evidence
-about the daemon rather than an argument for a bigger number.
+Bump `size`. It converts "red at 60s" into "red at 300s" — the same failure five minutes of RBE
+later, evidence buried a tier deeper. This is the case AGENTS.md's timeout rule is written for; the
+measurements above are what it asks for, and they say hang. Nothing was bumped; a target that still
+times out is evidence about the daemon, not an argument for a bigger number.
 
 ## If it happens again
 

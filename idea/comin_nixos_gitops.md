@@ -19,9 +19,7 @@ comin already does it:
 - pull mode — an agent runs **on the machine** and polls git, so no CI executes
   build/deploy commands and there's no push access from outside into the box;
 - **in-place `nixos-rebuild switch`** on a new commit — no VM/pod restart, so a
-  running codex/agent session survives a config change (unlike a pod roll);
-- it's the same reconcile-on-push ergonomics we wanted, at a granularity where
-  it's a solved problem instead of a bespoke controller.
+  running codex/agent session survives a config change (unlike a pod roll).
 
 The codex-pod exploration was partly an attempt to get _away_ from the VM, but
 auto-reconcile-on-push is exactly a VM/comin strength that the pod shape throws

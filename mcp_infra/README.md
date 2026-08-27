@@ -4,8 +4,8 @@ MCP infrastructure package providing compositor, exec backends, and shared utili
 
 ## Components
 
-- **compositor**: Tool compositor for MCP servers
+- **compositor**: aggregates multiple MCP servers behind one interface
 - **exec**: Execution backends (Docker, sandbox)
 - **naming**: MCP function naming utilities
-- **types**: Shared types for MCP infrastructure
+- **types**: MCP domain types with Pydantic validation
 - **constants**: URI format strings and server name constants

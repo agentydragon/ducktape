@@ -33,6 +33,8 @@ When a sandboxed command makes an outbound connection, the proxy calls
 - **Match found** → allow immediately.
 - **No match** → call `sandboxAskCallback`, which shows the user a prompt:
   "Allow network connection to X?" with options: Yes / Yes, don't ask again / No.
+  There is no "allow all" wildcard — `matchesDomainPattern()` supports only
+  `*.example.com` subdomain wildcards and exact matches, no bare `*`.
 
 Picking "don't ask again" writes `WebFetch(domain:X)` to
 `.claude/settings.local.json` via `persistPermissionUpdate()`. This is where
@@ -40,27 +42,15 @@ the self-reinforcing cycle starts.
 
 ### The self-reinforcing cycle
 
-1. Start with no `WebFetch(domain:...)` rules → `allowedDomains = []`.
-2. `hasNetworkConfig` is still `true` (array is defined, just empty).
-3. Proxy runs, `--unshare-net` is applied. On Linux, proxy sockets are
-   bind-mounted into the sandbox so connections can still work through the
-   proxy.
-4. Every outbound connection to an unlisted domain triggers the prompt.
-5. User picks "don't ask again" → `WebFetch(domain:X)` written to
+1. With zero `WebFetch(domain:...)` rules the array is `[]`, so the proxy still
+   runs and every unlisted domain prompts (mechanism above).
+2. User picks "don't ask again" → `WebFetch(domain:X)` written to
    `settings.local.json`.
-6. On next sandbox invocation, `allowedDomains` is now non-empty.
-7. **On Linux**, the proxy is supposed to work, but `--unshare-net` blocks
+3. On next sandbox invocation, `allowedDomains` is now non-empty.
+4. **On Linux**, the proxy is supposed to work, but `--unshare-net` blocks
    TCP loopback — including Bazel's gRPC client-server protocol (port in
    `<output_base>/server/command_port`). Bazel can't reach its server or
    RBE endpoints (e.g. `remote.buildbuddy.io`).
-
-### Why the prompts appear even with zero domain rules
-
-The proxy always runs because `allowedDomains` is always defined (as `[]`).
-With no entries in the list, no host matches → every outbound connection
-falls through to the "ask user" path. There is no "allow all" wildcard —
-`matchesDomainPattern()` only supports `*.example.com` subdomain wildcards
-and exact matches, no bare `*`.
 
 ### Current workaround
 
@@ -71,10 +61,14 @@ prompting, but triggers `--unshare-net` on every sandbox invocation.
 **Tradeoff accepted:** Bazel commands must always use
 `dangerouslyDisableSandbox: true`. This is documented in `AGENTS.md`.
 
-Domains not on the allowlist will still prompt. "Yes" only approves for
-the current request — the next sandboxed command will prompt again. The
-only durable option is "don't ask again", which writes to
-`settings.local.json` (avoid this in Bazel projects).
+Domains not on the allowlist still prompt, and "Yes" does not persist even
+for the session: the proxy keeps no in-memory cache of ad-hoc approvals —
+`filterNetworkRequest()` re-checks `config.network.allowedDomains` on every
+connection, and "Yes" resolves only the current promise without adding the
+host (concurrent connections to the same host in one sandboxed command are
+batch-resolved; the next sandboxed command prompts again). The only durable
+suppression is "don't ask again" — the settings write above, which breaks
+Bazel.
 
 ### Per-project trap
 
@@ -87,15 +81,6 @@ including auto-allowed commands like `Bash(bazelisk build *)`.
 **Rule:** never approve "don't ask again" for domain prompts in projects
 that need Bazel. Periodically strip `WebFetch(domain:...)` entries from
 `.claude/settings.local.json` if they accumulate.
-
-Note: "Yes" does **not** persist for the session either. The proxy has no
-in-memory cache for ad-hoc approvals — `filterNetworkRequest()` re-checks
-`config.network.allowedDomains` on every connection, and "Yes" only resolves
-the current promise without adding the host. Concurrent connections to the
-same host within one sandboxed command are batch-resolved, but the next
-sandboxed command will prompt again for the same host. The only way to
-suppress prompts durably is "don't ask again" — which writes to settings
-and breaks Bazel.
 
 ### Escape hatch
 

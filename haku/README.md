@@ -3,11 +3,8 @@
 Named after Spirited Away's Haku: a dragon who quietly helps run the household (and
 needs his name kept in writing — hence the repo).
 
-Haku runs in the background of the operator's life with a bundle of (mostly read-only)
-access, continuously looking for useful things to do across everything it can see —
-Gmail, Calendar, Drive, Tana, Plaid, the cluster, repos, and more as they're wired. What
-it promises today: `SPEC.md`. Vision, not-yet-built work, and open design questions:
-`PLAN.md`.
+What it promises today: `SPEC.md`. Vision, not-yet-built work, and open design
+questions: `PLAN.md`.
 
 **Status:** v0 is live end-to-end — the Claude Code web home runs the loop scheduled, the
 data plane (scoped k8s identity, the sandbox, read-only source mirrors, `haku-state`, the

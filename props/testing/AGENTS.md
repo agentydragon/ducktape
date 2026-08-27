@@ -5,8 +5,8 @@
 **Git fixtures are the single source of truth for ALL test data.**
 
 Never create synthetic ORM models (Snapshot, TruePositive, FalsePositive, Example) directly in
-tests. Use the git-tracked test fixtures in `testing/fixtures/testdata/specimens/` and the `synced_db`
-pytest fixture.
+tests. Depend on `synced_db` to seed the DB from the git-tracked fixtures in
+`testing/fixtures/testdata/specimens/`, and query examples/TPs/FPs from it.
 
 ## Available Git Fixtures
 
@@ -32,13 +32,6 @@ Located in `testing/fixtures/testdata/specimens/`:
   - Issues: 1 TP (tp-001)
   - Use for: RLS test split verification
 
-## Using Git Fixtures in Tests (short form)
-
-- Always depend on `synced_db` to seed the DB from git fixtures.
-- Query examples/TPs/FPs from the DB, never fabricate IDs.
-- Use shared factories from `props.core.testing.fixtures` (`make_critic_run`, `make_grader_run`, etc.).
-- Scope fixtures: `add_py_scope`, `subtract_file_scope`, `multiply_py_scope`, `divide_py_scope`, `all_files_scope`.
-
 ## High-value fixtures (testing/fixtures/)
 
 - **Scopes** (scopes.py): `subtract_file_scope`, `add_py_scope`, `multiply_py_scope`, `divide_py_scope`,
@@ -50,7 +43,6 @@ Located in `testing/fixtures/testdata/specimens/`:
 
 ## Anti-patterns (do not)
 
-- Fabricate snapshots/examples/TPs/FPs in tests—query from the synced DB instead.
 - Hardcode IDs like `tp-001`, `occ-001`, `fp-001`; use the fixtures above.
 - Build scopes inline; reuse scope fixtures to avoid drift.
 

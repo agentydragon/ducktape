@@ -1,8 +1,7 @@
 @README.md
 
-This directory is deploy config, not Haku's runtime manual — that moved to `haku-state`. Do not
-add runtime instructions here; they belong in `haku-state`'s root cards and hubs, which Haku owns
-and writes.
+Do not add runtime instructions here; they belong in `haku-state`'s root cards and hubs, which
+Haku owns and writes.
 
 ## Editing rules
 

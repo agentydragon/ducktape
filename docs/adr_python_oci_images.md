@@ -47,8 +47,6 @@ size and is offset by the caching benefits of the layered approach.
 
 ## Consequences
 
-- All Python images in the repo follow one pattern — no special cases.
-- Code-only changes produce sub-megabyte layer pushes.
 - The interpreter layer is shared across images on the same host, reducing
   total disk usage when multiple images are deployed together.
 - Images include a shell (`/bin/bash`), which is useful for debugging but
