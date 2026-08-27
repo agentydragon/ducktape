@@ -20,6 +20,20 @@ py_library(
 )
 
 py_library(
+    name = "claude_projection",
+    srcs = ["claude_projection.py"],
+    visibility = ["//haku:__subpackages__"],
+    deps = [":neutral_operations"],
+)
+
+py_library(
+    name = "operation_journal",
+    srcs = ["operation_journal.py"],
+    visibility = ["//haku:__subpackages__"],
+    deps = [":neutral_operations"],
+)
+
+py_library(
     name = "backend",
     srcs = ["backend.py"],
     visibility = ["//haku:__subpackages__"],
@@ -322,6 +336,33 @@ py_test(
         ":neutral_operations",
         "//util/bazel:runfiles",
         "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_claude_projection",
+    srcs = ["test_claude_projection.py"],
+    data = ["testdata/claude_diverse_session.jsonl"],
+    deps = [
+        ":claude_projection",
+        ":neutral_operations",
+        ":operation_journal",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_operation_journal",
+    srcs = ["test_operation_journal.py"],
+    data = [":neutral_operations_testdata"],
+    deps = [
+        ":neutral_operations",
+        ":operation_journal",
+        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
