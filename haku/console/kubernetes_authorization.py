@@ -68,7 +68,11 @@ class RequestAttributes(BaseModel):
     verb: str = Field(min_length=1)
     api_group: str = ""
     api_version: str = ""
-    namespace: str = ""
+    namespace: str = Field(
+        default="",
+        description="Exact namespace of a namespaced request; empty for cluster-scoped resources "
+        "and all-namespaces queries.",
+    )
     resource: str = ""
     subresource: str = ""
     name: str = ""
@@ -366,10 +370,40 @@ def required_rule(attributes: RequestAttributes) -> KubernetesRule:
     )
 
 
+# Reviewed static set of built-in kinds that are cluster-scoped in stock Kubernetes, keyed by
+# (api_group, resource) because a CRD may reuse a resource name in another group (nodes.longhorn.io
+# is namespaced). Kinds outside this set — CRDs and unknowns — must still declare their scope.
+BUILTIN_CLUSTER_SCOPED_RESOURCES: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("", "namespaces"),
+        ("", "nodes"),
+        ("", "persistentvolumes"),
+        ("admissionregistration.k8s.io", "mutatingwebhookconfigurations"),
+        ("admissionregistration.k8s.io", "validatingadmissionpolicies"),
+        ("admissionregistration.k8s.io", "validatingadmissionpolicybindings"),
+        ("admissionregistration.k8s.io", "validatingwebhookconfigurations"),
+        ("apiextensions.k8s.io", "customresourcedefinitions"),
+        ("apiregistration.k8s.io", "apiservices"),
+        ("certificates.k8s.io", "certificatesigningrequests"),
+        ("flowcontrol.apiserver.k8s.io", "flowschemas"),
+        ("flowcontrol.apiserver.k8s.io", "prioritylevelconfigurations"),
+        ("networking.k8s.io", "ingressclasses"),
+        ("node.k8s.io", "runtimeclasses"),
+        ("rbac.authorization.k8s.io", "clusterrolebindings"),
+        ("rbac.authorization.k8s.io", "clusterroles"),
+        ("scheduling.k8s.io", "priorityclasses"),
+        ("storage.k8s.io", "csidrivers"),
+        ("storage.k8s.io", "csinodes"),
+        ("storage.k8s.io", "storageclasses"),
+        ("storage.k8s.io", "volumeattachments"),
+    }
+)
+
+
 def required_scope(
     attributes: RequestAttributes, *, unnamespaced_resource_kind: KubernetesGrantScopeKind | None = None
 ) -> KubernetesGrantScope:
-    """Derive scope when a request either names its namespace or states its unnamespaced kind."""
+    """Derive scope from a named namespace, a declared unnamespaced kind, or a built-in cluster-scoped kind."""
 
     if not attributes.resource_request:
         if unnamespaced_resource_kind is not None:
@@ -383,4 +417,14 @@ def required_scope(
         return KubernetesAllNamespacesGrantScope()
     if unnamespaced_resource_kind is KubernetesGrantScopeKind.CLUSTER:
         return KubernetesClusterGrantScope()
-    raise ValueError("an unnamespaced resource request must declare all_namespaces or cluster scope")
+    if unnamespaced_resource_kind is not None:
+        raise ValueError(
+            f"unnamespaced_resource_kind must be 'all_namespaces' or 'cluster', not {unnamespaced_resource_kind}"
+        )
+    if (attributes.api_group, attributes.resource) in BUILTIN_CLUSTER_SCOPED_RESOURCES:
+        return KubernetesClusterGrantScope()
+    resource = f"{attributes.resource}.{attributes.api_group}" if attributes.api_group else attributes.resource
+    raise ValueError(
+        f"cannot infer the scope of unnamespaced resource {resource!r}: "
+        "declare unnamespaced_resource_kind='all_namespaces' or 'cluster'"
+    )

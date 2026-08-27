@@ -20,7 +20,8 @@ import pytest_bazel
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastmcp import Client
-from pydantic import ValidationError
+from fastmcp.exceptions import ToolError
+from mcp.types import TextContent
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.agent_bearer_authority import AgentBearerAuthority
@@ -39,6 +40,7 @@ from haku.console.kubernetes_authorization import (
     SubjectAccessReviewResult,
 )
 from haku.console.kubernetes_grant_models import (
+    KubernetesClusterGrantScope,
     KubernetesGrantScopeKind,
     KubernetesGrantSpec,
     KubernetesGrantStatus,
@@ -46,7 +48,12 @@ from haku.console.kubernetes_grant_models import (
     KubernetesRule,
 )
 from haku.console.kubernetes_grant_service import KubernetesGrantService
-from haku.console.mcp_execution import AgentMcpExecutionCaller, McpExecutionContext, OperatorMcpExecutionCaller
+from haku.console.mcp_execution import (
+    AgentMcpExecutionCaller,
+    McpExecutionContext,
+    OperatorMcpExecutionCaller,
+    mcp_execution_request_meta,
+)
 from haku.console.tools.kubernetes import KubernetesAccessCheck, KubernetesToolsService, build_mcp
 
 _NOW = datetime(2026, 8, 20, tzinfo=UTC)
@@ -326,16 +333,157 @@ def test_can_i_falls_back_to_an_active_grant_only_after_sar_denial(console: _Con
     console.call(exercise)
 
 
-def test_can_i_requires_explicit_scope_for_unnamespaced_resource_request() -> None:
-    attributes = RequestAttributes(
-        resource_request=True, verb="list", api_version="v1", resource="pods", path="/api/v1/pods"
+def test_can_i_infers_cluster_scope_for_builtin_cluster_scoped_kinds(console: _Console) -> None:
+    """The natural probe — can_i on a built-in cluster-scoped kind with no declaration — is accepted."""
+    context = console.agent_context()
+    console.sar.allowed = True
+    batch = [
+        RequestAttributes(resource_request=True, verb="list", api_version="v1", resource="namespaces"),
+        RequestAttributes(resource_request=True, verb="get", api_version="v1", resource="nodes", name="ovh-ns103656"),
+        RequestAttributes(
+            resource_request=True,
+            verb="list",
+            api_group="rbac.authorization.k8s.io",
+            api_version="v1",
+            resource="clusterroles",
+        ),
+        RequestAttributes(
+            resource_request=True,
+            verb="list",
+            api_group="apiextensions.k8s.io",
+            api_version="v1",
+            resource="customresourcedefinitions",
+        ),
+        RequestAttributes(
+            resource_request=True, verb="list", api_group="storage.k8s.io", api_version="v1", resource="storageclasses"
+        ),
+    ]
+
+    async def exercise() -> None:
+        results = await console.service.can_i(
+            context=context, requests=[KubernetesAccessCheck(attributes=attributes) for attributes in batch]
+        )
+        assert [result.allowed for result in results] == [True] * len(batch)
+
+    console.call(exercise)
+    assert [attributes for _, attributes in console.sar.reviews] == batch
+
+
+def test_can_i_inferred_cluster_scope_matches_cluster_grants(console: _Console) -> None:
+    """The inferred scope is cluster: after SAR denial, a cluster-scoped grant satisfies the request."""
+    context = console.agent_context()
+    attributes = RequestAttributes(resource_request=True, verb="list", api_version="v1", resource="nodes")
+
+    async def exercise() -> None:
+        await console.service.create_grants(
+            context=context,
+            grants=[
+                KubernetesGrantSpec(
+                    scope=KubernetesClusterGrantScope(),
+                    rules=(KubernetesRule(api_groups=("",), resources=("nodes",), verbs=("list",)),),
+                )
+            ],
+            duration_seconds=600,
+        )
+        (allowed,) = await console.service.can_i(
+            context=context, requests=[KubernetesAccessCheck(attributes=attributes)]
+        )
+        assert allowed.allowed is True
+        assert allowed.source is KubernetesAuthorizationSource.GRANT
+
+    console.call(exercise)
+
+
+def test_can_i_explicit_unnamespaced_scope_declarations_still_work(console: _Console) -> None:
+    context = console.agent_context()
+    console.sar.allowed = True
+    pods_all_namespaces = RequestAttributes(resource_request=True, verb="list", api_version="v1", resource="pods")
+    crd_cluster = RequestAttributes(
+        resource_request=True, verb="get", api_group="longhorn.io", api_version="v1beta2", resource="settings"
     )
-    with pytest.raises(ValidationError, match="all_namespaces or cluster"):
-        KubernetesAccessCheck(attributes=attributes)
+
+    async def exercise() -> None:
+        results = await console.service.can_i(
+            context=context,
+            requests=[
+                KubernetesAccessCheck(
+                    attributes=pods_all_namespaces, unnamespaced_resource_kind=KubernetesGrantScopeKind.ALL_NAMESPACES
+                ),
+                KubernetesAccessCheck(
+                    attributes=crd_cluster, unnamespaced_resource_kind=KubernetesGrantScopeKind.CLUSTER
+                ),
+            ],
+        )
+        assert [result.allowed for result in results] == [True, True]
+
+    console.call(exercise)
+    assert [attributes for _, attributes in console.sar.reviews] == [pods_all_namespaces, crd_cluster]
+
+
+def test_can_i_namespaced_builtin_without_declaration_still_rejects(console: _Console) -> None:
+    """An unnamespaced ``pods`` request stays ambiguous — all namespaces or a forgotten namespace."""
+    context = console.agent_context()
     check = KubernetesAccessCheck(
-        attributes=attributes, unnamespaced_resource_kind=KubernetesGrantScopeKind.ALL_NAMESPACES
+        attributes=RequestAttributes(resource_request=True, verb="list", api_version="v1", resource="pods")
     )
-    assert check.unnamespaced_resource_kind is KubernetesGrantScopeKind.ALL_NAMESPACES
+
+    async def exercise() -> None:
+        with pytest.raises(ToolError, match=r"'pods'.*declare unnamespaced_resource_kind"):
+            await console.service.can_i(context=context, requests=[check])
+
+    console.call(exercise)
+    assert console.sar.reviews == []
+
+
+def test_can_i_unknown_unnamespaced_kind_rejects_with_one_line_tool_error(console: _Console) -> None:
+    """A kind outside the built-in set still must declare its scope; the caller sees one clean line.
+
+    ``nodes`` in group ``longhorn.io`` also pins that inference matches on (api_group, resource):
+    the core ``nodes`` kind is cluster-scoped while Longhorn's is namespaced.
+    """
+    context = console.agent_context()
+    check = {
+        "attributes": {
+            "resource_request": True,
+            "verb": "list",
+            "api_group": "longhorn.io",
+            "api_version": "v1beta2",
+            "resource": "nodes",
+        }
+    }
+
+    async def exercise() -> str:
+        async with Client(build_mcp(console.service)) as client:
+            result = await client.call_tool(
+                "can_i", {"requests": [check]}, meta=mcp_execution_request_meta(context), raise_on_error=False
+            )
+        assert result.is_error
+        block = result.content[0]
+        assert isinstance(block, TextContent)
+        return block.text
+
+    message = console.call(exercise)
+    assert "\n" not in message
+    assert "requests[0]" in message
+    assert "'nodes.longhorn.io'" in message
+    assert "unnamespaced_resource_kind" in message
+    assert "'all_namespaces' or 'cluster'" in message
+    assert console.sar.reviews == []
+
+
+def test_can_i_rejects_a_declaration_that_is_not_an_unnamespaced_scope(console: _Console) -> None:
+    """A nonsense declaration fails loudly instead of being overridden by built-in inference."""
+    context = console.agent_context()
+    check = KubernetesAccessCheck(
+        attributes=RequestAttributes(resource_request=True, verb="list", api_version="v1", resource="namespaces"),
+        unnamespaced_resource_kind=KubernetesGrantScopeKind.NAMESPACES,
+    )
+
+    async def exercise() -> None:
+        with pytest.raises(ToolError, match=r"requests\[0\].*'all_namespaces' or 'cluster'"):
+            await console.service.can_i(context=context, requests=[check])
+
+    console.call(exercise)
 
 
 if __name__ == "__main__":

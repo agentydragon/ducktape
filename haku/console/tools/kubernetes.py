@@ -9,7 +9,8 @@ from uuid import UUID
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from fastmcp.exceptions import ToolError
+from pydantic import BaseModel, ConfigDict, Field
 
 from haku.console.grant_principal import AgentGrantPrincipal, GrantPrincipal, GrantPrincipalKind, SessionGrantPrincipal
 from haku.console.kubernetes_authorization import (
@@ -41,20 +42,26 @@ class CanIResult(BaseModel):
 class KubernetesAccessCheck(BaseModel):
     """One hypothetical request for ``can_i``.
 
-    A named namespace and a non-resource path are self-describing. An unnamespaced resource path is
-    ambiguous without API discovery, so the caller must state whether it means all namespaces or a
-    cluster-scoped resource. The executing proxy performs that discovery itself before forwarding.
+    A named namespace, a non-resource path, and a built-in cluster-scoped kind are self-describing.
+    Any other unnamespaced resource request is ambiguous without API discovery, so the caller must
+    state whether it means all namespaces or a cluster-scoped resource. The executing proxy
+    performs that discovery itself before forwarding.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    attributes: RequestAttributes
-    unnamespaced_resource_kind: KubernetesGrantScopeKind | None = None
-
-    @model_validator(mode="after")
-    def validate_scope(self) -> KubernetesAccessCheck:
-        required_scope(self.attributes, unnamespaced_resource_kind=self.unnamespaced_resource_kind)
-        return self
+    attributes: RequestAttributes = Field(
+        description="The hypothetical request, in Kubernetes' canonical SubjectAccessReview attributes."
+    )
+    unnamespaced_resource_kind: KubernetesGrantScopeKind | None = Field(
+        default=None,
+        description=(
+            "How to read an empty namespace on a resource request: 'cluster' for a cluster-scoped "
+            "resource, 'all_namespaces' for a namespaced resource across all namespaces. Built-in "
+            "cluster-scoped kinds (namespaces, nodes, persistentvolumes, clusterroles, ...) are "
+            "inferred as 'cluster'; any other kind, e.g. a CRD, must declare one."
+        ),
+    )
 
 
 class KubernetesToolsService:
@@ -96,20 +103,29 @@ class KubernetesToolsService:
         )
 
     async def can_i(self, *, context: McpExecutionContext, requests: list[KubernetesAccessCheck]) -> list[CanIResult]:
-        tasks = [
-            self.authorization.authorize_agent(
-                request_principal=context.request_principal,
-                request=AuthorizationRequest(
+        authorization_requests = []
+        for index, request in enumerate(requests):
+            try:
+                scope = required_scope(
+                    request.attributes, unnamespaced_resource_kind=request.unnamespaced_resource_kind
+                )
+            except ValueError as error:
+                # FastMCP surfaces a pydantic argument-validation failure as the whole multi-line
+                # trace, so the scope contract is checked here and raised as a one-line ToolError.
+                raise ToolError(f"requests[{index}]: {error}") from error
+            authorization_requests.append(
+                AuthorizationRequest(
                     attributes=request.attributes,
-                    required_scope=required_scope(
-                        request.attributes, unnamespaced_resource_kind=request.unnamespaced_resource_kind
-                    ),
+                    required_scope=scope,
                     required_rules=[required_rule(request.attributes)],
-                ),
+                )
             )
-            for request in requests
-        ]
-        decisions = await asyncio.gather(*tasks)
+        decisions = await asyncio.gather(
+            *(
+                self.authorization.authorize_agent(request_principal=context.request_principal, request=request)
+                for request in authorization_requests
+            )
+        )
         return [_can_i_result(decision) for decision in decisions]
 
 

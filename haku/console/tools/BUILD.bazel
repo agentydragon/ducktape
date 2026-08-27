@@ -205,7 +205,7 @@ py_test(
         "//haku/console:mcp_execution",
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
-        "@pypi//pydantic",
+        "@pypi//mcp",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
