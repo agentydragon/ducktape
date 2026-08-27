@@ -142,8 +142,8 @@ def check_base_branch_freshness(repo: pygit2.Repository) -> str | None:
     )
 
 
-def _likely_diff_base(repo: pygit2.Repository) -> tuple[pygit2.Oid, str] | None:
-    """Resolve bb remote's likely diff base (commit, human name), mirroring its
+def _likely_diff_base(repo: pygit2.Repository) -> tuple[str, str] | None:
+    """Resolve bb remote's likely diff base (revision, human name), mirroring its
     Phase 2 logic (bb_remote_internals.md): HEAD itself when the current branch
     is tracked and HEAD is not ahead of it, else `<default-branch>@{upstream}`.
     None when it can't be determined locally — silence, not a guess."""
@@ -156,12 +156,12 @@ def _likely_diff_base(repo: pygit2.Repository) -> tuple[pygit2.Oid, str] | None:
     if current_tracking_ref is not None:
         ahead, _ = repo.ahead_behind(repo.head.target, current_tracking_ref.target)
         if ahead == 0:
-            return repo.head.target, "HEAD"
+            return str(repo.head.target), "HEAD"
 
     tracking_ref = repo.references.get(f"refs/remotes/{remote}/{default_branch}")
     if tracking_ref is None:
         return None
-    return tracking_ref.target, f"{remote}/{default_branch}"
+    return str(tracking_ref.target), f"{remote}/{default_branch}"
 
 
 def check_binary_deletions(repo: pygit2.Repository) -> str | None:
@@ -173,10 +173,10 @@ def check_binary_deletions(repo: pygit2.Repository) -> str | None:
     run unless BBR_ALLOW_BINARY_DELETIONS is set), or None."""
     if (base := _likely_diff_base(repo)) is None:
         return None
-    base_oid, base_name = base
+    base_rev, base_name = base
 
     numstat = subprocess.run(
-        ["git", "diff", "--numstat", "--diff-filter=D", str(base_oid)],
+        ["git", "diff", "--numstat", "--diff-filter=D", base_rev],
         cwd=repo.workdir,
         capture_output=True,
         text=True,
