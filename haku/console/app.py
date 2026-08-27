@@ -731,7 +731,6 @@ def create_app(
         # Its own lock and its own task, like the two above: what it does is bounded by the room's
         # send budget, and a room that is refusing sends must not hold up ingress or provisioning.
         noticing = matrix_notices.run() if matrix_notices is not None else contextlib.nullcontext()
-        following = follow.run() if follow is not None else contextlib.nullcontext()
         # Prompt demand is channel-neutral and durable. Start its elected reconciler only after
         # the notification listener is live; the first sweep is also the restart backstop.
         allocating = sandbox_allocator.run() if sandbox_allocator is not None else contextlib.nullcontext()
@@ -754,7 +753,7 @@ def create_app(
                 # a concrete shared store; the static-only variant has no OAuth subsystem to initialize.
                 if isinstance(mcp_auth, mcp_agent_auth.OAuthMcpAuth):
                     await mcp_auth.storage.setup()
-                async with session_live_updates.run(), following, supervising, allocating, mcp_asgi.lifespan(app):
+                async with session_live_updates.run(), supervising, allocating, mcp_asgi.lifespan(app):
                     yield
             finally:
                 # Cancel in-flight approved-call executions (each marks its row cancelled) before the

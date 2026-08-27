@@ -58,12 +58,12 @@ from haku.console.operator_identity import OperatorStatus
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.pydantic_column import PydanticColumn
 from haku.console.tool_calls import ToolCallStatus
+from util.enum_vocab import UnknownValue
 from util.sqlalchemy_types import (
     StrEnumColumn,
     StringBackedStrEnumColumn,
     TextBackedStrEnumColumn,
     TolerantTextBackedStrEnumUnionColumn,
-    UnknownValue,
 )
 
 

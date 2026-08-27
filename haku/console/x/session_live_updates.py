@@ -36,7 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.console_events import ConsoleEventHub, SessionChangedEvent
 from haku.console.database_schema import Session
-from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
+from haku.console.x.session_notifications import SessionEvent, SessionEventKind, SessionNotifications
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ class SessionLiveUpdates:
 
     @contextlib.asynccontextmanager
     async def run(self) -> AsyncIterator[None]:
-        with self._notifications.watch(SessionEventKind.UPDATE, self._record):
+        with self._notifications.watch(self._record):
             publishing = asyncio.create_task(self._publish_loop())
             try:
                 yield
@@ -80,9 +80,15 @@ class SessionLiveUpdates:
                 with contextlib.suppress(asyncio.CancelledError):
                     await publishing
 
-    def _record(self, session_id: UUID) -> None:
-        """Note that this session changed. Runs on the listener's reader task: no awaiting here."""
-        self._changed.add(session_id)
+    def _record(self, event: SessionEvent) -> None:
+        """Note that this session changed. Runs on the listener's reader task: no awaiting here.
+
+        Only `update` invalidates: a prompt or abort wake says nothing about the rows a tab shows,
+        and each invalidation costs every open tab a refetch.
+        """
+        if event.kind is not SessionEventKind.UPDATE:
+            return
+        self._changed.add(event.session_id)
         self._pending.set()
 
     async def _publish_loop(self) -> None:

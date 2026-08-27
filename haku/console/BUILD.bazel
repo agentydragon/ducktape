@@ -242,6 +242,7 @@ py_library(
         ":provider_connection_registry",
         ":pydantic_column",
         "//haku/console/agents:models",
+        "//util:enum_vocab",
         "//util:sqlalchemy_types",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//sqlalchemy",

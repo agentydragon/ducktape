@@ -61,7 +61,7 @@ from haku.console.x import session_events
 from haku.console.x.conversation_events import FrameRange
 from haku.console.x.runtime import RuntimeRegistry
 from haku.runtime.x.bridge.protocol import HarnessFrame
-from util.sqlalchemy_types import UnknownValue
+from util.enum_vocab import UnknownValue
 
 
 @dataclass(frozen=True, slots=True)

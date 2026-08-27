@@ -588,40 +588,56 @@ quiet-path control.
 The console is a process, and the sandboxes are started by the test off the claim files that console
 writes, for one reason: a sandbox has to outlive the console for there to be an adoption at all.
 
-## `session_notifications.py` — the wake channel
+## `session_notifications.py` — the wake channels
 
 `LISTEN`/`NOTIFY` for the chat surfaces, deliberately **not** part of `SessionStore`: a
 repository answers questions about rows, and this wakes tasks. Merging the two is what let
 the listener be written against psycopg3's API while running on an asyncpg engine.
 
-**One channel, `session_events`, carrying a `SessionEvent`** — `{kind, session_id}`, where `kind` is
-`prompt`, `update`, or `abort`; waiters register on `(kind, session_id)`. `console_events.py` stays a
-separate channel and a separate connection: it is a different subsystem with a different payload and
-its own lifecycle, and the only thing the two share is the mechanism.
+**One channel per layer, a typed payload on each.** A session and a conversation sit at different
+layers, so their wakes do not share a wire. `session_events` carries `SessionEvent
+{kind, session_id}` (`prompt`, `update`, `abort`) for the runtime's own consumers; the
+`conversation_wakes` channel carries `ConversationWakeEvent {kind, conversation_id, position}`
+(`runtime_demand`, `update`) for conversation subscribers, which never see a session id. The
+`position` is a hint — the log head as of the emitting write, letting a subscriber skip a read it
+can prove redundant — never content, and never required for correctness. The conversation channel
+is deliberately not named `conversation_events`: what travels on it is a level-triggered wake,
+while `conversation_event` is the durable record's vocabulary, and one name for both would suggest
+the record rides the notification. `console_events.py` stays a separate channel and a separate
+connection: it is a different subsystem with a different payload and its own lifecycle, and the
+only thing the three share is the mechanism.
 
-**Waiters name a session; watchers cannot.** `wait`/`subscribe` register on `(kind, session_id)`,
-which is what the turn loop and the supervisor want. `watch` is the other shape — every event of a
-kind, whatever session it names — and exists for `session_live_updates.py`, which has to hear about
-sessions nothing has told it to expect. Its gotcha is the mirror of the waiters' one: a reconnect
-can be replayed to a waiter (`_wake_everyone` tells it to re-read the session it already knows
-about) and cannot be replayed to a watcher, so a watcher must be something a missed event only
-delays.
+**Registration is by scope, never by kind; the kind arrives as payload.** `wait` blocks about one
+session and any kind wakes it — a waiter re-checks the durable state it waits on, so a wake it did
+not need costs one query. `watch_session` hands one session's events to a consumer whose fact is
+edge-triggered and has no row to re-check (the abort watcher). `watch` hands over every session
+event, for `session_live_updates.py` and the allocator, which have to hear about sessions nothing
+told them to expect. `watch_conversations` is the shape every conversation-scoped consumer
+registers with — the follow socket, the Matrix subscriber, the runtime supervisor — and hands over
+the wake payload or `RecheckHeld` ("re-check what you hold"), which the wire never carries: a
+listener reconnect synthesizes it, because the notifications committed during the gap are gone.
+On that reconnect `_wake_everyone` also wakes every waiter; a session _watcher_ gets nothing —
+there is no kind to synthesize — so what it watches for must be something a missed edge's producer
+can repeat (an operator pressing abort again).
 
-`test_notify_puts_a_readable_event_on_the_channel` pins the wire format — channel name and
-envelope, read off a raw connection. Nothing else would notice if either drifted, because every
-other test has the same code on both ends.
+`test_notify_puts_a_readable_event_on_the_channel` and its conversation twin pin the wire formats
+— channel name and envelope, read off a raw connection. Nothing else would notice if either
+drifted, because every other test has the same code on both ends.
 
 One long-lived connection with a reconnect loop, matching <../console_events.py>, the console's
 other LISTEN consumer. The notify half stays inside the caller's transaction, because `pg_notify`
 delivers on commit.
 
-**Gotcha for anyone changing the channel name or payload:** the Deployment rolls with
+**Gotcha for anyone changing a channel name or payload:** the Deployment rolls with
 `maxUnavailable: 0`, so old and new replicas run together for the length of a roll. A renamed
 channel means the new replica notifies where the old one is not listening, and the wakes are lost
 for that window — the same expand/contract discipline a destructive migration needs. Notify on both
 names for one release, then drop the old, and gate that second release on the roll having
 **converged** (every pod on an image at or after the first) rather than on a release having elapsed,
-since `maxUnavailable: 0` means a bad image stalls the roll with the old replica still serving.
+since `maxUnavailable: 0` means a bad image stalls the roll with the old replica still serving. The
+one sanctioned exception is an explicit operator cutover: conversation-side wakes moved to their own
+channel without an overlap under the standing conversation-disruption allowance (<../AGENTS.md>),
+costing wake latency for one roll and no data.
 
 The trap in the overlap phase: while both names are being notified, every wake is delivered twice,
 so a woken waiter proves nothing about which name woke it. Tests and production alike will look
@@ -655,7 +671,7 @@ the session's owner is resolved once per session and kept (a session's owner nev
 
 ## `subscription.py` — reading a conversation from a position
 
-The wake above says _which_ session moved; this is what a woken consumer reads, and from where.
+The wake above says _which conversation_ moved; this is what a woken consumer reads, and from where.
 A conversation is an ordered stream of `conversation_event` rows addressed by `event_seq`, dense
 within the conversation, and a **subscription** is one consumer reading it from a position.
 `ConversationStream.read` is the shared half — everything after N, keyed by the thread rather than
@@ -706,13 +722,15 @@ and there is nothing for a caller to combine.
   correct.
 - **The ordering is inside the operation.** Wakes are registered before the state is read, so a
   change landing between the two cannot be lost — and it costs a flag rather than a buffer, because
-  the wake carries no payload and the read that follows it is positional.
+  the wake carries no content and the read that follows it is positional.
 - **A position that cannot be served is answered with the conversation whole**, never an error: a
   log that no longer holds the position and an update that would carry most of a snapshot recover
   the same way, so a client has no repair path to get wrong.
-- **What crosses replicas is still an id.** `pg_notify` carries `{kind, session_id}`; the replica
-  holding the socket reads the rows itself. Nothing about a payload rides the notification, which
-  is what keeps the 8000-byte cap and the expand/contract discipline out of this.
+- **What crosses replicas is an id at its own layer.** The conversation channel's `pg_notify`
+  carries `{kind, conversation_id, position}`; the replica holding the socket reads the rows
+  itself, and the position is only a hint that lets a follower skip a read it can prove redundant.
+  Nothing about the record rides the notification, which is what keeps the 8000-byte cap and the
+  expand/contract discipline out of this.
 - **Coalescing bounds the open message.** `content` is rewritten in place as prose arrives and a
   `TextDelta` is not a row, so every update re-sends the message being written, whole; without a
   window that is bytes quadratic in a turn's answer. 500ms, which also sets how fast prose appears.

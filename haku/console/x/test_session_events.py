@@ -36,7 +36,7 @@ from haku.console.x.conversation_events import (
     TurnAnswered,
     TurnCompleted,
 )
-from util.sqlalchemy_types import UnknownValue
+from util.enum_vocab import UnknownValue
 
 CONVERSATION_ID = uuid4()
 SESSION_ID = uuid4()

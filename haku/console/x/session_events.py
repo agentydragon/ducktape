@@ -60,7 +60,7 @@ from haku.console.x.conversation_events import (
     ToolCallStarted,
     TurnCompleted,
 )
-from util.sqlalchemy_types import UnknownValue
+from util.enum_vocab import UnknownValue
 
 
 class MessageStartedBody(BaseModel):

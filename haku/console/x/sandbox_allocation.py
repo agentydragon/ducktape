@@ -19,12 +19,11 @@ import contextlib
 import logging
 from collections.abc import AsyncIterator
 from datetime import timedelta
-from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from haku.console.x.session_notifications import SessionEventKind, SessionNotifications
+from haku.console.x.session_notifications import SessionEvent, SessionEventKind, SessionNotifications
 from haku.console.x.session_runtime import SessionService
 from haku.console.x.session_store import REPLICA, SessionStore
 
@@ -66,10 +65,15 @@ class SandboxAllocator:
             if allocated:
                 logger.info("a queued prompt bought session %s a sandbox", demand.session_id)
 
-    def _wake(self, session_id: UUID) -> None:
-        """Wake the database sweep; the listener callback itself must not block or await."""
-        del session_id  # The sweep reads every durable demand row, including missed ids.
-        self._prompted.set()
+    def _wake(self, event: SessionEvent) -> None:
+        """Wake the database sweep on prompt demand; the listener callback must not block or await.
+
+        Only `prompt` names new demand — `update` fires per streaming delta, and sweeping on those
+        would run continuously. The sweep reads every durable demand row, so which session the
+        wake named does not matter.
+        """
+        if event.kind is SessionEventKind.PROMPT:
+            self._prompted.set()
 
     async def _sweep(self) -> None:
         """Sweep until cancelled. Only entered while this replica holds the allocator lock."""
@@ -110,7 +114,7 @@ class SandboxAllocator:
     @contextlib.asynccontextmanager
     async def run(self) -> AsyncIterator[None]:
         """Run the elected allocator and register its notification wake for this replica."""
-        with self._notifications.watch(SessionEventKind.PROMPT, self._wake):
+        with self._notifications.watch(self._wake):
             task = asyncio.create_task(self._run(), name="sandbox-allocator")
             try:
                 yield
