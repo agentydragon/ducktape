@@ -40,25 +40,25 @@ class RuntimeKind(StrEnum):
     CODEX_APP_SERVER = "codex_app_server"
 
 
-class ChatSurface(StrEnum):
-    """Which front end a session was created for.
+class ChannelSurface(StrEnum):
+    """Which channel holds a copy of a conversation.
 
-    Not cosmetic: a past conversation is only findable if the row says what it was, so a Matrix
-    session that has been replaced stays distinguishable from an SPA one.
+    A row exists only for a channel that keeps a copy the console owes work against, so a browser
+    tab is not a surface here and `ck_channel_attachment_surface` admits only `matrix`. Naming the
+    channel keeps a replaced conversation findable by what held it.
     """
 
-    SPA = "spa"
     MATRIX = "matrix"
 
 
 class PromptOriginKind(StrEnum):
     """Which arm of `PromptOrigin` a prompt carries.
 
-    Its first two members coincide with `ChatSurface`'s and it stays its own vocabulary: this
-    discriminates a value stored inside a `prompt_enqueued` body, `ChatSurface` names which kind of
-    channel holds a conversation, and one enum for both would make a change to either meaning
-    rewrite the other's stored strings. `HARNESS` is the member with no surface at all — the
-    harness resuming its own session is not a channel anything can attach to.
+    Its own vocabulary, overlapping `ChannelSurface` only at `MATRIX`: this discriminates a value
+    stored inside a `prompt_enqueued` body, `ChannelSurface` names which channel holds a
+    conversation's copy, and one enum for both would make a change to either meaning rewrite the
+    other's stored strings. `SPA` (the operator typing into the console) and `HARNESS` (the harness
+    resuming its own session) have no surface at all — neither is a channel anything can attach to.
     """
 
     SPA = "spa"

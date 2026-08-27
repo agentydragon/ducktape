@@ -41,7 +41,7 @@ compatibility variant to keep stored conversation rows readable may **delete the
 and should: take the simpler schema.
 
 `conversation` is the root, and every conversation-scoped table cascades from it —
-`chat_attachment`, `sessions`, `conversation_event`, `conversation_item`, `conversation_turn`,
+`channel_attachment`, `sessions`, `conversation_event`, `conversation_item`, `conversation_turn`,
 `conversation_prompt`, `session_frames`, and the per-attachment channel state — so deleting there
 is the whole of it.
 

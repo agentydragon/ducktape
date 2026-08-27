@@ -20,9 +20,9 @@ import pytest
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import ChatSurface, ItemStatus, ItemType, RuntimeKind
+from haku.console.chat_models import ChannelSurface, ItemStatus, ItemType, RuntimeKind
 from haku.console.config import RuntimeRegistrationConfig
-from haku.console.database_schema import ChatAttachment, ConversationItem, Session
+from haku.console.database_schema import ChannelAttachmentRow, ConversationItem, Session
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.claude_code.client import cli_over_websocket
 from haku.console.x.conversation_views import SessionView
@@ -182,12 +182,12 @@ async def attach_channel(sessions: async_sessionmaker[AsyncSession], session_id:
     """
     async with sessions.begin() as db:
         db.add(
-            ChatAttachment(
+            ChannelAttachmentRow(
                 attachment_id=uuid4(),
                 conversation_id=await db.scalar(
                     select(Session.conversation_id).where(Session.session_id == session_id)
                 ),
-                surface=ChatSurface.MATRIX,
+                surface=ChannelSurface.MATRIX,
                 address=address,
                 attached_at=datetime.now(UTC),
             )

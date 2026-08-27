@@ -14,8 +14,8 @@ import pytest_bazel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import ChatSurface, RuntimeKind
-from haku.console.database_schema import ChatAttachment, Conversation
+from haku.console.chat_models import ChannelSurface, RuntimeKind
+from haku.console.database_schema import ChannelAttachmentRow, Conversation
 from haku.console.x.channels.matrix.revisions import RevisionLog
 
 
@@ -39,13 +39,13 @@ async def attachment_id(migrated_sessions: async_sessionmaker[AsyncSession], ope
         )
         # Flushed before the row that points at it: the unit of work orders a flush from
         # `relationship()` dependencies and nothing else, so a bare `ForeignKey` leaves these in
-        # mapper-name order — `chat_attachment` ahead of `conversation`.
+        # mapper-name order — `channel_attachment` ahead of `conversation`.
         await db.flush()
         db.add(
-            ChatAttachment(
+            ChannelAttachmentRow(
                 attachment_id=attachment_id,
                 conversation_id=conversation_id,
-                surface=ChatSurface.MATRIX,
+                surface=ChannelSurface.MATRIX,
                 address="!room:example.org",
                 attached_at=now,
                 detached_at=None,
@@ -96,7 +96,7 @@ async def test_a_detached_attachment_takes_its_revisions_with_it(
     await revisions.record(attachment_id, "status", "$line")
 
     async with migrated_sessions() as db, db.begin():
-        attachment = await db.get(ChatAttachment, attachment_id)
+        attachment = await db.get(ChannelAttachmentRow, attachment_id)
         assert attachment is not None
         await db.delete(attachment)
 

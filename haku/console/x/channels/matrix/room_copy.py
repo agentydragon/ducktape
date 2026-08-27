@@ -29,7 +29,7 @@ from sqlalchemy import exists, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.database_schema import ChatAttachment, MatrixRoomCopy
+from haku.console.database_schema import ChannelAttachmentRow, MatrixRoomCopy
 from haku.console.x.channels.matrix.client import ProjectedEvent, Redaction
 
 logger = logging.getLogger(__name__)
@@ -124,7 +124,9 @@ class RoomCopy:
         tagged = {event.source.attachment_id for event in projected}
         known = set(
             (
-                await db.scalars(select(ChatAttachment.attachment_id).where(ChatAttachment.attachment_id.in_(tagged)))
+                await db.scalars(
+                    select(ChannelAttachmentRow.attachment_id).where(ChannelAttachmentRow.attachment_id.in_(tagged))
+                )
             ).all()
         )
         for event in projected:

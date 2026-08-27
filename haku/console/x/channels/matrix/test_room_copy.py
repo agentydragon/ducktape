@@ -1,6 +1,6 @@
 """Contracts of the room's durable copy: correspondence, redaction visibility, duplicate repair.
 
-Against real Postgres, like every store here — the foreign key to `chat_attachment` and the
+Against real Postgres, like every store here — the foreign key to `channel_attachment` and the
 conflict behaviour under re-recording are exactly what a fake would agree with the code about.
 """
 

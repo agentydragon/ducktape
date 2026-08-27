@@ -47,7 +47,7 @@ from haku.console.conversation_read_access import (
     ProfileScopedReads,
 )
 from haku.console.database_schema import (
-    ChatAttachment,
+    ChannelAttachmentRow,
     Conversation,
     ConversationEventRow,
     ConversationItem,
@@ -173,9 +173,9 @@ async def _live_attachments(db: AsyncSession, conversations: set[UUID]) -> dict[
     """
     rows = (
         await db.scalars(
-            select(ChatAttachment)
-            .where(ChatAttachment.conversation_id.in_(conversations), ChatAttachment.detached_at.is_(None))
-            .order_by(ChatAttachment.attached_at, ChatAttachment.attachment_id)
+            select(ChannelAttachmentRow)
+            .where(ChannelAttachmentRow.conversation_id.in_(conversations), ChannelAttachmentRow.detached_at.is_(None))
+            .order_by(ChannelAttachmentRow.attached_at, ChannelAttachmentRow.attachment_id)
         )
     ).all()
     attachments: dict[UUID, list[ChannelAttachment]] = {conversation: [] for conversation in conversations}
@@ -2062,9 +2062,9 @@ class SessionStore:
         async with self._sessions() as db:
             return (
                 await db.scalar(
-                    select(ChatAttachment.attachment_id)
-                    .join(Session, Session.conversation_id == ChatAttachment.conversation_id)
-                    .where(Session.session_id == session_id, ChatAttachment.detached_at.is_(None))
+                    select(ChannelAttachmentRow.attachment_id)
+                    .join(Session, Session.conversation_id == ChannelAttachmentRow.conversation_id)
+                    .where(Session.session_id == session_id, ChannelAttachmentRow.detached_at.is_(None))
                 )
             ) is not None
 

@@ -66,7 +66,7 @@ conversation's tail as prompt text.
 
 **Handover** is the operator's "only one session holds it at a time", and the lease is what holds
 it: `authenticate_bridge` admits one runner connection while a lease is valid, and expiry makes the
-row adoptable (§ 14). `chat_attachment`'s partial unique index is a different rule wearing the same
+row adoptable (§ 14). `channel_attachment`'s partial unique index is a different rule wearing the same
 words — **one live conversation per _address_** — and reading it as the handover rule is what makes
 a channel's row look like a statement about sessions (§ 7).
 
@@ -328,7 +328,7 @@ inside the channel.
 
 ## 6. The conversation is identity only
 
-`conversation(conversation_id, operator_id, created_at)` and `chat_attachment` exist, with
+`conversation(conversation_id, operator_id, created_at)` and `channel_attachment` exist, with
 the partial unique index on `(surface, address) where detached_at is null`. What forces the entity
 is a combination rather than a cardinality: **many sessions × many channels**. When the sandbox dies
 and session A is replaced by B, what has to move is _the set of attachments_, and a set has no name.
@@ -355,7 +355,7 @@ they are conversation facts (<../docs/chat_layers.md>); the session they name is
 key. Identity-only is a statement about the `conversation` row, not about the record: the log is
 keyed to the conversation and the conversation table still holds nothing but an id.
 
-`chat_attachment` is authoritative for which rooms the bot holds, and the rule its `user_id`
+`channel_attachment` is authoritative for which rooms the bot holds, and the rule its `user_id`
 primary key enforced — one bot user, one room, ever — is gone entirely: every operator-invited
 room binds beside the others, which was **the point rather than the cost** (§ 7).
 
@@ -367,7 +367,7 @@ room binds beside the others, which was **the point rather than the cost** (§ 7
   should mostly use the same affordances/operations/protocol as the matrix channel uses"). Same
   subscription, same operations, same neutral vocabulary, same provenance pointer on the prompts
   it sends. The one difference is **whether its position is durable**, and it
-  is the reason it gets no `chat_attachment` row: an attachment exists to hold a cursor, a cursor
+  is the reason it gets no `channel_attachment` row: an attachment exists to hold a cursor, a cursor
   exists because a channel holds a copy the console owes work against, and a tab holds no copy.
 
   Read that as narrow. It is a statement about **delivery state**, not a licence for the SPA to have
@@ -410,7 +410,7 @@ room binds beside the others, which was **the point rather than the cost** (§ 7
   reader is how the reconciler learns what the room currently shows, and that is a read, not a
   store.
 
-- **One bot serves many rooms, and that is what parallel sessions are.** `chat_attachment`'s partial
+- **One bot serves many rooms, and that is what parallel sessions are.** `channel_attachment`'s partial
   unique index expresses the rule that is actually wanted: **one live conversation per address**,
   which permits a bot in many rooms at once — and `bind_room` now binds each invited room beside
   the others rather than refusing the second.
@@ -460,7 +460,7 @@ operator invite creates a second conversation and starts its reconciler beside t
 
 - **The record and subscription.** `ConversationStream`, dense `conversation_event.event_seq` and
   `Subscription.read()` are shared with the browser rather than invented for Matrix.
-- **The attachment cursor.** `channel_cursor` is keyed by `chat_attachment`, advances monotonically,
+- **The attachment cursor.** `channel_cursor` is keyed by `channel_attachment`, advances monotonically,
   and represents work the channel still owes.
 - **Replies as channel-private retry state.** `matrix_outbox` is attachment-scoped, ordered and
   deduplicated by subject.

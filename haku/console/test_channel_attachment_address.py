@@ -42,13 +42,13 @@ def test_one_conversation_holds_an_address_at_a_time_and_detaching_frees_it(db_u
             _attach(conn, first, "!room:example.org")
         with engine.begin() as conn:
             conn.execute(
-                text("UPDATE chat_attachment SET detached_at = now() WHERE conversation_id = :c"), {"c": first}
+                text("UPDATE channel_attachment SET detached_at = now() WHERE conversation_id = :c"), {"c": first}
             )
             _attach(conn, second, "!room:example.org")
 
         with engine.connect() as conn:
             live = conn.execute(
-                text("SELECT conversation_id FROM chat_attachment WHERE detached_at IS NULL")
+                text("SELECT conversation_id FROM channel_attachment WHERE detached_at IS NULL")
             ).scalar_one()
         assert live == second
     finally:
@@ -58,7 +58,7 @@ def test_one_conversation_holds_an_address_at_a_time_and_detaching_frees_it(db_u
 def _attach(conn: Connection, conversation_id: UUID, address: str) -> None:
     conn.execute(
         text(
-            "INSERT INTO chat_attachment (attachment_id, conversation_id, surface, address, attached_at) "
+            "INSERT INTO channel_attachment (attachment_id, conversation_id, surface, address, attached_at) "
             "VALUES (:attachment_id, :conversation_id, 'matrix', :address, now())"
         ),
         {"attachment_id": uuid4(), "conversation_id": conversation_id, "address": address},

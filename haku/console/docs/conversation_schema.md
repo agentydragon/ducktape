@@ -166,7 +166,7 @@ them.
 ## 2. The tables
 
 The schema itself lives in <../database_schema.py> — `Conversation`, `ConversationEventRow`,
-`ConversationItem`, `ConversationTurn`, `ConversationPrompt`, `ChatAttachment`, `ChannelCursor`,
+`ConversationItem`, `ConversationTurn`, `ConversationPrompt`, `ChannelAttachmentRow`, `ChannelCursor`,
 `Session`, `SessionFrame`, and the Matrix channel's own tables — with every column, constraint and
 index documented where it is declared. The stored event kinds and their provenance arms are
 `ConversationEventKind` and `AuthoredEventKind` in <../chat_models.py>, and the neutral event
@@ -192,15 +192,15 @@ span them:
 
 ### What is derived from what
 
-| Table                                                     | What it is          | Derived from                                                                 |
-| --------------------------------------------------------- | ------------------- | ---------------------------------------------------------------------------- |
-| `conversation`                                            | identity            | —                                                                            |
-| `conversation_event`                                      | **the log**         | frames, for the `frame_range` arm; the console alone, for the `authored` arm |
-| `conversation_item`                                       | materialised entity | the log, wholly                                                              |
-| `conversation_turn`                                       | materialised entity | the log, wholly                                                              |
-| `conversation_prompt`                                     | queue state         | `queued_at` from the log; the claim is not derivable                         |
-| `chat_attachment`, `channel_cursor`, the Matrix channel's | channel state       | —                                                                            |
-| `sessions`, `session_frames`                              | session state       | —                                                                            |
+| Table                                                        | What it is          | Derived from                                                                 |
+| ------------------------------------------------------------ | ------------------- | ---------------------------------------------------------------------------- |
+| `conversation`                                               | identity            | —                                                                            |
+| `conversation_event`                                         | **the log**         | frames, for the `frame_range` arm; the console alone, for the `authored` arm |
+| `conversation_item`                                          | materialised entity | the log, wholly                                                              |
+| `conversation_turn`                                          | materialised entity | the log, wholly                                                              |
+| `conversation_prompt`                                        | queue state         | `queued_at` from the log; the claim is not derivable                         |
+| `channel_attachment`, `channel_cursor`, the Matrix channel's | channel state       | —                                                                            |
+| `sessions`, `session_frames`                                 | session state       | —                                                                            |
 
 **A rebuild folds and compares at each level**, and both halves are assertable:
 

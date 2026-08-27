@@ -1,6 +1,6 @@
 """The conversations the rooms Haku services are attached to.
 
-A `chat_attachment` row binds a room to a conversation, and the conversation outlives every
+A `channel_attachment` row binds a room to a conversation, and the conversation outlives every
 session that runs under it. One bot serves many rooms — every room the operator invites Haku into
 is its own conversation under its own attachment. The binding and ingress are Matrix's;
 conversation history and turn execution are channel-neutral, and a replacement joins the
@@ -18,9 +18,9 @@ from uuid import UUID, uuid4
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import ChatSurface, MatrixOrigin, PromptRejection, RuntimeKind
+from haku.console.chat_models import ChannelSurface, MatrixOrigin, PromptRejection, RuntimeKind
 from haku.console.config import MatrixConfig
-from haku.console.database_schema import ChatAttachment, Conversation, Operator
+from haku.console.database_schema import ChannelAttachmentRow, Conversation, Operator
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x import session_events
 from haku.console.x.channels.matrix.client import InboundMessage, UnmappableEvent
@@ -47,10 +47,10 @@ async def live_attachment(db: AsyncSession, room_id: str) -> UUID | None:
     Takes the caller's session so a caller can read it inside its own transaction.
     """
     attachment_id: UUID | None = await db.scalar(
-        select(ChatAttachment.attachment_id).where(
-            ChatAttachment.surface == ChatSurface.MATRIX,
-            ChatAttachment.address == room_id,
-            ChatAttachment.detached_at.is_(None),
+        select(ChannelAttachmentRow.attachment_id).where(
+            ChannelAttachmentRow.surface == ChannelSurface.MATRIX,
+            ChannelAttachmentRow.address == room_id,
+            ChannelAttachmentRow.detached_at.is_(None),
         )
     )
     return attachment_id
@@ -73,10 +73,12 @@ class RoomAttachment:
 async def _live_room_binding(db: AsyncSession, room_id: str) -> RoomAttachment | None:
     row = (
         await db.execute(
-            select(ChatAttachment.address, ChatAttachment.conversation_id, ChatAttachment.attachment_id).where(
-                ChatAttachment.surface == ChatSurface.MATRIX,
-                ChatAttachment.address == room_id,
-                ChatAttachment.detached_at.is_(None),
+            select(
+                ChannelAttachmentRow.address, ChannelAttachmentRow.conversation_id, ChannelAttachmentRow.attachment_id
+            ).where(
+                ChannelAttachmentRow.surface == ChannelSurface.MATRIX,
+                ChannelAttachmentRow.address == room_id,
+                ChannelAttachmentRow.detached_at.is_(None),
             )
         )
     ).first()
@@ -128,9 +130,16 @@ class MatrixConversationStore:
         async with self._sessions() as db:
             rows = (
                 await db.execute(
-                    select(ChatAttachment.address, ChatAttachment.conversation_id, ChatAttachment.attachment_id)
-                    .where(ChatAttachment.surface == ChatSurface.MATRIX, ChatAttachment.detached_at.is_(None))
-                    .order_by(ChatAttachment.attached_at, ChatAttachment.attachment_id)
+                    select(
+                        ChannelAttachmentRow.address,
+                        ChannelAttachmentRow.conversation_id,
+                        ChannelAttachmentRow.attachment_id,
+                    )
+                    .where(
+                        ChannelAttachmentRow.surface == ChannelSurface.MATRIX,
+                        ChannelAttachmentRow.detached_at.is_(None),
+                    )
+                    .order_by(ChannelAttachmentRow.attached_at, ChannelAttachmentRow.attachment_id)
                 )
             ).all()
             return tuple(
@@ -151,7 +160,7 @@ class MatrixConversationStore:
 
         Read-then-insert rather than insert-or-nothing, serialized by the sync loop's election:
         only its leader binds rooms, so the read and the insert cannot interleave with another
-        replica's. `uq_chat_attachment_live_address` is the backstop if that ever stops holding.
+        replica's. `uq_channel_attachment_live_address` is the backstop if that ever stops holding.
         """
         async with self._sessions() as db, db.begin():
             # There is no row to lock before a room's first bind, so serialize the empty-check with
@@ -182,15 +191,15 @@ class MatrixConversationStore:
             )
             # Flushed before the attachment that points at it. The unit of work orders a flush from
             # `relationship()` dependencies and nothing else, so a bare `ForeignKey` between two
-            # mappers leaves their inserts in mapper-name order — `chat_attachment` ahead of
+            # mappers leaves their inserts in mapper-name order — `channel_attachment` ahead of
             # `conversation`, which the constraint rejects.
             await db.flush()
             attachment_id = uuid4()
             db.add(
-                ChatAttachment(
+                ChannelAttachmentRow(
                     attachment_id=attachment_id,
                     conversation_id=conversation_id,
-                    surface=ChatSurface.MATRIX,
+                    surface=ChannelSurface.MATRIX,
                     address=room_id,
                     attached_at=now,
                     detached_at=None,

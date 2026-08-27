@@ -114,7 +114,7 @@ function at one call site in the shape the approval policy already has — not s
 through the transport. Three things it needs:
 
 - **A conversation needs a tier of its own.** A session's room is its conversation's live
-  `chat_attachment`; the tier goes beside it, derived from the room's fixed tier for a Matrix
+  `channel_attachment`; the tier goes beside it, derived from the room's fixed tier for a Matrix
   conversation and from the agent kind otherwise. Those two must agree, and the room's is
   authoritative where both exist.
 - **Unlabelled is highest, so it fails closed.** Every session predating the column has no tier
@@ -160,7 +160,7 @@ Matrix surface run as ordinary separate sessions, separate rows, separate sandbo
 several agents needs the turn loop, the store or the bridge to change.
 
 Nothing enforces "one Matrix session, one room" any more: **two rooms on one bot account — what
-the operator asked for — work today.** `chat_attachment` admits a live row per address, ingress
+the operator asked for — work today.** `channel_attachment` admits a live row per address, ingress
 resolves each inbound message's attachment from its room (adopting operator traffic in unbound
 joined rooms), and one reconciler per live attachment owns that room's cursor, outbox, revisions
 and send budget, swept under the sync leader's one `MXSY` lock — one loop on one account serves N
@@ -228,7 +228,7 @@ Six consequences, in the order they will bite:
   the coordination room"). Hanging them off `session_id` loses every subscription at each
   rotation — the same data-losing shape R11.3a already flags for room bindings. An attachment is
   owned by the conversation, and which session runs under it moves freely.
-- **`chat_attachment` is the right table, with a role.** It is
+- **`channel_attachment` is the right table, with a role.** It is
   `(attachment_id, conversation_id, surface, address, attached_at, detached_at)` with a partial
   unique index on the address. What this section asks of that design: add `role`, and a
   second partial unique index enforcing **at most one attached room per agent**. One table, and

@@ -1,6 +1,6 @@
 """Contracts of the session store: the rows, and which of them commit together.
 
-A room is an address on a `chat_attachment` row here and nothing more — no channel is imported, so
+A room is an address on a `channel_attachment` row here and nothing more — no channel is imported, so
 this file is what a second channel inherits (<README.md> § The runtime's conftest names no
 channel).
 """

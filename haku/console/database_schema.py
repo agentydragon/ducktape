@@ -42,7 +42,7 @@ from haku.console.agents.models import (
 from haku.console.chat_models import (
     AuthoredEventKind,
     BridgeFrameKind,
-    ChatSurface,
+    ChannelSurface,
     ConversationEventKind,
     EventProvenance,
     FrameDirection,
@@ -1039,7 +1039,7 @@ class Conversation(Base):
 
     **A conversation never ends.** No `ended_at` and no terminal state: it is an id. "Start this room
     over" is detaching the address and attaching it to a new conversation, which
-    `uq_chat_attachment_live_address` already permits — so a surface listing these needs keyset
+    `uq_channel_attachment_live_address` already permits — so a surface listing these needs keyset
     paging, since the list only grows.
 
     **A session attached to nothing stays expressible**: a conversation with one session and no
@@ -1083,12 +1083,12 @@ class Conversation(Base):
     )
 
 
-class ChatAttachment(Base):
+class ChannelAttachmentRow(Base):
     """One channel holding a copy of a conversation, at the address it holds it under.
 
     **Copy-holding channels only.** A row exists to hold a cursor, and a cursor exists because the
     channel keeps a copy the console owes work against — a Matrix room does, a browser tab does not.
-    So `ck_chat_attachment_surface` admits no `spa` row, there is no synthetic address for a tab,
+    So `ck_channel_attachment_surface` admits no `spa` row, there is no synthetic address for a tab,
     and "the browser is looking at this conversation" is an absence rather than a row.
 
     Attach and detach are the row's whole lifecycle: `detached_at IS NULL` is the live binding, and
@@ -1098,13 +1098,13 @@ class ChatAttachment(Base):
     the conversation this attachment names.
     """
 
-    __tablename__ = "chat_attachment"
+    __tablename__ = "channel_attachment"
 
     attachment_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     conversation_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("conversation.conversation_id", ondelete="CASCADE"), nullable=False
     )
-    surface: Mapped[ChatSurface] = mapped_column(TextBackedStrEnumColumn(ChatSurface), nullable=False)
+    surface: Mapped[ChannelSurface] = mapped_column(TextBackedStrEnumColumn(ChannelSurface), nullable=False)
     # What the channel calls this conversation: a Matrix room id today. Opaque here — only the
     # channel that holds the copy knows how to reach it.
     address: Mapped[str] = mapped_column(Text, nullable=False)
@@ -1112,19 +1112,19 @@ class ChatAttachment(Base):
     detached_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
-        CheckConstraint("surface IN ('matrix')", name="ck_chat_attachment_surface"),
-        CheckConstraint("btrim(address) <> ''", name="ck_chat_attachment_address_nonempty"),
+        CheckConstraint("surface IN ('matrix')", name="ck_channel_attachment_surface"),
+        CheckConstraint("btrim(address) <> ''", name="ck_channel_attachment_address_nonempty"),
         CheckConstraint(
-            "detached_at IS NULL OR detached_at >= attached_at", name="ck_chat_attachment_detach_after_attach"
+            "detached_at IS NULL OR detached_at >= attached_at", name="ck_channel_attachment_detach_after_attach"
         ),
         Index(
-            "uq_chat_attachment_live_address",
+            "uq_channel_attachment_live_address",
             "surface",
             "address",
             unique=True,
             postgresql_where=text("detached_at IS NULL"),
         ),
-        Index("idx_chat_attachment_conversation", "conversation_id", "attached_at"),
+        Index("idx_channel_attachment_conversation", "conversation_id", "attached_at"),
     )
 
 
@@ -1149,7 +1149,7 @@ class ChannelCursor(Base):
     __tablename__ = "channel_cursor"
 
     attachment_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("chat_attachment.attachment_id", ondelete="CASCADE"), primary_key=True
+        PGUUID(as_uuid=True), ForeignKey("channel_attachment.attachment_id", ondelete="CASCADE"), primary_key=True
     )
     event_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
@@ -1873,7 +1873,7 @@ class MatrixRevision(Base):
     A row per delivered message is a flushed-up-to position materialised one row at a time, and
     `channel_cursor` holds that properly. So only revisable subjects are here.
 
-    Both columns are opaque outside this channel, as `chat_attachment.address` is: `event_id` is
+    Both columns are opaque outside this channel, as `channel_attachment.address` is: `event_id` is
     where the channel put it and `subject` is what it decided to show there.
 
     **Live means the channel still shows it.** `retired_at` is set when the channel takes it back,
@@ -1886,7 +1886,7 @@ class MatrixRevision(Base):
 
     revision_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     attachment_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("chat_attachment.attachment_id", ondelete="CASCADE"), nullable=False
+        PGUUID(as_uuid=True), ForeignKey("channel_attachment.attachment_id", ondelete="CASCADE"), nullable=False
     )
     subject: Mapped[str] = mapped_column(Text, nullable=False)
     event_id: Mapped[str] = mapped_column(Text, nullable=False)
@@ -1932,7 +1932,7 @@ class MatrixRoomCopy(Base):
     # The attachment named by the event's own tag: a rebound room's old events keep naming the
     # attachment they were projected under, so the new attachment starts with no correspondence.
     attachment_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("chat_attachment.attachment_id", ondelete="CASCADE"), nullable=False
+        PGUUID(as_uuid=True), ForeignKey("channel_attachment.attachment_id", ondelete="CASCADE"), nullable=False
     )
     source_event_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
     replaces_event_id: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -1974,7 +1974,7 @@ class MatrixOutbox(Base):
     # rather than posting twice.
     outbox_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     attachment_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("chat_attachment.attachment_id", ondelete="CASCADE"), nullable=False
+        PGUUID(as_uuid=True), ForeignKey("channel_attachment.attachment_id", ondelete="CASCADE"), nullable=False
     )
     subject: Mapped[str] = mapped_column(Text, nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)

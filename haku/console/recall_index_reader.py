@@ -12,9 +12,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import ChatSurface
+from haku.console.chat_models import ChannelSurface
 from haku.console.conversation_read_access import ConversationReadScope
-from haku.console.database_schema import ChatAttachment, Session
+from haku.console.database_schema import ChannelAttachmentRow, Session
 from haku.console.tools.recall_index import (
     ChatIndexStatus,
     ChatSource,
@@ -148,12 +148,12 @@ class PostgresIndexSearcher:
             row.session_id: row.address
             for row in (
                 await session.execute(
-                    select(Session.session_id, ChatAttachment.address)
-                    .join(ChatAttachment, ChatAttachment.conversation_id == Session.conversation_id)
+                    select(Session.session_id, ChannelAttachmentRow.address)
+                    .join(ChannelAttachmentRow, ChannelAttachmentRow.conversation_id == Session.conversation_id)
                     .where(
                         Session.session_id.in_({hit.session_id for hit in found}),
-                        ChatAttachment.surface == ChatSurface.MATRIX,
-                        ChatAttachment.detached_at.is_(None),
+                        ChannelAttachmentRow.surface == ChannelSurface.MATRIX,
+                        ChannelAttachmentRow.detached_at.is_(None),
                     )
                 )
             ).all()

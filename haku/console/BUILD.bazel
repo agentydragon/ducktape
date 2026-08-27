@@ -2098,9 +2098,9 @@ py_test(
 )
 
 py_test(
-    name = "test_chat_attachment_address",
+    name = "test_channel_attachment_address",
     size = "medium",
-    srcs = ["test_chat_attachment_address.py"],
+    srcs = ["test_channel_attachment_address.py"],
     data = [
         "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
