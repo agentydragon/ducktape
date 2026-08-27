@@ -19,7 +19,7 @@ from unittest.mock import patch
 import pytest
 import pytest_bazel
 
-from util.crane import Crane, _format_crane_error, find_crane
+from util.crane import Crane, CraneError, _format_crane_error, find_crane
 
 
 def test_format_crane_error_includes_stderr_and_stdout() -> None:
@@ -43,7 +43,7 @@ def test_format_crane_error_includes_only_nonempty_stream() -> None:
 
 
 def test_run_wraps_called_process_error_with_full_context() -> None:
-    """Sync `_run` must re-raise as RuntimeError whose message contains stderr/stdout.
+    """Sync `_run` must re-raise as CraneError whose message contains stderr/stdout.
 
     Crucial: the previous behavior was a bare CalledProcessError that hides
     the captured streams in `__str__`, so trying to debug `crane push` failures
@@ -58,7 +58,7 @@ def test_run_wraps_called_process_error_with_full_context() -> None:
         stderr="DENIED: requested access to the resource is denied\n",
     )
 
-    with patch("subprocess.run", side_effect=fake_error), pytest.raises(RuntimeError) as exc_info:
+    with patch("subprocess.run", side_effect=fake_error), pytest.raises(CraneError) as exc_info:
         crane._run("push", "img", "ref")
 
     msg = str(exc_info.value)
@@ -73,7 +73,7 @@ def test_run_handles_calledprocesserror_with_none_streams() -> None:
     """`subprocess.CalledProcessError` may carry `stderr=None` if capture wasn't requested."""
     crane = Crane(path=Path("/nonexistent/crane"))
     fake_error = subprocess.CalledProcessError(returncode=1, cmd=["crane", "tag", "x", "y"])
-    with patch("subprocess.run", side_effect=fake_error), pytest.raises(RuntimeError) as exc_info:
+    with patch("subprocess.run", side_effect=fake_error), pytest.raises(CraneError) as exc_info:
         crane._run("tag", "x", "y")
     assert "crane tag x y failed (exit 1)" in str(exc_info.value)
 
@@ -103,15 +103,30 @@ def test_digest_or_none_reraises_real_errors() -> None:
     fake_error = subprocess.CalledProcessError(
         returncode=1, cmd=["crane", "digest", "repo:latest"], stderr="UNAUTHORIZED: token expired\n"
     )
-    with patch("subprocess.run", side_effect=fake_error), pytest.raises(RuntimeError):
+    with patch("subprocess.run", side_effect=fake_error), pytest.raises(CraneError):
         crane.digest_or_none("repo:latest")
 
 
 def test_find_crane_raises_when_the_binary_is_not_on_path() -> None:
     """The CI planners have crane on PATH; a caller without one must hear about it
-    at construction, not as a confusing failure inside the first subprocess."""
+    at construction, not as a confusing failure inside the first subprocess.
+
+    Deliberately not a `CraneError`: nothing was invoked, and a caller catching
+    "crane failed" to decide whether to publish must not swallow "no crane".
+    """
     with patch("shutil.which", return_value=None), pytest.raises(RuntimeError, match="not on PATH"):
         find_crane()
+
+
+def test_absence_is_classified_from_stderr_not_the_rendered_message() -> None:
+    """The message embeds the reference being looked up, so matching against it
+    would call a repository named after an error code absent."""
+    crane = Crane(path=Path("/nonexistent/crane"))
+    fake_error = subprocess.CalledProcessError(
+        returncode=1, cmd=["crane", "digest"], stderr="UNAUTHORIZED: authentication required\n"
+    )
+    with patch("subprocess.run", side_effect=fake_error), pytest.raises(CraneError):
+        crane.digest_or_none("ghcr.io/agentydragon/MANIFEST_UNKNOWN:latest")
 
 
 def test_arun_raises_with_stderr_and_stdout() -> None:
@@ -131,7 +146,7 @@ def test_arun_raises_with_stderr_and_stdout() -> None:
         with patch("asyncio.create_subprocess_exec", side_effect=_fake_create):
             await crane._arun("push", "img", "registry/foo:bar")
 
-    with pytest.raises(RuntimeError) as exc_info:
+    with pytest.raises(CraneError) as exc_info:
         asyncio.run(_go())
 
     msg = str(exc_info.value)

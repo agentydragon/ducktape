@@ -23,7 +23,6 @@ from __future__ import annotations
 import argparse
 import datetime
 import os
-import sys
 from pathlib import Path
 
 from devinfra.ci.image_registry import DIGEST_SUFFIX, Registry, registry_digest, repo_for
@@ -42,19 +41,20 @@ def pinned_tag(now: datetime.datetime, commit: str) -> str:
 
 
 def push(oci_dir: Path, repo: str, tag: str, crane: Crane) -> bool:
-    """Publish `oci_dir` as `repo:tag` unless that content is already the newest tag.
+    """Publish `oci_dir` as `repo:tag` unless the registry already holds that content.
 
     Returns whether anything was pushed.
+
+    A registry that cannot be read fails the job, unlike the planner, which
+    publishes whatever it could not prove unchanged. The asymmetry is real: the
+    planner's mistake costs one runner, while publishing here costs a tag Flux
+    commits back and rolls out, which is the churn this check exists to stop. A
+    read failure is also unlikely to be survivable — the push that follows goes to
+    the same registry with the same credentials — and a push not made is recovered
+    by the next merge, which still sees the difference.
     """
     local = oci_dir.with_name(oci_dir.name + DIGEST_SUFFIX).read_text().strip()
-    try:
-        digest = registry_digest(crane, repo)
-    except RuntimeError as e:
-        # Same rule as the planner's: unreadable is not unchanged. Reading is a
-        # saving, not a precondition — a registry blip must not turn a push that
-        # would have worked into a failed job.
-        print(f"::warning::{repo}: could not read the published digest ({e}); pushing anyway", file=sys.stderr)
-        digest = None
+    digest = registry_digest(crane, repo)
     if digest == local:
         print(f"{repo}: {local} is already published; not pushing")
         return False

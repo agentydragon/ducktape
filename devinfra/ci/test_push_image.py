@@ -2,11 +2,12 @@ import datetime
 import re
 from pathlib import Path
 
+import pytest
 import pytest_bazel
 
 from devinfra.ci.image_registry import DIGEST_SUFFIX
 from devinfra.ci.push_image import pinned_tag, push
-from util.crane import Crane
+from util.crane import Crane, CraneError
 
 
 class FakeCrane(Crane):
@@ -61,16 +62,20 @@ def test_a_repository_with_nothing_published_yet_is_pushed(tmp_path: Path) -> No
     assert len(crane.pushed) == 1
 
 
-def test_an_unreadable_registry_publishes_rather_than_failing_the_job(tmp_path: Path) -> None:
-    """Unreadable is not unchanged, and the read is a saving, not a precondition."""
+def test_an_unreadable_registry_aborts_rather_than_publishing(tmp_path: Path) -> None:
+    """The opposite of the planner's rule, deliberately. The planner publishes what it
+    could not prove unchanged because its mistake costs one runner; publishing here
+    costs a tag Flux commits back and rolls out. A push not made is recovered by the
+    next merge, which still sees the difference."""
 
     class Unreachable(FakeCrane):
         def digest_or_none(self, image_ref: str) -> str | None:
-            raise RuntimeError("crane digest failed (exit 1):\nunexpected status code 500")
+            raise CraneError(("digest", image_ref), 1, "unexpected status code 500", "")
 
     crane = Unreachable({"r/a": {"latest": "sha256:same"}})
-    assert push(layout(tmp_path, "sha256:same"), "r/a", "devel-20260827000000-def5678", crane)
-    assert len(crane.pushed) == 1
+    with pytest.raises(CraneError):
+        push(layout(tmp_path, "sha256:different"), "r/a", "devel-20260827000000-def5678", crane)
+    assert crane.pushed == [], "nothing may go out when the registry could not be read"
 
 
 def test_the_pinned_tag_is_the_shape_flux_filters_on() -> None:

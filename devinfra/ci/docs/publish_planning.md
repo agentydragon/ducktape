@@ -51,13 +51,13 @@ or basename guess resolves to a different image's file, quietly. Where only a
 path is available, it is `pathPrefix` + `name`: a source file and the generated
 file of the same name differ only by prefix.
 
-## Fail open, always
+## The planner fails open; the push job does not
 
 `release` and `push-images` run under `always() && !cancelled()`, so they run
-even when `bazel-ci` failed or was skipped. **Anything short of proof that an
-item is unchanged republishes it.** No invocation, an output the stream never
-mentions, an unreadable blob, an unreachable registry — all keep the item in the
-matrix, where its own job checks properly and fails loudly.
+even when `bazel-ci` failed or was skipped. **In the planner, anything short of
+proof that an item is unchanged republishes it.** No invocation, an output the
+stream never mentions, an unreadable blob, an unreachable registry — all keep the
+item in the matrix.
 
 The asymmetry is deliberate: wrongly including an item costs one job, wrongly
 excluding one silently skips a deployment. A planner that cannot prove anything
@@ -68,9 +68,17 @@ built rather than from what the planner could read. A release is content-address
 — same bytes, same tag, nothing new to publish. An image is not: every push mints
 a fresh `devel-<timestamp>-<sha>` tag that Flux picks up, so publishing an
 unchanged image still costs a commit, a reconcile and a rollout. So
-`devinfra/ci/push_image.py` compares its built digest against the newest published
-tag and pushes only on a difference. Without that, a row this sweep cannot see —
-`manifold-mcp-server` below — churns a deployment on every merge.
+`devinfra/ci/push_image.py` compares its built digest against what the registry
+last published and pushes only on a difference. Without that, a row this sweep
+cannot see — `manifold-mcp-server` below — churns a deployment on every merge.
+
+**And there the asymmetry reverses.** The push job is the last check, so a
+registry it cannot read fails the job rather than publishing regardless. Carrying
+the planner's rule down here would have meant a blip republishing the very images
+this check exists to hold back — and it would rarely buy anything, since the push
+that follows goes to the same registry with the same credentials. A push not made
+is recovered by the next merge, which still sees the difference; a push wrongly
+made is a rollout.
 
 ## What a `//...` sweep cannot cover
 

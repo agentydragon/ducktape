@@ -24,11 +24,49 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# crane's way of saying "that repository/tag has never been pushed to". Distinct
-# from a transport or auth failure, which must not be read as "absent": callers
-# use absence to mean "nothing published yet, go ahead", so a network blip read
-# as absence churns a fresh push past whatever watches the registry.
-ABSENT_MARKERS = ("NAME_UNKNOWN", "MANIFEST_UNKNOWN")
+# The registry's own error codes, from the OCI distribution spec, which crane
+# passes through in its message — it has no structured output mode (checked on
+# 0.18.0: the only global flags are --platform, --insecure and -v, and -v dumps
+# the error JSON into a debug log rather than to stdout).
+#
+# Absence must stay distinct from a transport or auth failure: callers read it as
+# "nothing published yet, go ahead", so a blip read as absence churns a fresh push
+# past whatever watches the registry.
+#
+# GOTCHA: on GHCR these cover an absent *tag* but not an absent *repository*.
+# Fetching a pull token for a repository that does not exist is refused before any
+# manifest request, so crane reports `DENIED: requested access to the resource is
+# denied` — indistinguishable from a genuine permission failure, which is why it is
+# not listed here. A first-ever push of a newly added image may therefore raise
+# rather than read as absent. Unverified with push-scoped credentials, which may
+# get a token and then a real NAME_UNKNOWN.
+_ABSENT_MARKERS = ("NAME_UNKNOWN", "MANIFEST_UNKNOWN")
+
+
+class CraneError(Exception):
+    """A crane invocation exited non-zero.
+
+    Its own type rather than `RuntimeError` so a caller can say "crane failed"
+    without also catching every unrelated failure raised beneath it — one of them
+    decides whether to publish an image, and swallowing the wrong exception there
+    republishes on a bug somewhere else entirely.
+
+    Keeps crane's streams rather than only a rendered message, so
+    `repository_absent` classifies on what crane wrote to stderr instead of
+    searching prose that also contains the reference being looked up.
+    """
+
+    def __init__(self, command: tuple[str, ...], returncode: int | None, stderr: str, stdout: str) -> None:
+        super().__init__(_format_crane_error(command, returncode, stderr, stdout))
+        self.command = command
+        self.returncode = returncode
+        self.stderr = stderr
+        self.stdout = stdout
+
+    @property
+    def repository_absent(self) -> bool:
+        """Whether crane failed because nothing has ever been pushed there."""
+        return any(marker in self.stderr for marker in _ABSENT_MARKERS)
 
 
 def find_crane() -> Path:
@@ -90,7 +128,7 @@ class Crane:
             # in tracebacks. Without the captured streams we can't tell whether
             # crane hit a 401 from GHCR, a network blip during a blob upload,
             # or anything else.
-            raise RuntimeError(_format_crane_error(args, e.returncode, e.stderr or "", e.stdout or "")) from e
+            raise CraneError(args, e.returncode, e.stderr or "", e.stdout or "") from e
         return result.stdout.strip()
 
     async def _arun(self, *args: str) -> str:
@@ -99,7 +137,7 @@ class Crane:
         )
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
-            raise RuntimeError(_format_crane_error(args, proc.returncode, stderr.decode(), stdout.decode()))
+            raise CraneError(args, proc.returncode, stderr.decode(), stdout.decode())
         return stdout.decode().strip()
 
     def digest(self, image_ref: str) -> str:
@@ -110,12 +148,12 @@ class Crane:
 
         For content-dedup before a push: an unpublished tag or repo means "nothing
         there, push it". Any other crane failure (auth, transport, 5xx) re-raises —
-        see ABSENT_MARKERS for why a real error must not be read as "absent".
+        see CraneError for why a real error must not be read as "absent".
         """
         try:
             return self._run("digest", image_ref)
-        except RuntimeError as e:
-            if any(marker in str(e) for marker in ABSENT_MARKERS):
+        except CraneError as e:
+            if e.repository_absent:
                 return None
             raise
 
