@@ -63,9 +63,18 @@ The asymmetry is deliberate: wrongly including an item costs one job, wrongly
 excluding one silently skips a deployment. A planner that cannot prove anything
 must degrade to the full fan-out it replaced, never to publishing nothing.
 
+What makes that cheap is that the item's own job decides again, from what it
+built rather than from what the planner could read. A release is content-addressed
+— same bytes, same tag, nothing new to publish. An image is not: every push mints
+a fresh `devel-<timestamp>-<sha>` tag that Flux picks up, so publishing an
+unchanged image still costs a commit, a reconcile and a rollout. So
+`devinfra/ci/push_image.py` compares its built digest against the newest published
+tag and pushes only on a difference. Without that, a row this sweep cannot see —
+`manifold-mcp-server` below — churns a deployment on every merge.
+
 ## What a `//...` sweep cannot cover
 
-Some rows always take the slow path, for reasons that are not going to change:
+Some rows are outside the sweep, and no amount of care here brings them in:
 
 | Row                   | Why                                                                                |
 | --------------------- | ---------------------------------------------------------------------------------- |
@@ -75,6 +84,19 @@ Some rows always take the slow path, for reasons that are not going to change:
 | `debundle`            | builds under `-c opt`, a different configuration                                   |
 
 Measured coverage on devel's sweep: **41 of 42** images, **47 of 50** releases.
+
+**A row in that table is a live defect until its own job re-checks.** This design
+replaced one that named every digest label out of the roster and built them, so it
+covered 42 of 42; reading the sweep instead is what made the table non-empty. For
+three weeks `manifold-mcp-server` — whose image content had not changed since June —
+therefore hit fail-open on every devel push and minted a tag Flux committed back,
+once per merge. The gap was written down here from the start and read as an accepted
+limitation, which is precisely the mistake: the note recorded that the planner could
+not see the row, not that not seeing it meant republishing it.
+
+So do not add a row here and stop. Either the item's own job proves the item
+unchanged before publishing (what `push_image.py` now does, and why a row here is
+merely wasteful rather than wrong), or the row does not belong in the roster.
 
 ## Alternatives, and why not
 

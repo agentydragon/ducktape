@@ -98,7 +98,28 @@ py_library(
     srcs = ["plan_image_pushes.py"],
     data = ["image_targets.json"],
     visibility = ["//:__subpackages__"],
-    deps = [":bes"],
+    deps = [
+        ":bes",
+        ":image_registry",
+        "//util:crane",
+    ],
+)
+
+py_library(
+    name = "image_registry",
+    srcs = ["image_registry.py"],
+    visibility = ["//:__subpackages__"],
+    deps = ["//util:crane"],
+)
+
+py_library(
+    name = "push_image",
+    srcs = ["push_image.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":image_registry",
+        "//util:crane",
+    ],
 )
 
 py_library(
@@ -220,8 +241,32 @@ py_test(
     srcs = ["test_plan_image_pushes.py"],
     deps = [
         ":bes",
+        ":image_registry",
         ":plan_image_pushes",
+        "//util:crane",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_image_registry",
+    srcs = ["test_image_registry.py"],
+    deps = [
+        ":image_registry",
+        "//util:crane",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_push_image",
+    srcs = ["test_push_image.py"],
+    deps = [
+        ":image_registry",
+        ":push_image",
+        "//util:crane",
         "@pypi//pytest_bazel",
     ],
 )
