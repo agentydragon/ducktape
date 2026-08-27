@@ -65,6 +65,7 @@ from haku.console.chat_models import RuntimeKind
 from haku.console.config import MCP_PATH, EmbedderConfig, GitRecallIndexDefinition, Settings
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
+from haku.console.http_decide_config import load_egress_decide
 from haku.console.http_decide_service import HttpDecideService
 from haku.console.http_grant_repository import PostgresHttpGrantRepository
 from haku.console.http_grant_service import HttpGrantService
@@ -85,7 +86,6 @@ from haku.console.mcp_config import (
     OperatorConnectionCredential,
     _server_entry,
     load_console_config,
-    load_egress_decide,
     load_static_agents,
     validate_in_process_server_bindings,
 )

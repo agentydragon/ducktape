@@ -24,9 +24,9 @@ from dataclasses import dataclass
 from pydantic import SecretStr
 
 from haku.console.grant_principal import RequestPrincipal
+from haku.console.http_decide_config import LoadedEgressDecide
 from haku.console.http_grant_models import HttpMethod, HttpOrigin, HttpRequestAllowed, HttpScheme
 from haku.console.http_grant_service import HttpGrantService
-from haku.console.mcp_config import LoadedEgressDecide
 from haku.egress.decision import DecideAllowed, DecideDenied, DecideRequest, DecisionSource, GrantScope, RequestMeta
 
 logger = logging.getLogger(__name__)

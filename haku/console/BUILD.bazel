@@ -81,6 +81,7 @@ py_library(
     deps = [
         ":chat_models",
         ":config",
+        ":http_decide_config",
         ":provider_connection_registry",
         ":tool_call_actor",
         "//haku/console/agents:naming",
@@ -282,6 +283,12 @@ py_test(
 )
 
 py_library(
+    name = "http_decide_config",
+    srcs = ["http_decide_config.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
     name = "http_decide_routes",
     srcs = ["http_decide_routes.py"],
     deps = [
@@ -296,9 +303,9 @@ py_library(
     srcs = ["http_decide_service.py"],
     deps = [
         ":grant_principal",
+        ":http_decide_config",
         ":http_grant_models",
         ":http_grant_service",
-        ":mcp_config",
         "//haku/egress:decision",
         "@pypi//pydantic",
     ],
@@ -1268,6 +1275,7 @@ py_library(
         ":console_events",
         ":database_migrate",
         ":deployment",
+        ":http_decide_config",
         ":http_decide_routes",
         ":http_decide_service",
         ":http_grant_repository",
@@ -2032,25 +2040,46 @@ py_test(
         ":http_decide_service",
         "//haku/egress:decision",
         "@pypi//fastapi",
+        "@pypi//httpx",  # keep: starlette.testclient runtime requirement, not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_http_decide_config",
+    srcs = ["test_http_decide_config.py"],
+    deps = [
+        ":http_decide_config",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
 
 py_test(
     name = "test_http_decide_service",
+    size = "medium",
     srcs = ["test_http_decide_service.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
     deps = [
+        ":conftest",
         ":grant_principal",
+        ":http_decide_config",
         ":http_decide_service",
         ":http_grant_models",
+        ":http_grant_repository",
         ":http_grant_service",
-        ":mcp_config",
         "//:conftest",
         "//haku/egress:decision",
+        "@pypi//fastapi",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 
