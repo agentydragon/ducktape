@@ -38,15 +38,22 @@ def test_a_message_carries_the_components_a_read_returns() -> None:
     assert union["discriminator"]["propertyName"] == "kind"
 
 
-def test_runtime_kind_is_a_read_only_closed_identity_field() -> None:
+def test_runtime_and_harness_kind_are_read_only_closed_identity_fields() -> None:
+    # Expand step of the runtime_kind→harness_kind wire rename (naming_and_layout.md §3.1, #4772):
+    # every identity-bearing model publishes both names, each a required reference to the same
+    # closed enum, so a consumer can move to `harness_kind` before `runtime_kind` is dropped in the
+    # contract step.
     published = schemas()
     runtime_ref = {"$ref": "#/components/schemas/RuntimeKind"}
     assert published["RuntimeKind"]["enum"] == ["claude_code", "codex_app_server"]
     for model in ("ConversationSummary", "ConversationView", "SessionFramePage", "SessionProvisioningView"):
-        field = published[model]["properties"]["runtime_kind"]
-        # Pydantic wraps a referenced enum in `allOf` when the field also carries a description.
-        assert field.get("$ref") == runtime_ref["$ref"] or field.get("allOf") == [runtime_ref]
-        assert "runtime_kind" in published[model]["required"]
+        properties = published[model]["properties"]
+        required = published[model]["required"]
+        for field_name in ("runtime_kind", "harness_kind"):
+            field = properties[field_name]
+            # Pydantic wraps a referenced enum in `allOf` when the field also carries a description.
+            assert field.get("$ref") == runtime_ref["$ref"] or field.get("allOf") == [runtime_ref]
+            assert field_name in required
 
 
 def test_tool_call_serializer_preserves_the_structured_frontend_schema() -> None:

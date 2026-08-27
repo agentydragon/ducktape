@@ -83,6 +83,10 @@ class ConversationSummary(BaseModel):
     item_count: int = Field(
         description="How many transcript rows this conversation holds — prompts, answers and calls alike."
     )
+    # CLEANUP(added 2026-08-27): expand step of runtime_kind→harness_kind (naming_and_layout.md
+    #   §3.1, #4772). A read-only mirror of `runtime_kind`, so a consumer can move to `harness_kind`
+    #   before the contract step renames the field and drops `runtime_kind`.
+    harness_kind: RuntimeKind
 
 
 class ConversationCursor(BaseModel):
@@ -162,6 +166,10 @@ class ConversationView(BaseModel):
     )
     session: ConversationSessionView
     earlier_sessions: list[EarlierSession]
+    # CLEANUP(added 2026-08-27): expand step of runtime_kind→harness_kind (naming_and_layout.md
+    #   §3.1, #4772). A read-only mirror of `runtime_kind`, so a consumer can move to `harness_kind`
+    #   before the contract step renames the field and drops `runtime_kind`.
+    harness_kind: RuntimeKind
 
 
 class ConversationSnapshot(BaseModel):
@@ -267,6 +275,12 @@ class SessionProvisioningView(BaseModel):
         "is idle and has never asked for one; `claim_absent` means one was requested but Kubernetes "
         "does not have it now."
     )
+    # CLEANUP(added 2026-08-27): expand step of runtime_kind→harness_kind (naming_and_layout.md
+    #   §3.1, #4772). A read-only mirror of `runtime_kind`, so a consumer can move to `harness_kind`
+    #   before the contract step renames the field and drops `runtime_kind`.
+    harness_kind: RuntimeKind = Field(
+        description="The immutable runner implementation pinned by this session's conversation."
+    )
 
 
 # Frames per page of the inspector. One `user` frame carries a whole tool result — a file read, a
@@ -308,6 +322,10 @@ class SessionFramePage(BaseModel):
     next_before_seq: int | None = Field(
         description="Pass back as `before_seq` for the page of earlier frames, or absent at the start of the log."
     )
+    # CLEANUP(added 2026-08-27): expand step of runtime_kind→harness_kind (naming_and_layout.md
+    #   §3.1, #4772). A read-only mirror of `runtime_kind`, so a consumer can move to `harness_kind`
+    #   before the contract step renames the field and drops `runtime_kind`.
+    harness_kind: RuntimeKind = Field(description="The immutable runner implementation whose wire these frames use.")
 
 
 def frame_page(
@@ -332,6 +350,7 @@ def frame_page(
         frames=frames,
         conversation_id=conversation_id,
         runtime_kind=runtime_kind,
+        harness_kind=runtime_kind,
         next_before_seq=frames[0].frame_seq if len(frames) == limit else None,
     )
 

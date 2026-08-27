@@ -402,6 +402,7 @@ class SessionService:
         return SessionProvisioningView(
             session_id=session_id,
             runtime_kind=identity.runtime_kind,
+            harness_kind=identity.runtime_kind,
             status=identity.status,
             sandbox=None if identity.status == SessionStatus.IDLE else await self._observed(session_id),
         )
