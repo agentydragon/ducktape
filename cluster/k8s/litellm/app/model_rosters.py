@@ -90,7 +90,7 @@ def legacy_tana_name(model: str) -> str:
 
 
 # ChatGPT/Codex-subscription models behind CLIProxyAPI, each exposed on both wire
-# surfaces (Provider.CHATGPT with ApiShape.MESSAGES and ApiShape.RESPONSES).
+# surfaces (Provider.CHATGPT with ApiShape.ANT_MESSAGES and ApiShape.OAI_RESPONSES).
 CLIPROXY_MODELS: list[str] = [
     "gpt-5.4",
     "gpt-5.5",
