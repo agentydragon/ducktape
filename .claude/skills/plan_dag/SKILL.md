@@ -134,10 +134,15 @@ function buildMermaid(showDone) {
   artifact CSP admits allowlisted-CDN scripts only as static tags — a
   `document.createElement("script")` loader is blocked in the viewer while
   curl from the workspace sees 200s, so it "fails from all CDNs" only in the
-  browser. Two more traps, both verified: cdnjs hosts the mermaid UMD only
-  through v10 (`11.x/mermaid.min.js` 404s — pin `10.9.1`, with a jsdelivr
-  static tag as backup), and the page code just polls for `window.mermaid`
-  (the local render harness pre-injects the same global).
+  browser. Use ONE static tag —
+  `https://cdn.jsdelivr.net/npm/mermaid@11.<x>/dist/mermaid.min.js` — and
+  have the page poll for `window.mermaid`. Verified traps: cdnjs hosts the
+  UMD only through v10 (`11.x/mermaid.min.js` 404s), **v10 ignores this
+  page's layout config** (init spacing — a 3055px sprawl vs v11's compact
+  layout), and a second tag double-executes the UMD. **Pin the local render
+  harness's node_modules mermaid to the SAME version the page loads** — a
+  version-skewed harness proves nothing (an 11.x harness passed while the
+  viewer's 10.x broke).
 - Completed nodes wear `done` + a `✓`; their real dependency edges stay, so
   provenance chains read (landed prerequisites → the merged integration PR →
   the running work). Prune a completed node once nothing live traces to it —
