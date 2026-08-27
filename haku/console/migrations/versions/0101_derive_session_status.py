@@ -16,7 +16,7 @@ The 0097 grant-source trigger reads `sessions.status` inside PL/pgSQL, which no 
 validates against a dropped column, so it is replaced here with one asking the same liveness
 question of the facts.
 
-Revision ID: 0098
+Revision ID: 0101
 Revises: 0097
 """
 
@@ -25,7 +25,7 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0098"
+revision: str = "0101"
 down_revision: str | None = "0097"
 branch_labels: str | None = None
 depends_on: str | None = None
@@ -44,8 +44,8 @@ _FACT_CHECKS = (
 
 _OLD_TRIGGER = "trg_haku_0097_kubernetes_grant_source_invariants"
 _OLD_FUNCTION = "public.haku_0097_kubernetes_grant_source_invariants()"
-_NEW_TRIGGER = "trg_haku_0098_kubernetes_grant_source_invariants"
-_NEW_FUNCTION = "public.haku_0098_kubernetes_grant_source_invariants()"
+_NEW_TRIGGER = "trg_haku_0101_kubernetes_grant_source_invariants"
+_NEW_FUNCTION = "public.haku_0101_kubernetes_grant_source_invariants()"
 
 # 0097's source-provenance check verbatim, except that the source session's liveness is asked of
 # the facts: live (not ended, no close requested) and runner-attached is what 'ready'/'responding'
