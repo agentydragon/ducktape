@@ -23,6 +23,7 @@ the programme's plan directory under `plans/`.
 | [requirements.md](requirements.md)         | The stated wants (C/W/P/H/K), cross-cutting and per-agent-function                                    |
 | [success_criteria.md](success_criteria.md) | S1–S5: the observable pass conditions, and the S4 waiver for the public coder                         |
 | [credential_proxy.md](credential_proxy.md) | The credential-substitution design: what shipped and what was rejected                                |
+| [knowledge_garden.md](knowledge_garden.md) | The K1–K5 knowledge-garden tool evaluation, kept for haku to maybe adopt as a user interface          |
 
 Findings are numbered in discovery order and referenced by number from cluster
 manifests, so `F7` means the same thing here as in a comment on a Deployment.
