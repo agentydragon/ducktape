@@ -3,8 +3,8 @@
 Part of the 2026-04 architecture redesign (its plan is retired; git history has it).
 
 > **Status (2026-04-19)**: Resolved. The cluster moved to Option B-ish (TF writes
-> Authentik providers directly, secrets in SOPS). Vault was decommissioned — see
-> <../2026_04_19_vault_migration.md>. The options analysis below is kept as
+> Authentik providers directly, secrets in SOPS). Vault was decommissioned 2026-04-19 —
+> see <../../docs/decisions.md> § "Secrets: SOPS SSOT". The options analysis below is kept as
 > historical context for the decision.
 
 ## Current Setup (Vault + tofu-controller + ESO)

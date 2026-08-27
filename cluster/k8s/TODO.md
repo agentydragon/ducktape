@@ -30,8 +30,9 @@ committed. `NO_PROXY` in `inject-mitmproxy.yaml` is unchanged.
 ## InvenTree secrets if unsuspending
 
 - [ ] Add SOPS secrets for InvenTree admin and database passwords before
-      unsuspending it. The old Vault `kv/inventree/*` values are gone, so
-      generate fresh values. Background: <../archive/2026_04_19_vault_migration.md>.
+      unsuspending it. The old Vault `kv/inventree/*` values are gone with
+      Vault (decommissioned 2026-04-19; <../docs/decisions.md> § "Secrets: SOPS
+      SSOT"), so generate fresh values.
 
 ## Mobile Nebula phone followups
 

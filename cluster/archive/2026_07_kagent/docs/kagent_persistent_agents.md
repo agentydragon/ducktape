@@ -10,7 +10,7 @@
 > <operational_findings.md> for the original operational findings.
 
 > **Note (2026-05-17)**: This plan was written when Vault was the secret SSOT.
-> Vault has since been decommissioned (see <../../2026_04_19_vault_migration.md>);
+> Vault has since been decommissioned (see <../../../docs/decisions.md> § "Secrets: SOPS SSOT");
 > replace any `vault-backend` ClusterSecretStore references below with SOPS-managed
 > secrets when implementing.
 

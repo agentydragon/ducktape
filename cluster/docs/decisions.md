@@ -17,14 +17,16 @@ Public-critical services run on distributed services (SeaweedFS, CNPG
 Postgres) backed by OVH storage; storage-heavy services that tolerate home
 downtime use Proxmox storage.
 
-| Location | Services                                                               | Rationale                         |
-| -------- | ---------------------------------------------------------------------- | --------------------------------- |
-| OVH      | Authentik, Grafana, Gateway, DNS, cert-mgr                             | Always-on, critical path          |
-| Home     | Ollama                                                                 | Storage-heavy, tolerates downtime |
-| OVH      | SeaweedFS, attic-db, Forgejo, Nix cache chunks + Loki/Mimir/Tempo (S3) | Replicated across 2 kimsufi nodes |
+| Location | Services                                                               | Rationale                                         |
+| -------- | ---------------------------------------------------------------------- | ------------------------------------------------- |
+| OVH      | Authentik, Grafana, Gateway, DNS automation, cert-mgr                  | Always-on, critical path                          |
+| Home     | Ollama                                                                 | Storage-heavy, tolerates downtime                 |
+| OVH      | SeaweedFS, attic-db, Forgejo, Nix cache chunks + Loki/Mimir/Tempo (S3) | Replicated across the OVH nodes (HDD ×3, NVMe ×2) |
 
-CNPG: individual clusters per app. Two profiles: OVH-HA (2 instances, OVH
-kimsufi) and Proxmox-single (1 instance). See <cnpg_conventions.md>.
+CNPG: individual clusters per app. Two sanctioned profiles: OVH-HA (2 instances
+pinned `zone: hil-ovh`, on `local-path-ovh` or `local-path-ovh-ssd`) and
+Proxmox-single (1 instance, `local-path`). See <cnpg_conventions.md>. Known
+deviation: `study-casino-db` runs 3 instances across OVH nodes.
 
 ## OVH-Only Resilience Invariants
 
@@ -32,13 +34,13 @@ kimsufi) and Proxmox-single (1 instance). See <cnpg_conventions.md>.
 Proxmox-pinned storage (`lvm-proxmox-*`, `local-path-proxmox`) or Proxmox-pinned
 workloads.
 
-| Service   | Status | Storage            | Notes                                                         |
-| --------- | ------ | ------------------ | ------------------------------------------------------------- |
-| DNS       | OK     | `local-path`       | CNPG on OVH/HIL nodes                                         |
-| Website   | OK     | None (stateless)   |                                                               |
-| Ingress   | OK     | None (hostNetwork) | Cilium Gateway on OVH                                         |
-| Authentik | OK     | `local-path`       | All components pinned                                         |
-| Grafana   | OK     | CNPG OVH-HA        | grafana-operator managed, JWT auth, no admin creds dependency |
+| Service   | Status | Storage            | Notes                                                                                                          |
+| --------- | ------ | ------------------ | -------------------------------------------------------------------------------------------------------------- |
+| DNS       | OK     | None in-cluster    | Zone is AWS Route 53; records reconciled by the `dns-records` Terraform CR (state in CNPG `tofu-state-db-ovh`) |
+| Website   | OK     | None (stateless)   |                                                                                                                |
+| Ingress   | OK     | None (hostNetwork) | Cilium Gateway on OVH                                                                                          |
+| Authentik | OK     | `local-path-ovh`   | CNPG `authentik-db-ovh` (OVH-HA); server + worker pinned to OVH                                                |
+| Grafana   | OK     | `local-path-ovh`   | CNPG `grafana-db-ovh` (OVH-HA); grafana-operator managed, JWT auth, no admin creds dependency                  |
 
 **Compliance checklist** for critical-path changes:
 
@@ -47,25 +49,29 @@ workloads.
 3. Can schedule on OVH nodes
 4. All upstream dependencies also pass 1-3
 
-**Proxmox-dependent services** (tolerate downtime by design): Nix cache,
-BuildBuddy, Ollama, InvenTree, ActivityWatch.
+**Proxmox-dependent services** (tolerate downtime by design): Ollama,
+ActivityWatch (central store on wyrm2, `local-path-proxmox`; device-side
+importers buffer and re-push through downtime), and — both currently suspended —
+BuildBuddy executor and InvenTree. Not the Nix cache: attic runs pinned to
+`hil-ovh`, `attic-db` is CNPG OVH-HA, and chunks live in OVH SeaweedFS S3.
 
 ### Proxmox CSI removed (2026-07-16)
 
-Proxmox CSI (`proxmox-csi-retain`) is gone. Primary reason: it hotplugs each PV as a
+Proxmox CSI (`proxmox-csi-retain`) is gone. Two reasons: it hotplugs each PV as a
 virtual SCSI disk onto the VM, capping PVs-per-node (`max-volume-attachments = 29`) —
-too low, and OpenEBS LVM has no such limit. It had also started crash-looping after
+too low, and OpenEBS LVM has no such limit; and only one k8s node runs on Proxmox any
+more, so there is no reshuffling of PVCs between Proxmox nodes for a CSI to serve
+(there was, when Proxmox hosted several nodes). It had also started crash-looping after
 the network topology change broke its path to the Proxmox API, and with a single
 physical Proxmox host LVM-local storage has the same failure domain anyway. Rationale
 and full context: <lessons_learned/2026_07_16_disable_proxmox_csi.md>. All consumers
 now use `lvm-proxmox-hdd`.
 
-The `lifecycle { ignore_changes = [disk] }` rule on the wyrm2 VM (only there to avoid
-fighting CSI-hotplugged disks) has been removed, so tofu manages all wyrm2 disks
-declaratively again. The `disk` blocks in `terraform/main/proxmox-vms.tf` are now the
-authoritative shape — the next `bazel run //cluster:bootstrap` re-plans them, so eyeball
-that plan for unexpected resizes/deletions (e.g. any CSI-retained orphan disks) before
-applying.
+The `lifecycle { ignore_changes = [disk] }` rule on the wyrm2 VM is back since
+2026-08-05 (tombstoned in `terraform/main/proxmox-vms.tf`): two orphaned CSI-era disks
+(scsi1/scsi2) remain attached to the VM, and letting tofu reconcile the incomplete disk
+state would remap live disks. Deliberately detach them, then delete the rule so the
+declared `disk` blocks become authoritative again.
 
 ## Cilium Gateway API `Programmed=False`
 
@@ -73,7 +79,11 @@ Upstream bug [cilium/cilium#42786](https://github.com/cilium/cilium/issues/42786
 hostNetwork mode leaves the Gateway status as `Programmed=False` /
 `AddressNotAssigned`, even when Cilium has generated the `CiliumEnvoyConfig`,
 Envoy listeners are present on the selected nodes, and routes work — traffic
-flows through the hostNetwork Envoy listeners.
+flows through the hostNetwork Envoy listeners. Fixed upstream by
+[cilium/cilium#46350](https://github.com/cilium/cilium/pull/46350) (merged
+2026-06-22, backported to the 1.18/1.19 branches); the pinned Cilium 1.19.2
+(released 2026-03-23) predates the fix, so the status anomaly persists here
+until a Cilium upgrade.
 
 **Decision**: keep the hostNetwork Gateway plus Route 53 wildcard/apex records
 pointing directly at the public OVH Kubernetes node IPs. Do not alert solely on
@@ -83,9 +93,13 @@ Setting `Gateway.spec.addresses` to static OVH node IPs is not a real
 replacement for a routed VIP/LB; it may help status only if Cilium supports
 that shape, but it would not add failover or change internet routing.
 
-Revisit only if Cilium fixes hostNetwork Gateway status or if we introduce a
-normal external exposure layer. More normal Cilium exposure models, if we
-decide to leave hostNetwork mode:
+Revisit on the Cilium upgrade that picks up the #46350 fix (the
+status-suppression half of the decision stops being needed), or if we introduce
+a normal external exposure layer. The latter stays attractive independent of
+the status bug: with Route 53 pointing directly at node IPs, a downed node's
+share of packets is simply lost until the record set is edited — the current
+hostNetwork shape has no failover and cannot provide it. More normal Cilium
+exposure models, if we decide to leave hostNetwork mode:
 
 1. Provider-managed load balancer: public OVH LB IP -> Kubernetes
    `LoadBalancer`/`NodePort` Service -> Cilium service handling -> Envoy ->
@@ -105,27 +119,39 @@ generated Gateway Service be the externally exposed object.
 ## Secrets: SOPS SSOT
 
 All secrets are SOPS (age-encrypted in git, decrypted by Flux). ESO is still installed
-but only with the Kubernetes provider, mirroring a small number of secrets cross-namespace
-(authentik, agent sandboxes, openhands). Stakater Reloader restarts pods on
-changes. Vault was decommissioned 2026-04-19 — see
-<../archive/2026_04_19_vault_migration.md>.
+but only with the Kubernetes provider, mirroring a small number of secrets
+cross-namespace — rotator-published tokens out of `flux-system`, shared agent
+credentials out of `claude-sandbox`, Airlock OAuth tokens, CLIProxyAPI keys (stores in
+`k8s/external-secrets/config/`). Stakater Reloader restarts pods on changes. Vault was
+decommissioned 2026-04-19: much higher bootstrap operational complexity, raft being
+annoying on a 3-replica Vault, and its extra features not actually helping — SOPS + ESO
+and friends are enough.
 
 ## Google OAuth Client redirect URIs (blocked upstream)
 
 The Google Cloud OAuth client backing Authentik's "Sign in with Google"
 source (client_id `230253529789-…`, referenced from
 `tf/gitops/sso-providers/source_google.tf`) is hand-managed in the
-GCP Console. Every new forward-auth app needs its callback URI
-(`https://<app>.allegedly.works/source/oauth/callback/google/`)
-appended to the client's Authorized redirect URIs by hand — a
-`redirect_uri_mismatch` is the symptom on first sign-in. The
-behaviour itself is intentional in Authentik
+GCP Console. In principle each forward-auth app has its own callback
+URI (`https://<app>.allegedly.works/source/oauth/callback/google/`)
+that would need appending to the client's Authorized redirect URIs by
+hand, `redirect_uri_mismatch` being the failure mode. The behaviour
+itself is intentional in Authentik
 (<https://github.com/goauthentik/authentik/issues/19883> closed as
 not-planned); standalone proxy outposts run flows on the proxied
 domain. Domain-Level forward-auth would centralise the callback but
 sacrifices per-app group restrictions
 (<https://docs.goauthentik.io/add-secure-apps/providers/proxy/forward_auth/>),
 which is the entire reason for using forward-auth here.
+
+**Observed in practice**: the per-app URIs have not been registered,
+yet auth-proxied services keep working, with only occasional strange
+Authentik errors. **Hypothesis** for the gap: flows normally run on
+`auth.allegedly.works` against an existing Authentik session, so the
+proxied-domain Google callback is rarely exercised; a fresh Google
+sign-in started on a proxied domain is the case expected to fail with
+`redirect_uri_mismatch`, and the occasional odd errors may be this
+surfacing.
 
 **Why this isn't behind GitOps yet:** Web Application OAuth 2.0
 Client IDs in GCP have no public CRUD API
@@ -143,17 +169,18 @@ Hit list when this changes:
       public OAuth-client management API. When it lands and the
       Terraform provider gains a resource, move the client and its
       redirect URIs to TF.
-- [ ] Until then: record per-app callback URI additions in the app's
-      commit message so future audits can rebuild the list from git.
+- [ ] Until then: when a per-app callback URI is added by hand, record
+      it in the app's commit message so future audits can rebuild the
+      list from git.
 
 ## Kubeconfig Endpoints (Current State)
 
-| Consumer                      | Endpoint                    | Mechanism                            |
-| ----------------------------- | --------------------------- | ------------------------------------ |
-| Talos nodes (kubelet)         | `localhost:7445`            | KubePrism (built-in Talos API proxy) |
-| NixOS workers (wyrm2, rugged) | `localhost:7445`            | haproxy -> all CP Nebula IPs         |
-| TF state / `cluster/.envrc`   | `terraform/main/kubeconfig` | File written by OpenTofu             |
-| `~/.kube/config` (wyrm2)      | `localhost:7445`            | Via local haproxy                    |
+| Consumer                      | Endpoint                   | Mechanism                                        |
+| ----------------------------- | -------------------------- | ------------------------------------------------ |
+| Talos nodes (kubelet)         | `localhost:7445`           | KubePrism (built-in Talos API proxy)             |
+| NixOS workers (wyrm2, rugged) | `localhost:7445`           | haproxy -> all CP Nebula IPs                     |
+| TF state / `cluster/.envrc`   | `api.allegedly.works:6443` | `terraform/main/kubeconfig`, written by OpenTofu |
+| `~/.kube/config` (wyrm2)      | `localhost:7445`           | Via local haproxy                                |
 
 `api.allegedly.works` exists on port 443 behind the cluster Cilium Gateway
 (TLSRoute in `k8s/kube-api-proxy/` with TLS passthrough to the `kubernetes`
@@ -164,11 +191,13 @@ would not work. TLS passthrough preserves client certificates for x509 auth.
 ## OpenTofu State Backend
 
 All 6 former TF roots consolidated into a single root at `cluster/terraform/main/` with
-PG backend (CNPG `tofu-state-db`, schema `main`, OVH local-path). Backup CronJob
-removed 2026-06-01; will be restored via CNPG replication once wyrm2 is back.
+PG backend (CNPG `tofu-state-db-ovh`, schema `main`, OVH `local-path-ovh`). State
+backups have been absent since the backup CronJob's removal 2026-06-01; restoring them
+(CNPG replication or scheduled backups) is
+[#4900](https://github.com/agentydragon/ducktape/issues/4900).
 
 All in-cluster tofu-controller `Terraform` CRs also use the PG backend (one schema per CR
-in the same `tofu-state-db` cluster; reflector mirrors PG creds into `flux-system`).
+in the same `tofu-state-db-ovh` cluster; reflector mirrors PG creds into `flux-system`).
 PG advisory locks auto-release on runner-pod death — no more stale-Lease problem.
 
 Zero `terraform_remote_state` dependencies — everything is in the same root. Persistent-auth
@@ -186,9 +215,13 @@ Flux `Receiver` at `flux-webhook.allegedly.works`. GitHub webhook registered by
 
 ## InvenTree API Token Provisioning
 
-Via `inventree-token-provisioner` Job. SOPS-managed sandbox-agent password ->
-Job execs into pod, creates user via Django ORM -> `inventree-api-token` Secret
-in `claude-sandbox`.
+Via the `inventree-token-provisioner` image
+(`cluster/provisioners/inventree_token_provisioner/`), run as a Job plus a weekly
+renewal CronJob: admin credentials -> InvenTree REST API -> get-or-create the
+`sandbox-agent` user, issue a named API token, write the `inventree-api-token`
+Secret in the `inventree` namespace; an ESO `ClusterExternalSecret` mirrors it
+into `claude-sandbox`. Renews when fewer than 30 days remain. Suspended together
+with InvenTree.
 
 ## CPU limits policy (VPA)
 
@@ -211,97 +244,88 @@ See `cluster/k8s/agents/tana-mcp-facade/deployment.yaml` for a working example
   injected in Gimlet's private build pipeline, not in the published source. Weave GitOps
   (the main alternative with dep graph visualization) has had no stable release since
   2023-12-06. Use Headlamp + `flux` CLI instead.
+- **ARC (GitHub Actions runner)**: decommissioned 2026-04-11; manifests deleted
+  2026-08-05 (#3773).
 - **Kagent** (2026-07-21): Retired after noisy MCP results repeatedly exceeded the z.ai
   prompt limit and killed sessions. Kagent had no client-side tool-output budget, and its
   between-turn compaction could not prevent a single turn from overflowing context. See
   <../archive/2026_07_kagent/README.md>.
+- **OpenClaw gateway / OpenShell** (2026-07-31): manifests deleted rather than parked.
+  The gateway was unused and wedged (no exec traffic, idle orphaned sandboxes), and the
+  operator could not be egress-confined (`plans/personal_agents/findings/` F3). OpenClaw
+  as an agent runtime is alive: `public-coder-agent` (the reference agent — same
+  `ghcr.io/agentydragon/openclaw` image, plain Deployment, `sandbox.mode: "off"`) and
+  `haku-openclaw-spike` (its own OpenClaw build) run today, and the `openclaw`
+  ImageRepository/ImagePolicy are kept for that image. The former `openclaw-gateway` and
+  `openclaw-sandbox` namespaces were retired after their retained credentials moved to
+  `agents/shared-secrets`; see <../archive/2026_08_openclaw_namespace_retirement.md>.
+  Evaluated alternatives: `plans/personal_agents/verdicts.md`.
+- **LiteLLM ChatGPT sub-instance** (`litellm-chatgpt`, deleted 2026-08-06): a second
+  LiteLLM Deployment holding its own ChatGPT/Codex OAuth session on a PVC, serving the
+  `*-chatgpt` models over the Responses API; superseded by
+  [CLIProxyAPI](../k8s/cli-proxy-api/README.md). [#3198] had already isolated it so an
+  expired token could not crashloop the main proxy; what retired it was
+  re-authentication: LiteLLM has no in-place login, so every new token meant an
+  interactive `codex login`, reshaping into LiteLLM's flat `auth.json`, a SOPS commit,
+  and an init-container guard to replace the PVC copy — a guard wrong twice ([#3199];
+  2026-08-06, ~3h crashloop) because it could only test the file's shape, never whether
+  the credential works. **Lesson**: a credential that rotates on use and can only be
+  minted interactively does not belong in a checked-in secret. CLIProxyAPI logs in
+  against the running pod (`-codex-device-login`), keeps the session alive with a
+  refresh worker, and never puts the upstream OAuth session in git. The `*-chatgpt`
+  model names live on: LiteLLM serves them over CLIProxyAPI's native `/v1/responses`
+  (`openai/` passthrough, not a bridge), so the baked configs pinning those names
+  (<../k8s/agents/agent-sandbox/workspace-image/codex-config.toml>,
+  <../../x/codex_pod_image/home.nix>, `oai_lane_models` in
+  <../../tf/gitops/litellm-keys/main.tf>) needed no rebuild; the `codex-*` entries stay
+  on `anthropic/` → `/v1/messages` for Claude Code.
+
+  [#3198]: https://github.com/agentydragon/ducktape/pull/3198
+  [#3199]: https://github.com/agentydragon/ducktape/pull/3199
 
 ## Suspended Kustomizations
 
 ### Intentionally parked
 
-Independent of the Proxmox outage — these stay suspended until explicitly revived,
-and would **not** come back just because `atlas`/`wyrm2` returns.
+These stay suspended until explicitly revived. The atlas/wyrm2 outage that idled
+the Proxmox-pinned entries is over (both are back as of 2026-08), so for those
+the open question is unsuspending, not hardware.
 
-- **ARC**: `arc-namespace`, `arc` — decommissioned 2026-04-11; GitHub runner
-  pod/statefulset removed, resources deleted (`arc-secrets` still deployed).
-- **BuildBuddy Executor**: `buildbuddy-executor` — scaled to 0; re-enable when needed.
-- **Docker CI**: `docker-ci` — parked.
-- **Firecrawl**: `firecrawl-{namespace,db,app}` — parked.
+- **agent-box**: `agent-box`, `agent-box-namespace` — inactive while the unschedulable
+  legacy VM is retired; the VM and its local disk stay untouched until explicitly
+  deleted.
+- **ArchiveBox**: `archivebox`, `archivebox-namespace` — retained suspended so Flux
+  cannot recreate the retired objects.
+- **Browsertrix**: `browsertrix`, `browsertrix-{namespace,retained}`,
+  `seaweedfs-browsertrix-bucket` — manifests retained suspended (#4248).
+- **BuildBuddy Executor**: `buildbuddy-executor` — scaled to 0; Proxmox-pinned, and
+  atlas/wyrm2 being back removes that blocker — re-enable when needed.
+- **claude-sandbox-firecracker** — pinned to wyrm2; parked to free resources, and wyrm2
+  is back — unsuspending is now an open question.
+- **egress-proxy-rugged** — decommissioned by operator request; configuration kept,
+  reconciliation stopped.
+- **Firecrawl**: `firecrawl`, `firecrawl-{namespace,db}` — parked.
+- **gecko**: `gecko`, `gecko-namespace` — same legacy-VM retirement hold as agent-box.
 - **Google Workspace MCP**: `google-workspace-mcp` — parked 2026-05-13; resources + PVC deleted.
-- **LiteLLM ChatGPT sub-instance** (`litellm-chatgpt`): scaled to 0 and then deleted on 2026-08-06,
-  superseded by [CLIProxyAPI](../k8s/cli-proxy-api/README.md). It was a second LiteLLM
-  Deployment inside the `litellm` namespace holding its **own** ChatGPT/Codex OAuth
-  session on a PVC, serving the `*-chatgpt` models over the Responses API so Codex CLI
-  could use the Codex subscription. CLIProxyAPI arrived later for a different client —
-  Claude Code, which needs Anthropic-shaped tool calls that LiteLLM's Responses bridge
-  mistranslates.
-  [#3198] gave it its own single-replica `Recreate` deployment because LiteLLM builds the
-  ChatGPT authenticator during ASGI startup: an expired token sends that call into the
-  device-code flow, the pod never binds its port, and it dies to its own startup probe —
-  which in the main proxy took Ollama, z.ai, Anthropic, Groq and Gemini down too. That
-  split worked and is not why this was retired.
-  **What stayed painful was re-authenticating it.** LiteLLM has no in-place login, so a
-  new token meant: run `codex login` interactively somewhere with a browser, reshape the
-  result into LiteLLM's _different_ flat `auth.json` schema (see the seed Secret's own
-  description — "flattened from a Codex `codex login`"), SOPS-encrypt it, commit, push,
-  wait for Flux, and then rely on an init-container guard to actually replace the copy on
-  the PVC. That guard was wrong twice: `[ -f auth.json ]` could not replace a half-written
-  file holding only `device_code_requested_at` ([#3199]), and its replacement
-  `grep -q '"refresh_token"'` could not replace a present-but-revoked token (2026-08-06,
-  ~3h of crashlooping). Both tested the file's shape; neither could test whether the
-  credential works, which is the only property that decides whether the pod starts.
-  CLIProxyAPI replaces that whole ritual with one command against the running pod
-  (`-codex-device-login`), writing straight to its PVC, picked up by a file watcher
-  without a restart and kept alive by a 15m refresh worker. Note it has SOPS secrets too
-  (`config.sops.yaml`, `client-key.sops.yaml`) — but those hold the **inbound** client
-  key, i.e. how LiteLLM authenticates _to_ it, which is static and rotates by editing two
-  files. The **upstream** ChatGPT OAuth session is never in git there; its init container
-  only does `mkdir -p /data/auth`. That is the whole difference: a credential that
-  rotates on use and can only be minted interactively is a bad fit for a checked-in
-  secret, which is why the copy-if-absent guard kept being wrong.
-  CLIProxyAPI also serves `/v1/responses` directly, so it can front Codex CLI as well as
-  Claude Code and this instance buys nothing.
-
-  [#3198]: https://github.com/agentydragon/ducktape/pull/3198
-  [#3199]: https://github.com/agentydragon/ducktape/pull/3199
-
-  Deleted: the Deployment, Service, PVC, ServiceMonitor, auth-seed Secret, Gatus check,
-  and the 6 `*-chatgpt` entries in `k8s/litellm/app/proxy-config.yaml`.
-
-  The `*-chatgpt` model names came back the same day on a working backend: LiteLLM now
-  serves them over CLIProxyAPI's native `/v1/responses` via the `openai/` provider, which
-  is a passthrough rather than a bridge. The baked Codex configs
-  (<../k8s/agents/agent-sandbox/workspace-image/codex-config.toml>,
-  <../../x/codex_pod_image/home.nix>) and `oai_lane_models` in
-  <../../tf/gitops/litellm-keys/main.tf> pin those names, so nothing downstream needed a
-  rebuild. The `codex-*` entries stay on `anthropic/` → `/v1/messages` for Claude Code;
-  the two lanes are the same pod reached through the wire each client speaks natively.
-
-- **Harbor**: **removed 2026-08-11** (#3967) after two months parked — it was mostly a
-  registry for props, which use the Forgejo registry; the replacement track is the
-  `oci-cache` lighter-registry item in <plan.md>.
-- **InvenTree**: `inventree-{namespace,secrets,token-provisioner}`,
-  `authentik-blueprint-inventree-secret` — nice-to-have, parked under capacity pressure.
-- **OpenClaw / OpenShell**: **removed 2026-07-31**, manifests deleted rather than
-  parked. The gateway was unused and wedged (no exec traffic, idle orphaned
-  sandboxes), the operator could not be egress-confined
-  (`plans/personal_agents/findings/` F3), and `public-coder-agent` is now the
-  reference agent — same OpenClaw image, plain Deployment, `sandbox.mode: "off"`.
-  The `ghcr.io/agentydragon/openclaw` ImageRepository/ImagePolicy are deliberately
-  **kept**: that image is what `public-coder-agent` runs. The former
-  `openclaw-gateway` and `openclaw-sandbox` namespaces were retired after their
-  retained credentials moved to `agents/shared-secrets`; see
-  <../archive/2026_08_openclaw_namespace_retirement.md>. Rationale and the evaluated
-  alternatives: `plans/personal_agents/verdicts.md`.
+- **Harbor**: parked 2026-06-02 (#1822); manifests archived under `x/harbor/` 2026-08-11 (#3967) and
+  still suspended in-repo
+  (`harbor{,-namespace,-secrets,-db,-oidc-config,-proxy-cache,-servicemonitor,-agent-rbac}`).
+  It was mostly a registry for props, which use the Forgejo registry; the replacement
+  track is the `oci-cache` lighter-registry item in <plan.md>.
+- **InvenTree**: `inventree`, `inventree-{namespace,secrets,db,token-provisioner}` —
+  nice-to-have, parked under capacity pressure; Proxmox-pinned, so atlas/wyrm2
+  being back removes that blocker. Before unsuspending: mint the SOPS admin/db
+  secrets (<../k8s/TODO.md>). The app's formerly dangling `dependsOn` now points
+  at `sso-providers-tf` (#4908).
 - **OpenHands**: `openhands`, `openhands-{namespace,secrets,sandboxes}` — experimental, not
   currently used.
+- **props**: `props`, `props-{namespace,secrets,db,agent-rbac}` — suspended 2026-08-20
+  for a temporary teardown.
 - **Tandoor**: `tandoor`, `tandoor-{db,namespace}` — using Grocy instead.
-- **claude-sandbox-firecracker** — parked to free resources.
-- **listing-monitor-smoke** — parked. (thrive-scraper was un-parked by moving it to
-  git-based storage in Forgejo — no PVC, no wyrm2 pinning; see gaffer-private
-  `x/thrive_scrape/DESIGN.md`.)
+- **Wayback cache**: `wayback-cache`, `wayback-cache-{namespace,agent-rbac}`,
+  `wayback-archive-db` — decommissioned by operator request; configuration kept.
 
 ### Still down
 
-- **sdr** — suspended pending the radio re-set-up post-relocation.
+- **sdr** — suspended pending the radio re-set-up post-relocation (not unblocked by
+  atlas/wyrm2 returning).
