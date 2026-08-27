@@ -323,3 +323,29 @@ The agent-box VM and its `codex` user are live (see
       with the `agent-box-codex-user` key) — caveat: the token likely carries a
       refresh token that rotates on use, so a static plant could go stale; check
       whether the Codex CLI rewrites `auth.json` after refresh.
+
+## Alloy `allow_arbitrary_file_access`: decide the residual components
+
+Native scrapes in `monitoring/alloy/config.alloy` cover apiserver and kubelet,
+and clearing the spurious token fixes coredns. Three consumers of
+`bearerTokenFile` are still rejected by Alloy and therefore still unscraped:
+`monitoring-kube-controller-manager`, `monitoring-kube-scheduler`, and
+`volsync-system/volsync`. The last one is emitted by the volsync chart, so
+kube-prometheus-stack values cannot reach it.
+
+The alternative is `allow_arbitrary_file_access = true` on
+`prometheus.operator.servicemonitors`, which fixes all three at once but grants
+file access to every ServiceMonitor in the cluster rather than to named jobs.
+Today that is close to free — only `monitoring-operator`, `kubevirt-operator`
+and `seaweedfs-operator-manager-role` can write ServiceMonitors, and Alloy
+mounts nothing but its own ConfigMap and service-account token — so the flag
+would hand a hostile author only a credential they could already obtain.
+
+- [ ] Decide between extending the native scrapes to controller-manager and
+      scheduler (needs their endpoints reachable on 10257/10259, unverified
+      since the metrics have been absent since 2026-08-07) versus enabling the
+      flag for the remainder. Whichever wins, `volsync` needs an answer: a
+      `postRenderers` patch on its HelmRelease, an upstream values knob, or the
+      flag.
+- [ ] Re-evaluate if Alloy ever mounts a Secret. The flag's low cost rests on
+      it having nothing worth reading; that assumption is the tripwire.

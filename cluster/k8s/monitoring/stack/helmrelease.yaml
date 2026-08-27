@@ -444,13 +444,23 @@ spec:
 
     # Disable components we don't need
     kubeApiServer:
-      enabled: true
+      # Scraped natively from ../alloy/config.alloy instead. The chart's
+      # ServiceMonitor authenticates with `bearerTokenFile`, which Alloy will not
+      # read out of a ServiceMonitor, so it produced no scrape config at all.
+      enabled: false
     kubelet:
-      enabled: true
+      # Same as kubeApiServer: scraped natively in ../alloy/config.alloy.
+      enabled: false
     kubeControllerManager:
       enabled: true
     coreDns:
       enabled: true
+      serviceMonitor:
+        # CoreDNS serves metrics over plain HTTP on 9153 and requires no
+        # authentication; the chart sends a service-account token anyway, which is
+        # the one thing here Alloy refuses to read. Clearing it is the whole fix
+        # for this component -- no native scrape needed.
+        bearerTokenFile: ""
     kubeEtcd:
       # Static Talos etcd endpoints are managed in cluster/k8s/monitoring/etcd.
       enabled: false
