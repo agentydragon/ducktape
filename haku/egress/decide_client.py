@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from haku.egress.decision import Decision, RequestMeta
+from haku.egress.decision import DecideResponse, RequestMeta
 
 
 class DecideClient(ABC):
@@ -15,4 +15,4 @@ class DecideClient(ABC):
     """
 
     @abstractmethod
-    async def decide(self, request: RequestMeta) -> Decision: ...
+    async def decide(self, request: RequestMeta) -> DecideResponse: ...

@@ -25,7 +25,7 @@ from typing import assert_never
 from mitmproxy import http
 
 from haku.egress.decide_client import DecideClient
-from haku.egress.decision import AllowDecision, DenyDecision, PlaceholderSubstitution, RequestMeta
+from haku.egress.decision import DecideAllowed, DecideDenied, PlaceholderSubstitution, RequestMeta
 
 logger = logging.getLogger(__name__)
 
@@ -91,18 +91,19 @@ class EgressGateAddon:
         try:
             decision = await asyncio.wait_for(self._decide.decide(meta), timeout=self._decide_timeout_seconds)
             match decision:
-                case DenyDecision():
+                case DecideDenied():
                     logger.info("deny %s %s:%d: %s", meta.method, meta.host, meta.port, decision.reason)
                     flow.response = _refusal(403, f"egress denied: {decision.reason}")
-                case AllowDecision():
+                case DecideAllowed():
                     applied = sum(
                         _apply_substitution(flow.request, substitution) for substitution in decision.substitutions
                     )
                     logger.info(
-                        "allow %s %s:%d (substitutions: %d of %d applied)",
+                        "allow %s %s:%d decision_id=%s (substitutions: %d of %d applied)",
                         meta.method,
                         meta.host,
                         meta.port,
+                        decision.decision_id,
                         applied,
                         len(decision.substitutions),
                     )

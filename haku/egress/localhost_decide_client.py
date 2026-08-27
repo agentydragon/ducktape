@@ -13,22 +13,12 @@ from __future__ import annotations
 import asyncio
 import socket
 from ipaddress import IPv4Address, IPv6Address, ip_address
-from typing import assert_never
 
 import httpx
 from pydantic import SecretStr, TypeAdapter
 
 from haku.egress.decide_client import DecideClient
-from haku.egress.decision import (
-    AllowDecision,
-    DecideAllowed,
-    DecideDenied,
-    DecideRequest,
-    DecideResponse,
-    Decision,
-    DenyDecision,
-    RequestMeta,
-)
+from haku.egress.decision import DecideRequest, DecideResponse, RequestMeta
 
 DECIDE_PATH = "/api/internal/http/decide"
 DEFAULT_TIMEOUT_SECONDS = 5.0
@@ -62,7 +52,7 @@ class LocalhostDecideClient(DecideClient):
             trust_env=False,
         )
 
-    async def decide(self, request: RequestMeta) -> Decision:
+    async def decide(self, request: RequestMeta) -> DecideResponse:
         resolved = await _resolve(request.host, request.port)
         decide_request = DecideRequest(
             fence_credential=self._fence_credential,
@@ -78,14 +68,7 @@ class LocalhostDecideClient(DecideClient):
             DECIDE_PATH, content=decide_request.model_dump_json(), headers={"Content-Type": "application/json"}
         )
         response.raise_for_status()
-        verdict = _RESPONSE_ADAPTER.validate_json(response.content)
-        match verdict:
-            case DecideAllowed():
-                return AllowDecision(substitutions=verdict.substitutions)
-            case DecideDenied():
-                return DenyDecision(reason=verdict.reason)
-            case _:
-                assert_never(verdict)
+        return _RESPONSE_ADAPTER.validate_json(response.content)
 
     async def aclose(self) -> None:
         await self._client.aclose()

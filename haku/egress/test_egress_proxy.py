@@ -34,13 +34,11 @@ from pydantic import SecretStr
 from haku.egress.addon import DEFAULT_DECIDE_TIMEOUT_SECONDS
 from haku.egress.decide_client import DecideClient
 from haku.egress.decision import (
-    AllowDecision,
     DecideAllowed,
     DecideDenied,
     DecideRequest,
-    Decision,
+    DecideResponse,
     DecisionSource,
-    DenyDecision,
     GrantScope,
     PlaceholderSubstitution,
     RequestMeta,
@@ -53,13 +51,16 @@ PLACEHOLDER = "proxy-github-placeholder"
 REAL_CREDENTIAL = "real-redeemed-credential"
 
 
-def allow_with_substitution() -> AllowDecision:
-    return AllowDecision(
+def allow_with_substitution() -> DecideAllowed:
+    return DecideAllowed(
+        source=DecisionSource.GRANT,
+        decision_id="grant:50000000-0000-4000-8000-000000000005",
+        valid_until=datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=5),
         substitutions=[
             PlaceholderSubstitution(
                 placeholder=PLACEHOLDER, value=REAL_CREDENTIAL, match_headers=frozenset({"Authorization"})
             )
-        ]
+        ],
     )
 
 
@@ -130,19 +131,19 @@ async def proxied_get(proxy: EgressProxy, url: str, headers: dict[str, str] | No
 
 
 class RaisingDecideClient(DecideClient):
-    async def decide(self, request: RequestMeta) -> Decision:
+    async def decide(self, request: RequestMeta) -> DecideResponse:
         raise RuntimeError("decide transport exploded")
 
 
 class HangingDecideClient(DecideClient):
-    async def decide(self, request: RequestMeta) -> Decision:
+    async def decide(self, request: RequestMeta) -> DecideResponse:
         await asyncio.Event().wait()
         raise AssertionError("unreachable: the event is never set")
 
 
 class MalformedDecideClient(DecideClient):
-    async def decide(self, request: RequestMeta) -> Decision:
-        return cast(Decision, {"kind": "allow", "substitutions": []})
+    async def decide(self, request: RequestMeta) -> DecideResponse:
+        return cast(DecideResponse, {"allowed": True, "substitutions": []})
 
 
 async def test_allow_substitutes_presented_placeholder(upstream: RecordingUpstream, tmp_path: Path) -> None:
@@ -209,7 +210,7 @@ async def test_allow_passes_unscanned_placeholder_through_verbatim(upstream: Rec
 
 
 async def test_deny_refuses_without_upstream_contact(upstream: RecordingUpstream, tmp_path: Path) -> None:
-    decide = StaticDecideClient(DenyDecision(reason="no standing policy or active grant"))
+    decide = StaticDecideClient(DecideDenied(reason="no standing policy or active grant"))
     async with make_proxy(decide, tmp_path) as proxy:
         status, body = await proxied_get(proxy, f"http://127.0.0.1:{upstream.port}/secret")
     assert status == 403
@@ -242,7 +243,7 @@ async def test_malformed_decision_fails_closed(upstream: RecordingUpstream, tmp_
 
 
 async def test_connect_deny_refuses_tunnel(upstream: RecordingUpstream, tmp_path: Path) -> None:
-    decide = StaticDecideClient(DenyDecision(reason="no grant for origin"))
+    decide = StaticDecideClient(DecideDenied(reason="no grant for origin"))
     async with make_proxy(decide, tmp_path) as proxy, aiohttp.ClientSession() as session:
         with pytest.raises(aiohttp.ClientHttpProxyError) as excinfo:
             await session.get(f"https://127.0.0.1:{upstream.port}/", proxy=f"http://127.0.0.1:{proxy.listen_port}")
@@ -263,15 +264,6 @@ async def test_connect_decide_exception_fails_closed(upstream: RecordingUpstream
 
 PROXY_BEARER = "proxy-identity-bearer"
 FENCE_CREDENTIAL = "agent-fence-credential"
-
-
-def wire_allow() -> DecideAllowed:
-    return DecideAllowed(
-        source=DecisionSource.GRANT,
-        decision_id="grant:50000000-0000-4000-8000-000000000005",
-        valid_until=datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=5),
-        substitutions=allow_with_substitution().substitutions,
-    )
 
 
 @dataclass(frozen=True)
@@ -352,7 +344,7 @@ def stub_client(
 
 async def test_localhost_decide_allow_flows_end_to_end(upstream: RecordingUpstream, tmp_path: Path) -> None:
     async with (
-        stub_console(wire_allow()) as stub,
+        stub_console(allow_with_substitution()) as stub,
         aclosing(stub_client(stub)) as decide,
         make_proxy(decide, tmp_path) as proxy,
     ):
@@ -411,7 +403,10 @@ class EndpointFailure:
 
 
 ENDPOINT_FAILURES = [
-    pytest.param(EndpointFailure(behavior=wire_allow(), proxy_bearer="not-the-proxy-bearer"), id="rejected-bearer-401"),
+    pytest.param(
+        EndpointFailure(behavior=allow_with_substitution(), proxy_bearer="not-the-proxy-bearer"),
+        id="rejected-bearer-401",
+    ),
     pytest.param(EndpointFailure(behavior=Unconfigured()), id="unconfigured-503"),
     pytest.param(EndpointFailure(behavior=Hang(), timeout_seconds=0.2), id="endpoint-timeout"),
     pytest.param(EndpointFailure(behavior=GarbageBody()), id="garbage-body"),

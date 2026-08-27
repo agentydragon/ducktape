@@ -18,11 +18,6 @@ from typing import Annotated, Literal
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, PlainSerializer, SecretStr, model_validator
 
 
-class DecisionKind(StrEnum):
-    ALLOW = "allow"
-    DENY = "deny"
-
-
 class RequestMeta(BaseModel):
     """What the proxy tells the decision endpoint about one request or CONNECT.
 
@@ -70,29 +65,6 @@ class PlaceholderSubstitution(BaseModel):
         min_length=1,
         description="Header names (case-insensitive) scanned for the placeholder; it passes through anywhere else.",
     )
-
-
-class AllowDecision(BaseModel):
-    """Forward the request after applying the substitutions."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    kind: Literal[DecisionKind.ALLOW] = DecisionKind.ALLOW
-    substitutions: list[PlaceholderSubstitution] = Field(
-        default_factory=list, description="Applied in order before forwarding; empty forwards the request as-is."
-    )
-
-
-class DenyDecision(BaseModel):
-    """Refuse the request without contacting the upstream."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    kind: Literal[DecisionKind.DENY] = DecisionKind.DENY
-    reason: str = Field(description="Operator-facing denial reason; safe to log and to return to the client.")
-
-
-type Decision = Annotated[AllowDecision | DenyDecision, Field(discriminator="kind")]
 
 
 class DecisionSource(StrEnum):
