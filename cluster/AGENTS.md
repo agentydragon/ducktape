@@ -70,19 +70,6 @@ New Terraform modules get BUILD.bazel targets for format, lint, and validate.
 - **Talos CLI**: Run from cluster directory (direnv provides tools + config)
 - **Proxmox API**: Only reachable from VLAN. Use `nodeSelector: topology.kubernetes.io/region: proxmox`.
 
-## Cilium Gateway Status
-
-The public `cluster-gateway` intentionally uses Cilium Gateway API in
-`gatewayAPI.hostNetwork.enabled` mode: Envoy binds 80/443 directly on the OVH nodes and
-Route 53 records point at those node IPs, so there is no provider `LoadBalancer`/VIP for
-Cilium to report as a Gateway address. `gateway-system/cluster-gateway` can therefore
-report `Programmed=False` (`AddressNotAssigned`) even while HTTPRoutes are accepted and
-public probes succeed. Do not treat that condition alone as an outage or "fix" it by
-adding static `Gateway.spec.addresses` (that would not create provider-level failover) —
-check HTTPRoute `Accepted`/`ResolvedRefs`, Cilium/Envoy programming, and blackbox probes
-against the public node IPs instead. Full rationale and migration options:
-<docs/plan.md> "Cilium Gateway API `Programmed=False`".
-
 ## Key Files
 
 In `terraform/main/`:
