@@ -87,39 +87,53 @@ principals · PR</a>"]` (single quotes inside the double-quoted label). Anchors
   read and makes ready work look gated; audit every edge against this rule
   before publishing.
 
-## Completed-work toggle
+## One dataset, two views — the completed-work toggle
 
-The page carries **two views behind one switch**: the default **live view**
-(pending/in-flight only) and a **provenance view** that adds completed work as
-`done`-class nodes with their real dependency edges — useful for onboarding,
-retros, and seeing why the current roots are where they are.
+**The graph is data, not two hand-kept mermaid blocks.** Hold one `NODES` /
+`EDGES` dataset in an inline script (each node: `id`, `label`, `url`, `cls`,
+with completed work as `cls: "done"`), generate the mermaid source from it,
+and render with a page-controlled mermaid instance. The default **live view**
+filters out `done` nodes and any edge touching them; the switch re-renders
+with the completed layer included (provenance view — useful for onboarding,
+retros, and seeing why the current roots are where they are). Duplicate
+blocks drift; one dataset cannot.
 
-- Implement as two sibling mermaid blocks (`.board-live`, `.board-full`) and a
-  checkbox styled as a switch; pure CSS does the swap:
-
-  ```css
-  body:has(#showdone:checked) .board-live,
-  body:not(:has(#showdone:checked)) .board-full {
-    position: absolute;
-    left: -300vw;
-    top: 0;
-    visibility: hidden;
-    pointer-events: none;
+```js
+function buildMermaid(showDone) {
+  const live = new Map(NODES.filter((n) => showDone || n.cls !== "done").map((n) => [n.id, n]));
+  const lines = [INIT_DIRECTIVE, `flowchart ${DIRECTION}`];
+  for (const n of live.values()) {
+    const label = `<a href='${n.url}'>${n.label}</a>`;
+    const box = n.cls === "gate" ? `{{"${label}"}}` : `["${label}"]`;
+    lines.push(`  ${n.id}${box}:::${n.cls}`);
   }
-  ```
+  for (const [a, b, style] of EDGES) {
+    if (!live.has(a) || !live.has(b)) continue;
+    lines.push(`  ${a} ${style === "dotted" ? "-.->" : "-->"} ${b}`);
+  }
+  return lines.concat(CLASSDEFS).join("\n");
+}
+```
 
-- **Never hide the inactive view with `display:none`** — a mermaid block that
-  is display:none at load renders zero-size (verified). Off-screen absolute
-  positioning keeps layout so both views render; verify BOTH states in the
-  local render (flip `checked` on a temp copy).
-- The full view is the live view plus the completed layer — completed nodes
-  wear `:::done` and a `✓`, and umbrella/sink edges from landed parts stay, so
-  the provenance chains read (e.g. landed prerequisites → the merged
-  integration PR → the running spike).
-- Prune a completed node once nothing live traces to it through any path —
+- **Render into a plain `<div>`, not `<pre class="mermaid">`** — the artifact
+  runtime processes mermaid fences itself and must not fight the page's own
+  renderer. Load mermaid as `window.mermaid` if a harness pre-injected it,
+  else from the CDN (pinned UMD,
+  `https://cdnjs.cloudflare.com/ajax/libs/mermaid/<version>/mermaid.min.js`);
+  `mermaid.initialize({ startOnLoad: false, securityLevel: "loose" })` —
+  `loose` is required or the `<a>` labels are stripped — then
+  `mermaid.render(id, source)` and inject the SVG. Re-render on toggle with a
+  fresh id.
+- Completed nodes wear `done` + a `✓`; their real dependency edges stay, so
+  provenance chains read (landed prerequisites → the merged integration PR →
+  the running work). Prune a completed node once nothing live traces to it —
   the provenance view explains the present, it is not an archive; git is.
-- The flush-and-restore-at-the-source rule applies to both layers: a node
-  moves to the completed layer only on verified merge state.
+- Flush-and-restore-at-the-source applies to both layers: a node moves to
+  `done` only on verified merge state.
+- The local render harness pre-injects the npm UMD build as `window.mermaid`
+  and waits for the page to set `document.title = "MERMAID_DONE"` after its
+  own render; verify BOTH toggle states (flip `checked` on a temp copy) and
+  both color schemes.
 
 ## Graph structure
 
@@ -130,7 +144,10 @@ retros, and seeing why the current roots are where they are.
   showing, prefix each chain's node labels with a small per-workstream icon
   (🔐 💬 🗂 🤖 📸 …) and put the icon key in the legend — the grouping survives
   without the layout cost.
-- Keep labels ≤ ~30 characters; `flowchart LR`; tighten with
+- **Direction is a free choice per render** — pick `LR`/`TB` (a generator
+  makes this one constant) to keep the aspect ratio near the viewport;
+  disconnected chains stack on their own, so no direction is "the" layout.
+- Keep labels ≤ ~30 characters; tighten with
   `%%{init: {"flowchart": {"nodeSpacing": 26, "rankSpacing": 40, "padding": 7}}}%%` — halving the default node padding is what gets the natural width under the container and the effective scale to 1.0.
 
 ## Mermaid-in-artifact gotchas
@@ -149,6 +166,12 @@ retros, and seeing why the current roots are where they are.
   linkStyle default stroke:#2F6F5E,stroke-width:1.4px
   ```
 
+- **Theme follows the operator's preference.** Default artifact guidance
+  honors an explicit viewer theme stamp; when the operator asks the board to
+  track their OS ("adapt to device settings"), define light tokens on bare
+  `:root` and dark ones only under `@media (prefers-color-scheme: dark)`,
+  with no `[data-theme]` overrides — and say so in a comment so the deviation
+  reads as chosen.
 - **Background: transparent beats a paper card when the fills allow it.** The
   GitHub state colors are label-chip pastels that read on light and dark
   grounds alike, so the diagram container can sit directly on the page
