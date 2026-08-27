@@ -47,7 +47,7 @@ _TANA_MODELS = {
 
 def _public_coder_agent_models() -> list[dict]:
     config = json5.loads(get_required_path(_PUBLIC_CODER_AGENT_CONFIG).read_text())
-    models: list[dict] = config["models"]["providers"]["litellm-subscription"]["models"]
+    models: list[dict] = config["models"]["providers"]["litellm"]["models"]
     return models
 
 
@@ -142,10 +142,10 @@ def test_public_coder_agent_models_match_litellm_codex_routes() -> None:
     assert [model["id"] for model in _public_coder_agent_models()] == [*OPENCLAW_CODEX_MODELS, *_OPENCLAW_GEMINI_IDS]
 
     config = json5.loads(get_required_path(_PUBLIC_CODER_AGENT_CONFIG).read_text())
-    provider = config["models"]["providers"]["litellm-subscription"]
+    provider = config["models"]["providers"]["litellm"]
     assert provider["api"] == "anthropic-messages"
     assert config["agents"]["defaults"]["model"]["primary"] in {
-        f"litellm-subscription/{model_id}" for model_id in OPENCLAW_CODEX_MODELS
+        f"litellm/{model_id}" for model_id in OPENCLAW_CODEX_MODELS
     }
 
 

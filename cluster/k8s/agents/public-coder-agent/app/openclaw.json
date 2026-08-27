@@ -3,7 +3,7 @@
     "defaults": {
       "userTimezone": "America/Los_Angeles",
       "model": {
-        "primary": "litellm-subscription/chatgpt/ant-messages/gpt-5.6-luna"
+        "primary": "litellm/chatgpt/ant-messages/gpt-5.6-luna"
       },
       "compaction": {
         "reserveTokensFloor": 50000
@@ -95,7 +95,7 @@
   },
   "models": {
     "providers": {
-      "litellm-subscription": {
+      "litellm": {
         "agentRuntime": {
           "id": "openclaw"
         },
