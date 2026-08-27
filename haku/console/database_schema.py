@@ -1358,6 +1358,21 @@ class ConversationItem(Base):
         ),
         Index("idx_conversation_item_conversation", "conversation_id", "opened_seq"),
         Index("idx_conversation_item_turn", "turn_id", "opened_seq"),
+        # The `read_items` keyset branches: a page of entries is served from the rows' defining
+        # stream positions, so each branch needs an index that already stands in that order —
+        # partial, because the branch's filter would otherwise make it a scan of the other rows.
+        Index(
+            "idx_conversation_item_tool_call_opened",
+            "conversation_id",
+            "opened_seq",
+            postgresql_where=sql_text("item_type = 'tool_call'"),
+        ),
+        Index(
+            "idx_conversation_item_completed",
+            "conversation_id",
+            "closed_seq",
+            postgresql_where=sql_text("status = 'complete'"),
+        ),
     )
 
 
@@ -1410,6 +1425,13 @@ class ConversationTurn(Base):
         ),
         Index("idx_conversation_turn_conversation", "conversation_id", "first_seq"),
         Index("idx_conversation_turn_session", "session_id", "first_seq"),
+        # The `read_items` turn-end branch, ordered by where each ended exchange closed.
+        Index(
+            "idx_conversation_turn_ended",
+            "conversation_id",
+            "last_seq",
+            postgresql_where=sql_text("last_seq IS NOT NULL"),
+        ),
     )
 
 
