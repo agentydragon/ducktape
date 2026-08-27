@@ -1,3 +1,5 @@
+import { ensureLedger, recordViolation, tracked } from "./visual_network_ledger";
+
 export type OperatorMcpToolFixture = (args: Record<string, unknown>) => unknown;
 export type OperatorMcpToolFixtures = Readonly<Record<string, OperatorMcpToolFixture>>;
 
@@ -28,13 +30,18 @@ function toolPayload(name: string, args: Record<string, unknown>, fixtures: Oper
 }
 
 export function installOperatorMcpMock(fixtures: OperatorMcpToolFixtures): void {
-  const realFetch = globalThis.fetch;
+  ensureLedger();
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    const response = await mockOperatorMcpFetch(input, init, url, fixtures);
-    if (response !== null) return response;
-    if (realFetch) return realFetch(input, init);
-    return jsonResponse({});
+    return tracked(url, async () => {
+      const response = await mockOperatorMcpFetch(input, init, url, fixtures);
+      if (response !== null) return response;
+      // A route no mock matches must fail the run by name; see mock_api.ts for why answering
+      // empty (rather than rejecting or hitting the real network) is what keeps the page
+      // deterministic while the ledger fails the test.
+      recordViolation(`unmatched route: ${url}`);
+      return jsonResponse({});
+    });
   }) as typeof fetch;
 }
 

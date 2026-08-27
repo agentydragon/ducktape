@@ -11,9 +11,11 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  abortUnexpectedRequests,
+  assertNetworkSettled,
   prepareDeterministicPage,
   screenshotElement,
-  settle,
+  waitForStable,
 } from "../../../../../util/testing/frontend_visual/capture.mjs";
 import {
   DISABLE_ANIMATIONS_CSS,
@@ -94,6 +96,9 @@ try {
   // approvals-panel width (card.tsx's `.haku-shell-panels` wrapper) — no shared gallery.
   const discover = await browser.newPage();
   await discover.evaluateOnNewDocument(frozenClockScript(FROZEN_NOW_MS));
+  // Fenced like the capture pages; not asserted, because this page only reads the fixture
+  // manifest and the same widget code runs — and is asserted — on every captured page.
+  await abortUnexpectedRequests(discover, () => false);
   await discover.setContent(pageHtml(css, harnessJs, COLOR_SCHEMES[0], { __FIXTURE__: 0, __VARIANT__: "compact" }), {
     waitUntil: "load",
   });
@@ -112,15 +117,24 @@ try {
           viewport: { width: VIEWPORT_WIDTH, height: 900, deviceScaleFactor: 2 },
           colorScheme,
         });
+        // Everything this page uses is inlined and its fetch is stubbed, so no request may reach
+        // the network at all; one that tries is aborted and fails the fixture by name below.
+        const escapedRequests = await abortUnexpectedRequests(page, () => false);
         await page.setContent(pageHtml(css, harnessJs, colorScheme, { __FIXTURE__: index, __VARIANT__: variant }), {
           waitUntil: "load",
         });
         await page.waitForSelector(".haku-preview-card", { timeout: 10_000 });
-        // Let Mantine mount and any mock-backed widget (gmail subjects, grocy reference, calendar
-        // name) fetch + re-render before the screenshot.
-        await settle(700);
-        const file = `preview-${slug}-${variant}-${colorScheme}.png`;
         const context = `fixture ${slug} ${variant} ${colorScheme}`;
+        // A mock-backed widget (gmail subjects, grocy reference, calendar name) fetches after
+        // mount and re-renders: paint once so those effects have started, drain the stubbed
+        // network, then paint the post-data render — conditions, not a fixed delay.
+        await waitForStable(page);
+        await assertNetworkSettled(page, { context });
+        if (escapedRequests.length > 0) {
+          throw new Error(`${context}: requests escaped the harness mocks:\n  ${escapedRequests.join("\n  ")}`);
+        }
+        await waitForStable(page);
+        const file = `preview-${slug}-${variant}-${colorScheme}.png`;
         writeFileSync(join(outDir, file), await screenshotElement(page, ".haku-preview-card", { context }));
         assets.push({ path: file, label: `${label} — ${variant} · ${colorScheme}` });
         console.log(`wrote ${join(outDir, file)}`);

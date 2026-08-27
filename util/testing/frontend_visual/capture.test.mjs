@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 
-import { prepareDeterministicPage, screenshotElement, settle } from "./capture.mjs";
+import {
+  abortUnexpectedRequests,
+  assertNetworkSettled,
+  prepareDeterministicPage,
+  screenshotElement,
+  settle,
+} from "./capture.mjs";
 
 function fakePage() {
   const calls = [];
@@ -68,6 +74,47 @@ function fakePage() {
   assert.equal(resolved, false);
   await pending;
   assert.equal(resolved, true);
+}
+
+{
+  // The fence continues allowed requests, and aborts + records everything else by type and URL.
+  const handlers = {};
+  const seen = [];
+  const page = {
+    setRequestInterception: async (on) => seen.push(["intercept", on]),
+    on: (event, handler) => {
+      handlers[event] = handler;
+    },
+  };
+  const request = (url, resourceType, log) => ({
+    url: () => url,
+    resourceType: () => resourceType,
+    continue: async () => log.push(`continue ${url}`),
+    abort: async () => log.push(`abort ${url}`),
+  });
+  const violations = await abortUnexpectedRequests(page, (candidate) => candidate.url().startsWith("file://"));
+  assert.deepEqual(seen, [["intercept", true]]);
+  const log = [];
+  handlers.request(request("file:///harness/index.html", "document", log));
+  handlers.request(request("https://fonts.example/inter.woff2", "font", log));
+  assert.deepEqual(log, ["continue file:///harness/index.html", "abort https://fonts.example/inter.woff2"]);
+  assert.deepEqual(violations, ["font https://fonts.example/inter.woff2"]);
+}
+
+{
+  // A page with no ledger has nothing to settle: no waiting, no violation read.
+  const evaluated = [];
+  const page = {
+    evaluate: async (fn) => {
+      evaluated.push(fn);
+      return false;
+    },
+    waitForFunction: async () => {
+      throw new Error("must not wait on a page with no ledger");
+    },
+  };
+  await assertNetworkSettled(page, { context: "scene x" });
+  assert.equal(evaluated.length, 1);
 }
 
 console.log("capture.test.mjs passed");
