@@ -487,6 +487,7 @@ py_library(
         "@pypi//mcp",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
+        "@pypi//tenacity",
     ],
 )
 

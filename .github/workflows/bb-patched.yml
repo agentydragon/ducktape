@@ -1,0 +1,69 @@
+# Builds the patched bb CLI (third_party/bb: upstream cli-v5.0.387 +
+# buildbuddy#13067) and publishes it as a content-addressed GitHub release,
+# the same tag scheme release.yml uses for the Bazel-built pins.
+# Standalone workflow because the input is upstream BuildBuddy source, not a
+# ducktape Bazel target — see third_party/bb/README.md.
+name: bb patched pin
+
+on:
+  workflow_dispatch:
+  push:
+    # branches filter keeps the release's own tag push from re-triggering the
+    # workflow (path filters do not apply to tag pushes).
+    branches: ["**"]
+    paths:
+      - "third_party/bb/**"
+      - ".github/workflows/bb-patched.yml"
+
+concurrency:
+  group: bb-patched-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & publish patched bb
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Checkout BuildBuddy at cli-v5.0.387
+        uses: actions/checkout@v7
+        with:
+          repository: buildbuddy-io/buildbuddy
+          ref: e85d89e0bf52040c222424f9ca8b3ce4649116c1
+          path: bb-upstream
+
+      - uses: ./.github/actions/setup-ci-secrets
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Build patched bb
+        shell: bash
+        run: |
+          third_party/bb/build_bb.sh \
+            "$GITHUB_WORKSPACE/bb-upstream" \
+            "$RUNNER_TEMP/bb-5.0.387-pr13067-linux-amd64"
+
+      - name: Publish release if content changed
+        shell: bash
+        env:
+          GH_TOKEN: ${{ env.GH_RELEASE_PAT }}
+        run: |
+          set -euo pipefail
+          binary="$RUNNER_TEMP/bb-5.0.387-pr13067-linux-amd64"
+          content_sha=$(python3 devinfra/ci/release_content_hash.py "$binary")
+          tag="bb-patched-${content_sha:0:12}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "unchanged (release $tag exists), skipping"
+            exit 0
+          fi
+          gh release create "$tag" "$binary" \
+            --title "bb-patched (${content_sha:0:12})" \
+            --notes "bb CLI cli-v5.0.387 + buildbuddy-io/buildbuddy#13067 (binary-deletion patchset fix). Built from third_party/bb by bb-patched.yml." \
+            --target "$GITHUB_SHA" \
+            --latest=false
+          echo "Released: $tag"

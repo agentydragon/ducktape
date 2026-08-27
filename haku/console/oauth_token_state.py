@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 from mcp.shared.auth import OAuthToken
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from tenacity import RetryCallState, Retrying, wait_exponential
 
 from haku.console.database_schema import OAuthTokenState
 from haku.console.oauth_token_support import token_expires_at, token_is_fresh
@@ -24,8 +25,7 @@ type RefreshToken = Callable[[str], Awaitable[OAuthToken]]
 
 _REFRESH_CLAIM_TTL = datetime.timedelta(seconds=30)
 _REFRESH_CLAIM_POLL_SECONDS = 0.05
-_REFRESH_RETRY_BASE = datetime.timedelta(seconds=30)
-_REFRESH_RETRY_MAX = datetime.timedelta(minutes=15)
+_REFRESH_RETRY_WAIT = wait_exponential(multiplier=30, max=datetime.timedelta(minutes=15))
 _FAILURE_MESSAGE_LIMIT = 1024
 
 
@@ -76,6 +76,18 @@ class OAuthRefreshBlockedError(RuntimeError):
 
 def _now() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC)
+
+
+def _refresh_retry_delay(failure_count: int) -> datetime.timedelta:
+    """Backoff before the retry that follows the ``failure_count``-th consecutive failure.
+
+    Tenacity is the wait calculator only: its strategies evaluate over a ``RetryCallState``, so a
+    minimal state carrying the persisted failure count as its attempt number stands in for a live
+    retry loop (the maintenance sweep drives actual retries off the stored ``refresh_retry_at``).
+    """
+    retry_state = RetryCallState(retry_object=Retrying(), fn=None, args=(), kwargs={})
+    retry_state.attempt_number = failure_count
+    return datetime.timedelta(seconds=_REFRESH_RETRY_WAIT(retry_state))
 
 
 def new_oauth_token_state(
@@ -266,11 +278,7 @@ class PostgresOAuthTokenStateStore:
             state.refresh_failure_count += 1
             state.refresh_failure_action = action
             if action == OAuthRefreshFailureAction.RETRYING:
-                delay_seconds = min(
-                    _REFRESH_RETRY_BASE.total_seconds() * 2 ** (state.refresh_failure_count - 1),
-                    _REFRESH_RETRY_MAX.total_seconds(),
-                )
-                state.refresh_retry_at = now + datetime.timedelta(seconds=delay_seconds)
+                state.refresh_retry_at = now + _refresh_retry_delay(state.refresh_failure_count)
             else:
                 state.refresh_retry_at = None
             state.refresh_claim_id = None

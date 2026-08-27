@@ -76,7 +76,10 @@ chat_runtimes:
     system_prompt_template: /etc/haku-console/config/public_coder_system_prompt.md.j2
     implementation:
       kind: codex_app_server
-      model: codex-gpt-5.6-sol
+      # The runner pins wire_api=responses, so this must be a `*-chatgpt` Responses-lane
+      # LiteLLM model, never `codex-*` (the Anthropic Messages lane, which fails every
+      # turn at /v1/responses) — cross-checked by cluster/k8s/litellm/app/test_litellm_config.py.
+      model: gpt-5.6-luna-chatgpt
       provider_id: haku
       provider_name: Haku OpenAI-compatible
       # The sandbox has no direct LiteLLM egress. Its inert OPENAI_API_KEY placeholder reaches this

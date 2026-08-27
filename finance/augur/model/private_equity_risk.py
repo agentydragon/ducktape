@@ -70,33 +70,54 @@ class PrimaryRoundConfig(FrozenModel):
     `bayesian_mint_streams` preset uses this. See augur/plans/mint_streams_model.md.
     """
 
-    monthly_hazard: float = Field(gt=0, le=1.0)
-    """Per-month Poisson rate of primary-round arrivals. ~1/18 = 0.056 baseline (one
-    round every ~18 months); fit per issuer."""
+    monthly_hazard: float = Field(
+        gt=0,
+        le=1.0,
+        description=(
+            "Per-month Poisson rate of primary-round arrivals. ~1/18 = 0.056 baseline (one "
+            "round every ~18 months); fit per issuer."
+        ),
+    )
 
-    monthly_hazard_scale_reversion: ValuationDriftScaleReversion | None = None
-    """Optional: `lambda(s) = lambda_mature + (lambda_young - lambda_mature) *
-    exp(-max(0, s - onset)/scale)`, `s = log V`. Reuses the same shape submodel as V
-    drift; semantics differ — for hazard this models rounds-dry-up as the company
-    matures. `monthly_log_return_mu_young` is reinterpreted as `lambda_young`."""
+    monthly_hazard_scale_reversion: ValuationDriftScaleReversion | None = Field(
+        default=None,
+        description=(
+            "Optional: `lambda(s) = lambda_mature + (lambda_young - lambda_mature) * "
+            "exp(-max(0, s - onset)/scale)`, `s = log V`. Reuses the same shape submodel as V "
+            "drift; semantics differ — for hazard this models rounds-dry-up as the company "
+            "matures. `monthly_log_return_mu_young` is reinterpreted as `lambda_young`."
+        ),
+    )
 
-    ipo_anticipation_decay: bool = False
-    """If True, multiply the hazard by `(1 - P(public_market_opened_by_t))` so primary
-    rounds taper as IPO approaches. Reads from the same `public_market_cdf_anchors` /
-    `annual_public_market_probability` as the existing IPO model."""
+    ipo_anticipation_decay: bool = Field(
+        default=False,
+        description=(
+            "If True, multiply the hazard by `(1 - P(public_market_opened_by_t))` so primary "
+            "rounds taper as IPO approaches. Reads from the same `public_market_cdf_anchors` / "
+            "`annual_public_market_probability` as the existing IPO model."
+        ),
+    )
 
-    cash_over_v_pre_median: float = Field(gt=0)
-    """Median round size as fraction of pre-money V(t). e.g. 0.08 ⇒ ~8% raise/V_pre."""
+    cash_over_v_pre_median: float = Field(
+        gt=0, description="Median round size as fraction of pre-money V(t). e.g. 0.08 ⇒ ~8% raise/V_pre."
+    )
 
-    cash_over_v_pre_log_sigma: float = Field(default=0.5, ge=0)
-    """Per-round LogNormal dispersion of cash/V_pre."""
+    cash_over_v_pre_log_sigma: float = Field(
+        default=0.5, ge=0, description="Per-round LogNormal dispersion of cash/V_pre."
+    )
 
-    step_up_median: float = Field(default=1.0, gt=0)
-    """Multiplicative info-driven repricing at the round. `V_post = V_pre * (1 +
-    cash/V_pre) * step_up`. Default 1.0 is pure mechanical (V_post = V_pre + cash)."""
+    step_up_median: float = Field(
+        default=1.0,
+        gt=0,
+        description=(
+            "Multiplicative info-driven repricing at the round. `V_post = V_pre * (1 + "
+            "cash/V_pre) * step_up`. Default 1.0 is pure mechanical (V_post = V_pre + cash)."
+        ),
+    )
 
-    step_up_log_sigma: float = Field(default=0.0, ge=0)
-    """Per-round LogNormal dispersion of the step-up factor."""
+    step_up_log_sigma: float = Field(
+        default=0.0, ge=0, description="Per-round LogNormal dispersion of the step-up factor."
+    )
 
 
 class EmployeeMintConfig(FrozenModel):
@@ -106,19 +127,33 @@ class EmployeeMintConfig(FrozenModel):
     (SBC is non-cash). Per rollout `m` is drawn LogNormal-around the configured median.
     """
 
-    annual_mint_rate_mature: float = Field(default=0.03, ge=0)
-    """Mature-regime per-year employee mint rate. ~3%/yr matches large-cap public tech
-    (NVDA / MSFT range). Young-regime companies mint faster; see `scale_reversion`."""
+    annual_mint_rate_mature: float = Field(
+        default=0.03,
+        ge=0,
+        description=(
+            "Mature-regime per-year employee mint rate. ~3%/yr matches large-cap public tech "
+            "(NVDA / MSFT range). Young-regime companies mint faster; see `scale_reversion`."
+        ),
+    )
 
-    annual_mint_rate_log_sigma: float = Field(default=0.0, ge=0)
-    """Per-rollout LogNormal dispersion of the mint rate. 0.0 ⇒ every rollout uses
-    `annual_mint_rate_mature` exactly."""
+    annual_mint_rate_log_sigma: float = Field(
+        default=0.0,
+        ge=0,
+        description=(
+            "Per-rollout LogNormal dispersion of the mint rate. 0.0 ⇒ every rollout uses "
+            "`annual_mint_rate_mature` exactly."
+        ),
+    )
 
-    scale_reversion: ValuationDriftScaleReversion | None = None
-    """Optional: mint rate decays from a hot young rate toward `annual_mint_rate_mature`
-    as `log V` grows past onset. `monthly_log_return_mu_young` is reinterpreted as the
-    young per-year mint rate (NOT monthly log-drift). Empirically late-stage tech mint
-    is fairly stable across maturity, so this is usually unnecessary."""
+    scale_reversion: ValuationDriftScaleReversion | None = Field(
+        default=None,
+        description=(
+            "Optional: mint rate decays from a hot young rate toward `annual_mint_rate_mature` "
+            "as `log V` grows past onset. `monthly_log_return_mu_young` is reinterpreted as the "
+            "young per-year mint rate (NOT monthly log-drift). Empirically late-stage tech mint "
+            "is fairly stable across maturity, so this is usually unnecessary."
+        ),
+    )
 
 
 class PrivateEquityRiskIssuerConfig(FrozenModel):
@@ -199,70 +234,87 @@ class PrivateEquityRiskIssuerConfig(FrozenModel):
     #
     # Leaving `current_valuation_usd` unset keeps today's independent latent-mark
     # random walk byte-for-byte (zero-value regression for existing configs).
-    current_valuation_usd: float | None = Field(default=None, gt=0)
-    """Company market-cap anchor `V0` (USD).
-
-    `None` disables the valuation channel AND selects the legacy independent
-    latent-mark random walk. Must be set together with
-    `shares_outstanding_initial`.
-    """
-    valuation_monthly_log_return_mu: float = 0.0
-    """Monthly log-space drift of V(t). Only meaningful when the channel is on.
-
-    With `valuation_drift_scale_reversion` unset this is the CONSTANT monthly drift (legacy
-    behavior). With it set, this is the LONG-RUN MATURE drift `mu_mature` that the
-    scale-dependent drift reverts toward as the company grows large.
-    """
-    valuation_drift_scale_reversion: ValuationDriftScaleReversion | None = None
-    """Optional scale-dependent mean-reverting drift (M2.2-D).
-
-    When set, the monthly drift is a function of the realized company SIZE `s = log V(t)`
-    rather than a constant:
-
-        mu_V(s) = mu_mature + (mu_young - mu_mature) * exp(-max(0, s - s_onset) / s_scale)
-
-    with `mu_mature = valuation_monthly_log_return_mu`. A small company (`s <= s_onset`) grows
-    at `mu_young`; a large one reverts toward `mu_mature`, and keeps maturing as it grows. This
-    makes V(t) a genuine SDE (drift depends on the realized level), so the sampler integrates it
-    month by month. It is data-driven (the boom is tamed because the company is observably large
-    NOW, not by a calendar prior) and self-correcting per rollout. `None` => constant drift,
-    byte-identical to the legacy single-drift path. See augur/plans/prediction_market_calibration.md
-    (M2.2-D) for the empirical grounding (firm-growth scaling laws; conservative mu_mature ~
-    S&P 100-yr CAGR).
-    """
-    valuation_monthly_log_return_sigma: float = Field(default=0.0, ge=0.0)
-    """Monthly log-space volatility of V(t). Only meaningful when the channel is on."""
-    valuation_student_t_nu: float = Field(default=5.0, gt=2.0)
-    """Degrees of freedom for V(t)'s Student-t shocks. Only meaningful when the channel is on."""
-    shares_outstanding_initial: float | None = Field(default=None, gt=0)
-    """Initial share count `shares0`.
-
-    Required together with `current_valuation_usd`. In v1 only the *ratio*
-    `shares(t)/shares0` enters the mark via the dilution factor, so V0 and
-    shares0 cancel at t=0; we still require it set so the process is honestly
-    specified for the Bayesian fit (M2.2 / TODO #1734).
-    """
-    annual_dilution_rate: float = Field(default=0.0, ge=0.0)
-    """Continuous per-year share-count growth (employee mint + baseline).
-
-    The per-rollout MEDIAN dilution rate: each rollout draws
-    `r = annual_dilution_rate * exp(annual_dilution_rate_log_sigma * z)`, `z ~ N(0, 1)`,
-    driving `dilution_factor(t) = (1 + r) ** (t / 12)`. The primary-round / secondary-trade
-    distinction (M2.2-C) and the full Bayesian posterior (M2.2-D) are DEFERRED. Only
-    meaningful when the valuation channel is on.
-    """
-    annual_dilution_rate_log_sigma: float = Field(default=0.0, ge=0.0)
-    """Per-rollout dilution-rate dispersion (M2.2-A).
-
-    Each rollout draws `r = annual_dilution_rate * exp(annual_dilution_rate_log_sigma * z)`
-    with `z ~ N(0, 1)` -- a **median-anchored** LogNormal: `median(r) == annual_dilution_rate`
-    exactly (a LogNormal's median is `exp(mu)`). This is deliberately NOT mean-anchored --
-    mean-anchoring would inflate the typical realized dilution by `exp(sigma**2 / 2)` as
-    sigma grows, biasing the central mark path. Default `0.0` => every rollout gets exactly
-    `annual_dilution_rate` (since `exp(0) == 1`), byte-identical to the M2 deterministic
-    factor. Only meaningful when the valuation channel is on; left unguarded in the validator
-    since it defaults inert and is simply ignored when the channel is off.
-    """
+    current_valuation_usd: float | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "Company market-cap anchor `V0` (USD).\n\n"
+            "`None` disables the valuation channel AND selects the legacy independent "
+            "latent-mark random walk. Must be set together with `shares_outstanding_initial`."
+        ),
+    )
+    valuation_monthly_log_return_mu: float = Field(
+        default=0.0,
+        description=(
+            "Monthly log-space drift of V(t). Only meaningful when the channel is on.\n\n"
+            "With `valuation_drift_scale_reversion` unset this is the CONSTANT monthly drift (legacy "
+            "behavior). With it set, this is the LONG-RUN MATURE drift `mu_mature` that the "
+            "scale-dependent drift reverts toward as the company grows large."
+        ),
+    )
+    valuation_drift_scale_reversion: ValuationDriftScaleReversion | None = Field(
+        default=None,
+        description=(
+            "Optional scale-dependent mean-reverting drift (M2.2-D).\n\n"
+            "When set, the monthly drift is a function of the realized company SIZE `s = log V(t)` "
+            "rather than a constant:\n\n"
+            "    mu_V(s) = mu_mature + (mu_young - mu_mature) * exp(-max(0, s - s_onset) / s_scale)\n\n"
+            "with `mu_mature = valuation_monthly_log_return_mu`. A small company (`s <= s_onset`) grows "
+            "at `mu_young`; a large one reverts toward `mu_mature`, and keeps maturing as it grows. This "
+            "makes V(t) a genuine SDE (drift depends on the realized level), so the sampler integrates it "
+            "month by month. It is data-driven (the boom is tamed because the company is observably large "
+            "NOW, not by a calendar prior) and self-correcting per rollout. `None` => constant drift, "
+            "byte-identical to the legacy single-drift path. See augur/plans/prediction_market_calibration.md "
+            "(M2.2-D) for the empirical grounding (firm-growth scaling laws; conservative mu_mature ~ "
+            "S&P 100-yr CAGR)."
+        ),
+    )
+    valuation_monthly_log_return_sigma: float = Field(
+        default=0.0, ge=0.0, description="Monthly log-space volatility of V(t). Only meaningful when the channel is on."
+    )
+    valuation_student_t_nu: float = Field(
+        default=5.0,
+        gt=2.0,
+        description="Degrees of freedom for V(t)'s Student-t shocks. Only meaningful when the channel is on.",
+    )
+    shares_outstanding_initial: float | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "Initial share count `shares0`.\n\n"
+            "Required together with `current_valuation_usd`. In v1 only the *ratio* "
+            "`shares(t)/shares0` enters the mark via the dilution factor, so V0 and "
+            "shares0 cancel at t=0; we still require it set so the process is honestly "
+            "specified for the Bayesian fit (M2.2 / TODO #1734)."
+        ),
+    )
+    annual_dilution_rate: float = Field(
+        default=0.0,
+        ge=0.0,
+        description=(
+            "Continuous per-year share-count growth (employee mint + baseline).\n\n"
+            "The per-rollout MEDIAN dilution rate: each rollout draws "
+            "`r = annual_dilution_rate * exp(annual_dilution_rate_log_sigma * z)`, `z ~ N(0, 1)`, "
+            "driving `dilution_factor(t) = (1 + r) ** (t / 12)`. The primary-round / secondary-trade "
+            "distinction (M2.2-C) and the full Bayesian posterior (M2.2-D) are DEFERRED. Only "
+            "meaningful when the valuation channel is on."
+        ),
+    )
+    annual_dilution_rate_log_sigma: float = Field(
+        default=0.0,
+        ge=0.0,
+        description=(
+            "Per-rollout dilution-rate dispersion (M2.2-A).\n\n"
+            "Each rollout draws `r = annual_dilution_rate * exp(annual_dilution_rate_log_sigma * z)` "
+            "with `z ~ N(0, 1)` -- a **median-anchored** LogNormal: `median(r) == annual_dilution_rate` "
+            "exactly (a LogNormal's median is `exp(mu)`). This is deliberately NOT mean-anchored -- "
+            "mean-anchoring would inflate the typical realized dilution by `exp(sigma**2 / 2)` as "
+            "sigma grows, biasing the central mark path. Default `0.0` => every rollout gets exactly "
+            "`annual_dilution_rate` (since `exp(0) == 1`), byte-identical to the M2 deterministic "
+            "factor. Only meaningful when the valuation channel is on; left unguarded in the validator "
+            "since it defaults inert and is simply ignored when the channel is off."
+        ),
+    )
 
     # -- M2.2-C mint-streams channel (opt-in via primary_round_config) -------
     #
@@ -275,14 +327,22 @@ class PrivateEquityRiskIssuerConfig(FrozenModel):
     # with V between events still integrated as the scale-reverting Student-t SDE.
     # `latent_mark(t) = current_mark_usd * (V(t)/V0) / (shares(t)/shares0)` — same
     # algebraic structure as the legacy formula with `dilution_factor = shares(t)/shares0`.
-    primary_round_config: PrimaryRoundConfig | None = None
-    """Discrete primary-round event stream. See `PrimaryRoundConfig`. Must be set
-    together with `employee_mint_config`; both require `current_valuation_usd` +
-    `shares_outstanding_initial`. When set, legacy `annual_dilution_rate` must be 0."""
+    primary_round_config: PrimaryRoundConfig | None = Field(
+        default=None,
+        description=(
+            "Discrete primary-round event stream. See `PrimaryRoundConfig`. Must be set "
+            "together with `employee_mint_config`; both require `current_valuation_usd` + "
+            "`shares_outstanding_initial`. When set, legacy `annual_dilution_rate` must be 0."
+        ),
+    )
 
-    employee_mint_config: EmployeeMintConfig | None = None
-    """Continuous employee-mint stream. See `EmployeeMintConfig`. Must be set together
-    with `primary_round_config`."""
+    employee_mint_config: EmployeeMintConfig | None = Field(
+        default=None,
+        description=(
+            "Continuous employee-mint stream. See `EmployeeMintConfig`. Must be set together "
+            "with `primary_round_config`."
+        ),
+    )
 
     @model_validator(mode="after")
     def _validate_ranges(self) -> PrivateEquityRiskIssuerConfig:

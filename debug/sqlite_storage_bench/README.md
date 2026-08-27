@@ -36,16 +36,11 @@ space, Kubernetes object snapshots, and raw JSONL logs.
 
 Run ID: `20260707T002921Z`
 
-Artifacts:
-
-- Full generated summary: <results/20260707T002921Z/summary.md>
-- CSV summary: <results/20260707T002921Z/summary.csv>
-- Follow-up latency forensics: <seaweedfs_latency_forensics.md>
-
-Generated ConfigMap YAML, namespace YAML, PVC/Job manifests, raw pod logs,
-Kubernetes object snapshots, and cluster metadata snapshots are intentionally
-not committed; rerun `kubectl kustomize`, `render_manifests.py`, or
-`run_bench.sh` to regenerate them.
+Follow-up latency forensics: <seaweedfs_latency_forensics.md>. The aggregated
+findings are the tables below; the per-run `results/` summaries were removed
+2026-08 (git history). Generated manifests, raw pod logs, and per-run summary
+tables are all reproducible: `run_bench.sh` for a fresh run,
+`summarize_results.py` for the tables.
 
 All 20 runs completed: 4 StorageClasses x 5 repeats. Each run used a fresh PVC,
 and the Job/PVC were deleted before the next run.

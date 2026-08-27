@@ -8,13 +8,11 @@ on the wire (the frontend camelizes), exported to the frontend Zod schema via
 
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import Field, PositiveInt
 
 from finance.augur.api.schemas import ApiModel
 from finance.augur.calibration.calibration import CalibrationResult, MarkFan
-from finance.augur.model.sample_sanity import SanityBandResult
+from finance.augur.model.sample_sanity import SanityBandResult, SanityStatus
 from finance.augur.product.wire import MAX_HORIZON_MONTHS
 
 # Default percentile bands for the issuer mark fan (5/25/50/75/95).
@@ -41,7 +39,7 @@ class CalibrationSanityBand(ApiModel):
     # `unmodeled` = this band's series/issuer isn't produced by the deployment's preset; the
     # frontend renders these distinctly from `skipped` (band's month exceeds the sampled horizon
     # but the series is otherwise emitted) and `fail` (band failed against an emitted series).
-    status: Literal["pass", "fail", "skipped", "unmodeled"]
+    status: SanityStatus
     detail: str
 
 

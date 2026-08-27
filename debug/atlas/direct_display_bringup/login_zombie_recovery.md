@@ -113,6 +113,6 @@ merged — greeter only); the VT-less user-session handoff
 ([gdm!291](https://gitlab.gnome.org/GNOME/gdm/-/merge_requests/291)) is unmerged,
 blocked on [systemd#42247](https://github.com/systemd/systemd/issues/42247).
 There is no GDM fix today → needs an SDDM-lineage DM (PLM + MR 155 backport) or a
-non-GDM path. Full write-up + the retracted "GDM decision": <archive/greeters.md> and
-<README.md>. (The earlier wlroots `Failed to import DMA-BUF FD … No such device`
+non-GDM path. Summary + the retracted "GDM decision": <README.md> § History
+(archived). (The earlier wlroots `Failed to import DMA-BUF FD … No such device`
 was a red herring from one earlier attempt, not the operative blocker.)

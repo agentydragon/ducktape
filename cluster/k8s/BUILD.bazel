@@ -227,7 +227,10 @@ filegroup(
 filegroup(
     name = "haku_console_config",
     srcs = ["haku/console/config.yaml"],
-    visibility = ["//haku/console:__pkg__"],
+    visibility = [
+        "//cluster/k8s/litellm/app:__pkg__",
+        "//haku/console:__pkg__",
+    ],
 )
 
 filegroup(

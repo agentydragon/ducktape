@@ -12,7 +12,7 @@ from typing import Any
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_context
 from fastmcp.tools import Tool, ToolResult
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from agent_core.pydantic_utils import format_validation_error
 
@@ -30,14 +30,13 @@ class FlatTool[InputModelT: BaseModel, OutputT](Tool):
     Use isinstance(tool, FlatTool) to check for flat tools and access input_model directly.
     """
 
-    fn: Callable[..., Any]
-    """The original function that takes a Pydantic model (or nothing for no-arg tools)."""
-
-    input_model: type[InputModelT]
-    """The Pydantic model for tool input parameters."""
-
-    context_kwarg: str | None = None
-    """Name of the context parameter, if the function accepts one."""
+    fn: Callable[..., Any] = Field(
+        description="The original function that takes a Pydantic model (or nothing for no-arg tools)."
+    )
+    input_model: type[InputModelT] = Field(description="The Pydantic model for tool input parameters.")
+    context_kwarg: str | None = Field(
+        default=None, description="Name of the context parameter, if the function accepts one."
+    )
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
         """Run the tool by parsing arguments into input_model and calling fn."""

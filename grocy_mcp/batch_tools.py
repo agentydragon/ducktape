@@ -29,7 +29,7 @@ import logging
 import traceback
 from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime, timedelta
-from typing import Annotated, Any, Literal, TypeVar
+from typing import Annotated, Any, TypeVar
 
 import httpx
 from fastmcp import FastMCP
@@ -56,6 +56,7 @@ from grocy_mcp.mcp_types import (
     CreateProductItem,
     CreateQuantityUnitItem,
     CreateShoppingListItem,
+    DetailLevel,
     EditOk,
     EditProductField,
     EditProductItem,
@@ -324,10 +325,10 @@ def register_batch_tools(
         return changes or None
 
     async def _list_reference(
-        client: GrocyClient, entity_type: EntityType, detail: Literal["brief", "full"], model: Any
+        client: GrocyClient, entity_type: EntityType, detail: DetailLevel, model: Any
     ) -> list[Any]:
         rows = await client.list_entities(entity_type)
-        if detail == "brief":
+        if detail == DetailLevel.BRIEF:
             return [BriefListItem(id=int(row["id"]), name=str(row["name"])) for row in rows]
         return [model.model_validate(row) for row in rows]
 
@@ -835,7 +836,7 @@ def register_batch_tools(
 
     @mcp.tool()
     async def products_list(
-        detail: Annotated[Literal["brief", "full"], Field(description=DETAIL_DESC)] = "brief",
+        detail: Annotated[DetailLevel, Field(description=DETAIL_DESC)] = DetailLevel.BRIEF,
         client: GrocyClient = client_dependency,
     ) -> list[BriefListItem] | list[FullProduct]:
         """Returns every product defined in this Grocy instance. Create new ones with `products_create`.
@@ -848,7 +849,7 @@ def register_batch_tools(
 
     @mcp.tool()
     async def locations_list(
-        detail: Annotated[Literal["brief", "full"], Field(description=DETAIL_DESC)] = "brief",
+        detail: Annotated[DetailLevel, Field(description=DETAIL_DESC)] = DetailLevel.BRIEF,
         client: GrocyClient = client_dependency,
     ) -> list[BriefListItem] | list[FullLocation]:
         """Returns every storage location defined in this Grocy instance. Create new ones with `locations_create`.
@@ -861,7 +862,7 @@ def register_batch_tools(
 
     @mcp.tool()
     async def quantity_units_list(
-        detail: Annotated[Literal["brief", "full"], Field(description=DETAIL_DESC)] = "brief",
+        detail: Annotated[DetailLevel, Field(description=DETAIL_DESC)] = DetailLevel.BRIEF,
         client: GrocyClient = client_dependency,
     ) -> list[BriefQuantityUnit] | list[FullQuantityUnit]:
         """Returns every quantity unit defined in this Grocy instance. Create new ones with `quantity_units_create`.
@@ -873,7 +874,7 @@ def register_batch_tools(
         `entities_list`.
         """
         rows = await client.list_entities(EntityType.QUANTITY_UNIT)
-        if detail == "brief":
+        if detail == DetailLevel.BRIEF:
             return [
                 BriefQuantityUnit(id=int(r["id"]), name=str(r["name"]), name_plural=r.get("name_plural")) for r in rows
             ]
@@ -881,7 +882,7 @@ def register_batch_tools(
 
     @mcp.tool()
     async def product_groups_list(
-        detail: Annotated[Literal["brief", "full"], Field(description=DETAIL_DESC)] = "brief",
+        detail: Annotated[DetailLevel, Field(description=DETAIL_DESC)] = DetailLevel.BRIEF,
         client: GrocyClient = client_dependency,
     ) -> list[BriefListItem] | list[FullProductGroup]:
         """Returns every product-group (category) defined in this Grocy instance.
@@ -893,7 +894,7 @@ def register_batch_tools(
 
     @mcp.tool()
     async def shopping_lists_list(
-        detail: Annotated[Literal["brief", "full"], Field(description=DETAIL_DESC)] = "brief",
+        detail: Annotated[DetailLevel, Field(description=DETAIL_DESC)] = DetailLevel.BRIEF,
         client: GrocyClient = client_dependency,
     ) -> list[BriefListItem] | list[FullShoppingList]:
         """Returns every shopping list defined in this Grocy instance.

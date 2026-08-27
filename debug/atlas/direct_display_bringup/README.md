@@ -71,16 +71,50 @@ no-reboot path.)
   restarting the display manager does \_not* fix either).
 - **Seat/DRM/logind state** → `sudo bash seat-diag.sh` (DM-agnostic).
 
-## History (archived)
+## History (archived) — the constraints we ran into
 
 The road here was long and cursed — gamescope kiosk → sway seats → SDDM → PLM →
-greetd, and finally the discovery that GDM can't do a non-`seat0` user login at
-all. Kept for the reasoning trail, not as current plans:
+greetd — and ended at the finding that **no mainstream DM cleanly drives a
+non-`seat0` Wayland seat today** (source-grounded 2026-07-17). The constraints,
+compactly; each cost real investigation and still binds if anyone retries:
 
-- <archive/2026_07_multiseat_saga.md> — full chronological bring-up log.
-- <archive/greeters.md> — grounded display-manager capability matrix (which DMs
-  can drive a non-seat0 seat, the VC-tty/systemd-258 trap, same-user vetoes — and
-  why none of them cleanly works here).
-- <archive/plm-mr155-per-seat-greeter.patch> — shelved PLM per-seat greeter
-  backport, the fallback _if_ two simultaneous local seats ever become a real
-  requirement.
+- **Non-seat0 seats have no VTs** (`CAN_TTY=0`) — any DM whose session model is
+  "allocate a VT and `chvt`" structurally cannot drive one. That scarcity alone
+  kills ly/emptty/nodm and most of the field.
+- **systemd ≥ 258 varlink `CreateSession` trap**: a greeter that sends a
+  virtual-console tty (`/dev/tty0`) for a non-seat0 seat is rejected with
+  `InvalidParameter{Seat}` (`logind-varlink.c` seat/VC check) → no session → no
+  `XDG_RUNTIME_DIR` → the greeter compositor aborts to a black screen.
+- **Shipped SDDM 0.21.0 hits exactly that**: `PamBackend.cpp` sets
+  `PAM_TTY=/dev/tty<XDG_VTNR>` unconditionally (`tty0` when unset); guarded
+  only in unreleased upstream `cda8d93`.
+- **GDM**: the non-seat0 _greeter_ works (gdm!174, merged), but a non-seat0
+  _user login_ opens the PAM session and then never launches a compositor
+  (`Session never registered, failing`) — gdm!291 unmerged, blocked on
+  systemd#42247. GDM is also the only DM with a same-user veto (refuses a
+  session for a user already graphically active elsewhere), the original
+  blocker.
+- **plasma-login-manager** clears the session axes, but its greeter is
+  single-instance (fixed-name user units) — a second seat stays black without
+  the unmerged MR 155 per-seat greeter (shelved backport in git history).
+- **greetd** hardcodes `XDG_SEAT=seat0` and is VT-driven — cannot target
+  another seat at all.
+- **Two identical GPUs are software-indistinguishable to Vulkan**: DXVK/NVIDIA
+  always picks the first-PCI device; gamescope's `--prefer-vk-device` takes
+  only `vendor:device` (identical for both 5090s) and NVIDIA's ICD honors no
+  per-app PCI filter. There is no software way to pin a game to one of two
+  identical cards — the fix was physical: move the monitor to the GPU games
+  render on (`01:00.0`).
+- **Cross-seat DRM opens fail hard**: a session that opens a card owned by
+  another seat gets a logind `TakeDevice` denial → gamescope
+  `Aborted (core dumped)` → wedged greeter (why the leftover kiosk session
+  entries had to be removed, not just unused).
+- **NVIDIA DP/HDMI audio sinks default to 10000% volume** in PipeWire (it
+  allows > 100%) — clamp (`wpctl set-volume … 0.3`; waybar capped at
+  `max-volume=100`).
+- **FV43U KVM auto-reverts its uplink binding to USB-C** — during USB-B
+  testing the hub silently never leaves USB-C; use the OSD Input menu to
+  isolate video from USB.
+
+The full chronological bring-up log and the grounded per-DM capability matrix
+behind these are in git history (`archive/`, removed 2026-08).

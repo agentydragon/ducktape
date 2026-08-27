@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 import pytest_bazel
 
+from haku.console.config import CodexReasoningEffort
 from haku.console.x.codex_app_server.client import CodexAppServer, CodexAppServerError, CodexThread
 from haku.runtime.x.bridge.client import RecordedFrame
 from haku.runtime.x.bridge.protocol import HarnessFrame
@@ -116,6 +117,15 @@ async def test_new_process_handshake_thread_configuration_and_prompt_are_exact()
     }
     assert sink.numbered[-2][0] == prompt.frame_seq
     await cli.aclose()
+
+
+def test_thread_start_params_carry_the_reasoning_effort_as_a_config_override() -> None:
+    # thread/start has no dedicated effort param at 0.144.1, so the effort travels in the
+    # `config` override map under the server's own `model_reasoning_effort` key.
+    with_effort = CodexThread(cwd="/workspace", model="gpt-test", reasoning_effort=CodexReasoningEffort.LOW)
+    assert with_effort.start_params()["config"] == {"model_reasoning_effort": "low"}
+    # Absent means the provider/config default, so no override may be sent at all.
+    assert "config" not in CodexThread(cwd="/workspace").start_params()
 
 
 async def test_an_initialized_process_is_adopted_with_its_active_turn_without_a_second_handshake() -> None:

@@ -15,6 +15,7 @@ from pydantic import Field, PositiveInt
 
 from finance.augur.api.local_regulation import LocalRegulation
 from finance.augur.api.schemas import ApiModel, NonNegativeCurrencyAmount, PositiveCurrencyAmount
+from finance.augur.product.wire import SpendIndex
 
 PropertyId = str
 
@@ -77,7 +78,7 @@ class ProductInputDefaults(ApiModel):
     rollout_count: PositiveInt | None = None
     first_seed: int | None = None
     monthly_spend: PositiveCurrencyAmount | None = None
-    spend_index: Literal["inflation", "none"] | None = None
+    spend_index: SpendIndex | None = None
     cash_floor: NonNegativeCurrencyAmount | None = None
     cash_ceiling: NonNegativeCurrencyAmount | None = None
     cash_band_index_to_inflation: bool | None = None
