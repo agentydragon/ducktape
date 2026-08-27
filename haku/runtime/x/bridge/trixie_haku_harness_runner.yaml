@@ -1,5 +1,6 @@
 # Deb packages for the haku-harness-runner image, on debian:trixie-slim.
-# `git` lets the runner check out haku-state before launching a harness. The generated CA bundle,
+# `git` lets the runner check out haku-state before launching a harness. `bubblewrap` gives the
+# Codex sandbox a system bwrap instead of its bundled fallback. The generated CA bundle,
 # Python interpreter, bridge, Claude CLI, Codex CLI and kubectl use separate layers.
 #
 # Regenerate the lock file after any change:
@@ -16,4 +17,5 @@ archs:
   - "amd64"
 
 packages:
+  - "bubblewrap"
   - "git"

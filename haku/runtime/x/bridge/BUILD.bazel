@@ -225,7 +225,7 @@ oci_image(
         ":codex_layer",
         ":kubectl_layer",
         "//third_party/debian_slim:cacerts",
-        # git for checking haku-state out before a harness starts.
+        # Apt packages: git for the haku-state checkout, bubblewrap for the Codex sandbox.
         "@trixie_haku_harness_runner//:flat",
     ],
     user = "1000:1000",
