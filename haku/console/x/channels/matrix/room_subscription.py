@@ -43,7 +43,6 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import (
-    PROMPT_ORIGIN,
     HarnessOrigin,
     ItemStatus,
     ItemType,
@@ -278,6 +277,12 @@ def project_notice(event: StreamedEvent, *, conversation_id: UUID, room_id: str)
             # it is said here — on the one outcome of three that the operator caused.
             body = ABORTED_BY_OPERATOR
             kind = RoomEventKind.LIFECYCLE
+        case TurnFailedBody(failure=failure):
+            # The one ending a room cannot read from what it was sent. An answered turn arrives as
+            # the answer and an aborted one as the line above; a failure produces no message at all,
+            # so without this the conversation just stops mid-exchange and never says why.
+            body = f"the turn failed — {failure}"
+            kind = RoomEventKind.LIFECYCLE
         case (
             MessageStartedBody()
             | ReasoningStartedBody()
@@ -289,7 +294,6 @@ def project_notice(event: StreamedEvent, *, conversation_id: UUID, room_id: str)
             | PromptCompletedBody()
             | TurnStartedBody()
             | TurnAnsweredBody()
-            | TurnFailedBody()
             | SessionProvisioningBody()
             | SessionEndedBody()
             | UnknownEventBody()
@@ -434,8 +438,7 @@ class RoomNotices:
             item = await db.get(ConversationItem, item_id)
             if item is None or item.origin is None:
                 return None
-            origin = PROMPT_ORIGIN.validate_python(item.origin)
-            return None if _arrived_here(origin, room_id) else RELAYED_PROMPT + item.item_text
+            return None if _arrived_here(item.origin, room_id) else RELAYED_PROMPT + item.item_text
 
     def _wake(self, _change: ConversationWakeEvent | RecheckHeld) -> None:
         """Note that some conversation moved. Runs on the listener's reader task: no awaiting.

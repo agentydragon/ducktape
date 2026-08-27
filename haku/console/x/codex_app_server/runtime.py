@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from haku.console.chat_models import RuntimeKind
+from haku.console.config import CodexReasoningEffort
 from haku.console.x.codex_app_server import frames, projection
 from haku.console.x.codex_app_server.client import CodexClientFactory, CodexThread, app_server_over_websocket
 from haku.console.x.conversation_events import TurnCompleted
@@ -49,6 +50,7 @@ class CodexRuntimeAdapter:
 
     client_factory: CodexClientFactory = app_server_over_websocket
     model: str | None = None
+    reasoning_effort: CodexReasoningEffort | None = None
     model_provider: CodexModelProvider | None = None
 
     @property
@@ -101,7 +103,12 @@ class CodexRuntimeAdapter:
                 ),
                 resume_from=launch.resume_from,
             ),
-            thread=CodexThread(cwd=launch.cwd, model=self.model, developer_instructions=launch.appended_system_prompt),
+            thread=CodexThread(
+                cwd=launch.cwd,
+                model=self.model,
+                reasoning_effort=self.reasoning_effort,
+                developer_instructions=launch.appended_system_prompt,
+            ),
         )
 
 

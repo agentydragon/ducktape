@@ -20,6 +20,7 @@ py_library(
     deps = [
         ":frames",
         ":protocol",
+        "//haku/console:config",
         "//haku/console/x:runtime",
         "//haku/runtime/x/bridge:client",
         "//haku/runtime/x/bridge:protocol",
@@ -50,6 +51,7 @@ py_library(
         ":frames",
         ":projection",
         "//haku/console:chat_models",
+        "//haku/console:config",
         "//haku/console/x:conversation_events",
         "//haku/console/x:runtime",
         "//haku/runtime/x/bridge:client",
@@ -97,6 +99,7 @@ py_test(
     deps = [
         ":client",
         "//:conftest",
+        "//haku/console:config",
         "//haku/runtime/x/bridge:client",
         "//haku/runtime/x/bridge:protocol",
         "@pypi//pytest",
@@ -135,6 +138,7 @@ py_test(
         ":runtime",
         "//:conftest",
         "//haku/console:chat_models",
+        "//haku/console:config",
         "//haku/console/x:conversation_events",
         "//haku/console/x:runtime",
         "//haku/runtime/x/bridge:codex_options",

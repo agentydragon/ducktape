@@ -42,6 +42,7 @@ from haku.console.chat_models import (
     FrameDirection,
     ItemStatus,
     ItemType,
+    PromptOrigin,
     ReasoningDisclosure,
     RuntimeKind,
     SessionStatus,
@@ -1279,7 +1280,7 @@ class ConversationItem(Base):
     # rows and on every delta, which is why the console mints its own.
     backend_item_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Prompt only: which attachment or surface sent it.
-    origin: Mapped[dict[str, Any] | None] = mapped_column(_ABSENT_JSONB, nullable=True)
+    origin: Mapped[PromptOrigin | None] = mapped_column(PydanticColumn(PromptOrigin), nullable=True)
     call_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     tool_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     arguments: Mapped[dict[str, Any] | None] = mapped_column(_ABSENT_JSONB, nullable=True)

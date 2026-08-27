@@ -7,6 +7,10 @@ Covers when and how each flag is consumed during startup and session lifecycle.
 **Source of truth**: `--help` output from the live binaries (Build IDs below).
 Reconstructed source provides call-path details.
 
+> **Stale**: captured against binaries two builds behind the sibling RE docs
+> (which track Build ID `0b86a2a0`); regenerate via the `update_container_re`
+> skill before relying on flag details.
+
 ---
 
 ## Binary 1: `process_api` (Rust, stripped)

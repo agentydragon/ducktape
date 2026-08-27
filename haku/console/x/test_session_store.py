@@ -1027,7 +1027,7 @@ async def test_one_prompt_in_flight_is_a_schema_property(chat_store, migrated_se
             opened_seq=100,
             closed_seq=102,
             item_text="second",
-            origin=SPA_ORIGIN.model_dump(mode="json"),
+            origin=SPA_ORIGIN,
             created_at=datetime.now(UTC),
             updated_at=datetime.now(UTC),
         )
@@ -1059,7 +1059,7 @@ async def test_a_prompt_item_with_no_queue_row_is_not_a_prompt(chat_store, migra
                 opened_seq=100,
                 closed_seq=102,
                 item_text="an item nothing queued",
-                origin=SPA_ORIGIN.model_dump(mode="json"),
+                origin=SPA_ORIGIN,
                 created_at=datetime.now(UTC),
                 updated_at=datetime.now(UTC),
             )

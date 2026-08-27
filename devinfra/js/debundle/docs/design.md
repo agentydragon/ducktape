@@ -1247,35 +1247,17 @@ member names`, it projects onto each importing chunk's local binding
   patch intrinsics would need the affected whitelist entries
   disabled for soundness.)
 
-A1–A5 are statically checkable on each chunk, and each now has an
-enforced core. A2 is enforced by the TLA scan inside fact analysis —
-`stage_one::compute_chunk_analysis` `bail!`s with the offending
-statement ordinal as soon as fact analysis returns, before any
-quotient or lowering work. A1, A3, and A5 are enforced (to the
-per-assumption strengths described above) by the input-chunk
-admission scan in `chunk_admission`, which
-`compute_chunk_analysis` runs right after the A2 bail; its
-diagnostics carry the chunk id, the offending statement ordinal,
-and the matched shape. A4 is enforced at parse time. The admission
-scan is on by default for every materialized chunk; for audited
-corpora a spec can disable individual checks per chunk via
+A1–A5 are statically checkable per chunk, each enforced to the
+strength stated on its bullet above (A1/A3/A5 by the `chunk_admission`
+scan, A2 by the TLA scan, A4 at parse). The admission scan is on by
+default for every materialized chunk; for audited corpora a spec can
+disable individual checks per chunk via
 `chunk_analysis_options.<chunk>.admission_overrides`
 (`[a1_eval, a3_dynamic_import, a5_import_meta]`) — every override
 use prints a one-line notice, and overrides that no longer suppress
-anything are reported as redundant. A6 (no module-eval reentry) is relied
-on by observation: the unmodified bundle loads in the browser.
-A7 (multi-chunk DAG) is satisfied by typical bundlers' vendor-leaf
-chunking. A8 (whitelist receivers not shadowed) is dropped to
-`Unknown` per-name by `compute_shadowed_globals` whenever the
-chunk-top declared-name set claims one of the whitelist receivers,
-so chunks that violate A8 still validate soundly. A9 (declared
-purity is author-trusted) is satisfied by spec review — every
-`purity: "pure"` annotation is an explicit, reviewable trust
-claim. A10 (declared local effects) is likewise satisfied by spec
-review, with analyzer shape checks limiting the trusted surface to
-the admitted helper-call forms. A11 (intrinsic integrity) is not
-statically checkable — pollution can originate outside the analyzed
-chunk — and is relied on by observation of the target bundles.
+anything are reported as redundant. A6, A7, and A11 are relied on by
+observation of the target bundles; A8 degrades soundly per its
+bullet; A9 and A10 are satisfied by spec review.
 
 ### Lemmas
 
@@ -1890,25 +1872,14 @@ scripts, notebooks, and repo-specific peel skills. It is emitted on
 both success and validation rejection, because useful graph data often
 exists precisely when the current assignment is not yet realizable.
 
-The detailed output is machine-readable, typed, and debundler-owned.
-For each chunk it includes:
-
-- run metadata: chunk id and source paths;
-- owner vertices: report id, statement ordinal, source location,
-  declared bindings as `{binding, export_name}` records, owner kind,
-  side-effect classification, and current destination;
-- owner edges: `source`, `target`, edge kind, optional binding,
-  statement ordinal, and whether the edge constrains realizability;
-- quotient projections for the current assignment: module nodes,
-  aggregated edge kinds, SCC membership, and SCC realizability
-  status;
-- `atomic_graph`: atomic unit nodes, atomic DAG edges, source spans, current
-  destinations, constraining owner-edge provenance, and unit causes.
-
-New fields can add source spans, input/spec hashes, direct importability
-classifications, and closure suggestions without changing the underlying
-graph transform. Do not add top-level `kind` or `schema_version` fields
-just to mimic an external compatibility scheme.
+The detailed output is machine-readable, typed, and debundler-owned:
+per chunk, the owner vertices/edges, quotient projections for the
+current assignment, and the `atomic_graph`. The field-level shape is
+the serde schema (`OwnerGraphReport` and siblings in
+<../reports/schema.rs>); this doc does not mirror it. New fields can
+be added without changing the underlying graph transform. Do not add
+top-level `kind` or `schema_version` fields just to mimic an external
+compatibility scheme.
 
 Keep this side output high fidelity. It is allowed to be larger than
 stderr and larger than a human-facing report. The compact console
@@ -2230,15 +2201,11 @@ certification too common, the fix is incremental component invalidation,
 a denser quotient reachability representation, or narrower exact-repair
 indexing, not weakening proposal soundness.
 
-Implementation status: the realizability index now maintains rollbackable
-quotient edge buckets and validates candidate deltas with scoped push/read/undo
-over localized SCC reachability. A tested non-mutating overlay predicate exists
-as a future optimization path, but local profiling found the current
-ordered-map overlay slower than the rollback path. The current proposer-latency
-fix is the quotient boolean gate split; further dense-index or reusable-buffer
-work should wait for a fresh post-fix profile that makes this path material
-again. `factorize` should continue to be audited against this contract before
-large-factor output is treated as authoritative.
+A tested non-mutating overlay predicate exists as an alternative to the
+index's rollbackable push/read/undo path, but profiling found the
+ordered-map overlay slower — don't switch without a profile saying
+otherwise. `factorize` should continue to be audited against this
+contract before large-factor output is treated as authoritative.
 
 ### Graph operations for peel tooling
 
@@ -2292,20 +2259,12 @@ The pipeline (`pipeline.rs`) is a fixed composition over three layers:
   exclusion, not an artifact removal; wrappers / facades / manifests
   are emission outputs.
 
-This is the landed shape of the 2026-06 vendor-into-emission
-collapse: the former stage braid — specifier rewriting, vendor
-renaming, and swapping braided around materialization across seven
-artifact mutations — is gone, and vendor operations contribute zero
-mutation waves.
-
-The remaining trajectory step is collapsing materialize-into-emit:
-`materialize_logical_modules` still writes lowered module files back
-into the chunk bundle for the emission stages to re-read, where the
-lowered outputs could feed `write_js_tree` / harness emission directly
-without the bundle round-trip. Tracked in ARCHITECTURE_BACKLOG.md; no
-timetable is committed. The e2e tests in `devinfra/js/debundle/e2e/`
+One bundle round-trip remains: `materialize_logical_modules` writes
+lowered module files back into the chunk bundle for the emission
+stages to re-read (collapsing that is tracked in
+ARCHITECTURE_BACKLOG.md). The e2e tests in `devinfra/js/debundle/e2e/`
 pin observable chunk → emitted-JS behavior and are the safety net for
-that step, as they were for the vendor collapse.
+any such pipeline reshaping.
 
 ## Anonymous-statement selectors
 
@@ -2554,46 +2513,33 @@ peel-set hyperedges so authoring tools can mostly project and filter
 debundler facts instead of re-analyzing JavaScript or private repo
 YAML conventions.
 
-| Step                           | Module                           | Runs when                                                                                                                                                                                                                               |
-| ------------------------------ | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `load_transform_spec`          | <../pipeline.rs>                 | Always; loads either the flat YAML spec or the tree-shaped authoring spec.                                                                                                                                                              |
-| `validate_transform_spec`      | <../spec.rs>                     | Always after spec load.                                                                                                                                                                                                                 |
-| `load_js_chunks`               | <../artifact.rs>                 | Always; configured by `inputs`.                                                                                                                                                                                                         |
-| `prepare_js_chunks`            | <../prepare_chunks.rs>           | Always. In one parallel per-chunk pass, parses every chunk with SWC, computes shallow program facts, and canonicalizes entries.                                                                                                         |
-| `build_artifact_indexes`       | <../artifact.rs>                 | Always after preparation. Builds chunk id, source path, output path, and import-reference indexes for later stages.                                                                                                                     |
-| `build_vendor_resolution_plan` | <../vendor/plan.rs>              | Always after index build. Read-only: validates every `vendor` mark, resolves boundary mappings / swap targets / partial-swap symbol tables, runs the plan-time consumer gate.                                                           |
-| `materialize_logical_modules`  | <../lowering/> + analysis files  | When `logical_modules`, `unassigned_mode`, or `chunk_renames` is non-empty. Computes facts, quotients the owner graph into `I ∪ S`, validates, emits.                                                                                   |
-| `apply_emission_rewrites`      | <../vendor/emission.rs>          | Always. Pass-through directive rewrite (specifier canonicalization, boundary-rename mapping, partial-swap consumer surgery) over files emitted without lowering, plus the per-vendor-chunk residual composition (self-rewrite + strip). |
-| `validate_emitted_exports`     | <../validate_emitted_exports.rs> | Always; duplicate-public-export tripwire over the emission set (excluded full-swap chunks are skipped).                                                                                                                                 |
-| `write_js_tree`                | <../write_tree.rs>               | When `write_js_tree` output config is present; writes JS tree reports with exact `output_metrics` and directory reports when logical modules exist.                                                                                     |
-| `emit_browser_harness`         | <../emit_harness.rs>             | When `emit_browser_harness` output config is present; writes browser harness reports with exact `output_metrics` and directory reports when logical modules exist.                                                                      |
+The authoritative stage sequence — which stages exist, which module
+implements each, and when each runs — is the fixed composition in
+`run_transform_cli_with_options` (<../pipeline.rs>); this doc does not
+mirror it. The shape to know: spec load/validate → chunk load/prepare
+(one parallel per-chunk SWC parse) → artifact indexes → the read-only
+`build_vendor_resolution_plan` → `materialize_logical_modules` (the only
+lowering stage) → `apply_emission_rewrites` →
+`validate_emitted_exports` (duplicate-public-export tripwire) →
+optional tree/harness outputs.
 
-Within `materialize_logical_modules`, the substages are:
+Within `materialize_logical_modules`, analysis (chunk AST scan,
+statement facts, owner-graph construction — <../lowering/chunk_ast.rs>,
+<../facts/mod.rs>, <../graph/>) feeds the stages that carry design
+invariants:
 
-1. **Spec parsing** → `LogicalRequest` / `ModulePlan` per chunk.
-2. **Chunk AST analysis** (<../lowering/chunk_ast.rs>:
-   `analyze_chunk_ast`) → top-level declarations, declaration index,
-   and runtime import facts in one top-level scan.
-3. **Statement-facts analysis** (<../facts/mod.rs>:
-   `analyze_chunk`) → `Vec<StatementFacts>`.
-4. **Owner graph construction** (<../graph/>) → owner vertices plus read and
-   side-effect-order evidence. This is a first-class intermediate
-   and report side output.
-5. **Binding assignment** → `BTreeMap<BindingName, ModuleId>` from
+1. **Binding assignment** → `BTreeMap<BindingName, ModuleId>` from
    the spec's explicit member list. Bindings with no spec entry
    default to `ResidualEntry`; nothing pulls implicitly. (See
    [Spec explicitness](#spec-explicitness-and-diagnostics).)
-6. **Quotient + validation** (<../graph/>, <../validation.rs>).
-   The quotient graph
+2. **Quotient + validation** (<../graph/>, <../validation.rs>) —
    collapses owners by destination, aggregates edge reasons, and
-   validates the resulting `I ∪ S`.
-7. **Diagnostics projections** — cycle evidence, atomic-unit conflicts,
+   validates the resulting `I ∪ S`; an unrealizable cycle aborts the
+   pipeline with the cycle evidence.
+3. **Diagnostics projections** — cycle evidence, atomic-unit conflicts,
    and atomic graph reports are projections of the same owner graph +
    quotient, not separate heuristic analyses.
-8. **Cycle resolution gate** — if the validator finds an
-   unrealizable cycle, the pipeline aborts with the cycle
-   evidence.
-9. **Source-order emission** — each module's body in source order;
+4. **Source-order emission** — each module's body in source order;
    cross-module imports + source-chunk re-imports; `export { ... }`.
    No init wrappers. Import-directive ordering comes from the shared
    `esm_import_order::EsmImportOrder` (the same object the
@@ -3282,38 +3228,15 @@ exploration before crossing the relevant phase.
 
 ## File references
 
-Primary:
+Entry points (the rest of the tree hangs off these; per-concern file
+rosters live in the directories, not here):
 
-- <design.md> — this document.
+- <../pipeline.rs> — fixed transform composition.
 - <../facts/mod.rs> — `StatementFacts` analyzer.
 - <../graph/> — owner graph and `ModuleDepGraph` builders.
 - <../validation.rs> — realizability checks.
-- <../chunk_analysis.rs> — `ChunkAnalysis` (inputs + IR + input-derived caches).
-- <../chunk_factorization.rs> — `ChunkFactorization` construction and linker-order reasoning.
+- <../lowering/> — main splitting transform.
 - <../atomic_units.rs> — owner-level hard colocation units.
-- <../factor_assembly.rs> — spec claims projected onto atomic units.
-- <../peel/factorize.rs> — advisory factorization proposal construction
-  and reporting.
-- <../lowering/> — main splitting transform (`mod.rs` plus per-concern
-  sibling files: `chunk_ast.rs`, `lower.rs`, `materialize/`,
-  `plans.rs`, `naturalize.rs`, `imports_cross.rs`,
-  `imports_runtime.rs`, `exports.rs`, `plan_references.rs`,
-  `runtime_imports.rs`, `body_facts.rs`, `chunk_renames.rs`,
-  `rewrite_runtime.rs`, `visitors.rs`, `anonymous.rs`, `util.rs`).
-- <../pipeline.rs> — fixed transform composition.
-- <../program_analysis.rs> — chunk metadata + side-effect
-  classification (used as input to the analyzer).
-
-Secondary:
-
-- <../vendor/>, <../emit_harness.rs>, <../write_tree.rs>,
-  <../identifier_rename_queue.rs> — supporting transforms and
-  side-output producers.
-
-Tracking:
-
-- <../TODO.md> — open work items.
-- <../AGENTS.md> — operating principles for contributors.
 
 ## Conventions for updating this doc
 

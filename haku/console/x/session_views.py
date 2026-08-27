@@ -18,7 +18,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.console.chat_models import (
-    PROMPT_ORIGIN,
     BridgeFrameKind,
     FrameDirection,
     ItemStatus,
@@ -434,7 +433,7 @@ def item_view(item: ConversationItem) -> ConversationItemView:
         outcome=item.outcome,
         structured=item.structured,
         disclosure=item.disclosure,
-        origin=None if item.origin is None else PROMPT_ORIGIN.validate_python(item.origin),
+        origin=item.origin,
         created_at=item.created_at,
         updated_at=item.updated_at,
     )

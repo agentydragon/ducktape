@@ -72,6 +72,7 @@ def runtime_registration(
     elif isinstance(implementation, CodexAppServerImplementationConfig):
         adapter = CodexRuntimeAdapter(
             model=implementation.model,
+            reasoning_effort=implementation.reasoning_effort,
             model_provider=CodexModelProvider(
                 provider_id=implementation.provider_id,
                 name=implementation.provider_name,

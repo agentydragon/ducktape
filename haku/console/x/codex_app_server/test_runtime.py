@@ -7,6 +7,7 @@ from typing import Any, cast
 import pytest_bazel
 
 from haku.console.chat_models import RuntimeKind
+from haku.console.config import CodexReasoningEffort
 from haku.console.x.codex_app_server import projection
 from haku.console.x.codex_app_server.client import CodexThread
 from haku.console.x.codex_app_server.runtime import CodexRuntimeAdapter, CodexTurnHandler
@@ -50,6 +51,7 @@ def test_codex_builds_process_and_thread_configuration_from_the_same_neutral_lau
     adapter = CodexRuntimeAdapter(
         client_factory=factory,
         model="codex-gpt-5.6-sol",
+        reasoning_effort=CodexReasoningEffort.LOW,
         model_provider=CodexModelProvider(
             provider_id="haku",
             name="Haku OpenAI-compatible",
@@ -79,7 +81,10 @@ def test_codex_builds_process_and_thread_configuration_from_the_same_neutral_lau
     assert factory.launch.resume_from == 29
     assert factory.launch.environment == {"CODEX_HOME": "/codex-home"}
     assert factory.thread == CodexThread(
-        cwd="/workspace", model="codex-gpt-5.6-sol", developer_instructions="you are Haku"
+        cwd="/workspace",
+        model="codex-gpt-5.6-sol",
+        reasoning_effort=CodexReasoningEffort.LOW,
+        developer_instructions="you are Haku",
     )
 
 

@@ -68,7 +68,7 @@
   },
   "releases": {
     "ducktape": {
-      "tests": "//agent_core/... //difftree/... //git_commit_ai/... //gmail_api/... //gmail_archiver/... //mako_utils/... //mcp_infra/... //mcp_utils/... //openai_utils/... //cluster/skills/hetzner_vnc_screenshot/... //cluster/skills/proxmox_vm/... //devinfra/gc/...",
+      "tests": "//agent_core/... //difftree/... //git_commit_ai/... //gmail_api/... //gmail_archiver/... //mako_utils/... //mcp_infra/... //openai_utils/... //cluster/skills/hetzner_vnc_screenshot/... //cluster/skills/proxmox_vm/... //devinfra/gc/...",
       "nixPackage": true
     },
     "bbr": {

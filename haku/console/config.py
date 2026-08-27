@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
@@ -405,6 +406,25 @@ class ClaudeCodeImplementationConfig(BaseModel):
     oauth_placeholder: str
 
 
+class CodexReasoningEffort(StrEnum):
+    """The named reasoning-effort wire values of the pinned Codex client.
+
+    A pinned third-party vocabulary (`ReasoningEffort` in
+    `codex-rs/protocol/src/openai_models.rs` at tag `rust-v0.144.1`), so an unknown value is
+    a config error, not a roll-tolerance case. Re-read that enum when the Codex image pin
+    moves.
+    """
+
+    NONE = "none"
+    MINIMAL = "minimal"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    XHIGH = "xhigh"
+    MAX = "max"
+    ULTRA = "ultra"
+
+
 class CodexAppServerImplementationConfig(BaseModel):
     """The settings that belong specifically to the Codex app-server implementation."""
 
@@ -412,6 +432,11 @@ class CodexAppServerImplementationConfig(BaseModel):
 
     kind: Literal[RuntimeKind.CODEX_APP_SERVER] = RuntimeKind.CODEX_APP_SERVER
     model: str
+    # A field default rather than a required cluster config.yaml key: the ConfigMap applies
+    # ahead of the image, and on the previous image this extra="forbid" model would reject
+    # the unknown key at startup (the 2026-07-14 config/image-skew outage class,
+    # haku/TODO.md). Safe to set in YAML once an image carrying this field is deployed.
+    reasoning_effort: CodexReasoningEffort = CodexReasoningEffort.LOW
     provider_id: str = Field(min_length=1)
     provider_name: str = Field(min_length=1)
     api_base_url: str

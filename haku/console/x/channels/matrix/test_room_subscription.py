@@ -29,7 +29,7 @@ from haku.console.x.channels.matrix.room_subscription import (
     RoomNotices,
     project_notice,
 )
-from haku.console.x.session_events import TurnAbortedBody, TurnAnsweredBody
+from haku.console.x.session_events import TurnAbortedBody, TurnAnsweredBody, TurnFailedBody
 from haku.console.x.session_store import SessionStore
 from haku.console.x.subscription import START, ConversationStream, StreamedEvent, StreamPosition
 
@@ -159,6 +159,24 @@ async def test_an_abort_recorded_after_the_room_started_reading_becomes_a_notice
     await notices.reconcile_once()
 
     assert room.said == [ABORTED_BY_OPERATOR]
+
+
+async def test_a_failed_turn_tells_the_room_what_the_runtime_said(
+    chat_store, operator_id, served, notices, room
+) -> None:
+    """A failure is the one ending the room cannot infer: no answer arrives and nothing else is
+    said, so the reason has to be carried in the runtime's own words or it reaches nobody here."""
+    await notices.reconcile_once()
+    await chat_store.enqueue_prompt(
+        operator_id, served, "do the thing", MatrixOrigin(address=MATRIX_ROOM, refs=("$asked",))
+    )
+    turn = await chat_store.next_prompt(served)
+    assert turn is not None
+    await chat_store.end_turn(turn.turn_id, TurnFailedBody(failure="upstream is at capacity"))
+
+    await notices.reconcile_once()
+
+    assert room.said == ["the turn failed — upstream is at capacity"]
 
 
 async def test_an_answered_turn_without_a_message_becomes_a_silence_notice(
@@ -509,6 +527,11 @@ async def test_a_failed_projection_is_replayed_with_the_same_source_identity(
         ),
         (session_events.SetupNarrationBody(text="cloning haku-state"), "cloning haku-state", RoomEventKind.NARRATION),
         (session_events.TurnAbortedBody(), ABORTED_BY_OPERATOR, RoomEventKind.LIFECYCLE),
+        (
+            session_events.TurnFailedBody(failure="the model provider is at capacity"),
+            "the turn failed — the model provider is at capacity",
+            RoomEventKind.LIFECYCLE,
+        ),
     ],
 )
 def test_sealed_notices_are_pure_projections_of_their_source_event(body, expected, kind) -> None:

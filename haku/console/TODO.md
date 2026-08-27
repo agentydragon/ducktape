@@ -372,14 +372,6 @@ of thing.
 What the sketch still names correctly is what the seam does not cover: selecting an adapter, the
 control channel's `control_request` spelling, and choosing a backend per session.
 
-One obstacle it does not carry: **<x/README.md> claims a neutrality the live path does not have.**
-It says the live path "does not know that `assistant`, `stream_event` and `result` exist", while
-`_run_turn` reads `subtype`, `stop_reason` and `result` straight off the payload. The code is the
-honest half — both reads name themselves escape hatches — so what a second backend needs is those
-two answers coming from the vocabulary: why a turn failed, and a turn's final text when it arrived
-nowhere else. The chat-runtime plan already schedules the correction
-(<plans/conversation_layers.md>); check there before writing it again.
-
 ### More than one agent
 
 Several agent identities, each with its own permissions and its own session runner — an

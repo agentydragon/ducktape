@@ -34,28 +34,52 @@ _JWT = re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}
 _COOKIE_HEADER = re.compile(r"(?i)\b(?:set-cookie|cookie)\s*:\s*[^\r\n]+")
 _QUERY_SECRET = re.compile(r"(?i)([?&][^=&#\s\"'<>]*(?:api[_-]?key|token|jwt|signature|sig)=)[^&#\s\"'<>]+")
 _DEFAULT_MAX_BYTES = 8 * 1024 * 1024
+# Below this length, substring replacement collides with unrelated frame text — a prompt of "hi" ate
+# the "hi" in "high" and "which" (#4757). At >=12 characters an accidental exact match outside paths
+# and URLs (which _ABSOLUTE_UNIX_PATH already rewrites) does not realistically occur, while
+# disposable workspace paths and credential material clear the floor easily.
+_SUBSTRING_FLOOR = 12
 
 
 @dataclass(slots=True)
 class Sanitizer:
-    """Stable placeholders for identifiers, paths, user text, and environment values."""
+    """Stable placeholders for identifiers, paths, user text, and environment values.
+
+    The prompt is replaced whole at the protocol's prompt-bearing paths (``turn/start``
+    ``params.input[].text`` and ``userMessage`` item ``content[].text``), so it may be arbitrarily
+    short.  Workspace and environment values have no fixed paths and are replaced by substring;
+    ``_SUBSTRING_FLOOR`` refuses values too short to replace without corrupting unrelated text.
+    """
 
     workspace: str
     prompt: str
-    environment_values: tuple[str, ...]
+    environment_values: Mapping[str, str]  # environment variable name -> value
     ids: dict[tuple[str, str], str] = field(default_factory=dict)
     counts: dict[str, int] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        if len(self.workspace) < _SUBSTRING_FLOOR:
+            raise ValueError(
+                f"workspace {self.workspace!r} is shorter than {_SUBSTRING_FLOOR} characters and cannot be"
+                " substring-replaced without corrupting unrelated text; use a longer disposable workspace path"
+            )
+        for name, value in self.environment_values.items():
+            if len(value) < _SUBSTRING_FLOOR:
+                raise ValueError(
+                    f"environment value {name} is shorter than {_SUBSTRING_FLOOR} characters and cannot be"
+                    " substring-replaced without corrupting unrelated text"
+                )
+
     @classmethod
     def from_process(cls, *, workspace: Path, prompt: str) -> Sanitizer:
-        # Values are inspected only for replacement.  They are never logged or serialized.
-        environment_values = tuple(
-            sorted(
-                {value for value in os.environ.values() if len(value) >= 8 and value not in {str(workspace), prompt}},
-                key=len,
-                reverse=True,
-            )
-        )
+        # Values are inspected only for replacement and never logged or serialized; names may appear
+        # in floor errors. Values below the floor are not redaction candidates at all: strings that
+        # short are not credential material, and replacing them would corrupt frames.
+        environment_values = {
+            name: value
+            for name, value in os.environ.items()
+            if len(value) >= _SUBSTRING_FLOOR and value not in {str(workspace), prompt}
+        }
         return cls(workspace=str(workspace), prompt=prompt, environment_values=environment_values)
 
     def sanitize(self, value: Any, *, key: str | None = None, parent: Mapping[str, Any] | None = None) -> Any:
@@ -63,7 +87,12 @@ class Sanitizer:
             return "<REDACTED>"
         if isinstance(value, dict):
             return {
-                member_key: self.sanitize(member, key=member_key, parent=value) for member_key, member in value.items()
+                member_key: (
+                    self._user_input(member)
+                    if self._is_user_input(member_key, member, container=value, parent=parent)
+                    else self.sanitize(member, key=member_key, parent=value)
+                )
+                for member_key, member in value.items()
             }
         if isinstance(value, list):
             return [self.sanitize(member, key=key, parent=parent) for member in value]
@@ -73,6 +102,32 @@ class Sanitizer:
                 return self._placeholder(category, value)
             return self._text(value, key=key)
         return value
+
+    def _is_user_input(
+        self, key: str, member: Any, *, container: Mapping[str, Any], parent: Mapping[str, Any] | None
+    ) -> bool:
+        """The prompt-bearing paths at rust-v0.144.1 (docs/protocol_evidence.md): the ``turn/start``
+        request's ``params.input`` and any ``userMessage`` item's ``content``, both ``UserInput``
+        arrays — the latter wherever the item appears (``item/started``, ``item/completed``, a
+        ``Turn.items`` payload)."""
+        if not isinstance(member, list):
+            return False
+        if key == "content" and container.get("type") == "userMessage":
+            return True
+        return key == "input" and parent is not None and parent.get("method") == frames.TURN_START
+
+    def _user_input(self, items: list[Any]) -> list[Any]:
+        # User-authored text never survives whole-value: each text entry becomes <PROMPT> outright,
+        # so a short prompt needs no substring surgery anywhere else.
+        return [
+            {
+                member_key: "<PROMPT>" if member_key == "text" else self.sanitize(member, key=member_key, parent=item)
+                for member_key, member in item.items()
+            }
+            if isinstance(item, dict) and item.get("type") == "text"
+            else self.sanitize(item)
+            for item in items
+        ]
 
     def _id_category(self, key: str | None, parent: Mapping[str, Any] | None) -> str | None:
         if key in {"threadId", "parentThreadId", "forkedFromId"}:
@@ -110,8 +165,14 @@ class Sanitizer:
     def _text(self, value: str, *, key: str | None) -> str:
         if value == self.workspace or (key in {"cwd", "codexHome", "path"} and value.startswith("/")):
             return "<WORKSPACE>" if value == self.workspace or key == "cwd" else "<ABSOLUTE_PATH>"
-        text = value.replace(self.prompt, "<PROMPT>").replace(self.workspace, "<WORKSPACE>")
-        for environment_value in self.environment_values:
+        text = value
+        # A prompt echoed inside longer text (a model quoting the question back) is still replaced,
+        # but only above the floor; below it, the prompt-bearing paths are the sole replacement.
+        if len(self.prompt) >= _SUBSTRING_FLOOR:
+            text = text.replace(self.prompt, "<PROMPT>")
+        text = text.replace(self.workspace, "<WORKSPACE>")
+        # Longest first, so a value containing another value is replaced before its substring.
+        for environment_value in sorted(self.environment_values.values(), key=len, reverse=True):
             if environment_value in text:
                 text = text.replace(environment_value, "<REDACTED_ENV_VALUE>")
         text = _COOKIE_HEADER.sub("Cookie: <REDACTED>", text)
@@ -202,6 +263,8 @@ class StdioFrameChannel:
 
 async def capture(args: argparse.Namespace) -> None:
     workspace, output = _capture_paths(args)
+    # Floor validation fails here, before the output is truncated or the child process exists.
+    sanitizer = Sanitizer.from_process(workspace=workspace, prompt=args.prompt)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text("")
     process = await asyncio.create_subprocess_exec(
@@ -218,10 +281,7 @@ async def capture(args: argparse.Namespace) -> None:
     stderr_drain = asyncio.create_task(_discard_stderr(process))
     channel = StdioFrameChannel(process, args.timeout_seconds)
     sink = SanitizingCapture(
-        output=output,
-        sanitizer=Sanitizer.from_process(workspace=workspace, prompt=args.prompt),
-        max_messages=args.max_messages,
-        max_bytes=args.max_bytes,
+        output=output, sanitizer=sanitizer, max_messages=args.max_messages, max_bytes=args.max_bytes
     )
     client = CodexAppServer(
         channel,

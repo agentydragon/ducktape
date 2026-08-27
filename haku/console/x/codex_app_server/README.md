@@ -32,8 +32,11 @@ The utility:
 - performs `initialize`/`initialized`, `thread/start`, and `turn/start`;
 - records direction-labelled JSONL through the matching `turn/completed`;
 - drains but never records stderr;
-- records no environment block and replaces values equal to inherited environment values;
-- replaces the prompt, workspace paths, native IDs, credential-shaped keys, bearer values, and
-  OpenAI-key-shaped strings before writing.
+- records no environment block and substring-replaces inherited environment values, skipping values
+  shorter than 12 characters (not credential material, and replacing them corrupts unrelated text);
+- replaces the prompt whole at the prompt-bearing protocol paths (`turn/start` input, `userMessage`
+  content), so a short prompt like `hi` cannot mangle other frame text;
+- replaces workspace paths — refusing a workspace shorter than 12 characters — native IDs,
+  credential-shaped keys, bearer values, and OpenAI-key-shaped strings before writing.
 
 Sanitization is not a substitute for review. Follow `testdata/README.md` before committing output.
