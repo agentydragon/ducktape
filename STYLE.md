@@ -60,9 +60,10 @@ instead, so they load on demand.
 - **Reuse before minting**: before adding a helper, type, or mechanism, search for the
   existing one solving the same shape; a near-duplicate dedupes into the original
   rather than landing beside it.
-- **A `typing.Protocol` needs plural implementers**: when one concrete type flows
-  through, name that type — structural indirection over a single implementer hides the
-  real type without buying substitution.
+- **`typing.Protocol` is a smell by default**: name the concrete type or a union of the
+  real types; a Protocol earns its place only to break a proven circular dependency or
+  in genuinely structural metaprogramming, never as indirection over implementers you
+  can name.
 - **No dynamic attribute probing** (`getattr`/`hasattr`/`setattr`) unless justified and
   documented; in tests, assert attributes directly.
 - **Exceptions**:
