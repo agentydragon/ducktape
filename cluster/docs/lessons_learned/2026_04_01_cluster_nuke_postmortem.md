@@ -63,7 +63,8 @@ server delete`.
 
 `hcloud_server` has `lifecycle { ignore_changes = [user_data, image] }` but NOT
 `ssh_keys`. When the import block imported the servers, tofu saw `ssh_keys` as a new
-field and planned forced replacement (destroy + create).
+field and planned forced replacement (destroy + create) — as would any state drift
+on a field `ignore_changes` doesn't cover.
 
 **Fix**: Add `ssh_keys` to `ignore_changes` on `hcloud_server.vps`.
 
@@ -90,6 +91,9 @@ cluster became unstable, PG became unreachable, and state operations failed with
 
 **Mitigation**: The `errored.tfstate` local fallback worked — state was preserved.
 But recovery required manual intervention to push state back once PG was accessible.
+Longer-term options: external state backend (S3, GCS, or Terraform Cloud); automated
+periodic `errored.tfstate` backup to local disk / external storage; PG backup CronJob
+writing to external storage (partially exists: pg_dump to PVC).
 
 ### RC4: Nebula DNS resolution failure on wyrm2
 
@@ -111,20 +115,7 @@ connectivity (Nebula down → haproxy down → kubelet unregistered), it couldn'
 
 The only remaining access was `talosctl` via public VPS IPs and `hcloud` CLI.
 
-## Architectural Footguns Identified
-
-### 1. Tofu state stored inside the managed cluster
-
-**Problem**: PG backend runs in the cluster. Cluster dies → state inaccessible →
-can't fix cluster.
-
-**Mitigation options**:
-
-- External state backend (S3, GCS, or Terraform Cloud)
-- Automated periodic `errored.tfstate` backup to local disk / external storage
-- PG backup CronJob writes to external storage (partially exists: pg_dump to PVC)
-
-### 2. Tofu runs from a machine managed by tofu
+## Architectural Footgun: Tofu runs from a machine managed by tofu
 
 **Problem**: `module.wyrm2` in the same TF root manages the VM running tofu. A
 `tofu apply` that changes wyrm2 config (bridge, disks, resources) can reboot the
@@ -136,13 +127,6 @@ machine mid-apply.
 - Never run tofu against wyrm2's own config from wyrm2 itself
 - Add guard in bootstrap script to skip wyrm2 changes when running on wyrm2
 
-### 3. `ignore_changes` doesn't cover all immutable fields
-
-**Problem**: `hcloud_server` ignores `user_data` and `image` but not `ssh_keys`.
-Import or any state drift on `ssh_keys` forces replacement.
-
-**Fix**: Add `ssh_keys` to `ignore_changes`.
-
 ## Incident 2: wyrm2 rebooted during bootstrap recovery
 
 During the bootstrap recovery attempt (same day), the bootstrap script's Phase 2
@@ -151,9 +135,8 @@ targeted apply included `proxmox_virtual_environment_vm.talos["pve_cp0"]`. Altho
 config change (bridge `vmbr0→vmbr4`) to wyrm2 as a side effect, triggering
 `qmshutdown:110:root@pam!tofu` at 21:31.
 
-This is the exact footgun identified in "Architectural Footgun #2" above — tofu
-managing wyrm2 from wyrm2. The fix is to use `-exclude=module.wyrm2` on all tofu
-applies run from wyrm2.
+This is the exact footgun identified above — tofu managing wyrm2 from wyrm2. The
+fix is to use `-exclude=module.wyrm2` on all tofu applies run from wyrm2.
 
 ## Recovery Changes (2026-04-02 bootstrap)
 

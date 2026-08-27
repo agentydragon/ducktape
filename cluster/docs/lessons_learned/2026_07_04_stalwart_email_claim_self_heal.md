@@ -15,9 +15,8 @@ Stalwart's OIDC directory for the `stalwart-haku` provider
 from the `email`/`preferred_username` claims. The JWT was minted from the
 `haku` Authentik service account (`tf/gitops/agent-machine-access/main.tf`,
 `authentik_user.haku_grocy` — the same account used for Grocy read access),
-which had never set `email`. Authentik's `email` scope mapping emitted `""`,
-so the token authenticated but Stalwart never resolved a mailbox account for
-it.
+which had never set `email`. Authentik's `email` scope mapping emitted `""` —
+hence the symptom above.
 
 Grocy's own auth path never noticed because it authorizes on
 `X-authentik-username` (forwarded by the outpost), not `email` — so this
@@ -90,8 +89,7 @@ More generally: any rotator/minter that asserts required claims should also
 be able to _detect drift_ in the already-stored artifact and force a refresh,
 not just gate freshness on expiry. Otherwise every fix to an upstream
 attribute needs a paired manual "now go force a re-mint" step — easy to
-forget, and in this case would have left the mailbox broken for another
-month. `expected_audiences`/`expected_claims`'s stamp-and-compare pattern in
+forget. `expected_audiences`/`expected_claims`'s stamp-and-compare pattern in
 `cluster/rotators/authentik_jwt_rotation/rotate.py` is a reusable shape for
 this: cheap to check (no decryption), cheap to extend (one more dict key),
 and it converges automatically within the hour instead of requiring an

@@ -20,10 +20,7 @@ Only these CNPG cluster profiles are permitted:
 | **Proxmox-single** | 1         | `topology.kubernetes.io/region: proxmox` | `local-path-proxmox`           | n/a                                   |
 
 **OVH-HA**: For services co-located with the SeaweedFS cluster on the OVH
-nodes. Two instances on separate nodes. Existing clusters mostly still name
-`local-path-ovh` — the deprecated alias re-pinned to the same media as
-`local-path-ovh-hdd`, kept only for already-bound PVCs (see the SC manifest) —
-new clusters name the tiered classes explicitly.
+nodes. Two instances on separate nodes.
 
 **Proxmox-single**: For homelab services. Single instance co-located with the
 app on Proxmox. Relies on ZFS for local reliability; off-site backups via
@@ -36,10 +33,13 @@ all instances to one site avoids this.
 
 ### R3: CNPG storage class follows the pin
 
-OVH-HA uses `local-path-ovh` (HDD; deprecated alias of `local-path-ovh-hdd`)
-or, for fsync/latency-critical DBs, the `local-path-ovh-ssd` KS-GAME NVMe tier
-(`forgejo-db-ssd`, `seaweedfs-filer-db-ssd`) — both constrained to OVH nodes
-via `allowedTopologies`. Proxmox-single uses `local-path-proxmox`. OVH-HA gets
+OVH-HA uses `local-path-ovh-hdd` or, for fsync/latency-critical DBs, the
+`local-path-ovh-ssd` KS-GAME NVMe tier (`forgejo-db-ssd`,
+`seaweedfs-filer-db-ssd`) — both constrained to OVH nodes via
+`allowedTopologies`. (`local-path-ovh` is a deprecated alias re-pinned to the
+same media as `-hdd`, kept only for already-bound PVCs — see the SC manifest;
+new clusters name the tiered classes explicitly.) Proxmox-single uses
+`local-path-proxmox`. OVH-HA gets
 replication at the CNPG level (2 instances on separate nodes);
 Proxmox-single gets replication at the storage level (ZFS on the Proxmox
 host).
@@ -70,9 +70,8 @@ grep -rl 'kind: Cluster' cluster/k8s --include='postgres-cluster*.yaml'
 ```
 
 As of 2026-08, every **live** (unsuspended) cluster is 2-instance OVH-HA —
-most on the deprecated `local-path-ovh` alias (same media as `-hdd`), plus
-`forgejo-db-ssd` and `seaweedfs-filer-db-ssd`
-on the `local-path-ovh-ssd` tier — with one deviation:
+most on the deprecated `local-path-ovh` alias, plus `forgejo-db-ssd` and
+`seaweedfs-filer-db-ssd` on the `local-path-ovh-ssd` tier — with one deviation:
 
 - `study-casino-db` (`k8s/study-casino/db/`): 3 instances pinned
   `region: hil`, one per OVH node, so it tolerates a node loss without

@@ -1,7 +1,4 @@
-# PERSISTENT AUTH
-# Persistent authentication credentials that survive VM lifecycle.
-# Includes: CSI tokens, Nebula PKI,
-# Nix cache signing key, Attic JWT token, SOPS age keypair.
+# PERSISTENT AUTH — credentials that survive VM lifecycle (prevent_destroy).
 
 # PROXMOX USERS, ROLES, AND TOKENS
 

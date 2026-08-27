@@ -40,19 +40,16 @@ in the `tofu-state-db-ovh` CNPG cluster (one schema per `Terraform` CR). Recover
 
 ### DNS and website must survive OVH-only
 
-They must work without Proxmox: no Proxmox-pinned storage (`lvm-proxmox-*`,
-`local-path-proxmox`) and no Proxmox-pinned nodes. See <docs/decisions.md> "OVH-Only
-Resilience Invariants".
+Full statement — no Proxmox-pinned storage or nodes — in README § "OVH-Only
+Resilience Invariants" above; compliance checklist in <docs/decisions.md>.
 
 ## Primary Directive: Declarative Turnkey Bootstrap
 
 **Goal**: `bazel run //cluster:bootstrap` from committed repo state produces a working cluster.
 
-1. NO imperative patches -- all fixes must be committed configuration
-2. Dev loop: `bazel run //cluster:bootstrap` -> verify (single TF root with targeted applies)
-3. Debug freely, but solutions MUST be declarative
-4. Done = bootstrap->verify passes
-5. SSO required for all in-scope applications
+1. Debug freely, but every fix lands as committed configuration — no imperative patches
+2. Done = bootstrap → verify passes
+3. SSO required for all in-scope applications
 
 ## Bootstrap Script
 

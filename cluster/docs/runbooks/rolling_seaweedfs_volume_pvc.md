@@ -68,8 +68,6 @@ its PVC is back.)
 
 ### 3. **GATE**: wait for replication to converge
 
-This is the step we skipped on 2026-06-02.
-
 ```bash
 # Run until output is "no under-replicated volumes found" (no -n: actually fix).
 # Re-run periodically; convergence is rate-limited by how fast volumes can be
@@ -80,10 +78,9 @@ EOF
 ```
 
 For our ~700 MB working set this takes single-digit minutes. **Do not
-proceed to step 4 until this returns clean.** If you're rolling multiple
-volume-server nodes (e.g. node-rename project), repeat this gate **between
-each one** — losing two DataNodes' worth of volumes in sequence without
-re-replication is exactly the failure mode we hit.
+proceed to step 4 until this returns clean.** Rolling multiple volume-server
+nodes (e.g. the node-rename project)? Repeat this gate **between each one** —
+skipping it between nodes is exactly the 2026-06-02 failure.
 
 ### 4. Delete the PVC and let it rebind on the renamed/new node
 

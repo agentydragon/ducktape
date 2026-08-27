@@ -15,11 +15,6 @@ VXLAN-encapsulated packets exceeded the WireGuard interface MTU (1420), forcing 
 fragmentation. UDP fragments traversing NAT/middleboxes between Hetzner VPS and home
 Proxmox were intermittently dropped.
 
-**Fix**: `MTU: 1370` (uppercase) in `cilium-values.yaml`, plus stripping Cilium config
-to Talos-recommended defaults only (removing `endpointRoutes`, `hostServices`,
-`bpf.hostLegacyRouting`, and other non-default options that Talos docs warn against
-with KubeSpan).
-
 ## Key Symptoms
 
 - Bootstrap stalled at ~18/64 Ready kustomizations for >20 minutes
@@ -51,10 +46,13 @@ These approaches masked symptoms but didn't fix the root cause:
 
 ## What Fixed It
 
-1. **`MTU: 1370` (uppercase)** — Eliminated IP fragmentation at the WireGuard interface.
-   Zero fragmentation: pod (1370) + VXLAN (50) = 1420 fits WireGuard MTU, + WireGuard (80) = 1500 fits eth0.
-2. **Stripped Cilium to Talos-recommended defaults** — Removed all non-default options
-   except required ones (ipam, kubeProxyReplacement, securityContext, cgroup, hubble).
+1. **`MTU: 1370` (uppercase) in `cilium-values.yaml`** — Eliminated IP fragmentation at
+   the WireGuard interface. Zero fragmentation: pod (1370) + VXLAN (50) = 1420 fits
+   WireGuard MTU, + WireGuard (80) = 1500 fits eth0.
+2. **Stripped Cilium to Talos-recommended defaults** — Removed `endpointRoutes`,
+   `hostServices`, `bpf.hostLegacyRouting`, and every other non-default option Talos
+   docs warn against with KubeSpan; kept required ones (ipam, kubeProxyReplacement,
+   securityContext, cgroup, hubble).
 3. **Reverted DNS to defaults** — `forwardKubeDNSToHost: true` (default), no explicit
    nameservers, CoreDNS using `/etc/resolv.conf`. Works correctly with default Cilium
    (no eBPF host routing).

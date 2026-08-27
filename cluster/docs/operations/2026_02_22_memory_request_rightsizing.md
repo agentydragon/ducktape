@@ -6,16 +6,11 @@ Cluster nodes were hitting scheduling limits despite low actual memory usage. Th
 scheduler refuses to place pods when the sum of memory **requests** exceeds node
 allocatable, even if actual consumption is well below capacity.
 
-Analysis of `kubectl top pods` vs configured requests revealed widespread
-over-provisioning: many pods requested 5-50x their actual usage, wasting ~4GB of
-scheduling budget across the cluster.
-
-## Methodology
-
-Compared actual memory usage (`kubectl top pods -A`) against configured requests for
-all pods. Right-sized requests to ~1.5-2x observed usage, preserving headroom for
-spikes while reclaiming wasted scheduling budget. Limits were left unchanged (they
-only matter at OOM-kill time).
+Comparing actual usage (`kubectl top pods -A`) against configured requests for all
+pods revealed widespread over-provisioning — many pods requested 5-50x actual,
+wasting ~4GB of scheduling budget across the cluster. Requests were right-sized to
+~1.5-2x observed usage (headroom for spikes); limits were left unchanged (they only
+matter at OOM-kill time).
 
 ## Observed Usage vs New Requests
 
