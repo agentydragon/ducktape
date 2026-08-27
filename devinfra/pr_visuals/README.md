@@ -37,6 +37,15 @@ tests. The by-run derivation remains the fallback: it is the only handle on a PR
 run, which records the merge SHA and so cannot be found by head SHA, and on a run
 cancelled before Bazel started.
 
+**Gotcha: artifacts come from the CAS, not from `bbapi artifact download`.** That
+command resolves its `label/name` pattern against the invocation's whole build event
+stream, and refetches that stream — 33 MB on a `//...` sweep — for every file, so it
+costs ~4.4 s per artifact whatever the artifact's size. At a commit's ~294 files the
+publish step took ~16 minutes. The artifact listing already carries each blob's
+`bytestream://` URI, so the publisher reads blobs straight from
+`app.buildbuddy.io/file/download`, eight at a time: the same set lands in under 20
+seconds.
+
 A run cancelled as superseded publishes its commit bundle and nothing else: it
 often holds a complete manifest set, because cancellation kills the workflow
 rather than the Bazel invocation. It stays silent — the PR comment is a

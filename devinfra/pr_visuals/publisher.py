@@ -10,8 +10,11 @@ import os
 import re
 import shutil
 import subprocess
+import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol, cast
@@ -21,6 +24,7 @@ from botocore.exceptions import ClientError
 from github import Auth, Github
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import BaseModel, TypeAdapter
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from devinfra.ci.invocation_ids import invocation_id
 from devinfra.pr_visuals.check_run import upsert_check_run
@@ -43,6 +47,19 @@ class BuildBuddyArtifact(BaseModel):
 class ListedArtifact:
     invocation_id: str
     artifact: BuildBuddyArtifact
+
+
+@dataclass(frozen=True)
+class _Download:
+    listed: ListedArtifact
+    destination: Path
+
+
+@dataclass(frozen=True)
+class _PlannedTest:
+    target_label: str
+    slug: str
+    manifests: list[_Download]
 
 
 @dataclass(frozen=True)
@@ -175,10 +192,14 @@ class ReviewBundleMetadata(BaseModel):
     tests: list[ReviewTest]
 
 
-BUILDBUDDY_RPC = "https://app.buildbuddy.io/rpc/BuildBuddyService"
+BUILDBUDDY_APP = "https://app.buildbuddy.io"
+BUILDBUDDY_RPC = f"{BUILDBUDDY_APP}/rpc/BuildBuddyService"
 REPO_URL = "https://github.com/agentydragon/ducktape"
 
-Fetcher = Callable[[urllib.request.Request], Any]
+Fetcher = Callable[[urllib.request.Request], bytes]
+# Measured against BuildBuddy: 40 blobs took 2.3s at this width, so a commit's ~294
+# files land in under 20s. Raising it buys little and is less polite to the service.
+DOWNLOAD_WORKERS = 8
 
 
 def search_ci_test_invocations(commit_sha: str, *, api_key: str, fetch: Fetcher) -> list[str]:
@@ -201,15 +222,20 @@ def search_ci_test_invocations(commit_sha: str, *, api_key: str, fetch: Fetcher)
     return sweeps or [i["invocationId"] for i in found]
 
 
-def _read(request: urllib.request.Request) -> str:
+def _is_transient(error: BaseException) -> bool:
+    if isinstance(error, urllib.error.HTTPError):
+        return error.code >= 500
+    return isinstance(error, urllib.error.URLError | TimeoutError)
+
+
+@retry(retry=retry_if_exception(_is_transient), stop=stop_after_attempt(4), wait=wait_exponential(max=8), reraise=True)
+def _read(request: urllib.request.Request) -> bytes:
     with urllib.request.urlopen(request, timeout=30) as response:
         body: bytes = response.read()
-    return body.decode()
+    return body
 
 
-def find_test_invocations(
-    *, run_id: str, run_attempt: str, commit_sha: str, api_key: str | None, fetch: Fetcher
-) -> list[str]:
+def find_test_invocations(*, run_id: str, run_attempt: str, commit_sha: str, api_key: str, fetch: Fetcher) -> list[str]:
     """Where this commit's test artifacts are, by commit if BuildBuddy knows, else by run.
 
     The by-run derivation (devinfra/ci/invocation_ids.py) is what makes a *cancelled*
@@ -222,7 +248,7 @@ def find_test_invocations(
     disagree across invocations, and mixing a sweep with an affected-set run invites
     exactly that.
     """
-    if api_key and (found := search_ci_test_invocations(commit_sha, api_key=api_key, fetch=fetch)):
+    if found := search_ci_test_invocations(commit_sha, api_key=api_key, fetch=fetch):
         return found
     return [str(invocation_id(run_id=run_id, attempt=run_attempt, role=role)) for role in ("test", "build")]
 
@@ -297,21 +323,48 @@ def target_slug(label: str) -> str:
     return f"{readable[:80]}-{digest}"
 
 
-def _download_artifact(listed: ListedArtifact, destination: Path, *, bbapi: Path, run: Runner) -> None:
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    match = f"{listed.artifact.label}/{listed.artifact.name}"
-    run([bbapi, "artifact", "download", listed.invocation_id, match, "-o", destination], check=True, text=True)
+def _download_artifact(download: _Download, *, api_key: str, fetch: Fetcher) -> None:
+    """Read one artifact's blob straight from the CAS, by the URI the listing gave.
+
+    Deviation from `bbapi artifact download`, which resolves a `label/name` pattern
+    against the invocation's whole build event stream and so pays for that stream per
+    file — README.md § Gotcha: artifacts come from the CAS.
+    """
+    download.destination.parent.mkdir(parents=True, exist_ok=True)
+    request = urllib.request.Request(
+        f"{BUILDBUDDY_APP}/file/download?bytestream_url={urllib.parse.quote(download.listed.artifact.uri, safe='')}",
+        headers={"x-buildbuddy-api-key": api_key},
+    )
+    download.destination.write_bytes(fetch(request))
+
+
+def _download_all(downloads: list[_Download], *, api_key: str, fetch: Fetcher) -> None:
+    with ThreadPoolExecutor(max_workers=DOWNLOAD_WORKERS) as pool:
+        pending = [pool.submit(_download_artifact, download, api_key=api_key, fetch=fetch) for download in downloads]
+    for download in pending:
+        download.result()
 
 
 def download_visual_tests(
-    invocations: list[str], destination: Path, *, bbapi: Path = Path("bbapi"), run: Runner = subprocess.run
+    invocations: list[str],
+    destination: Path,
+    *,
+    api_key: str,
+    fetch: Fetcher = _read,
+    bbapi: Path = Path("bbapi"),
+    run: Runner = subprocess.run,
 ) -> list[DownloadedVisualTest]:
     artifacts = list_ci_artifacts(invocations, bbapi=bbapi, run=run)
     by_target: dict[str, list[ListedArtifact]] = {}
     for listed in artifacts:
         by_target.setdefault(listed.artifact.label, []).append(listed)
 
-    tests: list[DownloadedVisualTest] = []
+    # A bb remote script can expose the same test result through more than one linked
+    # invocation (for example, a retry or a child invocation that was discovered after
+    # the primary one).  Compare the manifests rather than rejecting the target merely
+    # because it has duplicate listings.  Conflicting manifests remain an error: there
+    # is no honest way to pick one candidate without a result-attempt identity.
+    planned: list[_PlannedTest] = []
     used_slugs: dict[str, str] = {}
     for target_label, target_artifacts in sorted(by_target.items()):
         manifests = [
@@ -319,45 +372,52 @@ def download_visual_tests(
         ]
         if not manifests:
             continue
-
         slug = target_slug(target_label)
         if previous := used_slugs.get(slug):
             raise ValueError(f"Bazel target URL slug collision: {previous} and {target_label}")
         used_slugs[slug] = target_label
-        test_dir = destination / slug
-        manifest_path = test_dir / MANIFEST_NAME
-
-        # A bb remote script can expose the same test result through more than
-        # one linked invocation (for example, a retry or a child invocation that
-        # was discovered after the primary one).  Compare the manifests rather
-        # than rejecting the target merely because it has duplicate listings.
-        # Conflicting manifests remain an error: there is no honest way to pick
-        # one candidate without a result-attempt identity.
         candidate_dir = destination / ".manifests" / slug
-        candidates: list[tuple[ListedArtifact, VisualReviewManifest, Path]] = []
-        for index, listed in enumerate(manifests):
-            candidate_path = candidate_dir / f"{index}.json"
-            _download_artifact(listed, candidate_path, bbapi=bbapi, run=run)
-            candidates.append(
-                (listed, VisualReviewManifest.model_validate_json(candidate_path.read_text()), candidate_path)
+        planned.append(
+            _PlannedTest(
+                target_label,
+                slug,
+                [_Download(listed, candidate_dir / f"{index}.json") for index, listed in enumerate(manifests)],
             )
-        signatures = {json.dumps(manifest.model_dump(mode="json"), sort_keys=True) for _, manifest, _ in candidates}
+        )
+
+    # Two waves rather than one, because the manifests are what name the assets: every
+    # manifest has to land before any asset can be asked for.
+    _download_all([download for test in planned for download in test.manifests], api_key=api_key, fetch=fetch)
+
+    tests: list[DownloadedVisualTest] = []
+    asset_downloads: list[_Download] = []
+    for plan in planned:
+        parsed = [
+            VisualReviewManifest.model_validate_json(download.destination.read_text()) for download in plan.manifests
+        ]
+        signatures = {json.dumps(manifest.model_dump(mode="json"), sort_keys=True) for manifest in parsed}
         if len(signatures) != 1:
-            raise ValueError(f"{target_label} exposed conflicting visual manifests from {len(manifests)} results")
-        selected_listed, manifest, selected_path = candidates[0]
+            raise ValueError(
+                f"{plan.target_label} exposed conflicting visual manifests from {len(plan.manifests)} results"
+            )
+        selected, manifest = plan.manifests[0], parsed[0]
+        test_dir = destination / plan.slug
         test_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(selected_path, manifest_path)
+        shutil.copyfile(selected.destination, test_dir / MANIFEST_NAME)
 
         available: dict[str, ListedArtifact] = {}
-        for artifact in sorted(target_artifacts, key=lambda item: item.invocation_id != selected_listed.invocation_id):
+        for artifact in sorted(
+            by_target[plan.target_label], key=lambda item: item.invocation_id != selected.listed.invocation_id
+        ):
             available.setdefault(artifact.artifact.name, artifact)
         for asset in manifest.assets:
             artifact_name = f"test.outputs/{asset.path}"
             asset_artifact = available.get(artifact_name)
             if asset_artifact is None:
-                raise ValueError(f"{target_label} visual manifest references missing artifact {asset.path}")
-            _download_artifact(asset_artifact, test_dir / asset.path, bbapi=bbapi, run=run)
-        tests.append(DownloadedVisualTest(target_label, slug, manifest, test_dir))
+                raise ValueError(f"{plan.target_label} visual manifest references missing artifact {asset.path}")
+            asset_downloads.append(_Download(asset_artifact, test_dir / asset.path))
+        tests.append(DownloadedVisualTest(plan.target_label, plan.slug, manifest, test_dir))
+    _download_all(asset_downloads, api_key=api_key, fetch=fetch)
     return tests
 
 
@@ -859,17 +919,20 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
-def _invocations_for(args: argparse.Namespace) -> list[str]:
+def _buildbuddy_api_key() -> str:
+    key = os.environ.get("BUILDBUDDY_API_KEY")
+    if not key:
+        raise ValueError("BUILDBUDDY_API_KEY is required to read this commit's test artifacts from BuildBuddy")
+    return key
+
+
+def _invocations_for(args: argparse.Namespace, *, api_key: str) -> list[str]:
     return find_test_invocations(
-        run_id=args.ci_run_id,
-        run_attempt=args.ci_run_attempt,
-        commit_sha=args.sha,
-        api_key=os.environ.get("BUILDBUDDY_API_KEY"),
-        fetch=_read,
+        run_id=args.ci_run_id, run_attempt=args.ci_run_attempt, commit_sha=args.sha, api_key=api_key, fetch=_read
     )
 
 
-def publish_only(args: argparse.Namespace, *, github_token: str, details_url: str | None) -> None:
+def publish_only(args: argparse.Namespace, *, github_token: str, api_key: str, details_url: str | None) -> None:
     """Upload a superseded run's commit bundle, saying nothing about it.
 
     Deliberately does not call :func:`write_baseline_pointers`. Pointers are the
@@ -892,8 +955,8 @@ def publish_only(args: argparse.Namespace, *, github_token: str, details_url: st
         external_id=args.check_external_id,
         token=github_token,
     )
-    invocations = _invocations_for(args)
-    tests = download_visual_tests(invocations, args.work_dir / "tests")
+    invocations = _invocations_for(args, api_key=api_key)
+    tests = download_visual_tests(invocations, args.work_dir / "tests", api_key=api_key)
     if tests:
         s3 = boto3.client("s3", endpoint_url=args.endpoint)
         bundle = build_bundle(
@@ -910,6 +973,7 @@ def main() -> None:
     github_token = os.environ.get("GITHUB_TOKEN")
     if not github_token:
         raise ValueError("GITHUB_TOKEN is required to publish the visual-review check run")
+    api_key = _buildbuddy_api_key()
     workflow_url = current_workflow_url()
 
     conclusion: Literal["success", "failure", "neutral"] = "neutral"
@@ -931,14 +995,14 @@ def main() -> None:
         # already streamed to BuildBuddy. Those are published: the commit bundle is
         # immutable and additive, and it is what lets a PR based on this commit resolve
         # an exact baseline instead of falling back to a pointer.
-        publish_only(args, github_token=github_token, details_url=details_url)
+        publish_only(args, github_token=github_token, api_key=api_key, details_url=details_url)
         return
 
     try:
-        invocations = _invocations_for(args)
+        invocations = _invocations_for(args, api_key=api_key)
         if args.ci_conclusion != "success":
             ci_failures = list_ci_failures(invocations)
-        tests = download_visual_tests(invocations, args.work_dir / "tests")
+        tests = download_visual_tests(invocations, args.work_dir / "tests", api_key=api_key)
         github_output = os.environ.get("GITHUB_OUTPUT")
         if github_output:
             with Path(github_output).open("a") as output:

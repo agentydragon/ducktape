@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import subprocess
+import urllib.parse
+import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 
@@ -49,8 +51,39 @@ class FakeBaselineSource:
         return self.objects.get(key)
 
 
-def _search_reply(*invocations: dict[str, object]) -> Callable[..., str]:
-    return lambda _request: json.dumps({"invocation": list(invocations)})
+def _search_reply(*invocations: dict[str, object]) -> Callable[..., bytes]:
+    return lambda _request: json.dumps({"invocation": list(invocations)}).encode()
+
+
+def _cas(blobs: dict[str, bytes]) -> Callable[[urllib.request.Request], bytes]:
+    """Serve blobs by the `bytestream://` URI the artifact listing advertised.
+
+    An unlisted URI is a KeyError, which is the point: the publisher may only ask for
+    a blob the listing named.
+    """
+
+    def fetch(request: urllib.request.Request) -> bytes:
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(request.full_url).query)
+        return blobs[query["bytestream_url"][0]]
+
+    return fetch
+
+
+def _manifest(title: str, *assets: str) -> bytes:
+    return json.dumps(
+        {
+            "schema": "ducktape.visual-review.v1",
+            "title": title,
+            "assets": [{"path": asset, "label": asset.removesuffix(".png")} for asset in assets],
+        }
+    ).encode()
+
+
+def _listing(artifacts: list[dict[str, str]]) -> Callable[..., subprocess.CompletedProcess[str]]:
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, json.dumps(artifacts), "")
+
+    return fake_run
 
 
 def test_the_full_sweep_wins_over_an_affected_set_run_at_the_same_commit() -> None:
@@ -90,19 +123,6 @@ def test_the_derivation_separates_every_input() -> None:
     assert invocation_id(run_id="33060467223", attempt="1", role="test") != base
     assert invocation_id(run_id="33060467222", attempt="2", role="test") != base
     assert invocation_id(run_id="33060467222", attempt="1", role="build") != base
-
-
-def test_without_a_credential_the_search_is_skipped_rather_than_attempted() -> None:
-    """No API key means no search — falling through to the derived IDs beats raising, and
-    beats an HTTP call that would fail anyway."""
-
-    def forbid(_request: object) -> str:
-        pytest.fail("no credential must mean no BuildBuddy request")
-
-    found = find_test_invocations(
-        run_id="33060467222", run_attempt="1", commit_sha="deadbeef", api_key=None, fetch=forbid
-    )
-    assert found[0] == str(invocation_id(run_id="33060467222", attempt="1", role="test"))
 
 
 def test_an_invocation_that_never_existed_is_not_a_failure() -> None:
@@ -149,32 +169,24 @@ def test_download_visual_tests_groups_manifests_by_executed_target(tmp_path: Pat
 
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         commands.append(command)
-        if command[2:4] == ["list", "missing"]:
+        if command[3] == "missing":
             return subprocess.CompletedProcess(command, 1, "", "invocation not found")
-        if command[2] == "list":
-            return subprocess.CompletedProcess(command, 0, json.dumps(artifacts), "")
+        return subprocess.CompletedProcess(command, 0, json.dumps(artifacts), "")
 
-        match = str(command[4])
-        output = Path(command[-1])
-        if match.endswith("visual-review.json"):
-            if match.startswith("//aiquota"):
-                manifest = {
-                    "schema": "ducktape.visual-review.v1",
-                    "title": "AI quota",
-                    "assets": [{"path": "hot.png", "label": "hot"}],
-                }
-            else:
-                manifest = {
-                    "schema": "ducktape.visual-review.v1",
-                    "title": "Haku Console",
-                    "assets": [{"path": "preview.png", "label": "preview"}],
-                }
-            output.write_text(json.dumps(manifest))
-        else:
-            output.write_bytes(b"png")
-        return subprocess.CompletedProcess(command, 0, "", "")
-
-    tests = download_visual_tests(["missing", "real"], tmp_path / "tests", run=fake_run)
+    tests = download_visual_tests(
+        ["missing", "real"],
+        tmp_path / "tests",
+        api_key="key",
+        fetch=_cas(
+            {
+                "bytestream://manifest-haku": _manifest("Haku Console", "preview.png"),
+                "bytestream://preview-haku": b"png",
+                "bytestream://manifest-aiquota": _manifest("AI quota", "hot.png"),
+                "bytestream://hot-aiquota": b"png",
+            }
+        ),
+        run=fake_run,
+    )
 
     assert [test.target_label for test in tests] == [
         "//aiquota/gnome:test_render",
@@ -184,27 +196,53 @@ def test_download_visual_tests_groups_manifests_by_executed_target(tmp_path: Pat
     assert commands[1] == [Path("bbapi"), "artifact", "list", "real", "--json"]
 
 
+def test_bbapi_is_asked_once_per_invocation_however_many_files_a_commit_has(tmp_path: Path) -> None:
+    """The artifact listing resolves every blob's URI at once, so the per-file fetch goes
+    straight to the CAS. Reintroducing a per-file `bbapi artifact download` would refetch
+    the invocation's whole build event stream — 33 MB on a `//...` sweep — for each of a
+    commit's ~294 files, which is what made a publish take a quarter of an hour."""
+    artifacts = [
+        {"label": "//ui:screenshots", "name": "test.outputs/visual-review.json", "uri": "bytestream://manifest"},
+        *(
+            {"label": "//ui:screenshots", "name": f"test.outputs/shot-{index}.png", "uri": f"bytestream://shot-{index}"}
+            for index in range(12)
+        ),
+    ]
+    shots = [f"shot-{index}.png" for index in range(12)]
+    calls: list[list[str | Path]] = []
+
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, json.dumps(artifacts), "")
+
+    tests = download_visual_tests(
+        ["invocation"],
+        tmp_path / "tests",
+        api_key="key",
+        fetch=_cas(
+            {"bytestream://manifest": _manifest("UI", *shots)}
+            | {f"bytestream://shot-{index}": b"png" for index in range(12)}
+        ),
+        run=fake_run,
+    )
+
+    assert len(tests[0].manifest.assets) == 12
+    assert calls == [[Path("bbapi"), "artifact", "list", "invocation", "--json"]]
+
+
 def test_download_visual_tests_rejects_missing_declared_asset(tmp_path: Path) -> None:
     artifacts = [
         {"label": "//ui:screenshots", "name": "test.outputs/visual-review.json", "uri": "bytestream://manifest"}
     ]
 
-    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        if command[2] == "list":
-            return subprocess.CompletedProcess(command, 0, json.dumps(artifacts), "")
-        Path(command[-1]).write_text(
-            json.dumps(
-                {
-                    "schema": "ducktape.visual-review.v1",
-                    "title": "UI",
-                    "assets": [{"path": "missing.png", "label": "missing"}],
-                }
-            )
-        )
-        return subprocess.CompletedProcess(command, 0, "", "")
-
     with pytest.raises(ValueError, match=r"references missing artifact missing\.png"):
-        download_visual_tests(["invocation"], tmp_path / "tests", run=fake_run)
+        download_visual_tests(
+            ["invocation"],
+            tmp_path / "tests",
+            api_key="key",
+            fetch=_cas({"bytestream://manifest": _manifest("UI", "missing.png")}),
+            run=_listing(artifacts),
+        )
 
 
 def test_download_visual_tests_deduplicates_equivalent_manifests(tmp_path: Path) -> None:
@@ -213,23 +251,21 @@ def test_download_visual_tests_deduplicates_equivalent_manifests(tmp_path: Path)
         {"label": "//ui:screenshots", "name": "test.outputs/visual-review.json", "uri": "bytestream://manifest-retry"},
         {"label": "//ui:screenshots", "name": "test.outputs/screen.png", "uri": "bytestream://screen"},
     ]
-    manifest = {
-        "schema": "ducktape.visual-review.v1",
-        "title": "UI",
-        "assets": [{"path": "screen.png", "label": "screen"}],
-    }
+    manifest = _manifest("UI", "screen.png")
 
-    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        if command[2] == "list":
-            return subprocess.CompletedProcess(command, 0, json.dumps(artifacts), "")
-        output = Path(command[-1])
-        if str(command[4]).endswith("visual-review.json"):
-            output.write_text(json.dumps(manifest))
-        else:
-            output.write_bytes(b"png")
-        return subprocess.CompletedProcess(command, 0, "", "")
-
-    tests = download_visual_tests(["invocation"], tmp_path / "tests", run=fake_run)
+    tests = download_visual_tests(
+        ["invocation"],
+        tmp_path / "tests",
+        api_key="key",
+        fetch=_cas(
+            {
+                "bytestream://manifest-first": manifest,
+                "bytestream://manifest-retry": manifest,
+                "bytestream://screen": b"png",
+            }
+        ),
+        run=_listing(artifacts),
+    )
 
     assert len(tests) == 1
     assert (tests[0].directory / "screen.png").read_bytes() == b"png"
@@ -240,33 +276,24 @@ def test_download_visual_tests_rejects_conflicting_manifests(tmp_path: Path) -> 
         {"label": "//ui:screenshots", "name": "test.outputs/visual-review.json", "uri": "manifest-one"},
         {"label": "//ui:screenshots", "name": "test.outputs/visual-review.json", "uri": "manifest-two"},
     ]
-    manifest_number = 0
-
-    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        nonlocal manifest_number
-        if command[2] == "list":
-            return subprocess.CompletedProcess(command, 0, json.dumps(artifacts), "")
-        manifest_number += 1
-        Path(command[-1]).write_text(
-            json.dumps(
-                {
-                    "schema": "ducktape.visual-review.v1",
-                    "title": f"UI {manifest_number}",
-                    "assets": [{"path": f"screen-{manifest_number}.png", "label": "screen"}],
-                }
-            )
-        )
-        return subprocess.CompletedProcess(command, 0, "", "")
 
     with pytest.raises(ValueError, match="exposed conflicting visual manifests from 2 results"):
-        download_visual_tests(["invocation"], tmp_path / "tests", run=fake_run)
+        download_visual_tests(
+            ["invocation"],
+            tmp_path / "tests",
+            api_key="key",
+            fetch=_cas(
+                {"manifest-one": _manifest("UI 1", "screen-1.png"), "manifest-two": _manifest("UI 2", "screen-2.png")}
+            ),
+            run=_listing(artifacts),
+        )
 
 
 def test_download_visual_tests_treats_null_artifact_list_as_empty(tmp_path: Path) -> None:
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(command, 0, "null", "")
 
-    assert download_visual_tests(["invocation"], tmp_path / "tests", run=fake_run) == []
+    assert download_visual_tests(["invocation"], tmp_path / "tests", api_key="key", run=fake_run) == []
 
 
 def test_list_ci_failures_is_best_effort_and_deduplicates_labels() -> None:
@@ -489,12 +516,16 @@ def test_a_superseded_run_publishes_its_bundle_but_leaves_the_comment_alone(
         monkeypatch.setattr(f"devinfra.pr_visuals.publisher.{forbidden}", forbid(forbidden))
     downloaded: list[list[str]] = []
 
-    def record(invocations: list[str], _destination: Path) -> list[object]:
+    def record(invocations: list[str], _destination: Path, *, api_key: str) -> list[object]:
         downloaded.append(invocations)
         return []
 
     monkeypatch.setattr("devinfra.pr_visuals.publisher.download_visual_tests", record)
+    # BuildBuddy holds nothing under this commit — a PR run records the merge SHA — so
+    # the lookup falls through to the IDs derived from the run.
+    monkeypatch.setattr("devinfra.pr_visuals.publisher._read", lambda _request: b'{"invocation": []}')
     monkeypatch.setenv("GITHUB_TOKEN", "token")
+    monkeypatch.setenv("BUILDBUDDY_API_KEY", "key")
     monkeypatch.setattr(
         "sys.argv",
         [

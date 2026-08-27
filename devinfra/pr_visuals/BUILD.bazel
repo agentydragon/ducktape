@@ -34,6 +34,7 @@ py_library(
         "@pypi//pillow",
         "@pypi//pydantic",
         "@pypi//pygithub",
+        "@pypi//tenacity",
     ],
 )
 
