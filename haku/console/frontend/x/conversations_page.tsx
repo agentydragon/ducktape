@@ -8,11 +8,13 @@ import {
   fetchConfig,
   fetchConversations,
   type ChatLaunchOption,
-  type ConversationItem,
   type Conversation,
   type ConversationCursor,
+  type ConversationEntry,
   type ConversationSession,
   type ConversationSummary,
+  type StreamingItem,
+  type ToolResultEntry,
 } from "../client";
 import { useCoalescedRefresh } from "../coalesced_refresh";
 import {
@@ -28,12 +30,13 @@ import { bootstrapNarration, type BootstrapNarration } from "./bootstrap_narrati
 import { isNearChatBottom } from "./chat_scroll";
 import { ToolCallView } from "./tool_call";
 import { ConversationComposer } from "./conversation_composer";
-import { conversationTimeline, type ConversationTurn } from "./conversation_timeline";
 import { Markdown } from "./markdown";
 import { SandboxProvisioning } from "./sandbox_provisioning";
 
 /** A session that has ended takes no more prompts, so it gets no composer. */
 const SETTLED = new Set<ConversationSession["status"]>(["closing", "closed", "failed"]);
+
+type EntryOf<K extends ConversationEntry["kind"]> = Extract<ConversationEntry, { kind: K }>;
 
 function openConversation(conversationId: string): void {
   navigateToConsolePath(conversationPath(conversationId));
@@ -80,30 +83,42 @@ function Attachments({ attachments }: { attachments: ConversationSummary["attach
 
 /** Where one exchange began, drawn across the transcript.
  *
- * No start time: the boundary's own position already says when, and the narrow viewport has no
- * room for a wall-clock value that would only repeat it.
+ * No start time and no outcome: the boundary's own position already says when, and how the
+ * exchange went is the stream's `turn_end` entry, rendered where it happened.
  */
-function TurnBoundary({ turn, number }: { turn: ConversationTurn; number: number }) {
+function TurnBoundary({ number }: { number: number }) {
   return (
     <Divider
       className="haku-conversation-turn-boundary"
       labelPosition="center"
       label={
-        <Group gap={6} justify="center">
-          <Text fw={600} size="xs">
-            Turn {number}
-          </Text>
-          <Badge size="xs" color={turn.end?.outcome === "failed" ? "red" : "teal"} variant="light">
-            {turn.end?.outcome ?? "running"}
-          </Badge>
-          {turn.end?.outcome === "failed" && (
-            <Text size="xs" c="red" style={{ whiteSpace: "pre-wrap" }}>
-              {turn.end.failure}
-            </Text>
-          )}
-        </Group>
+        <Text fw={600} size="xs">
+          Turn {number}
+        </Text>
       }
     />
+  );
+}
+
+/** How an exchange ended, at the stream position it ended at.
+ *
+ * Nothing for the answered case: the next turn's boundary already separates the exchanges, and a
+ * badge per normal answer would be noise. What must not pass silently is a turn that ended any
+ * other way.
+ */
+function TurnEndView({ entry }: { entry: EntryOf<"turn_end"> }) {
+  if (entry.end.outcome === "answered") return null;
+  return (
+    <Group gap={6} className="haku-conversation-turn-end">
+      <Badge size="xs" color={entry.end.outcome === "failed" ? "red" : "gray"} variant="light">
+        turn {entry.end.outcome}
+      </Badge>
+      {entry.end.outcome === "failed" && (
+        <Text size="xs" c="red" style={{ whiteSpace: "pre-wrap" }}>
+          {entry.end.failure}
+        </Text>
+      )}
+    </Group>
   );
 }
 
@@ -145,62 +160,132 @@ function BootstrapNarrationPanel({ narration, starting }: { narration: Bootstrap
   );
 }
 
-/** One item of the transcript, in chat shape: the operator's prompts as right-side bubbles, the
- * agent's prose flush left with no chrome of its own, thinking folded to one line, and a tool call
- * as a sibling of the message rather than a field on it. Who is speaking is carried by the layout —
- * a bubble on the right is the operator, everything on the left is the agent — so no line is spent
- * saying so. */
-function ItemView({ item }: { item: ConversationItem }) {
-  if (item.item_type === "tool_call") return <ToolCallView item={item} />;
-  const text = item.text.trim();
-  if (item.item_type === "prompt") {
-    // A harness-origin prompt is the session waking itself — a background command's notification,
-    // a scheduled wakeup — so it renders as a note in the margin, never as the operator's bubble.
-    if (item.origin?.kind === "harness") {
-      return (
-        <Text c="dimmed" size="xs" fs="italic" className="haku-chat-wake">
-          {text}
-        </Text>
-      );
-    }
+/** The agent's folded thought: one dimmed line when there is nothing to show, a fold when there is. */
+function Thinking({ text, open }: { text: string; open: boolean }) {
+  if (!text.trim()) {
     return (
-      <div className="haku-chat-prompt">
-        <Markdown source={text} className="haku-chat-markdown" />
-      </div>
-    );
-  }
-  if (item.item_type === "reasoning") {
-    // The thought is secondary to the answer it produced: one dimmed line when there is nothing to
-    // show — withheld, or still arriving — and a fold when there is.
-    if (!text) {
-      return (
-        <Text c="dimmed" size="xs" className="haku-chat-thinking">
-          Thinking{item.status === "open" ? "…" : ""}
-        </Text>
-      );
-    }
-    return (
-      <details className="haku-shell-disclosure haku-chat-thinking">
-        <summary>Thinking</summary>
-        <div className="haku-shell-disclosure-body">
-          <Markdown source={text} className="haku-chat-markdown" />
-        </div>
-      </details>
+      <Text c="dimmed" size="xs" className="haku-chat-thinking">
+        Thinking{open ? "…" : ""}
+      </Text>
     );
   }
   return (
+    <details className="haku-shell-disclosure haku-chat-thinking">
+      <summary>Thinking</summary>
+      <div className="haku-shell-disclosure-body">
+        <Markdown source={text.trim()} className="haku-chat-markdown" />
+      </div>
+    </details>
+  );
+}
+
+/** A prose item a dead session never finished: what had been said, marked as cut short. */
+function CutOffView({ entry }: { entry: EntryOf<"cut_off"> }) {
+  return (
     <div className="haku-chat-assistant">
-      {item.status === "failed" && (
-        <Badge size="xs" variant="light" color="red" mb={4}>
-          failed
-        </Badge>
+      <Badge size="xs" variant="light" color="red" mb={4}>
+        cut off
+      </Badge>
+      {entry.item_type === "reasoning" ? (
+        <Thinking text={entry.text} open={false} />
+      ) : (
+        <Markdown source={entry.text.trim()} className="haku-chat-markdown" />
       )}
-      <Markdown source={text || (item.status === "open" ? "…" : "")} className="haku-chat-markdown" />
-      {!text && item.status === "complete" && (
-        <Text c="dimmed" size="xs">
-          Nothing was captured for this.
-        </Text>
-      )}
+    </div>
+  );
+}
+
+/** One row of the rendered transcript: an entry, with what only the render joins onto it. */
+export type TranscriptRow =
+  | { kind: "call"; call: EntryOf<"tool_call">; result: ToolResultEntry | null }
+  | { kind: "boundary"; seq: number; number: number }
+  | { kind: "spoken"; entry: EntryOf<"prompt" | "message" | "reasoning" | "turn_end" | "cut_off"> };
+
+export function transcriptRowSeq(row: TranscriptRow): number {
+  switch (row.kind) {
+    case "call":
+      return row.call.seq;
+    case "boundary":
+      return row.seq;
+    case "spoken":
+      return row.entry.seq;
+  }
+}
+
+/** The stream as the page renders it: results joined onto their calls, boundaries numbered.
+ *
+ * The one join the transcript makes — a call's answer is a separate entry keyed by `call_id`, and
+ * showing them apart would make the reader do it. A result rides with its call, so it emits no row
+ * of its own.
+ */
+export function transcriptRows(entries: readonly ConversationEntry[]): TranscriptRow[] {
+  const results = new Map<string, ToolResultEntry>();
+  for (const entry of entries) if (entry.kind === "tool_result") results.set(entry.call_id, entry);
+  const rows: TranscriptRow[] = [];
+  let turns = 0;
+  for (const entry of entries) {
+    if (entry.kind === "tool_result") continue;
+    if (entry.kind === "tool_call")
+      rows.push({ kind: "call", call: entry, result: results.get(entry.call_id) ?? null });
+    else if (entry.kind === "turn_started") rows.push({ kind: "boundary", seq: entry.seq, number: (turns += 1) });
+    else rows.push({ kind: "spoken", entry });
+  }
+  return rows;
+}
+
+/** One settled entry of the transcript, in chat shape: the operator's prompts as right-side
+ * bubbles, the agent's prose flush left with no chrome of its own, thinking folded to one line,
+ * and a tool call as a sibling of the message rather than a field on it. Who is speaking is
+ * carried by the layout — a bubble on the right is the operator, everything on the left is the
+ * agent — so no line is spent saying so. */
+function SpokenEntryView({ entry }: { entry: EntryOf<"prompt" | "message" | "reasoning" | "turn_end" | "cut_off"> }) {
+  switch (entry.kind) {
+    case "turn_end":
+      return <TurnEndView entry={entry} />;
+    case "cut_off":
+      return <CutOffView entry={entry} />;
+    case "reasoning":
+      return <Thinking text={entry.summary ?? ""} open={false} />;
+    case "prompt": {
+      const text = entry.text.trim();
+      // A harness-origin prompt is the session waking itself — a background command's notification,
+      // a scheduled wakeup — so it renders as a note in the margin, never as the operator's bubble.
+      if (entry.origin === "harness") {
+        return (
+          <Text c="dimmed" size="xs" fs="italic" className="haku-chat-wake">
+            {text}
+          </Text>
+        );
+      }
+      return (
+        <div className="haku-chat-prompt">
+          <Markdown source={text} className="haku-chat-markdown" />
+        </div>
+      );
+    }
+    case "message": {
+      const text = entry.text.trim();
+      return (
+        <div className="haku-chat-assistant">
+          <Markdown source={text} className="haku-chat-markdown" />
+          {!text && (
+            <Text c="dimmed" size="xs">
+              Nothing was captured for this.
+            </Text>
+          )}
+        </div>
+      );
+    }
+  }
+}
+
+/** The live turn's still-open prose, rendered after everything settled: the tail that is still
+ * being written, replaced whole by every update rather than merged. */
+function StreamingView({ item }: { item: StreamingItem }) {
+  if (item.item_type === "reasoning") return <Thinking text={item.text} open />;
+  return (
+    <div className="haku-chat-assistant">
+      <Markdown source={item.text.trim() || "…"} className="haku-chat-markdown" />
     </div>
   );
 }
@@ -499,8 +584,9 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
   }
 
   const { session } = conversation;
-  const narration = bootstrapNarration(session);
-  const timeline = conversationTimeline(session.items, session.turns);
+  const transcriptEmpty = conversation.entries.length === 0 && conversation.streaming.length === 0;
+  const narration = bootstrapNarration(session, transcriptEmpty);
+  const rows = transcriptRows(conversation.entries);
 
   const close = async (sessionId: string) => {
     setClosing(true);
@@ -576,18 +662,23 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
             {narration && (
               <BootstrapNarrationPanel narration={narration} starting={session.status === "provisioning"} />
             )}
-            {timeline.length === 0 && !narration && !session.provisioning && (
+            {transcriptEmpty && !narration && !session.provisioning && (
               <Text c="dimmed" size="sm">
-                Nothing was recorded for this session.
+                Nothing was recorded for this conversation.
               </Text>
             )}
-            {timeline.map((entry) =>
-              entry.kind === "item" ? (
-                <ItemView key={entry.item.item_id} item={entry.item} />
+            {rows.map((row) =>
+              row.kind === "call" ? (
+                <ToolCallView key={transcriptRowSeq(row)} call={row.call} result={row.result} />
+              ) : row.kind === "boundary" ? (
+                <TurnBoundary key={transcriptRowSeq(row)} number={row.number} />
               ) : (
-                <TurnBoundary key={entry.turn.turn_id} turn={entry.turn} number={entry.number} />
+                <SpokenEntryView key={transcriptRowSeq(row)} entry={row.entry} />
               )
             )}
+            {conversation.streaming.map((item) => (
+              <StreamingView key={`streaming-${item.item_type}`} item={item} />
+            ))}
           </div>
         </div>
         {!SETTLED.has(session.status) && (

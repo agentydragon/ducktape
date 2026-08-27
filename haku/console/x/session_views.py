@@ -1,9 +1,11 @@
-"""What the console's chat API returns for a session, and how stored rows become it.
+"""What the console's chat API returns for a session or a conversation.
 
-The read models the SPA and the conversations inventory are typed against, together with the
-projection that assembles one out of the session row, its transcript and its stored events.
-Nothing here decides anything about a live session: it is handed rows and produces the shapes the
-routes hand back.
+The SPA's wire shapes — the inventory, the conversation detail, and the follow socket's messages.
+Projections, not a read model: the transcript they carry is the shared entry vocabulary of
+<conversation_reads.py>, folded once in <item_entries.py>, and what is here is how the browser is
+handed it — which container, which session row beside it, which page envelope. Nothing here
+decides anything about a live session: it is handed rows and produces the shapes the routes hand
+back.
 """
 
 from __future__ import annotations
@@ -17,64 +19,18 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.chat_models import (
-    BridgeFrameKind,
-    FrameDirection,
-    ItemStatus,
-    ItemType,
-    PromptOrigin,
-    ReasoningDisclosure,
-    RuntimeKind,
-    SessionStatus,
-    ToolOutcome,
-)
-from haku.console.database_schema import ConversationItem, Session, SessionFrame
-from haku.console.x.conversation_reads import ChannelAttachment, TurnAbortedEnd, TurnAnsweredEnd, TurnFailedEnd
+from haku.console.chat_models import BridgeFrameKind, FrameDirection, RuntimeKind, SessionStatus
+from haku.console.database_schema import Session, SessionFrame
+from haku.console.x.conversation_reads import ChannelAttachment, SetupOutputRecord, StreamingItem, TranscriptEntry
 from haku.console.x.sandbox_claims import SandboxProvisioningView
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 
 
-class ConversationItemView(BaseModel):
-    """One item of a transcript, as the store hands it to whoever asked.
-
-    **A tool call is one of these, not a field on a message.** What this replaces stapled calls onto
-    the message whose frames made them, and joined the answer back by `call_id` at read time — two
-    indexes and a bisect over frame spans. A call is a sibling item now, with its ask and its answer
-    on its own row, so the join is gone and the transcript is the flat stream the design says it is.
-
-    The per-type fields are the ones `conversation_item`'s constraints tie to `item_type`; a reader
-    branches on the type rather than testing them for absence.
-
-    **No frame numbers.** They are one session's and incomparable outside it, so a surface that
-    wants to appeal an item to the wire asks for its events rather than being handed a coordinate
-    it cannot interpret.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    item_id: UUID
-    item_type: ItemType
-    status: ItemStatus
-    text: str = Field(description="The concatenation of this item's segments — its whole prose.")
-    call_id: str | None = None
-    tool_name: str | None = None
-    arguments: dict[str, Any] | None = None
-    outcome: ToolOutcome | None = None
-    structured: Any | None = None
-    disclosure: ReasoningDisclosure | None = None
-    origin: PromptOrigin | None = Field(
-        default=None,
-        description="Who admitted a prompt — the operator's browser, a channel, or the harness"
-        " resuming its own session. None on every other item type.",
-    )
-    created_at: datetime
-    updated_at: datetime
-
-
 class SessionView(BaseModel):
-    """One session's own row and transcript, as the store hands it to whoever asked.
+    """One session's own row, as the store hands it to whoever asked.
 
-    Not a wire shape: the browser reads a conversation, assembled from this.
+    Not a wire shape: the browser reads a conversation, assembled from this. The transcript is the
+    conversation's, so it is not here.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -84,7 +40,6 @@ class SessionView(BaseModel):
     error: str | None
     created_at: datetime
     updated_at: datetime
-    items: list[ConversationItemView]
 
 
 class LiveSession(BaseModel):
@@ -154,35 +109,12 @@ class ConversationPage(BaseModel):
     )
 
 
-class SetupNarrationView(BaseModel):
-    """One thing the sandbox said while coming up, as the frame log recorded it.
-
-    Positioned by `frame_seq` alone: the runner numbers setup output on the wire but does not retain
-    it in the native replay window, so two identical rendered lines are two things that happened.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    frame_seq: int
-    text: str
-    created_at: datetime
-
-
-class ConversationTurnView(BaseModel):
-    """A turn summary, without exposing the raw frame range yet."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    turn_id: UUID
-    started_at: datetime
-    ended_at: datetime | None
-    end: TurnAnsweredEnd | TurnAbortedEnd | TurnFailedEnd | None = Field(
-        discriminator="outcome", description="How it ended, and on a failure why. Absent while it is still running."
-    )
-
-
 class ConversationSessionView(BaseModel):
-    """One session of a conversation, whole: what it said, what it cost to start, how it ended."""
+    """One session of a conversation: what it cost to start, how it is doing, what setup said.
+
+    The transcript is deliberately not here — it is the conversation's (`ConversationView.entries`),
+    because the thread outlives every session that ran it.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -192,9 +124,7 @@ class ConversationSessionView(BaseModel):
     created_at: datetime
     updated_at: datetime
     provisioning: SandboxProvisioningView | None = None
-    narration: list[SetupNarrationView]
-    items: list[ConversationItemView]
-    turns: list[ConversationTurnView]
+    narration: list[SetupOutputRecord]
 
 
 class EarlierSession(BaseModel):
@@ -215,7 +145,8 @@ class ConversationView(BaseModel):
     """One conversation as the browser reads it.
 
     No terminal state and no `ended_at`: a conversation is an id, and what ends is the session
-    under it.
+    under it. The transcript is the same entry stream the MCP read pages, plus the lifecycle
+    members only this surface carries; `streaming` is the live tail nothing has defined yet.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -226,6 +157,13 @@ class ConversationView(BaseModel):
     runtime_kind: RuntimeKind
     created_at: datetime
     attachments: list[ChannelAttachment]
+    entries: list[TranscriptEntry] = Field(
+        description="The settled transcript, oldest first, keyed by `seq`. Append-only: an entry never changes "
+        "once read, so a follower merges updates by position."
+    )
+    streaming: list[StreamingItem] = Field(
+        description="The live turn's still-open prose, in the order it opened — replace what is held, never merge."
+    )
     session: ConversationSessionView
     earlier_sessions: list[EarlierSession]
 
@@ -249,15 +187,12 @@ class ConversationSnapshot(BaseModel):
 class ConversationUpdate(BaseModel):
     """What moved in a conversation since a position, for a follower that already holds the rest.
 
-    Whole rows rather than events to apply: a merge keyed on `item_id` is idempotent, so a
-    duplicate costs nothing and re-reading from an older position is always correct. `event_seq` is
-    the address — where the follower is — and these rows are what that position resolves to.
-
-    **The transcript arrives incrementally and everything else arrives whole.** Only the items
-    and turns grow without bound, so only they are worth addressing by position; the rest of what a
-    conversation shows is a handful of rows, and sending them every time is what keeps a follower
-    from holding a copy nothing can correct. A field carried only in the snapshot would be a value
-    the tab can never be told has changed.
+    **The transcript arrives incrementally and everything else arrives whole.** The entries are
+    exactly the ones defined after the follower's position — the same keyset read that pages the
+    MCP surface — and merging them is a union by `seq`, idempotent because an entry never changes
+    once defined. Everything else a conversation shows is a handful of rows, and sending them every
+    time is what keeps a follower from holding a copy nothing can correct: `streaming` and
+    `narration` replace what is held, and so do the attachments and the session block.
 
     That extends to the live session's own row, timestamps included, so that a follower merging
     this can hold no field belonging to a session it has just been told was replaced. What a
@@ -277,8 +212,8 @@ class ConversationUpdate(BaseModel):
         default=None,
         description="The cluster's account of the sandbox this session is waiting on, while it is still waiting.",
     )
-    narration: list[SetupNarrationView] = Field(
-        description="What that session has said while coming up, whole — replace by `frame_seq`."
+    narration: list[SetupOutputRecord] = Field(
+        description="What that session has said while coming up, whole — replaces what is held."
     )
     attachments: list[ChannelAttachment] = Field(
         description="The channels holding a copy of this conversation now — replaces what is held."
@@ -286,10 +221,11 @@ class ConversationUpdate(BaseModel):
     earlier_sessions: list[EarlierSession] = Field(
         description="The sessions this conversation ran before `session_id`, newest first — replaces what is held."
     )
-    items: list[ConversationItemView] = Field(
-        description="The items that moved — merge them by `item_id` over the ones already held, never render them as a transcript."
+    entries: list[TranscriptEntry] = Field(
+        description="The entries defined since the follower's position, oldest first — union them by `seq` "
+        "over the ones already held."
     )
-    turns: list[ConversationTurnView] = Field(description="The turns that moved, newest first.")
+    streaming: list[StreamingItem] = Field(description="The live turn's still-open prose now — replaces what is held.")
 
 
 # The browser's types for these come from here: `haku.console.export_schema` publishes this union
@@ -301,11 +237,11 @@ type ConversationFollowMessage = Annotated[
 ]
 
 
-# Rows of one update, in either collection. An item carries its whole prose, and a tool call its
-# arguments and structured result, so what bounds a row is payload rather than row count — the
-# lesson `/api/tool-calls` learned at `le=500` (`frontend/tool_calls_page.tsx`). One update is
-# normally one coalescing window's worth of rows; past this the follower is sent the conversation
-# whole instead, which is cheaper than an update carrying most of one twice over.
+# Entries of one update. An entry carries its whole prose, and a tool call its arguments and
+# structured result, so what bounds an update is payload rather than row count — the lesson
+# `/api/tool-calls` learned at `le=500` (`frontend/tool_calls_page.tsx`). One update is normally
+# one coalescing window's worth of entries; past this the follower is sent the conversation whole
+# instead, which is cheaper than an update carrying most of one twice over.
 UPDATE_ROW_LIMIT = 50
 
 
@@ -403,7 +339,7 @@ def frame_page(
     )
 
 
-async def setup_narration(db: AsyncSession, session_id: UUID) -> list[SetupNarrationView]:
+async def setup_narration(db: AsyncSession, session_id: UUID) -> list[SetupOutputRecord]:
     """What the sandbox printed while bootstrapping, in the order it produced it.
 
     Unbounded, like the transcript beside it in the same response: in the session where narration
@@ -415,28 +351,9 @@ async def setup_narration(db: AsyncSession, session_id: UUID) -> list[SetupNarra
         .order_by(SessionFrame.frame_seq)
     )
     return [
-        SetupNarrationView(frame_seq=frame_seq, text=payload["text"], created_at=created_at)
+        SetupOutputRecord(frame_seq=frame_seq, text=payload["text"], created_at=created_at)
         for frame_seq, payload, created_at in rows
     ]
-
-
-def item_view(item: ConversationItem) -> ConversationItemView:
-    """One stored item, as a reader sees it. A projection of the row and nothing more."""
-    return ConversationItemView(
-        item_id=item.item_id,
-        item_type=item.item_type,
-        status=item.status,
-        text=item.item_text,
-        call_id=item.call_id,
-        tool_name=item.tool_name,
-        arguments=item.arguments,
-        outcome=item.outcome,
-        structured=item.structured,
-        disclosure=item.disclosure,
-        origin=item.origin,
-        created_at=item.created_at,
-        updated_at=item.updated_at,
-    )
 
 
 def live_status(record: Session, *, responding: bool) -> SessionStatus:
@@ -450,12 +367,11 @@ def live_status(record: Session, *, responding: bool) -> SessionStatus:
     return SessionStatus.RESPONDING if responding and record.status == SessionStatus.READY else record.status
 
 
-def session_view(record: Session, items: list[ConversationItem], *, responding: bool) -> SessionView:
+def session_view(record: Session, *, responding: bool) -> SessionView:
     return SessionView(
         session_id=record.session_id,
         status=live_status(record, responding=responding),
         error=record.error,
         created_at=record.created_at,
         updated_at=record.updated_at,
-        items=[item_view(item) for item in items],
     )

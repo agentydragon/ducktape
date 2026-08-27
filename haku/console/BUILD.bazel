@@ -1290,7 +1290,7 @@ py_library(
         "//haku/console/x:conversation_history",
         "//haku/console/x:conversation_live_updates",
         "//haku/console/x:conversation_runtime",
-        "//haku/console/x:item_entries",
+        "//haku/console/x:conversation_reader",
         "//haku/console/x:launch_identity",
         "//haku/console/x:sandbox_allocation",
         "//haku/console/x:session_runtime",

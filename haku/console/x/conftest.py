@@ -185,6 +185,25 @@ async def attach_channel(sessions: async_sessionmaker[AsyncSession], session_id:
         )
 
 
+async def session_items(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> list[ConversationItem]:
+    """This session's stored transcript rows, in opening order, for row-level assertions.
+
+    The rows and not a read model: what these tests pin is what the fold materialised — an item
+    still open, a call resumed onto the row its predecessor minted — which the read surfaces
+    deliberately do not carry.
+    """
+    async with sessions() as db:
+        return list(
+            (
+                await db.scalars(
+                    select(ConversationItem)
+                    .where(ConversationItem.session_id == session_id)
+                    .order_by(ConversationItem.opened_seq)
+                )
+            ).all()
+        )
+
+
 async def answers(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> list[str]:
     """What this session said, oldest first — its completed message items and nothing else.
 

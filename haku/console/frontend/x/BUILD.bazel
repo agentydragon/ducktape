@@ -81,13 +81,6 @@ ts_library(
 )
 
 ts_library(
-    name = "conversation_timeline",
-    srcs = ["conversation_timeline.ts"],
-    tsconfig = TSCONFIG,
-    deps = ["//haku/console/frontend:client"],
-)
-
-ts_library(
     name = "conversation_composer",
     srcs = ["conversation_composer.tsx"],
     tsconfig = TSCONFIG,
@@ -131,7 +124,6 @@ ts_library(
         ":chat_scroll",
         ":conversation_composer",
         ":conversation_follow",
-        ":conversation_timeline",
         ":markdown",
         ":sandbox_provisioning",
         ":tool_call",
@@ -162,17 +154,6 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":bootstrap_narration",
-        "//:node_modules/vitest",
-        "//haku/console/frontend:client",
-    ],
-)
-
-ts_library(
-    name = "conversation_timeline_test",
-    srcs = ["conversation_timeline.test.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":conversation_timeline",
         "//:node_modules/vitest",
         "//haku/console/frontend:client",
     ],

@@ -184,5 +184,51 @@ def test_a_running_turn_has_no_end_entry() -> None:
         item_entries.turn_end_entry(turn)
 
 
+def test_a_turns_start_is_an_authored_entry_at_its_opening_row() -> None:
+    turn = ConversationTurn(
+        turn_id=uuid4(),
+        conversation_id=CONVERSATION,
+        session_id=SESSION,
+        first_seq=4,
+        last_seq=None,
+        started_at=NOW,
+        ended_at=None,
+        outcome=None,
+        failure=None,
+    )
+
+    entry = item_entries.turn_started_entry(turn)
+
+    assert (entry.seq, entry.provenance) == (4, ConsoleAuthored())
+
+
+def test_cut_off_prose_keeps_what_was_said_at_the_position_it_began() -> None:
+    """Failing a session closes its open items at their opening position; the transcript keeps the
+    half-said prose there rather than dropping it or reporting it finished."""
+    item = _item(ItemType.MESSAGE, text="the answer was going to")
+    item.status = ItemStatus.FAILED
+    item.closed_seq = item.opened_seq
+
+    entry = item_entries.cut_off_entry(item, _event(item.opened_seq))
+
+    assert (entry.seq, entry.item_type, entry.text) == (item.opened_seq, ItemType.MESSAGE, "the answer was going to")
+
+
+def test_only_prose_is_cut_off() -> None:
+    """A dead call's account is its unanswered `tool_call` entry and the failed `turn_end`."""
+    call = _item(ItemType.TOOL_CALL, call_id="toolu_1", tool_name="Bash")
+    call.status = ItemStatus.FAILED
+    call.closed_seq = call.opened_seq
+
+    with pytest.raises(ValueError, match="prose"):
+        item_entries.cut_off_entry(call, _event(call.opened_seq))
+
+
+def test_an_open_prose_item_streams_its_text_so_far() -> None:
+    streaming = item_entries.streaming_item(_item(ItemType.REASONING, text="thinking about", closed_seq=None))
+
+    assert (streaming.item_type, streaming.text) == (ItemType.REASONING, "thinking about")
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

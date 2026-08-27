@@ -17,11 +17,18 @@ import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, FrameDirection, ItemStatus, ItemType, SessionStatus
+from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, FrameDirection, ItemType, SessionStatus
 from haku.console.x.conftest import attach_channel
 from haku.console.x.conversation_events import FrameRange, ItemSegment, MessageCompleted, MessageStarted, OpenRef
 from haku.console.x.conversation_follow import ConversationFollow
-from haku.console.x.conversation_reads import TurnAnsweredEnd
+from haku.console.x.conversation_reads import (
+    MessageEntry,
+    PromptEntry,
+    StreamingItem,
+    TranscriptEntry,
+    TurnAnsweredEnd,
+    TurnEndEntry,
+)
 from haku.console.x.session_events import TurnAnsweredBody
 from haku.console.x.session_notifications import SessionNotifications
 from haku.console.x.session_runtime import SessionService
@@ -60,6 +67,11 @@ async def _nothing_more(messages: AsyncIterator[ConversationFollowMessage]) -> N
     with pytest.raises(TimeoutError):
         async with asyncio.timeout(PATIENCE.total_seconds()):
             await anext(messages)
+
+
+def _prose(entries: list[TranscriptEntry]) -> list[str]:
+    """The spoken texts of a stream, in order — what most follow assertions care about."""
+    return [entry.text for entry in entries if isinstance(entry, PromptEntry | MessageEntry)]
 
 
 async def _started(chat_store: SessionStore, operator_id: UUID) -> tuple[UUID, UUID]:
@@ -102,7 +114,7 @@ async def test_a_follow_opens_with_the_conversation_whole(
     opened = await _next(following.follow(operator_id, conversation_id))
 
     assert isinstance(opened, ConversationSnapshot)
-    assert [item.text for item in opened.conversation.session.items] == ["first", "one"]
+    assert _prose(opened.conversation.entries) == ["first", "one"]
     assert opened.position == await chat_store.conversation_position(conversation_id)
 
 
@@ -119,8 +131,8 @@ async def test_what_moves_after_the_snapshot_arrives_as_an_update(
     update = await _next(messages)
 
     assert isinstance(update, ConversationUpdate)
-    assert [item.text for item in update.items] == ["second", "two"]
-    assert [turn.end for turn in update.turns] == [TurnAnsweredEnd()]
+    assert _prose(update.entries) == ["second", "two"]
+    assert [entry.end for entry in update.entries if isinstance(entry, TurnEndEntry)] == [TurnAnsweredEnd()]
     await messages.aclose()
 
 
@@ -147,7 +159,7 @@ async def test_a_change_landing_during_the_snapshot_is_carried_by_the_update_aft
     assert isinstance(snapshot, ConversationSnapshot)
     update = await _next(messages)
     assert isinstance(update, ConversationUpdate)
-    assert [item.text for item in update.items] == ["written mid-read"]
+    assert _prose(update.entries) == ["written mid-read"]
     await messages.aclose()
 
 
@@ -164,7 +176,7 @@ async def test_a_resume_is_told_what_it_missed_at_once(
     resumed = await _next(following.follow(operator_id, conversation_id, after=held))
 
     assert isinstance(resumed, ConversationUpdate)
-    assert [item.text for item in resumed.items] == ["second", "two"]
+    assert _prose(resumed.entries) == ["second", "two"]
 
 
 async def test_a_position_the_log_cannot_answer_from_is_answered_with_the_conversation_whole(
@@ -179,7 +191,7 @@ async def test_a_position_the_log_cannot_answer_from_is_answered_with_the_conver
     opened = await _next(following.follow(operator_id, conversation_id, after=beyond))
 
     assert isinstance(opened, ConversationSnapshot)
-    assert [item.text for item in opened.conversation.session.items] == ["first", "one"]
+    assert _prose(opened.conversation.entries) == ["first", "one"]
 
 
 async def test_a_streaming_turns_segments_become_one_update(
@@ -207,7 +219,7 @@ async def test_a_streaming_turns_segments_become_one_update(
     update = await _next(messages)
 
     assert isinstance(update, ConversationUpdate)
-    assert ("the answer so far", ItemStatus.OPEN) in [(item.text, item.status) for item in update.items]
+    assert update.streaming == [StreamingItem(item_type=ItemType.MESSAGE, text="the answer so far")]
     assert update.status == SessionStatus.RESPONDING
     await _nothing_more(messages)
     await messages.aclose()
@@ -230,7 +242,7 @@ async def test_a_replacement_sessions_rows_reach_a_follower_that_never_named_it(
 
     assert isinstance(update, ConversationUpdate)
     assert update.session_id == replacement.session_id
-    assert [item.text for item in update.items] == ["carry on", "carrying on"]
+    assert _prose(update.entries) == ["carry on", "carrying on"]
     # And the session it replaced is now one of the thread's earlier ones, which a follower is told
     # rather than left to infer from a `session_id` it does not recognise.
     assert [earlier.session_id for earlier in update.earlier_sessions] == [first]

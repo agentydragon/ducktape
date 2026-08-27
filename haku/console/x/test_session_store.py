@@ -23,7 +23,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.console.chat_models import (
-    HARNESS_ORIGIN,
     OPEN_SESSION_STATUSES,
     SPA_ORIGIN,
     AuthoredEventKind,
@@ -82,6 +81,7 @@ from haku.console.x.conversation_reads import (
     ToolResultEntry,
     TurnAnsweredEnd,
     TurnCursor,
+    TurnEndEntry,
 )
 from haku.console.x.item_entries import entry_of
 from haku.console.x.runtime import RuntimeAdapter, RuntimeRegistry
@@ -920,7 +920,7 @@ async def test_a_turn_that_ended_on_no_frame_is_bounded_by_the_ones_it_recorded(
 
 
 async def _conversation_entries(chat_store, conversation_id, *, after_seq=None, limit=100):
-    """The store's page rows folded to entries, as `item_entries.ConversationReads` serves them."""
+    """The store's page rows folded to entries, as `conversation_reader.ConversationReads` serves them."""
     return [entry_of(row) for row in await chat_store.read_item_rows(conversation_id, after_seq=after_seq, limit=limit)]
 
 
@@ -1148,8 +1148,9 @@ async def test_operator_conversation_read_surface_keeps_inventory_and_transcript
     assert [attachment.address for attachment in detail.attachments] == [ROOM]
     assert detail.runtime_kind == "claude_code"
     assert detail.session.session_id == matrix.session_id
-    assert detail.session.items[0].text == "What is happening?"
-    assert detail.session.turns == []
+    asked = one(entry for entry in detail.entries if isinstance(entry, PromptEntry))
+    assert asked.text == "What is happening?"
+    assert detail.streaming == []
     assert detail.earlier_sessions == []
 
 
@@ -1169,7 +1170,8 @@ async def test_a_conversation_a_channel_holds_takes_a_prompt_typed_in_the_browse
         operator_id, await chat_store.conversation_of(matrix.session_id)
     )
 
-    assert [item.text for item in detail.session.items] == ["typed into the tab"]
+    typed = one(entry for entry in detail.entries if isinstance(entry, PromptEntry))
+    assert typed.text == "typed into the tab"
     assert [attachment.address for attachment in detail.attachments] == [ROOM]
 
 
@@ -2022,13 +2024,20 @@ async def test_an_update_carries_the_rows_the_events_after_a_position_name(chat_
     await _exchange(chat_store, operator_id, session_id, "second", "two")
     changes = await chat_store.read_operator_conversation_changes(operator_id, conversation_id, after=held, limit=50)
 
-    assert [item.text for item in changes.items] == ["second", "two"]
-    assert [turn.end for turn in changes.turns] == [TurnAnsweredEnd()]
+    # The prompt precedes the boundary in the stream: it is admitted into the queue before the
+    # turn that answers it opens.
+    assert [entry.kind for entry in changes.entries] == ["prompt", "turn_started", "message", "turn_end"]
+    assert [entry.text for entry in changes.entries if isinstance(entry, PromptEntry | MessageEntry)] == [
+        "second",
+        "two",
+    ]
+    ended = one(entry for entry in changes.entries if isinstance(entry, TurnEndEntry))
+    assert ended.end == TurnAnsweredEnd()
     assert changes.position > held
-    # Re-reading the same position is the same answer: the merge is keyed on `item_id`, so a
+    # Re-reading the same position is the same answer: the merge is a union keyed on `seq`, so a
     # duplicate costs nothing and nothing about delivery has to be exactly-once.
     again = await chat_store.read_operator_conversation_changes(operator_id, conversation_id, after=held, limit=50)
-    assert [item.item_id for item in again.items] == [item.item_id for item in changes.items]
+    assert [entry.seq for entry in again.entries] == [entry.seq for entry in changes.entries]
 
 
 async def test_an_update_carries_what_a_replaced_session_wrote_after_the_position(chat_store, operator_id) -> None:
@@ -2046,7 +2055,7 @@ async def test_an_update_carries_what_a_replaced_session_wrote_after_the_positio
     await _exchange(chat_store, operator_id, second.session_id, "after it was replaced", "answered again")
     changes = await chat_store.read_operator_conversation_changes(operator_id, conversation_id, after=held, limit=50)
 
-    assert [item.text for item in changes.items] == [
+    assert [entry.text for entry in changes.entries if isinstance(entry, PromptEntry | MessageEntry)] == [
         "before the sandbox died",
         "answered",
         "after it was replaced",
@@ -2055,26 +2064,24 @@ async def test_an_update_carries_what_a_replaced_session_wrote_after_the_positio
     assert changes.session_id == second.session_id
 
 
-async def test_a_claim_reaches_a_reader_that_no_event_told(chat_store, operator_id) -> None:
-    """`next_prompt` takes the operator's question off the queue and writes no event of its own.
-
-    The address alone would leave a tab showing a thread that never started working, which is why
-    the newest turn's own rows ride along on every read rather than waiting to be named.
-    """
+async def test_a_claimed_prompt_reaches_a_reader_as_the_turn_it_opened(chat_store, operator_id) -> None:
+    """`next_prompt` takes the operator's question off the queue; the `turn_started` boundary it
+    writes is what tells a tab the thread started working."""
     view, token = await chat_store.create(operator_id)
     assert await chat_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     conversation_id = await chat_store.conversation_of(view.session_id)
     await chat_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?", SPA_ORIGIN)
     enqueued = await chat_store.read_operator_conversation_changes(operator_id, conversation_id, after=0, limit=50)
-    assert [(row.item_type, row.text) for row in enqueued.items] == [(ItemType.PROMPT, "why did it fail?")]
-    assert enqueued.turns == []
+    assert [entry.kind for entry in enqueued.entries] == ["prompt"]
+    asked = one(entry for entry in enqueued.entries if isinstance(entry, PromptEntry))
+    assert asked.text == "why did it fail?"
 
     assert await chat_store.next_prompt(view.session_id) is not None
     claimed = await chat_store.read_operator_conversation_changes(
         operator_id, conversation_id, after=enqueued.position, limit=50
     )
 
-    assert [turn.ended_at for turn in claimed.turns] == [None], "the turn that opened is what says so"
+    assert [entry.kind for entry in claimed.entries] == ["turn_started"], "the turn that opened is what says so"
     assert claimed.status == SessionStatus.RESPONDING
 
 
@@ -2108,7 +2115,8 @@ async def test_an_update_over_its_limit_is_refused_rather_than_shortened(chat_st
         await chat_store.read_operator_conversation_changes(operator_id, conversation_id, after=0, limit=2)
 
     whole = await chat_store.read_operator_conversation_changes(operator_id, conversation_id, after=0, limit=50)
-    assert len(whole.items) == 4
+    # Two exchanges of four entries each: the boundary, the prompt, the answer, and the end.
+    assert len(whole.entries) == 8
 
 
 async def test_the_update_refuses_a_conversation_another_operator_owns(chat_store, operator_id) -> None:
@@ -2138,11 +2146,10 @@ async def test_open_wake_turn_brackets_a_harness_initiated_exchange(chat_store, 
         session_row = await db.get(Session, view.session_id)
         assert session_row is not None
         assert session_row.projected_frame_seq == 6
-    prompt = one(
-        item for item in (await chat_store.get(operator_id, view.session_id)).items if item.item_type is ItemType.PROMPT
-    )
+    entries = await _conversation_entries(chat_store, await chat_store.conversation_of(view.session_id))
+    prompt = one(entry for entry in entries if isinstance(entry, PromptEntry))
     assert prompt.text == 'Background command "fetch" completed'
-    assert prompt.origin == HARNESS_ORIGIN
+    assert prompt.origin == PromptOriginKind.HARNESS
 
 
 async def test_open_wake_turn_refuses_a_session_that_ended(chat_store, operator_id) -> None:

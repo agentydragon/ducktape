@@ -118,10 +118,10 @@ announces itself, so the browser one is the easy one to forget you are paying fo
 Each is a module nothing in `session_runtime.py` reaches into. `session_store.py` is not one of
 them: the service calls it on every path, so that split is a seam and not a leaf.
 
-| Path               | Role                                                                                                                                                           |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `setup_output.py`  | The bridge envelope's `kind` and frame shape retained temporarily as the setup-narration compatibility copy.                                                   |
-| `session_views.py` | The read models the API returns for a session or a conversation, and the projection that assembles one out of the session row, its transcript and its rollout. |
+| Path               | Role                                                                                                                                                                                 |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `setup_output.py`  | The bridge envelope's `kind` and frame shape retained temporarily as the setup-narration compatibility copy.                                                                         |
+| `session_views.py` | The SPA's wire shapes — the inventory, the conversation detail, the follow messages. Projections over the shared read model in `conversation_reads.py`, folded in `item_entries.py`. |
 
 ### What a read hands back — `conversation_reads.py`
 
@@ -240,12 +240,14 @@ batch boundary is not an ending, and the wire facts every rule in it answers. It
 here; what follows is who reads it and what is not yet on it.
 
 **The live turn loop is the only thing that folds frames.** A stored conversation is read from the
-rows that fold materialised: `SessionStore.read_item_rows` pages `conversation_item` and
-`conversation_turn` by their defining stream positions, and `item_entries.ConversationReads` folds
-each row onto the wire models in `conversation_reads.py` at the MCP seam — the store speaks items
-and turns, never the entry vocabulary. So `haku_conversations` needs neither an adapter nor the
-session's `runtime_kind` to answer what was said, and a page of a long thread costs the page, not
-the thread. There is no whole-log projection any more — no `project_log` on the adapter, and no
+rows that fold materialised: `SessionStore.read_item_rows` and `read_transcript_rows` page
+`conversation_item` and `conversation_turn` by their defining stream positions, and
+`item_entries.py` is the one place those rows fold onto the wire models in
+`conversation_reads.py` — the settled entry stream the MCP reader pages, and the superset the
+SPA's conversation views and follow updates carry (turn starts, cut-off prose, the streaming
+tail). So `haku_conversations` needs neither an adapter nor the session's `runtime_kind` to
+answer what was said, and a page of a long thread costs the page, not the thread — and the
+follower's "what moved since this position" is the same keyset read, not a second one. There is no whole-log projection any more — no `project_log` on the adapter, and no
 `finish` that declares a stream over — so an item the frames left open stays open, and only a frame
 closes one. A capture is still folded in tests, through the same reducer one frame at a time
 (`claude_code/testing/fold.py`).

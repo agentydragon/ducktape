@@ -525,7 +525,7 @@ mixed into these PRs.
 **Dependencies.** Steps 5 and 6 can proceed independently of 4. The
 channel-neutral allocator is already complete and is not a step in this plan.
 
-**Independent runtime work.** The `provisioning` refinement (§ 10) and the duplicated read models
+**Independent runtime work.** The `provisioning` refinement (§ 10) and the read-surface work
 (§ 13) are not channel dependencies. Bridge v3 already made the frame payload harness-neutral; any remaining
 numbering/contract cleanup stays in that runtime stack. The
 `session_runtime.py` split and its abort wait can land with #4431 or step 5 on their own merits, not
@@ -736,9 +736,9 @@ other** rather than only against `devel`. Prune finished worktrees as you go.
 ## 13. The read surfaces, and the line between them
 
 The console reads its session corpus through two surfaces that answer nearly the same questions off
-the same tables — REST for the browser, `haku_conversations` over MCP for agents. **The duplication
-is two Pydantic families over one query, not two implementations**, and the recommendation is to
-make the _store_ singular rather than the API.
+the same tables — REST for the browser, `haku_conversations` over MCP for agents. The two share one
+read model (`x/conversation_reads.py`, folded once in `x/item_entries.py`); what stays two is the
+transport and its envelope.
 
 The boundary, stated as a rule:
 
@@ -752,7 +752,7 @@ The boundary, stated as a rule:
   `ConversationChangedEvent {conversation_id}` is an invalidation, not a payload.
 - **Mutations, the WebSocket, and anything the service worker touches stay REST**, always.
 
-Two things are left, neither of which needs a transport decision:
+One thing is left, and it needs no transport decision:
 
 - **Make the reader reflectable.** `build_schema_servers()` leaves `conversations` and `index`
   unset, so the conversation tools are absent from both generated catalogs. Passing the same inert
@@ -760,9 +760,6 @@ Two things are left, neither of which needs a transport decision:
   behaviour. Every JSON Schema keyword those models produce is already in the reviewed
   `_FRONTEND_SCHEMA_KEYWORDS` allowlist, so this should generate without adapter work — and if it
   does not, that is a cheap and decisive answer.
-- **Delete `ConversationTurnView`** and return the frame range that `TurnRecord` already carries, so
-  the detail view's turns link to the frame inspector. One store method, one model, both surfaces.
-  This is the actual duplication.
 
 **Not planned: moving `/api/conversations*` onto MCP.** Revisit only when **both** hold: an in-process
 server can be handed the acting principal (a fourth `InProcessCredentialKind`), and the tier decision

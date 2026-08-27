@@ -1,29 +1,35 @@
 """One conversation's read entries, built from the materialised rows rather than a fold.
 
-<conversation_reads.py> is what `read_conversation_items` hands back; this module is how one
-materialised row becomes one of those entries. An entry is the wire shape of one conversation
-item — or of a turn's end — as `read_conversation_items` serves it: neither the ORM row nor a
-stream event, but the folded item with its prose whole and its provenance attached. The rows are
-`conversation_item` and `conversation_turn` — themselves folds of the log, asserted so by
-<reprojection.py> — which is what lets a page be served by keyset reads instead of refolding the
-conversation from its first row: an entry needs nothing the row and its one defining
+<conversation_reads.py> is what the conversation reads hand back; this module is how one
+materialised row becomes one of those shapes — the single fold both surfaces consume. An entry is
+the wire shape of one conversation item — or of a turn's boundary — as a read serves it: neither
+the ORM row nor a stream event, but the folded item with its prose whole and its provenance
+attached. The rows are `conversation_item` and `conversation_turn` — themselves folds of the log,
+asserted so by <reprojection.py> — which is what lets a page be served by keyset reads instead of
+refolding the conversation from its first row: an entry needs nothing the row and its one defining
 `conversation_event` row do not carry.
 
 **An entry is defined by exactly one stream position.** A tool call's entry is written where the
 call opens — its arguments are whole by then — and every other item's entry where the item
 completes, because an item that never completed is not an entry: a turn that died mid-message left
-prose nothing finished saying. A turn's end is its own entry at the `turn_ended` row. Those
-positions are `opened_seq`, `closed_seq` and `last_seq` on the rows, so the store pages on them.
+prose nothing finished saying. A turn's two boundaries are their own entries at its `turn_started`
+and `turn_ended` rows. Those positions are `opened_seq`, `closed_seq`, `first_seq` and `last_seq`
+on the rows, so the store pages on them.
+
+**Two projections of the one fold.** `entry_of` serves the settled stream the MCP read returns;
+`transcript_entry_of` extends it with the members only the SPA carries — turn starts, and the
+cut-off prose a dead session left at its `closed_seq` (stamped to `opened_seq`, the one position
+such an item has). The store produces the rows for both; which rows a read asks for is the read's
+own contract (`SessionStore.read_item_rows` versus `read_transcript_rows`).
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from uuid import UUID
+from dataclasses import dataclass
 
 from pydantic import TypeAdapter
 
-from haku.console.chat_models import BridgeFrameKind, EventProvenance, ItemType, PromptOrigin, ReasoningDisclosure
+from haku.console.chat_models import EventProvenance, ItemType, PromptOrigin, ReasoningDisclosure, TurnOutcome
 
 # The ORM row and the neutral vocabulary's union share a name; the row is aliased so a reader can
 # tell them apart, as `session_store` does.
@@ -31,31 +37,93 @@ from haku.console.database_schema import ConversationEvent as ConversationEventR
 from haku.console.x.conversation_reads import (
     ConsoleAuthored,
     ConversationEntry,
+    CutOffItemEntry,
     EntryProvenance,
-    FrameRecord,
     FromFrames,
     MessageEntry,
     Outcome,
     PromptEntry,
     ReasoningEntry,
-    SessionCursor,
-    SessionRecord,
+    StreamingItem,
     ToolCallEntry,
     ToolResultEntry,
-    TurnCursor,
+    TranscriptEntry,
+    TurnAbortedEnd,
+    TurnAnsweredEnd,
+    TurnEnd,
     TurnEndEntry,
-    TurnRecord,
-)
-from haku.console.x.session_store import (
-    CompletedItem,
-    ConversationPageRow,
-    EndedTurn,
-    OpenedCall,
-    SessionStore,
-    turn_end_of,
+    TurnFailedEnd,
+    TurnStartedEntry,
 )
 
 _PROMPT_ORIGIN = TypeAdapter[PromptOrigin](PromptOrigin)
+
+# The prose types a turn streams into, and so the only types an open or cut-off item can carry to
+# a reader. A tool call is settled at its opening instead, and a prompt is closed in one breath.
+PROSE_ITEM_TYPES = (ItemType.MESSAGE, ItemType.REASONING)
+
+
+@dataclass(frozen=True, slots=True)
+class OpenedCall:
+    """A tool call at its opening row — the one entry written before its item completes."""
+
+    item: ConversationItem
+    defining: ConversationEventRow
+
+
+@dataclass(frozen=True, slots=True)
+class CompletedItem:
+    """Any completed item at its closing row."""
+
+    item: ConversationItem
+    defining: ConversationEventRow
+
+
+@dataclass(frozen=True, slots=True)
+class EndedTurn:
+    """An ended turn at its `turn_ended` row."""
+
+    turn: ConversationTurn
+
+
+@dataclass(frozen=True, slots=True)
+class StartedTurn:
+    """A turn at its `turn_started` row. Only the transcript read serves these."""
+
+    turn: ConversationTurn
+
+
+@dataclass(frozen=True, slots=True)
+class CutOffItem:
+    """A prose item a dead session left unfinished, at the opening row failing it closed it on.
+
+    Only the transcript read serves these; *defining* is that opening row, for its provenance.
+    """
+
+    item: ConversationItem
+    defining: ConversationEventRow
+
+
+type ConversationPageRow = OpenedCall | CompletedItem | EndedTurn
+
+type TranscriptPageRow = ConversationPageRow | StartedTurn | CutOffItem
+
+
+def turn_end_of(turn: ConversationTurn) -> TurnEnd | None:
+    """How *turn* ended, or None while it is still running.
+
+    `ck_conversation_turn_failure` is what makes the failed arm's reason always present.
+    """
+    match turn.outcome:
+        case None:
+            return None
+        case TurnOutcome.ANSWERED:
+            return TurnAnsweredEnd()
+        case TurnOutcome.ABORTED:
+            return TurnAbortedEnd()
+        case TurnOutcome.FAILED:
+            assert turn.failure is not None, "ck_conversation_turn_failure"
+            return TurnFailedEnd(failure=turn.failure)
 
 
 def provenance_of(event: ConversationEventRow) -> EntryProvenance:
@@ -137,8 +205,33 @@ def turn_end_entry(turn: ConversationTurn) -> TurnEndEntry:
     return TurnEndEntry(seq=turn.last_seq, provenance=ConsoleAuthored(), end=end)
 
 
+def turn_started_entry(turn: ConversationTurn) -> TurnStartedEntry:
+    """The entry a turn's `turn_started` row writes — authored, like the end that pairs with it."""
+    return TurnStartedEntry(seq=turn.first_seq, provenance=ConsoleAuthored())
+
+
+def cut_off_entry(item: ConversationItem, event: ConversationEventRow) -> CutOffItemEntry:
+    """The entry a failed prose item's closing writes; *event* is its opening row, for provenance.
+
+    The opening row rather than a closing one, because failing a session stamps `closed_seq` to
+    `opened_seq` and writes nothing new: the one position such an item has is where it began.
+    """
+    if item.item_type not in PROSE_ITEM_TYPES or item.closed_seq is None:
+        raise ValueError(f"only failed prose has a cut-off entry: {item.item_id=} {item.item_type=}")
+    return CutOffItemEntry(
+        seq=item.closed_seq, provenance=provenance_of(event), item_type=item.item_type, text=item.item_text
+    )
+
+
+def streaming_item(item: ConversationItem) -> StreamingItem:
+    """A still-open prose item as the live tail carries it."""
+    if item.item_type not in PROSE_ITEM_TYPES:
+        raise ValueError(f"only open prose streams: {item.item_id=} {item.item_type=}")
+    return StreamingItem(item_type=item.item_type, text=item.item_text)
+
+
 def entry_of(row: ConversationPageRow) -> ConversationEntry:
-    """The wire entry one page row folds to."""
+    """The wire entry one settled page row folds to."""
     match row:
         case OpenedCall(item=item, defining=defining):
             return opened_entry(item, defining)
@@ -148,30 +241,12 @@ def entry_of(row: ConversationPageRow) -> ConversationEntry:
             return turn_end_entry(turn)
 
 
-class ConversationReads:
-    """The `haku_conversations` reader: the store's rows, folded to the wire at the MCP seam.
-
-    The store speaks items, turns and frames; the entry vocabulary is the MCP server's. This
-    adapter is where the two meet, so the fold happens beside its one consumer rather than at the
-    store layer, and the other three reads pass through untouched.
-    """
-
-    def __init__(self, store: SessionStore) -> None:
-        self._store = store
-
-    async def list_sessions(self, *, cursor: SessionCursor | None, limit: int) -> list[SessionRecord]:
-        return await self._store.list_sessions(cursor=cursor, limit=limit)
-
-    async def read_frames(
-        self, session_id: UUID, *, cursor: int | None, limit: int, kinds: Sequence[BridgeFrameKind] | None = None
-    ) -> list[FrameRecord]:
-        return await self._store.read_frames(session_id, cursor=cursor, limit=limit, kinds=kinds)
-
-    async def list_turns(self, session_id: UUID, *, cursor: TurnCursor | None, limit: int) -> list[TurnRecord]:
-        return await self._store.list_turns(session_id, cursor=cursor, limit=limit)
-
-    async def read_conversation_items(
-        self, conversation_id: UUID, *, cursor: int | None, limit: int
-    ) -> list[ConversationEntry]:
-        rows = await self._store.read_item_rows(conversation_id, after_seq=cursor, limit=limit)
-        return [entry_of(row) for row in rows]
+def transcript_entry_of(row: TranscriptPageRow) -> TranscriptEntry:
+    """The wire entry one transcript page row folds to — the SPA's superset of `entry_of`."""
+    match row:
+        case StartedTurn(turn=turn):
+            return turn_started_entry(turn)
+        case CutOffItem(item=item, defining=defining):
+            return cut_off_entry(item, defining)
+        case _:
+            return entry_of(row)

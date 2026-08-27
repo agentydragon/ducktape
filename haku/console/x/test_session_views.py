@@ -8,21 +8,13 @@ from uuid import uuid4
 
 import pytest_bazel
 
-from haku.console.chat_models import (
-    HARNESS_ORIGIN,
-    SPA_ORIGIN,
-    BridgeFrameKind,
-    FrameDirection,
-    ItemStatus,
-    ItemType,
-    MatrixOrigin,
-    RuntimeKind,
-)
-from haku.console.database_schema import ConversationItem, SessionFrame
+from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, FrameDirection, RuntimeKind
+from haku.console.database_schema import SessionFrame
 from haku.console.x import session_views
 from haku.console.x.claude_code import projection
 from haku.console.x.claude_code.testing.fold import whole_capture
 from haku.console.x.claude_code.testing.wire import assistant, tool_result, tool_use_block
+from haku.console.x.conversation_reads import ToolResultEntry
 from haku.console.x.session_store import BridgeAuthentication
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
 
@@ -110,9 +102,9 @@ async def test_a_calls_output_reads_back_as_the_items_text(chat_store, operator_
         )
 
     detail = await _detail(chat_store, operator_id, view.session_id)
-    calls = [item for item in detail.session.items if item.item_type is ItemType.TOOL_CALL]
+    results = [entry for entry in detail.entries if isinstance(entry, ToolResultEntry)]
 
-    assert {item.call_id: item.text for item in calls} == {"toolu_text": "a.py\nb.py", "toolu_empty": ""}
+    assert {entry.call_id: entry.content for entry in results} == {"toolu_text": "a.py\nb.py", "toolu_empty": ""}
 
 
 def _frame(frame_seq: int, kind: BridgeFrameKind, payload: dict[str, Any]) -> SessionFrame:
@@ -147,37 +139,6 @@ def test_the_inspector_keeps_native_payloads_opaque() -> None:
     assert [(frame.kind, frame.payload) for frame in page.frames] == [(row.kind, row.payload) for row in _INSPECTED]
     assert all("native_kind" not in frame.model_fields_set for frame in page.frames)
     assert all("unprojected" not in frame.model_fields_set for frame in page.frames)
-
-
-def _prompt_row(origin: dict[str, object] | None) -> ConversationItem:
-    now = datetime.now(UTC)
-    return ConversationItem(
-        item_id=uuid4(),
-        conversation_id=uuid4(),
-        item_type=ItemType.PROMPT,
-        status=ItemStatus.COMPLETE,
-        opened_seq=1,
-        closed_seq=3,
-        item_text="a prompt",
-        origin=origin,
-        created_at=now,
-        updated_at=now,
-    )
-
-
-def test_a_prompts_origin_reads_back_typed_for_every_arm() -> None:
-    """The view says whose voice a prompt is — including the harness's own, which the renderer
-    must be able to tell from the operator's before anything writes it (readers ship a release
-    ahead of the writer; see AGENTS.md § Vocabularies across a roll)."""
-    assert session_views.item_view(_prompt_row({"kind": "spa"})).origin == SPA_ORIGIN
-    assert session_views.item_view(_prompt_row({"kind": "harness"})).origin == HARNESS_ORIGIN
-    matrix = session_views.item_view(_prompt_row({"kind": "matrix", "address": "!r:x", "refs": ["$e"]})).origin
-    assert isinstance(matrix, MatrixOrigin)
-    assert matrix.address == "!r:x"
-
-
-def test_an_item_without_an_origin_reports_none() -> None:
-    assert session_views.item_view(_prompt_row(None)).origin is None
 
 
 if __name__ == "__main__":

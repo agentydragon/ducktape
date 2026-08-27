@@ -1,8 +1,14 @@
 """What the conversation reads hand back, and the cursors that page them.
 
-The store produces these — a session, a frame, a turn, a conversation entry — and
-<../tools/conversations.py> is the MCP surface that serialises them. They live at the runtime level
-because the store is their only producer.
+The store produces these — a session, a frame, a turn, a conversation entry — and two surfaces
+serialise them: <../tools/conversations.py> over MCP, and the SPA's wire shapes in
+<session_views.py>. They live at the runtime level because the store is their only producer.
+
+**One vocabulary, two projections.** `ConversationEntry` is the settled stream both surfaces
+share. The SPA's projection additionally carries the lifecycle the MCP read deliberately excludes —
+where an exchange began (`TurnStartedEntry`), prose a dead session never finished
+(`CutOffItemEntry`), and the live turn's still-open prose (`StreamingItem`) — as members defined
+here beside the shared ones, so a conversation-schema change still lands in one place.
 
 **What one read produced, not a page.** How reads are handed out — the `Page` envelope every
 listing shares — belongs to the tool.
@@ -21,7 +27,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from haku.console.chat_models import FrameDirection, PromptOriginKind, RuntimeKind
+from haku.console.chat_models import FrameDirection, ItemType, PromptOriginKind, RuntimeKind
 
 
 class ChannelAttachment(BaseModel):
@@ -302,6 +308,62 @@ type ConversationEntry = Annotated[
     PromptEntry | MessageEntry | ReasoningEntry | ToolCallEntry | ToolResultEntry | TurnEndEntry,
     Field(discriminator="kind"),
 ]
+
+
+class TurnStartedEntry(_EntryBase):
+    """An exchange began here — the boundary a transcript draws between one turn and the next.
+
+    In the SPA's stream and not the MCP read: `list_turns` already serves an agent the exchange
+    index with cost and outcome, while a transcript wants the boundary in position. Authored, like
+    the `turn_started` row it stands for. Its end, when it comes, is the stream's next
+    `turn_end` entry; the two are paired by order, because at most one turn is ever open.
+    """
+
+    kind: Literal["turn_started"] = "turn_started"
+
+
+class CutOffItemEntry(_EntryBase):
+    """Prose a session died around: what had been said when nothing more could be.
+
+    In the SPA's stream and not the MCP read, whose contract is that an item that never completed
+    is not an entry. The operator asking why a session failed wants the half-said answer where it
+    stopped; an agent re-reading its past does not. A cut-off tool call has no entry of its own —
+    its ask is already in the stream, and the missing `tool_result` plus the failed `turn_end` are
+    the account.
+
+    **Reaches a follower only in a snapshot.** Failing a session closes its open items at their
+    opening position without writing an event for them, so no update's position window ever names
+    one; the streaming tail it replaces just stops arriving.
+    """
+
+    kind: Literal["cut_off"] = "cut_off"
+    item_type: Literal[ItemType.MESSAGE, ItemType.REASONING]
+    text: str
+
+
+type TranscriptEntry = Annotated[
+    PromptEntry
+    | MessageEntry
+    | ReasoningEntry
+    | ToolCallEntry
+    | ToolResultEntry
+    | TurnEndEntry
+    | TurnStartedEntry
+    | CutOffItemEntry,
+    Field(discriminator="kind"),
+]
+
+
+class StreamingItem(BaseModel):
+    """A prose item the live turn is still writing, and what it has said so far.
+
+    Not an entry: nothing has defined it yet, so it has no stream position and its text grows.
+    A reader holds at most one of each type — the fold streams into one open message and one open
+    reasoning at a time — and replaces what it holds wholesale, never merges.
+    """
+
+    item_type: Literal[ItemType.MESSAGE, ItemType.REASONING]
+    text: str
 
 
 # The item read's cursor is the plain stream position (`ConversationEntry.seq`): `event_seq` is
