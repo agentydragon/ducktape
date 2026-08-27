@@ -10,10 +10,10 @@ import pytest
 import pytest_bazel
 from jinja2 import UndefinedError
 
-from haku.console.mcp_guidance import SERVER_INSTRUCTIONS
 from haku.console.x.system_prompt import HistoryMessage, HistorySender, SessionIntroduction, SystemPromptTemplate
 
 SESSION = UUID("11111111-2222-4333-8444-555555555555")
+CONVERSATION = UUID("66666666-7777-4888-8999-aaaaaaaaaaaa")
 
 # The files the ConfigMap mounts. Rendering the real ones is the point: a fixture copy would let
 # the shipped templates break while the test stayed green.
@@ -23,7 +23,11 @@ DEPLOYED_CODER_TEMPLATE = Path("cluster/k8s/haku/console/public_coder_system_pro
 
 def introduction(*messages: HistoryMessage, earlier: tuple[UUID, ...] = ()) -> SessionIntroduction:
     return SessionIntroduction(
-        session_id=SESSION, workspace="/workspace", recent_messages=messages, earlier_session_ids=earlier
+        session_id=SESSION,
+        conversation_id=CONVERSATION,
+        workspace="/workspace",
+        recent_messages=messages,
+        earlier_session_ids=earlier,
     )
 
 
@@ -60,6 +64,8 @@ def test_deployed_coder_template_includes_the_shared_contract():
     rendered = SystemPromptTemplate.from_path(DEPLOYED_CODER_TEMPLATE).render(introduction())
     assert "public-coder-agent" in rendered
     assert "Replies are automatic" in rendered
+    assert "Haku Console MCP" in rendered
+    assert str(CONVERSATION) in rendered
     assert "the start of it" in rendered
     assert "haku-state" not in rendered.lower()
 
@@ -67,6 +73,7 @@ def test_deployed_coder_template_includes_the_shared_contract():
 def test_deployed_template_renders_a_fresh_chat(deployed: SystemPromptTemplate):
     rendered = deployed.render(introduction())
     assert str(SESSION) in rendered
+    assert str(CONVERSATION) in rendered
     assert "!room:allegedly.works" not in rendered
     assert "@rai:allegedly.works" not in rendered
     assert "the start of it" in rendered
@@ -104,9 +111,11 @@ def test_deployed_template_carries_both_sides_of_the_history(deployed: SystemPro
 def test_deployed_template_includes_mcp_guidance_for_clients_that_hide_server_instructions(
     deployed: SystemPromptTemplate,
 ):
+    """The template owns the guidance prose (a deliberate second copy of the MCP server's own
+    instructions, `haku/console/mcp_guidance.py`), so the render is asserted on its load-bearing
+    content rather than on string identity with the server constant."""
     rendered = deployed.render(introduction())
-    guidance = SERVER_INSTRUCTIONS
-    assert guidance in rendered
+    assert "Haku Console MCP" in rendered
     assert "pending_approval" in rendered
     assert "get_mcp_server_status" in rendered
     assert "https://github.com/agentydragon/ducktape" in rendered

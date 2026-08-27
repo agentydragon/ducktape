@@ -352,10 +352,7 @@ py_library(
 py_library(
     name = "system_prompt",
     srcs = ["system_prompt.py"],
-    deps = [
-        "//haku/console:mcp_guidance",
-        "@pypi//jinja2",
-    ],
+    deps = ["@pypi//jinja2"],
 )
 
 py_library(

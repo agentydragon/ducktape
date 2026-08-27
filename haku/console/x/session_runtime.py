@@ -479,8 +479,11 @@ class SessionService:
         resources = (await self._configured(session_id)).resources
         if self._conversation_history is None or not await self._store.attached(session_id):
             return None
+        # The conversation id is load-bearing prompt content, so its lookup failing fails the
+        # render (and the admission path fails the session visibly); only the history reads
+        # degrade to an empty tail.
+        conversation_id = await self._store.conversation_of(session_id)
         try:
-            conversation_id = await self._store.conversation_of(session_id)
             recorded = await self._conversation_history.recent(
                 conversation_id, before_session=session_id, limit=RE_AWAKENING_MESSAGES
             )
@@ -492,6 +495,7 @@ class SessionService:
         return resources.system_prompt.render(
             SessionIntroduction(
                 session_id=session_id,
+                conversation_id=conversation_id,
                 workspace=resources.cwd,
                 recent_messages=tuple(
                     HistoryMessage(

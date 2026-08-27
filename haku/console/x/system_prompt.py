@@ -29,8 +29,6 @@ from uuid import UUID
 
 from jinja2 import BaseLoader, Environment, FileSystemLoader, StrictUndefined
 
-from haku.console.mcp_guidance import SERVER_INSTRUCTIONS
-
 
 class HistorySender(StrEnum):
     OPERATOR = "operator"
@@ -59,6 +57,9 @@ class SessionIntroduction:
     """Everything a rendered prompt may name about the session being started."""
 
     session_id: UUID
+    # The durable thread this session serves — rendered so the agent can hand it straight to the
+    # conversation-scoped read tools.
+    conversation_id: UUID
     workspace: str
     # Oldest first, so the template renders them in reading order.
     recent_messages: Sequence[HistoryMessage]
@@ -109,10 +110,11 @@ class SystemPromptTemplate:
         becomes Ready while the previous version keeps serving.
         """
         probe = UUID(int=0)
-        self.render(SessionIntroduction(session_id=probe, workspace="/", recent_messages=()))
+        self.render(SessionIntroduction(session_id=probe, conversation_id=probe, workspace="/", recent_messages=()))
         self.render(
             SessionIntroduction(
                 session_id=probe,
+                conversation_id=probe,
                 workspace="/",
                 recent_messages=(
                     HistoryMessage(sender=HistorySender.OPERATOR, body="probe", sent_at=datetime(2000, 1, 1)),
@@ -124,8 +126,8 @@ class SystemPromptTemplate:
     def render(self, introduction: SessionIntroduction) -> str:
         return self._template.render(
             session_id=introduction.session_id,
+            conversation_id=introduction.conversation_id,
             workspace=introduction.workspace,
             recent_messages=list(introduction.recent_messages),
             earlier_session_ids=list(introduction.earlier_session_ids),
-            haku_console_mcp_guidance=SERVER_INSTRUCTIONS,
         ).strip()
