@@ -1,10 +1,55 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
+    name = "addon",
+    srcs = ["addon.py"],
+    deps = [
+        ":decide_client",
+        ":decision",
+        "@pypi//mitmproxy",
+    ],
+)
+
+py_library(
+    name = "decide_client",
+    srcs = ["decide_client.py"],
+    deps = [":decision"],
+)
+
+py_library(
     name = "decision",
     srcs = ["decision.py"],
     visibility = ["//haku/console:__pkg__"],
     deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "localhost_decide_client",
+    srcs = ["localhost_decide_client.py"],
+    deps = [
+        ":decide_client",
+        ":decision",
+    ],
+)
+
+py_library(
+    name = "runner",
+    srcs = ["runner.py"],
+    deps = [
+        ":addon",
+        ":decide_client",
+        "@pypi//mitmproxy",
+    ],
+)
+
+py_library(
+    name = "static_decide_client",
+    testonly = True,
+    srcs = ["static_decide_client.py"],
+    deps = [
+        ":decide_client",
+        ":decision",
+    ],
 )
 
 py_test(
@@ -14,6 +59,24 @@ py_test(
         ":decision",
         "@pypi//pydantic",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_egress_proxy",
+    srcs = ["test_egress_proxy.py"],
+    deps = [
+        ":addon",
+        ":decide_client",
+        ":decision",
+        ":runner",
+        ":static_decide_client",
+        "//:conftest",
+        "@pypi//aiohttp",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # runtime dep: conftest sets asyncio_mode="auto"
         "@pypi//pytest_bazel",
     ],
 )
