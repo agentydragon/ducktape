@@ -12,7 +12,9 @@ resources:
   - node-daemon-rugged.sops.yaml
   - node-daemon-wyrm2.sops.yaml
   - httproute.yaml
-  - indexer-deployment.yaml
+  - indexer-chunk-ducktape-public-deployment.yaml
+  - indexer-chunk-haku-conversations-deployment.yaml
+  - indexer-chunk-haku-state-deployment.yaml
   - indexer-embed-deployment.yaml
   - indexer-role-provisioner-job.yaml
   - kube-api-proxy.yaml
