@@ -175,8 +175,9 @@ py_library(
     srcs = ["resource_utils.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//mcp_utils",
         "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//more_itertools",
         "@pypi//pydantic",
     ],
 )

@@ -296,7 +296,6 @@ py_package(
         "gmail_archiver.planners",
         "mako_utils",
         "mcp_infra",
-        "mcp_utils",
         "openai_utils",
     ],
     deps = [

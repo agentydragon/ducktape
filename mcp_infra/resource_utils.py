@@ -5,10 +5,10 @@ from collections.abc import Iterable
 from typing import Any
 
 from fastmcp.client.client import Client
+from mcp import types as mcp_types
+from more_itertools import one
 from pydantic import TypeAdapter
 from pydantic.networks import AnyUrl
-
-from mcp_utils.resources import extract_single_text_content
 
 _URI_PATTERN = re.compile(r"^([^:]+://)(.*?)$")
 
@@ -21,6 +21,14 @@ def add_resource_prefix(uri: str | AnyUrl, prefix: str) -> str:
         protocol, path = match.groups()
         return f"{protocol}{prefix}/{path}"
     return uri_str
+
+
+def extract_single_text_content(res: list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents]) -> str:
+    """Return the text from the single TextResourceContents part, or raise."""
+    item = one(res)
+    if not isinstance(item, mcp_types.TextResourceContents):
+        raise TypeError(f"expected TextResourceContents, got {type(item).__name__}")
+    return item.text
 
 
 async def read_text(client: Client[Any], uri: AnyUrl | str) -> str:

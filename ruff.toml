@@ -151,7 +151,6 @@ known-first-party = [
     "llm",
     "loom",
     "mcp_infra",
-    "mcp_utils",
     "openai_utils",
     "py_detectors",
     "sysrw",
