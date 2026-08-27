@@ -898,10 +898,7 @@ def build_console_mcp(
         fields: Annotated[
             list[ToolCallPayloadField],
             Field(
-                description=(
-                    "Whole payloads to include. Allowed values are `arguments`, `caller`, `rationale`, and "
-                    "`result`. Defaults to [`result`]; pass [] for a compact status poll."
-                ),
+                description="Whole payloads to include. Defaults to [`result`]; pass [] for a compact status poll.",
                 json_schema_extra={"default": [ToolCallPayloadField.RESULT]},
             ),
         ] = _DEFAULT_GET_TOOL_CALL_FIELDS,
@@ -944,10 +941,7 @@ def build_console_mcp(
         fields: Annotated[
             list[ToolCallPayloadField],
             Field(
-                description=(
-                    "Whole payloads to include. Allowed values are `arguments`, `caller`, `rationale`, and "
-                    "`result`. Defaults to [] for compact status summaries."
-                ),
+                description="Whole payloads to include. Defaults to [] for compact status summaries.",
                 json_schema_extra={"default": []},
             ),
         ] = _DEFAULT_LIST_TOOL_CALL_FIELDS,
