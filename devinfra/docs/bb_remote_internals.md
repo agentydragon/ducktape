@@ -1,67 +1,50 @@
 # `bb remote` Internals
 
 How `bb remote` works end-to-end, from CLI invocation to Bazel execution on the
-runner. Based on reading the BuildBuddy source at
-`/code/github.com/buildbuddy-io/buildbuddy`.
+runner. Bare source paths refer to the
+[BuildBuddy source](https://github.com/buildbuddy-io/buildbuddy).
 
 ## End-to-end flow
 
 ### 1. CLI arg processing (local, no rc expansion)
 
-Source: `cli/cmd/bb/bb.go`, `cli/remotebazel/remotebazel.go`
+Source: `cli/cmd/bb/bb.go`, `cli/parser/parser.go`,
+`cli/remotebazel/remotebazel.go`
 
-`bb remote` is a **bb CLI command**, dispatched at `bb.go:137`
-(`interpretAsBBCliCommand`) _before_ the `ResolveArgs` path (line 172) that
-reads rc files and expands `--config` flags. This means:
+`bb remote` is a **bb CLI command**, dispatched (`interpretAsBBCliCommand`)
+_before_ the `ResolveArgs` path that reads rc files and expands `--config`
+flags. So **`bb remote` reads NO rc files locally** (`.bazelrc`,
+`~/.bazelrc`, `/etc/bazel.bazelrc`) **and expands NO `--config=X` flags
+locally** — `--config=rbe` in `~/.config/bazel/buildbuddy.bazelrc` has no
+effect on `bb remote` invocations. The only local processing is
+`CanonicalizeArgs` (flag format normalization, e.g. `--flag value` →
+`--flag=value`); all `--config` flags pass through literally to the runner.
 
-- **`bb remote` does NOT read `.bazelrc`, `~/.bazelrc`, or
-  `/etc/bazel.bazelrc` locally.**
-- **`bb remote` does NOT expand `--config=X` flags locally.**
-- `--config=rbe` in `~/.config/bazel/buildbuddy.bazelrc` has **no effect** on
-  `bb remote` invocations.
+> **Contrast with `bb build`/`bb test`** (direct local Bazel): those go through
+> `ResolveArgs` — reads all rc files locally, expands configs, appends
+> `--nohome_rc --noworkspace_rc --nosystem_rc`. Those `--no*_rc` flags make
+> Bazel's legacy transition check (`option_processor.cc`) warn that `.bazelrc`
+> is "no longer being read" — harmless for command-level directives, which `bb`
+> already inlined, but **`startup` directives are silently dropped** — bites
+> `startup --host_jvm_args=…` users (notably Claude sessions: the
+> session-installed trust store never loads). Workaround + proper shim fix:
+> <bb_bazelrc_startup.md>.
 
-The only local processing is `CanonicalizeArgs` (flag format normalization,
-e.g., `--flag value` → `--flag=value`). All `--config` flags are passed
-through literally to the runner.
-
-> **Contrast with `bb build`/`bb test`** (direct local Bazel): These go through
-> `ResolveArgs`, which reads all rc files locally, expands configs, and appends
-> `--nohome_rc --noworkspace_rc --nosystem_rc`. The "no longer being read"
-> warning from Bazel is triggered by these `--no*_rc` flags — Bazel's legacy
-> transition check (`option_processor.cc`) sees that `.bazelrc` exists but isn't
-> in the read set and warns. Mostly harmless — `bb` already inlined
-> command-level directives — but **`startup` directives are silently dropped**,
-> which bites anyone relying on `startup --host_jvm_args=…` from a bazelrc
-> (notably Claude sessions, where the session-installed trust store never
-> loads). Workaround + proper shim fix in <bb_bazelrc_startup.md>.
-
-**bb remote flags** (verified via `bb help remote` on our pinned `bb 5.0.387`,
-2026-07-01 — run `bb help remote` yourself to get the current set for
-whatever version is pinned): `--runner_exec_properties`, `--run_from_commit`,
-`--run_from_branch`, `--run_from_snapshot`, `--remote_run_header`,
-`--remote_runner`, `--container_image`, `--os`, `--arch`, `--timeout`,
-`--script`, `--env`, `--invocation_id_file`, `--run_remotely`,
-`--disable_retry`, `--skip_auto_checkout`, `--use_system_git_credentials`.
-The last two are relevant to git-state sync specifically:
-`--skip_auto_checkout` skips the runner's automatic GitHub checkout step
-entirely (untested here — likely means "run in whatever the container image
-already has", not "checkout HEAD without patches"); `--use_system_git_credentials`
-tells the runner to use its own pre-configured GitHub auth instead of
-requiring `--repo.url`-embedded HTTPS + token. Neither has been used to fix
-the `github-no-proxy`/insteadOf collision below — the URL-suffix fix was
-simpler and didn't require touching runner-side auth config — but either
-could be a cleaner long-term fix if revisited.
+**bb remote flags**: `bb help remote` lists the current set. Two matter for
+git-state sync: `--skip_auto_checkout` skips the runner's automatic GitHub
+checkout step; `--use_system_git_credentials` makes the runner use its own
+pre-configured GitHub auth instead of `--repo.url`-embedded HTTPS + token.
 
 **NOT a bb flag**: `--remote_header` is a Bazel flag. It must go after the
 subcommand, otherwise bb puts it in Bazel startup options and Bazel rejects it.
 
 ### 2. `RunRequest` construction
 
-Source: `cli/remotebazel/remotebazel.go`, `parseArgs()` ~line 1298
+Source: `cli/remotebazel/remotebazel.go` (`parseArgs`), `proto/runner.proto`
 
 bb builds a `RunRequest` protobuf and sends it to the runner service via gRPC:
 
-```
+```text
 RunRequest {
   repo: { url, commit_sha, patches[] }
   exec_properties: [from --runner_exec_properties]
@@ -72,16 +55,13 @@ RunRequest {
 }
 ```
 
-`<user-flags-as-is>` includes literal `--config=X` flags — they are NOT
-expanded. The runner's Bazel will expand them against the workspace `.bazelrc`.
+`<user-flags-as-is>` still contains the literal `--config=X` flags; expansion
+happens on the runner.
 
 **Auto-configs** (hardcoded in `parseArgs`): bb strips any user-supplied
-`--bes_backend` and `--remote_cache`, then appends:
-
-- `--config=buildbuddy_bes_backend`
-- `--config=buildbuddy_bes_results_url`
-- `--config=buildbuddy_remote_cache`
-- `--remote_upload_local_results` (for `build` and non-remote `run`)
+`--bes_backend` and `--remote_cache`, then appends
+`--config=buildbuddy_{bes_backend,bes_results_url,remote_cache}` and, for
+`build` and non-remote `run`, `--remote_upload_local_results`.
 
 ### 3. Runner bootstrap
 
@@ -90,73 +70,55 @@ Source: `enterprise/server/cmd/ci_runner/main.go`
 The runner VM receives the `RunRequest` and:
 
 1. **Git checkout**: fetches the commit, applies patches (local diffs).
-2. **Writes `buildbuddy.bazelrc`** to the workspace root (`writeBazelrc`,
-   ~line 2201). This file defines the auto-config values:
-   ```
+2. **Writes `buildbuddy.bazelrc`** to the workspace root (`writeBazelrc`),
+   defining the auto-config values:
+
+   ```text
    common:buildbuddy_bes_backend --bes_backend=<runner's BES endpoint>
-   common:buildbuddy_bes_results_url --bes_results_url=<runner's results URL>
-   common:buildbuddy_remote_cache --remote_cache=<runner's cache endpoint>
-   common:buildbuddy_remote_executor --remote_executor=<runner's RBE endpoint>
+   … (bes_results_url, remote_cache, remote_executor likewise)
    ```
-   Values are dynamic — they point to the same BB environment that triggered
-   the run.
-3. **Invokes Bazel** with startup flags (`customBazelrcOptions`, line ~1625):
-   ```
+
+   Values are dynamic — they point to the BB environment that triggered the
+   run.
+
+3. **Invokes Bazel** with startup flags (`customBazelrcOptions`):
+
+   ```text
    --bazelrc=buildbuddy.bazelrc --noworkspace_rc --bazelrc=.bazelrc
    ```
-   This ensures `buildbuddy.bazelrc` has highest priority, then the workspace
-   `.bazelrc` is loaded explicitly (via `--bazelrc`) while suppressing the
-   default workspace rc loading (`--noworkspace_rc`) to avoid double-loading.
+
+   `buildbuddy.bazelrc` gets highest priority; the workspace `.bazelrc` is
+   loaded explicitly, with `--noworkspace_rc` preventing a double load.
 
 ### 4. Bazel execution on the runner
 
-Bazel on the runner reads `buildbuddy.bazelrc` and `.bazelrc` (in that
-priority order), and expands all `--config` flags. For example,
-`--config=rbe` expands using the workspace `.bazelrc` definitions
-(`--remote_executor`, `--remote_header`, `--extra_execution_platforms`, etc.).
-`--config=buildbuddy_*` expands using `buildbuddy.bazelrc` definitions.
+Bazel on the runner reads `buildbuddy.bazelrc` then `.bazelrc` and expands all
+`--config` flags — `--config=rbe` from the workspace `.bazelrc`,
+`--config=buildbuddy_*` from `buildbuddy.bazelrc`.
 
-**If you don't pass `--config=rbe` explicitly, RBE is not enabled.** The
+**If you don't pass `--config=rbe` explicitly, RBE is not enabled** — the
 runner builds everything locally in linux-sandbox on the runner VM.
-
-### Verified by experiment (2026-04-08)
-
-```
-# No --config=rbe → runner builds locally (57 linux-sandbox actions)
-bb remote build //devinfra:gazelle --config=nolint
-
-# Explicit --config=rbe → runner fans out to RBE (64 remote cache hits)
-bb remote build //devinfra:gazelle --config=nolint --config=rbe
-```
 
 ## Git state synchronization
 
-Source: `cli/remotebazel/remotebazel.go`, `Config()` line 368
-
-BuildBuddy's own docs (<https://www.buildbuddy.io/docs/remote-bazel/>) call
-this **"automatic git-state mirroring"** — same mechanism described here, just
-their user-facing name for it. Their docs corroborate the staleness gotcha
-below verbatim: "If your branch hasn't been recently rebased against the
-default branch, this patchset can be large, slowing down the CLI." Their
-docs also name `--run_from_branch`/`--run_from_commit` as the way to disable
-mirroring and pin to a specific ref instead (see the flags list above — do
-NOT use `--run_from_commit` in wrapper scripts per the gotcha below, it drops
-uncommitted changes).
+Source: `cli/remotebazel/remotebazel.go` (`Config`)
 
 `bb remote` mirrors your local working tree to the runner as a base commit +
-patchset. The logic has three phases:
+patchset —
+["automatic git-state mirroring"](https://www.buildbuddy.io/docs/remote-bazel/)
+in BuildBuddy's docs. Three phases:
 
-### Phase 1: Determine remote (`determineRemote`, line 162)
+### Phase 1: Determine remote (`determineRemote`)
 
-Runs `git remote -v`, picks a fetch remote. With multiple remotes, prompts
-the user and caches the selection in `.git/config`.
+Runs `git remote -v`, picks a fetch remote. With multiple remotes, prompts the
+user and caches the selection in `.git/config`.
 
-### Phase 2: Find base branch + commit (`getBaseBranchAndCommit`, line 404)
+### Phase 2: Find base branch + commit (`getBaseBranchAndCommit`)
 
 When `--run_from_branch` and `--run_from_commit` are both empty (auto mode):
 
-1. `getCurrentRef()` → `git symbolic-ref --short HEAD` → e.g., `feature-x`
-   (or parses "detached at \<ref\>" from `git branch` output)
+1. `getCurrentRef()` → `git symbolic-ref --short HEAD` → e.g. `feature-x` (or
+   parses "detached at \<ref\>" from `git branch` output)
 2. `branchTrackedRemotely(remote, "feature-x")` → checks if
    `refs/remotes/origin/feature-x` exists locally
 3. If yes: `commitTrackedInRemoteBranch(remote, "feature-x", "HEAD")` →
@@ -165,337 +127,258 @@ When `--run_from_branch` and `--run_from_commit` are both empty (auto mode):
      `branch=feature-x`, `commit=<HEAD SHA>`
    - If HEAD is ahead (unpushed commits): falls through to default branch
 4. **Fallback** (branch doesn't exist remotely, or has unpushed commits):
-   - `branch = defaultBranch` (e.g., `devel`)
+   - `branch = defaultBranch` (e.g. `devel`)
    - `commit = git rev-parse devel@{upstream}` — the **remote-tracking** commit
      (e.g. `origin/devel`), so an unpushed local `devel` tip is never used as
-     the base; the unpushed commits are sent as patches instead. Falls back to
-     `git rev-parse devel` (the **local** ref) only when `devel` has no upstream
-     configured.
-   - Resolving `@{upstream}` requires a **local** `devel` branch with tracking
-     config. A normal clone has this; a CI checkout that creates only
-     `origin/devel` (no local branch) does not — see Gotchas below.
-   - **Deviation from older `bb`:** before [buildbuddy#11838][bb11838] the
-     fallback was just `git rev-parse devel` (local ref), which broke when local
-     `devel` had unpushed commits. Our pinned `bb` (≥ 5.0.387) includes the fix.
+     the base; unpushed commits are sent as patches instead. Falls back to
+     `git rev-parse devel` (the **local** ref) only when `devel` has no
+     upstream configured.
+   - Resolving `@{upstream}` needs a **local** `devel` branch with tracking
+     config — see Gotchas for the CI case.
 
-[bb11838]: https://github.com/buildbuddy-io/buildbuddy/pull/11838
+Net effect: with the current ref on the remote and HEAD an ancestor of it, the
+base is HEAD and patches carry only uncommitted changes; in every other case
+(unpushed branch, HEAD ahead, detached ref not on remote) the base is
+`devel@{upstream}` and patches carry everything since it.
 
-### Phase 3: Generate patches (`generatePatches`, line 514)
+### Phase 3: Generate patches (`generatePatches`)
 
-Generates a patchset of everything that differs between the base commit and
-the current working tree:
+A patchset of everything that differs between the base commit and the current
+working tree:
 
 1. `git diff <baseCommit>` — tracked modified files (text), as unified diff
 2. `git diff <baseCommit> --binary -- <files>` — binary modified files
 3. `git ls-files --others --exclude-standard` → for each untracked file,
    `git diff --no-index /dev/null <file>` (synthetic "add file" patch)
 
-All patches are sent as `RepoState.Patch[]` in the `RunRequest`.
-
-### Runner side
-
-The runner clones the repo at the base commit/branch, then applies each patch
-with `git apply`. Result: workspace matches your local working tree.
-
-### Scenario matrix
-
-| Scenario                                   | Base branch       | Base commit                       | Patches contain                  |
-| ------------------------------------------ | ----------------- | --------------------------------- | -------------------------------- |
-| Local branch, pushed, HEAD on remote       | `feature-x`       | HEAD SHA                          | uncommitted changes only         |
-| Local branch, pushed, HEAD ahead of remote | `devel` (default) | `devel@{upstream}` (origin/devel) | all branch commits + uncommitted |
-| Local branch, not pushed                   | `devel` (default) | `devel@{upstream}` (origin/devel) | all branch commits + uncommitted |
-| Detached HEAD, ref exists remotely         | detached ref      | ref SHA                           | uncommitted changes only         |
-| Detached HEAD, ref not on remote           | `devel` (default) | `devel@{upstream}` (origin/devel) | everything since devel           |
-
-(The fallback rows assume a local `devel` branch with an upstream — a normal
-clone. With no local `devel` it falls back to `git rev-parse devel`, which also
-fails if absent: that is the CI case the `bazel-ci.yml` workaround handles.)
+Patches travel as `RepoState.Patch[]` in the `RunRequest`; the runner clones
+at the base commit/branch and `git apply`s each, reproducing your local
+working tree.
 
 ### Gotchas
 
-- **Fallback base is `origin/devel` via `@{upstream}`**: the fallback resolves
-  `devel@{upstream}` (the remote-tracking commit), so unpushed commits on a local
-  `devel` are sent as patches rather than used as the base. This needs a **local**
-  `devel` branch with tracking config. A CI checkout (`actions/checkout`) creates
-  only `origin/devel`, not a local branch, so `@{upstream}` (and the `git rev-parse
-devel` fallback) both fail — `bazel-ci.yml` creates a local `devel` ref for PR
-  builds. If `origin/devel` itself is stale, the diff base can end up hundreds of
-  commits behind HEAD, producing a huge (and sometimes unappliable — see binary
-  patch gotcha below) patchset instead of the small diff you expect.
-  `devinfra/bbr.py`'s `check_base_branch_freshness()` runs before every `bbr`
-  invocation and **refuses to run** when the tracked base looks stale
-  (`BBR_ALLOW_STALE_BASE=1` overrides) — a print-only warning proved too easy
-  to lose in scrollback, costing multi-minute runner failures. It deliberately
-  never fetches (surprise network calls on every command would be its own
-  problem), so the error means you should
-  `git fetch <buildbuddy-remote> <default-branch>` (and the current branch, if
-  pushed, so bb can base on it directly) yourself before retrying.
-  Session setup (`devinfra/claude/reconcile_bbr_remote.sh`) is the one place
-  that does fetch, once, when the session starts.
-- **`--run_from_commit` disables patches**: When set, the runner checks out
-  exactly that commit. Patches are only generated when BOTH `--run_from_branch`
-  and `--run_from_commit` are empty. Do NOT use `--run_from_commit` in wrapper
+- **Fallback base is `origin/devel` via `@{upstream}`**: needs a **local**
+  `devel` branch with tracking config. A CI checkout (`actions/checkout`)
+  creates only `origin/devel`, so both `@{upstream}` and the
+  `git rev-parse devel` fallback fail — `bazel-ci.yml` creates a local `devel`
+  ref for PR builds. A stale `origin/devel` puts the diff base hundreds of
+  commits behind HEAD: a huge patchset — on stock `bb`, possibly an
+  unappliable one (next bullet) — instead of the small diff you expect.
+  `devinfra/bbr.py`'s `check_base_branch_freshness()` **refuses to run** when
+  the tracked base looks stale (`BBR_ALLOW_STALE_BASE=1` overrides); it
+  deliberately never fetches (surprise network calls on every command), so on
+  that error run `git fetch <buildbuddy-remote> <default-branch>` (and the
+  current branch, if pushed, so bb can base on it directly) and retry. Session
+  setup (`devinfra/claude/reconcile_bbr_remote.sh`) fetches once, at session
+  start.
+- **A deleted binary file makes the patchset unappliable on stock `bb`**:
+  `generatePatches` runs `git diff --binary` only for files it detects as
+  _modified_ — `isBinaryFile` runs `file --mime` on the working-tree path,
+  which cannot classify a deleted file — so a binary file **deleted** since
+  the diff base lands in the plain-text patch as a content-less stub, and the
+  runner's `git apply` dies with
+  `cannot apply binary patch to '<file>' without full index line`. Every run
+  breaks during git setup, even on a fresh base, until the deleting commit is
+  pushed (moving the base past it). Upstream fix (unconditional `--binary`):
+  [buildbuddy#13067](https://github.com/buildbuddy-io/buildbuddy/pull/13067);
+  until a `bb` release carries it, the repo pins a patched build
+  (`5.0.387-pr13067`, <../../third_party/bb/README.md>).
+- **`--run_from_commit` disables patches**: the runner checks out exactly that
+  commit. Patches are only generated when BOTH `--run_from_branch` and
+  `--run_from_commit` are empty. Do NOT use `--run_from_commit` in wrapper
   scripts — it silently drops all uncommitted local changes.
-- **Large patchsets**: All untracked files are included. A stale `bazel-bin`
-  symlink or large generated files can bloat the patchset (though
-  `.gitignore`'d files are excluded via `--exclude-standard`). A patchset that's
-  huge because of base-commit staleness (above) can also fail outright with
-  `error: cannot apply binary patch ... without full index line` when it spans
-  binary-file history it shouldn't need to touch.
+- **Large patchsets**: all untracked files are included — a stale `bazel-bin`
+  symlink or large generated files can bloat the patchset (`.gitignore`'d
+  files are excluded via `--exclude-standard`).
 - **Repo-scoped Claude sessions' git `insteadOf` rewrite defeats the
-  `github-no-proxy` remote**: Claude Code web sessions rewrite `origin` to a
-  local git-mirroring proxy (`http://127.0.0.1:<port>/git/...`) so the cloud
-  runner can't fetch from it directly — `devinfra/claude/web_setup.sh` and
-  `devinfra/codex_cloud/setup.sh` work around this with a `github-no-proxy`
-  remote pointing straight at GitHub, selected via
-  `buildbuddy.remote-bazel-remote-name` (bb resolves the URL via
-  `git remote get-url`, which applies the effective config, not the literal
-  one). Some sessions ALSO install a **global**
+  `github-no-proxy` remote**: web sessions rewrite `origin` to a local
+  git-mirroring proxy (`http://127.0.0.1:<port>/git/...`) that the cloud
+  runner can't reach, so `devinfra/claude/web_setup.sh` and
+  `devinfra/codex_cloud/setup.sh` add a `github-no-proxy` remote pointing
+  straight at GitHub, selected via `buildbuddy.remote-bazel-remote-name` (bb
+  resolves the URL via `git remote get-url`, which applies the effective
+  config). Some sessions ALSO install a **global**
   `url."http://local_proxy@127.0.0.1:<port>/git/".insteadOf = https://github.com/`
-  rule (repo-access scoping) — this rewrites **any** remote whose URL has that
-  literal prefix, including `github-no-proxy`'s, silently routing it back
-  through the same unreachable local proxy and reintroducing the original
-  failure. Fix: give `github-no-proxy` a URL that's real but doesn't textually
-  match the rewrite's prefix, e.g. `https://github.com:443/<owner>/<repo>` (the
-  explicit default port changes nothing functionally but isn't the literal
-  string `https://github.com/`, so `insteadOf` skips it).
+  rule, which rewrites **any** remote matching that literal prefix —
+  `github-no-proxy` included — back to the same unreachable proxy. Fix: give
+  `github-no-proxy` a URL outside the literal prefix, e.g.
+  `https://github.com:443/<owner>/<repo>` (functionally identical but not
+  literally prefixed, so `insteadOf` skips it).
 
 ## Flag taxonomy
 
-| Flag                           | Owned by | Where it goes                 | Purpose                                                             |
-| ------------------------------ | -------- | ----------------------------- | ------------------------------------------------------------------- |
-| `--runner_exec_properties=K=V` | bb CLI   | `RunRequest.ExecProperties`   | Runner VM platform (disk, recycling)                                |
-| `--remote_run_header=K=V`      | bb CLI   | `RunRequest.RemoteHeaders`    | gRPC metadata for the runner execution request                      |
-| `--remote_header=K=V`          | Bazel    | Bazel args (after subcommand) | gRPC metadata for RBE actions (API keys, container image overrides) |
-| `--build_metadata=K=V`         | Bazel    | Bazel args (after subcommand) | BES metadata: `ROLE=X` → invocation role, `TAGS=a,b` → tags         |
+- `--runner_exec_properties=K=V` (bb CLI → `RunRequest.ExecProperties`):
+  runner VM platform (disk, recycling)
+- `--remote_run_header=K=V` (bb CLI → `RunRequest.RemoteHeaders`): gRPC
+  metadata for the runner execution request
+- `--remote_header=K=V` (Bazel, after the subcommand): gRPC metadata for RBE
+  actions (API keys, container image overrides)
+- `--build_metadata=K=V` (Bazel, after the subcommand): BES metadata —
+  `ROLE=X` → invocation role, `TAGS=a,b` → tags
 
-For bbr's layered configuration (repo config, session bazelrc, env vars), see `bbr --help`.
+For bbr's layered configuration (repo config, session bazelrc, env vars), see
+`bbr --help`.
 
 ## Bazel linux-sandbox and Docker
 
 Bazel's linux-sandbox (non-hermetic mode, the default) creates a new mount
-namespace but **inherits the entire host filesystem read-only**. It then
+namespace but **inherits the entire host filesystem read-only**, then
 selectively makes output paths writable. It does NOT hide host paths.
+([`linux-sandbox-pid1.cc`](https://github.com/bazelbuild/bazel/blob/master/src/main/tools/linux-sandbox-pid1.cc)
+`MakeFilesystemMostlyReadOnly()` iterates `/proc/self/mounts` and remounts
+everything `MS_RDONLY` except whitelisted writable paths.)
 
-Source: [`src/main/tools/linux-sandbox-pid1.cc`](https://github.com/bazelbuild/bazel/blob/master/src/main/tools/linux-sandbox-pid1.cc) — `MakeFilesystemMostlyReadOnly()`
-iterates `/proc/self/mounts` and remounts everything `MS_RDONLY` except
-whitelisted writable paths.
+**Docker socket access**: `/var/run/docker.sock` is always accessible inside
+the sandbox — Unix socket `connect()` works through read-only mounts
+(read-only blocks file creation/modification, not socket operations).
+`--sandbox_add_mount_pair` is only needed in hermetic mode (`-h`, with
+`pivot_root`).
 
-**Docker socket access**: `/var/run/docker.sock` is always accessible inside the
-sandbox because Unix socket `connect()` works through read-only mounts (read-only
-blocks file creation/modification, not socket operations).
-`--sandbox_add_mount_pair` is only needed in hermetic mode (`-h` flag with
-`pivot_root`), not the default non-hermetic mode.
-
-**Docker load gotcha**: `tarfile.TarFile.add()` on symlinks (like Bazel runfiles)
-records them as symlink entries with absolute target paths. Docker extracts the
-tarball and tries to follow the symlinks, which fail when the targets are
-sandbox-internal paths. Fix: `tarfile.open(..., dereference=True)` to store file
-content instead of symlinks.
+**Docker load gotcha**: `tarfile.TarFile.add()` on symlinks (like Bazel
+runfiles) records them as symlink entries with absolute target paths; Docker
+extracts and follows them, failing on sandbox-internal targets. Fix:
+`tarfile.open(..., dereference=True)` to store file content instead.
 
 ## Firecracker VM boot sequence
 
-Source: `enterprise/server/remote_execution/containers/firecracker/firecracker.go`,
+Source:
+`enterprise/server/remote_execution/containers/firecracker/firecracker.go`,
 `enterprise/server/cmd/goinit/main.go`, `enterprise/server/vmexec/vmexec.go`
 
-BuildBuddy uses Firecracker microVMs for workload isolation. The container image
-is NOT run as a Docker container — it's converted to an ext4 filesystem and
-mounted as a block device in a Firecracker VM.
+BuildBuddy isolates workloads in Firecracker microVMs. The container image is
+NOT run as a Docker container — it's converted to an ext4 filesystem and
+mounted as a block device. Both `bb remote` and `bb execute` boot this way
+when `workload-isolation-type=firecracker` is set; without that exec property,
+`bb execute` uses OCI containers instead (no VM, direct `runc`-style exec into
+the container rootfs).
 
-### Host side (executor)
+**Host side (executor)**: converts the Docker/OCI image to an ext4 image
+(cached by content hash at
+`/tmp/${USER}_remote_build/executor/<sha>/containerfs.ext4`), then launches
+Firecracker with `goinit` as init and three block devices:
 
-1. **Image conversion**: Docker/OCI image → ext4 filesystem (`containerfs.ext4`),
-   cached by content hash at `/tmp/${USER}_remote_build/executor/<sha>/containerfs.ext4`
-2. **VM disk layout** — 3 block devices:
-   - `/dev/vda` — container rootfs ext4 (read-only)
-   - `/dev/vdb` — scratch disk ext4 (read-write, overlay upper layer)
-   - `/dev/vdc` — workspace ext4 (hot-swapped per action)
-3. **Launch Firecracker** with `goinit` as init, kernel args like
-   `ro console=ttyS0 reboot=k panic=1 pci=off`
+- `/dev/vda` — container rootfs ext4 (read-only)
+- `/dev/vdb` — scratch disk ext4 (read-write, overlay upper layer)
+- `/dev/vdc` — workspace ext4 (hot-swapped per action)
 
-### Inside the VM (goinit, PID 1)
+**Inside the VM**: `goinit` (PID 1, a custom init — it does NOT run the
+container's `/init`) mounts `/dev` and `/sys`, assembles an overlayfs
+(`lowerdir=/container` from vda, `upperdir=/scratch/bbvmroot` on vdb), pivots
+root into it, mounts pseudo-filesystems (`/proc`, `/dev/pts`, `/dev/shm`,
+cgroup2, …), creates `/etc/hostname`, `/etc/hosts`, `/etc/resolv.conf`, sets
+the hardcoded PATH
+`/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`, then spawns
+`vmexec` (gRPC server on vsock port 11), `dockerd` (if `--init_dockerd`), and
+optionally a DNS server and VFS server.
 
-`goinit` is a custom init process — it does NOT run the container's `/init`.
-
-4. **Mount basics**: `/dev` (devtmpfs), `/sys` (sysfs)
-5. **Overlay assembly**:
-   - Mount `/dev/vda` → `/container` (read-only)
-   - Mount `/dev/vdb` → `/scratch` (read-write)
-   - Create overlayfs: `lowerdir=/container, upperdir=/scratch/bbvmroot` → `/mnt`
-6. **Pivot root** to `/mnt` — container rootfs is now `/`
-7. **Pseudo-filesystems**: `/proc`, `/dev/pts`, `/dev/shm`, cgroup2, etc.
-8. **Create `/etc/hostname`, `/etc/hosts`, `/etc/resolv.conf`**
-9. **Set PATH** to `/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`
-   (hardcoded in goinit)
-10. **Spawn children**:
-    - `vmexec` gRPC server on vsock port 11 (receives exec requests from host)
-    - `dockerd` (if `--init_dockerd` flag)
-    - Optional: DNS server, VFS server
-11. **Wait forever** (child reaper handles SIGCHLD)
-
-### Command execution (vmexec)
-
-The host communicates with the VM over vsock (virtio socket, no TCP needed):
-
-12. Host sends `Exec` gRPC → vmexec runs `os/exec.Command` with requested
-    args, env vars, working dir, and optional UID/GID switch
-13. **Workspace** is hot-mounted: `MountWorkspace` RPC → mounts `/dev/vdc` →
-    `/workspace`. Between actions: unmount, swap disk, remount.
+**Command execution (vmexec)**: the host talks to the VM over vsock (virtio
+socket, no TCP). An `Exec` gRPC makes vmexec run `os/exec.Command` with the
+requested args, env vars, working dir, and optional UID/GID switch. The
+workspace is hot-mounted per action: `MountWorkspace` RPC mounts `/dev/vdc` →
+`/workspace`; between actions: unmount, swap disk, remount.
 
 ### Implications for container images
 
 - **goinit does NOT run the container's `/init` or systemd.** NixOS activation
-  scripts, envfs, nix-ld systemd services — none of these run.
+  scripts, envfs, and the `programs.nix-ld.enable` systemd unit never run.
 - **PATH is hardcoded** to FHS paths. NixOS tools at
   `/run/current-system/sw/bin/` are not on PATH.
 - **envfs never starts** — `/bin/bash` must be a real file/symlink, not a FUSE
   resolution.
-- **nix-ld activation doesn't happen** — `programs.nix-ld.enable` creates a
-  systemd unit that never runs.
 - **`/etc/passwd` may be overwritten** — goinit creates its own
   `/etc/hostname`, `/etc/hosts`, `/etc/resolv.conf` during boot.
 - **Container rootfs is ext4** — all symlinks into `/nix/store/` resolve
   correctly (the whole store is in the ext4 image).
-- **NixOS glibc searches nix-store paths only** — it does NOT search
-  `/lib/x86_64-linux-gnu/`, `/usr/lib/`, or read `/etc/ld.so.cache` from the
-  FHS path. Any dynamically-linked binary downloaded at runtime (like Bazel
-  from bazelisk) will fail to find `libstdc++.so.6` unless `LD_LIBRARY_PATH`
-  is set or nix-ld is active.
-
-### `bb execute` vs `bb remote` Firecracker behavior
-
-Both use the same Firecracker boot sequence when
-`workload-isolation-type=firecracker` is set. `bb execute` without
-`-exec_properties=workload-isolation-type=firecracker` uses OCI containers
-instead (no VM, direct `runc`-style exec into the container rootfs).
+- **NixOS glibc searches nix-store paths only** — not
+  `/lib/x86_64-linux-gnu/`, `/usr/lib/`, or `/etc/ld.so.cache`. A
+  dynamically-linked binary downloaded at runtime (like Bazel from bazelisk)
+  fails to find `libstdc++.so.6` unless `LD_LIBRARY_PATH` is set or nix-ld is
+  active.
 
 ## Limitations
 
 ### `bb remote` only supports bazel commands, not bb commands
 
 `bb remote` dispatches recognized bazel subcommands (`build`, `test`, `query`,
-`cquery`, `aquery`, etc.) to the runner. Non-bazel commands like `mod` are not
-recognized. Use `--script` mode instead:
+`cquery`, `aquery`, …) to the runner. Non-bazel commands like `mod` are not
+recognized — use `--script`:
 
 ```bash
-# Does not work:
-bb remote mod explain protobuf
-
-# Use --script:
 bb remote --script 'bazel mod explain protobuf'
 ```
 
 ### Output stream separation
 
-Source: `cli/remotebazel/remotebazel.go` (`streamLogs`, `printLogs`), `cli/log/log.go`
+Source: `cli/remotebazel/remotebazel.go` (`streamLogs`, `printLogs`),
+`cli/log/log.go`
 
-| Source                                   | Destination                    |
-| ---------------------------------------- | ------------------------------ |
-| Remote Bazel output (event log chunks)   | **stdout** (`os.Stdout.Write`) |
-| CLI messages (`log.Printf`, `log.Warnf`) | **stderr** (Go default logger) |
-| ANSI cursor control (progress rewriting) | **stdout** (`fmt.Print`)       |
-
-Interactive mode (detected via `terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stderr)`):
-
-- **Interactive**: `streamLogs()` — polls `GetEventLogChunk()`, redraws "live"
-  chunks with ANSI cursor-up/delete-line escape sequences on stdout
-- **Non-interactive** (piped): `printLogs()` — waits for each chunk to finalize,
-  writes raw bytes to stdout, no ANSI escapes
+Remote Bazel output (event log chunks) and ANSI cursor control both go to
+**stdout**; CLI messages (`log.Printf`, `log.Warnf`) go to **stderr**.
+Interactive mode (`terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stderr)`):
+`streamLogs()` polls `GetEventLogChunk()`, redrawing "live" chunks with ANSI
+cursor escapes. Non-interactive (piped): `printLogs()` waits for each chunk to
+finalize and writes raw bytes, no ANSI escapes.
 
 **Extracting clean output programmatically**:
 
-1. **Pipe stdout** — non-interactive mode activates automatically when stdout is
-   not a TTY, producing clean bazel output on stdout with CLI noise on stderr:
+1. **Pipe stdout** — non-interactive mode activates when stdout is not a TTY,
+   producing clean bazel output on stdout with CLI noise on stderr:
+
    ```bash
    RESULT=$(bb remote query 'deps(//foo)' 2>/dev/null)
-   # or force non-interactive:
-   bb remote query 'deps(//foo)' | cat
    ```
+
 2. **`--invocation_id_file`** — write the invocation ID to a file, then fetch
    logs post-hoc via the BuildBuddy API. `bbr` does this automatically
    (`~/.cache/bbr/last_invocation_id`) and prints a post-run summary with
-   `bbapi` commands for fetching targets, logs, and artifacts.
+   `bbapi` commands.
 3. **`--script` + file redirect** — redirect bazel output to a file on the
-   runner, download via `--remote_download_regex`
+   runner, download via `--remote_download_regex`.
 
 ## Downloaded artifacts land under `bb-out/bazel-out/`, NOT `bb-out/bazel-bin/`
 
-When `bb remote build //pkg:name --remote_download_outputs=toplevel` (or
-`--remote_download_regex=...`) fetches build outputs back to the local
-workspace, they land at:
-
-```
-bb-out/bazel-out/<config>/bin/<pkg>/<name>
-```
-
-The `<config>` for our standard Linux x86_64 RBE builds (via
-`--config=rbe --config=ci` from `.github/actions/bb-remote/`) is
-`k8-fastbuild`. So `bb remote build //grocy_mcp:server_image.digest`
-lands at `bb-out/bazel-out/k8-fastbuild/bin/grocy_mcp/server_image.json.sha256`.
-
-**There is NO `bb-out/bazel-bin/<pkg>/<name>` convenience symlink.** That
-symlink only exists in local Bazel workspaces — it's created by Bazel's
-local runner, not by `bb remote`. Workflows that consume bb-remote-built
-artifacts on the runner side (e.g. `push-images.yml` after PR #1290)
-must use the full `bb-out/bazel-out/k8-fastbuild/bin/...` path.
-
-`bbr` follows the same layout, as shown in `CLAUDE.md`:
+Outputs fetched back by `--remote_download_outputs=toplevel` or
+`--remote_download_regex=...` land at
+`bb-out/bazel-out/<config>/bin/<pkg>/<name>`; `<config>` is `k8-fastbuild` for
+our standard Linux x86_64 RBE builds. **There is NO
+`bb-out/bazel-bin/<pkg>/<name>` convenience symlink** — it exists only in
+local Bazel workspaces. Consumers of bb-remote-built artifacts (e.g.
+`push-images.yml`) must use the full path:
 
 ```bash
 bbr build //:requirements --remote_download_regex='.*requirements\.out'
 cp bb-out/bazel-out/k8-fastbuild/bin/requirements.out requirements_bazel.txt
 ```
 
-## Key source files
-
-All paths relative to <https://github.com/buildbuddy-io/buildbuddy>.
-
-| File                                                                                                                                                                                                           | Purpose                                                                           |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| [`cli/cmd/bb/bb.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/cli/cmd/bb/bb.go)                                                                                                                 | Entry point; dispatches bb CLI commands before `ResolveArgs`                      |
-| [`cli/parser/parser.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/cli/parser/parser.go)                                                                                                         | `ResolveArgs` (rc reading + config expansion) vs `CanonicalizeArgs` (format only) |
-| [`cli/remotebazel/remotebazel.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/cli/remotebazel/remotebazel.go)                                                                                     | `bb remote` flag parsing, `RunRequest` construction, auto-config injection        |
-| [`enterprise/server/cmd/ci_runner/main.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/enterprise/server/cmd/ci_runner/main.go)                                                                   | Runner bootstrap, `buildbuddy.bazelrc` generation, Bazel invocation               |
-| [`enterprise/server/hostedrunner/hostedrunner.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/enterprise/server/hostedrunner/hostedrunner.go)                                                     | Runner service, processes `RunRequest`, handles remote headers                    |
-| [`proto/runner.proto`](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/runner.proto)                                                                                                             | `RunRequest` protobuf definition                                                  |
-| [`enterprise/server/cmd/goinit/main.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/enterprise/server/cmd/goinit/main.go)                                                                         | Firecracker VM init process (PID 1), mounts, pivot root, spawns vmexec            |
-| [`enterprise/server/vmexec/vmexec.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/enterprise/server/vmexec/vmexec.go)                                                                             | VM exec service: runs commands via gRPC over vsock, workspace mount/unmount       |
-| [`enterprise/server/remote_execution/containers/firecracker/firecracker.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/enterprise/server/remote_execution/containers/firecracker/firecracker.go) | Firecracker container orchestration, image conversion, VM lifecycle               |
-| [`cli/storage/storage.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/cli/storage/storage.go)                                                                                                     | `ConfigDir`, `CacheDir`, `.git/config [buildbuddy]` read/write                    |
-| [`cli/config/config.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/cli/config/config.go)                                                                                                         | `buildbuddy.yaml` loading (user + workspace), plugin/local-cache config           |
-| [`cli/login/login.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/cli/login/login.go)                                                                                                             | API key resolution (`BUILDBUDDY_API_KEY` env → `.git/config` → interactive login) |
-
 ## Server-side: how `Run` becomes an RE action
 
 Source: `enterprise/server/hostedrunner/hostedrunner.go`
 
-The `runnerService.Run()` RPC translates the bespoke `RunRequest` into a
-standard Remote Execution API action:
+`runnerService.Run()` translates the bespoke `RunRequest` into a standard
+Remote Execution API action:
 
-1. **Upload input root** — the ci_runner binary and supporting files go to CAS
-2. **Upload patches** — each `RepoState.Patch[]` blob is uploaded via bytestream,
-   producing CAS URIs passed as `--patch_uri` args to ci_runner
-3. **Serialize action** — the steps YAML is base64-encoded into
-   `--serialized_action` arg
-4. **Build `Command` proto** — ci_runner binary with args:
-   `--bes_backend`, `--cache_backend`, `--rbe_backend`, `--invocation_id`,
-   `--target_repo_url`, `--pushed_branch`, `--commit_sha`, `--patch_uri`, etc.
-5. **Call standard RE `Execute()`** — `ExecuteRequest` with the action digest,
-   `SkipCacheLookup: true`, `DigestFunction: BLAKE3`
-6. **Wait for first `Operation`** from the stream (ensures execution is created),
-   then return invocation ID to the CLI
+1. Uploads the input root (ci_runner + support files) to CAS, and each
+   `RepoState.Patch[]` blob via bytestream — CAS URIs become `--patch_uri`
+   args
+2. Base64-encodes the steps YAML into `--serialized_action`
+3. Builds a `Command` proto running ci_runner with backend endpoints
+   (`--bes_backend`, `--cache_backend`, `--rbe_backend`), repo state
+   (`--target_repo_url`, `--pushed_branch`, `--commit_sha`, `--patch_uri`),
+   and `--invocation_id`
+4. Calls standard RE `Execute()` (`SkipCacheLookup: true`,
+   `DigestFunction: BLAKE3`), waits for the first `Operation` (execution
+   created), returns the invocation ID to the CLI
 
 ### Client-side completion tracking
 
-The CLI uses **two parallel paths** to track the execution:
+The CLI tracks the execution over two parallel paths:
 
 - **BB bespoke API** (`BuildBuddyServiceClient`): `GetEventLogChunk` for live
   log streaming, `GetInvocation` for final invocation metadata, `GetExecution`
   to look up the execution ID, `CancelExecutions` on interrupt
 - **Standard RE API** (`ExecutionClient`): `WaitExecution` on the execution ID
-  to get the final `ExecuteResponse` (exit code)
+  for the final `ExecuteResponse` (exit code)
 
-Both are standard — the RE action is a normal execution on BB's infrastructure.
 The bespoke APIs exist because RE `WaitExecution` only provides `Operation`
 status updates, not live stdout or invocation-level metadata.
 
@@ -503,40 +386,28 @@ status updates, not live stdout or invocation-level metadata.
 
 Source: `cli/storage/storage.go`, `cli/config/config.go`, `cli/login/login.go`
 
-### Dotfiles
+Dotfiles:
 
-| File                                                                       | Purpose                                                       |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `$BUILDBUDDY_CONFIG_DIR/buildbuddy.yaml` (default `~/.config/buildbuddy/`) | Plugins, local cache config                                   |
-| `<workspace>/buildbuddy.yaml`                                              | Same schema, higher precedence                                |
-| `.git/config [buildbuddy]` section                                         | API key (`api-key`), remote-bazel remote name, default branch |
+- `$BUILDBUDDY_CONFIG_DIR/buildbuddy.yaml` (default `~/.config/buildbuddy/`) —
+  plugins, local cache config
+- `<workspace>/buildbuddy.yaml` — same schema, higher precedence
+- `.git/config [buildbuddy]` section — API key (`api-key`), remote-bazel
+  remote name, default branch
 
-Both YAML files support `plugins` (list of repos/paths) and `local_cache`
-(enabled, max_size, root_directory). Env vars in YAML are expanded via
-`os.ExpandEnv`.
+API key resolution order: `BUILDBUDDY_API_KEY` env → `.git/config` →
+interactive login.
 
-### Environment variables
+Environment variables:
 
-| Variable                   | Purpose                                                            |
-| -------------------------- | ------------------------------------------------------------------ |
-| `BUILDBUDDY_API_KEY`       | API key (checked before `.git/config`)                             |
-| `BUILDBUDDY_CONFIG_DIR`    | Override config dir                                                |
-| `BUILDBUDDY_CACHE_DIR`     | Override cache dir                                                 |
-| `BB_USE_BAZEL_VERSION`     | Override Bazel version (takes precedence over `USE_BAZEL_VERSION`) |
-| `BB_DISABLE_SIDECAR`       | Set to `1`/`true` to disable the local sidecar                     |
-| `BB_SIDECAR_ARGS`          | Extra args passed to the sidecar process                           |
-| `BB_WATCHER_LOCKFILE_PATH` | Override watcher lockfile path                                     |
-| `GIT_REPO_DEFAULT_BRANCH`  | Override default branch detection for `bb remote`                  |
-| `BAZELISK_SKIP_WRAPPER`    | Set to `true` to make bb behave as plain bazelisk                  |
-| `CI`                       | Disables sidecar when truthy                                       |
+- `BUILDBUDDY_API_KEY` — API key
+- `BUILDBUDDY_CONFIG_DIR` / `BUILDBUDDY_CACHE_DIR` — override config/cache dir
+- `BB_USE_BAZEL_VERSION` — override Bazel version (takes precedence over
+  `USE_BAZEL_VERSION`)
+- `BB_DISABLE_SIDECAR` — `1`/`true` disables the local sidecar; `CI` truthy
+  also disables it
+- `GIT_REPO_DEFAULT_BRANCH` — override default branch detection for
+  `bb remote`
+- `BAZELISK_SKIP_WRAPPER` — `true` makes bb behave as plain bazelisk
 
 **None of these inject Bazel flags.** For `bb remote`, Bazel flags come only
 from the CLI command line and the workspace `.bazelrc` (loaded by ci_runner).
-
-## Future: custom runner orchestration
-
-`bb remote` output is verbose and not designed for programmatic consumption.
-Long-term, we could implement our own runner orchestration that calls
-BuildBuddy's hosted runner API directly (via the `RunWorkflow` / `Run` RPCs
-in `runner.proto`), giving full control over output format, invocation ID
-extraction, and post-run reporting. This would replace `bb remote` in `bbr`.
