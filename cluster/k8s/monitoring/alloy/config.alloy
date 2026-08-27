@@ -4,6 +4,24 @@
 prometheus.operator.servicemonitors "cluster" {
   kubernetes_role = "endpointslice"
 
+  // The kube-prometheus-stack ServiceMonitors for apiserver, kubelet, coredns,
+  // kube-controller-manager and kube-scheduler authenticate with the pod's own
+  // service-account token and CA at their well-known paths. Alloy rejects any
+  // ServiceMonitor referencing a local file -- `bearerTokenFile`, and
+  // `tlsConfig.{ca,cert,key}File` -- unless this is set.
+  //
+  // A rejected ServiceMonitor produces no scrape config at all, so there is no
+  // `up` series to fall to 0 and TargetDown cannot fire: the only trace is one
+  // error line in Alloy's own log. That is how the entire control-plane and
+  // cAdvisor surface (`container_cpu_usage_seconds_total`, `kubelet_*`,
+  // `apiserver_request_*`, `coredns_*`) went missing while every rule built on
+  // it kept evaluating against no data.
+  //
+  // The guard is for multi-tenant clusters, where an untrusted party can create
+  // a ServiceMonitor and make Alloy read arbitrary files off its own disk. Here
+  // ServiceMonitors arrive only through Flux.
+  allow_arbitrary_file_access = true
+
   scrape {
     default_scrape_interval = "60s"
   }
