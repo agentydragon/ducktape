@@ -36,7 +36,14 @@ from haku.console.grant_principal import (
     RequestPrincipal,
     SessionGrantPrincipal,
 )
-from haku.console.http_grant_models import HttpGrantSpec, HttpGrantStatus, HttpMethod, HttpOrigin, HttpScheme
+from haku.console.http_grant_models import (
+    HttpGrantSpec,
+    HttpGrantStatus,
+    HttpMethod,
+    HttpOrigin,
+    HttpRequestCoverage,
+    HttpScheme,
+)
 from haku.console.http_grant_service import HttpGrantService
 from haku.console.mcp_execution import AgentMcpExecutionCaller, McpExecutionContext, OperatorMcpExecutionCaller
 from haku.console.tools.http_grants import HttpToolsService, build_mcp
@@ -44,8 +51,10 @@ from haku.console.tools.http_grants import HttpToolsService, build_mcp
 _NOW = datetime(2026, 8, 27, tzinfo=UTC)
 _ORIGIN = HttpOrigin(scheme=HttpScheme.HTTPS, host="grocy.example", port=443)
 _OTHER_ORIGIN = HttpOrigin(scheme=HttpScheme.HTTP, host="mirror.example", port=80)
-_SPEC = HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}))
-_OTHER_SPEC = HttpGrantSpec(origin=_OTHER_ORIGIN, methods=frozenset({HttpMethod.GET, HttpMethod.POST}))
+_SPEC = HttpGrantSpec(origin=_ORIGIN, coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})))
+_OTHER_SPEC = HttpGrantSpec(
+    origin=_OTHER_ORIGIN, coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET, HttpMethod.POST}))
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -309,7 +318,9 @@ def test_grants_admit_the_matcher_only_for_covered_requests(console: _Console) -
     """End to end through the real store: what create_grant mints is what match_request honors."""
 
     context = console.agent_context()
-    spec = HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}), path_regex="/api/.*")
+    spec = HttpGrantSpec(
+        origin=_ORIGIN, coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET}), path_regex="/api/.*")
+    )
 
     async def exercise() -> None:
         (grant,) = await console.service.create_grants(

@@ -34,6 +34,7 @@ from haku.console.http_grant_models import (
     HttpGrantSourceError,
     HttpGrantSpec,
     HttpOrigin,
+    HttpRequestCoverage,
     derive_status,
 )
 from haku.console.tool_calls import ToolCallStatus
@@ -49,8 +50,7 @@ def _row_to_model(row: HttpGrantRow, *, now: datetime.datetime) -> HttpGrant:
         source_tool_call_id=row.source_tool_call_id,
         spec=HttpGrantSpec(
             origin=HttpOrigin(scheme=row.scheme, host=row.host, port=row.port),
-            methods=row.methods,
-            path_regex=row.path_regex,
+            coverage=HttpRequestCoverage(methods=row.methods, path_regex=row.path_regex),
             credential_handle=row.credential_handle,
         ),
         status=derive_status(
@@ -172,8 +172,8 @@ class PostgresHttpGrantRepository:
                     scheme=spec.origin.scheme,
                     host=spec.origin.host,
                     port=spec.origin.port,
-                    methods=spec.methods,
-                    path_regex=spec.path_regex,
+                    methods=spec.coverage.methods,
+                    path_regex=spec.coverage.path_regex,
                     credential_handle=spec.credential_handle,
                     created_at=created_at,
                     expires_at=expires_at,

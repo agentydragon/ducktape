@@ -113,8 +113,9 @@ class HttpOrigin(BaseModel):
 
 class HttpRequestCoverage(BaseModel):
     """The request-matching half of an allowance at an already-matched origin: a method set plus
-    an optional path pin. Shared by temporary grants and deploy-managed standing policy entries
-    (`http_decide_config.EgressStandingPolicyEntry`) so both speak one matcher vocabulary."""
+    an optional path pin. Held as a field by temporary grants (`HttpGrantSpec`) and deploy-managed
+    standing policy entries (`http_decide_config.EgressStandingPolicyEntry`) so both speak one
+    matcher vocabulary."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -148,11 +149,14 @@ class HttpRequestCoverage(BaseModel):
         return self.path_regex is None or re.fullmatch(self.path_regex, path) is not None
 
 
-class HttpGrantSpec(HttpRequestCoverage):
-    """One requested coverage item: an exact origin, its permitted methods, an optional path pin,
-    and optionally the Console-owned credential the grant redeems there."""
+class HttpGrantSpec(BaseModel):
+    """One requested coverage item: an exact origin, the request coverage at it, and optionally
+    the Console-owned credential the grant redeems there."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     origin: HttpOrigin
+    coverage: HttpRequestCoverage = Field(description="Method set and optional path pin at the origin.")
     credential_handle: str | None = Field(
         default=None,
         max_length=64,

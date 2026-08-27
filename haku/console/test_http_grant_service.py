@@ -23,6 +23,7 @@ from haku.console.http_grant_models import (
     HttpGrantStatus,
     HttpMethod,
     HttpOrigin,
+    HttpRequestCoverage,
     HttpScheme,
     derive_status,
 )
@@ -34,8 +35,8 @@ _OTHER_AGENT = UUID("10000000-0000-4000-8000-000000000002")
 _GRANT_PRINCIPAL = AgentGrantPrincipal(agent_id=_AGENT)
 _ORIGIN = HttpOrigin(scheme=HttpScheme.HTTPS, host="grocy.example", port=443)
 _OTHER_ORIGIN = HttpOrigin(scheme=HttpScheme.HTTPS, host="api.example", port=443)
-_SPEC = HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}))
-_OTHER_SPEC = HttpGrantSpec(origin=_OTHER_ORIGIN, methods=frozenset({HttpMethod.GET}))
+_SPEC = HttpGrantSpec(origin=_ORIGIN, coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})))
+_OTHER_SPEC = HttpGrantSpec(origin=_OTHER_ORIGIN, coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})))
 
 
 def _request_principal(agent_id: UUID = _AGENT, session_id: UUID | None = None) -> RequestPrincipal:
@@ -178,7 +179,11 @@ async def test_match_covers_only_the_exact_origin_method_and_path() -> None:
         owner_agent_id=_AGENT,
         grant_principal=_GRANT_PRINCIPAL,
         source_tool_call_id="tool-call-1",
-        grants=(HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}), path_regex="/api/.*"),),
+        grants=(
+            HttpGrantSpec(
+                origin=_ORIGIN, coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET}), path_regex="/api/.*")
+            ),
+        ),
         expires_at=_NOW + timedelta(minutes=5),
     )
 
@@ -216,7 +221,11 @@ async def test_tunnel_matches_the_exact_origin_ignoring_method_and_path_coverage
         owner_agent_id=_AGENT,
         grant_principal=_GRANT_PRINCIPAL,
         source_tool_call_id="tool-call-1",
-        grants=(HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.POST}), path_regex="/api/.*"),),
+        grants=(
+            HttpGrantSpec(
+                origin=_ORIGIN, coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.POST}), path_regex="/api/.*")
+            ),
+        ),
         expires_at=_NOW + timedelta(minutes=5),
     )
 
@@ -262,7 +271,13 @@ async def test_match_reports_credential_handles_from_every_matching_grant() -> N
         owner_agent_id=_AGENT,
         grant_principal=_GRANT_PRINCIPAL,
         source_tool_call_id="tool-call-1",
-        grants=(HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}), credential_handle="github-bot"),),
+        grants=(
+            HttpGrantSpec(
+                origin=_ORIGIN,
+                coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})),
+                credential_handle="github-bot",
+            ),
+        ),
         expires_at=_NOW + timedelta(minutes=50),
     )
     (reachability,) = await service.create_grants(
@@ -358,7 +373,7 @@ async def test_create_many_enforces_the_tool_batch_limit_in_the_service() -> Non
             grants=tuple(
                 HttpGrantSpec(
                     origin=HttpOrigin(scheme=HttpScheme.HTTPS, host=f"host{index}.example", port=443),
-                    methods=frozenset({HttpMethod.GET}),
+                    coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})),
                 )
                 for index in range(33)
             ),

@@ -19,7 +19,7 @@ from haku.console.http_decide_config import (
     EgressStandingPolicyEntry,
     load_egress_decide,
 )
-from haku.console.http_grant_models import HttpMethod, HttpOrigin, HttpScheme
+from haku.console.http_grant_models import HttpMethod, HttpOrigin, HttpRequestCoverage, HttpScheme
 
 _AGENT = UUID("10000000-0000-4000-8000-000000000001")
 _PROXY_TOKEN = "proxy-identity-token"
@@ -137,11 +137,16 @@ def test_second_presentation_shares_the_value_env_var(monkeypatch: pytest.Monkey
 
 
 def _standing_entry(**overrides: Any) -> EgressStandingPolicyEntry:
+    """Build a standing entry; ``methods``/``path_regex`` overrides populate the nested coverage."""
+    coverage_fields: dict[str, Any] = {"methods": frozenset({HttpMethod.GET})}
+    for key in ("methods", "path_regex"):
+        if key in overrides:
+            coverage_fields[key] = overrides.pop(key)
     fields: dict[str, Any] = {
         "id": "haku-github-api",
         "agent_ids": frozenset({_AGENT}),
         "origins": frozenset({_ORIGIN}),
-        "methods": frozenset({HttpMethod.GET}),
+        "coverage": HttpRequestCoverage(**coverage_fields),
     }
     return EgressStandingPolicyEntry(**{**fields, **overrides})
 
@@ -167,7 +172,7 @@ def test_standing_policy_entries_validate_fail_loud() -> None:
                 "id": "wild",
                 "agent_ids": [str(_AGENT)],
                 "origins": [{"scheme": "https", "host": "*.github.com", "port": 443}],
-                "methods": ["GET"],
+                "coverage": {"methods": ["GET"]},
             }
         )
 
@@ -225,13 +230,15 @@ def test_github_spike_standing_config(monkeypatch: pytest.MonkeyPatch) -> None:
                     agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
                     origins:
                       - {scheme: https, host: api.github.com, port: 443}
-                    methods: [DELETE, GET, HEAD, PATCH, POST, PUT]
+                    coverage:
+                      methods: [DELETE, GET, HEAD, PATCH, POST, PUT]
                     credential_handle: github-bot
                   - id: haku-github-git
                     agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
                     origins:
                       - {scheme: https, host: github.com, port: 443}
-                    methods: [GET, POST]
+                    coverage:
+                      methods: [GET, POST]
                     credential_handle: github-bot
                 """
             )
@@ -246,8 +253,8 @@ def test_github_spike_standing_config(monkeypatch: pytest.MonkeyPatch) -> None:
     assert (api_entry.id, git_entry.id) == ("haku-github-api", "haku-github-git")
     # Absent path_regex covers every path plus query — git smart HTTP needs
     # /info/refs?service=git-upload-pack through to the pack endpoints.
-    assert git_entry.path_regex is None
-    assert git_entry.methods == frozenset({HttpMethod.GET, HttpMethod.POST})
+    assert git_entry.coverage.path_regex is None
+    assert git_entry.coverage.methods == frozenset({HttpMethod.GET, HttpMethod.POST})
     # The registry binding must actually redeem what the standing entries admit: same Agent set,
     # every standing origin within the credential's redemption origins.
     (credential,) = loaded.credentials

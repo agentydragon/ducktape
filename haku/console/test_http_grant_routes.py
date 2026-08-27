@@ -15,7 +15,15 @@ from haku.console import operator_auth
 from haku.console.agents.enrollment import OperatorAgent
 from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
 from haku.console.grant_principal import AgentGrantPrincipal
-from haku.console.http_grant_models import HttpGrant, HttpGrantSpec, HttpGrantStatus, HttpMethod, HttpOrigin, HttpScheme
+from haku.console.http_grant_models import (
+    HttpGrant,
+    HttpGrantSpec,
+    HttpGrantStatus,
+    HttpMethod,
+    HttpOrigin,
+    HttpRequestCoverage,
+    HttpScheme,
+)
 from haku.console.http_grant_routes import router
 from haku.console.operator_auth import require_operator_mutation_origin
 from haku.console.tool_call_actor import OperatorActor
@@ -48,8 +56,7 @@ def _grant() -> HttpGrant:
         source_tool_call_id="tc_0123456789abcdef01234567",
         spec=HttpGrantSpec(
             origin=HttpOrigin(scheme=HttpScheme.HTTPS, host="grocy.example", port=443),
-            methods=frozenset({HttpMethod.GET}),
-            path_regex="/api/.*",
+            coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET}), path_regex="/api/.*"),
         ),
         status=HttpGrantStatus.ACTIVE,
         created_at=NOW - datetime.timedelta(minutes=5),
@@ -107,8 +114,7 @@ def test_lists_only_the_authenticated_operators_agents_with_provenance() -> None
                     "source_tool_call_id": "tc_0123456789abcdef01234567",
                     "spec": {
                         "origin": {"scheme": "https", "host": "grocy.example", "port": 443},
-                        "methods": ["GET"],
-                        "path_regex": "/api/.*",
+                        "coverage": {"methods": ["GET"], "path_regex": "/api/.*"},
                         "credential_handle": None,
                     },
                     "status": "active",

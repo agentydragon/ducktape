@@ -23,18 +23,19 @@ from haku.console.http_grant_models import (
     HttpGrantStatus,
     HttpMethod,
     HttpOrigin,
+    HttpRequestCoverage,
     HttpScheme,
 )
 from haku.console.http_grant_repository import PostgresHttpGrantRepository
 
 _NOW = datetime(2026, 8, 27, 0, 0, tzinfo=UTC)
 _SPEC = HttpGrantSpec(
-    origin=HttpOrigin(scheme=HttpScheme.HTTPS, host="grocy.example", port=443), methods=frozenset({HttpMethod.GET})
+    origin=HttpOrigin(scheme=HttpScheme.HTTPS, host="grocy.example", port=443),
+    coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})),
 )
 _OTHER_SPEC = HttpGrantSpec(
     origin=HttpOrigin(scheme=HttpScheme.HTTPS, host="api.example", port=8443),
-    methods=frozenset({HttpMethod.GET, HttpMethod.POST}),
-    path_regex="/v1/.*",
+    coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET, HttpMethod.POST}), path_regex="/v1/.*"),
     credential_handle="github-bot",
 )
 

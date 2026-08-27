@@ -228,7 +228,7 @@ class HttpGrantService:
             for grant in await self._repository.active_for_request_principal(
                 request_principal=request_principal, now=self._now()
             )
-            if grant.spec.origin == origin and grant.spec.covers(method=method, path=path)
+            if grant.spec.origin == origin and grant.spec.coverage.covers(method=method, path=path)
         ]
         if not matching:
             return HttpRequestDenied(reason="no active HTTP grant covers the request")

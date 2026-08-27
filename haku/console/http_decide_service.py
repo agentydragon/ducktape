@@ -269,7 +269,7 @@ class HttpDecideService:
             for entry in self._standing_policies
             if principal.agent_id in entry.agent_ids
             and origin in entry.origins
-            and (isinstance(canonical, _Tunnel) or entry.covers(method=canonical.method, path=canonical.path))
+            and (isinstance(canonical, _Tunnel) or entry.coverage.covers(method=canonical.method, path=canonical.path))
         ]
         if not matching:
             return None

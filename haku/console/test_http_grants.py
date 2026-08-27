@@ -16,6 +16,7 @@ from haku.console.http_grant_models import (
     HttpGrantStatus,
     HttpMethod,
     HttpOrigin,
+    HttpRequestCoverage,
     HttpScheme,
     derive_status,
 )
@@ -29,8 +30,15 @@ def origin(**overrides: object) -> HttpOrigin:
     return HttpOrigin.model_validate(payload)
 
 
+def coverage(**overrides: object) -> HttpRequestCoverage:
+    payload: dict[str, object] = {"methods": [HttpMethod.GET], **overrides}
+    return HttpRequestCoverage.model_validate(payload)
+
+
 def spec(**overrides: object) -> HttpGrantSpec:
-    payload: dict[str, object] = {"origin": origin(), "methods": [HttpMethod.GET], **overrides}
+    """Build a grant spec; ``methods``/``path_regex`` overrides populate the nested coverage."""
+    coverage_fields = {key: overrides.pop(key) for key in ("methods", "path_regex") if key in overrides}
+    payload: dict[str, object] = {"origin": origin(), "coverage": coverage(**coverage_fields), **overrides}
     return HttpGrantSpec.model_validate(payload)
 
 
@@ -113,29 +121,29 @@ def test_origin_serializes_canonically() -> None:
     }
 
 
-def test_spec_requires_at_least_one_method_and_sorts_them_canonically() -> None:
+def test_coverage_requires_at_least_one_method_and_sorts_them_canonically() -> None:
     with pytest.raises(ValidationError):
-        spec(methods=[])
-    dumped = spec(methods=[HttpMethod.POST, HttpMethod.GET, HttpMethod.DELETE]).model_dump(mode="json")
+        coverage(methods=[])
+    dumped = coverage(methods=[HttpMethod.POST, HttpMethod.GET, HttpMethod.DELETE]).model_dump(mode="json")
     assert dumped["methods"] == ["DELETE", "GET", "POST"]
 
 
-def test_spec_rejects_uncompilable_or_blank_path_regex() -> None:
+def test_coverage_rejects_uncompilable_or_blank_path_regex() -> None:
     with pytest.raises(ValidationError, match="not a valid regular expression"):
-        spec(path_regex="(unclosed")
+        coverage(path_regex="(unclosed")
     with pytest.raises(ValidationError):
-        spec(path_regex="")
+        coverage(path_regex="")
 
 
-def test_spec_coverage_requires_method_and_full_path_match() -> None:
-    coverage = spec(methods=[HttpMethod.GET, HttpMethod.HEAD], path_regex="/repos/agentydragon/.*")
-    assert coverage.covers(method=HttpMethod.GET, path="/repos/agentydragon/ducktape")
-    assert coverage.covers(method=HttpMethod.HEAD, path="/repos/agentydragon/")
-    assert not coverage.covers(method=HttpMethod.POST, path="/repos/agentydragon/ducktape")
+def test_coverage_requires_method_and_full_path_match() -> None:
+    pinned = coverage(methods=[HttpMethod.GET, HttpMethod.HEAD], path_regex="/repos/agentydragon/.*")
+    assert pinned.covers(method=HttpMethod.GET, path="/repos/agentydragon/ducktape")
+    assert pinned.covers(method=HttpMethod.HEAD, path="/repos/agentydragon/")
+    assert not pinned.covers(method=HttpMethod.POST, path="/repos/agentydragon/ducktape")
     # fullmatch, not search: a prefix or infix hit is not coverage.
-    assert not coverage.covers(method=HttpMethod.GET, path="/evil/repos/agentydragon/x")
-    assert not coverage.covers(method=HttpMethod.GET, path="/repos")
-    unpinned = spec(methods=[HttpMethod.GET])
+    assert not pinned.covers(method=HttpMethod.GET, path="/evil/repos/agentydragon/x")
+    assert not pinned.covers(method=HttpMethod.GET, path="/repos")
+    unpinned = coverage(methods=[HttpMethod.GET])
     assert unpinned.covers(method=HttpMethod.GET, path="/anything")
 
 

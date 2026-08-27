@@ -31,7 +31,7 @@ from haku.console.http_decide_config import (
     LoadedFenceCredential,
 )
 from haku.console.http_decide_service import HttpDecideService, HttpDecideUnavailableError
-from haku.console.http_grant_models import HttpGrantSpec, HttpMethod, HttpOrigin, HttpScheme
+from haku.console.http_grant_models import HttpGrantSpec, HttpMethod, HttpOrigin, HttpRequestCoverage, HttpScheme
 from haku.console.http_grant_repository import PostgresHttpGrantRepository
 from haku.console.http_grant_service import HttpGrantService
 from haku.egress.decision import (
@@ -73,11 +73,16 @@ def _github_credential(agent_id: UUID, **overrides: Any) -> LoadedEgressCredenti
 
 
 def _standing_entry(agent_id: UUID, **overrides: Any) -> EgressStandingPolicyEntry:
+    """Build a standing entry; ``methods``/``path_regex`` overrides populate the nested coverage."""
+    coverage_fields: dict[str, Any] = {"methods": frozenset({HttpMethod.GET})}
+    for key in ("methods", "path_regex"):
+        if key in overrides:
+            coverage_fields[key] = overrides.pop(key)
     fields: dict[str, Any] = {
         "id": "api-standing",
         "agent_ids": frozenset({agent_id}),
         "origins": frozenset({_ORIGIN}),
-        "methods": frozenset({HttpMethod.GET}),
+        "coverage": HttpRequestCoverage(**coverage_fields),
     }
     return EgressStandingPolicyEntry(**{**fields, **overrides})
 
@@ -178,9 +183,14 @@ def test_proxy_bearer_and_fence_identity_gate_evaluation(make_client: Any) -> No
 def test_grant_scoped_verdicts_against_stored_grants(make_client: Any) -> None:
     with make_client() as client:
         harness = _harness(client)
-        prefix_spec = HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}), path_regex="/api/.*")
+        prefix_spec = HttpGrantSpec(
+            origin=_ORIGIN, coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET}), path_regex="/api/.*")
+        )
         exact_origin = HttpOrigin(scheme=HttpScheme.HTTPS, host="exact.example", port=443)
-        exact_spec = HttpGrantSpec(origin=exact_origin, methods=frozenset({HttpMethod.GET}), path_regex="/api/items")
+        exact_spec = HttpGrantSpec(
+            origin=exact_origin,
+            coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET}), path_regex="/api/items"),
+        )
         prefix_grant_id, _ = _create_grants(
             client, harness, prefix_spec, exact_spec, expires_at=_NOW + timedelta(minutes=30)
         )
@@ -224,9 +234,13 @@ def test_grant_scoped_verdicts_against_stored_grants(make_client: Any) -> None:
 def test_connect_tunnel_admission(make_client: Any) -> None:
     with make_client() as client:
         harness = _harness(client)
-        https_spec = HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.POST}), path_regex="/api/.*")
+        https_spec = HttpGrantSpec(
+            origin=_ORIGIN, coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.POST}), path_regex="/api/.*")
+        )
         cleartext_origin = HttpOrigin(scheme=HttpScheme.HTTP, host="plain.example", port=80)
-        cleartext_spec = HttpGrantSpec(origin=cleartext_origin, methods=frozenset({HttpMethod.GET}))
+        cleartext_spec = HttpGrantSpec(
+            origin=cleartext_origin, coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET}))
+        )
         https_grant_id, _ = _create_grants(
             client, harness, https_spec, cleartext_spec, expires_at=_NOW + timedelta(minutes=30)
         )
@@ -294,7 +308,9 @@ def test_standing_wins_over_a_matching_grant(make_client: Any) -> None:
         (grant_id,) = _create_grants(
             client,
             harness,
-            HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET, HttpMethod.POST})),
+            HttpGrantSpec(
+                origin=_ORIGIN, coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET, HttpMethod.POST}))
+            ),
             expires_at=_NOW + timedelta(minutes=30),
         )
         decide = partial(client.portal.call, harness.decide.decide)
@@ -445,7 +461,11 @@ def test_standing_unresolvable_credential_degrades(make_client: Any, caplog: pyt
 def test_credentialed_grant_redeems_the_substitution(make_client: Any) -> None:
     with make_client() as client:
         harness = _harness(client, credentials=lambda agent_id: [_github_credential(agent_id)])
-        spec = HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}), credential_handle="github-bot")
+        spec = HttpGrantSpec(
+            origin=_ORIGIN,
+            coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})),
+            credential_handle="github-bot",
+        )
         (grant_id,) = _create_grants(client, harness, spec, expires_at=_NOW + timedelta(minutes=30))
         decide = partial(client.portal.call, harness.decide.decide)
 
@@ -468,7 +488,7 @@ def test_credentialed_grant_redeems_the_substitution(make_client: Any) -> None:
         (reachability_id,) = _create_grants(
             client,
             harness,
-            HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET})),
+            HttpGrantSpec(origin=_ORIGIN, coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET}))),
             expires_at=_NOW + timedelta(minutes=10),
         )
         combined = decide(_request(path="/repos/agentydragon/ducktape"))
@@ -483,7 +503,11 @@ def test_connect_tunnel_admission_carries_no_substitutions(make_client: Any) -> 
     # individually and redeems there.
     with make_client() as client:
         harness = _harness(client, credentials=lambda agent_id: [_github_credential(agent_id)])
-        spec = HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}), credential_handle="github-bot")
+        spec = HttpGrantSpec(
+            origin=_ORIGIN,
+            coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})),
+            credential_handle="github-bot",
+        )
         _create_grants(client, harness, spec, expires_at=_NOW + timedelta(minutes=30))
 
         allowed = client.portal.call(partial(harness.decide.decide, _request(method="CONNECT", scheme=None, path=None)))
@@ -514,9 +538,21 @@ def test_unresolvable_credential_admits_without_substitution(
         _create_grants(
             client,
             harness,
-            HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}), credential_handle="github-bot"),
-            HttpGrantSpec(origin=locked_origin, methods=frozenset({HttpMethod.GET}), credential_handle="origin-locked"),
-            HttpGrantSpec(origin=ghost_origin, methods=frozenset({HttpMethod.GET}), credential_handle="ghost"),
+            HttpGrantSpec(
+                origin=_ORIGIN,
+                coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})),
+                credential_handle="github-bot",
+            ),
+            HttpGrantSpec(
+                origin=locked_origin,
+                coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})),
+                credential_handle="origin-locked",
+            ),
+            HttpGrantSpec(
+                origin=ghost_origin,
+                coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})),
+                credential_handle="ghost",
+            ),
             expires_at=_NOW + timedelta(minutes=30),
         )
         decide = partial(client.portal.call, harness.decide.decide)
@@ -537,7 +573,7 @@ def test_unresolvable_credential_admits_without_substitution(
 def test_earliest_expiry_bounds_the_admission(make_client: Any) -> None:
     with make_client() as client:
         harness = _harness(client)
-        spec = HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}))
+        spec = HttpGrantSpec(origin=_ORIGIN, coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})))
         (later_id,) = _create_grants(client, harness, spec, expires_at=_NOW + timedelta(minutes=50))
         (earlier_id,) = _create_grants(client, harness, spec, expires_at=_NOW + timedelta(minutes=10))
         assert later_id != earlier_id
@@ -573,7 +609,7 @@ def test_prohibited_resolved_answer_denies_each_class(make_client: Any) -> None:
     """Every always-prohibited class denies with no grantable scope, despite a covering grant."""
     with make_client() as client:
         harness = _harness(client)
-        spec = HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}))
+        spec = HttpGrantSpec(origin=_ORIGIN, coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})))
         _create_grants(client, harness, spec, expires_at=_NOW + timedelta(minutes=30))
         decide = partial(client.portal.call, harness.decide.decide)
 
@@ -606,7 +642,7 @@ def test_mixed_public_and_prohibited_answer_denies_whole(make_client: Any) -> No
     """
     with make_client() as client:
         harness = _harness(client)
-        spec = HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}))
+        spec = HttpGrantSpec(origin=_ORIGIN, coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})))
         _create_grants(client, harness, spec, expires_at=_NOW + timedelta(minutes=30))
 
         decision = client.portal.call(
@@ -631,7 +667,7 @@ def test_configured_prohibited_cidrs_extend_the_always_on_classes(make_client: A
         fenced = _harness(
             client, prohibited_cidrs=frozenset({IPv4Network("100.64.0.0/10"), IPv6Network("64:ff9b::/96")})
         )
-        spec = HttpGrantSpec(origin=_ORIGIN, methods=frozenset({HttpMethod.GET}))
+        spec = HttpGrantSpec(origin=_ORIGIN, coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})))
         _create_grants(client, fenced, spec, expires_at=_NOW + timedelta(minutes=30))
         cgnat = IPv4Address("100.64.9.9")
         nat64 = IPv6Address("64:ff9b::a00:1")
