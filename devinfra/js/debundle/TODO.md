@@ -11,7 +11,6 @@ plans and evidence live here:
 - <plans/selector_constraint_model.md> — P0 selector solver design, gates, and
   real-spec evidence queue.
 - <plans/automated_spec_workflows.md> — automation-first CLI/workflow design.
-- <CLI_DOGFOOD.md> — command UX and scripting-safety gaps from real workflows.
 - <SELECTOR_BUGS.md> — matcher/diagnostic bugs with anonymized examples.
 - <ARCHITECTURE_BACKLOG.md> — deeper refactors, urgent only when they block this
   queue.
@@ -160,11 +159,60 @@ The read-off minimizer's completed design and research notes were pruned from
    prove-gate fan-out. Profile evidence lives in
    <debug/selector_minimizer_perf.md>.
 
-## Code refactor / dedup opportunities (2026-06-17 survey)
+## Code refactor / dedup opportunities
 
-Production-code (non-test) dedup/cleanup options surfaced by a codebase survey.
-Calibrated by (LOC saved × safety). Closed refactors live in git history; this
-section tracks only remaining options.
+Production-code (non-test) dedup/cleanup options, calibrated by
+(LOC saved × safety). Closed refactors live in git history; this section
+tracks only remaining options.
+
+**Structural findings (full-package review):**
+
+1. `realizability/mod.rs` — extract `gate_perf_counters` (~490-line `pub mod`).
+   Entangled with index internals (`use super::*`, `pub(super)` recording APIs
+   called from `RealizabilityIndex` / `IncrementalQuotient` query methods, and
+   the timing-only `IncrementalQuotient::base_snapshot_stale` shadow state); a
+   clean move needs a narrow recording trait first, not just a file move.
+2. `vendor/mod.rs` further split (~1.3k lines + tests remain after the
+   emission/manifests/passthrough/plan/strip/validate/wrappers extraction):
+   package/subpath resolution helpers, export-surface collection,
+   `MaterializedOutputChunkIndex`, the shared import factories
+   (`DeferredImport` / `IdentRewriteTarget` / `PartialSwapIdentRewriter` and
+   the `make_*` constructors), and the post-strip consumer scan are each
+   liftable.
+3. Two parallel top-level fact extractors:
+   `program_analysis.rs::analyze_program_shallow` keeps its own traversal and
+   `classify_top_level_decl` alongside the `facts/` walk; the two rule sets
+   can drift independently. Fold the shallow extractor into the facts
+   traversal or derive its records from `StatementFacts`.
+4. `lowering/lower.rs` — extract the remaining inline phases of `lower_chunk`
+   (naturalization, disambiguation, import planning, the per-module loop);
+   each needs substantial captured state from `LowerChunkInputs` (15–20
+   fields). Related: `lowering/mod.rs` carries a ~95-line import block from
+   wildcard `use super::*` in every sub-module.
+5. `output_layout.rs` — replace the 10 identical `self.root.join(CONSTANT)`
+   accessors with a data-driven `report_path(name)` plus constants.
+6. Encapsulation/type design: BTree collections in hot-path graph structures
+   (`rollback_graph.rs`, `artifact.rs`, `realizability/`) where hash-based
+   would be measurably faster — document determinism where it is required;
+   make `DepKind`'s constraining vs non-constraining axis
+   (`constrains_init_order()`) a first-class type distinction; the three-layer
+   edge representation (domain graph → rollback graph → realizability index)
+   has fragile bridging; `pub(super)` blankets `lowering/` field and function
+   visibility; `SourceImportResolution = Option<(String, String, String)>`
+   (`plan_references.rs`) needs a named struct.
+7. Tests: `e2e/comma_list_owner_split_test.rs` asserts emitted shapes via
+   whitespace OR-chains — parse or normalize instead;
+   `peel/quotient_integration_test.rs` references share too much code with the
+   system under test (most verdicts compare against the kernel's own
+   `project_partition`; only `replay_partition` rebuilds independently, and
+   compares only `cycle_set()`), and randomized merge/partition sequences and
+   gate-residual promotion transitions are uncovered.
+8. `ChunkBundle` ownership ping-pong through every stage
+   (`artifact = result.artifact`) — cosmetic now that each stage is a pure
+   function.
+
+SWC-reuse evaluations (what to adopt, what was rejected and why):
+<docs/swc_reuse.md>.
 
 **Real value but needs design work / behavior-risk:**
 
@@ -417,10 +465,9 @@ mock browser bundle. Extend to:
 
 ## Rename pipeline
 
-The collect → seal → execute-once `RenameLedger` pipeline landed 2026-06
-(PRs #2086/#2091/#2101/#2106 plus the PR-5 defensive-era cleanup);
-`lowering/rename_ledger.rs`'s module doc is the architecture reference.
-Ideas it unlocked, still open:
+`lowering/rename_ledger.rs`'s module doc is the architecture reference for
+the collect → seal → execute-once `RenameLedger` pipeline. Ideas it unlocked,
+still open:
 
 - **Id-keyed rename executor.** Seal output is still projected to bare
   syms (`SealedRenames::*_by_name`) because the application visitors are
@@ -445,4 +492,64 @@ Ideas it unlocked, still open:
 
 ## CLI usability
 
-CLI usability and scripting-safety findings live in <CLI_DOGFOOD.md>.
+Open usability and scripting-safety findings from exercising the documented
+workflows against a real spec; resolved items are deleted. Corpus-specific
+paths and owner ids belong in the consuming repo.
+
+- **`tana/re/web/AGENTS.md` BIN path stale** (gaffer-private): says
+  `BIN=bazel-bin/external/ducktape_debundle_bin/file/debundle`; the actual
+  path now carries a `+_repo_rules+` prefix. Fix in gaffer-private.
+
+### Planner CLI follow-ups
+
+Generic usability follow-ups for the top-level planner commands.
+Corpus-specific paths and owner ids belong in the consuming repo.
+
+- **Selector synthesis filters apply too late.** A downstream large-spec
+  dogfood run of `debundle spec synthesize-selectors --rewrite
+name-binding-to-source-match` showed that even one explicit
+  `--item module:export` scanned every module file and member in the spec:
+  `files_scanned=1745`, `modules_scanned=1745`, `members_scanned=6692`,
+  `name_binding_members=1`, `elapsed=3.43s`. Scoped `--module-prefix` dry runs
+  timed out at 30s CPU-bound. Explicit item batches were useful but still paid
+  full-scan cost: top-100 items took 16.37s for 75 candidate changes; top-200
+  took 31.38s for 157 candidate changes. Apply item/file/module filters before
+  full YAML traversal and before source candidate generation where possible.
+- **Selector synthesis apply emits non-reviewable YAML churn.** The same
+  downstream dogfood run applied a top-100 item batch with 75 changed
+  candidates. Selector correctness looked promising, but the YAML application
+  path rewrote unrelated text: 13 files changed with 7331 insertions and 4273
+  deletions, one large module accounted for most churn, and an unrelated
+  top-level comment was dropped. Source-aware selector synthesis needs a
+  text-preserving patch path for member selector replacement and
+  binding-group/member collapse before broad generated patches are reviewable.
+- **Selector synthesis needs a minimization acceptance loop.** A generated
+  selector that exactly copies today's large function body, object literal,
+  argument list, or class body can match uniquely while still being fragile
+  spec debt. Dry-run/apply output should surface when a
+  candidate is long/exact and should either minimize it automatically with
+  `ANYTHING`, typed holes, `OBJECT_PROPS`, `CLASS_REST`, `STMT_LIST`, or
+  `DECLARATORS`, or emit a stable tooling-gap diagnostic that agents can route
+  instead of hand-maintaining the exact body.
+- **Diagnostics toggle for `modules propose`.** `--limit` now bounds
+  proposals and diagnostics and the `limits` summary reports totals
+  when details are truncated, but there is still no explicit
+  diagnostics on/off toggle for first-pass planning, where proposal
+  rows are the only thing the caller wants.
+- **Concise explain mode.** Proposal/diagnostic structures on
+  `describe` are already opt-in (`--include-proposals`), but there is
+  still no compact mode focused on: selected owner identity and source
+  span, atomic-unit membership, matching proposal (if any), immediate
+  constraining neighbors, and the exact reason the owner is not
+  landable today.
+- **Source roots.** `show-source --source-root ...` depends on the
+  consuming target's source-tree layout. Runbooks and skills should make
+  that target-specific root explicit instead of assuming repository root
+  or working directory.
+- **Patch-plan naming.** `coverage` is useful for intersecting existing
+  module YAML with atomic-unit coverage, but it is not the only way to
+  discover readable work: `atoms --readable-only` and `modules propose`
+  may show graph-valid work even when no whole patch section is ready.
+  Docs and skill text should reserve "plan" for proposed edits that can be
+  reviewed/applied, and avoid implying that empty coverage output means there
+  is no landable work.
