@@ -25,7 +25,7 @@ over Matrix, and any write surface for the agent beyond its own replies.
   refusing does not converge: nothing about an already-sent screenshot ever changes, so the batch
   would be re-offered forever and one image would wedge ingress against every later message.
 
-  Both are **recorded** as `session_events` rows written in the transaction that advances the
+  Both are **recorded** as `conversation_event` rows written in the transaction that advances the
   watermark, so the room's line is a rendering of a fact the console kept rather than the only copy
   of it.
 

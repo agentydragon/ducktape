@@ -24,6 +24,7 @@ py_test(
         "kustomization.yaml",
         "proxy-config.yaml",
         "service.yaml",
+        "//cluster/k8s:haku_console_config",
         "//tf/gitops/litellm-keys:main.tf",
     ],
     deps = [

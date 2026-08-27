@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import uuid4
 
+from haku.console.config import CodexReasoningEffort
 from haku.console.x.codex_app_server import frames
 from haku.console.x.codex_app_server.protocol import Notification, Request, RequestId, Response, parse_message
 from haku.console.x.runtime import RuntimeClient
@@ -47,6 +48,7 @@ class CodexThread:
 
     cwd: str
     model: str | None = None
+    reasoning_effort: CodexReasoningEffort | None = None
     developer_instructions: str | None = None
     approval_policy: str = "never"
     sandbox: str = "danger-full-access"
@@ -61,6 +63,13 @@ class CodexThread:
         }
         if self.model is not None:
             result["model"] = self.model
+        if self.reasoning_effort is not None:
+            # thread/start has no dedicated effort param at 0.144.1; its `config` map carries
+            # per-thread overrides in config-file vocabulary, and `model_reasoning_effort` is the
+            # exact key the app-server itself re-applies for a persisted thread's effort
+            # (codex-rs/app-server/src/request_processors/thread_processor.rs). The thread/start
+            # response echoes the effective value as `reasoningEffort`.
+            result["config"] = {"model_reasoning_effort": self.reasoning_effort}
         if self.developer_instructions is not None:
             result["developerInstructions"] = self.developer_instructions
         return result

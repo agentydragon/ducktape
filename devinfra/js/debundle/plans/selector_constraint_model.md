@@ -1,18 +1,16 @@
 # Plan: selectors as one global constraint problem (relational spec model)
 
-**Current state (2026-07-07).** PR #2439 landed on `devel` as `db25ef639`
-and closed the first global-solver bridge: `source_match` selectors now enter
-the global selector IR/solver instead of bypassing it. PR #2443 lowered exact
-single-statement selectors onto native AST facts. PR #2446 stopped asking
-`ChunkResolver` for candidate rows when a selector already lowers natively. PR
-#2447 added native `AstSuperClass` constraints for `class ... extends ...`
-matches. `match-selector` now lowers its baseline probe through selector IR and
-`selector_runtime` instead of calling `ChunkResolver` directly. That proved the
-right architectural direction, but profiling the production-sized path showed
-the current Ascent exact-assignment encoding is not the final backend: it pushes
+**Current state.** `source_match` selectors, exact single-statement shapes,
+superclass constraints, and `match-selector` baseline probes all lower through
+the global selector IR/solver on native AST facts; materialization still
+constructs `ChunkResolver` for the legacy projection path, and deleting that
+path is remaining work. Profiling the production-sized path showed the current
+Ascent exact-assignment encoding is not the final backend: it pushes
 `AssignmentRow = Vec<(var, value)>` payloads through `partial_assignment` /
-`stepped_assignment`, and `all_different` becomes pairwise row filtering instead
-of native finite-domain propagation.
+`stepped_assignment`, and `all_different` becomes pairwise row filtering
+instead of native finite-domain propagation. Ascent remains useful for
+relation derivation and as a migration oracle, but it is no longer the planned
+production owner of target assignment.
 
 The bridge that remains is narrower: production materialization still has a
 legacy `source_match` projection path that asks `ChunkResolver` for candidate
@@ -705,24 +703,6 @@ for production-sized selector programs, because the current solver reaches
 target assignment by enumerating `AssignmentRow` tuples and filtering them. The
 backend pivot preserves the vocabulary proof while moving exact target
 assignment to a finite-domain solver.
-
-## Closed so far
-
-- `source_match` selectors now enter the global selector IR/solver.
-- The materializer has a single Ascent-backed selector solve path for binding
-  pins, staged relational selectors, and `source_match` claims.
-- Exact native `source_match` forms and `match-selector` baseline probes lower
-  through the selector IR/solver instead of using `ChunkResolver`.
-- Production anonymous statements and source-match claims can lower natively
-  for supported shapes. Materialization still constructs `ChunkResolver` for
-  the legacy projection path; deleting that path is remaining work, not closed
-  work.
-- Exact single-statement shape and superclass constraints lower to native AST
-  facts.
-- Profiling identified the production-sized bottleneck in the current
-  `AssignmentRow` exact-assignment encoding. Ascent remains useful for relation
-  derivation and as a migration oracle, but it is no longer the planned
-  production owner of target assignment.
 
 ## Remaining work (single-model cutover)
 

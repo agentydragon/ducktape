@@ -145,13 +145,17 @@ resource "kubernetes_secret" "codex_pod" {
 
 resource "litellm_key" "public_coder_agent" {
   key_alias = "public-coder-agent"
-  # Codex subscription models, the Gemini chat lineup, plus embeddings.
+  # Codex subscription models on both wire surfaces, the Gemini chat lineup,
+  # plus embeddings. The subscription lane is doubled because the two shells
+  # speak different protocols: OpenClaw drives the `codex-*` Anthropic-wire
+  # models, while the Console-launched Codex runner pins wire_api=responses and
+  # needs the `*-chatgpt` Responses-lane models.
   # Embeddings ride along because OpenClaw's memory index needs a backend and
   # this agent has no route to api.openai.com -- its egress allowlist is git
   # hosting plus package indexes, and it should not gain one merely to embed.
   # Gemini reaches Google through LiteLLM's own in-cluster GEMINI_API_KEY, so
   # this key never carries that credential either.
-  models = concat(local.codex_client_models, local.gemini_client_models, local.embedding_client_models)
+  models = concat(local.codex_client_models, local.oai_lane_models, local.gemini_client_models, local.embedding_client_models)
   metadata = {
     consumer = "public-coder-agent"
   }
@@ -162,7 +166,7 @@ resource "kubernetes_secret" "public_coder_agent" {
     name      = "litellm-key-public-coder-agent"
     namespace = "litellm"
     annotations = {
-      description                                                     = "LiteLLM virtual key for public-coder-agent OpenClaw and least-credential runner-proxy-mediated Haku Console Codex shells (subscription models through CLIProxyAPI, Gemini chat models, plus embeddings)"
+      description                                                     = "LiteLLM virtual key for public-coder-agent OpenClaw (codex-* Anthropic-wire models) and least-credential runner-proxy-mediated Haku Console Codex shells (*-chatgpt Responses-lane models); subscription models through CLIProxyAPI, Gemini chat models, plus embeddings"
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
       "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "public-coder-agent"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"

@@ -34,6 +34,10 @@ instead, so they load on demand.
 
 ## General
 
+**Correct, then short.** Short is not terminal: map the code to the domain, test what
+matters to pin down, comment what reading alone won't yield, and spend no tokens or
+attention past that.
+
 - **Enter async early**: a single `asyncio.run(async_main(...))` at the top of `main()`;
   never scattered or nested deeper in the call stack.
 - **No large code blobs in YAML/JSON**: any embedded script/config block longer than ~5
@@ -116,11 +120,15 @@ instead, so they load on demand.
   the boundary; `dict.get(...)` only for truly untyped external payloads. Construct
   models, not schema-shaped dicts, in tests; never `Mock()` a Pydantic model; no
   `model_dump()` except at I/O boundaries.
-- **`Field(description=...)`** for per-field docs, not a class docstring listing fields.
+- **`Field(description=...)`** for per-field docs — not a class docstring listing
+  fields, and not bare attribute docstrings, which Python discards at runtime and no
+  schema consumer sees.
 - **Explicit keyword arguments** when arguments are known; `Model.model_validate(data)`
   over `TypeAdapter(...)` unless adapter semantics are needed.
 - **Enums**: `EnumClass.VALUE`, not string literals. StrEnum is already a string — no
-  `.value` in f-strings.
+  `.value` in f-strings. A vocabulary occurring more than once is a StrEnum, not
+  repeated `Literal["…", "…"]` unions — unless an external API dictates the Literal
+  shape.
 - **Compact CLI output**: merge related information onto single lines; vertical space
   is at a premium.
 - **`f"{x=}"`** in error/log/debug strings, not `f"x={x!r}"`.

@@ -260,6 +260,21 @@ def test_terraform_key_allowlists_only_name_models_the_proxy_serves() -> None:
         assert not missing, f"{local} allows models the proxy does not serve: {missing}"
 
 
+# haku-console picks its Codex chat runtime's model from Git YAML — the one Codex consumer
+# whose model choice lives outside the baked-config and Terraform pins above. The runner
+# hardcodes wire_api="responses" (haku/runtime/x/bridge/codex_options.py), so the model
+# must be a `*-chatgpt` Responses-surface entry; a `codex-*` (Anthropic Messages lane)
+# name fails every turn at /v1/responses
+# (haku/console/x/codex_app_server/testdata/real_provider_failure.sanitized.jsonl).
+def test_console_codex_chat_runtimes_use_responses_lane_models() -> None:
+    config = yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/config.yaml").read_text())
+    responses_lane = {f"{model}-chatgpt" for model in _CLIPROXY_MODELS}
+    for name, runtime in config["chat_runtimes"].items():
+        implementation = runtime["implementation"]
+        if implementation["kind"] == "codex_app_server":
+            assert implementation["model"] in responses_lane, name
+
+
 def test_config_maps_mount_their_matching_committed_configs() -> None:
     kustomization = yaml.safe_load(get_required_path("ducktape/cluster/k8s/litellm/app/kustomization.yaml").read_text())
     config_files = {config["name"]: config["files"] for config in kustomization["configMapGenerator"]}
