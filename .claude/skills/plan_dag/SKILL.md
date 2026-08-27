@@ -17,11 +17,16 @@ and date-stamp the subtitle each time.
 Four classes, styled explicitly (see gotchas), plus one hard shape rule:
 
 ```text
-["#4691 grant principals · PR"]:::pr     open PR — solid accent border
-{{"operator: #4667 verdict"}}:::gate     human decision gate — hexagon
-["#4772 vocabulary collapse"]:::next     planned, undispatched — dashed
-["#4850 clipping removal ✓"]:::done      merged context — muted
+["#4691 grant principals · PR"]:::pr        open PR — GitHub outline green
+["#4832 extract indexer · ready"]:::ready   PR ready to merge — solid green
+{{"operator: #4667 verdict"}}:::gate        human decision gate — rust hexagon
+["#4772 vocabulary collapse"]:::next        planned, undispatched — dashed
+["#4850 clipping removal · merged"]:::done  merged — GitHub purple
 ```
+
+PR states wear GitHub's colors (open green, merged purple, solid merge-button
+green for "ready"), so PR standing reads without the legend; merged purple also
+keeps done work visually far from the dashed planned nodes.
 
 - A gate names **whose** action unblocks it and what the action is
   (`operator: Codex canary`), never a vague "pending".
@@ -49,10 +54,11 @@ Four classes, styled explicitly (see gotchas), plus one hard shape rule:
   (and `style`/`linkStyle`) survive:
 
   ```text
-  classDef pr fill:#E5F0EB,color:#173B31,stroke:#2F6F5E,stroke-width:1.6px
+  classDef pr fill:#DAFBE1,color:#116329,stroke:#1A7F37,stroke-width:1.6px
+  classDef ready fill:#2DA44E,color:#FFFFFF,stroke:#1A7F37,stroke-width:1.6px
   classDef gate fill:#F6E8E1,color:#5A2E1D,stroke:#A4553B,stroke-width:1.4px
   classDef next fill:#F1EFE9,color:#1D1F1E,stroke:#8A9691,stroke-dasharray:5 3
-  classDef done fill:#EAE8E2,color:#6B7370,stroke:#C1BFB8
+  classDef done fill:#FBEFFF,color:#6639BA,stroke:#8250DF
   linkStyle default stroke:#2F6F5E,stroke-width:1.4px
   ```
 
