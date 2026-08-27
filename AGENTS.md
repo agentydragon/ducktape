@@ -142,6 +142,11 @@ for a reviewer to bounce a PR.
   contested parts on the original PR. The faster small pieces land, the fewer and
   simpler the cross-agent rebases, and partial wins get secured instead of waiting out
   the argument.
+- **"Uncontroversial" in a review comment is a split nudge.** When the operator marks
+  part of a PR uncontroversial, that is the explicit form of the implied approval above:
+  split those parts into their own PR so they land now. Debounce a few minutes first —
+  such comments arrive one per file while the review is still in progress, and the rest
+  of the round may resolve the contested remainder anyway.
 - **The only real dependency is unspecifiable content** — the work genuinely depends on
   an open question's answer. "It will conflict" / "touches the same file" / "tidier
   afterwards" are not dependencies.
