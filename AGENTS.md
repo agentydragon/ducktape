@@ -126,6 +126,10 @@ temporary instrumentation local to the investigation and remove it before review
 **The scarce resource is operator review, not machine time.** Split aggressively into
 independently approvable PRs and dispatch them in parallel — a reviewer can approve
 three of five separate PRs today and argue about the rest for as long as it takes.
+[Google's small-CLs guidance](https://google.github.io/eng-practices/review/developer/small-cls.html)
+applies: the unit is one self-contained change, split by change and never by file, with
+a floor — not so small its implications can't be understood — and size alone is grounds
+for a reviewer to bounce a PR.
 
 - **A conflict is not a reason to wait.** Rebasing across PRs is cheap agent work;
   sequencing costs the operator a great deal. Dispatch the simple overlapping change
@@ -133,10 +137,11 @@ three of five separate PRs today and argue about the rest for as long as it take
 - **Never queue ready work behind one contested change.**
 - **Split again under review.** A review round usually contests a handful of things,
   and the parts the operator calls fine — or comments around without touching — are
-  implied approved. When those uncontested parts are independently landable, split them
-  off into their own PR and land them first, leaving the contested parts on the
-  original PR. The faster small pieces land, the fewer and simpler the cross-agent
-  rebases, and partial wins get secured instead of waiting out the argument.
+  implied approved. Split the uncontested, independently landable parts off to land
+  first — as one PR or several, wherever the change-unit boundaries fall — leaving the
+  contested parts on the original PR. The faster small pieces land, the fewer and
+  simpler the cross-agent rebases, and partial wins get secured instead of waiting out
+  the argument.
 - **The only real dependency is unspecifiable content** — the work genuinely depends on
   an open question's answer. "It will conflict" / "touches the same file" / "tidier
   afterwards" are not dependencies.
