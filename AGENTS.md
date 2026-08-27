@@ -314,6 +314,14 @@ not test stdout/stderr. They upload to BuildBuddy and download to
 `size`/`timeout`. Trace the blockage: `--test_output=streamed --test_arg=-s`, fixture
 logging, `docker ps`.
 
+**Deviation — a size that was never right for the test.** The rule above assumes the
+declared size fits and something wedged inside it. Where `bbapi target history` shows the
+target passing well inside its budget on `devel` and the timeout tracks fleet load rather
+than the diff, the size is the bug. Raising it then needs the history, not a re-run:
+several timings across commits, and a local pass on the same tree. A `py_test` here
+defaults to `size = "small"` (60s, <devinfra/python/defs.bzl>), which a test that starts a
+Postgres testcontainer can spend half of before its first assertion.
+
 **Localizing test failures**: `bbapi target history` gives the pass/fail timeline —
 faster than `git bisect` since BuildBuddy already has the results. Recipes:
 `/buildbuddy_api` skill.

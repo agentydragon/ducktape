@@ -564,6 +564,7 @@ py_test(
 
 py_test(
     name = "test_sandbox_claims",
+    size = "medium",
     srcs = ["test_sandbox_claims.py"],
     deps = [
         ":conftest",
