@@ -62,7 +62,7 @@ from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgen
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
 from haku.console.chat_models import RuntimeKind
-from haku.console.config import MCP_PATH, EmbedderConfig, Settings
+from haku.console.config import MCP_PATH, Settings
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.http_decide_config import load_egress_decide
@@ -131,6 +131,7 @@ from haku.console.x.launch_identity import ChatLaunchAuthorizer
 from haku.console.x.session_store import SessionStore
 from haku.console.x.session_wakes import SessionWakes
 from haku.console.x.system_prompt import SystemPromptTemplate
+from haku.recall_index.config import EmbedderConfig
 from haku.recall_index.openai_embedder import OpenAIEmbedder
 from haku.runtime.x.bridge.protocol import KUBERNETES_PROXY_URL_ENV, RUNNER_SETUP_ENV
 from haku.sandbox.kubernetes_client import InClusterSandboxClient

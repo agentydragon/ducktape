@@ -354,9 +354,19 @@ C0 and C0b are this PR — the first no-collision chunks.
 
 ### Indexer lane — independent of all naming work
 
-- **C13 · `haku/indexer/` tree move (#4887)** _(mechanical)_ — worker code (`recall_index_sync.py` +
-  the #4872 chunk/embed split) leaves console; console keeps the query-time read path (`mcp/tools/recall/`). Atomic import sweep, no
-  shims. Waits only on #4872; runs beside every other lane.
+- **C13 · `haku/indexer/` tree move (#4887)** _(staged; the directory move is the last step)_ — the
+  worker (`indexer.py` + `recall_index_sync.py`) leaves console; console keeps the query-time read
+  path (`mcp/tools/recall/`). Not a bare rename: the §5 exclusion — worker deps physically unable to
+  reach console — must already hold when the tree appears, so the console edges sever in place first,
+  each step an atomic sweep with no shims, beside every other lane. The shared recall-index/embedder
+  config lives in `haku/recall_index/config.py`; remaining, in order:
+  1. a worker-owned narrow config read (the `recall_indexes` + `git_ca_bundle` slice of the shared
+     YAML) and sync-URL helper, dropping the worker's `mcp_config` and `database_migrate` deps;
+  2. a shared home for `ConversationItem` and the item enums (**operator decision, pending** — the
+     gating semantic piece): `haku/recall_index/chat_source.py` imports
+     `haku.console.{chat_models,database_schema}` today, the §5 violation this step removes;
+  3. the mechanical move, retargeting `devinfra/ci/image_targets.json` and BUILD — the GHCR name
+     `haku-indexer` keys off the JSON key, not the Bazel path, so Flux image automation is untouched.
 
 ### Conversation / session lane — the #4772 core, behind the #4667 cutover
 
@@ -422,7 +432,7 @@ Needs operator go **and** the `<auth-context>` name pick.
 
 ```text
 now ─┬─ C0, C0b            (docs, immediate — this PR)
-     ├─ C13               ← after #4872 (index train)          [indexer lane, independent]
+     ├─ C13               ← staged severing; ConversationItem home is the gate   [indexer lane, independent]
      ├─ C8 → C9 → C10     ← after operator go + <auth-context>  [identity lane]
      ├─ C11 → C12         ← after egress lands + #4889          [grants lane]
      └─ (#4667 settles) → C1, C2, C3, C4a  then  C4b, C4c, C5 → C6 → C7   [conversation lane]

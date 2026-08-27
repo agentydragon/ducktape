@@ -13,7 +13,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import ChatSurface
-from haku.console.config import ChatRecallIndexDefinition, ConfiguredRecallIndex, GitRecallIndexDefinition
 from haku.console.conversation_read_access import ConversationReadScope
 from haku.console.database_schema import ChatAttachment, Session
 from haku.console.tools.recall_index import (
@@ -29,6 +28,7 @@ from haku.recall_index.chat_corpus import chat_chunker_key
 from haku.recall_index.chat_source import session_shapes
 from haku.recall_index.chat_sync import is_indexed
 from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
+from haku.recall_index.config import ChatRecallIndexDefinition, ConfiguredRecallIndex, GitRecallIndexDefinition
 from haku.recall_index.embedder import Embedder
 from haku.recall_index.schema import IndexType
 from haku.recall_index.store import (

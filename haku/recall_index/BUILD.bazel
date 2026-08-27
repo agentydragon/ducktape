@@ -7,6 +7,16 @@ py_library(
 )
 
 py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":chunking",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "content",
     srcs = ["content.py"],
     visibility = ["//visibility:public"],

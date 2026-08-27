@@ -27,8 +27,6 @@ from haku.console.agents.naming import normalize_agent_name
 from haku.console.chat_models import RuntimeKind
 from haku.console.config import (
     ChatRuntimesConfig,
-    ConfiguredRecallIndex,
-    GitRecallIndexDefinition,
     HostexecConfig,
     KubernetesAuthorizationConfig,
     NodeDaemonsConfig,
@@ -37,6 +35,7 @@ from haku.console.config import (
 from haku.console.http_decide_config import EgressDecideConfig
 from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_actor import RuntimeActor
+from haku.recall_index.config import ConfiguredRecallIndex, GitRecallIndexDefinition
 from haku.sandbox.config import SandboxEnvironmentConfig
 from mcp_infra.prefix import MCPMountPrefix
 

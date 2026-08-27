@@ -36,11 +36,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import create_engine, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from haku.console.config import EmbedderConfig, GitRecallIndexDefinition, RecallIndexSettings
 from haku.console.database_migrate import sync_database_url
 from haku.console.database_schema import ConversationItem
 from haku.console.mcp_config import load_console_config
 from haku.console.recall_index_sync import RecallEmbeddingMaintenance, RecallIndexMaintenance
+from haku.recall_index.config import EmbedderConfig, GitRecallIndexDefinition, RecallIndexSettings
 from haku.recall_index.git_tree import configure_ca_trust
 from haku.recall_index.openai_embedder import OpenAIEmbedder
 from haku.recall_index.schema import Base as RecallIndexBase
