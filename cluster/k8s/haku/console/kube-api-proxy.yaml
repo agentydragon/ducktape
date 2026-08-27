@@ -1,11 +1,35 @@
 # Dedicated Kubernetes API authorization proxy for Haku Agents.
 #
-# Gateway terminates the public wildcard certificate and forwards plain HTTP on this namespace-
-# local Service. That backend hop deliberately trusts the cluster node/pod network and Gateway;
-# compromising either can already observe or redirect this workload's traffic. The Cilium policy
-# admits only the Gateway identity. The proxy authenticates every request synchronously with Haku
-# Console, strips the Agent bearer, and uses only its rotating projected ServiceAccount token
-# upstream.
+# Two listeners, two trust models. The Gateway terminates the public wildcard certificate and
+# forwards plain HTTP to :8080; that backend hop deliberately trusts the cluster node/pod network
+# and Gateway. In-cluster kubeconfig callers (Console-launched runners) instead use the :8443 TLS
+# listener, because client-go attaches kubeconfig credentials only to an https server — against
+# plain HTTP kubectl sends every request unauthenticated. The Cilium policy admits the Gateway to
+# the plaintext port and the runners to the TLS port. The proxy authenticates every request
+# synchronously with Haku Console, strips the Agent bearer, and uses only its rotating projected
+# ServiceAccount token upstream.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: haku-kube-api-proxy-tls
+  namespace: haku-console
+spec:
+  secretName: haku-kube-api-proxy-tls
+  duration: 2160h # 90d
+  renewBefore: 720h # 30d
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  commonName: haku-kube-api-proxy.haku-console.svc.cluster.local
+  dnsNames:
+    - haku-kube-api-proxy.haku-console.svc.cluster.local
+    - haku-kube-api-proxy.haku-console.svc
+  issuerRef:
+    # Every sandbox trust bundle (public-coder-agent-proxy-ca-cert, haku-egress-proxy-ca-cert)
+    # already carries cluster-root-ca, so kubeconfigs verify this leaf via their existing bundle.
+    name: cluster-internal-ca
+    kind: ClusterIssuer
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -15,6 +39,8 @@ metadata:
     app.kubernetes.io/name: haku-kube-api-proxy
   annotations:
     description: Fail-closed Haku Agent Kubernetes authorization boundary.
+    # cert-manager rotates the TLS Secret; the listener loads it once at start.
+    reloader.stakater.com/auto: "true"
 spec:
   replicas: 2
   strategy:
@@ -59,10 +85,21 @@ spec:
               value: 5s
             - name: HAKU_KUBE_MAX_REQUEST_BYTES
               value: "10485760"
+            - name: HAKU_KUBE_TLS_CERT_FILE
+              value: /etc/haku-kube-api-proxy-tls/tls.crt
+            - name: HAKU_KUBE_TLS_KEY_FILE
+              value: /etc/haku-kube-api-proxy-tls/tls.key
           ports:
             - name: http
               containerPort: 8080
               protocol: TCP
+            - name: https
+              containerPort: 8443
+              protocol: TCP
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/haku-kube-api-proxy-tls
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /healthz
@@ -89,6 +126,10 @@ spec:
             limits:
               cpu: 500m
               memory: 128Mi
+      volumes:
+        - name: tls
+          secret:
+            secretName: haku-kube-api-proxy-tls
 ---
 apiVersion: v1
 kind: Service
@@ -104,6 +145,10 @@ spec:
     - name: http
       port: 8080
       targetPort: http
+      protocol: TCP
+    - name: https
+      port: 8443
+      targetPort: https
       protocol: TCP
 ---
 apiVersion: gateway.networking.k8s.io/v1
@@ -151,6 +196,8 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
+    # Runners use the TLS listener only: their kubeconfigs authenticate, and client-go
+    # attaches those credentials only to an https server.
     - fromEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: haku-runtime-sandbox
@@ -162,7 +209,7 @@ spec:
             k8s:haku.allegedly.works/access-profile-id: public-coder
       toPorts:
         - ports:
-            - port: "8080"
+            - port: "8443"
               protocol: TCP
   egress:
     - toEndpoints:

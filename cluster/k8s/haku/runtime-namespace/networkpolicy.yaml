@@ -47,10 +47,11 @@ spec:
             - { port: "8080", protocol: TCP }
     # Console-selected Kubernetes access is mediated by the shared authorization proxy; the pod
     # has no ServiceAccount token and the runner writes a tokenFile kubeconfig only for this URL.
+    # The proxy's TLS listener, because kubectl sends credentials only to an https server.
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: haku-console
             k8s:app.kubernetes.io/name: haku-kube-api-proxy
       toPorts:
         - ports:
-            - { port: "8080", protocol: TCP }
+            - { port: "8443", protocol: TCP }

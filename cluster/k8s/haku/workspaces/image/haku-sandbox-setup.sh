@@ -129,13 +129,19 @@ if [ -n "${HAKU_KUBERNETES_PROXY_URL:-}" ] && [ -n "${HAKU_CONSOLE_TOKEN:-}" ]; 
   chmod 700 "$kube_dir"
   umask 077
   printf '%s' "${HAKU_CONSOLE_TOKEN}" >"$kube_dir/haku-agent-token"
+  # The proxy URL is https (client-go attaches kubeconfig credentials only to a TLS server),
+  # and its certificate chains to cluster-root-ca, carried in the egress trust bundle.
+  kube_ca=""
+  if [ -r "$bundle" ]; then
+    kube_ca=", \"certificate-authority\": \"$bundle\""
+  fi
   # JSON is valid kubeconfig YAML, so the URL is carried as a JSON string rather than as
   # bytes a YAML parser would reinterpret.
   cat >"$kube_dir/config" <<KUBECONFIG
 {
   "apiVersion": "v1",
   "kind": "Config",
-  "clusters": [{"name": "haku-console-proxy", "cluster": {"server": "${HAKU_KUBERNETES_PROXY_URL}"}}],
+  "clusters": [{"name": "haku-console-proxy", "cluster": {"server": "${HAKU_KUBERNETES_PROXY_URL}"${kube_ca}}}],
   "users": [{"name": "haku-agent", "user": {"tokenFile": "$kube_dir/haku-agent-token"}}],
   "contexts": [{"name": "haku-agent", "context": {"cluster": "haku-console-proxy", "user": "haku-agent"}}],
   "current-context": "haku-agent"

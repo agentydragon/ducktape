@@ -137,10 +137,14 @@ def test_proxy_kubeconfig_uses_token_file_and_never_serializes_bearer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
     launch = HarnessLaunch(
         arguments=(),
         cwd=str(tmp_path),
-        environment={KUBERNETES_PROXY_URL_ENV: "http://haku-kube-api-proxy.haku-console:8080"},
+        environment={
+            KUBERNETES_PROXY_URL_ENV: "https://haku-kube-api-proxy.haku-console:8443",
+            "SSL_CERT_FILE": "/trust/ca-certificates.crt",
+        },
     )
 
     materialized = _materialize_proxy_kubeconfig(launch, "session-secret")
@@ -148,13 +152,33 @@ def test_proxy_kubeconfig_uses_token_file_and_never_serializes_bearer(
     token = (tmp_path / ".kube/haku-agent-token").read_text()
 
     assert materialized.environment["KUBECONFIG"] == str(tmp_path / ".kube/config")
-    assert "http://haku-kube-api-proxy.haku-console:8080" in config
+    assert "https://haku-kube-api-proxy.haku-console:8443" in config
     assert '"tokenFile":' in config
+    # client-go attaches kubeconfig credentials only to a TLS server it can verify, so the
+    # cluster entry pins the launch-selected sandbox trust bundle.
+    assert '"certificate-authority": "/trust/ca-certificates.crt"' in config
     assert "session-secret" not in config
     assert token == "session-secret"
     assert (tmp_path / ".kube").stat().st_mode & 0o077 == 0
     assert (tmp_path / ".kube/haku-agent-token").stat().st_mode & 0o077 == 0
     assert (tmp_path / ".kube/config").stat().st_mode & 0o077 == 0
+
+
+def test_proxy_kubeconfig_omits_certificate_authority_without_a_trust_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No launch or image bundle leaves verification to client-go's default pool."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    launch = HarnessLaunch(
+        arguments=(),
+        cwd=str(tmp_path),
+        environment={KUBERNETES_PROXY_URL_ENV: "https://haku-kube-api-proxy.haku-console:8443"},
+    )
+
+    _materialize_proxy_kubeconfig(launch, "session-secret")
+
+    assert "certificate-authority" not in (tmp_path / ".kube/config").read_text()
 
 
 def test_proxy_kubeconfig_uses_claim_owned_bearer_not_launch_environment(
@@ -165,7 +189,7 @@ def test_proxy_kubeconfig_uses_claim_owned_bearer_not_launch_environment(
         arguments=(),
         cwd=str(tmp_path),
         environment={
-            KUBERNETES_PROXY_URL_ENV: "http://haku-kube-api-proxy.haku-console:8080",
+            KUBERNETES_PROXY_URL_ENV: "https://haku-kube-api-proxy.haku-console:8443",
             "HAKU_MCP_BEARER_TOKEN": "launch-selected-secret",
             "HAKU_AGENT_SDK_RUNNER_TOKEN": "launch-selected-secret",
         },
@@ -186,7 +210,7 @@ def test_proxy_kubeconfig_rejects_a_stale_session_kube_directory_symlink(
     launch = HarnessLaunch(
         arguments=(),
         cwd=str(tmp_path),
-        environment={KUBERNETES_PROXY_URL_ENV: "http://haku-kube-api-proxy.haku-console:8080"},
+        environment={KUBERNETES_PROXY_URL_ENV: "https://haku-kube-api-proxy.haku-console:8443"},
     )
 
     with pytest.raises(RuntimeError, match="unsafe Kubernetes config directory"):

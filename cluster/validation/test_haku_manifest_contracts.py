@@ -87,7 +87,8 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
         if rule.get("toEndpoints", [{}])[0].get("matchLabels", {}).get("k8s:app.kubernetes.io/name")
         == "haku-kube-api-proxy"
     )
-    assert kube_proxy_rule["toPorts"][0]["ports"] == [{"port": "8080", "protocol": "TCP"}]
+    # The proxy's TLS listener: client-go attaches kubeconfig credentials only to an https server.
+    assert kube_proxy_rule["toPorts"][0]["ports"] == [{"port": "8443", "protocol": "TCP"}]
 
     kube_proxy_objects = list(yaml.safe_load_all((k8s_dir / "haku/console/kube-api-proxy.yaml").read_text()))
     kube_proxy_policy = one(
@@ -106,7 +107,7 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
         )
         for profile in ("haku", "public-coder")
     }
-    assert runner_ingress["toPorts"][0]["ports"] == [{"port": "8080", "protocol": "TCP"}]
+    assert runner_ingress["toPorts"][0]["ports"] == [{"port": "8443", "protocol": "TCP"}]
 
     haku_binding = yaml.safe_load((k8s_dir / "haku/rbac/rolebinding-haku.yaml").read_text())
     assert haku_binding["subjects"] == [
@@ -713,7 +714,7 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
     }
     assert destinations == {
         ("haku-console", "haku-console", 8080),
-        ("haku-console", "haku-kube-api-proxy", 8080),
+        ("haku-console", "haku-kube-api-proxy", 8443),
         ("public-coder-agent", "public-coder-codex-runner-proxy", 8080),
     }
     assert not any(target_namespace in {"litellm", "haku-egress-proxy"} for target_namespace, _, _ in destinations)

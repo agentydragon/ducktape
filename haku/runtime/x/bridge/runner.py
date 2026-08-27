@@ -238,6 +238,11 @@ def _materialize_proxy_kubeconfig(launch: HarnessLaunch, bearer_token: str | Non
     YAML. It is already present by design in the ephemeral SandboxClaim environment for bridge and
     MCP authentication. The proxy URL is launch-selected so the runner does not carry a catalog of
     Console topology or bypass the authorization boundary.
+
+    The proxy URL must be https: client-go reads kubeconfig user credentials only for a TLS
+    server, so against a plain-http proxy kubectl sends every request unauthenticated and the
+    proxy answers 401. The cluster entry pins the launch-selected sandbox trust bundle
+    (`SSL_CERT_FILE`), which carries the internal root that signs the proxy's certificate.
     """
     proxy_url = launch.environment.get(KUBERNETES_PROXY_URL_ENV)
     if not proxy_url:
@@ -256,12 +261,15 @@ def _materialize_proxy_kubeconfig(launch: HarnessLaunch, bearer_token: str | Non
     kube_dir.chmod(0o700)
     token_path = kube_dir / "haku-agent-token"
     config_path = kube_dir / "config"
+    cluster: dict[str, str] = {"server": proxy_url}
+    if ca_bundle := launch.environment.get("SSL_CERT_FILE", os.environ.get("SSL_CERT_FILE", "")):
+        cluster["certificate-authority"] = ca_bundle
     # JSON is valid kubeconfig YAML and avoids treating deploy-configured URL/path bytes as YAML.
     config = json.dumps(
         {
             "apiVersion": "v1",
             "kind": "Config",
-            "clusters": [{"name": "haku-console-proxy", "cluster": {"server": proxy_url}}],
+            "clusters": [{"name": "haku-console-proxy", "cluster": cluster}],
             "users": [{"name": "haku-agent-session", "user": {"tokenFile": str(token_path)}}],
             "contexts": [
                 {

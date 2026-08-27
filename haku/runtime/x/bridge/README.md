@@ -60,7 +60,9 @@ usable without creating a second credential.
 When the Console launch environment contains `HAKU_KUBERNETES_PROXY_URL`, the runner creates
 `$HOME/.kube/config` and a mode-0600 `$HOME/.kube/haku-agent-token`. The config points only at that
 URL and references the token via client-go's `tokenFile`; bearer bytes never occur in argv,
-or kubeconfig YAML. They are intentionally present in the ephemeral SandboxClaim environment for
+or kubeconfig YAML. The URL must be https — client-go reads kubeconfig credentials only for a TLS
+server, so a plain-http proxy receives every kubectl request unauthenticated — and the cluster
+entry pins the launch-selected `SSL_CERT_FILE` trust bundle as its `certificate-authority`. They are intentionally present in the ephemeral SandboxClaim environment for
 bridge/MCP authentication. The proxy is therefore Console-selected and authorization-aware, while
 the runner has no direct ServiceAccount token. The Console must add
 this launch variable when a session is permitted Kubernetes access; the runner intentionally has

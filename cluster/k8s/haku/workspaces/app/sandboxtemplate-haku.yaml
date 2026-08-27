@@ -101,9 +101,10 @@ spec:
                   key: token
             # Where `kubectl` sends everything, now that nothing is mounted. Console
             # authorizes each request against the bearer above; haku-sandbox-setup.sh turns the
-            # pair into ~/.kube/config with the bearer in a mode-0600 tokenFile.
+            # pair into ~/.kube/config with the bearer in a mode-0600 tokenFile. https, never
+            # http: client-go attaches kubeconfig credentials only to a TLS server.
             - name: HAKU_KUBERNETES_PROXY_URL
-              value: http://haku-kube-api-proxy.haku-console.svc.cluster.local:8080
+              value: https://haku-kube-api-proxy.haku-console.svc.cluster.local:8443
           resources:
             requests:
               cpu: "1"
