@@ -49,17 +49,60 @@ class FakeBaselineSource:
         return self.objects.get(key)
 
 
-def test_find_test_invocations_is_stable_and_puts_the_test_invocation_first() -> None:
-    """Both sides of the handoff derive these IDs independently — `bazel-ci.yml` to name
-    the invocations, the publisher to find them — so the derivation must be a function of
-    the run's identity alone. Test first: it carries the undeclared outputs."""
-    first = find_test_invocations("33060467222", "1")
-    assert first == find_test_invocations("33060467222", "1")
-    assert first[0] == str(invocation_id(run_id="33060467222", attempt="1", role="test"))
-    assert first[1] == str(invocation_id(run_id="33060467222", attempt="1", role="build"))
-    # A re-run must not fold into the run it replaces: BuildBuddy merges two invocations
-    # claiming one ID rather than rejecting the second.
-    assert find_test_invocations("33060467222", "2") != first
+def _search_reply(*invocations: dict[str, object]) -> Callable[..., str]:
+    return lambda _request: json.dumps({"invocation": list(invocations)})
+
+
+def test_the_full_sweep_wins_over_an_affected_set_run_at_the_same_commit() -> None:
+    """The case that made #4927 insufficient: one commit, several CI runs. Only the
+    `//...` sweep carries the visual manifests; an affected-set run at the same commit
+    is complete and real and has none. Picking by commit must prefer the sweep."""
+    found = find_test_invocations(
+        run_id="33066954750",
+        run_attempt="1",
+        commit_sha="5ee3b732cc68b03ef86a1b6e95598f54d796e8f2",
+        api_key="key",
+        fetch=_search_reply(
+            {"invocationId": "affected-set", "pattern": ["//cluster/k8s:cluster_all_files"]},
+            {"invocationId": "full-sweep", "pattern": ["//..."]},
+        ),
+    )
+    assert found == ["full-sweep"]
+
+
+def test_a_commit_buildbuddy_does_not_know_falls_back_to_the_derived_ids() -> None:
+    """A PR run records the merge SHA, so its invocation is not findable by head SHA —
+    and a run cancelled before Bazel started has no invocation at all. The by-run
+    derivation is the only handle on either, so it stays as the fallback."""
+    found = find_test_invocations(
+        run_id="33060467222", run_attempt="1", commit_sha="deadbeef", api_key="key", fetch=_search_reply()
+    )
+    assert found == [
+        str(invocation_id(run_id="33060467222", attempt="1", role="test")),
+        str(invocation_id(run_id="33060467222", attempt="1", role="build")),
+    ]
+
+
+def test_the_derivation_separates_every_input() -> None:
+    """A re-run must not fold into the run it replaces, and build must not claim test's
+    ID: BuildBuddy merges two invocations sharing an ID rather than rejecting one."""
+    base = invocation_id(run_id="33060467222", attempt="1", role="test")
+    assert invocation_id(run_id="33060467223", attempt="1", role="test") != base
+    assert invocation_id(run_id="33060467222", attempt="2", role="test") != base
+    assert invocation_id(run_id="33060467222", attempt="1", role="build") != base
+
+
+def test_without_a_credential_the_search_is_skipped_rather_than_attempted() -> None:
+    """No API key means no search — falling through to the derived IDs beats raising, and
+    beats an HTTP call that would fail anyway."""
+
+    def forbid(_request: object) -> str:
+        pytest.fail("no credential must mean no BuildBuddy request")
+
+    found = find_test_invocations(
+        run_id="33060467222", run_attempt="1", commit_sha="deadbeef", api_key=None, fetch=forbid
+    )
+    assert found[0] == str(invocation_id(run_id="33060467222", attempt="1", role="test"))
 
 
 def test_an_invocation_that_never_existed_is_not_a_failure() -> None:
@@ -481,9 +524,12 @@ def test_a_superseded_run_publishes_its_bundle_but_leaves_the_comment_alone(
 
     main()
 
-    assert downloaded == [find_test_invocations("33060467222", "1")], (
-        "a superseded run must still look for the artifacts its Bazel invocation left behind"
-    )
+    assert downloaded == [
+        [
+            str(invocation_id(run_id="33060467222", attempt="1", role="test")),
+            str(invocation_id(run_id="33060467222", attempt="1", role="build")),
+        ]
+    ], "a superseded run must still look for the artifacts its Bazel invocation left behind"
     assert len(checks) == 1, "the announced in-progress check must still be terminated"
     assert checks[0]["conclusion"] == "neutral"
     assert checks[0]["commit_sha"] == "0123456789abcdef0123456789abcdef01234567"

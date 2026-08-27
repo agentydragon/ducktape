@@ -3,8 +3,9 @@
 Trusted publisher for PR visual reviews. The "Publish PR visuals" workflow
 (`.github/workflows/pr-visuals-publish.yml`) runs `publisher.py` after
 every PR and `devel` Bazel CI run, including failed and superseded ones. It
-names the run's Bazel invocations by deriving their IDs from the run's identity
-rather than observing them (<devinfra/ci/invocation_ids.py>), then scans them for
+locates that commit's Bazel invocations — by asking BuildBuddy which CI test
+invocation the commit has, falling back to IDs derived from the run's identity
+(<devinfra/ci/invocation_ids.py>) where it cannot know — then scans them for
 targets whose undeclared outputs contain a
 `visual-review.json` manifest (schema:
 `util/visual_review.py`), downloads the referenced PNGs, publishes an immutable
@@ -27,6 +28,14 @@ Use one of the shared harnesses and it's automatic:
 - Custom drivers write the manifest themselves via
   `writeVisualReviewManifest` / `write_visual_review_manifest`
   (e.g. haku's `tool_rendering/screenshot/render.mjs`).
+
+**Gotcha: one commit, several CI runs.** A `//...` devel sweep and an affected-set
+run can both exist at one commit, and only the sweep carries visual manifests. So
+the invocation is found by _commit_, preferring the sweep, rather than by the run
+that triggered this publish — that run is frequently not the one that ran the
+tests. The by-run derivation remains the fallback: it is the only handle on a PR
+run, which records the merge SHA and so cannot be found by head SHA, and on a run
+cancelled before Bazel started.
 
 A run cancelled as superseded publishes its commit bundle and nothing else: it
 often holds a complete manifest set, because cancellation kills the workflow

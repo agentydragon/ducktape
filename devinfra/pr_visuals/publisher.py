@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import subprocess
+import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -174,13 +175,55 @@ class ReviewBundleMetadata(BaseModel):
     tests: list[ReviewTest]
 
 
-def find_test_invocations(run_id: str, run_attempt: str) -> list[str]:
-    """The Bazel invocations `bazel-ci.yml` named for this run, test first.
+BUILDBUDDY_RPC = "https://app.buildbuddy.io/rpc/BuildBuddyService"
+REPO_URL = "https://github.com/agentydragon/ducktape"
 
-    Derived rather than observed, so a run cancelled before `bb remote` returned is
-    still addressable — that is the whole point, see devinfra/ci/invocation_ids.py.
-    An ID for an invocation that never started simply lists no artifacts.
+Fetcher = Callable[[urllib.request.Request], Any]
+
+
+def search_ci_test_invocations(commit_sha: str, *, api_key: str, fetch: Fetcher) -> list[str]:
+    """The CI test invocations BuildBuddy holds for `commit_sha`, full sweep first.
+
+    A commit has several CI runs with different target sets — a `//...` devel sweep
+    alongside affected-set runs — and only the sweep carries the visual manifests.
+    Asking by commit finds whichever run actually did the testing; asking by the run
+    that triggered this publish finds whichever one happens to have triggered it.
     """
+    request = urllib.request.Request(
+        f"{BUILDBUDDY_RPC}/SearchInvocation",
+        data=json.dumps(
+            {"query": {"repoUrl": REPO_URL, "commitSha": commit_sha, "command": "test", "role": ["CI"]}, "count": 25}
+        ).encode(),
+        headers={"Content-Type": "application/json", "x-buildbuddy-api-key": api_key},
+    )
+    found = json.loads(fetch(request)).get("invocation", [])
+    sweeps = [i["invocationId"] for i in found if i.get("pattern") == ["//..."]]
+    return sweeps or [i["invocationId"] for i in found]
+
+
+def _read(request: urllib.request.Request) -> str:
+    with urllib.request.urlopen(request, timeout=30) as response:
+        body: bytes = response.read()
+    return body.decode()
+
+
+def find_test_invocations(
+    *, run_id: str, run_attempt: str, commit_sha: str, api_key: str | None, fetch: Fetcher
+) -> list[str]:
+    """Where this commit's test artifacts are, by commit if BuildBuddy knows, else by run.
+
+    The by-run derivation (devinfra/ci/invocation_ids.py) is what makes a *cancelled*
+    run addressable, and it is the only handle on a PR run, which records the merge SHA
+    and so cannot be found by head SHA. It is the fallback rather than the primary
+    because it names the run that triggered this publish, which is frequently not the
+    run that ran the tests.
+
+    The two are not combined: `download_visual_tests` rejects a target whose manifests
+    disagree across invocations, and mixing a sweep with an affected-set run invites
+    exactly that.
+    """
+    if api_key and (found := search_ci_test_invocations(commit_sha, api_key=api_key, fetch=fetch)):
+        return found
     return [str(invocation_id(run_id=run_id, attempt=run_attempt, role=role)) for role in ("test", "build")]
 
 
@@ -816,6 +859,16 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
+def _invocations_for(args: argparse.Namespace) -> list[str]:
+    return find_test_invocations(
+        run_id=args.ci_run_id,
+        run_attempt=args.ci_run_attempt,
+        commit_sha=args.sha,
+        api_key=os.environ.get("BUILDBUDDY_API_KEY"),
+        fetch=_read,
+    )
+
+
 def publish_only(args: argparse.Namespace, *, github_token: str, details_url: str | None) -> None:
     """Upload a superseded run's commit bundle, saying nothing about it.
 
@@ -839,7 +892,7 @@ def publish_only(args: argparse.Namespace, *, github_token: str, details_url: st
         external_id=args.check_external_id,
         token=github_token,
     )
-    invocations = find_test_invocations(args.ci_run_id, args.ci_run_attempt)
+    invocations = _invocations_for(args)
     tests = download_visual_tests(invocations, args.work_dir / "tests")
     if tests:
         s3 = boto3.client("s3", endpoint_url=args.endpoint)
@@ -882,7 +935,7 @@ def main() -> None:
         return
 
     try:
-        invocations = find_test_invocations(args.ci_run_id, args.ci_run_attempt)
+        invocations = _invocations_for(args)
         if args.ci_conclusion != "success":
             ci_failures = list_ci_failures(invocations)
         tests = download_visual_tests(invocations, args.work_dir / "tests")
