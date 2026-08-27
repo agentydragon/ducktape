@@ -55,7 +55,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from haku.console import operator_auth
-from haku.console.console_events import ConsoleEventHubDep, McpOperatorAuthChangedEvent
+from haku.console.console_events import ConnectionStatus, ConsoleEventHubDep, McpOperatorAuthChangedEvent
 from haku.console.database_schema import McpOperatorOAuthAssociation, McpOperatorOAuthFlow
 from haku.console.deps import SettingsDep
 from haku.console.mcp_config import (
@@ -812,7 +812,9 @@ async def disconnect_mcp_operator_auth(
 ) -> McpOperatorAuthStatus:
     operator_id = actor.operator_id
     await oauth_store.disconnect(server_id=server_id, operator_id=operator_id)
-    await event_hub.broadcast(operator_id, [McpOperatorAuthChangedEvent(server_id=server_id, status="disconnected")])
+    await event_hub.broadcast(
+        operator_id, [McpOperatorAuthChangedEvent(server_id=server_id, status=ConnectionStatus.DISCONNECTED)]
+    )
     return McpOperatorAuthStatus(
         server_id=server_id, username=await _operator_username(request), state=McpOperatorAuthUnconnected()
     )
@@ -868,7 +870,7 @@ async def mcp_operator_auth_callback(
             destination="settings",
         )
     await event_hub.broadcast(
-        operator_id, [McpOperatorAuthChangedEvent(server_id=status.server_id, status="connected")]
+        operator_id, [McpOperatorAuthChangedEvent(server_id=status.server_id, status=ConnectionStatus.CONNECTED)]
     )
     return await result_redirect(
         result_store,

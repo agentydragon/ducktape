@@ -13,6 +13,7 @@ from pydantic import ValidationError
 
 from haku.console import console_events
 from haku.console.console_events import (
+    ConnectionStatus,
     ConsoleEventHub,
     ConsoleHelloEvent,
     McpOperatorAuthChangedEvent,
@@ -105,7 +106,7 @@ async def test_event_hub_routes_across_replicas_by_operator_id(migrated_db_url: 
         await second_hub.connect(cast(WebSocket, operator_a_second), OPERATOR_A)
         await second_hub.connect(cast(WebSocket, operator_b_second), OPERATOR_B)
 
-        event = McpOperatorAuthChangedEvent(server_id="grocy-sf", status="connected")
+        event = McpOperatorAuthChangedEvent(server_id="grocy-sf", status=ConnectionStatus.CONNECTED)
         # start() guarantees both LISTEN subscriptions are ready, so an immediate publish reaches
         # the local replica and its peer without a test sleep or a production startup race.
         await first_hub.broadcast(OPERATOR_A, [event])
@@ -201,7 +202,9 @@ async def test_event_hub_publish_timeout_is_lossy_not_a_request_failure(monkeypa
     hub._publisher = cast(Any, publisher)
     monkeypatch.setattr(ConsoleEventHub, "_PUBLISH_TIMEOUT_SECONDS", 0.02)
 
-    await hub.broadcast(OPERATOR_A, [McpOperatorAuthChangedEvent(server_id="grocy-sf", status="connected")])
+    await hub.broadcast(
+        OPERATOR_A, [McpOperatorAuthChangedEvent(server_id="grocy-sf", status=ConnectionStatus.CONNECTED)]
+    )
 
     assert publisher.closed
     assert hub._publisher is None
@@ -216,7 +219,9 @@ async def test_stuck_websocket_does_not_block_other_operator_tabs(monkeypatch: p
     await hub.connect(cast(WebSocket, stuck), OPERATOR_A)
     await hub.connect(cast(WebSocket, healthy), OPERATOR_A)
 
-    await hub.deliver_locally(OPERATOR_A, McpOperatorAuthChangedEvent(server_id="grocy-sf", status="connected"))
+    await hub.deliver_locally(
+        OPERATOR_A, McpOperatorAuthChangedEvent(server_id="grocy-sf", status=ConnectionStatus.CONNECTED)
+    )
 
     assert healthy.messages == [
         {"event_type": "mcp_operator_auth_changed", "server_id": "grocy-sf", "status": "connected"}
@@ -234,7 +239,9 @@ async def test_disabled_operator_socket_is_closed_before_event_delivery() -> Non
     websocket = RecordingWebSocket()
     await hub.connect(cast(WebSocket, websocket), OPERATOR_A)
 
-    await hub.deliver_locally(OPERATOR_A, McpOperatorAuthChangedEvent(server_id="grocy-sf", status="connected"))
+    await hub.deliver_locally(
+        OPERATOR_A, McpOperatorAuthChangedEvent(server_id="grocy-sf", status=ConnectionStatus.CONNECTED)
+    )
 
     assert websocket.messages == []
     assert websocket.closed

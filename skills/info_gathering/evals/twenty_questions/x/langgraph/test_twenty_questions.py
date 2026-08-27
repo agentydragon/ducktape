@@ -7,7 +7,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
-from skills.info_gathering.evals.twenty_questions.result_types import Correct, Timeout
+from skills.info_gathering.evals.twenty_questions.result_types import Correct, Player, Timeout
 from skills.info_gathering.evals.twenty_questions.x.langgraph.twenty_questions import GameState, build_graph
 
 
@@ -111,9 +111,9 @@ async def test_log_entries_recorded():
     entries = final["log_entries"]
 
     assert len(entries) == 2
-    assert entries[0].player == "guesser"
+    assert entries[0].player == Player.GUESSER
     assert entries[0].content == "Is it red?"
-    assert entries[1].player == "simulator"
+    assert entries[1].player == Player.SIMULATOR
     assert entries[1].tool_calls == [{"name": "correct_answer", "args": {}}]
 
 

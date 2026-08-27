@@ -45,7 +45,14 @@ from skills.info_gathering.evals.twenty_questions.prompts import (
     first_user_message,
     load_sim_prompt,
 )
-from skills.info_gathering.evals.twenty_questions.result_types import Correct, LogEntry, Result, RunSummary, Timeout
+from skills.info_gathering.evals.twenty_questions.result_types import (
+    Correct,
+    LogEntry,
+    Player,
+    Result,
+    RunSummary,
+    Timeout,
+)
 from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
     add_common_args,
     output_dir_from_args,
@@ -80,9 +87,7 @@ class GameContext:
     log_entries: list[LogEntry] = field(default_factory=list)
     last_sim_response: str = ""
 
-    def record(
-        self, player: Literal["guesser", "simulator"], content: str, tool_calls: list[dict[str, object]] | None = None
-    ) -> None:
+    def record(self, player: Player, content: str, tool_calls: list[dict[str, object]] | None = None) -> None:
         self.log_entries.append(
             LogEntry(timestamp=datetime.now(UTC), player=player, content=content, tool_calls=tool_calls or [])
         )
@@ -97,21 +102,21 @@ def _make_sim_tools(game: GameContext) -> list[FunctionTool]:
     it after `sim_agent.run(...)` returns."""
 
     async def answer(response: Literal["yes", "no", "sort_of"]) -> str:
-        game.record("simulator", response, [{"name": "answer", "args": {"response": response}}])
+        game.record(Player.SIMULATOR, response, [{"name": "answer", "args": {"response": response}}])
         game.last_sim_response = response
         logger.info("Simulator: %s", response)
         return response
 
     async def correct_answer() -> str:
         game.result = Correct(turns=game.turn)
-        game.record("simulator", "", [{"name": "correct_answer", "args": {}}])
+        game.record(Player.SIMULATOR, "", [{"name": "correct_answer", "args": {}}])
         game.last_sim_response = "correct"
         logger.info("Correct answer on turn %d!", game.turn)
         return "correct"
 
     async def invalid_input(reason: str) -> str:
         game.invalid_input_count += 1
-        game.record("simulator", reason, [{"name": "invalid_input", "args": {"reason": reason}}])
+        game.record(Player.SIMULATOR, reason, [{"name": "invalid_input", "args": {"reason": reason}}])
         game.last_sim_response = reason
         logger.info("Simulator: invalid_input — %s", reason)
         return reason
@@ -143,7 +148,7 @@ def _make_game_tools(*, game: GameContext, sim_agent: Agent, sim_session: AgentS
     async def ask_yes_no_question(question: str) -> str:
         """Ask a yes/no question. Uses one turn."""
         game.turn += 1
-        game.record("guesser", question, [{"name": "ask_yes_no_question", "args": {"question": question}}])
+        game.record(Player.GUESSER, question, [{"name": "ask_yes_no_question", "args": {"question": question}}])
         logger.info("Guesser (turn %d): %s", game.turn, question[:200])
 
         await _drive_simulator(f"Question: {question}")
@@ -162,7 +167,7 @@ def _make_game_tools(*, game: GameContext, sim_agent: Agent, sim_session: AgentS
     async def guess_answer(answer: str) -> str:
         """Guess the secret answer. Uses one turn."""
         game.turn += 1
-        game.record("guesser", answer, [{"name": "guess_answer", "args": {"answer": answer}}])
+        game.record(Player.GUESSER, answer, [{"name": "guess_answer", "args": {"answer": answer}}])
         logger.info("Guesser (turn %d) guesses: %s", game.turn, answer[:200])
 
         await _drive_simulator(f"My answer is: {answer}")

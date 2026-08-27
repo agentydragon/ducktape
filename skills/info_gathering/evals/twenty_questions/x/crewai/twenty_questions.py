@@ -33,7 +33,7 @@ from skills.info_gathering.evals.twenty_questions.prompts import (
     first_user_message,
     load_sim_prompt,
 )
-from skills.info_gathering.evals.twenty_questions.result_types import Correct, LogEntry, RunSummary, Timeout
+from skills.info_gathering.evals.twenty_questions.result_types import Correct, LogEntry, Player, RunSummary, Timeout
 from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
     add_common_args,
     output_dir_from_args,
@@ -59,9 +59,7 @@ class GameState:
     invalid_input_count: int = 0
     log_entries: list[LogEntry] = field(default_factory=list)
 
-    def record(
-        self, player: Literal["guesser", "simulator"], content: str, tool_calls: list[dict[str, object]] | None = None
-    ) -> None:
+    def record(self, player: Player, content: str, tool_calls: list[dict[str, object]] | None = None) -> None:
         self.log_entries.append(
             LogEntry(timestamp=datetime.now(UTC), player=player, content=content, tool_calls=tool_calls or [])
         )
@@ -233,19 +231,19 @@ def _process_sim_result(state: GameState, tool_result: dict[str, object] | None)
     if tool_name == "invalid_input":
         reason = str(tool_result["args"]["reason"])  # type: ignore[index]
         state.invalid_input_count += 1
-        state.record("simulator", reason, [{"name": "invalid_input", "args": {"reason": reason}}])
+        state.record(Player.SIMULATOR, reason, [{"name": "invalid_input", "args": {"reason": reason}}])
         state.turn -= 1  # Refund the turn.
         return reason
 
     if tool_name == "correct_answer":
-        state.record("simulator", "", [{"name": "correct_answer", "args": {}}])
+        state.record(Player.SIMULATOR, "", [{"name": "correct_answer", "args": {}}])
         state.result = Correct(turns=state.turn)
         logger.info("Correct answer on turn %d!", state.turn)
         return "Correct! You guessed it!"
 
     if tool_name == "answer":
         response = str(tool_result["args"]["response"])  # type: ignore[index]
-        state.record("simulator", response, [{"name": "answer", "args": {"response": response}}])
+        state.record(Player.SIMULATOR, response, [{"name": "answer", "args": {"response": response}}])
         logger.info("Simulator: %s", response)
         if state.turn >= state.turn_limit and state.result is None:
             state.result = Timeout(limit=state.turn_limit)
@@ -268,7 +266,7 @@ def run_game_loop(
         # Guesser turn
         guesser_text = _run_guesser_turn(guesser=guesser, prompt=guesser_prompt)
         state.turn += 1
-        state.record("guesser", guesser_text)
+        state.record(Player.GUESSER, guesser_text)
         logger.info("Guesser (turn %d): %s", state.turn, guesser_text[:200])
 
         # Simulator turn
@@ -338,7 +336,7 @@ def run_twenty_questions_crewai(
         invalid_input_count=sum(
             1
             for e in log_entries
-            if e.player == "simulator" and any(tc.get("name") == "invalid_input" for tc in e.tool_calls)
+            if e.player == Player.SIMULATOR and any(tc.get("name") == "invalid_input" for tc in e.tool_calls)
         ),
     )
     save_summary(summary=summary, summary_path=summary_path)

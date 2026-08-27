@@ -19,7 +19,7 @@ from finance.augur.api.portfolio_sources import resolve_portfolio_sources
 from finance.augur.model.exogenous import Sampler
 from finance.augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
 from finance.augur.product.service import ProductService
-from finance.augur.product.wire import MetricName, ProjectionSamplingRequest, ScenarioKey
+from finance.augur.product.wire import MetricName, ProjectionSamplingRequest, ScenarioKey, SpendIndex
 from util.bazel.runfiles import get_required_path
 
 DEFAULT_CONFIG_RUNFILE = "_main/finance/augur/api/testdata/config.yaml"
@@ -100,7 +100,7 @@ def _arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--horizon-months", type=int, default=DEFAULT_HORIZON_MONTHS)
     parser.add_argument("--rollout-count", type=int, default=DEFAULT_ROLLOUT_COUNT)
     parser.add_argument("--monthly-spend-usd", type=float, default=DEFAULT_MONTHLY_SPEND_USD)
-    parser.add_argument("--spend-index", choices=["none", "inflation"], default="inflation")
+    parser.add_argument("--spend-index", type=SpendIndex, choices=list(SpendIndex), default=SpendIndex.INFLATION)
     parser.add_argument("--metric", choices=get_args(MetricName), default="liquid_net_worth")
     parser.add_argument("--percentiles", type=float, nargs="+", default=list(DEFAULT_PERCENTILES))
     parser.add_argument("--profile-output", type=Path, default=DEFAULT_PROFILE_OUTPUT)

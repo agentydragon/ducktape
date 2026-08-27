@@ -20,12 +20,12 @@ logger = logging.getLogger(__name__)
 # carries a coarse state string (no exit code), so "exited" maps to "failed";
 # terminal pods are finalized by the supervisor either way.
 _DOCKER_STATE_MAP: dict[str, PodPhase] = {
-    "created": "pending",
-    "restarting": "pending",
-    "running": "running",
-    "paused": "running",
-    "exited": "failed",
-    "dead": "failed",
+    "created": PodPhase.PENDING,
+    "restarting": PodPhase.PENDING,
+    "running": PodPhase.RUNNING,
+    "paused": PodPhase.RUNNING,
+    "exited": PodPhase.FAILED,
+    "dead": PodPhase.FAILED,
 }
 
 
@@ -154,7 +154,7 @@ class DockerExecutor:
             summary = c._container  # list() summary dict
             names = summary.get("Names") or [summary.get("Id", "")]
             labels = summary.get("Labels") or {}
-            phase: PodPhase = _DOCKER_STATE_MAP.get(summary.get("State", ""), "unknown")
+            phase: PodPhase = _DOCKER_STATE_MAP.get(summary.get("State", ""), PodPhase.UNKNOWN)
             pods.append(
                 PodInfo(
                     name=names[0].lstrip("/"),

@@ -19,10 +19,15 @@ MCP_TOOL_META_KEY = "works.allegedly.haku/tool"
 MCP_TOOL_CALL_META_KEY = "works.allegedly.haku/tool-call"
 
 
+class ApprovalMode(StrEnum):
+    PASSTHROUGH = "passthrough"
+    APPROVAL_REQUIRED = "approval_required"
+
+
 class McpProxyToolMetadata(BaseModel):
     server_id: str
     upstream_tool_name: str
-    approval_mode: Literal["passthrough", "approval_required"]
+    approval_mode: ApprovalMode
 
 
 class McpToolCallMetadata(BaseModel):

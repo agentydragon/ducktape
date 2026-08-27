@@ -73,7 +73,7 @@ from haku.console.x.session_views import (
     SessionProvisioningView,
     SessionView,
 )
-from haku.console.x.system_prompt import HistoryMessage, SessionIntroduction
+from haku.console.x.system_prompt import HistoryMessage, HistorySender, SessionIntroduction
 from haku.runtime.x.bridge.backend import MCP_CREDENTIAL_VARIABLE
 from haku.runtime.x.bridge.client import ReceivedFrame, RecordedFrame
 from haku.runtime.x.bridge.protocol import GOING_AWAY_CODE, NOT_ADMITTED_CODE, HarnessFrame, TextWebSocket
@@ -493,7 +493,9 @@ class SessionService:
                 workspace=resources.cwd,
                 recent_messages=tuple(
                     HistoryMessage(
-                        sender="operator" if message.item_type is ItemType.PROMPT else "assistant",
+                        sender=HistorySender.OPERATOR
+                        if message.item_type is ItemType.PROMPT
+                        else HistorySender.ASSISTANT,
                         body=message.body,
                         sent_at=message.sent_at,
                     )

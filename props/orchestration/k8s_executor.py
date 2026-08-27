@@ -29,10 +29,10 @@ logger = logging.getLogger(__name__)
 
 # k8s pod.status.phase -> runtime-agnostic PodPhase.
 _PHASE_MAP: dict[str, PodPhase] = {
-    "Pending": "pending",
-    "Running": "running",
-    "Succeeded": "succeeded",
-    "Failed": "failed",
+    "Pending": PodPhase.PENDING,
+    "Running": PodPhase.RUNNING,
+    "Succeeded": PodPhase.SUCCEEDED,
+    "Failed": PodPhase.FAILED,
 }
 
 
@@ -153,7 +153,7 @@ class K8sExecutor:
         resp = await self._core_v1.list_namespaced_pod(namespace=self._namespace, label_selector=selector)
         pods: list[PodInfo] = []
         for pod in resp.items:
-            phase: PodPhase = _PHASE_MAP.get(pod.status.phase if pod.status else "", "unknown")
+            phase: PodPhase = _PHASE_MAP.get(pod.status.phase if pod.status else "", PodPhase.UNKNOWN)
             image = pod.spec.containers[0].image if pod.spec and pod.spec.containers else ""
             pods.append(
                 PodInfo(

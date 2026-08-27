@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest_bazel
 
-from skills.info_gathering.evals.twenty_questions.result_types import Correct, Timeout
+from skills.info_gathering.evals.twenty_questions.result_types import Correct, Player, Timeout
 from skills.info_gathering.evals.twenty_questions.x.crewai.twenty_questions import (
     AnswerTool,
     CorrectAnswerTool,
@@ -35,10 +35,10 @@ def test_correct_on_turn_2(mock_guesser, mock_sim):
     assert mock_sim.call_count == 2
     # 2 guesser + 2 simulator entries
     assert len(log_entries) == 4
-    assert log_entries[0].player == "guesser"
-    assert log_entries[1].player == "simulator"
-    assert log_entries[2].player == "guesser"
-    assert log_entries[3].player == "simulator"
+    assert log_entries[0].player == Player.GUESSER
+    assert log_entries[1].player == Player.SIMULATOR
+    assert log_entries[2].player == Player.GUESSER
+    assert log_entries[3].player == Player.SIMULATOR
 
 
 @patch("skills.info_gathering.evals.twenty_questions.x.crewai.twenty_questions._run_simulator_turn")
@@ -103,9 +103,9 @@ def test_log_entries_recorded(mock_guesser, mock_sim):
     )
 
     assert len(log_entries) == 2
-    assert log_entries[0].player == "guesser"
+    assert log_entries[0].player == Player.GUESSER
     assert log_entries[0].content == "Is it red?"
-    assert log_entries[1].player == "simulator"
+    assert log_entries[1].player == Player.SIMULATOR
     assert log_entries[1].tool_calls == [{"name": "correct_answer", "args": {}}]
 
 
@@ -125,7 +125,7 @@ def test_sim_answer_content_in_log(mock_guesser, mock_sim):
 
     # First simulator entry should have content="yes"
     sim_entry = log_entries[1]
-    assert sim_entry.player == "simulator"
+    assert sim_entry.player == Player.SIMULATOR
     assert sim_entry.content == "yes"
 
 
@@ -147,7 +147,7 @@ def test_sim_returns_none_ends_game(mock_guesser, mock_sim):
     assert turns == 1
     # Only the guesser entry -- sim produced no tool call so no sim log entry
     assert len(log_entries) == 1
-    assert log_entries[0].player == "guesser"
+    assert log_entries[0].player == Player.GUESSER
 
 
 def test_answer_tool_sets_state():

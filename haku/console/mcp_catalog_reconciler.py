@@ -10,7 +10,13 @@ from contextlib import asynccontextmanager
 from uuid import UUID
 
 from haku.console.console_events import ConsoleEvent, McpOperatorAuthChangedEvent, OperatorConnectionChangedEvent
-from haku.console.mcp_approval import DegradedReflection, McpServerDispatcher, ServerReflection, metadata_for_operator
+from haku.console.mcp_approval import (
+    DegradedReflection,
+    McpServerDispatcher,
+    ReflectionFailureStage,
+    ServerReflection,
+    metadata_for_operator,
+)
 from haku.console.mcp_config import McpServerEntry
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp_reflection_cache import ReflectedCatalog
@@ -63,7 +69,7 @@ class OperatorCatalogReconciler:
         if reflection is None:
             self.schedule(operator_id)
             return DegradedReflection(
-                failure_stage="tool_discovery",
+                failure_stage=ReflectionFailureStage.TOOL_DISCOVERY,
                 degraded_reason="the background catalog reconciler has not published this catalog yet",
             )
         return _detached(reflection)
@@ -142,7 +148,7 @@ class OperatorCatalogReconciler:
             )
         except Exception as error:
             logger.exception("MCP catalog reconciliation failed for server %s", server.id)
-            return DegradedReflection(failure_stage="tool_discovery", degraded_reason=str(error))
+            return DegradedReflection(failure_stage=ReflectionFailureStage.TOOL_DISCOVERY, degraded_reason=str(error))
 
     async def _refresh_loop(self) -> None:
         while True:
