@@ -63,7 +63,7 @@ principals · PR"]` (single quotes inside the double-quoted label). Anchors
   each chain's node labels with a small per-lane icon (🔐 💬 🗂 🤖 📸 …) and put
   the icon key in the legend — the grouping survives without the layout cost.
 - Keep labels ≤ ~30 characters; `flowchart LR`; tighten with
-  `%%{init: {"flowchart": {"nodeSpacing": 30, "rankSpacing": 45}}}%%`.
+  `%%{init: {"flowchart": {"nodeSpacing": 26, "rankSpacing": 40, "padding": 7}}}%%` — halving the default node padding is what gets the natural width under the container and the effective scale to 1.0.
 
 ## Mermaid-in-artifact gotchas
 
