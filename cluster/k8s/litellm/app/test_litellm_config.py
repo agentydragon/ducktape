@@ -187,17 +187,17 @@ def _expected_main_config() -> dict:
     for tag, ctx_variants in _MODELS:
         model_list.extend(_model_entries(tag, ctx_variants))
     model_list.extend(_tana_entries(legacy_tana_name))
-    model_list.extend(_tana_entries(partial(exposed_name, Provider.TANA, ApiShape.MESSAGES)))
+    model_list.extend(_tana_entries(partial(exposed_name, Provider.TANA, ApiShape.ANT_MESSAGES)))
     model_list.extend(_cliproxy_messages_entries(legacy_messages_name))
-    model_list.extend(_cliproxy_messages_entries(partial(exposed_name, Provider.CHATGPT, ApiShape.MESSAGES)))
+    model_list.extend(_cliproxy_messages_entries(partial(exposed_name, Provider.CHATGPT, ApiShape.ANT_MESSAGES)))
     model_list.extend(_cliproxy_responses_entries(legacy_responses_name))
-    model_list.extend(_cliproxy_responses_entries(partial(exposed_name, Provider.CHATGPT, ApiShape.RESPONSES)))
+    model_list.extend(_cliproxy_responses_entries(partial(exposed_name, Provider.CHATGPT, ApiShape.OAI_RESPONSES)))
     model_list.extend(_anthropic_entries())
     model_list.extend(_groq_entries())
     model_list.extend(_gemini_chat_entries(legacy_google_name))
     model_list.extend(_gemini_embedding_entries(legacy_google_name))
-    model_list.extend(_gemini_chat_entries(partial(exposed_name, Provider.GOOGLE, ApiShape.CHAT)))
-    model_list.extend(_gemini_embedding_entries(partial(exposed_name, Provider.GOOGLE, ApiShape.EMBEDDINGS)))
+    model_list.extend(_gemini_chat_entries(partial(exposed_name, Provider.GOOGLE, ApiShape.OAI_CHAT)))
+    model_list.extend(_gemini_embedding_entries(partial(exposed_name, Provider.GOOGLE, ApiShape.OAI_EMBEDDINGS)))
 
     # Master key and Langfuse credentials are injected as env vars in the
     # Deployment; not repeated here.
@@ -237,10 +237,10 @@ def _litellm_keys_locals() -> dict:
 def test_terraform_codex_allowlists_match_the_cliproxy_model_list() -> None:
     tf_locals = _litellm_keys_locals()
     assert tf_locals["oai_lane_models"] == [legacy_responses_name(model) for model in CLIPROXY_MODELS] + [
-        exposed_name(Provider.CHATGPT, ApiShape.RESPONSES, model) for model in CLIPROXY_MODELS
+        exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, model) for model in CLIPROXY_MODELS
     ]
     assert tf_locals["codex_client_models"] == [legacy_messages_name(model) for model in CLIPROXY_MODELS] + [
-        exposed_name(Provider.CHATGPT, ApiShape.MESSAGES, model) for model in CLIPROXY_MODELS
+        exposed_name(Provider.CHATGPT, ApiShape.ANT_MESSAGES, model) for model in CLIPROXY_MODELS
     ]
 
 
@@ -270,10 +270,10 @@ def test_terraform_key_allowlists_only_name_models_the_proxy_serves() -> None:
 # must be a Responses-wire entry (either era's name); a Messages-wire name fails every
 # turn at /v1/responses
 # (haku/console/x/codex_app_server/testdata/real_provider_failure.sanitized.jsonl).
-def test_console_codex_chat_runtimes_use_responses_wire_models() -> None:
+def test_console_codex_chat_runtimes_use_oai_responses_wire_models() -> None:
     config = yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/config.yaml").read_text())
     responses_wire_names = {legacy_responses_name(model) for model in CLIPROXY_MODELS} | {
-        exposed_name(Provider.CHATGPT, ApiShape.RESPONSES, model) for model in CLIPROXY_MODELS
+        exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, model) for model in CLIPROXY_MODELS
     }
     for name, runtime in config["chat_runtimes"].items():
         implementation = runtime["implementation"]

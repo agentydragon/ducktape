@@ -1,14 +1,26 @@
 """Shared model rosters and exposed-name derivations referenced by LiteLLM cross-configuration tests.
 
 Naming scheme (#4823): an exposed `model_name` is `{provider}/{shape}/{model}` — the
-upstream account/provider, the API shape LiteLLM exposes the entry under (its /v1
-endpoint vocabulary: messages, responses, chat, embeddings), then the upstream model:
+upstream account/provider, the API shape LiteLLM exposes the entry under, then the
+upstream model:
 
-- `chatgpt/messages/*` / `chatgpt/responses/*` — ChatGPT/Codex subscription via
+- `chatgpt/ant-messages/*` / `chatgpt/oai-responses/*` — ChatGPT/Codex subscription via
   CLIProxyAPI, on the Anthropic Messages wire (Claude Code clients) and the OpenAI
   Responses wire (Codex clients)
-- `tana/messages/*` — Tana account via tana-litellm, an Anthropic Messages passthrough
-- `google/chat/*` / `google/embeddings/*` — Google AI key (Gemini)
+- `tana/ant-messages/*` — Tana account via tana-litellm, an Anthropic Messages
+  passthrough
+- `google/oai-chat/*` / `google/oai-embeddings/*` — Google AI key (Gemini)
+
+A shape slug is `<definer>-<protocol>` (ant-messages, oai-responses, oai-chat,
+oai-embeddings): the shape segment names a wire protocol, and wire protocols are
+identified by their definer — the bare nouns are unique only in today's snapshot
+("chat" and "embeddings" are already generic: Cohere chat and Google embedContent are
+distinct wire shapes answering to the same nouns). The definer prefix is NOT the
+provider segment: provider says whose ACCOUNT serves the entry, the definer says whose
+PROTOCOL it speaks, and they vary independently — `chatgpt/ant-messages/*` is the
+ChatGPT account serving Anthropic's wire shape. Definer slugs stay short and fixed
+(ant, oai; future goog, coh, ...) so a provider slug can never stutter against a
+definer name (openai/openai-chat).
 
 Segments are separated by `/`, not `-`: provider model slugs are dash-heavy
 (gpt-5.6-sol, claude-sonnet-4-6, gemini-embedding-001), so a dash cannot mark segment
@@ -39,16 +51,16 @@ class Provider(StrEnum):
 
 
 class ApiShape(StrEnum):
-    """Second scheme segment: the API shape LiteLLM exposes the entry under."""
+    """Second scheme segment: the API shape LiteLLM exposes the entry under, as `<definer>-<protocol>`."""
 
-    MESSAGES = "messages"
-    RESPONSES = "responses"
-    CHAT = "chat"
-    EMBEDDINGS = "embeddings"
+    ANT_MESSAGES = "ant-messages"
+    OAI_RESPONSES = "oai-responses"
+    OAI_CHAT = "oai-chat"
+    OAI_EMBEDDINGS = "oai-embeddings"
 
 
 def exposed_name(provider: Provider, shape: ApiShape, model: str) -> str:
-    """#4823 scheme name, e.g. `chatgpt/responses/gpt-5.6-luna`."""
+    """#4823 scheme name, e.g. `chatgpt/oai-responses/gpt-5.6-luna`."""
     return f"{provider}/{shape}/{model}"
 
 

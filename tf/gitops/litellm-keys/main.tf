@@ -64,21 +64,21 @@ locals {
     "gpt-5.6-terra-chatgpt",
     "gpt-5.6-luna-chatgpt",
     "gpt-5.3-codex-spark-chatgpt",
-    "chatgpt/responses/gpt-5.4",
-    "chatgpt/responses/gpt-5.5",
-    "chatgpt/responses/gpt-5.6-sol",
-    "chatgpt/responses/gpt-5.6-terra",
-    "chatgpt/responses/gpt-5.6-luna",
-    "chatgpt/responses/gpt-5.3-codex-spark",
+    "chatgpt/oai-responses/gpt-5.4",
+    "chatgpt/oai-responses/gpt-5.5",
+    "chatgpt/oai-responses/gpt-5.6-sol",
+    "chatgpt/oai-responses/gpt-5.6-terra",
+    "chatgpt/oai-responses/gpt-5.6-luna",
+    "chatgpt/oai-responses/gpt-5.3-codex-spark",
   ]
   # Tana-UI models fronted through tana-litellm (TANA_MODELS in model_rosters.py).
   tana_client_models = [
     "tana-claude-sonnet-4-6",
     "tana-claude-opus-4-6",
     "tana-claude-haiku-4-5",
-    "tana/messages/claude-sonnet-4-6",
-    "tana/messages/claude-opus-4-6",
-    "tana/messages/claude-haiku-4-5",
+    "tana/ant-messages/claude-sonnet-4-6",
+    "tana/ant-messages/claude-opus-4-6",
+    "tana/ant-messages/claude-haiku-4-5",
   ]
   # Codex-subscription models on the Anthropic Messages surface, fronted through
   # CLIProxyAPI (_cliproxy_messages_entries) -- Claude Code clients.
@@ -89,12 +89,12 @@ locals {
     "codex-gpt-5.6-terra",
     "codex-gpt-5.6-luna",
     "codex-gpt-5.3-codex-spark",
-    "chatgpt/messages/gpt-5.4",
-    "chatgpt/messages/gpt-5.5",
-    "chatgpt/messages/gpt-5.6-sol",
-    "chatgpt/messages/gpt-5.6-terra",
-    "chatgpt/messages/gpt-5.6-luna",
-    "chatgpt/messages/gpt-5.3-codex-spark",
+    "chatgpt/ant-messages/gpt-5.4",
+    "chatgpt/ant-messages/gpt-5.5",
+    "chatgpt/ant-messages/gpt-5.6-sol",
+    "chatgpt/ant-messages/gpt-5.6-terra",
+    "chatgpt/ant-messages/gpt-5.6-luna",
+    "chatgpt/ant-messages/gpt-5.3-codex-spark",
   ]
   # Gemini embeddings (GEMINI_EMBEDDING_MODELS in test_litellm_config.py). Granted to
   # agents whose egress cannot reach api.openai.com: the main openclaw gateway holds
@@ -104,8 +104,8 @@ locals {
   embedding_client_models = [
     "gemini-embedding-2",
     "gemini-embedding-001",
-    "google/embeddings/gemini-embedding-2",
-    "google/embeddings/gemini-embedding-001",
+    "google/oai-embeddings/gemini-embedding-2",
+    "google/oai-embeddings/gemini-embedding-001",
   ]
   # Google Gemini models (GEMINI_MODELS in model_rosters.py) fronted through the
   # `gemini/` provider. Current generation only -- see that module for why the
@@ -116,9 +116,9 @@ locals {
     "gemini-3.1-pro-preview",
     "gemini-3.7-flash",
     "gemini-3.5-flash-lite",
-    "google/chat/gemini-3.1-pro-preview",
-    "google/chat/gemini-3.7-flash",
-    "google/chat/gemini-3.5-flash-lite",
+    "google/oai-chat/gemini-3.1-pro-preview",
+    "google/oai-chat/gemini-3.7-flash",
+    "google/oai-chat/gemini-3.5-flash-lite",
   ]
 }
 
