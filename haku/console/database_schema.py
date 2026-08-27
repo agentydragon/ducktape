@@ -1209,8 +1209,10 @@ class Session(Base):
     @status.inplace.expression
     @classmethod
     def _status_expression(cls) -> ColumnElement[SessionStatus]:
-        # `type_coerce` rather than a bare CASE so a selected status decodes to the enum exactly as
-        # the stored column did.
+        # `type_coerce` rather than a bare CASE so a selected status decodes to the enum, and
+        # labelled so `select(Session.status, …)` rows answer `.status` by name — both exactly as
+        # the stored column did. In a WHERE the label compiles to its element, so filters are
+        # untouched by it.
         return type_coerce(
             case(
                 (cls.ended_at.is_not(None) & cls.error.is_not(None), SessionStatus.FAILED),
@@ -1221,7 +1223,7 @@ class Session(Base):
                 else_=SessionStatus.READY,
             ),
             TextBackedStrEnumColumn(SessionStatus),
-        )
+        ).label("status")
 
 
 class ConversationEvent(Base):

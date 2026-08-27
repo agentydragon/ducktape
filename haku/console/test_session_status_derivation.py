@@ -123,6 +123,13 @@ async def test_the_row_facts_derive_the_same_member_in_python_and_sql(
         selected = await db.scalar(select(Session.status).where(Session.session_id == session_id))
         assert selected is expected
 
+        # By name too: `session_identity` reads `row.status` off a multi-column select, so the
+        # expression must carry the column's label, not an anonymous one.
+        named = (
+            await db.execute(select(Session.session_id, Session.status).where(Session.session_id == session_id))
+        ).one()
+        assert named.status is expected
+
         found = await db.scalar(
             select(Session.session_id).where(Session.session_id == session_id, Session.status == expected)
         )
