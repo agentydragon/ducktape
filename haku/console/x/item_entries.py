@@ -17,10 +17,10 @@ and `turn_ended` rows. Those positions are `opened_seq`, `closed_seq`, `first_se
 on the rows, so the store pages on them.
 
 **Two projections of the one fold.** `entry_of` serves the settled stream the MCP read returns;
-`transcript_entry_of` extends it with the members only the SPA carries — turn starts, and the
+`view_entry_of` extends it with the members only the SPA carries — turn starts, and the
 cut-off prose a dead session left at its `closed_seq` (stamped to `opened_seq`, the one position
 such an item has). The store produces the rows for both; which rows a read asks for is the read's
-own contract (`SessionStore.read_item_rows` versus `read_transcript_rows`).
+own contract (`SessionStore.read_item_rows` versus `read_conversation_view_rows`).
 """
 
 from __future__ import annotations
@@ -37,6 +37,7 @@ from haku.console.database_schema import ConversationEvent as ConversationEventR
 from haku.console.x.conversation_reads import (
     ConsoleAuthored,
     ConversationEntry,
+    ConversationViewEntry,
     CutOffItemEntry,
     EntryProvenance,
     FromFrames,
@@ -47,7 +48,6 @@ from haku.console.x.conversation_reads import (
     StreamingItem,
     ToolCallEntry,
     ToolResultEntry,
-    TranscriptEntry,
     TurnAbortedEnd,
     TurnAnsweredEnd,
     TurnEnd,
@@ -88,7 +88,7 @@ class EndedTurn:
 
 @dataclass(frozen=True, slots=True)
 class StartedTurn:
-    """A turn at its `turn_started` row. Only the transcript read serves these."""
+    """A turn at its `turn_started` row. Only the conversation-view read serves these."""
 
     turn: ConversationTurn
 
@@ -97,7 +97,7 @@ class StartedTurn:
 class CutOffItem:
     """A prose item a dead session left unfinished, at the opening row failing it closed it on.
 
-    Only the transcript read serves these; *defining* is that opening row, for its provenance.
+    Only the conversation-view read serves these; *defining* is that opening row, for its provenance.
     """
 
     item: ConversationItem
@@ -106,7 +106,7 @@ class CutOffItem:
 
 type ConversationPageRow = OpenedCall | CompletedItem | EndedTurn
 
-type TranscriptPageRow = ConversationPageRow | StartedTurn | CutOffItem
+type ConversationViewPageRow = ConversationPageRow | StartedTurn | CutOffItem
 
 
 def turn_end_of(turn: ConversationTurn) -> TurnEnd | None:
@@ -241,8 +241,8 @@ def entry_of(row: ConversationPageRow) -> ConversationEntry:
             return turn_end_entry(turn)
 
 
-def transcript_entry_of(row: TranscriptPageRow) -> TranscriptEntry:
-    """The wire entry one transcript page row folds to — the SPA's superset of `entry_of`."""
+def view_entry_of(row: ConversationViewPageRow) -> ConversationViewEntry:
+    """The wire entry one conversation-view page row folds to — the SPA's superset of `entry_of`."""
     match row:
         case StartedTurn(turn=turn):
             return turn_started_entry(turn)

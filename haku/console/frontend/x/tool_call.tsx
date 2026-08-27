@@ -192,7 +192,7 @@ function toolCallSummary(call: ToolCallEntry): ReactNode {
 
 /** One call, whole: what was asked, and what it answered where the answer has arrived.
  *
- * The ask and the answer are two entries joined by `call_id` — the join the transcript makes once,
+ * The ask and the answer are two entries joined by `call_id` — the join the conversation view makes once,
  * here — so a `result` still missing is what says the call is running.
  *
  * **Folded to one line by default.** In a transcript the calls are the agent's working, not its

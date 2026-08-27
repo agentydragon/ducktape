@@ -311,10 +311,10 @@ type ConversationEntry = Annotated[
 
 
 class TurnStartedEntry(_EntryBase):
-    """An exchange began here — the boundary a transcript draws between one turn and the next.
+    """An exchange began here — the boundary the conversation view draws between one turn and the next.
 
     In the SPA's stream and not the MCP read: `list_turns` already serves an agent the exchange
-    index with cost and outcome, while a transcript wants the boundary in position. Authored, like
+    index with cost and outcome, while the conversation view wants the boundary in position. Authored, like
     the `turn_started` row it stands for. Its end, when it comes, is the stream's next
     `turn_end` entry; the two are paired by order, because at most one turn is ever open.
     """
@@ -341,7 +341,7 @@ class CutOffItemEntry(_EntryBase):
     text: str
 
 
-type TranscriptEntry = Annotated[
+type ConversationViewEntry = Annotated[
     PromptEntry
     | MessageEntry
     | ReasoningEntry

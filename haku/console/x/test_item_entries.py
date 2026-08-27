@@ -203,8 +203,8 @@ def test_a_turns_start_is_an_authored_entry_at_its_opening_row() -> None:
 
 
 def test_cut_off_prose_keeps_what_was_said_at_the_position_it_began() -> None:
-    """Failing a session closes its open items at their opening position; the transcript keeps the
-    half-said prose there rather than dropping it or reporting it finished."""
+    """Failing a session closes its open items at their opening position; the conversation view keeps
+    the half-said prose there rather than dropping it or reporting it finished."""
     item = _item(ItemType.MESSAGE, text="the answer was going to")
     item.status = ItemStatus.FAILED
     item.closed_seq = item.opened_seq

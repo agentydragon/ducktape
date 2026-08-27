@@ -22,10 +22,10 @@ from haku.console.x.conftest import attach_channel
 from haku.console.x.conversation_events import FrameRange, ItemSegment, MessageCompleted, MessageStarted, OpenRef
 from haku.console.x.conversation_follow import ConversationFollow
 from haku.console.x.conversation_reads import (
+    ConversationViewEntry,
     MessageEntry,
     PromptEntry,
     StreamingItem,
-    TranscriptEntry,
     TurnAnsweredEnd,
     TurnEndEntry,
 )
@@ -69,7 +69,7 @@ async def _nothing_more(messages: AsyncIterator[ConversationFollowMessage]) -> N
             await anext(messages)
 
 
-def _prose(entries: list[TranscriptEntry]) -> list[str]:
+def _prose(entries: list[ConversationViewEntry]) -> list[str]:
     """The spoken texts of a stream, in order — what most follow assertions care about."""
     return [entry.text for entry in entries if isinstance(entry, PromptEntry | MessageEntry)]
 

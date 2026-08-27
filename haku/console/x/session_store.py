@@ -82,14 +82,14 @@ from haku.console.x.item_entries import (
     PROSE_ITEM_TYPES,
     CompletedItem,
     ConversationPageRow,
+    ConversationViewPageRow,
     CutOffItem,
     EndedTurn,
     OpenedCall,
     StartedTurn,
-    TranscriptPageRow,
     streaming_item,
-    transcript_entry_of,
     turn_end_of,
+    view_entry_of,
 )
 from haku.console.x.launch_identity import LaunchAgentRejectedError, LaunchAuthorizer
 from haku.console.x.runtime import RuntimeAdapter, RuntimeRegistry
@@ -960,10 +960,10 @@ class SessionStore:
         )
 
     async def get_operator_conversation(self, operator_id: UUID, conversation_id: UUID) -> ConversationView:
-        """Read one Operator-owned conversation: its channels, its transcript, and its sessions.
+        """Read one Operator-owned conversation: its channels, its entries, and its sessions.
 
-        The transcript is the conversation's, across replaced sessions — the same entry stream the
-        MCP read pages, plus the lifecycle members only this surface carries. The session block is
+        The entries are the conversation's, across replaced sessions — the same stream the MCP
+        read pages, plus the lifecycle members only this surface carries. The session block is
         the current session's — the one holding the conversation, or the last one to have held it;
         earlier sessions stay reachable rather than disappearing with the sandbox they ran in.
 
@@ -994,7 +994,7 @@ class SessionStore:
         view = await self.get(operator_id, current.session_id)
         async with self._sessions() as db:
             narration = await setup_narration(db, current.session_id)
-            rows = await _transcript_rows(db, conversation_id, after_seq=None, limit=None, transcript=True)
+            rows = await _conversation_page_rows(db, conversation_id, after_seq=None, limit=None, view=True)
             streaming = await _streaming_items(db, current.session_id)
         return ConversationView(
             conversation_id=conversation_id,
@@ -1003,7 +1003,7 @@ class SessionStore:
             runtime_kind=conversation.runtime_kind,
             created_at=conversation.created_at,
             attachments=attachments,
-            entries=[transcript_entry_of(row) for row in rows],
+            entries=[view_entry_of(row) for row in rows],
             streaming=streaming,
             session=ConversationSessionView(
                 session_id=view.session_id,
@@ -1059,7 +1059,7 @@ class SessionStore:
             position = (await stream_head(db, conversation_id)).event_seq
             if not await _addressable(db, conversation_id, after):
                 raise PositionUnusableError(f"{after=} is not a position this conversation's log can answer from")
-            rows = await _transcript_rows(db, conversation_id, after_seq=after + 1, limit=limit + 1, transcript=True)
+            rows = await _conversation_page_rows(db, conversation_id, after_seq=after + 1, limit=limit + 1, view=True)
             if len(rows) > limit:
                 raise PositionUnusableError(f"more than {limit} entries have been defined since {after=}")
             streaming = await _streaming_items(db, current.session_id)
@@ -1079,7 +1079,7 @@ class SessionStore:
                 EarlierSession(session_id=row.session_id, status=row.status, created_at=row.created_at)
                 for row in earlier
             ],
-            entries=[transcript_entry_of(row) for row in rows],
+            entries=[view_entry_of(row) for row in rows],
             streaming=streaming,
         )
 
@@ -1765,12 +1765,12 @@ class SessionStore:
         to on the wire is the reader's business (`item_entries.entry_of`), not this store's.
         """
         async with self._sessions() as db:
-            return await _transcript_rows(db, conversation_id, after_seq=after_seq, limit=limit, transcript=False)
+            return await _conversation_page_rows(db, conversation_id, after_seq=after_seq, limit=limit, view=False)
 
-    async def read_transcript_rows(
+    async def read_conversation_view_rows(
         self, conversation_id: UUID, *, after_seq: int | None, limit: int | None
-    ) -> list[TranscriptPageRow]:
-        """`read_item_rows` plus the lifecycle rows only the SPA transcript serves.
+    ) -> list[ConversationViewPageRow]:
+        """`read_item_rows` plus the lifecycle rows only the conversation view serves.
 
         The superset adds two keyset branches on the same order: a turn at its `turn_started`
         position (`first_seq`), and a failed prose item at the opening position failing it closed
@@ -1778,7 +1778,7 @@ class SessionStore:
         paging surfaces always bound it.
         """
         async with self._sessions() as db:
-            return await _transcript_rows(db, conversation_id, after_seq=after_seq, limit=limit, transcript=True)
+            return await _conversation_page_rows(db, conversation_id, after_seq=after_seq, limit=limit, view=True)
 
     async def read_operator_frames(
         self,
@@ -2444,26 +2444,26 @@ def _row_position(row: _DefinedItem | StartedTurn | EndedTurn) -> int:
 
 
 @overload
-async def _transcript_rows(
-    db: AsyncSession, conversation_id: UUID, *, after_seq: int | None, limit: int | None, transcript: Literal[False]
+async def _conversation_page_rows(
+    db: AsyncSession, conversation_id: UUID, *, after_seq: int | None, limit: int | None, view: Literal[False]
 ) -> list[ConversationPageRow]: ...
 
 
 @overload
-async def _transcript_rows(
-    db: AsyncSession, conversation_id: UUID, *, after_seq: int | None, limit: int | None, transcript: Literal[True]
-) -> list[TranscriptPageRow]: ...
+async def _conversation_page_rows(
+    db: AsyncSession, conversation_id: UUID, *, after_seq: int | None, limit: int | None, view: Literal[True]
+) -> list[ConversationViewPageRow]: ...
 
 
-async def _transcript_rows(
-    db: AsyncSession, conversation_id: UUID, *, after_seq: int | None, limit: int | None, transcript: bool
-) -> Sequence[TranscriptPageRow]:
+async def _conversation_page_rows(
+    db: AsyncSession, conversation_id: UUID, *, after_seq: int | None, limit: int | None, view: bool
+) -> Sequence[ConversationViewPageRow]:
     """One page of the rows that define a conversation's entries, oldest first.
 
     One keyset branch per defining position, each bounded by *limit*, merged on that position and
     cut to the page; then one point lookup of the page's item rows' defining `conversation_event`
     rows for their provenance — the page's cost stays the page's own however long the thread is.
-    *transcript* adds the branches only the SPA serves (`read_transcript_rows`).
+    *view* adds the branches only the conversation view serves (`read_conversation_view_rows`).
     """
     threshold = after_seq if after_seq is not None else 0
 
@@ -2504,7 +2504,7 @@ async def _transcript_rows(
     ]
     merged += (_DefinedItem(seq=_closed_seq(item), item=item, wrap=CompletedItem) for item in completed)
     merged += (EndedTurn(turn=turn) for turn in ended)
-    if transcript:
+    if view:
         started = await db.scalars(
             bounded(
                 select(ConversationTurn)
@@ -2536,7 +2536,7 @@ async def _transcript_rows(
             )
         )
     }
-    rows: list[TranscriptPageRow] = []
+    rows: list[ConversationViewPageRow] = []
     for row in page:
         match row:
             case _DefinedItem(seq=seq, item=item, wrap=wrap):

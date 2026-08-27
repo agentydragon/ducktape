@@ -240,7 +240,7 @@ batch boundary is not an ending, and the wire facts every rule in it answers. It
 here; what follows is who reads it and what is not yet on it.
 
 **The live turn loop is the only thing that folds frames.** A stored conversation is read from the
-rows that fold materialised: `SessionStore.read_item_rows` and `read_transcript_rows` page
+rows that fold materialised: `SessionStore.read_item_rows` and `read_conversation_view_rows` page
 `conversation_item` and `conversation_turn` by their defining stream positions, and
 `item_entries.py` is the one place those rows fold onto the wire models in
 `conversation_reads.py` — the settled entry stream the MCP reader pages, and the superset the

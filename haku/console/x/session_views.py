@@ -1,7 +1,7 @@
 """What the console's chat API returns for a session or a conversation.
 
 The SPA's wire shapes — the inventory, the conversation detail, and the follow socket's messages.
-Projections, not a read model: the transcript they carry is the shared entry vocabulary of
+Projections, not a read model: the conversation entries they carry are the shared vocabulary of
 <conversation_reads.py>, folded once in <item_entries.py>, and what is here is how the browser is
 handed it — which container, which session row beside it, which page envelope. Nothing here
 decides anything about a live session: it is handed rows and produces the shapes the routes hand
@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.console.chat_models import BridgeFrameKind, FrameDirection, RuntimeKind, SessionStatus
 from haku.console.database_schema import Session, SessionFrame
-from haku.console.x.conversation_reads import ChannelAttachment, SetupOutputRecord, StreamingItem, TranscriptEntry
+from haku.console.x.conversation_reads import ChannelAttachment, ConversationViewEntry, SetupOutputRecord, StreamingItem
 from haku.console.x.sandbox_claims import SandboxProvisioningView
 from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 
@@ -29,8 +29,8 @@ from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 class SessionView(BaseModel):
     """One session's own row, as the store hands it to whoever asked.
 
-    Not a wire shape: the browser reads a conversation, assembled from this. The transcript is the
-    conversation's, so it is not here.
+    Not a wire shape: the browser reads a conversation, assembled from this. The entries are the
+    conversation's, so they are not here.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -112,8 +112,8 @@ class ConversationPage(BaseModel):
 class ConversationSessionView(BaseModel):
     """One session of a conversation: what it cost to start, how it is doing, what setup said.
 
-    The transcript is deliberately not here — it is the conversation's (`ConversationView.entries`),
-    because the thread outlives every session that ran it.
+    The entries are deliberately not here — they are the conversation's
+    (`ConversationView.entries`), because the thread outlives every session that ran it.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -145,7 +145,7 @@ class ConversationView(BaseModel):
     """One conversation as the browser reads it.
 
     No terminal state and no `ended_at`: a conversation is an id, and what ends is the session
-    under it. The transcript is the same entry stream the MCP read pages, plus the lifecycle
+    under it. `entries` is the same stream the MCP read pages, plus the lifecycle
     members only this surface carries; `streaming` is the live tail nothing has defined yet.
     """
 
@@ -157,8 +157,8 @@ class ConversationView(BaseModel):
     runtime_kind: RuntimeKind
     created_at: datetime
     attachments: list[ChannelAttachment]
-    entries: list[TranscriptEntry] = Field(
-        description="The settled transcript, oldest first, keyed by `seq`. Append-only: an entry never changes "
+    entries: list[ConversationViewEntry] = Field(
+        description="The conversation's settled entries, oldest first, keyed by `seq`. Append-only: an entry never changes "
         "once read, so a follower merges updates by position."
     )
     streaming: list[StreamingItem] = Field(
@@ -187,7 +187,7 @@ class ConversationSnapshot(BaseModel):
 class ConversationUpdate(BaseModel):
     """What moved in a conversation since a position, for a follower that already holds the rest.
 
-    **The transcript arrives incrementally and everything else arrives whole.** The entries are
+    **The entries arrive incrementally and everything else arrives whole.** The entries are
     exactly the ones defined after the follower's position — the same keyset read that pages the
     MCP surface — and merging them is a union by `seq`, idempotent because an entry never changes
     once defined. Everything else a conversation shows is a handful of rows, and sending them every
@@ -221,7 +221,7 @@ class ConversationUpdate(BaseModel):
     earlier_sessions: list[EarlierSession] = Field(
         description="The sessions this conversation ran before `session_id`, newest first — replaces what is held."
     )
-    entries: list[TranscriptEntry] = Field(
+    entries: list[ConversationViewEntry] = Field(
         description="The entries defined since the follower's position, oldest first — union them by `seq` "
         "over the ones already held."
     )

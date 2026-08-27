@@ -195,13 +195,13 @@ function CutOffView({ entry }: { entry: EntryOf<"cut_off"> }) {
   );
 }
 
-/** One row of the rendered transcript: an entry, with what only the render joins onto it. */
-export type TranscriptRow =
+/** One row of the rendered conversation: an entry, with what only the render joins onto it. */
+export type ConversationRow =
   | { kind: "call"; call: EntryOf<"tool_call">; result: ToolResultEntry | null }
   | { kind: "boundary"; seq: number; number: number }
   | { kind: "spoken"; entry: EntryOf<"prompt" | "message" | "reasoning" | "turn_end" | "cut_off"> };
 
-export function transcriptRowSeq(row: TranscriptRow): number {
+export function conversationRowSeq(row: ConversationRow): number {
   switch (row.kind) {
     case "call":
       return row.call.seq;
@@ -214,14 +214,14 @@ export function transcriptRowSeq(row: TranscriptRow): number {
 
 /** The stream as the page renders it: results joined onto their calls, boundaries numbered.
  *
- * The one join the transcript makes — a call's answer is a separate entry keyed by `call_id`, and
+ * The one join the page makes — a call's answer is a separate entry keyed by `call_id`, and
  * showing them apart would make the reader do it. A result rides with its call, so it emits no row
  * of its own.
  */
-export function transcriptRows(entries: readonly ConversationEntry[]): TranscriptRow[] {
+export function conversationRows(entries: readonly ConversationEntry[]): ConversationRow[] {
   const results = new Map<string, ToolResultEntry>();
   for (const entry of entries) if (entry.kind === "tool_result") results.set(entry.call_id, entry);
-  const rows: TranscriptRow[] = [];
+  const rows: ConversationRow[] = [];
   let turns = 0;
   for (const entry of entries) {
     if (entry.kind === "tool_result") continue;
@@ -233,7 +233,7 @@ export function transcriptRows(entries: readonly ConversationEntry[]): Transcrip
   return rows;
 }
 
-/** One settled entry of the transcript, in chat shape: the operator's prompts as right-side
+/** One settled entry of the conversation, in chat shape: the operator's prompts as right-side
  * bubbles, the agent's prose flush left with no chrome of its own, thinking folded to one line,
  * and a tool call as a sibling of the message rather than a field on it. Who is speaking is
  * carried by the layout — a bubble on the right is the operator, everything on the left is the
@@ -584,9 +584,9 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
   }
 
   const { session } = conversation;
-  const transcriptEmpty = conversation.entries.length === 0 && conversation.streaming.length === 0;
-  const narration = bootstrapNarration(session, transcriptEmpty);
-  const rows = transcriptRows(conversation.entries);
+  const conversationEmpty = conversation.entries.length === 0 && conversation.streaming.length === 0;
+  const narration = bootstrapNarration(session, conversationEmpty);
+  const rows = conversationRows(conversation.entries);
 
   const close = async (sessionId: string) => {
     setClosing(true);
@@ -662,18 +662,18 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
             {narration && (
               <BootstrapNarrationPanel narration={narration} starting={session.status === "provisioning"} />
             )}
-            {transcriptEmpty && !narration && !session.provisioning && (
+            {conversationEmpty && !narration && !session.provisioning && (
               <Text c="dimmed" size="sm">
                 Nothing was recorded for this conversation.
               </Text>
             )}
             {rows.map((row) =>
               row.kind === "call" ? (
-                <ToolCallView key={transcriptRowSeq(row)} call={row.call} result={row.result} />
+                <ToolCallView key={conversationRowSeq(row)} call={row.call} result={row.result} />
               ) : row.kind === "boundary" ? (
-                <TurnBoundary key={transcriptRowSeq(row)} number={row.number} />
+                <TurnBoundary key={conversationRowSeq(row)} number={row.number} />
               ) : (
-                <SpokenEntryView key={transcriptRowSeq(row)} entry={row.entry} />
+                <SpokenEntryView key={conversationRowSeq(row)} entry={row.entry} />
               )
             )}
             {conversation.streaming.map((item) => (

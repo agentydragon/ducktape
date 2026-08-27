@@ -186,7 +186,7 @@ async def attach_channel(sessions: async_sessionmaker[AsyncSession], session_id:
 
 
 async def session_items(sessions: async_sessionmaker[AsyncSession], session_id: UUID) -> list[ConversationItem]:
-    """This session's stored transcript rows, in opening order, for row-level assertions.
+    """This session's stored `conversation_item` rows, in opening order, for row-level assertions.
 
     The rows and not a read model: what these tests pin is what the fold materialised — an item
     still open, a call resumed onto the row its predecessor minted — which the read surfaces
