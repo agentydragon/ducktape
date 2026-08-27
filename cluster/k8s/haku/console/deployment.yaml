@@ -158,9 +158,12 @@ spec:
             # writes.
             - name: HAKU_CONSOLE_EMBEDDER__MODEL
               value: "qwen3-embedding:4b"
-            # Qwen3-Embedding is instruction-aware: queries carry a task instruction, documents
-            # do not. The asymmetry is the client's to apply, because the endpoint is
-            # model-generic — check this against the tag Ollama actually serves.
+            # Query-side only, which is why it stays on this pod after the indexer split:
+            # Qwen3-Embedding is instruction-aware — queries carry a task instruction,
+            # documents do not — and only `search` embeds queries (`embed_query`, request
+            # path). The haku-indexer worker embeds documents plain and deliberately has no
+            # counterpart to this variable. Check the wording against the tag Ollama
+            # actually serves.
             - name: HAKU_CONSOLE_EMBEDDER__QUERY_INSTRUCTION
               value: "Instruct: Given a search query, retrieve relevant passages\nQuery: "
             # Free-form UI (Phase 1b): the Authentik-gated origin of Haku's own UI
