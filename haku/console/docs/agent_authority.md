@@ -75,7 +75,26 @@ The browser surfaces themselves are in <oauth_browser_surfaces.md> § Agent enro
 
 ## The runtime actor
 
-The runtime caller is `OperatorActor | AgentActor`. Only the authority constructs an
+Identity splits across five roles the tool-call domain keeps apart; reading the wrong one for an
+authorization or audit decision is the failure this boundary prevents. In one sentence: an actor is
+a request principal plus the accountability identities (owning Operator, exact credential binding)
+that authorization and audit read and applicability must not; grant principals are stored selectors
+those request principals are tested against; tool-call principal rows are the durable submitter
+provenance both are revalidated from. The five, at their definitions:
+
+- **Authentication context** — `RuntimeActor` (`OperatorActor | AgentActor`, `tool_call_actor.py`):
+  the actor.
+- **Request principal** — `RequestPrincipal` (`grant_principal.py`): the `agent_id`/`session_id`
+  atom the actor projects to, dropping the accountability identities applicability must not read.
+- **Grant principal** — `GrantPrincipal` = `AgentGrantPrincipal | SessionGrantPrincipal`
+  (`grant_principal.py`): the durable stored selector a request principal is tested against.
+- **Submitter provenance** — `McpToolCallPrincipal` (`database_schema.py`; wire in
+  `haku/shared/haku/console/tool_calls.py`): the durable audit record both the actor and the grant
+  principal are revalidated from.
+- **Runtime actor / execution** — `McpExecutionCaller` and `McpExecutionContext`
+  (`mcp_execution.py`): the trusted identity a Console-owned in-process tool reads at execution.
+
+The runtime caller is `RuntimeActor` (`OperatorActor | AgentActor`). Only the authority constructs an
 `AgentActor(agent_id, operator_id, binding_id, access_profile_id)` from durable state. Operators
 may change an OAuth Agent's profile later under Settings; configured static Agent profiles remain
 owned by deployment configuration so the manually approved public Coder identity cannot be granted

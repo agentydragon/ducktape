@@ -59,7 +59,7 @@ from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp_reflection_cache import ReflectedCatalog, ReflectionCache, ReflectionCacheKey
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.operator_identity import OperatorStatus
-from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
+from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_call_service import (
     AuthentikOperatorTokenStore,
     BackendAccountNotConnectedError,
@@ -249,7 +249,7 @@ class PostgresToolCallLedger:
         *,
         server: McpServerEntry,
         req: SubmitToolCallRequest,
-        actor: ToolCallActor,
+        actor: RuntimeActor,
         auto_approval_policy_id: str | None = None,
         auto_approval_evaluation: str | None = None,
         auto_denial_reason: str | None = None,
@@ -309,7 +309,7 @@ class PostgresToolCallLedger:
             return record
 
     async def get(
-        self, tool_call_id: str, *, actor: ToolCallActor, fields: frozenset[ToolCallPayloadField] | None = None
+        self, tool_call_id: str, *, actor: RuntimeActor, fields: frozenset[ToolCallPayloadField] | None = None
     ) -> ToolCallRecord:
         async with self._sessions.begin() as session:
             stmt = self._projection_stmt(actor, fields).where(McpToolCall.tool_call_id == tool_call_id)
@@ -321,7 +321,7 @@ class PostgresToolCallLedger:
     async def list_tool_calls(
         self,
         *,
-        actor: ToolCallActor,
+        actor: RuntimeActor,
         fields: frozenset[ToolCallPayloadField] | None = None,
         statuses: list[ToolCallStatus] | None = None,
         since: datetime.datetime | None = None,
@@ -396,7 +396,7 @@ class PostgresToolCallLedger:
             return self._record_from_principal(row, principal)
 
     async def finish(
-        self, tool_call_id: str, *, actor: ToolCallActor, result: dict[str, Any] | None, error: str | None
+        self, tool_call_id: str, *, actor: RuntimeActor, result: dict[str, Any] | None, error: str | None
     ) -> ToolCallRecord:
         if (result is None) == (error is None):
             raise ValueError("finish requires exactly one of result or error")
@@ -417,7 +417,7 @@ class PostgresToolCallLedger:
             row.error = error
             return self._record_from_principal(row, principal)
 
-    async def authorize_execution(self, tool_call_id: str, *, actor: ToolCallActor) -> ToolCallExecutionAuthorization:
+    async def authorize_execution(self, tool_call_id: str, *, actor: RuntimeActor) -> ToolCallExecutionAuthorization:
         """Revalidate the exact durable principal immediately before external execution."""
         async with self._sessions.begin() as session:
             row = await self._row_by_tool_call_id(session, tool_call_id, actor)
@@ -455,7 +455,7 @@ class PostgresToolCallLedger:
     # because the ledger is reachable from adapters that resolve an actor dynamically. Each caller
     # uses the narrowed value, so neither is a bare assertion.
     @staticmethod
-    def _require_operator_actor(actor: ToolCallActor) -> OperatorActor:
+    def _require_operator_actor(actor: RuntimeActor) -> OperatorActor:
         match actor:
             case OperatorActor():
                 return actor
@@ -463,7 +463,7 @@ class PostgresToolCallLedger:
                 raise TypeError(f"operator actor required, got {type(actor).__name__}")
 
     @staticmethod
-    def _require_agent_actor(actor: ToolCallActor) -> AgentActor:
+    def _require_agent_actor(actor: RuntimeActor) -> AgentActor:
         match actor:
             case AgentActor():
                 return actor
@@ -471,7 +471,7 @@ class PostgresToolCallLedger:
                 raise TypeError(f"agent actor required, got {type(actor).__name__}")
 
     async def _lock_pending(
-        self, session: AsyncSession, tool_call_id: str, actor: ToolCallActor
+        self, session: AsyncSession, tool_call_id: str, actor: RuntimeActor
     ) -> tuple[McpToolCall, _ResolvedToolCallPrincipal]:
         """Lock the actor's call and assert it is still pending, for one of its three exits.
 
@@ -487,7 +487,7 @@ class PostgresToolCallLedger:
             raise ToolCallStateConflictError(f"tool call is not pending approval; status={record.status}")
         return row, principal
 
-    async def _row_by_tool_call_id(self, session: AsyncSession, tool_call_id: str, actor: ToolCallActor) -> McpToolCall:
+    async def _row_by_tool_call_id(self, session: AsyncSession, tool_call_id: str, actor: RuntimeActor) -> McpToolCall:
         stmt = self._scope_to_actor(select(McpToolCall).where(McpToolCall.tool_call_id == tool_call_id), actor)
         row = (await session.scalars(stmt.with_for_update(of=McpToolCall))).first()
         if row is None:
@@ -495,7 +495,7 @@ class PostgresToolCallLedger:
         return row
 
     @staticmethod
-    def _scope_to_actor(stmt: Select[_SelectRow], actor: ToolCallActor) -> Select[_SelectRow]:
+    def _scope_to_actor(stmt: Select[_SelectRow], actor: RuntimeActor) -> Select[_SelectRow]:
         """Apply the one canonical tool-call ownership predicate to reads and locked writes."""
         stmt = (
             stmt.join(McpToolCallPrincipal, McpToolCallPrincipal.tool_call_id == McpToolCall.tool_call_id)
@@ -522,7 +522,7 @@ class PostgresToolCallLedger:
 
     @classmethod
     def _projection_stmt(
-        cls, actor: ToolCallActor, fields: frozenset[ToolCallPayloadField] | None
+        cls, actor: RuntimeActor, fields: frozenset[ToolCallPayloadField] | None
     ) -> Select[tuple[Any, ...]]:
         """Select one actor-scoped row shape; ``fields`` only controls optional payload columns.
 

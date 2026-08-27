@@ -1,4 +1,15 @@
-"""Trusted execution identity for Console-owned in-process MCP tools.
+"""Trusted execution identity for Console-owned in-process MCP tools — the execution role among the
+five identity roles the tool-call domain keeps apart.
+
+`McpExecutionCaller` and `McpExecutionContext` are the runtime-actor/execution role: the trusted
+identity a Console-owned in-process tool reads at execution. The one boundary across the five roles:
+an actor is a request principal plus the accountability identities (owning Operator, exact
+credential binding) that authorization and audit read and applicability must not; grant principals
+are stored selectors those request principals are tested against; tool-call principal rows are the
+durable submitter provenance both are revalidated from. The other four definitions: the actor
+`RuntimeActor` (`tool_call_actor.py`), `RequestPrincipal` and `GrantPrincipal` (`grant_principal.py`),
+and the `McpToolCallPrincipal` submitter-provenance row (`database_schema.py`; wire in
+`haku/shared/haku/console/tool_calls.py`).
 
 The application service constructs this identity from authenticated actors and durable ToolCall
 state. The dispatcher places it in MCP request metadata only for an in-process transport; a FastMCP

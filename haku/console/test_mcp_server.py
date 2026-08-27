@@ -45,7 +45,7 @@ from haku.console.mcp_operator_oauth import (
 from haku.console.mcp_reflection_cache import ReflectedCatalog
 from haku.console.operator_identity import ResolvedOperatorIdentity
 from haku.console.provider_connection import ProviderConnected, ProviderConnectionStatusResponse
-from haku.console.tool_call_actor import AgentActor, ToolCallActor
+from haku.console.tool_call_actor import AgentActor, RuntimeActor
 from haku.console.tool_call_service import ToolCallApplicationService, ToolCallNotFoundError
 from haku.console.tool_calls import (
     MCP_TOOL_CALL_META_KEY,
@@ -674,7 +674,7 @@ async def test_request_tool_preserves_explicit_zero_wait(
 ) -> None:
     submitted_waits: list[int] = []
 
-    async def capture_request(*, req: SubmitToolCallRequest, actor: ToolCallActor) -> ToolCallRecord:
+    async def capture_request(*, req: SubmitToolCallRequest, actor: RuntimeActor) -> ToolCallRecord:
         assert actor.operator_id == harness.operator_identity.operator_id
         submitted_waits.append(req.wait_for_ms)
         raise ToolCallNotFoundError("captured request")
@@ -699,7 +699,7 @@ async def test_request_tool_dispatches_valid_wait_without_clamping(
 ) -> None:
     submitted_waits: list[int] = []
 
-    async def capture_request(*, req: SubmitToolCallRequest, actor: ToolCallActor) -> ToolCallRecord:
+    async def capture_request(*, req: SubmitToolCallRequest, actor: RuntimeActor) -> ToolCallRecord:
         assert actor.operator_id == harness.operator_identity.operator_id
         submitted_waits.append(req.wait_for_ms)
         raise ToolCallNotFoundError("captured request")

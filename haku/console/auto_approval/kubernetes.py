@@ -10,13 +10,13 @@ from haku.console.auto_approval.decision import AutoApprovalDecision, AutoDenied
 from haku.console.grant_principal import RequestPrincipal
 from haku.console.kubectl_passthrough_policy import map_kubectl_passthrough_request
 from haku.console.kubernetes_authorization import KubernetesAuthorizationService
-from haku.console.tool_call_actor import AgentActor, ToolCallActor
+from haku.console.tool_call_actor import AgentActor, RuntimeActor
 
 logger = logging.getLogger(__name__)
 
 
 async def evaluate_passthrough_redundancy(
-    actor: ToolCallActor,
+    actor: RuntimeActor,
     tool_name: str,
     arguments: dict[str, Any],
     kubernetes_authorization: KubernetesAuthorizationService | None,

@@ -77,7 +77,7 @@ from haku.console.mcp_reflection_cache import ReflectedCatalog
 from haku.console.node_daemon_models import NodeDaemonExecutionStatus
 from haku.console.oauth_token_state import new_oauth_token_state
 from haku.console.operator_identity import OperatorStatus
-from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
+from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_call_service import ToolCallApplicationService, backend_auth_for_operator
 from haku.console.tool_calls import (
     AgentToolCallCaller,
@@ -585,7 +585,7 @@ def _submit(client: TestClient, *, amount: int = 1) -> dict[str, Any]:
 
 
 def _submit_request(
-    client: TestClient, request: SubmitToolCallRequest, *, actor: ToolCallActor | None = None
+    client: TestClient, request: SubmitToolCallRequest, *, actor: RuntimeActor | None = None
 ) -> dict[str, Any]:
     app = cast(FastAPI, client.app)
 
@@ -1344,7 +1344,7 @@ async def test_routing_executes_each_agent_as_its_own_operator(
         for bearer, expected_call_id in zip(("tool-token", "ops-token"), call_ids, strict=True):
             actor = _static_agent_actor(client, bearer)
 
-            async def list_calls(actor: ToolCallActor = actor) -> list[ToolCallRecord]:
+            async def list_calls(actor: RuntimeActor = actor) -> list[ToolCallRecord]:
                 return cast(list[ToolCallRecord], await client.app.state.tool_call_service.list_tool_calls(actor=actor))
 
             assert client.portal is not None

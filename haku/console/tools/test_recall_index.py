@@ -24,7 +24,7 @@ from haku.console.mcp_execution import (
     mcp_execution_request_meta,
 )
 from haku.console.recall_index_access import RecallIndexAccessPolicy
-from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
+from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tools.recall_index import (
     HAKU_INDEX_SERVER_ID,
     ChatIndexStatus,
@@ -70,7 +70,7 @@ def _mcp(searcher: _Searcher):
     return build_mcp(searcher, access=ACCESS, conversation_reads=READS)
 
 
-def _meta(actor: ToolCallActor = HAKU) -> dict[str, object]:
+def _meta(actor: RuntimeActor = HAKU) -> dict[str, object]:
     caller = (
         AgentMcpExecutionCaller(
             principal=RequestPrincipal(
@@ -85,7 +85,7 @@ def _meta(actor: ToolCallActor = HAKU) -> dict[str, object]:
     )
 
 
-async def _call(client: Client, tool: str, arguments: dict, *, actor: ToolCallActor = HAKU, **kwargs):
+async def _call(client: Client, tool: str, arguments: dict, *, actor: RuntimeActor = HAKU, **kwargs):
     return await client.call_tool(tool, arguments, meta=_meta(actor), **kwargs)
 
 
@@ -255,7 +255,7 @@ async def test_ungranted_index_fails_before_embedding_or_querying() -> None:
         ),
     ],
 )
-async def test_unprofiled_and_unknown_actors_are_denied_before_querying(actor: ToolCallActor) -> None:
+async def test_unprofiled_and_unknown_actors_are_denied_before_querying(actor: RuntimeActor) -> None:
     searcher = _Searcher()
     async with Client(_mcp(searcher)) as client:
         result = await _call(

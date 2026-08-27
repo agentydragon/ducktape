@@ -36,7 +36,7 @@ from haku.console.config import (
 )
 from haku.console.http_decide_config import EgressDecideConfig
 from haku.console.provider_connection_registry import ProviderConnectionKind
-from haku.console.tool_call_actor import ToolCallActor
+from haku.console.tool_call_actor import RuntimeActor
 from haku.sandbox.config import SandboxEnvironmentConfig
 from mcp_infra.prefix import MCPMountPrefix
 
@@ -740,7 +740,7 @@ def _credential_token(server_id: str, bearer_token_secret: str) -> str:
 # building for tool-schema reflection (`tools/list` never invokes a tool). Credential-free
 # servers (routine, tests) use `const_in_process_server`.
 InProcessServerBuilder = Callable[[str | None], FastMCP]
-InProcessRequestAuthorizer = Callable[[ToolCallActor, str, dict[str, Any]], str | None]
+InProcessRequestAuthorizer = Callable[[RuntimeActor, str, dict[str, Any]], str | None]
 
 
 class InProcessCredentialKind(StrEnum):

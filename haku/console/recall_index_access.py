@@ -8,7 +8,7 @@ from typing import Any
 from haku.console.grant_principal import RequestPrincipal
 from haku.console.mcp_config import AccessProfile
 from haku.console.mcp_execution import AgentMcpExecutionCaller, McpExecutionCaller, OperatorMcpExecutionCaller
-from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
+from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 
 
 class RecallIndexAccessPolicy:
@@ -21,7 +21,7 @@ class RecallIndexAccessPolicy:
         # Agent profile while remaining visible to the Operator.
         self._operator_indexes = tuple(sorted(set(configured_index_ids)))
 
-    def allowed_indexes(self, caller: ToolCallActor | McpExecutionCaller | None) -> tuple[str, ...]:
+    def allowed_indexes(self, caller: RuntimeActor | McpExecutionCaller | None) -> tuple[str, ...]:
         match caller:
             case OperatorActor() | OperatorMcpExecutionCaller():
                 return self._operator_indexes
@@ -36,10 +36,10 @@ class RecallIndexAccessPolicy:
             return ()
         return tuple(sorted(self._profile_indexes.get(access_profile_id, ())))
 
-    def allows(self, caller: ToolCallActor | McpExecutionCaller | None, index_id: str) -> bool:
+    def allows(self, caller: RuntimeActor | McpExecutionCaller | None, index_id: str) -> bool:
         return index_id in self.allowed_indexes(caller)
 
-    def authorize_index_tool(self, actor: ToolCallActor, tool_name: str, arguments: dict[str, Any]) -> str | None:
+    def authorize_index_tool(self, actor: RuntimeActor, tool_name: str, arguments: dict[str, Any]) -> str | None:
         """Reject an unauthorized index request before it reaches the approval queue."""
         if tool_name == "search":
             index_id = arguments.get("index_id")

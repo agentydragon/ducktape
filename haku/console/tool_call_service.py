@@ -41,7 +41,7 @@ from haku.console.mcp_execution import (
     McpExecutionContext,
     OperatorMcpExecutionCaller,
 )
-from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
+from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_calls import (
     ApprovalDecision,
     ApprovalDecisionRequest,
@@ -59,7 +59,7 @@ TERMINAL_STATUSES = {ToolCallStatus.OK, ToolCallStatus.ERROR, ToolCallStatus.DEN
 _CURSOR_SEPARATOR = "~"
 
 
-def _execution_caller(actor: ToolCallActor) -> McpExecutionCaller:
+def _execution_caller(actor: RuntimeActor) -> McpExecutionCaller:
     """The trusted execution identity one revalidated actor executes as."""
     match actor:
         case AgentActor() as agent:
@@ -107,20 +107,20 @@ class ToolCallRepository(Protocol):
         *,
         server: McpServerEntry,
         req: SubmitToolCallRequest,
-        actor: ToolCallActor,
+        actor: RuntimeActor,
         auto_approval_policy_id: str | None = None,
         auto_approval_evaluation: str | None = None,
         auto_denial_reason: str | None = None,
     ) -> ToolCallRecord: ...
 
     async def get(
-        self, tool_call_id: str, *, actor: ToolCallActor, fields: frozenset[ToolCallPayloadField] | None = None
+        self, tool_call_id: str, *, actor: RuntimeActor, fields: frozenset[ToolCallPayloadField] | None = None
     ) -> ToolCallRecord: ...
 
     async def list_tool_calls(
         self,
         *,
-        actor: ToolCallActor,
+        actor: RuntimeActor,
         fields: frozenset[ToolCallPayloadField] | None = None,
         statuses: list[ToolCallStatus] | None = None,
         since: datetime.datetime | None = None,
@@ -137,11 +137,11 @@ class ToolCallRepository(Protocol):
     async def withdraw(self, tool_call_id: str, reason: str | None, *, actor: AgentActor) -> ToolCallRecord: ...
 
     async def finish(
-        self, tool_call_id: str, *, actor: ToolCallActor, result: dict[str, Any] | None, error: str | None
+        self, tool_call_id: str, *, actor: RuntimeActor, result: dict[str, Any] | None, error: str | None
     ) -> ToolCallRecord: ...
 
     async def authorize_execution(
-        self, tool_call_id: str, *, actor: ToolCallActor
+        self, tool_call_id: str, *, actor: RuntimeActor
     ) -> ToolCallExecutionAuthorization: ...
 
 
@@ -150,7 +150,7 @@ class ToolCallExecutionAuthorization:
     """The revalidated original caller and owning Operator for one executable ledger row."""
 
     operator_id: UUID
-    caller: ToolCallActor
+    caller: RuntimeActor
 
 
 class ToolExecutor(Protocol):
@@ -324,7 +324,7 @@ class ToolCallApplicationService:
             authentik_store=self._authentik_token_store,
         )
 
-    async def submit_and_wait(self, *, req: SubmitToolCallRequest, actor: ToolCallActor) -> ToolCallRecord:
+    async def submit_and_wait(self, *, req: SubmitToolCallRequest, actor: RuntimeActor) -> ToolCallRecord:
         actor = self._require_actor(actor)
         server = _server_entry(self._settings, req.server_id)
         # Gmail label auto-approval resolves label IDs against the acting Operator's own Gmail; the
@@ -411,7 +411,7 @@ class ToolCallApplicationService:
             await self._notify_pending(actor.operator_id, record)
         return await self._wait_terminal(record.tool_call_id, actor, req.wait_for_ms)
 
-    async def execute_direct(self, *, req: SubmitToolCallRequest, actor: ToolCallActor) -> dict[str, Any]:
+    async def execute_direct(self, *, req: SubmitToolCallRequest, actor: RuntimeActor) -> dict[str, Any]:
         """Execute as the authenticated Operator without policy, ledger, events, or promises."""
 
         operator = self._require_operator(actor)
@@ -434,14 +434,14 @@ class ToolCallApplicationService:
         )
 
     async def get(
-        self, tool_call_id: str, *, actor: ToolCallActor, fields: frozenset[ToolCallPayloadField] | None = None
+        self, tool_call_id: str, *, actor: RuntimeActor, fields: frozenset[ToolCallPayloadField] | None = None
     ) -> ToolCallRecord:
         return await self._repository.get(tool_call_id, actor=self._require_actor(actor), fields=fields)
 
     async def list_tool_calls(
         self,
         *,
-        actor: ToolCallActor,
+        actor: RuntimeActor,
         fields: frozenset[ToolCallPayloadField] | None = None,
         statuses: list[ToolCallStatus] | None = None,
         since: datetime.datetime | None = None,
@@ -461,12 +461,12 @@ class ToolCallApplicationService:
             cursor=cursor,
         )
 
-    async def pending_approvals(self, *, actor: ToolCallActor) -> list[ToolCallRecord]:
+    async def pending_approvals(self, *, actor: RuntimeActor) -> list[ToolCallRecord]:
         operator = self._require_operator(actor)
         return await self._repository.list_tool_calls(actor=operator, statuses=[ToolCallStatus.PENDING_APPROVAL])
 
     async def decide(
-        self, *, tool_call_id: str, decision: ApprovalDecisionRequest, actor: ToolCallActor
+        self, *, tool_call_id: str, decision: ApprovalDecisionRequest, actor: RuntimeActor
     ) -> ToolCallRecord:
         operator = self._require_operator(actor)
         if decision.decision is ApprovalDecision.DENY:
@@ -499,7 +499,7 @@ class ToolCallApplicationService:
         self._dispatch_execution(record=running, server=server, auth_token=auth_token, actor=operator)
         return running
 
-    async def withdraw(self, *, tool_call_id: str, reason: str | None, actor: ToolCallActor) -> ToolCallRecord:
+    async def withdraw(self, *, tool_call_id: str, reason: str | None, actor: RuntimeActor) -> ToolCallRecord:
         """Retract an Agent's own pending call. Operators decide; only the requester withdraws.
 
         Deliberately not exposed to `OperatorActor`: an operator's verb is `deny`, and letting one
@@ -525,7 +525,7 @@ class ToolCallApplicationService:
         return record
 
     async def _execute_and_publish(
-        self, *, record: ToolCallRecord, server: McpServerEntry, auth_token: str | None, actor: ToolCallActor
+        self, *, record: ToolCallRecord, server: McpServerEntry, auth_token: str | None, actor: RuntimeActor
     ) -> ToolCallRecord:
         if record.status != ToolCallStatus.RUNNING:
             return record
@@ -560,7 +560,7 @@ class ToolCallApplicationService:
         return updated
 
     def _dispatch_execution(
-        self, *, record: ToolCallRecord, server: McpServerEntry, auth_token: str | None, actor: ToolCallActor
+        self, *, record: ToolCallRecord, server: McpServerEntry, auth_token: str | None, actor: RuntimeActor
     ) -> None:
         """Run an approved call's execution as a tracked background task (see `decide`)."""
         task = asyncio.create_task(
@@ -571,7 +571,7 @@ class ToolCallApplicationService:
 
     @staticmethod
     def _execution_context(
-        record: ToolCallRecord, deciding_actor: ToolCallActor, execution: ToolCallExecutionAuthorization
+        record: ToolCallRecord, deciding_actor: RuntimeActor, execution: ToolCallExecutionAuthorization
     ) -> McpExecutionContext:
         """Build trusted explicit execution identity after the repository revalidates the caller."""
 
@@ -635,7 +635,7 @@ class ToolCallApplicationService:
         except Exception:
             logger.exception("failed to notify resolved approval %s", record.tool_call_id)
 
-    async def _wait_terminal(self, tool_call_id: str, actor: ToolCallActor, wait_for_ms: int) -> ToolCallRecord:
+    async def _wait_terminal(self, tool_call_id: str, actor: RuntimeActor, wait_for_ms: int) -> ToolCallRecord:
         record = await self._repository.get(tool_call_id, actor=actor)
         if record.status in TERMINAL_STATUSES or wait_for_ms <= 0:
             return record
@@ -663,7 +663,7 @@ class ToolCallApplicationService:
                     return await self._repository.get(tool_call_id, actor=actor)
 
     @staticmethod
-    def _require_actor(actor: ToolCallActor) -> ToolCallActor:
+    def _require_actor(actor: RuntimeActor) -> RuntimeActor:
         match actor:
             case AgentActor() | OperatorActor():
                 return actor
@@ -671,13 +671,13 @@ class ToolCallApplicationService:
                 raise TypeError(f"unsupported tool-call actor: {type(actor).__name__}")
 
     @staticmethod
-    def _require_operator(actor: ToolCallActor) -> OperatorActor:
+    def _require_operator(actor: RuntimeActor) -> OperatorActor:
         if not isinstance(actor, OperatorActor):
             raise OperatorActorRequiredError("operator actor required")
         return actor
 
     @staticmethod
-    def _require_agent(actor: ToolCallActor) -> AgentActor:
+    def _require_agent(actor: RuntimeActor) -> AgentActor:
         if not isinstance(actor, AgentActor):
             raise AgentActorRequiredError("agent actor required")
         return actor

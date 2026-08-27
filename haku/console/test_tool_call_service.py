@@ -38,7 +38,7 @@ from haku.console.oauth_token_state import PostgresOAuthTokenStateStore
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.provider_connection import PostgresProviderConnectionStore
 from haku.console.recall_index_access import RecallIndexAccessPolicy
-from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
+from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_call_service import (
     AgentActorRequiredError,
     BackendAccountNotConnectedError,
@@ -192,10 +192,10 @@ class _OperatorTokens:
 class _RecordingLedger(PostgresToolCallLedger):
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         super().__init__(sessions)
-        self.finish_actors: list[ToolCallActor] = []
+        self.finish_actors: list[RuntimeActor] = []
 
     async def finish(
-        self, tool_call_id: str, *, actor: ToolCallActor, result: dict[str, Any] | None, error: str | None
+        self, tool_call_id: str, *, actor: RuntimeActor, result: dict[str, Any] | None, error: str | None
     ) -> ToolCallRecord:
         self.finish_actors.append(actor)
         return await super().finish(tool_call_id, actor=actor, result=result, error=error)
@@ -204,7 +204,7 @@ class _RecordingLedger(PostgresToolCallLedger):
 @pytest.fixture
 async def actors(
     migrated_engine: AsyncEngine, migrated_identity_store: PostgresOperatorIdentityStore
-) -> dict[str, ToolCallActor]:
+) -> dict[str, RuntimeActor]:
     identities = migrated_identity_store
     operator_ids = {
         "a": await identities.resolve_configured_external_user_key("service-operator-a"),
@@ -266,7 +266,7 @@ async def actors(
             )
         return AgentActor(agent_id=agent_id, operator_id=operator_id, binding_id=binding_id)
 
-    actors: dict[str, ToolCallActor] = {
+    actors: dict[str, RuntimeActor] = {
         "oa": OperatorActor(operator_id=operator_ids["a"]),
         "ob": OperatorActor(operator_id=operator_ids["b"]),
         "aa1": await agent("agent-a1", operator_ids["a"]),
@@ -298,7 +298,7 @@ def notifier() -> _RecordingApprovalNotifier:
 
 
 @pytest.fixture
-def tokens(actors: dict[str, ToolCallActor]) -> _OperatorTokens:
+def tokens(actors: dict[str, RuntimeActor]) -> _OperatorTokens:
     return _OperatorTokens({actors["oa"].operator_id: "token-a", actors["ob"].operator_id: "token-b"})
 
 
@@ -413,7 +413,7 @@ async def _always_approve(**_: Any) -> tuple[str, str]:
 
 
 async def test_operator_direct_execution_has_no_ledger_or_invalidation_side_effects(
-    actors: dict[str, ToolCallActor],
+    actors: dict[str, RuntimeActor],
     publisher: _RecordingInvalidationPublisher,
     executor: _RecordingExecutor,
     tokens: _OperatorTokens,
@@ -439,7 +439,7 @@ async def test_operator_direct_execution_has_no_ledger_or_invalidation_side_effe
 
 async def test_recall_index_authorizer_denies_argument_escalation_before_submission(
     *,
-    actors: dict[str, ToolCallActor],
+    actors: dict[str, RuntimeActor],
     executor: _RecordingExecutor,
     ledger: _RecordingLedger,
     migrated_db_url: str,
@@ -500,7 +500,7 @@ async def test_recall_index_authorizer_denies_argument_escalation_before_submiss
 
 async def test_two_operator_two_agent_authorization_matrix(
     *,
-    actors: dict[str, ToolCallActor],
+    actors: dict[str, RuntimeActor],
     publisher: _RecordingInvalidationPublisher,
     executor: _RecordingExecutor,
     ledger: _RecordingLedger,
@@ -621,7 +621,7 @@ async def test_two_operator_two_agent_authorization_matrix(
 
 
 async def test_pending_wait_uses_actor_scoped_event_invalidation(
-    actors: dict[str, ToolCallActor], publisher: _RecordingInvalidationPublisher, service: ToolCallApplicationService
+    actors: dict[str, RuntimeActor], publisher: _RecordingInvalidationPublisher, service: ToolCallApplicationService
 ) -> None:
     agent = actors["aa1"]
     operator = actors["oa"]
@@ -652,7 +652,7 @@ async def test_pending_wait_rereads_after_subscribing_before_waiting(
     migrated_sessions: async_sessionmaker[AsyncSession],
     migrated_identity_store: PostgresOperatorIdentityStore,
     tmp_path: Path,
-    actors: dict[str, ToolCallActor],
+    actors: dict[str, RuntimeActor],
     ledger: _RecordingLedger,
     executor: _RecordingExecutor,
     tokens: _OperatorTokens,
@@ -697,7 +697,7 @@ async def test_pending_wait_rereads_after_subscribing_before_waiting(
 
 async def test_auto_approval_resolves_auth_before_persistence_and_finishes_as_agent(
     *,
-    actors: dict[str, ToolCallActor],
+    actors: dict[str, RuntimeActor],
     ledger: _RecordingLedger,
     executor: _RecordingExecutor,
     tokens: _OperatorTokens,
@@ -732,7 +732,7 @@ async def test_auto_approval_resolves_auth_before_persistence_and_finishes_as_ag
 
 
 async def test_withdraw_retracts_the_agents_own_pending_call(
-    actors: dict[str, ToolCallActor], publisher: _RecordingInvalidationPublisher, service: ToolCallApplicationService
+    actors: dict[str, RuntimeActor], publisher: _RecordingInvalidationPublisher, service: ToolCallApplicationService
 ) -> None:
     actor = actors["aa1"]
     pending = await service.submit_and_wait(req=_request(owner="stale"), actor=actor)
@@ -750,7 +750,7 @@ async def test_withdraw_retracts_the_agents_own_pending_call(
 
 
 async def test_queued_call_is_notified_once_and_retracted_by_whichever_exit_it_takes(
-    actors: dict[str, ToolCallActor], notifier: _RecordingApprovalNotifier, service: ToolCallApplicationService
+    actors: dict[str, RuntimeActor], notifier: _RecordingApprovalNotifier, service: ToolCallApplicationService
 ) -> None:
     """Each of the three exits retracts the notification the queue entry raised.
 
@@ -786,7 +786,7 @@ async def test_queued_call_is_notified_once_and_retracted_by_whichever_exit_it_t
 
 
 async def test_calls_that_never_queue_are_never_notified(
-    actors: dict[str, ToolCallActor],
+    actors: dict[str, RuntimeActor],
     notifier: _RecordingApprovalNotifier,
     service: ToolCallApplicationService,
     monkeypatch: pytest.MonkeyPatch,
@@ -806,7 +806,7 @@ async def test_calls_that_never_queue_are_never_notified(
 
 
 async def test_a_failing_notifier_never_fails_the_transition(
-    actors: dict[str, ToolCallActor], service: ToolCallApplicationService, monkeypatch: pytest.MonkeyPatch
+    actors: dict[str, RuntimeActor], service: ToolCallApplicationService, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Notification is best-effort in exactly the way invalidation is: the ledger row wins."""
 
@@ -822,7 +822,7 @@ async def test_a_failing_notifier_never_fails_the_transition(
 
 
 async def test_withdraw_rejects_calls_that_are_no_longer_pending(
-    actors: dict[str, ToolCallActor], service: ToolCallApplicationService
+    actors: dict[str, RuntimeActor], service: ToolCallApplicationService
 ) -> None:
     actor = actors["aa1"]
     pending = await service.submit_and_wait(req=_request(owner="raced"), actor=actor)
@@ -843,7 +843,7 @@ async def test_withdraw_rejects_calls_that_are_no_longer_pending(
 
 
 async def test_withdraw_is_agent_only_and_scoped_to_the_submitting_agent(
-    actors: dict[str, ToolCallActor], service: ToolCallApplicationService
+    actors: dict[str, RuntimeActor], service: ToolCallApplicationService
 ) -> None:
     actor = actors["aa1"]
     pending = await service.submit_and_wait(req=_request(owner="mine"), actor=actor)
@@ -863,7 +863,7 @@ async def test_withdraw_is_agent_only_and_scoped_to_the_submitting_agent(
 
 
 async def test_withdraw_survives_credential_binding_rotation(
-    actors: dict[str, ToolCallActor], service: ToolCallApplicationService, migrated_sessions
+    actors: dict[str, RuntimeActor], service: ToolCallApplicationService, migrated_sessions
 ) -> None:
     """An Agent that reconnected can still clear its predecessor binding's ask out of the queue.
 
@@ -920,7 +920,7 @@ async def test_withdraw_survives_credential_binding_rotation(
 
 
 async def test_pending_wait_returns_when_the_agent_withdraws(
-    actors: dict[str, ToolCallActor], service: ToolCallApplicationService
+    actors: dict[str, RuntimeActor], service: ToolCallApplicationService
 ) -> None:
     actor = actors["aa1"]
     pending = await service.submit_and_wait(req=_request(owner="awaited"), actor=actor)
@@ -936,7 +936,7 @@ async def test_pending_wait_returns_when_the_agent_withdraws(
 
 
 async def test_unknown_server_is_a_transport_independent_not_found(
-    actors: dict[str, ToolCallActor], service: ToolCallApplicationService
+    actors: dict[str, RuntimeActor], service: ToolCallApplicationService
 ) -> None:
     actor = actors["aa1"]
 
@@ -948,7 +948,7 @@ async def test_unknown_server_is_a_transport_independent_not_found(
 
 
 async def test_list_tool_calls_filters_by_auto_approved(
-    actors: dict[str, ToolCallActor], service: ToolCallApplicationService, monkeypatch: pytest.MonkeyPatch
+    actors: dict[str, RuntimeActor], service: ToolCallApplicationService, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     actor = actors["aa1"]
     manual = await service.submit_and_wait(req=_request(owner="manual"), actor=actor)
@@ -975,7 +975,7 @@ async def test_auto_execution_finishes_before_best_effort_invalidation_publicati
     migrated_sessions: async_sessionmaker[AsyncSession],
     migrated_identity_store: PostgresOperatorIdentityStore,
     tmp_path: Path,
-    actors: dict[str, ToolCallActor],
+    actors: dict[str, RuntimeActor],
     ledger: _RecordingLedger,
     executor: _RecordingExecutor,
     tokens: _OperatorTokens,
@@ -1012,7 +1012,7 @@ async def test_executor_cancellation_terminalizes_before_reraising(
     migrated_sessions: async_sessionmaker[AsyncSession],
     migrated_identity_store: PostgresOperatorIdentityStore,
     tmp_path: Path,
-    actors: dict[str, ToolCallActor],
+    actors: dict[str, RuntimeActor],
     ledger: _RecordingLedger,
     publisher: _RecordingInvalidationPublisher,
     tokens: _OperatorTokens,
@@ -1050,7 +1050,7 @@ async def test_decide_dispatches_execution_and_aclose_cancels_in_flight(
     migrated_sessions: async_sessionmaker[AsyncSession],
     migrated_identity_store: PostgresOperatorIdentityStore,
     tmp_path: Path,
-    actors: dict[str, ToolCallActor],
+    actors: dict[str, RuntimeActor],
     ledger: _RecordingLedger,
     publisher: _RecordingInvalidationPublisher,
     tokens: _OperatorTokens,
@@ -1098,7 +1098,7 @@ async def test_decide_dispatches_execution_and_aclose_cancels_in_flight(
     assert terminal.error == "tool execution cancelled"
 
 
-async def test_finish_only_accepts_running_calls(actors: dict[str, ToolCallActor], ledger: _RecordingLedger) -> None:
+async def test_finish_only_accepts_running_calls(actors: dict[str, RuntimeActor], ledger: _RecordingLedger) -> None:
     operator = actors["oa"]
     assert isinstance(operator, OperatorActor)
     server = McpServerEntry(
@@ -1118,7 +1118,7 @@ async def test_finish_only_accepts_running_calls(actors: dict[str, ToolCallActor
 
 
 async def test_execution_authorization_reloads_profile_changed_after_operator_approval(
-    migrated_sessions, actors: dict[str, ToolCallActor], ledger: _RecordingLedger
+    migrated_sessions, actors: dict[str, RuntimeActor], ledger: _RecordingLedger
 ) -> None:
     agent = actors["aa1"]
     operator = actors["oa"]
@@ -1145,7 +1145,7 @@ async def test_execution_authorization_reloads_profile_changed_after_operator_ap
 
 
 async def test_binding_revoked_after_execution_authorization_does_not_strand_running_call(
-    migrated_sessions, actors: dict[str, ToolCallActor], ledger: _RecordingLedger
+    migrated_sessions, actors: dict[str, RuntimeActor], ledger: _RecordingLedger
 ) -> None:
     agent = actors["aa1"]
     assert isinstance(agent, AgentActor)

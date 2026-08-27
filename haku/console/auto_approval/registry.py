@@ -30,7 +30,7 @@ from haku.console.mcp_config import (
     KubernetesPassthroughAutoApprovalPolicy,
     NeverAutoApprovalPolicy,
 )
-from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
+from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tools.gmail_client import GmailToolsClient
 
 logger = logging.getLogger(__name__)
@@ -114,7 +114,7 @@ class AutoApprovalPolicyRegistry:
         profile = self._profiles.get(actor.access_profile_id) if actor.access_profile_id is not None else None
         return profile.auto_approval_policy if profile is not None else None
 
-    def tool_mode(self, actor: ToolCallActor, server_id: str, tool_name: str) -> ToolAutoApprovalMode:
+    def tool_mode(self, actor: RuntimeActor, server_id: str, tool_name: str) -> ToolAutoApprovalMode:
         if isinstance(actor, AgentActor):
             root = self._actor_root(actor)
             if root is None:
@@ -166,7 +166,7 @@ class AutoApprovalPolicyRegistry:
     async def evaluate(
         self,
         *,
-        actor: ToolCallActor,
+        actor: RuntimeActor,
         server_id: str,
         tool_name: str,
         arguments: dict[str, Any],
@@ -213,7 +213,7 @@ class AutoApprovalPolicyRegistry:
         self,
         policy_id: str,
         *,
-        actor: ToolCallActor,
+        actor: RuntimeActor,
         policy_path: tuple[str, ...],
         server_id: str,
         tool_name: str,
@@ -292,7 +292,7 @@ async def _validate_arguments(mcp: FastMCP, tool_name: str, arguments: dict[str,
 async def auto_approve_tool_call(
     *,
     policies: AutoApprovalPolicyRegistry,
-    actor: ToolCallActor,
+    actor: RuntimeActor,
     server_id: str,
     tool_name: str,
     arguments: dict[str, Any],

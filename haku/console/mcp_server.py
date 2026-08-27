@@ -87,7 +87,7 @@ from haku.console.mcp_guidance import SERVER_INSTRUCTIONS, approval_request_prea
 from haku.console.mcp_operator_oauth import McpOperatorAuthStatus, PostgresMcpOperatorOAuthStore
 from haku.console.node_daemons import DaemonStatusResponse, NodeDaemonService
 from haku.console.provider_connection import PostgresProviderConnectionStore, ProviderConnectionStatus
-from haku.console.tool_call_actor import OperatorActor, ToolCallActor
+from haku.console.tool_call_actor import OperatorActor, RuntimeActor
 from haku.console.tool_call_service import (
     AgentActorRequiredError,
     BackendAccountNotConnectedError,
@@ -304,7 +304,7 @@ def _tool_call_url(settings: Settings, tool_call_id: str) -> str:
 
 
 async def _passive_server_connection_statuses(
-    context: ConsoleMcpContext, actor: ToolCallActor
+    context: ConsoleMcpContext, actor: RuntimeActor
 ) -> McpServerConnectionStatusResponse:
     """Read connection rows without refreshing tokens or contacting an MCP/provider endpoint."""
     servers = _load_servers(context.settings)
@@ -350,7 +350,7 @@ async def _passive_server_connection_statuses(
     return McpServerConnectionStatusResponse(servers=result)
 
 
-def _is_passthrough(policies: AutoApprovalPolicyRegistry, actor: ToolCallActor, server_id: str, tool_name: str) -> bool:
+def _is_passthrough(policies: AutoApprovalPolicyRegistry, actor: RuntimeActor, server_id: str, tool_name: str) -> bool:
     return policies.tool_mode(actor, server_id, tool_name) is ToolAutoApprovalMode.ALWAYS_AUTO_APPROVED
 
 
@@ -358,7 +358,7 @@ def _exposed_metadata(
     metadata: ServerMetadata,
     *,
     policies: AutoApprovalPolicyRegistry,
-    actor: ToolCallActor,
+    actor: RuntimeActor,
     include_schemas: bool,
     max_wait_ms: int,
 ) -> ServerMetadata:
@@ -497,7 +497,7 @@ async def _dispatch(
     tool_name: str,
     arguments: dict[str, Any],
     passthrough: bool,
-    actor: ToolCallActor,
+    actor: RuntimeActor,
 ) -> ToolResult:
     """Read one call payload in the shape its tool advertises, then run it through the lifecycle its
     principal is entitled to.
@@ -552,7 +552,7 @@ class ProxyTool(Tool):
     server_id: str
     upstream_tool_name: str
     passthrough: bool
-    actor: ToolCallActor
+    actor: RuntimeActor
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
         return await _dispatch(
@@ -566,7 +566,7 @@ class ProxyTool(Tool):
 
 
 def _build_proxy_tool(
-    context: ConsoleMcpContext, server_id: str, tool: mcp_types.Tool, *, passthrough: bool, actor: ToolCallActor
+    context: ConsoleMcpContext, server_id: str, tool: mcp_types.Tool, *, passthrough: bool, actor: RuntimeActor
 ) -> ProxyTool:
     # `inputSchema` is a required field on the real upstream type, but treat a degenerate empty
     # dict the same as "no schema" — an empty object schema is a worse minimal schema than the
@@ -641,7 +641,7 @@ class OperatorServerCatalog:
         # rather than ``google``). Startup validation guarantees exact namespace uniqueness.
         return max(candidates, key=lambda candidate: len(server_tool_prefix(candidate.id)))
 
-    async def metadata(self, server: McpServerEntry, actor: ToolCallActor) -> ServerReflection:
+    async def metadata(self, server: McpServerEntry, actor: RuntimeActor) -> ServerReflection:
         return self._context.catalogs.metadata(operator_id=actor.operator_id, server=server)
 
 
@@ -676,10 +676,10 @@ class OperatorToolProvider(Provider):
             load_console_config(context.settings.config_file)
         )
 
-    def _is_passthrough(self, actor: ToolCallActor, server_id: str, tool_name: str) -> bool:
+    def _is_passthrough(self, actor: RuntimeActor, server_id: str, tool_name: str) -> bool:
         return _is_passthrough(self._auto_approval_policies, actor, server_id, tool_name)
 
-    async def _server_tools(self, server: McpServerEntry, actor: ToolCallActor) -> list[Tool]:
+    async def _server_tools(self, server: McpServerEntry, actor: RuntimeActor) -> list[Tool]:
         try:
             meta = await self._catalog.metadata(server, actor)
         except Exception:
@@ -786,7 +786,7 @@ def build_console_mcp(
     current_actor_dependency = Depends(actor_resolver.resolve)
 
     @mcp.tool(annotations=_READ_ONLY_META)
-    async def list_mcp_servers(actor: ToolCallActor = current_actor_dependency) -> McpServerConnectionStatusResponse:
+    async def list_mcp_servers(actor: RuntimeActor = current_actor_dependency) -> McpServerConnectionStatusResponse:
         """List configured MCP servers and their persisted connection state.
 
         This is a passive status read: it never refreshes a token, contacts an authorization server,
@@ -801,7 +801,7 @@ def build_console_mcp(
         return await _passive_server_connection_statuses(context, actor)
 
     @mcp.tool(annotations=_READ_ONLY_META)
-    async def list_node_daemons(actor: ToolCallActor = current_actor_dependency) -> DaemonStatusResponse:
+    async def list_node_daemons(actor: RuntimeActor = current_actor_dependency) -> DaemonStatusResponse:
         """List configured node daemons and their current persisted heartbeat/lease status.
 
         Use this to check whether approved node work can currently be dispatched; do not use it to
@@ -818,7 +818,7 @@ def build_console_mcp(
 
     @mcp.tool(annotations=_READ_ONLY_META)
     async def get_mcp_server_status(
-        server_id: str, include_tool_schemas: bool = False, actor: ToolCallActor = current_actor_dependency
+        server_id: str, include_tool_schemas: bool = False, actor: RuntimeActor = current_actor_dependency
     ) -> McpServerProbeResponse:
         """Actively reflect one configured MCP server's current tool availability.
 
@@ -859,7 +859,7 @@ def build_console_mcp(
         server_id: str,
         tool_name: str,
         arguments: dict[str, Any] | None = None,
-        actor: ToolCallActor = current_actor_dependency,
+        actor: RuntimeActor = current_actor_dependency,
     ) -> ToolResult:
         """Call a configured tool by server/tool name when it is missing from the tool list.
 
@@ -904,7 +904,7 @@ def build_console_mcp(
                 json_schema_extra={"default": [ToolCallPayloadField.RESULT]},
             ),
         ] = _DEFAULT_GET_TOOL_CALL_FIELDS,
-        actor: ToolCallActor = current_actor_dependency,
+        actor: RuntimeActor = current_actor_dependency,
     ) -> McpToolCallResponse:
         """Read one tool call: status, selected payloads, terminal reason, and approval link."""
         try:
@@ -915,7 +915,7 @@ def build_console_mcp(
 
     @mcp.tool(annotations=_LEDGER_MUTATION_META)
     async def withdraw_tool_call(
-        tool_call_id: str, reason: str | None = None, actor: ToolCallActor = current_actor_dependency
+        tool_call_id: str, reason: str | None = None, actor: RuntimeActor = current_actor_dependency
     ) -> ToolCallView:
         """Retract your own tool call while it is still `pending_approval`.
 
@@ -943,7 +943,7 @@ def build_console_mcp(
         ] = _DEFAULT_LIST_TOOL_CALL_FIELDS,
         limit: int = 100,
         newest_first: bool = True,
-        actor: ToolCallActor = current_actor_dependency,
+        actor: RuntimeActor = current_actor_dependency,
     ) -> list[McpToolCallResponse]:
         """List recent tool calls (newest first by default), optionally filtered by status/since/
         auto_approved (true: only calls the reviewed policy auto-approved; false: only calls that

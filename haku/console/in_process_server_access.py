@@ -8,7 +8,7 @@ from typing import Any
 from haku.console.grant_principal import RequestPrincipal
 from haku.console.mcp_config import AccessProfile
 from haku.console.mcp_execution import AgentMcpExecutionCaller, McpExecutionCaller
-from haku.console.tool_call_actor import AgentActor, ToolCallActor
+from haku.console.tool_call_actor import AgentActor, RuntimeActor
 
 
 class InProcessServerAccessPolicy:
@@ -17,7 +17,7 @@ class InProcessServerAccessPolicy:
     def __init__(self, profiles: tuple[AccessProfile, ...]) -> None:
         self._profile_servers = {profile.id: frozenset(profile.in_process_server_ids) for profile in profiles}
 
-    def allows(self, caller: ToolCallActor | McpExecutionCaller | None, server_id: str) -> bool:
+    def allows(self, caller: RuntimeActor | McpExecutionCaller | None, server_id: str) -> bool:
         match caller:
             case (
                 AgentActor(access_profile_id=access_profile_id)
@@ -27,8 +27,8 @@ class InProcessServerAccessPolicy:
             case _:
                 return False
 
-    def authorizer_for(self, server_id: str) -> Callable[[ToolCallActor, str, dict[str, Any]], str | None]:
-        def authorize(actor: ToolCallActor | None, _tool_name: str, _arguments: dict[str, Any]) -> str | None:
+    def authorizer_for(self, server_id: str) -> Callable[[RuntimeActor, str, dict[str, Any]], str | None]:
+        def authorize(actor: RuntimeActor | None, _tool_name: str, _arguments: dict[str, Any]) -> str | None:
             return None if self.allows(actor, server_id) else "in-process server access denied"
 
         return authorize

@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from haku.console.grant_principal import RequestPrincipal
 from haku.console.mcp_config import AccessProfile
 from haku.console.mcp_execution import AgentMcpExecutionCaller, McpExecutionCaller, OperatorMcpExecutionCaller
-from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
+from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 
 
 class ConversationAccessDeniedError(Exception):
@@ -76,7 +76,7 @@ class ConversationReadAccessPolicy:
 
         self._readable = {profile_id: closure(profile_id) for profile_id in edges}
 
-    def scope_for(self, caller: ToolCallActor | McpExecutionCaller | None) -> ConversationReadScope:
+    def scope_for(self, caller: RuntimeActor | McpExecutionCaller | None) -> ConversationReadScope:
         match caller:
             case OperatorActor() | OperatorMcpExecutionCaller():
                 return UnrestrictedReads()

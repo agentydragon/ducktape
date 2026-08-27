@@ -28,7 +28,7 @@ from haku.console.mcp_execution import (
     OperatorMcpExecutionCaller,
     mcp_execution_request_meta,
 )
-from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
+from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tools.conversations import HAKU_CONVERSATIONS_SERVER_ID, FramePage, ItemPage, SessionPage, build_mcp
 from haku.console.x.conversation_reads import (
     ChannelAttachment,
@@ -199,7 +199,7 @@ def _mcp(reader: _Reader):
     return build_mcp(reader, access=ACCESS, conversation_reads=READS)
 
 
-def _meta(actor: ToolCallActor = HAKU) -> dict[str, object]:
+def _meta(actor: RuntimeActor = HAKU) -> dict[str, object]:
     caller = (
         AgentMcpExecutionCaller(
             principal=RequestPrincipal(
@@ -214,7 +214,7 @@ def _meta(actor: ToolCallActor = HAKU) -> dict[str, object]:
     )
 
 
-async def _call(client: Client, tool: str, arguments: dict, *, actor: ToolCallActor = HAKU, **kwargs):
+async def _call(client: Client, tool: str, arguments: dict, *, actor: RuntimeActor = HAKU, **kwargs):
     return await client.call_tool(tool, arguments, meta=_meta(actor), **kwargs)
 
 
@@ -244,7 +244,7 @@ async def test_ungranted_actor_cannot_read_conversations() -> None:
         OperatorActor(operator_id=HAKU.operator_id),
     ],
 )
-async def test_unprofiled_unknown_and_operator_actors_cannot_read_conversations(actor: ToolCallActor) -> None:
+async def test_unprofiled_unknown_and_operator_actors_cannot_read_conversations(actor: RuntimeActor) -> None:
     reader = _Reader()
     async with Client(_mcp(reader)) as client:
         result = await _call(client, "list_sessions", {}, actor=actor, raise_on_error=False)

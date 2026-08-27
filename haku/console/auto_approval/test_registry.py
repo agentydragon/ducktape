@@ -22,7 +22,7 @@ from haku.console.auto_approval.registry import (
     auto_approve_tool_call,
 )
 from haku.console.mcp_config import AccessProfile, ConsoleConfigFile
-from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
+from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tools.gmail import build_mcp
 from haku.console.tools.google_calendar import build_mcp as build_calendar_mcp
 
@@ -145,7 +145,7 @@ _CONFIG = ConsoleConfigFile.model_validate(
 _POLICIES = AutoApprovalPolicyRegistry(_CONFIG)
 
 
-async def _decision(tool_name: str, arguments: dict, *, gmail=None, actor: ToolCallActor = AGENT_ACTOR):
+async def _decision(tool_name: str, arguments: dict, *, gmail=None, actor: RuntimeActor = AGENT_ACTOR):
     gmail = gmail or Mock()
     return await auto_approve_tool_call(
         policies=_POLICIES,
@@ -463,7 +463,7 @@ def test_access_profile_recall_index_ids_are_a_set() -> None:
 
 
 async def _remote_decision(
-    server_id: str, tool_name: str, arguments: dict, *, actor: ToolCallActor = AGENT_ACTOR
+    server_id: str, tool_name: str, arguments: dict, *, actor: RuntimeActor = AGENT_ACTOR
 ) -> tuple[str | None, str | None]:
     # Remote (operator_oauth) servers have no in-process schema, so `mcp` is None.
     return _approval(
@@ -606,7 +606,7 @@ def _policies_with_visibility(handler) -> AutoApprovalPolicyRegistry:
 
 
 async def _public_repo_decision(
-    tool_name: str, arguments: dict, *, handler, actor: ToolCallActor = PUBLIC_CODER_ACTOR
+    tool_name: str, arguments: dict, *, handler, actor: RuntimeActor = PUBLIC_CODER_ACTOR
 ) -> tuple[str | None, str | None]:
     return _approval(
         await auto_approve_tool_call(

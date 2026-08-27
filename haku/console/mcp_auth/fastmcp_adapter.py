@@ -44,7 +44,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from haku.console.tool_call_actor import AgentActor, OperatorActor, ToolCallActor
+from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from mcp_infra.authentik_auth.fastmcp_proxy import RetryableRefreshOIDCProxy
 from mcp_infra.authentik_auth.oidc_principal import (
     AuthentikOidcPrincipalResolver,
@@ -534,7 +534,7 @@ class HakuMcpActorResolver:
         self._grant_authority = grant_authority
         self._static_actor_resolver = static_actor_resolver
 
-    async def resolve(self) -> ToolCallActor:
+    async def resolve(self) -> RuntimeActor:
         token = get_access_token()
         if token is None:
             raise ToolError("Agent grant is missing")
