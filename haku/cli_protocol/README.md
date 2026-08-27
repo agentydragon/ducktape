@@ -7,9 +7,9 @@ The console drives that protocol directly rather than through the Agent SDK (dec
 the why lives in the owning modules' docstrings, and the remaining work — npm sourcing, unadopted
 handshake capabilities — in <../plans/cli_protocol_ownership.md>), so the protocol is now
 something this repo has to understand rather than depend on. Nothing here is published by
-Anthropic as a
-contract: the surface is reverse-engineered from the bundled binary's own schemas and measured by
-running it, and much of it the CLI marks `@internal`. Treat it as pinned to a CLI version.
+Anthropic as a contract: the surface is reverse-engineered from the bundled binary's own schemas
+and measured by running it, and much of it the CLI marks `@internal`. Treat it as pinned to a
+CLI version.
 
 | File                                     | Holds                                                              |
 | ---------------------------------------- | ------------------------------------------------------------------ |
