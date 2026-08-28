@@ -69,6 +69,7 @@ py_library(
         "//haku/console/tools:gmail_client",
         "@pypi//fastmcp_slim",
         "@pypi//jsonschema",
+        "@pypi//referencing",
     ],
 )
 

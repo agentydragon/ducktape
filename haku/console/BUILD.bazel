@@ -980,6 +980,7 @@ py_test(
         "@pypi//jsonschema",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//referencing",
     ],
 )
 

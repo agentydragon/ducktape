@@ -14,6 +14,10 @@ from haku.console.export_mcp_tool_schemas import (
     export_mcp_tool_schemas_json,
 )
 
+# The types-jsonschema stubs import referencing, so mypy needs the dist wherever
+# jsonschema is imported; gazelle cannot see the dependency.
+# gazelle:include_dep @pypi//referencing
+
 _EXPECTED_TOOLS = {
     "gmail": (
         "drafts_create",
