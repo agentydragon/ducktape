@@ -71,11 +71,12 @@ delays bazel-ci.
 
 The binary is the ordinary artifact pipeline: `//devinfra:gazelle_python_binary` is
 a row in <../ci/artifact_targets.json>, released from devel pushes and pinned into
-`nix/artifact-pins.json` by sync-pins. Two cases skip the check
-(<../ci/gazelle_diff_check.py>): no pin published yet (bootstrap), and a PR that
-changes the binary-defining files (plugin version, patch, binary composition) —
-there the released binary may disagree with the PR's own tree, and the devel push
-after merge validates it instead.
+`nix/artifact-pins.json` by sync-pins. The workflow gets it with
+`nix build .#gazelle`, where the flake's `artifacts.gazelle` fetchurl verifies the
+pin's digest. Two cases skip the check (<../ci/gazelle_diff_check.py>): no pin in
+the tree yet (bootstrap), and a PR that changes the binary-defining files (plugin
+version, patch, binary composition) — there the released binary may disagree with
+the PR's own tree, and the devel push after merge validates it instead.
 
 ## Known limitations
 

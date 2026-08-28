@@ -1,33 +1,30 @@
-"""Fetch the pinned released gazelle binary for the drift check, or decide to skip.
+"""Decide whether the gazelle drift check applies to this run.
 
-Runs on a plain GitHub Actions runner (stdlib only, no Bazel): reads the `gazelle`
-pin from nix/artifact-pins.json, downloads and digest-verifies the binary to
-/tmp/gazelle, and emits `skip=<reason>` to GITHUB_OUTPUT instead when the check
-cannot be meaningful:
+Runs on a plain GitHub Actions runner (stdlib only, no Bazel) and emits
+`skip=<reason>` to GITHUB_OUTPUT when the check cannot be meaningful; the
+workflow then skips fetching and running the binary. The binary itself comes
+from `nix build .#gazelle` — the flake's `artifacts.gazelle` fetchurl carries
+the pin's sha256, so nix is the download and the digest check in one.
 
-- `bootstrap`: no pin exists yet — the release lands from a devel push and
-  sync-pins publishes the pin afterwards, so the first runs after introduction
-  skip until the pipeline has cycled once.
+- `bootstrap`: no `gazelle` pin exists in this tree — the release lands from a
+  devel push and sync-pins publishes the pin afterwards, so trees from before
+  the pin skip until the pipeline has cycled.
 - `stale`: a pull request changes the files that define the binary's behavior
   (plugin version, patch, binary composition), so the released binary may
   disagree with the PR's own tree; the devel push after merge validates it.
 """
 
-import base64
-import hashlib
 import json
 import os
 import subprocess
-import urllib.request
 from pathlib import Path
 
 STALE_PATHS = {"MODULE.bazel", "patches/rules_python_gazelle_ducktape.patch", "devinfra/BUILD.bazel"}
 
 
 def main() -> None:
-    pin = json.loads(Path("nix/artifact-pins.json").read_text())["pins"].get("gazelle")
     with Path(os.environ["GITHUB_OUTPUT"]).open("a") as out:
-        if pin is None:
+        if "gazelle" not in json.loads(Path("nix/artifact-pins.json").read_text())["pins"]:
             print(
                 "::notice::no released gazelle pin yet; skipping the drift check until the release pipeline has cycled"
             )
@@ -44,23 +41,12 @@ def main() -> None:
                     text=True,
                     check=True,
                 ).stdout.split()
-                hits = sorted(STALE_PATHS.intersection(changed))
-                if hits:
+                if hits := sorted(STALE_PATHS.intersection(changed)):
                     print(
                         f"::notice::PR changes gazelle-defining files ({', '.join(hits)}); "
                         "the released binary may be stale for this tree — skipping, validated on devel after merge"
                     )
                     out.write("skip=stale\n")
-                    return
-    data = urllib.request.urlopen(pin["url"]).read()
-    digest = base64.b64encode(hashlib.sha256(data).digest()).decode()
-    if digest != pin["sha256"]:
-        print(f"::error::gazelle binary digest mismatch: got {digest}, pinned {pin['sha256']}")
-        raise SystemExit(1)
-    binary = Path("/tmp/gazelle")
-    binary.write_bytes(data)
-    binary.chmod(0o755)
-    print(f"fetched {pin['url']} ({len(data)} bytes, digest OK)")
 
 
 if __name__ == "__main__":

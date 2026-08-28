@@ -3,9 +3,11 @@
 # here means the PR hand-edited managed rules or skipped the gazelle run.
 #
 # Deliberately its own workflow on a plain runner: the released gazelle binary
-# (devinfra/ci/artifact_targets.json → nix/artifact-pins.json) needs only the
-# checkout and the checked-in manifest — no Bazel, no BuildBuddy — and a red
-# drift check neither blocks nor delays bazel-ci.
+# comes from `nix build .#gazelle` — the flake's `artifacts.gazelle` fetchurl
+# carries the pin's sha256 (nix/artifact-pins.json), so nix is the download and
+# the digest check in one, with no secrets and no substituter beyond
+# cache.nixos.org — no Bazel, no BuildBuddy, and a red drift check neither
+# blocks nor delays bazel-ci.
 name: Gazelle diff
 "on":
   pull_request: {}
@@ -29,14 +31,25 @@ jobs:
           # stale-binary guard's PR delta (see gazelle_diff_check.py).
           fetch-depth: 2
 
-      - name: Fetch pinned gazelle binary
-        id: fetch
+      - name: Decide whether the check applies
+        id: gate
         run: python3 devinfra/ci/gazelle_diff_check.py
 
+      - name: Install Nix
+        if: steps.gate.outputs.skip == ''
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Build pinned gazelle
+        if: steps.gate.outputs.skip == ''
+        run: nix build .#gazelle
+
       - name: Gazelle --mode=diff
-        if: steps.fetch.outputs.skip == ''
+        if: steps.gate.outputs.skip == ''
         run: |
-          if ! /tmp/gazelle --mode=diff; then
+          if ! result/bin/gazelle --mode=diff; then
             echo "::error::BUILD files drifted from gazelle; run: gazelle (devshell) or bb run //devinfra:gazelle"
             exit 1
           fi
