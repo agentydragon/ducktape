@@ -26,13 +26,14 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
 TO haku_matrix_adapter;
 
 -- 2. The conversation seam: the record it subscribes to and appends authored facts to, and
--- the offer-input path (which stamps the serving session's updated_at and checks turn/prompt
--- state — UPDATE on `conversation` is also what its row lock requires).
+-- the offer-input path — `submit_exclusive_prompt` into the durable inbox (#4667 stage 4),
+-- whose admission checks read the open turn, the serving session, and both pending-prompt
+-- representations. UPDATE on `conversation` is what its row lock requires; transcript items
+-- are materialized console-side on admission, so the worker only reads them.
 GRANT SELECT, INSERT, UPDATE ON public.conversation TO haku_matrix_adapter;
-GRANT SELECT, INSERT ON public.conversation_event, public.conversation_item, public.conversation_prompt
+GRANT SELECT, INSERT ON public.conversation_event, public.submitted_prompt TO haku_matrix_adapter;
+GRANT SELECT ON public.conversation_item, public.conversation_prompt, public.conversation_turn, public.sessions
 TO haku_matrix_adapter;
-GRANT SELECT ON public.conversation_turn TO haku_matrix_adapter;
-GRANT SELECT, UPDATE ON public.sessions TO haku_matrix_adapter;
 
 -- 3. Identity resolution and launch authorization: reads plus the guard locks (every
 -- SELECT ... FOR [NO KEY] UPDATE needs UPDATE privilege), and the anchor's updated_at stamp.

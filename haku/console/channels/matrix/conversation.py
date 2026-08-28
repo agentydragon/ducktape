@@ -296,7 +296,7 @@ class Turns:
         try:
             # The refusing variant, deliberately: this channel promises a mid-turn batch is
             # rejected, not held (<SPEC.md> § Batching and admission), and under the inbox that
-            # policy is the surface's to choose (<../../prompt_inbox.py>).
+            # policy is the surface's to choose (<../../x/prompt_inbox.py>).
             prompt_id = await self._session_store.submit_exclusive_prompt(
                 operator_id,
                 binding.conversation_id,

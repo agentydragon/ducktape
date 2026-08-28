@@ -60,6 +60,7 @@ from haku.console.database_schema import (
     Operator,
     Session,
     StaticCredential,
+    SubmittedPrompt,
 )
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
@@ -111,6 +112,7 @@ _ROLE_TABLES = (
     ConversationItem,
     ConversationTurn,
     ConversationPrompt,
+    SubmittedPrompt,
     Session,
     Operator,
     IdentityAnchor,
