@@ -260,7 +260,7 @@ spec:
                   key: token
             # Two in-process MCP servers execute as the acting Operator's own Google account:
             # `gmail` (Gmail reads mirroring the REST API, draft creation, thread-label changes,
-            # label CRUD — haku/console/tools/gmail.py) and `google_calendar` (recurrence-aware
+            # label CRUD — haku/console/mcp/tools/gmail.py) and `google_calendar` (recurrence-aware
             # event reads + approval-gated creation — google_calendar.py). Each call resolves that
             # Operator's per-Operator Google token from the console's own connection store
             # (haku/console/oauth/provider_connection.py), self-refreshed in-process.

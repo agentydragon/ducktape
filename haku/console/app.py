@@ -32,16 +32,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.middleware.sessions import SessionMiddleware
 
-from haku.console import (
-    capabilities,
-    mcp_approval,
-    mcp_catalog_reconciler,
-    mcp_mount,
-    mcp_operator_oauth,
-    mcp_server,
-    tool_call_service,
-)
-from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
+from haku.console import capabilities
 from haku.console.config import MCP_PATH, Settings
 
 # Aliased: bare `runtime` exists in three sibling packages, and `create_app` has a local `follow`.
@@ -81,13 +72,9 @@ from haku.console.identity.authorization import PostgresAgentAuthority, StaticAg
 from haku.console.identity.fastmcp_adapter import HakuMcpActorResolver, install_operator_session_route_guard
 from haku.console.identity.operator_identity import OperatorIdentityTrust
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.in_process_servers import (
-    HostexecServerConfig,
-    InProcessServerDependencies,
-    SandboxServerConfig,
-    build_in_process_servers,
-)
-from haku.console.mcp_config import (
+from haku.console.mcp import approval, catalog_reconciler, mount, operator_oauth, server, tool_call_service
+from haku.console.mcp.auto_approval.github import GitHubRepositoryVisibilityService
+from haku.console.mcp.config import (
     InProcessBackend,
     InProcessServers,
     LoadedStaticAgent,
@@ -97,6 +84,20 @@ from haku.console.mcp_config import (
     load_static_agents,
     validate_in_process_server_bindings,
 )
+from haku.console.mcp.in_process_servers import (
+    HostexecServerConfig,
+    InProcessServerDependencies,
+    SandboxServerConfig,
+    build_in_process_servers,
+)
+from haku.console.mcp.tools import (
+    gmail as gmail_tools,
+    grants as grants_tools,
+    kubernetes as kubernetes_tools,
+    routine as routine_tools,
+    sandbox as sandbox_tools,
+)
+from haku.console.mcp.tools.recall_index import HAKU_INDEX_SERVER_ID
 from haku.console.models import ChatLaunchOption, ConfigResponse
 from haku.console.notifications import connection_metrics, console_events, push, push_routes
 from haku.console.notifications.conversation_wakes import ConversationWakes
@@ -107,14 +108,6 @@ from haku.console.session import runtime as session_runtime, sandbox_allocation,
 from haku.console.session.launch_identity import ChatLaunchAuthorizer
 from haku.console.session.store import Store
 from haku.console.session.system_prompt import SystemPromptTemplate
-from haku.console.tools import (
-    gmail as gmail_tools,
-    grants as grants_tools,
-    kubernetes as kubernetes_tools,
-    routine as routine_tools,
-    sandbox as sandbox_tools,
-)
-from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
 from haku.console.x import runtime as console_runtime, runtime_catalog
 from haku.recall_index.config import EmbedderConfig
 from haku.recall_index.openai_embedder import OpenAIEmbedder
@@ -235,8 +228,8 @@ def create_app(
     # channel and sends on the console one, neither of which depends on this replica running a
     # Claude runtime.
     conversation_live_updates = ConversationLiveUpdates(conversation_wakes, console_event_hub, db_sessions)
-    tool_call_ledger = mcp_approval.PostgresToolCallLedger(db_sessions)
-    mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
+    tool_call_ledger = approval.PostgresToolCallLedger(db_sessions)
+    mcp_operator_oauth_store = operator_oauth.PostgresMcpOperatorOAuthStore(
         db_sessions,
         operator_identity_store=operator_identity_store,
         token_states=oauth_token_states,
@@ -558,7 +551,7 @@ def create_app(
         # listed and where the policy that lets an agent call it lives, and a boolean elsewhere
         # could only ever disagree with it — a listed server with no builder fails the binding
         # validation below.
-        configured_server_ids = {server.id for server in console_config.mcp.servers}
+        configured_server_ids = {entry.id for entry in console_config.mcp.servers}
         index_searcher = None
         if HAKU_INDEX_SERVER_ID in configured_server_ids:
             if settings.embedder is None:
@@ -616,10 +609,10 @@ def create_app(
     # The console's one path out to its configured MCP servers. Executing a tool and reflecting a
     # catalog are the same dispatch over the same transports, so they are one object: executing and
     # reflecting are not separate roles with separate wiring.
-    dispatcher = mcp_approval.McpServerDispatcher(
+    dispatcher = approval.McpServerDispatcher(
         in_process_servers, catalog_cache_ttl_seconds=settings.mcp_catalog_refresh_interval_seconds
     )
-    catalogs = mcp_catalog_reconciler.OperatorCatalogReconciler(
+    catalogs = catalog_reconciler.OperatorCatalogReconciler(
         servers=console_config.mcp.servers,
         dispatcher=dispatcher,
         oauth_store=mcp_operator_oauth_store,
@@ -646,7 +639,7 @@ def create_app(
     # The console's own Agent-and-Operator MCP server, mounted at /mcp — its reason to run.
     # Its tools re-expose the connected servers through the same application service. Always built;
     # `build_auth` fails loud if nothing can authenticate to it (no static agent, no OAuth).
-    console_mcp_context = mcp_server.ConsoleMcpContext(
+    console_mcp_context = server.ConsoleMcpContext(
         settings=settings,
         tool_calls=tool_calls,
         oauth_store=mcp_operator_oauth_store,
@@ -656,9 +649,7 @@ def create_app(
         node_daemons=hostexecd_service,
     )
 
-    console_mcp = mcp_server.build_console_mcp(
-        console_mcp_context, auth=mcp_auth.provider, actor_resolver=actor_resolver
-    )
+    console_mcp = server.build_console_mcp(console_mcp_context, auth=mcp_auth.provider, actor_resolver=actor_resolver)
     # The console runs multiple interchangeable replicas. FastMCP's default stateful HTTP
     # transport keeps its session map in-process, so a subsequent request routed to another pod
     # receives "Session not found". Haku's tools keep durable state in Postgres and do not need
@@ -791,10 +782,10 @@ def create_app(
     app.include_router(session_runtime.router, dependencies=operator_only)
     app.include_router(conversation_follow.router, dependencies=operator_only)
     app.include_router(console_events.router, dependencies=operator_only)
-    app.include_router(mcp_approval.router, dependencies=operator_only)
+    app.include_router(approval.router, dependencies=operator_only)
     app.include_router(kubernetes_grant_routes.router, dependencies=operator_only)
     app.include_router(http_grant_routes.router, dependencies=operator_only)
-    app.include_router(mcp_operator_oauth.router, dependencies=operator_only)
+    app.include_router(operator_oauth.router, dependencies=operator_only)
     app.include_router(provider_connection.router, dependencies=operator_only)
     app.include_router(connection_result.router, dependencies=operator_only)
     app.include_router(enrollment_routes.operator_router, dependencies=operator_only)
@@ -861,7 +852,7 @@ def create_app(
     )
 
     # MCP server (streamable HTTP), mounted after the API routers and before the SPA.
-    mcp_mount.mount_mcp_app(app, path=MCP_PATH, mcp_app=mcp_asgi)
+    mount.mount_mcp_app(app, path=MCP_PATH, mcp_app=mcp_asgi)
 
     # Optional direct local/dev fallback. Production serves the SPA from the
     # haku-console-static nginx image and leaves static_dir unset on this process.

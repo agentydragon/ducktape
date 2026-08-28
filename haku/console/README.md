@@ -40,7 +40,7 @@ console's Recall mirror is read-only.
 ## MCP approval queue — authored tool calls, console-approved
 
 `ToolCallApplicationService` is the actor-scoped lifecycle boundary. Agent callers enter through
-`mcp_server.py`; the operator browser enters through `mcp_approval.py`. The service owns the
+`mcp/server.py`; the operator browser enters through `mcp/approval.py`. The service owns the
 canonical `tool_call_id`, schema validation, reviewed auto-approval decision, audit row, waiting,
 execution, and result.
 
@@ -64,13 +64,13 @@ The browser reads pending calls and the audit ledger through `/api/approvals/pen
 WebSocket is only a lossy invalidation channel: REST remains authoritative. `list_node_daemons`
 reflects persisted heartbeat/lease state; the separately authenticated `/api/node-daemons/v1/*`
 machine API owns heartbeat, durable work claims, lease renewal, and idempotent results. Operator
-OAuth and provider associations are managed by `mcp_operator_oauth.py` and
+OAuth and provider associations are managed by `mcp/operator_oauth.py` and
 `oauth/provider_connection.py`; browser rendering and callback-result handling are specified in
 <docs/oauth_browser_surfaces.md>.
 
 ### MCP server (`/mcp`)
 
-`mcp_server.py` mounts one native MCP server for Agents and the trusted Operator frontend. Agents
+`mcp/server.py` mounts one native MCP server for Agents and the trusted Operator frontend. Agents
 submit through `ToolCallApplicationService.submit_and_wait`. A DB-revalidated Operator session uses
 `execute_direct`, resolving downstream credentials in that Operator's context without creating an
 approval row; browser MCP requests still require the exact console Origin.
@@ -109,7 +109,7 @@ and the Postgres-backed state required by the accepted private seam. See
 
 #### Catalog reconciliation
 
-`tools/list` is a snapshot read. `mcp_catalog_reconciler.py` builds one atomic per-Operator
+`tools/list` is a snapshot read. `mcp/catalog_reconciler.py` builds one atomic per-Operator
 generation before readiness and refreshes it periodically. Connection changes invalidate that
 Operator's generation across replicas through Postgres `LISTEN`/`NOTIFY`; a newly admitted Operator
 queues an immediate pass.
@@ -136,7 +136,7 @@ instance. `McpServerDispatcher` uses the same client/reflection path for both, w
 implementation code injects any in-process credential only at execution. Startup rejects a
 credential kind the implementation did not declare.
 
-Built-ins are assembled in `in_process_servers.py`:
+Built-ins are assembled in `mcp/in_process_servers.py`:
 
 - `gmail` and `google_calendar` execute as the acting Operator's separately linked Google grants.
   Their tool schemas/descriptions are the API contract; `TODO.md` inventories intentionally

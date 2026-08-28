@@ -269,7 +269,7 @@ auto_approval_policies:
   # Any repository confirmed genuinely public — not bounded to a fixed owner/repo allowlist.
   # `type: github_public_repository` positively confirms the target repository's visibility with a
   # live, unauthenticated GitHub API call before approving (see
-  # haku/console/auto_approval/github.py) rather than inferring "public" from the absence
+  # haku/console/mcp/auto_approval/github.py) rather than inferring "public" from the absence
   # of a restriction: the operator's GitHub OAuth token behind this connection can also reach
   # private repos it can see (agentydragon/gaffer-private included), so a bare owner/repo match
   # here would let a call read any of those just by naming it. The target repository is derived
@@ -856,7 +856,7 @@ mcp:
         auth:
           kind: remote_server_oauth
           # Scopes deliberately omitted (NOT `scopes: []`, which sends an explicit
-          # *empty*-scope OAuth request per mcp_operator_oauth.py's `oauth.scopes is not
+          # *empty*-scope OAuth request per mcp/operator_oauth.py's `oauth.scopes is not
           # None` check -- that was this line's actual effect, confirmed 2026-08-18).
           # Omitting the field makes the flow ask GitHub's server for its own default,
           # which per github-mcp-server's docs is "the full supported set." The real
@@ -887,7 +887,7 @@ mcp:
         auth:
           kind: static_bearer
           bearer_token_secret: tana-account-pat
-    # `sandbox` (haku/console/tools/sandbox.py): claim a warm Haku sandbox from the `agent_sandbox`
+    # `sandbox` (haku/console/mcp/tools/sandbox.py): claim a warm Haku sandbox from the `agent_sandbox`
     # pool above, bootstrap it, run bounded bash via pods/exec, dispose it. Credential-free —
     # Console's own ServiceAccount holds the claim/exec RBAC (cluster/k8s/haku/workspaces/app/
     # haku-console-sandbox-role.yaml), so there is no bearer to reflect and no second process to
@@ -996,7 +996,7 @@ mcp:
             # haku-console's operator-auth callback), safe to share since PKCE plus per-request
             # redirect_uri validation secure each caller independently.
             client_id: kubectl-passthrough-mcp
-    # In-process FastMCP servers (haku/console/tools/*.py) attached via an in-memory transport,
+    # In-process FastMCP servers (haku/console/mcp/tools/*.py) attached via an in-memory transport,
     # not remote MCP servers. Calls default to manual approval;
     # reviewed policies may auto-approve exact calls (currently Gmail label operations).
     #
@@ -1022,7 +1022,7 @@ mcp:
         credential:
           kind: operator_connection
           connection: google_calendar
-    # `haku_routine` (haku/console/tools/routine.py): launch_routine fires the Haku claude-code-web
+    # `haku_routine` (haku/console/mcp/tools/routine.py): launch_routine fires the Haku claude-code-web
     # routine via the haku-routine-launch-token secret (HAKU_CONSOLE_LAUNCH_ROUTINE__*), not the
     # Google grant. Superseding the bespoke launch-routine capability tier. It carries its own
     # credential, so it needs no operator-resolved backend auth.
@@ -1031,7 +1031,7 @@ mcp:
         kind: in_process
         credential:
           kind: none
-    # `haku_index` (haku/console/tools/recall_index.py): semantic search over haku-state,
+    # `haku_index` (haku/console/mcp/tools/recall_index.py): semantic search over haku-state,
     # public Ducktape source, and Haku's own past conversations. Listing it here is what builds
     # the searcher, and the
     # console refuses to start unless an embedder is configured too (`HAKU_CONSOLE_EMBEDDER__*`,
@@ -1047,7 +1047,7 @@ mcp:
         kind: in_process
         credential:
           kind: none
-    # `haku_conversations` (haku/console/tools/conversations.py): read Haku's own past sessions
+    # `haku_conversations` (haku/console/mcp/tools/conversations.py): read Haku's own past sessions
     # out of the console's rollout store, so a replacement session can consult what its
     # predecessor actually did instead of only the last few room messages. Read-only, and
     # credential-free — the corpus is the console's own database.
@@ -1056,7 +1056,7 @@ mcp:
         kind: in_process
         credential:
           kind: none
-    # `hostexec` (haku/console/tools/hostexec.py): run an approved shell command on an
+    # `hostexec` (haku/console/mcp/tools/hostexec.py): run an approved shell command on an
     # operator machine (wyrm2/rugged) under the operator's OWN Authentik identity. There
     # is no standing credential: `operator_login_identity` makes each call resolve the acting
     # Operator's stored console-login token (captured via offline_access) and exchange it

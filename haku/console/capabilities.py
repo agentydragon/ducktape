@@ -4,7 +4,7 @@ This is the console's one privileged non-MCP surface: **same-origin gated**, **a
 trusted namespace's logs (which Haku has no RBAC to read), and a small **PR-gated** allowlist.
 Today the one capability is `launch-routine`: firing the Haku "claude-code-web routine" with
 the bearer from the `haku-routine-launch-token` secret. The fire itself lives in
-`haku.console.tools.routine.RoutineLauncher` (shared with the `haku_routine` in-process MCP
+`haku.console.mcp.tools.routine.RoutineLauncher` (shared with the `haku_routine` in-process MCP
 server); the bearer never leaves this process. See `haku/docs/security.md` → enforcement inventory,
 "Console privileged-action tier".
 
@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 
 from haku.console.config import LaunchRoutineConfig
 from haku.console.deps import SettingsDep
-from haku.console.tools.routine import LaunchRoutineResult, RoutineLauncher
+from haku.console.mcp.tools.routine import LaunchRoutineResult, RoutineLauncher
 
 router = APIRouter(prefix="/api/capabilities", tags=["capabilities"])
 

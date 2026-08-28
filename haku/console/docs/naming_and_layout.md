@@ -476,8 +476,13 @@ Needs operator go **and** the `<auth-context>` name pick.
   namespaces + connector + docs in a coordinated cutover; "Haku" kept as agent config; redirect/compat
   for external refs. The tool-id de-Haku rides C12.
 - **C15 · Remainder packaging (#4924)** _(mechanical)_ — Landed: `oauth/` (#5000),
-  `notifications/` (#5001), `hostexecd/` (#5002) carved off the flat top level. Remaining: the rest
-  settles around the app shell once #4772 has settled what everything is called
+  `notifications/` (#5001), `hostexecd/` (#5002), and `mcp/` — the approval/audit/execution surface
+  (the `mcp_*` modules, `tool_call_service`, `in_process_servers`/`in_process_server_access`,
+  `export_tool_schemas`, `tools/`, `auto_approval/`), each a one-file `py_library` with the `mcp_`
+  file-prefix dropped per §4.1; the `McpExecution*` entity reshape stays with C8, so `execution.py`
+  keeps its class names for now. `tool_call_actor.py` (→ `identity/`, C8) and the recall read path
+  (`recall_index_{reader,access}.py` → `mcp/tools/recall/`, C13) deliberately stay put. Remaining:
+  the rest settles around the app shell once #4772 has settled what everything is called
   (rename-before-move), in a final quiet-window sweep.
 
 ### Dependency-ordered picture

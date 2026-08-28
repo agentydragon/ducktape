@@ -3,7 +3,7 @@
 - Let the pending tool-call note (`pending_tool_call_actions.tsx`) ride an **approve**, not just
   a deny — a general operator remark, not only a denial reason. The agent can already read
   decision notes back from the tool-call result DB, so this is mostly: persist a reason on the
-  approve path of the decision endpoint (`mcp_approval.py`) and give the field a neutral
+  approve path of the decision endpoint (`mcp/approval.py`) and give the field a neutral
   placeholder when it applies to both outcomes.
 
 - Add previews for the remaining **`tana-rw`** tools: `list_workspaces`, `search_nodes`, `read_node`,
@@ -25,11 +25,11 @@
   - `ToolCallItem` (<../conversation/item_reads.py>) carries `tool_name` and `arguments` and no
     `server_id`, which is what `tool_rendering/index.tsx` indexes by.
   - The proxy's name is not one split away from that key. `server_tool_prefix`
-    (<../mcp_config.py>) sanitizes the id into the tool namespace — `grocy-sf` and `tana-rw` become
+    (<../mcp/config.py>) sanitizes the id into the tool namespace — `grocy-sf` and `tana-rw` become
     `grocy_sf` and `tana_rw` — while `server_ids.ts` holds the verbatim config ids, and the mapping
     is not invertible. It has to come from the server catalog, not from parsing the name.
   - An approval-gated call's recorded arguments are the `{input, rationale}` envelope, because the
-    transcript is a fold of what the CLI sent and `mcp_server.py` unwraps the envelope
+    transcript is a fold of what the CLI sent and `mcp/server.py` unwraps the envelope
     server-side — so `/api/tool-calls` rows, which is what the approvals and history surfaces feed
     the widgets, are already unwrapped and transcript rows are not.
 

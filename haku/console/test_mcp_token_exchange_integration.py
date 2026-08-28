@@ -31,7 +31,7 @@ from haku.console.app import create_app
 from haku.console.config import OperatorOidcConfig
 from haku.console.conftest import console_settings, operator_id as resolve_operator_id, write_config
 from haku.console.database_schema import McpOperatorOAuthAssociation, OAuthTokenState
-from haku.console.mcp_config import (
+from haku.console.mcp.config import (
     DynamicOAuthClientRegistration,
     McpServerEntry,
     RemoteMcpBackend,

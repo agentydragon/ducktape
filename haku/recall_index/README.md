@@ -126,7 +126,7 @@ dropped, so you want the belt as well as the braces.
 
 Message ends are the preferred cut rather than line ends, so a window usually stops where a
 message does, and every window names each message it **intersects** — the pointers a caller
-drills into with the console's own conversation tools (`haku/console/tools/conversations.py`)
+drills into with the console's own conversation tools (`haku/console/mcp/tools/conversations.py`)
 rather than trusting the embedded copy in `contents.content`. Two things cut across a message
 anyway: the configured overlap, which carries the previous window's tail into the next, and a
 message longer than a whole chunk, which is split. So a window's message list is what it overlaps,
@@ -201,7 +201,7 @@ which is the one place the answer reliably is not, and a tool it never reaches f
 indistinguishable from a tool that does not exist. So recall is prompted in two places, both of
 which the agent cannot edit:
 
-- **The `search` tool's own description** (<../console/tools/recall_index.py>) states it as a step
+- **The `search` tool's own description** (<../console/mcp/tools/recall_index.py>) states it as a step
   rather than an affordance, and names the question types that trigger it — prior work, decisions,
   dates, people, preferences, commitments, anything asked for earlier. A tool description is what
   a model actually reads; a server's `instructions` frequently are not surfaced by the client at
@@ -224,7 +224,7 @@ comparable thing in reach and has had far more exposure to real sessions than th
   tests, which own their whole database. The deployed index gets them from the console's Alembic
   baseline — the console's CNPG cluster is the home because the chat corpus's source tables are
   already there.
-- **The MCP tool surface.** `haku_index` (<../console/tools/recall_index.py>) is an in-process
+- **The MCP tool surface.** `haku_index` (<../console/mcp/tools/recall_index.py>) is an in-process
   FastMCP server in haku-console: one `search` with optional `index_ids` (omitted means every
   configured index), plus `index_status`.
 

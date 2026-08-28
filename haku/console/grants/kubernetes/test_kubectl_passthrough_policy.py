@@ -12,8 +12,8 @@ import pytest_bazel
 from haku.console.conftest import console_settings, write_config
 from haku.console.grants.kubernetes.authorization import AuthorizationResponse, KubernetesAuthorizationSource
 from haku.console.grants.kubernetes.kubectl_passthrough_policy import map_kubectl_passthrough_request
+from haku.console.mcp.tool_call_service import ToolCallApplicationService
 from haku.console.tool_call_actor import AgentActor
-from haku.console.tool_call_service import ToolCallApplicationService
 from haku.console.tool_calls import SubmitToolCallRequest, ToolCallStatus
 
 _SERVER_ID = "kubectl-passthrough-mcp"

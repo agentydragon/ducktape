@@ -56,7 +56,7 @@ their heading, never by position — positions change as entries come and go.
 
 Durable Haku Agent/access-profile standing identity; deploy-selected after Agent
 authentication, with the same RBAC as Haku's OIDC and runtime identities.
-Source of truth: <../console/mcp_config.py>, <../../cluster/k8s/haku/console/config.yaml>,
+Source of truth: <../console/mcp/config.py>, <../../cluster/k8s/haku/console/config.yaml>,
 Kubernetes RoleBindings under <../../cluster/k8s/>.
 
 ### OIDC group `oidc-ksbx-groups:haku`
@@ -115,9 +115,9 @@ exact-Origin-gated calls resolve the configured downstream authentication in tha
 Operator's context and deliberately create no tool-call row. The refresh tokens live
 only in the `haku-console` Postgres; Haku never holds them, and they are never reflected
 into `haku-sandbox`.
-Source of truth: <../console/auto_approval/>, <../../cluster/k8s/haku/console/config.yaml>,
-<../console/mcp_agent_auth.py>, <../console/tool_call_service.py>,
-<../console/tools/gmail.py>, <../console/tools/google_calendar.py>.
+Source of truth: <../console/mcp/auto_approval/>, <../../cluster/k8s/haku/console/config.yaml>,
+<../console/mcp_agent_auth.py>, <../console/mcp/tool_call_service.py>,
+<../console/mcp/tools/gmail.py>, <../console/mcp/tools/google_calendar.py>.
 
 ### `kubectl-passthrough-mcp` server entry
 
@@ -137,7 +137,7 @@ under the console's reviewed policy; every other Tana tool (node edits, moves, d
 tag creation) stays approval-gated, executing under the approving Operator's own linked
 Tana account. Supersedes the standalone `tana-mcp-ro` facade — no separate
 Deployment/secret/route.
-Source of truth: <../console/auto_approval/>, <../console/mcp_config.py>.
+Source of truth: <../console/mcp/auto_approval/>, <../console/mcp/config.py>.
 
 ### `grocy-sf` server entry
 
@@ -148,8 +148,8 @@ Operator's own linked Grocy account. Supersedes Haku's dedicated read-only `haku
 identity (`grocy-mcp-haku-sf` Authentik provider + JWT rotation) — that credential could
 never reach writes at all; console routing trades a server-side permission scope for an
 allowlist gate, in exchange for approval-gated write access every runtime can now reach.
-Source of truth: <../console/auto_approval/>, <../../cluster/k8s/haku/console/config.yaml>,
-<../console/mcp_config.py>.
+Source of truth: <../console/mcp/auto_approval/>, <../../cluster/k8s/haku/console/config.yaml>,
+<../console/mcp/config.py>.
 
 ### `sandbox` in-process server
 
@@ -168,8 +168,8 @@ therefore gains only the removal of the per-call operator tap within its existin
 `haku-sandbox` blast radius; the box builds a git-synced haku-state checkout locally (no
 RBE — source never leaves the cluster). The server itself is credential-free: Console's
 own ServiceAccount holds the claim/exec RBAC (client in `haku/sandbox`, tools in
-<../console/tools/sandbox.py>).
-Source of truth: <../console/auto_approval/>, <../console/mcp_config.py>,
+<../console/mcp/tools/sandbox.py>).
+Source of truth: <../console/mcp/auto_approval/>, <../console/mcp/config.py>,
 <../../cluster/k8s/haku/console/config.yaml>, <../../cluster/k8s/haku/workspaces/>.
 
 ### Agent-facing `withdraw_tool_call` (`/mcp`)
@@ -183,7 +183,7 @@ attempt out of the operator's approval queue before it is scrutinised, but canno
 the record of it, and approval and withdrawal serialise under the row lock, so a
 withdrawal cannot cancel a call the operator already approved. Detail:
 <../console/README.md> § _MCP approval queue_.
-Source of truth: <../console/mcp_server.py>, <../console/tool_call_service.py>,
+Source of truth: <../console/mcp/server.py>, <../console/mcp/tool_call_service.py>,
 <../console/README.md>.
 
 ### Operator-owned base vs. canonical autonomous-write inventory

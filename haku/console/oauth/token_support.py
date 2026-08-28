@@ -1,7 +1,7 @@
 """Shared token helpers for the console's OAuth connection flows.
 
 Token expiry, freshness against a refresh skew, public-base-URL normalization, and
-token-endpoint response parsing, extracted from ``mcp_operator_oauth`` so every console OAuth
+token-endpoint response parsing, extracted from ``mcp/operator_oauth`` so every console OAuth
 flow shares one implementation and the stores cannot drift.
 """
 

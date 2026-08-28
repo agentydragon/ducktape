@@ -93,7 +93,7 @@ provenance both are revalidated from. The five, at their definitions:
   `haku/shared/haku/console/tool_calls.py`): the durable audit record both the actor and the grant
   principal are revalidated from.
 - **Runtime actor / execution** — `McpExecutionCaller` and `McpExecutionContext`
-  (`mcp_execution.py`): the trusted identity a Console-owned in-process tool reads at execution.
+  (`mcp/execution.py`): the trusted identity a Console-owned in-process tool reads at execution.
 
 The runtime caller is `RuntimeActor` (`OperatorActor | AgentActor`). Only the authority constructs an
 `AgentActor(agent_id, operator_id, binding_id, access_profile_id)` from durable state. Operators

@@ -7,7 +7,7 @@ tab's callback fails with ``mismatching_state`` — routine here, since the oper
 absolute one-hour deadline and every open tab bounces to ``/auth/login`` at about the same time.
 
 The console keeps each attempt in its own ``operator_login_flows`` row instead, the same shape the
-account-link flows already use (`mcp_operator_oauth.py`, `provider_connection.py`), so concurrent
+account-link flows already use (`mcp/operator_oauth.py`, `provider_connection.py`), so concurrent
 attempts do not interact. The user-agent binding RFC 6749 §10.12 wants is preserved explicitly:
 each flow mints a secret, hands it to the browser in a cookie **named after that flow's state**, and
 the callback refuses a flow whose secret the browser cannot produce. Per-flow cookie names are the

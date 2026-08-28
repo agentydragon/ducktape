@@ -1,0 +1,486 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//haku/console:__subpackages__"])
+
+# Deliberately no `//haku/console:conftest` on the tests below (`test_kubernetes` excepted —
+# it runs against the parent conftest's real database). The rest are leaf MCP servers and
+# their clients: each builds its own `FastMCP` over a mock and uses none of the parent
+# conftest's fixtures. Shipping that file into the runfiles is not free even so — pytest imports
+# every ancestor-directory conftest at collection, and `haku/console/conftest.py` imports
+# `create_app`, i.e. the whole console composition root (kubernetes_asyncio, nio, sqlalchemy,
+# the FastMCP stack), which roughly doubled these targets' wall time for fixtures nobody asked
+# for. The fixtures themselves are lazy; a module-level import is not.
+#
+# A test here that later does want a shared fixture just adds the dep back — the failure without
+# it is a loud `fixture 'x' not found`, and the parent conftest defines no autouse fixtures or
+# hooks, so its absence changes nothing else.
+
+py_library(
+    name = "gmail_client",
+    srcs = ["gmail_client.py"],
+    deps = [
+        "//gmail_api:filters",
+        "//gmail_api:labels",
+        "//gmail_api:messages",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "google_calendar_client",
+    srcs = ["google_calendar_client.py"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//python_dateutil",
+    ],
+)
+
+py_library(
+    name = "google_service",
+    srcs = ["google_service.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        "@pypi//google_api_python_client",
+        "@pypi//google_auth",
+    ],
+)
+
+py_library(
+    name = "gmail",
+    srcs = ["gmail.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        ":gmail_client",
+        ":google_discovery",
+        ":google_service",
+        "//gmail_api:filters",
+        "//gmail_api:labels",
+        "//gmail_api:messages",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "google_calendar",
+    srcs = ["google_calendar.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        ":google_calendar_client",
+        ":google_service",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "conversations",
+    srcs = ["conversations.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        "//haku/console:conversation_read_access",
+        "//haku/console:in_process_server_access",
+        "//haku/console:mcp_execution",
+        "//haku/console/conversation:item_reads",
+        "//haku/console/conversation:reads",
+        "//haku/console/mcp:execution",
+        "//haku/console/mcp:in_process_server_access",
+        "//haku/console/session:session_frames",
+        "@pypi//fastmcp_slim",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "recall_index",
+    srcs = ["recall_index.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        "//haku/console:conversation_read_access",
+        "//haku/console:recall_index_access",
+        "//haku/console/mcp:execution",
+        "@pypi//fastmcp_slim",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_recall_index",
+    srcs = ["test_recall_index.py"],
+    deps = [
+        ":recall_index",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console:conversation_read_access",
+        "//haku/console:recall_index_access",
+        "//haku/console:tool_call_actor",
+        "//haku/console/grants:principal",
+        "//haku/console/mcp:config",
+        "//haku/console/mcp:execution",
+        "@pypi//fastmcp_slim",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_conversations",
+    srcs = ["test_conversations.py"],
+    deps = [
+        ":conversations",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console:conversation_read_access",
+        "//haku/console:tool_call_actor",
+        "//haku/console/conversation:conversation_event",
+        "//haku/console/conversation:item_reads",
+        "//haku/console/conversation:item_vocabulary",
+        "//haku/console/conversation:reads",
+        "//haku/console/grants:principal",
+        "//haku/console/harnesses:kind",
+        "//haku/console/mcp:config",
+        "//haku/console/mcp:execution",
+        "//haku/console/mcp:in_process_server_access",
+        "//haku/console/session:session_frames",
+        "@pypi//fastmcp_slim",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "grants",
+    srcs = ["grants.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        ":kubernetes",
+        "//haku/console:mcp_execution",
+        "//haku/console/grants:envelope",
+        "//haku/console/grants:principal",
+        "//haku/console/grants/http:models",
+        "//haku/console/grants/http:service",
+        "//haku/console/grants/kubernetes:models",
+        "//haku/console/grants/kubernetes:service",
+        "//haku/console/identity:enrollment",
+        "//haku/console/mcp:execution",
+        "//haku/console/mcp/tools:kubernetes",
+        "@pypi//fastmcp_slim",
+        "@pypi//pydantic",
+    ],
+)
+
+# The kubernetes SAR check (`kubernetes_can_i`) exposed by the `grants` server — models + service
+# only, no standalone server (#4918).
+py_library(
+    name = "kubernetes",
+    srcs = ["kubernetes.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        "//haku/console/grants/kubernetes:authorization",
+        "//haku/console/grants/kubernetes:models",
+        "//haku/console/mcp:execution",
+        "@pypi//fastmcp_slim",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "sandbox",
+    srcs = ["sandbox.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        "//haku/sandbox:config",
+        "//haku/sandbox:models",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_sandbox",
+    srcs = ["test_sandbox.py"],
+    deps = [
+        ":sandbox",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/sandbox:config",
+        "//haku/sandbox:models",
+        "//mcp_infra/exec:models",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_grants",
+    size = "medium",
+    srcs = ["test_grants.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":grants",
+        ":kubernetes",
+        "//:conftest",
+        "//haku/console:config",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "//haku/console/grants:envelope",
+        "//haku/console/grants:principal",
+        "//haku/console/grants/http:models",
+        "//haku/console/grants/http:service",
+        "//haku/console/grants/kubernetes:authorization",
+        "//haku/console/grants/kubernetes:models",
+        "//haku/console/grants/kubernetes:service",
+        "//haku/console/identity:agent_bearer_authority",
+        "//haku/console/identity:enrollment",
+        "//haku/console/mcp:execution",
+        "@pypi//fastapi",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_kubernetes",
+    size = "medium",
+    srcs = ["test_kubernetes.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":kubernetes",
+        "//:conftest",
+        "//haku/console:config",
+        "//haku/console:conftest",
+        "//haku/console/grants:principal",
+        "//haku/console/grants/kubernetes:authorization",
+        "//haku/console/grants/kubernetes:models",
+        "//haku/console/grants/kubernetes:service",
+        "//haku/console/identity:agent_bearer_authority",
+        "//haku/console/mcp:execution",
+        "@pypi//fastapi",
+        "@pypi//fastmcp_slim",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "routine",
+    srcs = ["routine.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        "//haku/console:config",
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "hostexec_client",
+    srcs = ["hostexec_client.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        "//haku/hostexec:wire",
+        "//mcp_infra/exec:models",
+        "@pypi//fastmcp_slim",
+    ],
+)
+
+py_library(
+    name = "hostexec_token",
+    srcs = ["hostexec_token.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        "@pypi//authlib",
+        "@pypi//fastmcp_slim",
+    ],
+)
+
+py_test(
+    name = "test_hostexec_token",
+    srcs = ["test_hostexec_token.py"],
+    deps = [
+        ":hostexec_token",
+        "//:conftest",
+        "//haku/console:conftest",
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//respx",
+    ],
+)
+
+py_library(
+    name = "hostexec",
+    srcs = ["hostexec.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        ":hostexec_client",
+        "//haku/hostexec:wire",
+        "//mcp_infra/exec:models",
+        "@pypi//fastmcp_slim",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_hostexec_client",
+    srcs = ["test_hostexec_client.py"],
+    deps = [
+        ":hostexec_client",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//mcp_infra/exec:models",
+        "@pypi//fastmcp_slim",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_hostexec",
+    size = "medium",  # as test_gmail: startup and imports dominate, not the four tests
+    srcs = ["test_hostexec.py"],
+    deps = [
+        ":hostexec",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//mcp_infra/exec:models",
+        "@pypi//fastmcp_slim",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_gmail",
+    # Imports, not tests: the 14 cases here drive mocks and take about a second all told
+    # (`--durations` puts every one at ~0.03s). The rest of the wall time is interpreter start
+    # plus this package's import graph — still ~8s of it, four fifths under `fastmcp`, once the
+    # parent conftest is out of the runfiles (it was ~13s with). The 60s `small` default left no
+    # room for that once CI was loaded: it timed out twice in three runs while passing at 29s here.
+    size = "medium",
+    srcs = ["test_gmail.py"],
+    deps = [
+        ":gmail",
+        ":gmail_client",
+        "//:conftest",
+        "//gmail_api:filters",
+        "//gmail_api:labels",
+        "//gmail_api:messages",
+        "//haku/console:conftest",
+        "@pypi//fastmcp_slim",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_gmail_client",
+    srcs = ["test_gmail_client.py"],
+    deps = [
+        ":gmail_client",
+        "//:conftest",
+        "//gmail_api:filters",
+        "//gmail_api:labels",
+        "//gmail_api:messages",
+        "//haku/console:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_google_calendar",
+    srcs = ["test_google_calendar.py"],
+    deps = [
+        ":google_calendar",
+        ":google_calendar_client",
+        "//:conftest",
+        "//haku/console:conftest",
+        "@pypi//fastmcp_slim",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_google_calendar_client",
+    srcs = ["test_google_calendar_client.py"],
+    deps = [
+        ":google_calendar_client",
+        "//:conftest",
+        "//haku/console:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_routine",
+    srcs = ["test_routine.py"],
+    deps = [
+        ":routine",
+        "//:conftest",
+        "//haku/console:conftest",
+        "@pypi//fastmcp_slim",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_routine_client",
+    srcs = ["test_routine_client.py"],
+    deps = [
+        ":routine",
+        "//:conftest",
+        "//haku/console:config",
+        "//haku/console:conftest",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//respx",
+    ],
+)
+
+py_library(
+    name = "google_discovery",
+    srcs = ["google_discovery.py"],
+    visibility = ["//haku/console:__subpackages__"],
+    deps = [
+        "@pypi//fastmcp_slim",
+        "@pypi//google_api_python_client",  # keep: discovery docs loaded via importlib.resources (no import stmt)
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_google_discovery",
+    srcs = ["test_google_discovery.py"],
+    deps = [
+        ":google_discovery",
+        "//:conftest",
+        "//haku/console:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

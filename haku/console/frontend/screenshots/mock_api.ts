@@ -649,7 +649,7 @@ async function respond(input: RequestInfo | URL, init: RequestInit | undefined, 
   });
   if (mcpResponse !== null) return mcpResponse;
   if (url.includes("/api/tool-calls")) {
-    // Mirrors the real GET /api/tool-calls's `auto_approved` server-side filter (mcp_approval.py)
+    // Mirrors the real GET /api/tool-calls's `auto_approved` server-side filter (mcp/approval.py)
     // so the history screenshot scenes exercise the same request the frontend actually sends.
     const autoApproved = new URLSearchParams(url.split("?")[1] ?? "").get("auto_approved");
     const matching =
@@ -667,7 +667,7 @@ async function respond(input: RequestInfo | URL, init: RequestInit | undefined, 
             tool_call_id: `tc_paged_${index}`,
           }))
         : matching;
-    // Mirrors the real endpoint's keyset paging (mcp_approval.py): `cursor` is the opaque position
+    // Mirrors the real endpoint's keyset paging (mcp/approval.py): `cursor` is the opaque position
     // handed out as `next_cursor`, and a full page always offers one.
     const query = new URLSearchParams(url.split("?")[1] ?? "");
     const limit = Number(query.get("limit") ?? 100);

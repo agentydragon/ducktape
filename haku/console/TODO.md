@@ -159,7 +159,7 @@ deferred:
 
 ## MCP server (`/mcp`) — deferred follow-ups
 
-The `/mcp` server (`mcp_server.py`) now resolves canonical Operators, Agents, grants, and
+The `/mcp` server (`mcp/server.py`) now resolves canonical Operators, Agents, grants, and
 credential bindings through one authority, and derives each request's tool surface from that
 Agent's Operator connections. Settings lists the Operator's Agents and lets an OAuth Agent's
 auto-approval policy be reassigned among the roots `config.yaml` defines. The architecture is
@@ -397,7 +397,7 @@ changing session Agent identity.
 
 - The comment above `_operator_auth_requires_canonical_public_origin` (`config.py`) describes an
   optional standing Kubernetes authorization policy field that is not on `Settings` —
-  `kubernetes_authorization` is on `ConsoleConfigFile` in `mcp_config.py`. Delete the comment.
+  `kubernetes_authorization` is on `ConsoleConfigFile` in `mcp/config.py`. Delete the comment.
 - `HistorySender.ASSISTANT` (`session/system_prompt.py`) reads like the provider-LLM-API `assistant`
   role; it records harness-side provenance of a recorded message. Rename to say so (e.g.
   `HARNESS`) once the in-flight StrEnum PRs land.

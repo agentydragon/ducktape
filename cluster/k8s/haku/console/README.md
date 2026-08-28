@@ -124,9 +124,9 @@ stays owned by the console-image migration Job above.
 
 ## One-time bootstrap: the in-process `gmail` + `google_calendar` MCP servers
 
-The console's two Google-backed in-process MCP servers — `gmail` (`haku/console/tools/gmail.py` — Gmail
+The console's two Google-backed in-process MCP servers — `gmail` (`haku/console/mcp/tools/gmail.py` — Gmail
 reads mirroring the REST API, draft creation, thread-label changes, label CRUD) and
-`google_calendar` (`haku/console/tools/google_calendar.py` — recurrence-aware event reads and
+`google_calendar` (`haku/console/mcp/tools/google_calendar.py` — recurrence-aware event reads and
 creation), both behind the ordinary operator-approval queue — execute as the **acting
 Operator's own Google account**: each call resolves that Operator's per-Operator Google access
 token from the console's own connection store (`haku/console/oauth/provider_connection.py`),

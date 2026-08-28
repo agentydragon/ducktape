@@ -164,7 +164,7 @@ py_test(
         "//:conftest",
         "//haku/console:conftest",
         "//haku/console:tool_call_actor",
-        "//haku/console:tool_call_service",
+        "//haku/console/mcp:tool_call_service",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

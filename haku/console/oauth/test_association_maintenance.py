@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest_bazel
 
 from haku.console.database_schema import McpOperatorOAuthAssociation, OperatorAuthentikToken, ProviderConnection
-from haku.console.mcp_config import McpServerEntry, NoCredential, RemoteMcpBackend
+from haku.console.mcp.config import McpServerEntry, NoCredential, RemoteMcpBackend
 from haku.console.oauth.association_maintenance import AssociationMaintenance
 from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
 from haku.console.oauth.token_state import new_token_state

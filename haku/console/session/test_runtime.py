@@ -31,7 +31,7 @@ from haku.console.conversation.prompt_origin import SPA_ORIGIN
 from haku.console.database_schema import Agent, Conversation, Session
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
-from haku.console.mcp_config import ConsoleConfigFile
+from haku.console.mcp.config import ConsoleConfigFile
 from haku.console.notifications.session_wakes import SessionWakes
 from haku.console.session.conftest import age_lease, attach_channel, configured_runtimes, runtime_config
 from haku.console.session.launch_identity import ChatLaunchAuthorizer, LaunchAgentRejectedError, LaunchIdentity

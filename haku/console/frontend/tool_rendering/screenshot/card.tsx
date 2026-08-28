@@ -22,7 +22,7 @@ export type PreviewFixture = {
   result?: unknown;
 };
 
-// The stored wire shape of an executed call's result (mcp_approval.py's `_mcp_result_to_json`):
+// The stored wire shape of an executed call's result (mcp/approval.py's `_mcp_result_to_json`):
 // FastMCP dumps the return into a JSON text block + structuredContent, wrapping a non-dict
 // return (a list, a scalar) as `{"result": …}` with the wrap flagged in `_meta`. Shared so each
 // server's preview fixtures build finished-call results the same way.

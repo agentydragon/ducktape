@@ -14,7 +14,7 @@ The five roles, at their definitions:
   request principal is tested against.
 - **Submitter provenance** — `McpToolCallPrincipal` (`database_schema.py`; wire in
   `haku/shared/haku/console/tool_calls.py`): the durable submitter provenance.
-- **Runtime actor / execution** — `McpExecutionCaller` / `McpExecutionContext` (`mcp_execution.py`):
+- **Runtime actor / execution** — `McpExecutionCaller` / `McpExecutionContext` (`mcp/execution.py`):
   the trusted in-process execution identity.
 """
 

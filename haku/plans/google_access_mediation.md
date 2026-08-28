@@ -117,7 +117,7 @@ When every scope above is covered (or dropped), remove the `google` grant, its E
 
 Don't hand-code the schemas. Google API **Discovery Documents** already carry every method's
 parameters, request/response schemas, and required scopes; the shipped factory
-(`haku/console/tools/google_discovery.py`, first used by the gmail reads) generates clean MCP
+(`haku/console/mcp/tools/google_discovery.py`, first used by the gmail reads) generates clean MCP
 `inputSchema`s for reads near-turnkey (writes balloon into deep recursive bodies, so they stay
 hand-written). Build the surface as **one hand-written spine plus three tiers of tool specs**.
 
@@ -165,7 +165,7 @@ wheel's snapshot lag ever matters, git-pin Google's `googleapis/discovery-artifa
 (versioned, fresher, still not vendored). Do **not** vendor the raw discovery JSON in-repo (~1.3 MB;
 rejected for bloat), and don't read the live Discovery endpoint (latest-not-immutable → not a
 reproducible build input). The same `schemas` generate response types, so typing shares the source.
-Implemented in `haku/console/tools/google_discovery.py`.
+Implemented in `haku/console/mcp/tools/google_discovery.py`.
 
 **Build vs. reuse.** Own the discovery→JSON-Schema converter — ~90 lines of stdlib, the mapping is
 small and frozen (classic Workspace APIs use no `variant`/`oneOf`), and the value-add (curation
@@ -176,7 +176,7 @@ Schema → Pydantic) for response types. Avoid discovery→OpenAPI→`FastMCP.fr
 dependency that still doesn't yield approval-gated per-Operator tools.
 
 **Frontend types (Zod) — no new pipeline.** The frontend already derives runtime Zod validators + TS
-types from the live MCP `tools/list` via `export_mcp_tool_schemas` → `js_json_schema` →
+types from the live MCP `tools/list` via `export_tool_schemas` → `js_json_schema` →
 `z.fromJSONSchema` (`frontend/mcp_tool_schema.ts`). A generated tool appears in `tools/list` like any
 other, so it flows through unchanged — register it and add it to the exporter allowlist. The one
 constraint is on the converter: emit only the JSON-Schema subset `z.fromJSONSchema` accepts (standard

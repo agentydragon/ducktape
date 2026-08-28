@@ -40,7 +40,7 @@ js_openapi_schema(
 js_json_schema(
     name = "mcp_tool_arguments",
     out = "api/mcp_tool_arguments.d.ts",
-    generator = "//haku/console:export_mcp_tool_schemas_bin",
+    generator = "//haku/console/mcp:export_tool_schemas_bin",
     schema_out = "api/mcp_tool_arguments.schema.json",
 )
 
@@ -53,7 +53,7 @@ js_json_schema(
     name = "mcp_tool_results",
     out = "api/mcp_tool_results.d.ts",
     args = ["--results"],
-    generator = "//haku/console:export_mcp_tool_schemas_bin",
+    generator = "//haku/console/mcp:export_tool_schemas_bin",
     schema_out = "api/mcp_tool_results.schema.json",
 )
 
