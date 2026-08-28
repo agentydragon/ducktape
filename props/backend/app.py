@@ -43,6 +43,10 @@ from props.orchestration.executor_factory import create_executor
 from props.orchestration.grader_supervisor import GraderSupervisor
 from util.logging import LogLevel, configure_logging
 
+# SessionMiddleware signs cookies with itsdangerous, imported inside starlette;
+# gazelle cannot see the dependency.
+# gazelle:include_dep @pypi//itsdangerous
+
 # Configure logging on module import
 configure_logging(
     log_output=os.environ.get("PROPS_LOG_OUTPUT", "stderr"), log_level=os.environ.get("PROPS_LOG_LEVEL", LogLevel.INFO)

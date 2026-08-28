@@ -10,6 +10,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from finance.augur.api.config import (
+    # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
+    # gazelle:include_dep @pypi//httpx
     AgentDefinition,
     CalibrationCatalogConfig,
     Config,

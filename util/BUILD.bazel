@@ -194,10 +194,10 @@ py_library(
     name = "playwright",
     testonly = True,
     srcs = ["playwright.py"],
-    pyi_deps = ["@pypi//playwright"],
     visibility = ["//visibility:public"],
     deps = [
         "//util/testing:frontend_visual",
+        "@pypi//playwright",
         "@pypi//pytest",
     ],
 )

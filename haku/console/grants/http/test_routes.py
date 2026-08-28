@@ -15,6 +15,8 @@ from haku.console import operator_auth
 from haku.console.agents.enrollment import OperatorAgent
 from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
 from haku.console.grants.http.models import (
+    # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
+    # gazelle:include_dep @pypi//httpx
     HttpGrant,
     HttpGrantSpec,
     HttpMethod,

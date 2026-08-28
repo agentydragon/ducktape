@@ -52,9 +52,9 @@ py_library(
 py_library(
     name = "notifications_buffer",
     srcs = ["notifications_buffer.py"],
-    pyi_deps = [":compositor"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":compositor",
         "//mcp_infra:resource_utils",
         "//mcp_infra/notifications:types",
         "@pypi//fastmcp_slim",

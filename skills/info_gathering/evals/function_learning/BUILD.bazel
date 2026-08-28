@@ -55,7 +55,10 @@ py_library(
         "//skills/eval_infra/empty_skill:empty_skill_skill_spec",
         "//skills/info_gathering:info_gathering_skill_spec",
         "//skills/info_gathering/evals/twenty_questions/x/shared:output",
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//aiodocker",
     ],
 )
@@ -76,7 +79,10 @@ py_library(
         "//skills/eval_infra:af_chat_client",
         "//skills/eval_infra:eval_sandbox",
         "//skills/eval_infra:skill_staging",
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//aiodocker",
         "@pypi//anyio",
         "@pypi//pydantic",
@@ -132,7 +138,10 @@ py_test(
         "//skills/info_gathering/evals:replay_client",
         "//third_party/containers:rlocations",
         "//util:oci",
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//aiodocker",
         "@pypi//pytest_bazel",
     ],

@@ -86,8 +86,8 @@ py_library(
 py_library(
     name = "utils",
     srcs = ["utils.py"],
-    pyi_deps = [":models"],
     visibility = ["//:__subpackages__"],
+    deps = [":models"],
 )
 
 py_binary(

@@ -20,6 +20,9 @@ from x.study_casino.games import RNG_VERSION, draw_cards, load_cards, make_shoe,
 from x.study_casino.models import BlackjackHandRow, RngActionAuditRow, RngCallAuditRow
 from x.study_casino.rng import AuditedRandom
 
+# TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
+# gazelle:include_dep @pypi//httpx
+
 _TEST_RNG_SECRET = "test-auditable-rng-secret-with-enough-bytes"
 
 # Mid-afternoon Pacific (2023-11-14); stepping by whole days never crosses a

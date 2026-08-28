@@ -73,6 +73,7 @@ py_test(
         "//finance/plaid/db:config",
         "//finance/plaid/db:link_store",
         "@pypi//fastapi",
+        "@pypi//httpx",
         "@pypi//plaid_python",
         "@pypi//pytest_bazel",
     ],

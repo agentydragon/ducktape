@@ -5,8 +5,10 @@ py_library(
     srcs = ["persistence.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        "@pypi//asyncpg",
         "@pypi//py_key_value_aio",
         "@pypi//pydantic",
+        "@pypi//valkey_glide",
     ],
 )
 

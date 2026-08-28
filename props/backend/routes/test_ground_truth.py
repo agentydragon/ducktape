@@ -24,6 +24,9 @@ from props.db.models import TruePositive
 from props.testing.fixtures.credentials import make_agent_credentials
 from props.testing.fixtures.runs import FAKE_CRITIC_DEV_OPTIMIZE_DIGEST
 
+# TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
+# gazelle:include_dep @pypi//httpx
+
 
 def make_gt_client(caller_db: Database) -> TestClient:
     """Build a TestClient for the ground truth router using caller_db for all queries."""

@@ -32,6 +32,8 @@ from starlette.websockets import WebSocketDisconnect
 from haku.console import operator_auth
 from haku.console.agents.authorization import fingerprint_static_token
 from haku.console.agents.models import (
+    # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
+    # gazelle:include_dep @pypi//httpx
     AgentStatus,
     ClientRegistrationKind,
     CredentialBindingStatus,

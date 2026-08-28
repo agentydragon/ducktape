@@ -254,6 +254,7 @@ live_openai_py_test(
     requires_docker = True,
     deps = [
         ":conftest",
+        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "//agent_core:agent",
         "//agent_core:handler",
         "//agent_core:logging_handler",

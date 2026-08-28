@@ -11,6 +11,9 @@ from mcp_infra.oauth_facade.config import FacadeLoggingConfig, FacadeSettings, H
 from mcp_infra.oauth_facade.server import build_server
 from mcp_infra.static_bearer import StaticBearerGuard
 
+# TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
+# gazelle:include_dep @pypi//httpx
+
 
 def _guarded_app() -> Starlette:
     async def protected(request: Request) -> PlainTextResponse:

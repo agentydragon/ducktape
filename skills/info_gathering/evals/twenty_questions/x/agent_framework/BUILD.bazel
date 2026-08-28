@@ -16,7 +16,10 @@ py_library(
         "//skills/info_gathering/evals/twenty_questions/x/shared:cli",
         "//skills/info_gathering/evals/twenty_questions/x/shared:output",
         "//skills/info_gathering/evals/twenty_questions/x/shared:variants",
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
     ],
 )
 
@@ -43,7 +46,10 @@ py_test(
         "//skills/info_gathering/evals/twenty_questions:result_types",
         "//third_party/containers:rlocations",
         "//util:oci",
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -162,6 +162,7 @@ py_library(
         ":store",
         "//third_party/containers:rlocations",
         "//util/testing:postgres_fixtures",
+        "@pypi//asyncpg",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",

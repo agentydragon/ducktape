@@ -20,6 +20,10 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
+# The test drives `python -m devinfra.wt.shell.install` in a subprocess; the module
+# is referenced only as a string, so gazelle cannot see the dependency.
+# gazelle:include_dep //devinfra/wt/shell:install
+
 # Global constants for paths
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 

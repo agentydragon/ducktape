@@ -150,6 +150,7 @@ py_test(
         "//haku/console/grants:envelope",
         "//haku/console/grants:principal",
         "@pypi//fastapi",
+        "@pypi//httpx",
         "@pypi//pytest_bazel",
     ],
 )

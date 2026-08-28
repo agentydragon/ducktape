@@ -117,6 +117,10 @@ from haku.runtime.x.bridge.protocol import KUBERNETES_PROXY_URL_ENV, RUNNER_SETU
 from haku.sandbox.kubernetes_client import InClusterSandboxClient
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
+# SessionMiddleware signs cookies with itsdangerous, imported inside starlette;
+# gazelle cannot see the dependency.
+# gazelle:include_dep @pypi//itsdangerous
+
 APP_SHELL_CACHE_CONTROL = "no-store"
 IMMUTABLE_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
 NO_STORE_CACHE_CONTROL = "no-store"

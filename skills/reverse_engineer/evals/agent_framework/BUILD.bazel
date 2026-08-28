@@ -16,7 +16,10 @@ py_library(
         "//skills/eval_infra/empty_skill:empty_skill_skill_spec",
         "//skills/reverse_engineer:reverse_engineer_skill_spec",
         "//util/bazel:runfiles",
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//pydantic",
     ],
 )

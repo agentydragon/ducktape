@@ -37,6 +37,9 @@ from x.study_casino.app import create_app
 from x.study_casino.changelog import LATEST_CHANGELOG_ID
 from x.study_casino.config import Settings
 
+# pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
+# gazelle:include_dep //util:playwright
+
 pytest_plugins = ("util.playwright",)
 
 if TYPE_CHECKING:

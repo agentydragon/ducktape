@@ -11,6 +11,9 @@ from typer.testing import CliRunner
 from props.registry_proxy.app import create_app
 from props.registry_proxy.cli import cli
 
+# TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
+# gazelle:include_dep @pypi//httpx
+
 
 def _client() -> TestClient:
     return TestClient(create_app(db=MagicMock()), raise_server_exceptions=False)

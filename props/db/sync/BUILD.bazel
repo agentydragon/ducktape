@@ -42,10 +42,10 @@ py_library(
 py_library(
     name = "model_metadata",
     srcs = ["model_metadata.py"],
-    pyi_deps = ["//props:config"],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":stats",
+        "//props:config",
         "//props/db:models",
         "@pypi//sqlalchemy",
     ],

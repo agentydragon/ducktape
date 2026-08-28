@@ -21,6 +21,9 @@ from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
+# pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
+# gazelle:include_dep //util:playwright
+
 pytest_plugins = ("util.playwright",)
 
 if TYPE_CHECKING:

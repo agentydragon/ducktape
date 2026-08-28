@@ -12,6 +12,9 @@ from fastapi.testclient import TestClient
 
 from x.authentik_mcp_poc.backend import create_app
 
+# TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
+# gazelle:include_dep @pypi//httpx
+
 
 def test_healthz() -> None:
     client = TestClient(create_app())

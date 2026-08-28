@@ -29,6 +29,8 @@ py_test(
     deps = [
         "//:conftest",
         "//skills/freecad:conftest",
+        "//skills/freecad/examples:render_fcstd",
+        "//skills/freecad/examples/cube_with_hole:build",
         "//skills/freecad/testing:compare",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",

@@ -137,9 +137,11 @@ py_library(
     # chromium-flags.json is read at import time — it must ride along with
     # every consumer, not be re-declared per test.
     data = [":browser_launcher_assets"],
-    pyi_deps = ["@pypi//playwright"],
     visibility = ["//visibility:public"],
-    deps = ["//util/bazel:runfiles"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//playwright",
+    ],
 )
 
 py_test(

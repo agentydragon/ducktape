@@ -10,6 +10,7 @@ py_library(
         "//mcp_infra/authentik_auth:config",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -95,6 +96,7 @@ py_test(
         "//:conftest",
         "//mcp_infra:conftest",
         "//mcp_infra:static_bearer",
+        "@pypi//httpx",
         "@pypi//pytest_bazel",
         "@pypi//starlette",
     ],

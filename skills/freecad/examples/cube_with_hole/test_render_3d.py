@@ -11,6 +11,10 @@ from skills.freecad.testing.compare import assert_png_equal
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
+# The scripts below are driven by runfiles path; gazelle cannot see the dependency.
+# gazelle:include_dep //skills/freecad/examples/cube_with_hole:build
+# gazelle:include_dep //skills/freecad/examples:render_fcstd
+
 _BUILD_SCRIPT = "_main/skills/freecad/examples/cube_with_hole/build.py"
 _RENDER_SCRIPT = "_main/skills/freecad/examples/render_fcstd.py"
 _GOLDEN = "_main/skills/freecad/examples/cube_with_hole/render.png"

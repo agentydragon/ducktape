@@ -18,6 +18,9 @@ from props.db.database import Database
 from props.db.models import AgentRun
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
 
+# TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
+# gazelle:include_dep @pypi//httpx
+
 
 @pytest.fixture
 def stats_client(synced_db: Database) -> TestClient:

@@ -77,6 +77,10 @@ if TYPE_CHECKING:
     import asyncpg
     from asyncpg.pool import PoolConnectionProxy
 
+# The LISTEN/NOTIFY path lazily imports asyncpg inside functions; mypy checks those
+# bodies and wants the stubs dist, which nothing imports.
+# gazelle:include_dep @pypi//asyncpg_stubs
+
 logger = logging.getLogger(__name__)
 
 # Reminder sent when agent outputs text instead of using tools

@@ -60,6 +60,7 @@ py_test(
         ":backend",
         "//:conftest",
         "@pypi//fastapi",
+        "@pypi//httpx",
         "@pypi//pytest_bazel",
     ],
 )

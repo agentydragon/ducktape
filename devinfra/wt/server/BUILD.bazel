@@ -40,12 +40,10 @@ py_library(
 py_library(
     name = "git_refs_watcher",
     srcs = ["git_refs_watcher.py"],
-    pyi_deps = [
-        "//devinfra/wt/shared:configuration",
+    deps = [
         ":git_manager",
         ":stores",
-    ],
-    deps = [
+        "//devinfra/wt/shared:configuration",
         "//devinfra/wt/shared:protocol",
         "@pypi//pygit2",
         "@pypi//reaktiv",
@@ -67,11 +65,9 @@ py_library(
 py_library(
     name = "github_watcher",
     srcs = ["github_watcher.py"],
-    pyi_deps = [
-        "//devinfra/wt/shared:configuration",
-        ":github_client",
-    ],
     deps = [
+        ":github_client",
+        "//devinfra/wt/shared:configuration",
         "//devinfra/wt/shared:env",
         "//devinfra/wt/shared:fixtures",
         "//devinfra/wt/shared:github_models",

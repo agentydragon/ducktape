@@ -50,6 +50,7 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
+        "//devinfra/wt/shell:install",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

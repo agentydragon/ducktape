@@ -20,6 +20,9 @@ from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
+# TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
+# gazelle:include_dep @pypi//httpx
+
 
 def _usd_quanta(value: float | int) -> str:
     return str(int((Decimal(str(value)) / Decimal("0.01")).to_integral_value(rounding=ROUND_HALF_UP)))

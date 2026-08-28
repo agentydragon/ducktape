@@ -22,6 +22,9 @@ from finance.plaid.db.config import PlaidWebSettings
 from finance.plaid.db.link_store import PlaidLinkStorage, StoredLink, SyncAlreadyRunningError
 from finance.plaid.link.app import PlaidWebClient, create_app
 
+# TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
+# gazelle:include_dep @pypi//httpx
+
 
 class _FakeStorage:
     def __init__(self) -> None:

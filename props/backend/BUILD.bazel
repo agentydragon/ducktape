@@ -92,6 +92,7 @@ py_library(
         "//props/orchestration:grader_supervisor",
         "//util:logging",
         "@pypi//fastapi",
+        "@pypi//itsdangerous",
         "@pypi//starlette",
     ],
 )
@@ -99,11 +100,11 @@ py_library(
 py_library(
     name = "cli",
     srcs = ["cli.py"],
-    pyi_deps = ["@pypi//fastapi"],
     visibility = ["//:__subpackages__"],
     deps = [
         ":app",
         "//util:logging",
+        "@pypi//fastapi",
         "@pypi//typer_slim",
         "@pypi//uvicorn",
     ],

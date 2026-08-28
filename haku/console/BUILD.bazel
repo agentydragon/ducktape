@@ -893,6 +893,7 @@ py_library(
         "//haku/sandbox:kubernetes_client",
         "//mcp_infra/authentik_auth:config",
         "@pypi//fastapi",
+        "@pypi//itsdangerous",
         "@pypi//more_itertools",
         "@pypi//openai",
         "@pypi//prometheus_client",
@@ -1012,6 +1013,7 @@ py_library(
         "@pypi//testcontainers",
         "@pypi//asyncpg",
         "@pypi//psycopg",
+        "@pypi//httpx",
     ],
 )
 

@@ -73,6 +73,7 @@ py_test(
         ":server",
         ":token_scheme",
         "//:conftest",
+        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//starlette",

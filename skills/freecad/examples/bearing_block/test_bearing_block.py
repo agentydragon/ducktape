@@ -10,6 +10,13 @@ from skills.freecad.testing.compare import assert_dxf_equal, assert_pdf_equal, a
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
+# The scripts below are driven by runfiles path; gazelle cannot see the dependency.
+# gazelle:include_dep //skills/freecad/examples/bearing_block:build
+# gazelle:include_dep //skills/freecad/examples/bearing_block:build_techdraw
+# gazelle:include_dep //skills/freecad/examples:render_multi_angle
+# gazelle:include_dep //skills/freecad/examples:export_page
+# gazelle:include_dep //skills/freecad/examples:verify_fcstd_load
+
 _BUILD_SCRIPT = "_main/skills/freecad/examples/bearing_block/build.py"
 _TECHDRAW_SCRIPT = "_main/skills/freecad/examples/bearing_block/build_techdraw.py"
 _RENDER_SCRIPT = "_main/skills/freecad/examples/render_multi_angle.py"

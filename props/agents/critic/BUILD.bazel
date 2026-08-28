@@ -53,6 +53,7 @@ py_library(
         "//props/db:database",
         "//props/db:models",
         "//props/db:snapshots",
+        "@pypi//agent_framework_core",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//pydantic",
     ],
 )

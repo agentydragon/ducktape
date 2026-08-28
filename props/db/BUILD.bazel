@@ -122,9 +122,9 @@ py_library(
     name = "setup",
     srcs = ["setup.py"],
     data = ["//props/db/migrations"],
-    pyi_deps = [":config"],
     visibility = ["//props:__subpackages__"],
     deps = [
+        ":config",
         ":models",
         "@pypi//alembic",
         "@pypi//opentelemetry_api",
