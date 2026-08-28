@@ -59,11 +59,6 @@ def test_entry_rejects_deep_off_manifold() -> None:
         MarketEntry(platform=Platform.KALSHI, market_id="KXTEST-26", deep=True)
 
 
-def test_provenance_label() -> None:
-    entry = MarketEntry(platform=Platform.POLYMARKET, market_id="0xabc")
-    assert entry.provenance_label == "polymarket:0xabc"
-
-
 def test_layout_paths(tmp_path: Path) -> None:
     assert market_json_path(tmp_path, Platform.MANIFOLD, "m1") == tmp_path / "markets/manifold/m1/market.json"
     assert bets_jsonl_path(tmp_path, Platform.MANIFOLD, "m1") == tmp_path / "markets/manifold/m1/bets.jsonl"

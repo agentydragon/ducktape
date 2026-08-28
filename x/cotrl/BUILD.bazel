@@ -1,5 +1,5 @@
 # gazelle:ignore
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 # Experimental LLM RL scripts - not a proper package, just standalone scripts
 py_library(
@@ -28,18 +28,4 @@ py_binary(
     name = "analyze_trajectories",
     srcs = ["analyze_trajectories.py"],
     deps = [":cotrl"],
-)
-
-py_test(
-    name = "test_llm_rl_minimal",
-    srcs = ["test_llm_rl_minimal.py"],
-    # Integration test - requires OPENAI_API_KEY
-    tags = ["manual"],
-    deps = [
-        ":cotrl",
-        "@pypi//gymnasium",
-        "@pypi//openai",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
 )

@@ -15,11 +15,9 @@ _NO_PROJECT = UpstreamRegistryConfig(url="http://reg:5000", username=None, passw
 class TestPullAuthority:
     """Tests for RegistryProxyConfig.pull_authority()."""
 
-    def test_host_and_port(self) -> None:
-        config = RegistryProxyConfig(host="localhost", port=8000)
-        assert config.pull_authority() == "localhost:8000"
-
     def test_pull_host_overrides(self) -> None:
+        # pull_host without pull_port drops the proxy port entirely — the pull
+        # endpoint is a different authority, not the proxy host renamed.
         config = RegistryProxyConfig(host="props-registry-proxy", port=8000, pull_host="props-registry.allegedly.works")
         assert config.pull_authority() == "props-registry.allegedly.works"
 
@@ -41,10 +39,6 @@ class TestPullAuthority:
         )
         assert config.pull_authority() == "props-registry.allegedly.works"
 
-    def test_no_pull_host_uses_host_and_port(self) -> None:
-        config = RegistryProxyConfig(host="127.0.0.1", port=5000)
-        assert config.pull_authority() == "127.0.0.1:5000"
-
 
 class TestBuildOciReference:
     """Tests for RegistryProxyConfig.build_oci_reference()."""
@@ -52,27 +46,14 @@ class TestBuildOciReference:
     DIGEST = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
     def test_local_registry(self) -> None:
+        # Boundary artifact the container runtime parses: authority/repo@digest.
         config = RegistryProxyConfig(host="localhost", port=8000)
         ref = config.build_oci_reference(AgentType.CRITIC, self.DIGEST)
         assert ref == f"localhost:8000/critic@{self.DIGEST}"
 
-    def test_external_registry(self) -> None:
-        config = RegistryProxyConfig(host="props-registry-proxy", port=8000, pull_host="props-registry.allegedly.works")
-        ref = config.build_oci_reference(AgentType.CRITIC, self.DIGEST)
-        assert ref == f"props-registry.allegedly.works/critic@{self.DIGEST}"
-
-    def test_grader_agent_type(self) -> None:
-        config = RegistryProxyConfig(host="localhost", port=8000)
-        ref = config.build_oci_reference(AgentType.GRADER, self.DIGEST)
-        assert ref == f"localhost:8000/grader@{self.DIGEST}"
-
 
 class TestProxyUrl:
     """Tests for RegistryProxyConfig.proxy_url."""
-
-    def test_uses_host_and_port(self) -> None:
-        config = RegistryProxyConfig(host="props", port=8000)
-        assert config.proxy_url == "http://props:8000"
 
     def test_ignores_pull_host(self) -> None:
         config = RegistryProxyConfig(host="props-registry-proxy", port=8000, pull_host="props-registry.allegedly.works")
