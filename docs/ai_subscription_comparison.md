@@ -480,7 +480,8 @@ Two consequences worth carrying forward. Any capacity figure quoted in tokens is
 meaningless without the cache-hit ratio behind it — which is why third-party estimates
 like "220,000 tokens per 5-hour session on Max 20x" are off by orders of magnitude
 against a single session's 318M. (The Langfuse measurement below shows even the 1.3-2.6B
-figure derived here is a floor: ChatGPT alone measures ~6B/month.) And a long single-threaded conversation is the
+figure derived here is a floor: the proxied traffic alone measures ~6B/month, and two
+surfaces are missing from it.) And a long single-threaded conversation is the
 best case for caching; a fleet of short-lived agents re-warms more often, so $0.76/M
 is a floor and $9/M a ceiling, with real fleet traffic somewhere in $1-3/M.
 
@@ -795,6 +796,13 @@ this cluster's own Langfuse instance rather than from any vendor. The LiteLLM pr
 so its traces record subscription consumption, priced at nothing, with real token
 counts on real work.
 
+**What that instrument can and cannot see** decides how to read every number below. It
+sees exactly the traffic that goes through LiteLLM: the `codex-claude` wrapper (Claude
+Code driving ChatGPT models), the in-cluster Codex runners, `public-coder-agent`, and
+Haku's Codex runtime. It does not see the workstation `codex` CLI, which sets no
+`model_provider` and talks straight to `chatgpt.com/backend-api/codex` on its own OAuth
+token. So this is a measurement of the _proxied fleet_, not of the subscription.
+
 Fifteen calendar days sampled (2026-07-28 to 2026-08-24, with gaps where queries timed
 out):
 
@@ -810,9 +818,21 @@ Two things follow, and both correct figures elsewhere in this document.
 
 **Consumption was underestimated by more than an order of magnitude.** The back-solved
 figure above puts the whole Claude-plus-ChatGPT loadout at 1.3-2.6B tokens/month. The
-ChatGPT side alone measures ~0.22B input tokens per sampled day, or **roughly 6B per
-month** — and Claude Code does not route through this proxy at all, so none of the
-Claude side is counted. Treat 6B as a floor on the pair.
+proxied traffic alone measures ~0.22B input tokens per sampled day, or **roughly 6B per
+month**, with two whole surfaces excluded: Claude Code does not route through this
+proxy, and neither does the workstation `codex` CLI, whose usage bills to the same
+ChatGPT subscription. 6B is therefore a floor on the pair and a floor on the ChatGPT
+side by itself — the direction is unambiguous even though the size of the gap is not.
+
+**The gap is now measurable, and it was not when this was written.** `aiquota` reads
+Codex's own `wham/profiles/me`, which reports account-wide daily token totals from the
+provider's side, independent of how the traffic was routed. Differencing that against
+the proxied total gives the unproxied remainder directly. One thing to establish first:
+whether `cli-proxy-api`'s Codex OAuth session and the workstation login are the same
+ChatGPT account. If they are, the two figures share a quota and subtract cleanly; if
+not, there are two subscriptions here and the $200 denominator is wrong as well. The
+workstation and in-cluster `aiquota` instances read different credentials, so comparing
+their `profiles/me` totals answers it.
 
 **Agent traffic is essentially all input.** At 599:1 the output is a rounding error.
 That is the same effect the token-per-task work found, at a far greater extreme than
@@ -869,8 +889,8 @@ claims it is real. The right treatment for a flat plan is to leave cost empty an
 volume, which is what the deployment already does.
 
 **What the measurement does establish** is volume, and volume is the thing this
-document was previously guessing at: 3.25B input tokens over 15 days on one
-subscription, against a back-solved estimate of 1.3-2.6B/month for the _whole_ loadout.
+document was previously guessing at: 3.25B input tokens over 15 days through one
+proxy, against a back-solved estimate of 1.3-2.6B/month for the _whole_ loadout.
 The estimate was low by more than an order of magnitude, and that correction stands on
 counted tokens alone.
 
