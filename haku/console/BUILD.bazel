@@ -195,6 +195,7 @@ py_library(
         "//haku/recall_index:git_tree",
         "//haku/recall_index:openai_embedder",
         "//haku/recall_index:schema",
+        "@pypi//asyncpg",  # keep: runtime-only — SQLAlchemy's asyncpg dialect imports it dynamically for the async engine
         "@pypi//openai",
         "@pypi//psycopg",  # keep: runtime-only — SQLAlchemy's psycopg dialect imports it dynamically for the sync schema probe
         "@pypi//pydantic",
