@@ -1213,6 +1213,8 @@ ts_project(
     no_emit = True,
     resolve_json_module = True,
     tsconfig = {
+        # no_emit means no declarations, and tsc rejects isolatedDeclarations without them.
+        "compilerOptions": {"isolatedDeclarations": False},
         "exclude": [],
         "include": [],
     },
