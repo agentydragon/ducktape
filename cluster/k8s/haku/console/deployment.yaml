@@ -433,6 +433,13 @@ spec:
                   name: haku-egress-github-token
                   key: token
                   optional: true
+            #   - the substitution-smoke registry credential: a committed EXAMPLE- literal rather
+            #     than a Secret, deliberately — both sides of that swap are inert so the fence's
+            #     substitution path is drivable end to end against a public echo host with no real
+            #     credential anywhere (haku/egress/docs/test_substitution.md). Identity secrets
+            #     above stay Secret-backed and fail-loud.
+            - name: HAKU_EGRESS_CREDENTIAL_SUBSTITUTION_SMOKE
+              value: EXAMPLE-EGRESS-SMOKE-SUBSTITUTED
           resources:
             requests:
               cpu: 50m

@@ -62,6 +62,37 @@ def test_deployed_console_config_is_valid() -> None:
     assert "kubernetes_reads" in policies["public_coder_safe_reads"]["policies"]
 
 
+def test_deployed_egress_decide_env_slots_are_bound_at_their_rigor() -> None:
+    """Every env slot `egress_decide` names must resolve in the server container, at the rigor
+    `load_egress_decide` assigns it: identity slots (proxy token, fence credentials) fail loud at
+    startup, so they are non-optional Secret references; a registry credential slot may be an
+    optional Secret reference (unset skips the credential with a warning, #4970) or a committed
+    literal — acceptable only when inert by construction, hence the EXAMPLE- prefix. The sidecar
+    presents the same proxy token and a configured fence credential, so its references must name
+    the same Secret keys the server resolves."""
+    config = yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/config.yaml").read_text())
+    egress = config["egress_decide"]
+    deployment = yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/deployment.yaml").read_text())
+    containers = {container["name"]: container for container in deployment["spec"]["template"]["spec"]["containers"]}
+    server_env = {entry["name"]: entry for entry in containers["server"]["env"]}
+
+    for slot in [egress["proxy_token_env_var"], *(entry["token_env_var"] for entry in egress["fence_credentials"])]:
+        reference = server_env[slot]["valueFrom"]["secretKeyRef"]
+        assert not reference.get("optional", False), f"identity {slot=} must fail loud, never be optional"
+
+    for credential in egress["credentials"]:
+        entry = server_env[credential["value_env_var"]]
+        if "value" in entry:
+            assert entry["value"].startswith("EXAMPLE-"), f"literal value for {credential['handle']} must be inert"
+        else:
+            assert "secretKeyRef" in entry["valueFrom"], credential["handle"]
+
+    sidecar_env = {entry["name"]: entry for entry in containers["egress-proxy"]["env"]}
+    assert sidecar_env["HAKU_EGRESS_PROXY_TOKEN"]["valueFrom"] == server_env[egress["proxy_token_env_var"]]["valueFrom"]
+    fence_sources = [server_env[entry["token_env_var"]]["valueFrom"] for entry in egress["fence_credentials"]]
+    assert sidecar_env["HAKU_EGRESS_FENCE_CREDENTIAL"]["valueFrom"] in fence_sources
+
+
 def test_deployed_console_settings_load_from_the_shared_yaml(monkeypatch: pytest.MonkeyPatch) -> None:
     config_path = get_required_path("ducktape/cluster/k8s/haku/console/config.yaml")
     deployment = yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/deployment.yaml").read_text())
