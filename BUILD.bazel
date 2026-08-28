@@ -3,6 +3,21 @@
 # or don't need exclusion (cache dirs with no .py files like __pycache__)
 # gazelle:exclude ansible
 # gazelle:exclude homeassistant  # TODO: merge @pypi_homeassistant into @pypi to enable Gazelle here
+#
+# Deliberately unbazelized trees: one-off scripts, investigations, doc-run
+# artifacts, host configs. Pull a tree out of this list to bazelize it.
+# gazelle:exclude cluster/docs/inference
+# gazelle:exclude cluster/k8s/sdr
+# gazelle:exclude cluster/k8s/x
+# gazelle:exclude debug/atlas
+# gazelle:exclude debug/kernel-6.18-amd-kvm-stall
+# gazelle:exclude debug/sqlite_storage_bench
+# gazelle:exclude nix/nixos
+# gazelle:exclude tgarchive
+# gazelle:exclude x/domains
+# gazelle:exclude x/ember_evals
+# gazelle:exclude x/local_llm
+# gazelle:exclude x/rl_finetune
 
 # gazelle:python_root
 # gazelle:python_generation_mode file
@@ -17,6 +32,21 @@
 # Bazel-provided libraries (not from PyPI)
 # gazelle:resolve py rules_python.python.runfiles @rules_python//python/runfiles
 # gazelle:resolve py python.runfiles @rules_python//python/runfiles
+# gazelle:resolve py pkg.private @rules_pkg//pkg/private:manifest
+#
+# The generated manifest maps dotted namespace-package keys (opentelemetry.sdk,
+# google.oauth2, testcontainers.postgres, ...) but has no bare-module entry, so a
+# plain `import opentelemetry` doesn't resolve; pin it to the dist owning the root.
+# gazelle:resolve py opentelemetry @pypi//opentelemetry_api
+#
+# FreeCAD provides these modules at runtime (scripts run inside its bundled
+# Python); the stubs dist supplies types for mypy, mirroring the hand-written deps.
+# gazelle:resolve py FreeCAD @pypi//freecad_stubs
+# gazelle:resolve py FreeCADGui @pypi//freecad_stubs
+# gazelle:resolve py Part @pypi//freecad_stubs
+# gazelle:resolve py Sketcher @pypi//freecad_stubs
+# gazelle:resolve py TechDraw @pypi//freecad_stubs
+# gazelle:resolve py TechDrawGui @pypi//freecad_stubs
 #
 # Non-standard import paths (import name doesn't match directory structure)
 # gazelle:resolve py samplebooks_parts_data //inventree_utils:samplebooks_parts_data

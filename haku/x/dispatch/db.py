@@ -69,6 +69,9 @@ def to_record(row: JobRow) -> JobRecord:
 
 def make_engine(database_url: str) -> AsyncEngine:
     # CNPG secrets carry postgresql://; SQLAlchemy async needs the asyncpg driver.
+    # gazelle:include_dep @pypi//asyncpg
+    # (SQLAlchemy loads the asyncpg dialect at runtime via the URL scheme below;
+    # nothing imports it, so gazelle cannot see the dependency.)
     url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
     return create_async_engine(url)
 

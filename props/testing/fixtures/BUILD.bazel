@@ -1,3 +1,4 @@
+# gazelle:exclude testdata/specimens/test-fixtures/*/code
 """Props test fixtures package."""
 
 load("//devinfra/python:defs.bzl", "py_library")
