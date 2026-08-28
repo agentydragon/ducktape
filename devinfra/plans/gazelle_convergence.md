@@ -1,12 +1,9 @@
 # Gazelle Convergence
 
 Goal: `bb run //devinfra:gazelle` completes, a rerun is a no-op, and CI enforces clean
-diffs — a BUILD delta then only ever means real dependency drift. Verified on a scratch
-run of this branch (BuildBuddy invocation `d479a44c-da6c-4648-bdde-19a18ece2829`): with
-the burn-down below applied, gazelle completes with a purely mechanical residual diff
-(~226 files, +3226/−1190) and no destructive edits. Until step 1 lands, use
-`--mode=diff` only — a write-mode run aborts on the name collisions below _after_
-rewriting the packages it already visited.
+diffs — a BUILD delta then only ever means real dependency drift. The first two hold:
+the per-tree migrations and the repo-wide run have landed, and a rerun is a no-op
+(exit 0, empty diff). What remains is enforcement.
 
 ## Landed with this plan
 
@@ -57,34 +54,14 @@ map_kind to existing rules too, rewriting hand-written binaries' kind to `py_lib
   - `# gazelle:resolve py` BUILD directives for import-name/dist mismatches;
   - `# gazelle:ignore` / `# gazelle:exclude` BUILD directives for trees deliberately
     not built.
+- A hand-maintained `py_library`/`py_test` whose `srcs` are gazelle-excluded files
+  carries a rule-level `# keep`: gazelle deletes managed-kind rules over files it
+  cannot see (`laser/material_test`, `skills/forgejo:forgejo_lib`,
+  `skills/testing:frontmatter_test`).
 
 ## Burn-down
 
-Independently landable PRs; step 1's per-tree PRs go in parallel.
-
-1. **Per-tree structural migration** (one PR per tree: `devinfra`, `finance`, `haku`,
-   `mcp_infra`, `tana`, `skills`, `x`, remainder), references updated in the same
-   commit:
-   - Rename the 77 binaries squatting module stem names; rename `_bin` aspect image
-     twins to `_image_bin` where they collide.
-   - Convert the 43 remaining `srcs`-style `py_binary` rules to `main_module` form.
-   - Rename the 53 `<stem>_lib` libraries to `<stem>`.
-   - Dissolve the 7 multi-src aggregators (`finance/augur/sim` compiler/codec/engine,
-     `devinfra/js/debundle/live_proxy:proxy_lib`, `tana/litellm_proxy:provider`,
-     `mcp_infra/exec:docker`, `haku/console/mcp_auth:fastmcp_adapter`) into per-file
-     libraries — all seven verified acyclic. Subdirectory groups get their own BUILD
-     files.
-   - Add `# gazelle:include_dep` driver annotations where `haku/console` and `props`
-     build engine URLs (the single-owner cases — `finance/plaid/db`,
-     `haku/x/dispatch` — carry them already).
-   - Move the 9 subdir-reaching rules (`mcp_infra/exec:docker_types`,
-     `skills/forgejo:forgejo_lib`, `inventree_utils:samplebooks_parts_data`, the six
-     `finance/augur/sim` subdir tests) into the file's own package.
-2. **The run**: `bb run //devinfra:gazelle`; review the mechanical residue — ancestor
-   conftest deps (~350 tests gain `//:conftest`), direct deps that were only transitive
-   (`numpy`, `jaxtyping`), dead hand deps dropped — and land it. Rerun to confirm
-   no-op.
-3. **Enforcement**: bazel-ci step running `--mode=diff` (fails nonzero on drift);
+1. **Enforcement**: bazel-ci step running `--mode=diff` (fails nonzero on drift);
    graduate these conventions into README §Gazelle / STYLE.md and delete this plan.
 
 ## Known limitations

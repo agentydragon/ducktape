@@ -120,7 +120,6 @@ py_test(
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

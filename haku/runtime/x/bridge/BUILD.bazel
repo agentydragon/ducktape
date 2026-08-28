@@ -282,6 +282,7 @@ py_test(
     srcs = ["test_runner_image_packaging.py"],
     data = [":runner_image"],
     deps = [
+        "//:conftest",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
@@ -293,6 +294,7 @@ py_test(
     deps = [
         ":claude_options",
         ":protocol",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -303,6 +305,7 @@ py_test(
     deps = [
         ":backend_registry",
         ":codex_options",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -314,6 +317,7 @@ py_test(
     data = ["@codex_cli_linux_x64//:files"],
     deps = [
         ":codex_options",
+        "//:conftest",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
@@ -354,6 +358,7 @@ py_test(
     data = [":neutral_operations_testdata"],
     deps = [
         ":neutral_operations",
+        "//:conftest",
         "//util/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -369,6 +374,7 @@ py_test(
         ":claude_projection",
         ":neutral_operations",
         ":operation_journal",
+        "//:conftest",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -382,6 +388,7 @@ py_test(
     deps = [
         ":neutral_operations",
         ":operation_journal",
+        "//:conftest",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

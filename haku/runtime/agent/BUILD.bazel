@@ -94,6 +94,7 @@ py_test(
     srcs = ["test_bootstrap.py"],
     deps = [
         ":bootstrap",
+        "//:conftest",
         "@pypi//pygit2",
         "@pypi//pytest_bazel",
     ],

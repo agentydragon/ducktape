@@ -15,11 +15,11 @@ py_library(
 py_library(
     name = "nodes",
     srcs = ["nodes.py"],
+    pyi_deps = ["//tana/graph"],
     visibility = ["//:__subpackages__"],
     deps = [
         "//tana/domain:constants",
         "//tana/domain:nodes",
         "//tana/domain:types",
-        "//tana/graph",
     ],
 )

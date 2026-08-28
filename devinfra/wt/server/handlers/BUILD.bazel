@@ -62,6 +62,7 @@ py_test(
     srcs = ["test_status_handler.py"],
     deps = [
         ":status_handler",
+        "//:conftest",
         "//devinfra/wt/server:conftest",
         "//devinfra/wt/server:rpc",
         "//devinfra/wt/shared:protocol",

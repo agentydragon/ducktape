@@ -25,6 +25,7 @@ py_test(
     srcs = ["test_provision.py"],
     deps = [
         ":provision",
+        "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

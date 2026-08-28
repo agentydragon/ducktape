@@ -78,8 +78,8 @@ py_library(
     srcs = ["provider.py"],
     visibility = ["//visibility:public"],
     deps = [
-        LITELLM_PROXY_PIP + "httpx",
-        LITELLM_PROXY_PIP + "litellm",
+        "@pypi_tana_litellm_proxy//httpx",
+        "@pypi_tana_litellm_proxy//litellm",
     ],
 )
 
@@ -107,10 +107,8 @@ py_library(
     name = "demo",
     srcs = ["demo.py"],
     deps = [
-        ":__init__",
-        ":custom_handler",
         ":provider",
-        LITELLM_PROXY_PIP + "litellm",
+        "@pypi_tana_litellm_proxy//litellm",
     ],
 )
 
@@ -125,8 +123,6 @@ py_library(
     name = "probe_models",
     srcs = ["probe_models.py"],
     deps = [
-        ":__init__",
-        ":custom_handler",
         ":model_registry",
         ":provider",
     ],
@@ -143,12 +139,13 @@ py_test(
     name = "test_provider",
     srcs = ["test_provider.py"],
     deps = [
-        ":__init__",
         ":custom_handler",
         ":provider",
-        LITELLM_PROXY_PIP + "httpx",
-        LITELLM_PROXY_PIP + "litellm",
+        "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi_tana_litellm_proxy//httpx",
+        "@pypi_tana_litellm_proxy//litellm",
     ],
 )
 
@@ -157,13 +154,12 @@ py_test(
     srcs = ["test_proxy_runtime.py"],
     data = [":server_bin"],
     deps = [
-        ":__init__",
-        ":custom_handler",
         ":provider",
+        "//:conftest",
         "//util/bazel:runfiles",
-        LITELLM_PROXY_PIP + "litellm",
         "@pypi//pytest_bazel",
-    ] + LITELLM_PROXY_RUNTIME_DEPS,
+        "@pypi_tana_litellm_proxy//litellm",
+    ],
 )
 
 aspect_py_binary(

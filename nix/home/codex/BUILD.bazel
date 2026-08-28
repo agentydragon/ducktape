@@ -12,7 +12,7 @@ py_test(
     srcs = ["merge_test.py"],
     deps = [
         ":merge",
-        "@pypi//pytest",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )

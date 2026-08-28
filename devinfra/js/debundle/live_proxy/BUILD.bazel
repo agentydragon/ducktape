@@ -18,29 +18,20 @@ py_library(
     name = "core",
     srcs = ["core.py"],
     visibility = ["//visibility:public"],
-    deps = [
-        ":vendor_runtime",
-        "@pypi//mitmproxy",
-    ],
+    deps = [":vendor_runtime"],
 )
 
 py_library(
     name = "mitmproxy_script",
     srcs = ["mitmproxy_script.py"],
     visibility = ["//visibility:public"],
-    deps = [
-        ":addon",
-        "@pypi//mitmproxy",
-    ],
+    deps = [":addon"],
 )
 
 py_library(
     name = "package_tree",
     srcs = ["package_tree.py"],
     visibility = ["//visibility:public"],
-    deps = [
-        "@pypi//mitmproxy",
-    ],
 )
 
 py_library(
@@ -57,10 +48,7 @@ py_library(
     name = "serve",
     srcs = ["serve.py"],
     visibility = ["//visibility:public"],
-    deps = [
-        ":server",
-        "@pypi//mitmproxy",
-    ],
+    deps = [":server"],
 )
 
 py_library(
@@ -78,10 +66,7 @@ py_library(
     name = "vendor_runtime",
     srcs = ["vendor_runtime.py"],
     visibility = ["//visibility:public"],
-    deps = [
-        ":package_tree",
-        "@pypi//mitmproxy",
-    ],
+    deps = [":package_tree"],
 )
 
 py_library(
@@ -91,17 +76,7 @@ py_library(
     ],
     imports = ["../../../.."],
     visibility = ["//visibility:public"],
-    deps = [
-        ":addon",
-        ":core",
-        ":mitmproxy_script",
-        ":package_tree",
-        ":responses",
-        ":serve",
-        ":server",
-        ":vendor_runtime",
-        "@pypi//playwright",
-    ],
+    deps = ["@pypi//playwright"],
 )
 
 py_binary(
@@ -126,12 +101,7 @@ py_test(
     deps = [
         ":addon",
         ":core",
-        ":mitmproxy_script",
-        ":package_tree",
-        ":responses",
-        ":serve",
-        ":server",
-        ":vendor_runtime",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -141,14 +111,8 @@ py_test(
     name = "package_tree_test",
     srcs = ["package_tree_test.py"],
     deps = [
-        ":addon",
-        ":core",
-        ":mitmproxy_script",
         ":package_tree",
-        ":responses",
-        ":serve",
-        ":server",
-        ":vendor_runtime",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -158,14 +122,9 @@ py_test(
     name = "server_test",
     srcs = ["server_test.py"],
     deps = [
-        ":addon",
         ":core",
-        ":mitmproxy_script",
-        ":package_tree",
-        ":responses",
-        ":serve",
         ":server",
-        ":vendor_runtime",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

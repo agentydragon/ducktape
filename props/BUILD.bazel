@@ -41,7 +41,6 @@ py_library(
         "//agent_core/testing/mcp:fixtures",
         "//agent_core/testing/mcp:responses",
         "//mcp_infra/testing:fixtures",
-        "//props/testing",
         "//props/testing/fixtures:db",
         "//props/testing/fixtures:e2e",
         "//props/testing/fixtures:e2e_container",

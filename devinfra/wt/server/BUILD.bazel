@@ -17,7 +17,6 @@ py_library(
     deps = [
         "//devinfra/wt/testing:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
     ],
 )
 
@@ -41,10 +40,12 @@ py_library(
 py_library(
     name = "git_refs_watcher",
     srcs = ["git_refs_watcher.py"],
-    deps = [
+    pyi_deps = [
+        "//devinfra/wt/shared:configuration",
         ":git_manager",
         ":stores",
-        "//devinfra/wt/shared:configuration",
+    ],
+    deps = [
         "//devinfra/wt/shared:protocol",
         "@pypi//pygit2",
         "@pypi//reaktiv",
@@ -66,9 +67,11 @@ py_library(
 py_library(
     name = "github_watcher",
     srcs = ["github_watcher.py"],
-    deps = [
-        ":github_client",
+    pyi_deps = [
         "//devinfra/wt/shared:configuration",
+        ":github_client",
+    ],
+    deps = [
         "//devinfra/wt/shared:env",
         "//devinfra/wt/shared:fixtures",
         "//devinfra/wt/shared:github_models",
@@ -194,7 +197,6 @@ py_library(
         "//devinfra/wt/shared:protocol",
         "@pypi//psutil",
         "@pypi//pygit2",
-        "@pypi//types_psutil",
     ],
 )
 
@@ -239,6 +241,7 @@ py_test(
     deps = [
         ":conftest",
         ":worktree_service",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

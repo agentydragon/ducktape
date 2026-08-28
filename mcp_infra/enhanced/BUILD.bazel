@@ -44,7 +44,6 @@ py_library(
         ":flat_mixin",
         ":oob_notify_mixin",
         ":openai_strict_mixin",
-        "@pypi//anyio",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
     ],
@@ -66,6 +65,7 @@ py_test(
     srcs = ["test_flat_decorator.py"],
     deps = [
         ":server",
+        "//:conftest",
         "//mcp_infra:conftest",
         "//mcp_infra/stubs:typed_stubs",
         "//openai_utils:pydantic_strict_mode",
@@ -83,6 +83,7 @@ py_test(
     srcs = ["test_flat_helper.py"],
     deps = [
         ":server",
+        "//:conftest",
         "//mcp_infra:conftest",
         "//openai_utils:pydantic_strict_mode",
         "@pypi//fastmcp_slim",
@@ -97,6 +98,7 @@ py_test(
     srcs = ["test_oob_broadcast.py"],
     deps = [
         ":server",
+        "//:conftest",
         "//mcp_infra:conftest",
         "@pypi//anyio",
         "@pypi//fastmcp_slim",
@@ -110,6 +112,7 @@ py_test(
     srcs = ["test_oob_session_capturing.py"],
     deps = [
         ":server",
+        "//:conftest",
         "//mcp_infra:conftest",
         "//mcp_infra:urls",
         "@pypi//fastmcp_slim",
@@ -122,6 +125,8 @@ py_test(
     srcs = ["test_openai_strict_validation.py"],
     deps = [
         ":server",
+        "//:conftest",
+        "//mcp_infra:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

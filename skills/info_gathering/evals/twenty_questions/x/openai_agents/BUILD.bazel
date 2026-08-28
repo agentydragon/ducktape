@@ -4,8 +4,6 @@ py_library(
     name = "twenty_questions",
     srcs = ["twenty_questions.py"],
     deps = [
-        "//mcp_infra/exec/docker:container_session",
-        "//mcp_infra/exec/docker:launcher",
         "//mcp_infra/exec/docker:server",
         "//mcp_infra/exec/docker:types",
         "//skills/eval_infra:docker_exec",
@@ -18,7 +16,7 @@ py_library(
         "//skills/info_gathering/evals/twenty_questions/x/shared:output",
         "//skills/info_gathering/evals/twenty_questions/x/shared:variants",
         "@pypi//fastmcp_slim",
-        "@pypi//openai",
+        "@pypi//mcp",
         "@pypi//openai_agents",
     ],
 )
@@ -31,17 +29,20 @@ py_binary(
 
 py_test(
     name = "test_twenty_questions",
-    srcs = [
-        "conftest.py",
-        "test_twenty_questions.py",
-    ],
+    srcs = ["test_twenty_questions.py"],
     deps = [
+        ":conftest",
         ":twenty_questions",
-        "//skills/info_gathering/evals/twenty_questions/x/shared:conftest",
-        "@pypi//openai",
+        "//:conftest",
+        "//skills/info_gathering/evals/twenty_questions:conftest",
         "@pypi//openai_agents",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = ["//skills/info_gathering/evals/twenty_questions/x/shared:conftest"],
 )

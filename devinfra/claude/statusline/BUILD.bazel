@@ -6,6 +6,8 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//aiquota:cache",
+        "//aiquota:config",
+        "//aiquota:models",
         "//aiquota/render:format_lib",
         "//devinfra/claude:session_paths",
         "//devinfra/claude/claude_api:credentials",
@@ -28,7 +30,9 @@ py_test(
     uses_syrupy = True,
     deps = [
         ":statusline",
+        "//:conftest",
         "//aiquota:models",
+        "//devinfra/claude:conftest",
         "//devinfra/claude/claude_api:credentials",
         "//devinfra/claude/claude_api:statusline",
         "@pypi//pytest",

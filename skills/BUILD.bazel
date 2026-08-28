@@ -37,6 +37,7 @@ py_test(
     srcs = ["test_frontmatter.py"],
     deps = [
         ":frontmatter_validation",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

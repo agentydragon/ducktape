@@ -30,6 +30,7 @@ py_test(
     srcs = ["test_pytest_main.py"],
     deps = [
         ":pytest_main",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -85,6 +86,7 @@ py_test(
     srcs = ["test_bbr.py"],
     deps = [
         ":bbr",
+        "//:conftest",
         "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -110,7 +112,7 @@ py_test(
     srcs = ["test_prettier_cli.py"],
     deps = [
         ":prettier_cli",
-        "@pypi//pytest",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -135,4 +137,9 @@ pkg_tar(
     mode = "0755",
     package_dir = "/usr/local/bin",
     visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "update_image_pin",
+    srcs = ["update_image_pin.py"],
 )

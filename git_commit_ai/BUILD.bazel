@@ -167,6 +167,7 @@ py_test(
     deps = [
         ":cli",
         ":conftest",
+        "//:conftest",
         "//git_commit_ai/testing:git_repo_utils",
         "@pypi//pygit2",
         "@pypi//pytest_bazel",
@@ -181,7 +182,7 @@ py_test(
     deps = [
         ":conftest",
         ":editor",
+        "//:conftest",
         "@pypi//pytest_bazel",
-        "@pypi//syrupy",
     ],
 )

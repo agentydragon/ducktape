@@ -28,6 +28,10 @@ from mcp_infra.testing.notifications import SubscriptionRecorder, enable_resourc
 from mcp_infra.testing.simple_servers import make_simple_mcp as _make_simple_mcp  # avoid fixture collision
 from util.bazel.subprocess import python_env
 
+# The stdio transport fixture launches `-m mcp_infra.testing.stdio_app`; the module
+# is referenced only as a string, so gazelle cannot see the dependency.
+# gazelle:include_dep //mcp_infra/testing:stdio_app
+
 
 def make_container_opts(image: str, *, working_dir: Path = Path("/workspace")) -> ContainerExecServerConfig:
     """Create standard ContainerExecServerConfig for tests."""

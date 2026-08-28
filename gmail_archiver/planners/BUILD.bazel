@@ -148,6 +148,7 @@ py_test(
     deps = [
         ":anthropic",
         ":conftest",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -159,6 +160,7 @@ py_test(
     deps = [
         ":conftest",
         ":square",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )

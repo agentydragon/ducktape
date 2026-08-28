@@ -53,9 +53,10 @@ py_test(
     deps = [
         ":app",
         ":cli",
+        "//:conftest",
         "//props:config",
+        "//props:conftest",
         "@pypi//fastapi",
-        "@pypi//httpx",
         "@pypi//pytest_bazel",
         "@pypi//typer",
     ],
@@ -70,8 +71,8 @@ py_test(
     requires_docker = True,
     deps = [
         ":routes",
+        "//:conftest",
         "//props:conftest",
-        "//props/backend:conftest",
         "//props/core:agent_types",
         "//props/db:database",
         "//props/db:models",
@@ -90,10 +91,10 @@ py_test(
     requires_docker = True,
     deps = [
         ":routes",
+        "//:conftest",
         "//openai_utils:api_shape",
         "//props:config",
         "//props:conftest",
-        "//props/backend:conftest",
         "//props/db:database",
         "//props/db:models",
         "@pypi//fastapi",

@@ -63,10 +63,7 @@ py_library(
     name = "parse_eob_listing",
     srcs = ["parse_eob_listing.py"],
     visibility = ["//:__subpackages__"],
-    deps = [
-        "@pypi//beautifulsoup4",
-        "@pypi//lxml",
-    ],
+    deps = ["@pypi//beautifulsoup4"],
 )
 
 py_binary(

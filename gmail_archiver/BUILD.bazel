@@ -180,6 +180,7 @@ py_test(
     srcs = ["test_gmail_link.py"],
     deps = [
         ":plan_display",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -190,6 +191,7 @@ py_test(
     deps = [
         ":filter_sync",
         ":gmail_yaml_filters_models",
+        "//:conftest",
         "//gmail_api:labels",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

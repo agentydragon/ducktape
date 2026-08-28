@@ -37,7 +37,6 @@ py_library(
         "//mcp_infra/testing:fixtures",
         "@pypi//pygit2",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
     ],
 )
 
@@ -48,6 +47,8 @@ py_test(
         ":conftest",
         ":formatting",
         ":server",
+        "//:conftest",
+        "//git_commit_ai:conftest",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -61,6 +62,8 @@ py_test(
         ":conftest",
         ":formatting",
         ":server",
+        "//:conftest",
+        "//git_commit_ai:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -72,6 +75,8 @@ py_test(
         ":conftest",
         ":formatting",
         ":server",
+        "//:conftest",
+        "//git_commit_ai:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -83,6 +88,8 @@ py_test(
         ":conftest",
         ":formatting",
         ":server",
+        "//:conftest",
+        "//git_commit_ai:conftest",
         "@pypi//pygit2",
         "@pypi//pytest_bazel",
     ],
@@ -95,6 +102,8 @@ py_test(
         ":conftest",
         ":formatting",
         ":server",
+        "//:conftest",
+        "//git_commit_ai:conftest",
         "@pypi//pytest_bazel",
     ],
 )

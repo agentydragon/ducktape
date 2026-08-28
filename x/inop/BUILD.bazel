@@ -10,6 +10,7 @@ py_test(
     deps = [
         ":config",
         ":conftest",
+        "//:conftest",
         "//mcp_infra:naming",
         "//mcp_infra:prefix",
         "//openai_utils:model",
@@ -34,8 +35,6 @@ py_library(
         "//mcp_infra/enhanced:server",
         "//openai_utils:pydantic_strict_mode",
         "//x/inop/prompting:prompt_engineer",
-        "@pypi//fastmcp_slim",
-        "@pypi//pydantic",
     ],
 )
 
@@ -86,10 +85,10 @@ py_library(
     srcs = ["conftest.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":config",
         "//agent_core/testing:responses",
         "//agent_core/testing/mcp:responses",
         "//util/bazel:runfiles",
-        "//x/inop:config",
         "@pypi//pytest",
     ],
 )
@@ -100,6 +99,7 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
+        "//:conftest",
         "@pypi//pathspec",
         "@pypi//pytest_bazel",
     ],
@@ -113,6 +113,7 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
+        "//:conftest",
         "//x/inop/engine:models",
         "//x/inop/prompting:truncation_utils",
         "@pypi//pytest",

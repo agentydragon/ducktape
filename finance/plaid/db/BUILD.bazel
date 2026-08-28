@@ -5,7 +5,6 @@ py_library(
     name = "products",
     srcs = ["products.py"],
     visibility = ["//finance/plaid:__subpackages__"],
-    deps = ["@pypi//pydantic"],
 )
 
 py_library(
@@ -24,7 +23,7 @@ py_test(
     srcs = ["test_client.py"],
     deps = [
         ":client",
-        ":products",
+        "//:conftest",
         "@pypi//certifi",
         "@pypi//plaid_python",
         "@pypi//pytest_bazel",
@@ -36,7 +35,7 @@ py_test(
     srcs = ["test_products.py"],
     deps = [
         ":products",
-        "@pypi//pytest",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -61,7 +60,6 @@ py_library(
     visibility = ["//finance/augur:__subpackages__"],
     deps = [
         ":schema",
-        "@pypi//asyncpg",
         "@pypi//sqlalchemy",
     ],
 )
@@ -83,14 +81,10 @@ py_test(
     requires_docker = True,
     deps = [
         ":link_store",
-        ":products",
         "//:conftest",
-        "//third_party/containers:rlocations",
-        "//util:oci",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",
@@ -108,11 +102,9 @@ py_test(
     requires_docker = True,
     deps = [
         ":link_store",
-        ":products",
         ":read_model",
+        ":schema",
         "//:conftest",
-        "//third_party/containers:rlocations",
-        "//util:oci",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
         "@pypi//pytest",
@@ -128,12 +120,10 @@ py_test(
     srcs = ["test_sync.py"],
     deps = [
         ":link_store",
-        ":products",
         ":sync",
         "//:conftest",
         "@pypi//plaid_python",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -153,10 +143,8 @@ py_library(
     data = glob(["migrations/**"]),
     visibility = ["//finance/plaid:__subpackages__"],
     deps = [
-        ":products",
         ":schema",
         "@pypi//alembic",
-        "@pypi//asyncpg",
         "@pypi//sqlalchemy",
     ],
 )

@@ -131,6 +131,7 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
+    visibility = ["//devinfra/claude/claude_hook:__subpackages__"],
     deps = ["//devinfra/claude/testing:container_e2e"],
 )
 
@@ -149,6 +150,8 @@ py_test(
     ],
     deps = [
         ":conftest",
+        "//:conftest",
+        "//devinfra/claude:conftest",
         "//devinfra/claude/testing:container_e2e",
         "//util/bazel:runfiles",
         "@pypi//pytest",

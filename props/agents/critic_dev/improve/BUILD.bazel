@@ -39,6 +39,7 @@ py_test(
     ],
     requires_docker = True,
     deps = [
+        "//:conftest",
         "//agent_core/testing:responses",
         "//mcp_infra/exec:matchers",
         "//props:conftest",
@@ -46,7 +47,6 @@ py_test(
         "//props/db:database",
         "//props/db:examples",
         "//props/db:models",
-        "//props/testing",
         "//props/testing:constants",
         "@pypi//pyhamcrest",
         "@pypi//pytest",

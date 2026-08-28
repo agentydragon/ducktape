@@ -22,8 +22,5 @@ py_library(
     name = "true_positive",
     srcs = ["true_positive.py"],
     visibility = ["//props:__subpackages__"],
-    deps = [
-        ":types",
-        "@pypi//pydantic",
-    ],
+    deps = ["@pypi//pydantic"],
 )

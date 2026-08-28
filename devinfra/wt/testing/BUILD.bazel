@@ -72,7 +72,6 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         ":config_factory",
-        ":data",
         ":mock_factory",
         ":repo_factory",
         ":utils",
@@ -84,7 +83,6 @@ py_library(
         "//devinfra/wt/shared:configuration",
         "//devinfra/wt/shared:fixtures",
         "//devinfra/wt/shared:protocol",
-        "//devinfra/wt/shell:install",
         "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pyyaml",

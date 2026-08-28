@@ -9,8 +9,6 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":fixtures",
-        "//mcp_infra/exec/docker:container_session",
-        "//mcp_infra/exec/docker:launcher",
         "//mcp_infra/exec/docker:server",
         "@pypi//pytest",
     ],
@@ -35,18 +33,15 @@ py_library(
     deps = [
         ":notifications",
         ":simple_servers",
-        ":stdio_app",
-        ":stdio_notifier",
         "//mcp_infra:prefix",
         "//mcp_infra/compositor",
         "//mcp_infra/compositor:notifications_buffer",
         "//mcp_infra/compositor:resources_server",
         "//mcp_infra/enhanced:server",
-        "//mcp_infra/exec/docker:container_session",
-        "//mcp_infra/exec/docker:launcher",
-        "//mcp_infra/exec/docker:server",
+        "//mcp_infra/exec/docker:types",
         "//mcp_infra/stubs:resources_stub",
         "//mcp_infra/stubs:typed_stubs",
+        "//mcp_infra/testing:stdio_app",
         "//util/bazel:subprocess",
         "@pypi//aiodocker",
         "@pypi//fastmcp_slim",
@@ -62,7 +57,6 @@ py_library(
         "//openai_utils:model",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
-        "@pypi//pydantic",
     ],
 )
 

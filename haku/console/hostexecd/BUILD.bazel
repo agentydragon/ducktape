@@ -33,7 +33,6 @@ py_test(
         "//haku/console:conftest",
         "@pypi//fastapi",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

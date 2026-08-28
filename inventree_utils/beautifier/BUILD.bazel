@@ -7,7 +7,6 @@ py_library(
     deps = [
         ":cli_util",
         ":inventree_util",
-        ":lcsc_util",
         "@pypi//inventree",
         "@pypi//more_itertools",
         "@pypi//tqdm",
@@ -98,6 +97,7 @@ py_test(
     srcs = ["test_assign_jellybean.py"],
     deps = [
         ":assign_jellybean",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -107,6 +107,7 @@ py_test(
     srcs = ["test_fix_lcsc_links.py"],
     deps = [
         ":fix_lcsc_links",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -117,6 +118,7 @@ py_test(
     srcs = ["test_lcsc_util.py"],
     deps = [
         ":lcsc_util",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

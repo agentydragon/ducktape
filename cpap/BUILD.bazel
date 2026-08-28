@@ -53,6 +53,7 @@ py_test(
     srcs = ["test_card.py"],
     deps = [
         ":card",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

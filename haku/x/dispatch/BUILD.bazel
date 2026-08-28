@@ -13,7 +13,6 @@ py_library(
     name = "config",
     srcs = ["config.py"],
     deps = [
-        ":models",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
         "@pypi//pyyaml",
@@ -63,7 +62,6 @@ py_library(
     name = "k8s_jobs",
     srcs = ["k8s_jobs.py"],
     deps = [
-        ":models",
         "@pypi//kubernetes_asyncio",
         "@pypi//pyyaml",
     ],
@@ -84,6 +82,7 @@ py_library(
         "@pypi//anthropic",
         "@pypi//fastapi",
         "@pypi//kubernetes_asyncio",
+        "@pypi//sqlalchemy",
         "@pypi//uvicorn",
     ],
 )
@@ -143,7 +142,6 @@ py_library(
         "@pypi//aiosqlite",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
     ],
 )
 
@@ -151,7 +149,9 @@ py_test(
     name = "test_result_tokens",
     srcs = ["test_result_tokens.py"],
     deps = [
+        ":conftest",
         ":result_tokens",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -160,7 +160,9 @@ py_test(
     name = "test_prompt_lint",
     srcs = ["test_prompt_lint.py"],
     deps = [
+        ":conftest",
         ":prompt_lint",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -171,8 +173,9 @@ py_test(
     srcs = ["test_k8s_jobs.py"],
     data = ["//cluster/k8s/x/haku/dispatch/dispatcher:job-template.yaml"],
     deps = [
+        ":conftest",
         ":k8s_jobs",
-        ":models",
+        "//:conftest",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
@@ -184,6 +187,8 @@ py_test(
     data = ["//cluster/k8s/x/haku/dispatch/dispatcher:zones.yaml"],
     deps = [
         ":config",
+        ":conftest",
+        "//:conftest",
         "//cluster/k8s/x/haku/dispatch/litellm:generate_workers_litellm",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
@@ -197,8 +202,7 @@ py_test(
         ":conftest",
         ":k8s_jobs",
         ":result_tokens",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )

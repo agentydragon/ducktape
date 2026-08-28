@@ -84,7 +84,6 @@ py_library(
     data = ["//x/rspcache/admin_ui:bundle"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":app",
         ":dependencies",
         ":models",
         ":responses_db",
@@ -113,7 +112,6 @@ py_library(
     srcs = ["codegen.py"],
     deps = [
         ":admin_app",
-        ":app",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pyyaml",

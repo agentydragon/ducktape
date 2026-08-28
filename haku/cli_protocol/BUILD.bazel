@@ -11,6 +11,7 @@ py_test(
     srcs = ["test_frame_identity.py"],
     deps = [
         ":frame_identity",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -27,6 +28,7 @@ py_test(
     srcs = ["test_frames.py"],
     deps = [
         ":frames",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -36,6 +38,7 @@ py_test(
     srcs = ["test_compaction_capture.py"],
     data = ["testdata/compaction_session.jsonl"],
     deps = [
+        "//:conftest",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

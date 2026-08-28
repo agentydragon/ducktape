@@ -23,6 +23,7 @@ py_test(
     srcs = ["test_find_orphans.py"],
     deps = [
         ":find_orphans",
+        "//:conftest",
         "//util/bazel:workspace",
         "@pypi//pytest_bazel",
     ],

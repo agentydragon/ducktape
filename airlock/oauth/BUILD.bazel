@@ -57,9 +57,9 @@ py_test(
     deps = [
         ":conftest",
         ":provider",
+        "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//respx",
     ],
@@ -72,8 +72,8 @@ py_test(
         ":conftest",
         ":provider",
         ":refresh",
+        "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

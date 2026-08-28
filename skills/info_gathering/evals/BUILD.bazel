@@ -4,10 +4,7 @@ py_library(
     name = "litellm_tool_provider",
     srcs = ["litellm_tool_provider.py"],
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
-    deps = [
-        "//agent_core:tool_provider",
-        "@pypi//litellm",
-    ],
+    deps = ["//agent_core:tool_provider"],
 )
 
 py_library(
@@ -28,12 +25,7 @@ py_library(
     name = "replay_client",
     srcs = ["replay_client.py"],
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
-    deps = [
-        "@pypi//agent_framework_anthropic",
-        "@pypi//agent_framework_claude",
-        "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",
-    ],
+    deps = ["@pypi//agent_framework_core"],
 )
 
 py_library(

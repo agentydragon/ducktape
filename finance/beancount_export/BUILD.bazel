@@ -41,6 +41,7 @@ py_test(
     srcs = ["test_export.py"],
     deps = [
         ":export",
+        "//:conftest",
         "//finance/augur/budget:schema",
         "@pypi//beancount",
         "@pypi//pytest_bazel",

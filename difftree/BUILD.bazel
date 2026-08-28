@@ -80,6 +80,7 @@ py_test(
     deps = [
         ":cli",
         ":conftest",
+        "//:conftest",
         "@pypi//click",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -92,6 +93,7 @@ py_test(
     deps = [
         ":config",
         ":conftest",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -106,6 +108,7 @@ py_test(
         ":diff_tree",
         ":parser",
         ":progress_bar",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//rich",
@@ -120,6 +123,7 @@ py_test(
         ":conftest",
         ":parser",
         ":tree",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -130,6 +134,7 @@ py_test(
     deps = [
         ":conftest",
         ":parser",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -140,6 +145,7 @@ py_test(
     deps = [
         ":conftest",
         ":progress_bar",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -154,9 +160,9 @@ py_test(
         ":config",
         ":conftest",
         ":parser",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//syrupy",
     ],
 )
 
@@ -168,6 +174,7 @@ py_test(
         ":conftest",
         ":parser",
         ":tree",
+        "//:conftest",
         "@pypi//pyhamcrest",
         "@pypi//pytest_bazel",
     ],

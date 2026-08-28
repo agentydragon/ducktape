@@ -22,6 +22,9 @@ py_test(
     srcs = ["test_migration_sequence.py"],
     data = [":migrations"],
     deps = [
+        "//:conftest",
+        "//props:conftest",
+        "//props/db:conftest",
         "@pypi//alembic",
         "@pypi//pytest_bazel",
     ],
@@ -34,11 +37,13 @@ py_test(
     data = [":migrations"],
     requires_docker = True,
     deps = [
+        "//:conftest",
         "//props:conftest",
         "//props/db:config",
         "//props/db:conftest",
         "//util/testing:postgres",
         "@pypi//alembic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],

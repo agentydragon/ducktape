@@ -13,11 +13,12 @@ py_test(
     deps = [
         ":client",
         ":conftest",
+        "//:conftest",
         "//openai_utils:api_shape",
+        "//props:conftest",
         "@pypi//agent_framework_core",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//respx",
     ],

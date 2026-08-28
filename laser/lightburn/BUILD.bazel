@@ -11,6 +11,7 @@ py_test(
     srcs = ["test_lbrn2_writer.py"],
     deps = [
         ":lbrn2_writer",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

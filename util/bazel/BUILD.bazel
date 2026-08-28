@@ -26,6 +26,7 @@ py_test(
     srcs = ["test_subprocess.py"],
     deps = [
         ":subprocess",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -36,6 +37,7 @@ py_test(
     srcs = ["test_workspace.py"],
     deps = [
         ":workspace",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

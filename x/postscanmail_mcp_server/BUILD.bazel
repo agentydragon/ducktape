@@ -44,7 +44,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//mcp",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # runtime dep: root conftest sets asyncio_mode="auto"
         "@pypi//pytest_bazel",
         "@pypi//respx",
     ],

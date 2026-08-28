@@ -36,6 +36,7 @@ py_test(
     srcs = ["test_service.py"],
     deps = [
         ":service",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )

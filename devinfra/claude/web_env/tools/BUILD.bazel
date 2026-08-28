@@ -26,7 +26,6 @@ py_binary(
 py_library(
     name = "capture_versions",
     srcs = ["capture_versions.py"],
-    deps = ["@pypi//pydantic"],
 )
 
 py_binary(

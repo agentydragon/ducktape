@@ -18,6 +18,7 @@ py_test(
     srcs = ["test_provision_matrix_users.py"],
     deps = [
         ":provision_matrix_users",
+        "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

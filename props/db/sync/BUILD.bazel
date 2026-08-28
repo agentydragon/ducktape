@@ -42,12 +42,10 @@ py_library(
 py_library(
     name = "model_metadata",
     srcs = ["model_metadata.py"],
+    pyi_deps = ["//props:config"],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":stats",
-        "//openai_utils:api_shape",
-        "//openai_utils:model_metadata",
-        "//props:config",
         "//props/db:models",
         "@pypi//sqlalchemy",
     ],
@@ -94,6 +92,7 @@ py_test(
     srcs = ["test_example_generation.py"],
     requires_docker = True,
     deps = [
+        "//:conftest",
         "//props:conftest",
         "//props/core:ids",
         "//props/core:splits",
@@ -114,6 +113,7 @@ py_test(
     deps = [
         ":sync",
         ":yaml_loader",
+        "//:conftest",
         "//props:conftest",
         "//props/core:ids",
         "//props/core/models:true_positive",
@@ -133,11 +133,13 @@ py_test(
     requires_docker = True,
     deps = [
         ":model_metadata",
+        "//:conftest",
         "//props:config",
         "//props:conftest",
         "//props/db:conftest",
         "//props/db:database",
         "//props/db:models",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -149,12 +151,14 @@ py_test(
     requires_docker = True,
     deps = [
         ":sync",
+        "//:conftest",
         "//props:conftest",
         "//props/core:ids",
         "//props/core:splits",
         "//props/db:conftest",
         "//props/db:database",
         "//props/db:models",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],

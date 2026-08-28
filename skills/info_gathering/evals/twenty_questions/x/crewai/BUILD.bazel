@@ -17,7 +17,6 @@ py_library(
         "@pypi//crewai",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
-        "@pypi//types_protobuf",  # mypy: transitive via crewai → googleapis-common-protos
     ],
 )
 
@@ -32,7 +31,9 @@ py_test(
     srcs = ["test_twenty_questions.py"],
     deps = [
         ":twenty_questions",
-        "@pypi//pytest",
+        "//:conftest",
+        "//skills/info_gathering/evals/twenty_questions:conftest",
+        "//skills/info_gathering/evals/twenty_questions:result_types",
         "@pypi//pytest_bazel",
     ],
 )
