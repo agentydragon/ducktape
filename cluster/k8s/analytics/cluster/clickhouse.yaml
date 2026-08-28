@@ -41,9 +41,9 @@ spec:
       aiquota_ingest/quota: ingest
       aiquota_ingest/grants/query:
         - GRANT INSERT ON aiquota.raw_http_observations
-        # The materialized view executes under the inserting identity, so it
-        # needs only these source columns to normalize a raw observation.
-        - GRANT SELECT(event_id, observed_at, source, quota_windows) ON aiquota.raw_http_observations
+        # The materialized views execute under the inserting identity, so they
+        # need only these source columns to normalize a raw observation.
+        - GRANT SELECT(event_id, observed_at, source, quota_windows, token_activity, reset_credits) ON aiquota.raw_http_observations
       grafana/password:
         valueFrom:
           secretKeyRef:

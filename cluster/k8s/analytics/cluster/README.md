@@ -24,7 +24,7 @@ Without that listener, those members cannot be local DDLWorker targets. The
 internal native cluster therefore consistently uses port 9000; TLS must be
 configured end-to-end before enabling the operator's secure-cluster setting.
 
-The versioned `clickhouse-aiquota-schema-v5` Job applies idempotent tenant DDL
+The versioned `clickhouse-aiquota-schema-v6` Job applies idempotent tenant DDL
 once through the cluster Service with `ON CLUSTER analytics`. Tables remain
 ReplicatedMergeTree tables using the same Keeper paths. Tenant schema belongs
 only to these Jobs: ClickHouse startup scripts do not create application
