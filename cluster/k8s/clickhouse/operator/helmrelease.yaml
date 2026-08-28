@@ -34,10 +34,6 @@ spec:
   values:
     watchNamespaces:
       - clickhouse
-      # Keep the old namespace watched while Flux prunes the former
-      # analytics installation during the rebuild. Remove this entry after
-      # the old ClickHouse resources and namespace are gone.
-      - analytics
     rbac:
       namespaceScoped: true
     crdHook:
