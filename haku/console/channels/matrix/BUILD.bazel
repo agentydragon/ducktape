@@ -1,6 +1,9 @@
 """Matrix as one channel: everything that knows a homeserver exists."""
 
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -88,9 +91,9 @@ py_library(
     srcs = ["conversation.py"],
     deps = [
         ":client",
+        ":config",
         ":ingress_ledger",
         "//haku/console:chat_models",
-        "//haku/console:config",
         "//haku/console:database_schema",
         "//haku/console:operator_identity_store",
         "//haku/console/x:launch_identity",
@@ -144,6 +147,7 @@ py_library(
     deps = [
         ":attachment_reconciler",
         ":client",
+        ":config",
         ":conversation",
         ":conversation_subscriber",
         ":ingress_ledger",
@@ -154,7 +158,6 @@ py_library(
         ":room_copy",
         ":spans",
         "//haku/console:chat_models",
-        "//haku/console:config",
         "//haku/console:database_schema",
         "//haku/console:operator_identity_store",
         "//haku/console/x:conversation_log",
@@ -169,10 +172,11 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":config",
         ":conversation",
         ":ingress_ledger",
-        "//haku/console:config",
         "//haku/console/x:conftest",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
     ],
@@ -271,7 +275,6 @@ py_test(
         ":ingress_ledger",
         "//:conftest",
         "//haku/console:chat_models",
-        "//haku/console:config",
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "//haku/console/agents:authorization",
@@ -447,4 +450,92 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
+)
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    deps = [
+        "//haku/console:chat_models",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "worker",
+    srcs = ["worker.py"],
+    deps = [
+        ":config",
+        ":conversation",
+        ":ingress_ledger",
+        ":outbox",
+        ":outbox_wake",
+        ":revisions",
+        ":room_copy",
+        ":sync",
+        "//haku/console:chat_models",
+        "//haku/console:database_schema",
+        "//haku/console:operator_identity",
+        "//haku/console:operator_identity_store",
+        "//haku/console/agents:launch_authority",
+        "//haku/console/x:conversation_wakes",
+        "//haku/console/x:launch_identity",
+        "//haku/console/x:runtime",
+        "//haku/console/x:session_store",
+        "//haku/console/x:subscription",
+        "@pypi//more_itertools",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_binary(
+    name = "adapter",
+    main_module = "haku.console.channels.matrix.worker",
+    deps = [":worker"],
+)
+
+# ── OCI image (the haku-matrix-adapter worker) ────────────────────────────────
+# The Matrix channel adapter, deployed separately from the console API so a homeserver
+# outage, a matrix-nio upgrade, or an adapter bug never rolls or disrupts the Console
+# perimeter — and so the console pod carries no Matrix credential. Same base and CA
+# bundle as its siblings: the homeserver URL is config, so an https:// homeserver must
+# not require an image change.
+
+aspect_py_binary(
+    name = "adapter_bin",
+    main = "worker.py",
+    deps = [":worker"],
+)
+
+py_image_layer(
+    name = "adapter_layers",
+    binary = ":adapter_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "adapter_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("adapter_bin"),
+    env = py_image_env(binary_name = "adapter_bin"),
+    labels = {
+        "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
+        "org.opencontainers.image.title": "haku-matrix-adapter",
+    },
+    tars = [
+        ":adapter_layers",
+        "//third_party/debian_slim:cacerts",
+    ],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "adapter_load",
+    image = ":adapter_image",
+    repo_tags = ["haku-matrix-adapter:latest"],
 )

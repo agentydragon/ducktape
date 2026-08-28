@@ -56,11 +56,11 @@ the SPA chat surface's own HTTP routes. Around them:
 | `runtime.py`                   | Backend-neutral runtime catalog: provider adapters plus per-Agent execution resources.                                                                                                                                                                                           |
 | `runtime_catalog.py`           | Application composition of the runtime implementations linked into the console.                                                                                                                                                                                                  |
 
-The elected loops — Matrix sync (`MXSY`), runtime supervision (`CRUN`), allocation (`SBOX`) —
-hold independent advisory locks and can land on different replicas, so a stalled claim cannot
-wedge ingress or make one channel the only surface able to recover durable demand. The Matrix
-leader also sweeps one reconciler per live attachment (subscriber, drain, send budget), which is
-what makes each of those singular cluster-wide without an election of its own
+The elected loops here — runtime supervision (`CRUN`) and allocation (`SBOX`) — hold independent
+advisory locks and can land on different replicas, so a stalled claim cannot wedge ingress or
+make one channel the only surface able to recover durable demand. The Matrix sync loop (`MXSY`)
+is a third such election, held by the separately deployed `haku-matrix-adapter` worker
+(<../channels/matrix/worker.py>); its leader also sweeps one reconciler per live attachment
 (<../channels/matrix/attachment_reconciler.py>).
 
 **Gotcha:** both chat surfaces run at once as ordinary separate sessions — separate rows,

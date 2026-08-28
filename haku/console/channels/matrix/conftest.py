@@ -14,11 +14,12 @@ bind a room to an operator no session belongs to.
 from __future__ import annotations
 
 import pytest
+from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from haku.console.channels.matrix.config import Config
 from haku.console.channels.matrix.conversation import ConversationStore
 from haku.console.channels.matrix.ingress_ledger import IngressLedger
-from haku.console.config import MatrixConfig
 
 # The runtime-level fixtures the channel tests compose with. `channels/` is not under `x/`, so
 # pytest's conftest walk does not reach `x/conftest.py`; the fixtures are imported here instead.
@@ -28,11 +29,12 @@ MATRIX_USER = "@haku:allegedly.works"
 MATRIX_OPERATOR = "@rai:allegedly.works"
 MATRIX_ROOM = "!room:allegedly.works"
 
-MATRIX_CONFIG = MatrixConfig(
+MATRIX_CONFIG = Config(
     homeserver="https://matrix.allegedly.works",
     user_id=MATRIX_USER,
     operator_user_id=MATRIX_OPERATOR,
     operator_subject=OPERATOR_SUBJECT,
+    password=SecretStr("test-bot-password"),
 )
 
 

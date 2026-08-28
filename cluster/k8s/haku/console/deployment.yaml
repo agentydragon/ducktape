@@ -4,7 +4,9 @@
 # iframe. It writes nothing to haku-state (feedback/trace writes moved into haku-ui)
 # and holds no Git credential: recall-index maintenance — and the Forgejo credential
 # it needs — lives in the separate haku-indexer Deployment, while this pod only reads
-# the committed index state for `haku_index.search`/`index_status`.
+# the committed index state for `haku_index.search`/`index_status`. It likewise runs
+# no Matrix client and holds no Matrix credential: the channel adapter is the
+# separate haku-matrix-adapter Deployment.
 # The haku-console-static Deployment serves the bundled SPA and proxies public backend requests
 # here through this Service. Keeping it out of this pod means a frontend-only image update does
 # not restart the API, MCP streams, or background workers.
@@ -36,7 +38,7 @@ metadata:
     # do NOT use reloader's blanket auto mode: the projected static-image metadata
     # changes on every frontend release and must not restart API/MCP/background work.
     configmap.reloader.stakater.com/reload: haku-console-config
-    secret.reloader.stakater.com/reload: haku-routine-launch-token,haku-console-oidc,haku-matrix-bot-password,haku-console-web-push-vapid,tana-agentydragon-gmail-com-account-pat,ha-mcp-bearer,haku-console-db-app,haku-console-agent-api,haku-console-public-coder-agent,haku-console-node-daemon-wyrm2,haku-console-node-daemon-rugged,haku-console-google-client-credentials,haku-console-google-calendar-client-credentials,haku-console-github-mcp-client-credentials,haku-egress-proxy-identity,haku-egress-github-token
+    secret.reloader.stakater.com/reload: haku-routine-launch-token,haku-console-oidc,haku-console-web-push-vapid,tana-agentydragon-gmail-com-account-pat,ha-mcp-bearer,haku-console-db-app,haku-console-agent-api,haku-console-public-coder-agent,haku-console-node-daemon-wyrm2,haku-console-node-daemon-rugged,haku-console-google-client-credentials,haku-console-google-calendar-client-credentials,haku-console-github-mcp-client-credentials,haku-egress-proxy-identity,haku-egress-github-token
 spec:
   replicas: 2
   strategy:
@@ -130,28 +132,6 @@ spec:
                 secretKeyRef:
                   name: haku-routine-launch-token
                   key: token
-            # Matrix chat surface. The console starts without the password and simply
-            # does not run its sync loop; it mints its own access token from it.
-            - name: HAKU_CONSOLE_MATRIX__HOMESERVER
-              value: http://matrix-synapse.matrix.svc.cluster.local:8008
-            - name: HAKU_CONSOLE_MATRIX__USER_ID
-              value: "@haku:allegedly.works"
-            - name: HAKU_CONSOLE_MATRIX__OPERATOR_USER_ID
-              value: "@agentydragon:allegedly.works"
-            # The Authentik sub for the MXID above; Matrix has no OIDC identity of its own,
-            # so this pair is the whole sender-to-Operator mapping (R9.3). Same value the
-            # static Haku Agent already uses to find its Operator.
-            - name: HAKU_CONSOLE_MATRIX__OPERATOR_SUBJECT
-              valueFrom:
-                secretKeyRef:
-                  name: haku-console-oidc
-                  key: operator_subject
-            - name: HAKU_CONSOLE_MATRIX__PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: haku-matrix-bot-password
-                  key: password
-                  optional: true
             # Web Push: the VAPID key the console signs approval notifications with. Its
             # public half is derived at startup and handed to each browser at subscribe
             # time, so rotating this key makes every enrolled device re-subscribe from

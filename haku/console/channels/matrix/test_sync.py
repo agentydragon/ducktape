@@ -15,7 +15,6 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
-from pydantic import SecretStr
 from sqlalchemy import select
 
 from haku.console.channels.matrix.client import (
@@ -164,7 +163,6 @@ def _replica(sync_store, conversations, identities, turns, matrix, migrated_sess
     """
     service = SyncService(
         MATRIX_CONFIG,
-        SecretStr("pw"),
         engine=cast(Any, None),  # only `run()` takes the advisory lock; these drive one pass
         store=sync_store,
         conversations=conversations,

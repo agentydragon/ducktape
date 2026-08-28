@@ -40,7 +40,6 @@ from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from uuid import UUID, uuid4
 
-from pydantic import SecretStr
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -58,6 +57,7 @@ from haku.console.channels.matrix.client import (
     RoomEventKind,
     UnmappableEvent,
 )
+from haku.console.channels.matrix.config import Config
 from haku.console.channels.matrix.conversation import (
     ConversationFacts,
     ConversationStore,
@@ -74,7 +74,6 @@ from haku.console.channels.matrix.pacer import RoomPacers
 from haku.console.channels.matrix.revisions import Revision, RevisionLog
 from haku.console.channels.matrix.room_copy import RoomCopy
 from haku.console.channels.matrix.spans import Span, SpanKind
-from haku.console.config import MatrixConfig
 from haku.console.database_schema import MatrixAccessToken, MatrixSyncWatermark
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.conversation_log import writer_for
@@ -168,8 +167,7 @@ class SyncService:
 
     def __init__(
         self,
-        config: MatrixConfig,
-        password: SecretStr,
+        config: Config,
         engine: AsyncEngine,
         store: SyncStore,
         conversations: ConversationStore,
@@ -184,10 +182,8 @@ class SyncService:
         stream: ConversationStream,
         notifications: ConversationWakes,
     ):
-        # Taken separately from `config`, which carries it as optional: the service is only ever
-        # constructed once the password is known to be there.
         self._config = config
-        self._password = password
+        self._password = config.password
         self._engine = engine
         self._store = store
         self._conversations = conversations

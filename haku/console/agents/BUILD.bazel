@@ -33,6 +33,7 @@ py_library(
     srcs = ["authorization.py"],
     deps = [
         ":enrollment",
+        ":launch_authority",
         ":models",
         ":naming",
         "//haku/console:database_schema",
@@ -43,6 +44,18 @@ py_library(
         "//haku/console/x:launch_identity",
         "//mcp_infra/authentik_auth:oidc_principal",
         "@pypi//psycopg",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "launch_authority",
+    srcs = ["launch_authority.py"],
+    deps = [
+        ":models",
+        "//haku/console:database_schema",
+        "//haku/console:operator_identity",
+        "//haku/console/x:launch_identity",
         "@pypi//sqlalchemy",
     ],
 )
@@ -59,6 +72,7 @@ py_test(
     deps = [
         ":authorization",
         ":enrollment",
+        ":launch_authority",
         "//:conftest",
         "//haku/console:conftest",
         "//haku/console:database_migrate",
