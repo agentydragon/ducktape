@@ -154,6 +154,25 @@ def _cliproxy_responses_entries() -> Iterator[dict]:
         }
 
 
+# Claude Code-subscription models on CLIProxyAPI's Claude OAuth session — the same
+# `anthropic/` /v1/messages passthrough as the chatgpt/ant-messages entries above, a
+# different upstream OAuth session on the same pod. Messages wire only: Claude Code has no
+# Responses-wire twin. Exposes ANTHROPIC_MODELS: the subscription and the direct API serve
+# the same current generation, so they share one roster. The consuming key allowlist
+# (claude/ant-messages/*) is added by #5068.
+def _cliproxy_claude_entries() -> Iterator[dict]:
+    for model in ANTHROPIC_MODELS:
+        yield {
+            "model_name": exposed_name(Provider.CLAUDE, ApiShape.ANT_MESSAGES, model),
+            "litellm_params": {
+                "model": f"anthropic/{model}",
+                "api_base": _CLIPROXY_BASE,
+                "api_key": "os.environ/CLIPROXY_CLIENT_KEY",
+            },
+            "model_info": {"mode": "chat", "supports_function_calling": True},
+        }
+
+
 def _model_entries(tag: str, ctx_variants: list[tuple[str, int | None]]) -> Iterator[dict]:
     name_base = tag.replace(":", "-")
     for api, suffix, api_base in [
@@ -184,6 +203,7 @@ def _expected_main_config() -> dict:
     model_list.extend(_tana_entries())
     model_list.extend(_cliproxy_messages_entries())
     model_list.extend(_cliproxy_responses_entries())
+    model_list.extend(_cliproxy_claude_entries())
     model_list.extend(_anthropic_entries())
     model_list.extend(_groq_entries())
     model_list.extend(_gemini_chat_entries())
