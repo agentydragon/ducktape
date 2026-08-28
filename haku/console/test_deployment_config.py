@@ -8,7 +8,7 @@ from pydantic import SecretStr
 
 from haku.console.config import ClaudeCodeImplementationConfig, OperatorIdentityConfig, OperatorOidcConfig, Settings
 from haku.console.indexer import ChunkSettings, EmbedSettings, IndexerRole
-from haku.console.indexer_config import load_indexer_config
+from haku.console.indexer_config import IndexerConfigFile, load_indexer_config
 from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
 from util.bazel.runfiles import get_required_path
@@ -170,11 +170,12 @@ def _indexer_deployment_env(filename: str, role: IndexerRole) -> dict[str, str]:
 
 
 def test_deployed_chunk_role_env_satisfies_its_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Each registry index has a chunk pod that starts from exactly its manifest env, bound to it.
+    """Each registry index has a chunk pod that starts from exactly its manifest env.
 
     Derived from the deploy-owned registry rather than a fixed roster: a new `recall_indexes` entry
-    with no `indexer-chunk-<id>-deployment.yaml` fails here, and each pod's env must select exactly
-    its own index — no embedder configuration required on the chunk role.
+    with no `indexer-chunk-<id>-deployment.yaml` fails here. The contract is exactly
+    {config_file, database_url} — no embedder configuration, and no index selector: the mounted
+    config slice is the selection.
     """
     config = ConsoleConfigFile.model_validate(
         yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/config.yaml").read_text())
@@ -186,18 +187,26 @@ def test_deployed_chunk_role_env_satisfies_its_settings(monkeypatch: pytest.Monk
                 patched.setenv(name, value)
             # The one secret env the manifest binds by reference rather than value.
             patched.setenv("HAKU_INDEXER_DATABASE_URL", "postgresql+asyncpg://haku_indexer@db.test/approval_store")
-            settings = ChunkSettings()
-            assert settings.config_file.name == "config.yaml"
-            assert settings.index_id == index.index_id
+            assert ChunkSettings().config_file.name == "config.yaml"
 
 
-def test_deployed_config_reads_identically_for_console_and_indexer() -> None:
-    """Two parsers, one mounted file: the worker's narrow slice must agree with the console's read."""
-    config_path = get_required_path("ducktape/cluster/k8s/haku/console/config.yaml")
-    console = ConsoleConfigFile.model_validate(yaml.safe_load(config_path.read_text()))
-    indexer = load_indexer_config(config_path)
-    assert indexer.recall_indexes == console.recall_indexes
-    assert indexer.git_ca_bundle == console.git_ca_bundle
+def test_deployed_chunk_config_slices_project_the_registry() -> None:
+    """One instance, one config slice: each pod's mounted file equals its registry projection.
+
+    The console still reads the whole `recall_indexes` registry in config.yaml; each chunk pod
+    mounts only `indexer-chunk-<id>-config.yaml`, which must parse — through the worker's own
+    reader — to exactly that one registry entry plus the console's Git CA bundle. The slices are
+    generated output pinned to the registry (the LiteLLM config pattern), so a registry edit that
+    misses its slice, a drifted slice, or a slice grown past one entry fails here.
+    """
+    console = ConsoleConfigFile.model_validate(
+        yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/config.yaml").read_text())
+    )
+    for index in console.recall_indexes:
+        slice_path = get_required_path(f"ducktape/cluster/k8s/haku/console/indexer-chunk-{index.index_id}-config.yaml")
+        assert load_indexer_config(slice_path) == IndexerConfigFile(
+            git_ca_bundle=console.git_ca_bundle, recall_indexes=(index,)
+        )
 
 
 def test_deployed_embed_role_env_satisfies_its_settings(monkeypatch: pytest.MonkeyPatch) -> None:

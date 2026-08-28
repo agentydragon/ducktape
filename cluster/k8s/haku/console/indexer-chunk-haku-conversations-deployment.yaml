@@ -13,8 +13,8 @@
 #
 # Credential minimization by index: haku-conversations is a chat index sourced
 # from the console's own `conversation_item` table, so this pod carries no Git
-# credential and mounts no Git mirror — only the shared registry ConfigMap and
-# the `haku_indexer` database role (recall-index read/write + read-only chat
+# credential and mounts no Git mirror — only its own config slice and the
+# `haku_indexer` database role (recall-index read/write + read-only chat
 # source, see indexer-role.sql). Narrow identity otherwise: no ServiceAccount
 # token, no operator/agent auth, approval ledger, connector credentials, or Web
 # Push identity. The embedder endpoint lives only on the embed pod: this role
@@ -27,10 +27,11 @@ metadata:
   labels:
     app.kubernetes.io/name: haku-indexer-chunk-haku-conversations
   annotations:
-    # The registry (recall_indexes) lives in the shared console config; a config change
-    # restarts only this worker's loop — search in the console API is a database reader
-    # and needs no restart.
-    configmap.reloader.stakater.com/reload: haku-console-config
+    # This pod's own config slice (indexer-chunk-haku-conversations-config.yaml): only
+    # its one index's definition, so a change to another index's definition — or to the
+    # console-only config — never touches this worker. Search in the console API is a
+    # database reader and needs no restart.
+    configmap.reloader.stakater.com/reload: haku-indexer-chunk-haku-conversations-config
     secret.reloader.stakater.com/reload: haku-console-db-indexer
 spec:
   replicas: 1
@@ -61,16 +62,14 @@ spec:
         fsGroup: 1000
       containers:
         - name: indexer
-          image: ghcr.io/agentydragon/haku-indexer:devel-20260827230707-d8cb358 # {"$imagepolicy": "flux-system:haku-indexer"}
+          image: ghcr.io/agentydragon/haku-indexer:devel-20260828015612-2eccdbb # {"$imagepolicy": "flux-system:haku-indexer"}
           imagePullPolicy: Always
           args: ["--role=chunk"]
           env:
+            # The mounted per-index slice is the whole of this pod's registry: the config
+            # IS the index selection.
             - name: HAKU_INDEXER_CONFIG_FILE
-              value: /etc/haku-console/config/config.yaml
-            # The single logical index this pod sweeps. `_select_index` crash-loops the pod
-            # if this names nothing in the recall_indexes registry.
-            - name: HAKU_INDEXER_INDEX_ID
-              value: haku-conversations
+              value: /etc/haku-indexer/config/config.yaml
             # The narrow haku_indexer role (db/indexer-role-secret.yaml), never the
             # application owner: the worker cannot read the approval ledger, identity,
             # or OAuth state.
@@ -88,7 +87,7 @@ spec:
               memory: 1Gi
           volumeMounts:
             - name: config
-              mountPath: /etc/haku-console/config
+              mountPath: /etc/haku-indexer/config
               readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
@@ -97,4 +96,4 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: haku-console-config
+            name: haku-indexer-chunk-haku-conversations-config

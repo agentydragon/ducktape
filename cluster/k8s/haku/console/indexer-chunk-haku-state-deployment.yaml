@@ -28,10 +28,11 @@ metadata:
   labels:
     app.kubernetes.io/name: haku-indexer-chunk-haku-state
   annotations:
-    # The registry (recall_indexes) and credential slots live in the shared console
-    # config; a config or credential change restarts only this worker's loop — search
-    # in the console API is a database reader and needs no restart.
-    configmap.reloader.stakater.com/reload: haku-console-config
+    # This pod's own config slice (indexer-chunk-haku-state-config.yaml): only its one
+    # index's definition and credential slots, so a change to another index's definition
+    # — or to the console-only config — never touches this worker. Search in the console
+    # API is a database reader and needs no restart.
+    configmap.reloader.stakater.com/reload: haku-indexer-chunk-haku-state-config
     secret.reloader.stakater.com/reload: haku-console-db-indexer,haku-forgejo-git
 spec:
   replicas: 1
@@ -66,12 +67,10 @@ spec:
           imagePullPolicy: Always
           args: ["--role=chunk"]
           env:
+            # The mounted per-index slice is the whole of this pod's registry: the config
+            # IS the index selection.
             - name: HAKU_INDEXER_CONFIG_FILE
-              value: /etc/haku-console/config/config.yaml
-            # The single logical index this pod sweeps. `_select_index` crash-loops the pod
-            # if this names nothing in the recall_indexes registry.
-            - name: HAKU_INDEXER_INDEX_ID
-              value: haku-state
+              value: /etc/haku-indexer/config/config.yaml
             # The narrow haku_indexer role (db/indexer-role-secret.yaml), never the
             # application owner: the worker cannot read the approval ledger, identity,
             # or OAuth state.
@@ -80,9 +79,9 @@ spec:
                 secretKeyRef:
                   name: haku-console-db-indexer
                   key: DATABASE_URL
-            # The haku-state index's Git-read credential slots, named by the
-            # recall_indexes registry entry in config.yaml (username_env_var /
-            # password_env_var). This is Haku's own Forgejo account (operator,
+            # The haku-state index's Git-read credential slots, named by this pod's
+            # config slice (username_env_var / password_env_var, mirrored from the
+            # config.yaml registry). This is Haku's own Forgejo account (operator,
             # 2026-08-15) reflected in by tf/gitops/haku-state — a credential that
             # *can* write haku-state, fetched read-only here; the cheaper-privilege
             # alternative remains the read-only `claude` account. The console API pod
@@ -111,7 +110,7 @@ spec:
             - name: tmp
               mountPath: /tmp
             - name: config
-              mountPath: /etc/haku-console/config
+              mountPath: /etc/haku-indexer/config
               readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
@@ -122,4 +121,4 @@ spec:
           emptyDir: {}
         - name: config
           configMap:
-            name: haku-console-config
+            name: haku-indexer-chunk-haku-state-config

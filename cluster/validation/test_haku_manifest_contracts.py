@@ -1053,18 +1053,15 @@ def test_haku_indexer_worker_contract(k8s_dir: Path) -> None:
 
     The chunk role is one Deployment per logical index (#4886), and the expectations are derived
     from the deploy-owned `recall_indexes` registry rather than a fixed roster: every registry
-    index must have exactly one chunk pod that sweeps it, each carrying only that index's
-    credential — so a new registry index without a Deployment (or a Deployment for an unregistered
-    index) fails here.
+    index must have exactly one chunk pod, mounting only its own index's config slice and carrying
+    only that index's credential — so a new registry index without a Deployment (or a Deployment
+    for an unregistered index), and any drift between a slice and its registry entry, fails here.
     """
     console_dir = k8s_dir / "haku" / "console"
     config = yaml.safe_load((console_dir / "config.yaml").read_text(encoding="utf-8"))
     deployment = yaml.safe_load((console_dir / "deployment.yaml").read_text(encoding="utf-8"))
     server = one(c for c in deployment["spec"]["template"]["spec"]["containers"] if c["name"] == "server")
     server_env = {entry["name"]: entry for entry in server["env"]}
-    server_config_volume = one(
-        volume for volume in deployment["spec"]["template"]["spec"]["volumes"] if volume["name"] == "config"
-    )
     embed_raw = (console_dir / "indexer-embed-deployment.yaml").read_text(encoding="utf-8")
     embed = yaml.safe_load(embed_raw)
     embed_pod = embed["spec"]["template"]["spec"]
@@ -1072,29 +1069,44 @@ def test_haku_indexer_worker_contract(k8s_dir: Path) -> None:
     embed_env = {entry["name"]: entry for entry in embed_container["env"]}
     db_secret = embed_env["HAKU_INDEXER_DATABASE_URL"]["valueFrom"]["secretKeyRef"]["name"]
 
-    # One chunk Deployment per logical index, keyed by the index it sweeps — the same authority the
-    # running pod reads from `HAKU_INDEXER_INDEX_ID`. The naming convention ties file to index, and
-    # the set must equal the registry both ways: a registry index with no chunk pod, or a chunk pod
-    # for an unregistered index, fails.
-    chunk_by_index: dict[str, dict[str, Any]] = {}
-    for path in console_dir.glob("indexer-chunk-*-deployment.yaml"):
-        chunk = yaml.safe_load(path.read_text(encoding="utf-8"))
-        index_env = {entry["name"]: entry for entry in one(chunk["spec"]["template"]["spec"]["containers"])["env"]}
-        index_id = index_env["HAKU_INDEXER_INDEX_ID"]["value"]
-        assert path.name == f"indexer-chunk-{index_id}-deployment.yaml", path.name
-        chunk_by_index[index_id] = chunk
-    index_by_id = {index["index_id"]: index for index in config["recall_indexes"]}
-    assert set(chunk_by_index) == set(index_by_id)
-
     # Search joins `content_embeddings` on the model key the embed role writes, so reader and writer
     # must name the same model. (The endpoint address may legitimately differ; the model may not.)
     assert server_env["HAKU_CONSOLE_EMBEDDER__MODEL"]["value"] == embed_env["HAKU_INDEXER_EMBEDDER__MODEL"]["value"]
 
-    for index_id, chunk in chunk_by_index.items():
-        chunk_raw = (console_dir / f"indexer-chunk-{index_id}-deployment.yaml").read_text(encoding="utf-8")
+    kustomization = yaml.safe_load((console_dir / "kustomization.yaml").read_text(encoding="utf-8"))
+    generator_files = {entry["name"]: entry["files"] for entry in kustomization["configMapGenerator"]}
+    index_by_id = {index["index_id"]: index for index in config["recall_indexes"]}
+    chunk_index_ids: set[str] = set()
+    for path in sorted(console_dir.glob("indexer-chunk-*-deployment.yaml")):
+        chunk_raw = path.read_text(encoding="utf-8")
+        chunk = yaml.safe_load(chunk_raw)
         chunk_pod = chunk["spec"]["template"]["spec"]
         chunk_container = one(chunk_pod["containers"])
         chunk_env = {entry["name"]: entry for entry in chunk_container["env"]}
+
+        # Each pod is keyed by the one index its mounted config slice defines — the same authority
+        # the running pod reads (there is no selector env; the slice IS the selection). The chain
+        # pod volume -> generated ConfigMap -> slice file must resolve, and the naming convention
+        # ties Deployment, ConfigMap, and slice file to the index.
+        config_volume = one(volume for volume in chunk_pod["volumes"] if volume["name"] == "config")
+        configmap_name = config_volume["configMap"]["name"]
+        slice_key, _, slice_name = one(generator_files[configmap_name]).partition("=")
+        slice_config = yaml.safe_load((console_dir / slice_name).read_text(encoding="utf-8"))
+        index_id = one(slice_config["recall_indexes"])["index_id"]
+        assert index_id in index_by_id, f"{path.name} slices an unregistered index {index_id!r}"
+        chunk_index_ids.add(index_id)
+        assert path.name == f"indexer-chunk-{index_id}-deployment.yaml", path.name
+        assert chunk["metadata"]["name"] == f"haku-indexer-chunk-{index_id}"
+        assert configmap_name == f"haku-indexer-chunk-{index_id}-config"
+        assert slice_name == f"indexer-chunk-{index_id}-config.yaml"
+
+        # The slice is exactly the registry projection: this index's entry verbatim plus the Git CA
+        # bundle the console reads, and nothing else — so a console-only or another index's config
+        # change (or parse breakage) can never reach this pod. The config-file setting names the
+        # mounted slice.
+        assert slice_config == {"git_ca_bundle": config["git_ca_bundle"], "recall_indexes": [index_by_id[index_id]]}
+        config_mount = one(mount for mount in chunk_container["volumeMounts"] if mount["name"] == "config")
+        assert chunk_env["HAKU_INDEXER_CONFIG_FILE"]["value"] == f"{config_mount['mountPath']}/{slice_key}"
 
         # One binary, one role flag, the one Flux policy rewriting the same image as embed. A
         # replacement that cannot start (schema-incompatible image) crash-loops while the previous
@@ -1105,25 +1117,18 @@ def test_haku_indexer_worker_contract(k8s_dir: Path) -> None:
         assert chunk["spec"]["strategy"]["rollingUpdate"]["maxUnavailable"] == 0
 
         # Narrow identity: no ServiceAccount token, no secret shared with the console API pod (the
-        # API holds no index Git credential), and no embedder endpoint on the chunk role. Between
-        # chunk and embed exactly the narrow database role is shared.
+        # API holds no index Git credential). Between chunk and embed exactly the narrow database
+        # role is shared.
         assert chunk_pod["automountServiceAccountToken"] is False
         assert chunk_env["HAKU_INDEXER_DATABASE_URL"]["valueFrom"]["secretKeyRef"]["name"] == db_secret
         assert _secret_refs(server).isdisjoint(_secret_refs(chunk_container))
         assert _secret_refs(chunk_container) & _secret_refs(embed_container) == {db_secret}
-        assert not any(name.startswith("HAKU_INDEXER_EMBEDDER__") for name in chunk_env)
-
-        # The chunk role reads the one deploy-owned registry the console reads: the shared
-        # ConfigMap, mounted at the path the role's config-file setting names.
-        config_volume = one(volume for volume in chunk_pod["volumes"] if volume["name"] == "config")
-        assert config_volume["configMap"]["name"] == server_config_volume["configMap"]["name"]
-        config_mount = one(mount for mount in chunk_container["volumeMounts"] if mount["name"] == "config")
-        assert chunk_env["HAKU_INDEXER_CONFIG_FILE"]["value"] == f"{config_mount['mountPath']}/config.yaml"
 
         # Credential minimization by index: the registry names Git-read slots only for the indexes
         # that need them, and a chunk pod binds a Git slot — from a Secret — iff its own registry
-        # entry names it. An index without slots (the chat and anonymous-Git indexes) carries no
-        # Git credential, so the pod's secret set is exactly its DB role plus its own Git slots.
+        # entry names it. The pod's env is exactly its settings contract, {config_file,
+        # database_url} plus its own Git slots — in particular no embedder endpoint and no index
+        # selector — and its secret set is exactly its DB role plus its own Git slots.
         git_slots = {
             index_by_id[index_id][slot]
             for slot in ("username_env_var", "password_env_var")
@@ -1131,13 +1136,18 @@ def test_haku_indexer_worker_contract(k8s_dir: Path) -> None:
         }
         for var in git_slots:
             assert "secretKeyRef" in chunk_env[var]["valueFrom"], f"registry slot {var} unbound on {index_id}"
+        assert set(chunk_env) == {"HAKU_INDEXER_CONFIG_FILE", "HAKU_INDEXER_DATABASE_URL"} | git_slots
         git_secrets = {chunk_env[var]["valueFrom"]["secretKeyRef"]["name"] for var in git_slots}
         assert _secret_refs(chunk_container) == {db_secret} | git_secrets
 
         # Reloader watches exactly what each pod mounts.
         chunk_annotations = chunk["metadata"]["annotations"]
-        assert chunk_annotations["configmap.reloader.stakater.com/reload"] == config_volume["configMap"]["name"]
+        assert chunk_annotations["configmap.reloader.stakater.com/reload"] == configmap_name
         assert set(chunk_annotations["secret.reloader.stakater.com/reload"].split(",")) == _secret_refs(chunk_container)
+
+    # The chunk Deployments equal the registry both ways: a registry index with no chunk pod, or a
+    # chunk pod for an unregistered index, fails.
+    assert chunk_index_ids == set(index_by_id)
 
     # The embed role works off the database queue alone: exactly the shared DB role, no index Git
     # credential, no registry, and nothing else mounted either.

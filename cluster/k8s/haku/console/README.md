@@ -82,11 +82,15 @@ vocabulary policy remains in <../../../../haku/console/README.md> § Vocabularie
 `haku-indexer` (image `ghcr.io/agentydragon/haku-indexer` from `//haku/console:indexer_image`)
 runs the two maintenance stages of `haku/console/recall_index_sync.py` as one binary in
 role-flagged Deployments. The chunk role is one Deployment per logical index of the
-`recall_indexes` registry (shared `haku-console-config` ConfigMap):
-`indexer-chunk-<index>-deployment.yaml` runs `--role=chunk` with `HAKU_INDEXER_INDEX_ID=<index>`,
-so `haku-indexer-chunk-haku-state`, `-haku-conversations`, and `-ducktape-public` each sweep
-exactly their one index (startup crash-loops on an id absent from the registry). The embed role
-stays one shared Deployment — `haku-indexer-embed` (`indexer-embed-deployment.yaml`,
+`recall_indexes` registry: `indexer-chunk-<index>-deployment.yaml` runs `--role=chunk` mounting
+only its own index's config slice (`indexer-chunk-<index>-config.yaml`, its own generated
+ConfigMap), so `haku-indexer-chunk-haku-state`, `-haku-conversations`, and `-ducktape-public` each
+sweep exactly their one index — the mounted config is the selection, with no selector env, and one
+index's config change or parse breakage never touches another's pod. Each slice is the projection
+of the registry in `config.yaml` (which the console still reads whole); the derivation tests
+(`haku/console/test_deployment_config.py`, `cluster/validation/test_haku_manifest_contracts.py`)
+pin every slice to its registry entry and the Deployment set to the registry, both ways. The embed
+role stays one shared Deployment — `haku-indexer-embed` (`indexer-embed-deployment.yaml`,
 `--role=embed`) — draining the shared embedding queue. The API pod keeps only the database readers
 behind `haku_index.search`/`index_status`, so either role failing or rolling leaves search serving
 the last committed index state, with staleness visible in `index_status`.
@@ -100,12 +104,13 @@ embed replicas take disjoint batches, and conflict-safe vector insertion keeps e
 legacy reader from publishing a conflicting vector.
 
 Identity is deliberately narrow, and split to match the roles — and, for the chunk role, minimized
-per index. No pod mounts a ServiceAccount token or any of the console's operator/agent auth,
-approval-ledger, connector, or Web Push credentials, and no chunk pod holds an embedder endpoint.
-Only the `haku-state` chunk pod carries a Git credential — the `haku-forgejo-git` read slots its
-registry entry names; the `haku-conversations` (chat) and `ducktape-public` (anonymous HTTPS) chunk
-pods carry none. The embed pod holds the embedder endpoint and mounts nothing at all — not even the
-registry ConfigMap. Every pod shares exactly the `haku_indexer` database role. The role is declared
+per index: each pod's config surface mirrors its credential mounts. No pod mounts a ServiceAccount
+token or any of the console's operator/agent auth, approval-ledger, connector, or Web Push
+credentials, and no chunk pod holds an embedder endpoint or another index's definition. Only the
+`haku-state` chunk pod carries a Git credential — the `haku-forgejo-git` read slots its registry
+entry names; the `haku-conversations` (chat) and `ducktape-public` (anonymous HTTPS) chunk pods
+carry none. The embed pod holds the embedder endpoint and mounts nothing at all — not even a
+config slice. Every pod shares exactly the `haku_indexer` database role. The role is declared
 on the CNPG Cluster (`db/postgres-cluster.yaml` `managed.roles`; password from the ESO-generated
 `haku-console-db-indexer` Secret). Its object grants are `indexer-role.sql` — recall-index tables
 read/write plus `SELECT` on `conversation_item`, nothing else — applied by the

@@ -123,6 +123,7 @@ py_test(
     data = [
         "//cluster/k8s:haku_console_config",
         "//cluster/k8s:haku_console_deployment",
+        "//cluster/k8s:haku_indexer_chunk_configs",
         "//cluster/k8s:haku_indexer_deployments",
     ],
     deps = [
