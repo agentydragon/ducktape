@@ -3,18 +3,6 @@ load("//devinfra/python:defs.bzl", "py_library")
 package(default_testonly = True)
 
 py_library(
-    name = "assertions",
-    srcs = ["assertions.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//agent_core:agent",
-        "//openai_utils:model",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-    ],
-)
-
-py_library(
     name = "fixtures",
     srcs = ["fixtures.py"],
     visibility = ["//:__subpackages__"],

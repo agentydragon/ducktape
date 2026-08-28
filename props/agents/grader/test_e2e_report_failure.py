@@ -4,7 +4,7 @@ Verifies that when the LLM calls report_failure:
 1. The grader container exits with code 1 (failure)
 2. The AgentRun record is marked EXITED with container_exit_code=1
 3. The mock script is fully consumed — report_failure is the last scripted
-   response, so no further LLM calls are made (AbortIf fires first)
+   response, so no further LLM calls are made (the termination handler fires first)
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ async def test_grader_report_failure_exits_with_failure(
     """report_failure causes grader to exit with code 1.
 
     The mock yields one response (the report_failure tool call). The agent
-    processes it (state.failed=True), then AbortIf fires before the next LLM
+    processes it (state.failed=True), then the termination handler fires before the next LLM
     call — so the mock generator is left paused at its last yield rather than
     completed. We track that the tool was actually reached via an asyncio.Event.
     """

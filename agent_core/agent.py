@@ -349,8 +349,6 @@ class Agent:
         self.assistant_text_chunks: list[str] = []
         self.pending_function_calls: list[FunctionCallItem] = []
         self.finished: bool = False
-        # Track function calls for debugging
-        self._function_call_map: dict[str, FunctionCallItem] = {}
         self._handlers = list(handlers)
         if not self._handlers:
             raise ValueError(
@@ -359,8 +357,6 @@ class Agent:
                 "Add a handler:\n"
                 "  • DisplayEventsHandler() - for console output\n"
                 "  • TranscriptHandler(events_path=...) - for logging\n"
-                "  • AbortIf(lambda: should_stop) - to abort when condition is met\n"
-                "  • SequenceHandler([...]) - for fixed action sequences\n"
                 "  • Custom handler - subclass BaseHandler for specialized control"
             )
 
@@ -832,7 +828,7 @@ class Agent:
                 h.on_response(
                     Response(response_id=resp.id, request_id=request_id, usage=usage, model=self._client.model)
                 )
-        # Note: Loop termination is now controlled by handlers (e.g., AbortIf, MaxTurnsHandler)
+        # Note: Loop termination is controlled by handlers (e.g., MaxTurnsHandler)
         # or explicit tool policies (e.g., RequireAnyTool prevents text-only responses)
 
     def _process_resp_output(
@@ -883,8 +879,6 @@ class Agent:
                 call_id = _require_call_id(item)
                 self._transcript.append(item)
                 self._notify_handlers_for_transcript_item(item)
-                # Store in map for quick lookup when processing outputs
-                self._function_call_map[call_id] = item
                 if call_id in handled_call_ids:
                     continue
                 self.pending_function_calls.append(item)
