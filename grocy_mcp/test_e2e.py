@@ -44,7 +44,7 @@ from opentelemetry import trace
 from grocy_mcp.client import GrocyClient
 from grocy_mcp.grocy_container import make_settings
 from grocy_mcp.server import build_mcp
-from grocy_mcp.test_helpers import RefData, create_refunwrap_result, unwrap_result
+from grocy_mcp.testing.helpers import RefData, create_refunwrap_result, unwrap_result
 from grocy_mcp.tool_metadata import TOOL_OVERRIDES
 from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 

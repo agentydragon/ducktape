@@ -40,7 +40,7 @@ from finance.augur.sim.scenario import (
     TaxProfile,
 )
 from finance.augur.sim.simulate import simulate, simulate_with_external_series
-from finance.augur.sim.test_state_helpers import liabilities, property_stakes, property_state
+from finance.augur.sim.testing.state_helpers import liabilities, property_stakes, property_state
 
 LOCATION_ID = "loc"
 LOCATIONS = {

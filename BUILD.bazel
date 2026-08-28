@@ -76,6 +76,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
     ],
 )
 

@@ -33,7 +33,7 @@ from finance.augur.sim.scenario import (
     TargetAllocationPolicy,
 )
 from finance.augur.sim.simulate import simulate
-from finance.augur.sim.test_state_helpers import asset_lots, cash_balances, rollout_status
+from finance.augur.sim.testing.state_helpers import asset_lots, cash_balances, rollout_status
 
 _HORIZON = 4
 _STOCK = SecurityKey(symbol=SecuritySymbol("vti"))

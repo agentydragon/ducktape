@@ -4,7 +4,7 @@ Goal: `bb run //devinfra:gazelle` completes, a rerun is a no-op, and CI enforces
 diffs — a BUILD delta then only ever means real dependency drift. Verified on a scratch
 run of this branch (BuildBuddy invocation `d479a44c-da6c-4648-bdde-19a18ece2829`): with
 the burn-down below applied, gazelle completes with a purely mechanical residual diff
-(~226 files, +3226/−1190) and no destructive edits. Until step 3 lands, use
+(~226 files, +3226/−1190) and no destructive edits. Until step 2 lands, use
 `--mode=diff` only — a write-mode run aborts on the name collisions below _after_
 rewriting the packages it already visited.
 
@@ -60,7 +60,7 @@ map_kind to existing rules too, rewriting hand-written binaries' kind to `py_lib
 
 ## Burn-down
 
-Independently landable PRs; step 3's per-tree PRs go in parallel.
+Independently landable PRs; step 2's per-tree PRs go in parallel.
 
 1. **Resolution directives + escapes** (scratch-run inventory: 46 files with imports
    gazelle cannot resolve):
@@ -84,13 +84,7 @@ Independently landable PRs; step 3's per-tree PRs go in parallel.
      `cluster/docs/inference/runs/`, and one-off script dirs (`tgarchive/`,
      `x/rl_finetune/`, `skills/*/scripts/`, …) — or give them real deps where they
      should build. Also fix the malformed `x/agent_cli` map_kind directive.
-2. **conftest normalization**: root `conftest.py` imports `pytest_asyncio` (dep
-   `@pypi//pytest_asyncio`) so the plugin's `//:conftest` chain carries the plugin into
-   every test — replaces the 108 per-test hand deps, which gazelle removes as
-   unimported. Move the three test-glob-named helper modules
-   (`finance/augur/sim/test_state_helpers.py`, `grocy_mcp/test_helpers.py`,
-   `skills/skill_frontmatter_test.py`) into `testing/` packages.
-3. **Per-tree structural migration** (one PR per tree: `devinfra`, `finance`, `haku`,
+2. **Per-tree structural migration** (one PR per tree: `devinfra`, `finance`, `haku`,
    `mcp_infra`, `tana`, `skills`, `x`, remainder), references updated in the same
    commit:
    - Rename the 77 binaries squatting module stem names; rename `_bin` aspect image
@@ -105,11 +99,11 @@ Independently landable PRs; step 3's per-tree PRs go in parallel.
    - Move the 9 subdir-reaching rules (`mcp_infra/exec:docker_types`,
      `skills/forgejo:forgejo_lib`, `inventree_utils:samplebooks_parts_data`, the six
      `finance/augur/sim` subdir tests) into the file's own package.
-4. **The run**: `bb run //devinfra:gazelle`; review the mechanical residue — ancestor
+3. **The run**: `bb run //devinfra:gazelle`; review the mechanical residue — ancestor
    conftest deps (~350 tests gain `//:conftest`), direct deps that were only transitive
    (`numpy`, `jaxtyping`), dead hand deps dropped — and land it. Rerun to confirm
    no-op.
-5. **Enforcement**: bazel-ci step running `--mode=diff` (fails nonzero on drift);
+4. **Enforcement**: bazel-ci step running `--mode=diff` (fails nonzero on drift);
    graduate these conventions into README §Gazelle / STYLE.md and delete this plan.
 
 ## Known limitations
