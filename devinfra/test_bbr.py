@@ -8,6 +8,8 @@
 """
 
 import json
+import subprocess
+import sys
 import uuid
 from pathlib import Path
 
@@ -20,10 +22,12 @@ from devinfra.bbr import (
     RepoConfig,
     _bazelrc_args,
     _env_args,
+    _extract_invocation_id_file,
     _read_repo_config,
     build_command,
     check_base_branch_freshness,
     find_verb_index,
+    main,
 )
 
 BB = "/usr/bin/bb"
@@ -334,6 +338,79 @@ class TestBuildCommand:
         monkeypatch.delenv("BBR_BAZELRC", raising=False)
         cmd, inv_id = build_command(repo, ["test", "//foo"])
         assert cmd == [BB, "remote", "test", f"--invocation_id={inv_id}", "//foo"]
+
+
+class TestExtractInvocationIdFile:
+    def test_absent(self) -> None:
+        assert _extract_invocation_id_file(["test", "//foo"]) == (["test", "//foo"], None)
+
+    def test_stripped_anywhere(self) -> None:
+        """bbr's own flag is recognized before or after the verb, like --dry-run."""
+        args, path = _extract_invocation_id_file(["test", "--invocation-id-file=/tmp/inv", "//foo"])
+        assert args == ["test", "//foo"]
+        assert path == Path("/tmp/inv")
+
+    def test_last_wins(self) -> None:
+        args, path = _extract_invocation_id_file(
+            ["--invocation-id-file=/tmp/a", "test", "--invocation-id-file=/tmp/b", "//foo"]
+        )
+        assert args == ["test", "//foo"]
+        assert path == Path("/tmp/b")
+
+
+class TestMain:
+    def _setup(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, argv: list[str]) -> None:
+        repo = _make_repo(tmp_path)
+        _setup_repo_config(repo)
+        monkeypatch.setattr("devinfra.bbr._find_bb", lambda: BB)
+        for var in ("BBR_REMOTE_ARGS", "BBR_BAZELRC"):
+            monkeypatch.delenv(var, raising=False)
+        monkeypatch.chdir(Path(repo.workdir))
+        monkeypatch.setattr(sys, "argv", ["bbr", *argv])
+
+    def test_id_printed_and_recorded_before_run(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """An interrupted run must still leave the ID on stderr and in the file."""
+        id_file = tmp_path / "inv_id"
+        at_run_start: dict[str, str] = {}
+
+        def fake_run(cmd: list[str], check: bool) -> subprocess.CompletedProcess[bytes]:
+            at_run_start["stderr"] = capsys.readouterr().err
+            at_run_start["file"] = id_file.read_text()
+            return subprocess.CompletedProcess(cmd, 17)
+
+        monkeypatch.setattr("devinfra.bbr.subprocess.run", fake_run)
+        self._setup(tmp_path, monkeypatch, [f"--invocation-id-file={id_file}", "test", "//foo"])
+        with pytest.raises(SystemExit) as excinfo:
+            main()
+
+        assert excinfo.value.code == 17  # bb remote's exit code is propagated
+        inv_id = at_run_start["file"]
+        uuid.UUID(inv_id)
+        assert f"bbr: invocation {inv_id}" in at_run_start["stderr"]
+        # Post-run summary repeats the ID with bbapi recipes.
+        post_run = capsys.readouterr().err
+        assert inv_id in post_run
+        assert "bbapi" in post_run
+
+    def test_invocation_id_file_without_verb_errors(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """No verb means no ID to record — refuse instead of silently skipping the write."""
+
+        def fail_run(cmd: list[str], check: bool) -> subprocess.CompletedProcess[bytes]:
+            raise AssertionError("bb remote must not run")
+
+        monkeypatch.setattr("devinfra.bbr.subprocess.run", fail_run)
+        id_file = tmp_path / "inv_id"
+        self._setup(tmp_path, monkeypatch, [f"--invocation-id-file={id_file}", "--flag", "//foo"])
+        with pytest.raises(SystemExit) as excinfo:
+            main()
+
+        assert excinfo.value.code == 1
+        assert "--invocation-id-file" in capsys.readouterr().err
+        assert not id_file.exists()
 
 
 def _commit(repo: pygit2.Repository, ref: str, message: str, parents: list) -> pygit2.Oid:

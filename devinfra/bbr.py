@@ -17,11 +17,6 @@ from pathlib import Path
 
 import pygit2
 
-# Last-started invocation ID, for interactive `cat`-based recipes (snapshot
-# update hints, README workflows). bbr only writes it — the reported ID is
-# minted in build_command, never read back from shared state.
-_INVOCATION_ID_FILE = Path.home() / ".cache" / "bbr" / "last_invocation_id"
-
 # Commits HEAD can be ahead of the likely bb-remote diff base before we refuse
 # to run (see check_base_branch_freshness) — at that distance the runner-side
 # patchset tends to fail to apply outright, after minutes of setup.
@@ -249,10 +244,22 @@ def build_command(repo: pygit2.Repository, user_args: list[str]) -> tuple[list[s
     return cmd, invocation_id
 
 
+def _extract_invocation_id_file(args: list[str]) -> tuple[list[str], Path | None]:
+    """Strip bbr's own --invocation-id-file=PATH flag from args (last wins)."""
+    path = None
+    remaining = []
+    for arg in args:
+        if arg.startswith("--invocation-id-file="):
+            path = Path(arg.removeprefix("--invocation-id-file="))
+        else:
+            remaining.append(arg)
+    return remaining, path
+
+
 _HELP = """\
 bbr — wrapper around `bb remote` with layered configuration.
 
-Usage: bbr [--dry-run] [--help] <bazel-verb> [flags...] [targets...]
+Usage: bbr [--dry-run] [--invocation-id-file=PATH] [--help] <bazel-verb> [flags...] [targets...]
 
 Configuration layers (last-wins for Bazel flags):
   Repo      devinfra/bbr.json          runner properties, container image, bazel_args
@@ -261,8 +268,9 @@ Configuration layers (last-wins for Bazel flags):
   CLI       user args                  flags and targets (override everything)
 
 Flags:
-  --dry-run   Print the assembled command without executing
-  --help      Show this help
+  --dry-run                  Print the assembled command without executing
+  --invocation-id-file=PATH  Write the run's invocation ID to PATH before the run
+  --help                     Show this help
 
 Environment variables:
   BBR_BAZELRC       Path to a bazelrc-format file with Bazel flags to forward.
@@ -288,6 +296,7 @@ def main() -> None:
     dry_run = "--dry-run" in args
     if dry_run:
         args.remove("--dry-run")
+    args, invocation_id_file = _extract_invocation_id_file(args)
 
     repo = pygit2.Repository(".")
     if message := check_base_branch_freshness(repo):
@@ -295,15 +304,20 @@ def main() -> None:
         if not os.environ.get("BBR_ALLOW_STALE_BASE"):
             sys.exit(1)
     cmd, invocation_id = build_command(repo, args)
+    if invocation_id is None and invocation_id_file is not None:
+        print("bbr: --invocation-id-file: no bazel verb, so no invocation ID to record", file=sys.stderr)
+        sys.exit(1)
 
     if dry_run:
         print(" ".join(cmd))
         return
 
     if invocation_id is not None:
-        # Written before exec so the ID is readable while the run is in flight.
-        _INVOCATION_ID_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _INVOCATION_ID_FILE.write_text(invocation_id)
+        # Printed and recorded before exec so interrupted runs still leave the ID.
+        print(f"bbr: invocation {invocation_id}", file=sys.stderr)
+        if invocation_id_file is not None:
+            invocation_id_file.parent.mkdir(parents=True, exist_ok=True)
+            invocation_id_file.write_text(invocation_id)
 
     result = subprocess.run(cmd, check=False)
     if invocation_id is not None:
