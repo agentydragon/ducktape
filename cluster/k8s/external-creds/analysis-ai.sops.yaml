@@ -1,7 +1,3 @@
-# Analysis.AI API key.
-# Fill in the placeholder, then encrypt this file in place:
-#   sops --encrypt --in-place cluster/k8s/external-creds/analysis-ai.sops.yaml
-# Add this file to kustomization.yaml only after it has been encrypted.
 apiVersion: v1
 kind: Secret
 metadata:
