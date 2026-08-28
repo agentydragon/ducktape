@@ -11,6 +11,8 @@ const ENVELOPE = {
   status: "released" as const,
   created_at: "2026-08-23T10:00:00Z",
   expires_at: "2026-08-23T11:00:00Z",
+  released_at: "2026-08-23T10:15:00Z",
+  revoked_at: null,
   end_reason: "probe complete",
 };
 
@@ -20,7 +22,6 @@ const KUBERNETES_VIEW = {
     ...ENVELOPE,
     scope: { kind: "namespaces" as const, namespaces: ["haku-sandbox"] },
     rules: [{ api_groups: [""], resources: ["pods"], verbs: ["get", "list"] }],
-    ended_at: "2026-08-23T10:15:00Z",
   },
 };
 
