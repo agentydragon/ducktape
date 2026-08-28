@@ -309,6 +309,13 @@ The token limits expose only integer `percentage` values, not raw used/total
 token counts, so sub-1% burn is invisible. Track fine-grained token burn from
 your own usage totals, not this endpoint.
 
+Since the [2026-07-30 plan revision](https://docs.z.ai/devpack/notice/usage-revision),
+Coding Plans meter **credits** rather than prompt counts, and GLM-5.3 / GLM-5-Turbo
+burn at a **3x coefficient during peak hours** (14:00-18:00 SGT, Mon-Fri) against
+1x off-peak. The window structure this endpoint reports is unchanged, but a given
+`percentage` delta buys a third as much work inside the peak window. Plan-shape
+tradeoffs are in <docs/ai_subscription_comparison.md>.
+
 ### `GET /api/monitor/usage/model-usage`
 
 Works with API key. Returns daily model call counts and token usage over a date

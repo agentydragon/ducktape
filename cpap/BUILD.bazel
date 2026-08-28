@@ -21,7 +21,7 @@ py_library(
 )
 
 py_library(
-    name = "sync_lib",
+    name = "sync",
     srcs = ["sync.py"],
     deps = [
         ":card",
@@ -31,9 +31,9 @@ py_library(
 )
 
 py_binary(
-    name = "sync",
+    name = "sync_bin",
     main_module = "cpap.sync",
-    deps = [":sync_lib"],
+    deps = [":sync"],
 )
 
 py_test(
@@ -41,7 +41,7 @@ py_test(
     srcs = ["test_sync.py"],
     deps = [
         ":card",
-        ":sync_lib",
+        ":sync",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -61,24 +61,24 @@ py_test(
 # ── OCI Image ────────────────────────────────────────────────────────────────
 
 aspect_py_binary(
-    name = "sync_bin",
+    name = "sync_image_bin",
     main = "sync.py",
-    deps = [":sync_lib"],
+    deps = [":sync"],
 )
 
 py_image_layer(
     name = "layers",
-    binary = ":sync_bin",
+    binary = ":sync_image_bin",
 )
 
 oci_image(
     name = "image",
     base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("sync_bin"),
+    entrypoint = py_image_entrypoint("sync_image_bin"),
     # Shared CA bundle so the C git binary can verify the Forgejo TLS cert; the apt
     # :flat layer alone has no usable bundle. See //third_party/debian_slim:cacerts.
     env = py_image_env(
-        binary_name = "sync_bin",
+        binary_name = "sync_image_bin",
         extra_env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
     ),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},

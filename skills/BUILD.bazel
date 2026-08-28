@@ -1,3 +1,10 @@
+# skill_spec_library() (defs.bzl) generates each <name>_skill_spec module;
+# gazelle cannot see generated sources, so pin the imports to their targets.
+# gazelle:resolve py skills.eval_infra.empty_skill.empty_skill_skill_spec //skills/eval_infra/empty_skill:empty_skill_skill_spec
+# gazelle:resolve py skills.freecad.freecad_skill_spec //skills/freecad:freecad_skill_spec
+# gazelle:resolve py skills.info_gathering.info_gathering_skill_spec //skills/info_gathering:info_gathering_skill_spec
+# gazelle:resolve py skills.reverse_engineer.reverse_engineer_skill_spec //skills/reverse_engineer:reverse_engineer_skill_spec
+
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 exports_files(

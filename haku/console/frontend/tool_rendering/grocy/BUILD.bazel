@@ -10,6 +10,7 @@ TSCONFIG = "//haku/console/frontend:tsconfig"
 ts_library(
     name = "actions",
     srcs = ["actions.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         "//haku/console/frontend:mcp_tool_schema",
@@ -21,6 +22,7 @@ ts_library(
 ts_library(
     name = "requests",
     srcs = ["requests.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@mantine/core",
@@ -39,6 +41,7 @@ ts_library(
 ts_library(
     name = "responses",
     srcs = ["responses.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":requests",
@@ -62,6 +65,7 @@ filegroup(
 ts_library(
     name = "requests_test",
     srcs = ["requests.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":requests",
@@ -73,6 +77,7 @@ ts_library(
 ts_library(
     name = "responses_test",
     srcs = ["responses.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":responses",
@@ -84,6 +89,7 @@ ts_library(
 ts_library(
     name = "preview_harness",
     srcs = ["preview_harness.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":preview_mock",
@@ -95,6 +101,7 @@ ts_library(
 ts_library(
     name = "fixtures",
     srcs = ["fixtures.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = ["//haku/console/frontend:grocy_client"],
 )
@@ -102,6 +109,7 @@ ts_library(
 ts_library(
     name = "preview_mock",
     srcs = ["preview_mock.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":fixtures",

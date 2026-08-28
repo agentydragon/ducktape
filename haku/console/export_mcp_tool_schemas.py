@@ -107,6 +107,10 @@ _FRONTEND_SCHEMA_KEYWORDS = frozenset(
         "oneOf",
         "pattern",
         "properties",
+        # Annotation-only (no validation semantics): pydantic stamps computed fields
+        # (e.g. the grant envelope's derived `status`) readOnly in serialization schemas;
+        # z.fromJSONSchema ignores it.
+        "readOnly",
         "required",
         "title",
         "type",

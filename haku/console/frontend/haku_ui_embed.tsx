@@ -106,7 +106,7 @@ export function HakuUiEmbed({
   conversationId?: string | null;
   sessionFramesId?: string | null;
   onNavigate: (view: ConsoleNavigationView) => void;
-}) {
+}): JSX.Element {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const viewRef = useRef(view);
   viewRef.current = view;

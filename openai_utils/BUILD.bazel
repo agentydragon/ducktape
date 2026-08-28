@@ -209,14 +209,14 @@ live_openai_py_test(
 )
 
 py_library(
-    name = "probe_context_window_lib",
+    name = "probe_context_window",
     srcs = ["probe_context_window.py"],
     visibility = ["//:__subpackages__"],
 )
 
 py_binary(
-    name = "probe_context_window",
+    name = "probe_context_window_bin",
     imports = [".."],
     main_module = "openai_utils.probe_context_window",
-    deps = [":probe_context_window_lib"],
+    deps = [":probe_context_window"],
 )

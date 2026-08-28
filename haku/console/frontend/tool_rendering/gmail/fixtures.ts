@@ -4,14 +4,14 @@ type GmailThread = McpToolResultFor<"gmail", "threads_get">;
 type GmailMessage = McpToolResultFor<"gmail", "messages_get">;
 type GmailLabels = McpToolResultFor<"gmail", "labels_list">;
 
-const GMAIL_LABELS = {
+const GMAIL_LABELS: GmailLabels = {
   labels: [
     { id: "INBOX", name: "Inbox", type: "system" },
     { id: "Label_Work", name: "Work", type: "user" },
     { id: "Label_Receipts", name: "Receipts", type: "user" },
     { id: "Label_Newsletters", name: "Newsletters", type: "user" },
   ],
-} satisfies GmailLabels;
+};
 
 function thread(id: string, subject: string, snippet: string, labelIds: string[]): GmailThread {
   return {
@@ -60,14 +60,14 @@ const GMAIL_MESSAGES: Readonly<Record<string, GmailMessage>> = Object.fromEntrie
 );
 
 export const GMAIL_MCP_FIXTURES = {
-  gmail__labels_list: () => GMAIL_LABELS,
-  gmail__threads_get: (args: Record<string, unknown>) => {
+  gmail__labels_list: (): typeof GMAIL_LABELS => GMAIL_LABELS,
+  gmail__threads_get: (args: Record<string, unknown>): GmailThread => {
     const threadId = args.id;
     const result = typeof threadId === "string" ? GMAIL_THREADS[threadId] : undefined;
     if (result === undefined) throw new Error(`No Gmail thread fixture for ${String(threadId)}`);
     return result;
   },
-  gmail__messages_get: (args: Record<string, unknown>) => {
+  gmail__messages_get: (args: Record<string, unknown>): GmailMessage => {
     const messageId = args.id;
     const result = typeof messageId === "string" ? GMAIL_MESSAGES[messageId] : undefined;
     if (result === undefined) throw new Error(`No Gmail message fixture for ${String(messageId)}`);

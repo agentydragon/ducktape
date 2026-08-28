@@ -586,7 +586,7 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
   );
 }
 
-export function ConversationsPage({ conversationId }: { conversationId: string | null }) {
+export function ConversationsPage({ conversationId }: { conversationId: string | null }): JSX.Element {
   return conversationId === null ? (
     <ConversationListPage />
   ) : (

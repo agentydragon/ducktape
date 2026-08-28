@@ -28,7 +28,7 @@ py_library(
 )
 
 py_library(
-    name = "main_lib",
+    name = "main",
     srcs = ["main.py"],
     visibility = ["//:__subpackages__"],
     deps = [
@@ -48,7 +48,7 @@ py_library(
 )
 
 py_library(
-    name = "extract_pdfs_lib",
+    name = "extract_pdfs",
     srcs = ["extract_pdfs.py"],
     visibility = ["//:__subpackages__"],
     deps = [
@@ -60,7 +60,7 @@ py_library(
 )
 
 py_library(
-    name = "parse_eob_listing_lib",
+    name = "parse_eob_listing",
     srcs = ["parse_eob_listing.py"],
     visibility = ["//:__subpackages__"],
     deps = [
@@ -70,32 +70,32 @@ py_library(
 )
 
 py_binary(
-    name = "parse_eob_listing",
+    name = "parse_eob_listing_bin",
     main_module = "x.eob_matching.parse_eob_listing",
     visibility = ["//visibility:public"],
-    deps = [":parse_eob_listing_lib"],
+    deps = [":parse_eob_listing"],
 )
 
 py_binary(
     name = "eob_matching",
     main_module = "x.eob_matching.main",
     visibility = ["//visibility:public"],
-    deps = [":main_lib"],
+    deps = [":main"],
 )
 
 py_binary(
-    name = "extract_pdfs",
+    name = "extract_pdfs_bin",
     main_module = "x.eob_matching.extract_pdfs",
     visibility = ["//visibility:public"],
-    deps = [":extract_pdfs_lib"],
+    deps = [":extract_pdfs"],
 )
 
 py_library(
-    name = "eval_extraction_lib",
+    name = "eval_extraction",
     srcs = ["eval_extraction.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":extract_pdfs_lib",
+        ":extract_pdfs",
         ":models",
         ":pdf_utils",
         "@pypi//pydantic",
@@ -103,8 +103,8 @@ py_library(
 )
 
 py_binary(
-    name = "eval_extraction",
+    name = "eval_extraction_bin",
     main_module = "x.eob_matching.eval_extraction",
     visibility = ["//visibility:public"],
-    deps = [":eval_extraction_lib"],
+    deps = [":eval_extraction"],
 )

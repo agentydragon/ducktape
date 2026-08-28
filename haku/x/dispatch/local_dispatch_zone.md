@@ -150,7 +150,7 @@ guess. The probe contract for a local worker model should include at least:
 - Optional parity probes for OpenAI Chat and OpenAI Responses, kept for diagnostics even
   if the worker harness uses Anthropic shape.
 
-Use the existing `//debug/litellm_probe:probe_models` target for this. Its
+Use the existing `//debug/litellm_probe:probe_models_bin` target for this. Its
 `results.jsonl` records are keyed by `POST + URL + canonical JSON request body`, so
 reruns can preserve successful checks and rerun only failed or missing exchanges.
 

@@ -50,7 +50,7 @@ cpio_archive = rule(
         ),
         "out": attr.output(mandatory = True),
         "_tool": attr.label(
-            default = "//devinfra/cpio:cpio_tool",
+            default = "//devinfra/cpio:cpio_tool_bin",
             executable = True,
             cfg = "exec",
         ),

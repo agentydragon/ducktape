@@ -5,7 +5,7 @@ root, no bridge networking, UID mapping). The container was built with
 `podman build` and inspected via `podman create` + `podman mount` because
 `podman run` did not work under gVisor. podman/buildah/fuse-overlayfs are no
 longer in the container; the canonical build path is now
-`bazel run //devinfra/claude/web_env/tools:build_and_diff` (see <../AGENTS.md>).
+`bazel run //devinfra/claude/web_env/tools:build_and_diff_bin` (see <../AGENTS.md>).
 
 This file preserves the obsolete procedure for reference only. **Do not run it
 on Firecracker sessions.**
@@ -34,18 +34,18 @@ CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf \
     -t claude-code-web-recreated .
 
 # Capture live manifest (ground truth)
-bazel run //devinfra/claude/web_env/tools:capture_manifest -- > live_manifest.ndjson
+bazel run //devinfra/claude/web_env/tools:capture_manifest_bin -- > live_manifest.ndjson
 
 # Capture built manifest (via podman mount — can't podman run under gVisor)
 CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf \
   podman create --name capture-tmp localhost/claude-code-web-recreated /bin/true
 MOUNT_PATH=$(CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf podman mount capture-tmp)
-bazel run //devinfra/claude/web_env/tools:capture_manifest -- "$MOUNT_PATH" > built_manifest.ndjson
+bazel run //devinfra/claude/web_env/tools:capture_manifest_bin -- "$MOUNT_PATH" > built_manifest.ndjson
 CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf podman unmount capture-tmp
 CONTAINERS_STORAGE_CONF=/tmp/storage-tmpfs-vfs.conf podman rm capture-tmp
 
 # Diff
-bazel run //devinfra/claude/web_env/tools:diff_manifests -- \
+bazel run //devinfra/claude/web_env/tools:diff_manifests_bin -- \
   live_manifest.ndjson built_manifest.ndjson -o diff_report.md
 ```
 

@@ -664,7 +664,7 @@ export type IndicatorPanel = "location" | "screenshot" | "sync-status" | "sessio
 
 // Trusted chrome lives in a real left-hand layout rail. Page navigation is independent from the
 // approvals drawer, while the three compact indicator popovers are mutually exclusive.
-export function ShellChrome(props: ShellChromeProps) {
+export function ShellChrome(props: ShellChromeProps): JSX.Element {
   const {
     approvalsOpen,
     onApprovalsOpenChange,

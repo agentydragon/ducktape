@@ -9,12 +9,15 @@ import prettyMs from "pretty-ms";
 import type { z } from "zod";
 
 import { CodeBlock } from "../../code_block";
-import { mcpToolSchema } from "../../mcp_tool_schema";
+import { mcpToolSchema, type McpToolArgumentsFor } from "../../mcp_tool_schema";
 import { definePreview, type ToolPreview } from "../entry";
 import { clampBlock, PreviewText, PreviewTitle, type PreviewProps } from "../vocabulary";
 import { HOSTEXEC_SERVER_ID } from "../server_ids";
 
-const zBashArgs = mcpToolSchema(HOSTEXEC_SERVER_ID, "bash");
+const zBashArgs: z.ZodType<McpToolArgumentsFor<typeof HOSTEXEC_SERVER_ID, "bash">> = mcpToolSchema(
+  HOSTEXEC_SERVER_ID,
+  "bash"
+);
 
 export type BashArgs = z.infer<typeof zBashArgs>;
 
@@ -56,6 +59,8 @@ function BashPreview({ args, variant }: PreviewProps<BashArgs>) {
   );
 }
 
-export const hostexecPreviews = {
+export const hostexecPreviews: {
+  bash: ToolPreview<typeof zBashArgs>;
+} = {
   bash: definePreview(zBashArgs, BashPreview),
 } satisfies Record<string, ToolPreview>;

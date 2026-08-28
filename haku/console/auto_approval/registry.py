@@ -18,7 +18,7 @@ from haku.console.auto_approval.github import (
 )
 from haku.console.auto_approval.gmail import LABEL_NAMESPACE_TOOLS, evaluate_label_namespace
 from haku.console.auto_approval.kubernetes import evaluate_passthrough_redundancy
-from haku.console.kubernetes_authorization import KubernetesAuthorizationService
+from haku.console.grants.kubernetes.authorization import KubernetesAuthorizationService
 from haku.console.mcp_config import (
     AnyOfAutoApprovalPolicy,
     AutoApprovalPolicy,

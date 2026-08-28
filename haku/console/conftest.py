@@ -50,6 +50,11 @@ from third_party.containers.rlocations import PGVECTOR_PG18
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import start_postgres_container
 
+# Fixtures hand out postgresql+psycopg:// and postgresql+asyncpg:// URLs; SQLAlchemy
+# loads both dialects at runtime, so gazelle cannot see either dependency.
+# gazelle:include_dep @pypi//asyncpg
+# gazelle:include_dep @pypi//psycopg
+
 # A default static agent so `create_app`'s require-a-/mcp-credential invariant is satisfied without
 # every test spelling one out — the real deploy always has the `haku` agent. Tests that exercise
 # agent auth pass their own `config_file` naming the agents (and bearer) they need.

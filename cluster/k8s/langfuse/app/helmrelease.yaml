@@ -158,7 +158,24 @@ spec:
         existingSecret: langfuse-secrets
         existingSecretKey: clickhouse-password
       replicaCount: 1
-      resourcesPreset: medium
+      resources:
+        requests:
+          # A starting value only: the namespace is on RequestsOnly via the
+          # default-vpa-requests-only Kyverno policy, so VPA owns the request
+          # from here and the limits below are what actually apply.
+          cpu: 200m
+          memory: 1Gi
+          ephemeral-storage: 50Mi
+        limits:
+          # Cold start loads every part's metadata and immediately schedules
+          # the merges that accumulated while the server was down, so the
+          # budget that matters is the startup one, not steady state. The
+          # server must bind HTTP within the liveness probe's 10s + 3x10s or
+          # the kubelet kills it and the next start begins cold again.
+          cpu: "2"
+          # Resident set sits ~1.6Gi and VPA's own upper bound reached ~2.5Gi.
+          memory: 3Gi
+          ephemeral-storage: 2Gi
       # Disable ClickHouse's built-in self-profiling system logs. These grew
       # to 3.8 GiB in ~2 weeks, causing OOMKills at the 1.5 GiB limit.
       # Uses `remove="1"` to fully strip log table definitions from merged
@@ -172,9 +189,16 @@ spec:
           <text_log remove="1" />
           <metric_log remove="1" />
           <asynchronous_metric_log remove="1" />
+          <part_log remove="1" />
+          <latency_log remove="1" />
+          <query_metric_log remove="1" />
+          <error_log remove="1" />
           <query_log>
-            <max_size_rows>8192</max_size_rows>
-            <reserved_size_rows>8192</reserved_size_rows>
+            <!-- `ttl` is the retention control here. `max_size_rows` is the
+                 in-memory flush threshold, not a cap on stored rows: lowering
+                 it makes the table flush more often and accumulate parts,
+                 which is the opposite of the intent. -->
+            <ttl>event_date + INTERVAL 3 DAY DELETE</ttl>
           </query_log>
         </clickhouse>
       clusterEnabled: false

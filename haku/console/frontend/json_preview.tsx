@@ -38,7 +38,7 @@ const MAX_WIDTH = 72;
 /** A tool call's arguments as a syntax-highlighted, foldable JSON code block. Compact auto-folds to
  * fill the block with leading entries (see CodeBlock); detailed shows the full value with line
  * numbers. Width-aware pretty-print keeps short collections inline either way. */
-export function JsonPreview({ value, variant }: { value: unknown; variant: PreviewVariant }) {
+export function JsonPreview({ value, variant }: { value: unknown; variant: PreviewVariant }): JSX.Element {
   return (
     <CodeBlock
       language="json"

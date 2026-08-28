@@ -6,8 +6,16 @@ two lists drift silently — a file added to the library graph but not to the ch
 inputs is simply never type-checked, and nothing fails.
 
 `ts_library` removes the second list. Each target compiles its own `srcs` against its
-deps' generated `.d.ts` in the same action that emits the `.js` its consumers bundle, so
-the type check *is* the build step. Adding a file means adding it in one place.
+deps' generated `.d.ts`, and the file list it checks is the file list it builds, so a
+file cannot be in the graph but outside the checker. Adding a file means adding it in
+one place.
+
+Where that check runs depends on `isolated_typecheck`. By default emit and check are one
+action, so `bazel build` of the target fails on a type error. Under `isolated_typecheck`
+they are separate actions and the build target carries only the emit — the check moves to
+the generated `<name>_typecheck` target, which is not tagged `manual` and so is included
+by `//...` and by the bazel-diff affected set that <../ci/bazel_ci.sh> builds. CI still
+fails; a bare `bazel build //pkg:lib` no longer does.
 
 Deviation from stock `ts_project`: the tsconfig is passed as a dict rather than a label,
 so rules_ts writes a per-target config whose `files` array is exactly this target's
@@ -19,7 +27,7 @@ declarations included — making each target's program the transitive closure.
 
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
 
-def ts_library(name, srcs, tsconfig, deps = [], **kwargs):
+def ts_library(name, srcs, tsconfig, isolated_typecheck = False, deps = [], **kwargs):
     """A TypeScript library: type-checks its own sources and emits `.js` + `.d.ts`.
 
     Args:
@@ -29,6 +37,12 @@ def ts_library(name, srcs, tsconfig, deps = [], **kwargs):
             through their `.d.ts`.
         tsconfig: Label of the shared `ts_config` holding the compiler options, which the
             generated per-target config extends.
+        isolated_typecheck: Split declaration emit from type checking, so a consumer's
+            emit no longer waits on its dependency's whole program being checked and the
+            checks fan out in parallel. Opt-in per package: it requires
+            `isolatedDeclarations` in the shared `ts_config` — rules_ts validates that the
+            two agree — which in turn requires an explicit type annotation on every
+            exported symbol in the package.
         deps: Targets providing `JsInfo` — other `ts_library` targets, `js_library`
             targets wrapping generated declarations, and `//:node_modules/*` packages.
         **kwargs: Passed through to `ts_project` (`assets`, `data`, `testonly`, `tags`, …).
@@ -43,10 +57,11 @@ def ts_library(name, srcs, tsconfig, deps = [], **kwargs):
             "exclude": [],
             "include": [],
         },
-        # tsc emits the .js and the .d.ts in the one action that type-checks them, so a
-        # type error fails the build. A faster transpiler (swc, esbuild) would split
-        # emitting from checking and let `bazel build` go green on code tsc rejects.
+        # tsc, not a faster transpiler: swc and esbuild strip types without reading them,
+        # so nothing would type-check these sources at all. `isolated_typecheck` splits the
+        # actions while keeping tsc on both sides of the split.
         transpiler = "tsc",
+        isolated_typecheck = isolated_typecheck,
         declaration = True,
         source_map = True,
         resolve_json_module = True,

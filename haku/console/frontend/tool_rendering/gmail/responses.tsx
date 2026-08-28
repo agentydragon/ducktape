@@ -13,7 +13,7 @@ import { Field } from "../../field";
 import { fetchGmailLabelNames, messageSubject } from "../../gmail_client";
 import { GmailIcon, MailIcon } from "../../icons";
 import { ExternalLink } from "../../link";
-import { mcpToolResultSchema } from "../../mcp_tool_result_schema";
+import { mcpToolResultSchema, type McpToolResultFor } from "../../mcp_tool_result_schema";
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry";
 import {
   COMPACT_ITEM_LIMIT,
@@ -32,10 +32,22 @@ function gmailDraftUrl(draftId: string): string {
   return `https://mail.google.com/mail/u/0/#drafts?compose=${draftId}`;
 }
 
-export const zDraft = mcpToolResultSchema(GMAIL_SERVER_ID, "drafts_create");
-const zThread = mcpToolResultSchema(GMAIL_SERVER_ID, "threads_get");
-const zThreadsList = mcpToolResultSchema(GMAIL_SERVER_ID, "threads_list");
-const zMessage = mcpToolResultSchema(GMAIL_SERVER_ID, "messages_get");
+export const zDraft: z.ZodType<McpToolResultFor<typeof GMAIL_SERVER_ID, "drafts_create">> = mcpToolResultSchema(
+  GMAIL_SERVER_ID,
+  "drafts_create"
+);
+const zThread: z.ZodType<McpToolResultFor<typeof GMAIL_SERVER_ID, "threads_get">> = mcpToolResultSchema(
+  GMAIL_SERVER_ID,
+  "threads_get"
+);
+const zThreadsList: z.ZodType<McpToolResultFor<typeof GMAIL_SERVER_ID, "threads_list">> = mcpToolResultSchema(
+  GMAIL_SERVER_ID,
+  "threads_list"
+);
+const zMessage: z.ZodType<McpToolResultFor<typeof GMAIL_SERVER_ID, "messages_get">> = mcpToolResultSchema(
+  GMAIL_SERVER_ID,
+  "messages_get"
+);
 
 export type Draft = z.infer<typeof zDraft>;
 type GmailThread = z.infer<typeof zThread>;
@@ -55,7 +67,7 @@ export function CreateGmailDraftResultView({
   args: CreateGmailDraftArgs;
   result: Draft;
   variant: PreviewVariant;
-}) {
+}): JSX.Element {
   const detailed = variant === "detailed";
   return (
     <Stack gap={6}>
@@ -212,7 +224,11 @@ function GmailMessageResultView({ result, variant }: ResultPreviewProps<GmailMes
 
 /** Per-tool result widgets for the `gmail` server. `drafts_create` has no entry here — its
  * pending/finished states are one combined widget (calls.tsx), not a separate result-only one. */
-export const gmailResultPreviews = {
+export const gmailResultPreviews: {
+  threads_get: ToolResultPreview<typeof zThread>;
+  threads_list: ToolResultPreview<typeof zThreadsList>;
+  messages_get: ToolResultPreview<typeof zMessage>;
+} = {
   threads_get: defineResultPreview(zThread, GmailThreadResultView),
   threads_list: defineResultPreview(zThreadsList, GmailThreadsListResultView),
   messages_get: defineResultPreview(zMessage, GmailMessageResultView),

@@ -1,11 +1,10 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
-py_binary(
+py_library(
     name = "server",
     srcs = ["server.py"],
     data = ["//llm/html:content_files"],
-    visibility = ["//:__subpackages__"],
     deps = [
         ":token_counter",
         ":token_scheme",
@@ -16,6 +15,14 @@ py_binary(
         "@pypi//pydantic",
         "@pypi//uvicorn",
     ],
+)
+
+py_binary(
+    name = "server_bin",
+    data = ["//llm/html:content_files"],
+    main_module = "llm.html.llm_html.server",
+    visibility = ["//:__subpackages__"],
+    deps = [":server"],
 )
 
 py_library(
@@ -32,7 +39,7 @@ py_library(
 )
 
 aspect_py_binary(
-    name = "server_bin",
+    name = "server_image_bin",
     srcs = ["server.py"],
     data = ["//llm/html:content_files"],
     main = "server.py",
@@ -51,7 +58,7 @@ aspect_py_binary(
 
 py_image_layer(
     name = "layers",
-    binary = ":server_bin",
+    binary = ":server_image_bin",
     visibility = ["//llm/html:__pkg__"],
 )
 

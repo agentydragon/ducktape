@@ -21,6 +21,8 @@ function CreateEventCall({
 }
 
 /** Combined pending/finished widgets for the `google_calendar` server. */
-export const googleCalendarCallPreviews = {
+export const googleCalendarCallPreviews: {
+  create_event: ToolCallPreview<typeof zCreateCalendarEventArgs, typeof zCreateEventResult>;
+} = {
   create_event: defineCallPreview(zCreateCalendarEventArgs, zCreateEventResult, CreateEventCall),
 } satisfies Record<string, ToolCallPreview>;

@@ -21,7 +21,7 @@ from haku.console.agents.models import AgentStatus, CredentialBindingStatus, Cre
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.conftest import console_settings, write_config
 from haku.console.database_schema import Agent, AgentNameReservation, CredentialBinding, StaticCredential
-from haku.console.grant_principal import RequestPrincipal
+from haku.console.grants.principal import RequestPrincipal
 from haku.console.mcp_approval import PostgresToolCallLedger
 from haku.console.mcp_config import (
     AccessProfile,

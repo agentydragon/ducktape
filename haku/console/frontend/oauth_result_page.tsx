@@ -11,7 +11,7 @@ export function OAuthResultView({
 }: {
   result: OAuthConnectionResult;
   onClose?: () => void;
-}) {
+}): JSX.Element {
   const succeeded = result.status === "success";
   return (
     <Center component="main" className="haku-oauth-result-page">
@@ -51,7 +51,7 @@ export function OAuthResultView({
   );
 }
 
-export function OAuthResultPage({ resultId }: { resultId: string }) {
+export function OAuthResultPage({ resultId }: { resultId: string }): JSX.Element {
   const [result, setResult] = useState<OAuthConnectionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 

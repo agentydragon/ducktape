@@ -4,8 +4,8 @@ Collects runtime versions, package versions, environment-manager metadata,
 environment variables, and key binary hashes into a structured YAML artifact.
 
 Usage:
-    bazel run //devinfra/claude/web_env/tools:capture_versions -- > versions.yaml
-    bazel run //devinfra/claude/web_env/tools:capture_versions -- --diff previous-versions.yaml
+    bazel run //devinfra/claude/web_env/tools:capture_versions_bin -- > versions.yaml
+    bazel run //devinfra/claude/web_env/tools:capture_versions_bin -- --diff previous-versions.yaml
 
 The output is deterministic and diffable. Future sessions can compare against
 a previous capture to identify what changed in the container image.
@@ -286,7 +286,7 @@ def capture_versions_yaml() -> str:
     lines = [
         "# Claude Code Web Container Versions",
         f"# Captured: {captured}",
-        "# Use 'bazel run //devinfra/claude/web_env/tools:capture_versions -- --diff <prev>.yaml' to compare",
+        "# Use 'bazel run //devinfra/claude/web_env/tools:capture_versions_bin -- --diff <prev>.yaml' to compare",
         "",
         yaml_dump(data),
     ]

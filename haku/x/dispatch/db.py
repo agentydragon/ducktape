@@ -19,6 +19,11 @@ from haku.x.dispatch.models import JobRecord, JobStatus
 SessionMaker = async_sessionmaker[AsyncSession]
 
 
+# Connection URLs are rewritten to postgresql+asyncpg://; SQLAlchemy loads the
+# dialect at runtime, so gazelle cannot see the dependency.
+# gazelle:include_dep @pypi//asyncpg
+
+
 def _str_enum(enum_type: type) -> Enum:
     # Store StrEnum values (not member names), as a plain VARCHAR: readable
     # from haku_reader's raw SQL and no Postgres-type migrations on new values.

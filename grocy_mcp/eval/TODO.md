@@ -197,5 +197,5 @@ eval to confirm the agent doesn't misfire.
 2. Add an `EvalCase` entry in `cases.py` with the task prompt and prose
    success criteria.
 3. Register it in `CASES`.
-4. Run `bb run //grocy_mcp/eval:cli -- --case <id> --api anthropic`.
+4. Run `bb run //grocy_mcp/eval:cli_bin -- --case <id> --api anthropic`.
 5. Drop the rollout into `sample_rollouts/<id>/` alongside the others.

@@ -7,8 +7,8 @@ Uses a thread pool to parallelize SHA256 hashing for ~3-5x speedup on
 I/O-heavy filesystems.
 
 Usage:
-    bazel run //devinfra/claude/web_env/tools:capture_manifest -- > manifest.ndjson
-    bazel run //devinfra/claude/web_env/tools:capture_manifest -- /some/root > manifest.ndjson
+    bazel run //devinfra/claude/web_env/tools:capture_manifest_bin -- > manifest.ndjson
+    bazel run //devinfra/claude/web_env/tools:capture_manifest_bin -- /some/root > manifest.ndjson
 """
 
 import grp

@@ -40,7 +40,7 @@ from a published, digest-pinned image without committing the artifacts.""",
             doc = "Path inside the rootfs to extract, e.g. usr/share/nginx/html/assets.",
         ),
         "_tool": attr.label(
-            default = "//devinfra/oci:extract_image_subdir",
+            default = "//devinfra/oci:extract_image_subdir_bin",
             executable = True,
             cfg = "exec",
         ),

@@ -32,7 +32,7 @@ from haku.console.conversation_read_access import (
     ConversationReadScope,
     ProfileScopedReads,
 )
-from haku.console.grant_principal import RequestPrincipal
+from haku.console.grants.principal import RequestPrincipal
 from haku.console.in_process_server_access import InProcessServerAccessPolicy
 from haku.console.mcp_config import AccessProfile
 from haku.console.mcp_execution import (

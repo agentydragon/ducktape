@@ -1,6 +1,6 @@
 """Client of the colocated Console decision endpoint (github.com/agentydragon/ducktape/issues/4670).
 
-Speaks ``POST /api/internal/http/decide`` (haku/console/http_decide_routes.py):
+Speaks ``POST /api/internal/http/decide`` (haku/console/grants/http/decide_routes.py):
 the static proxy identity bearer travels in ``Authorization``, the Agent-bound
 fence credential inside the ``DecideRequest`` body; the gate's resolution and
 pin arrive as arguments and travel verbatim. Any failure — connection error,

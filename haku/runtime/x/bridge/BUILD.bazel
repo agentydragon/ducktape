@@ -125,20 +125,9 @@ py_library(
 
 py_binary(
     name = "runner_bin",
-    srcs = ["runner.py"],
-    main = "runner.py",
+    main_module = "haku.runtime.x.bridge.runner",
     visibility = ["//visibility:public"],
-    deps = [
-        ":backend",
-        ":backend_registry",
-        ":claude_projection",
-        ":neutral_operations",
-        ":operation_journal",
-        ":protocol",
-        "@pypi//anyio",
-        "@pypi//tenacity",
-        "@pypi//websockets",
-    ],
+    deps = [":runner"],
 )
 
 aspect_py_binary(
@@ -154,9 +143,15 @@ py_image_layer(
     owner = "1000",
 )
 
-py_binary(
+py_library(
     name = "extract_claude",
     srcs = ["extract_claude.py"],
+)
+
+py_binary(
+    name = "extract_claude_bin",
+    main_module = "haku.runtime.x.bridge.extract_claude",
+    deps = [":extract_claude"],
 )
 
 # The wheel is kept for one thing only: it bundles a `claude` binary the runner image needs. No
@@ -172,9 +167,9 @@ genrule(
     name = "claude_executable",
     srcs = ["@pypi//claude_agent_sdk:whl"],
     outs = ["claude"],
-    cmd = "$(location :extract_claude) $(location @pypi//claude_agent_sdk:whl) $@",
+    cmd = "$(location :extract_claude_bin) $(location @pypi//claude_agent_sdk:whl) $@",
     executable = True,
-    tools = [":extract_claude"],
+    tools = [":extract_claude_bin"],
 )
 
 pkg_files(

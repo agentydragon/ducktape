@@ -201,7 +201,7 @@ function toolCallSummary(call: ToolCallEntry): ReactNode {
  * name, the argument that identifies the call, and its state; everything else — full arguments,
  * output, structured result — is behind the fold.
  */
-export function ToolCallView({ call }: { call: ToolCallEntry }) {
+export function ToolCallView({ call }: { call: ToolCallEntry }): JSX.Element {
   return (
     <details className="haku-chat-tool-call">
       <summary className="haku-chat-tool-call-summary">

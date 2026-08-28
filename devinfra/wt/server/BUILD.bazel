@@ -198,7 +198,7 @@ py_library(
     ],
 )
 
-py_binary(
+py_library(
     name = "wt_server",
     srcs = ["wt_server.py"],
     deps = [
@@ -224,6 +224,12 @@ py_binary(
         "//devinfra/wt/shared:configuration",
         "//devinfra/wt/shared:protocol",
     ],
+)
+
+py_binary(
+    name = "wt_server_bin",
+    main_module = "devinfra.wt.server.wt_server",
+    deps = [":wt_server"],
 )
 
 py_test(

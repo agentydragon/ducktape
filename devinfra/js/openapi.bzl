@@ -65,7 +65,7 @@ def js_openapi_schema(name, generator, out = "api/schema.d.ts", visibility = Non
         visibility = visibility,
     )
 
-def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", tsconfig = None, visibility = None):
+def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", tsconfig = None, isolated_typecheck = False, visibility = None):
     """Generate a js_library with runtime Zod 4 schemas from an OpenAPI schema.
 
     Pipeline:
@@ -153,6 +153,7 @@ def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", tsconfig = None,
         ts_library(
             name = name,
             srcs = [emit],
+            isolated_typecheck = isolated_typecheck,
             tsconfig = tsconfig,
             tags = ["no-lint"],
             visibility = visibility,

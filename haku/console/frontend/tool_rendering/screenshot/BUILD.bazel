@@ -16,12 +16,14 @@ js_library(
 ts_library(
     name = "visual_network_ledger",
     srcs = ["visual_network_ledger.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
 )
 
 ts_library(
     name = "mcp_mock",
     srcs = ["mcp_mock.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [":visual_network_ledger"],
 )
@@ -29,6 +31,7 @@ ts_library(
 ts_library(
     name = "card",
     srcs = ["card.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@types/react",
@@ -43,6 +46,7 @@ ts_library(
 ts_library(
     name = "mount",
     srcs = ["mount.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":card",

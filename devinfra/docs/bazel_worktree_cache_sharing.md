@@ -55,7 +55,7 @@ workspace-gc bazel-bases --delete
 The command is distributed in the released, artifact-pinned Nix `ducktape`
 package. While developing an unmerged version from this repository, run the
 source target instead:
-`bb run //devinfra/gc:workspace_gc -- bazel-bases --all`.
+`bb run //devinfra/gc:workspace_gc_bin -- bazel-bases --all`.
 
 The tool only auto-selects direct-child, default MD5-named output bases whose
 recorded workspace no longer exists. It recovers the workspace from whichever of

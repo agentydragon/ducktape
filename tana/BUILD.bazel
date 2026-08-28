@@ -19,7 +19,7 @@ py_test(
     srcs = ["test_convert.py"],
     data = glob(["testdata/**/*"]),
     deps = [
-        "//tana/export:convert",
+        "//tana/export:convert_bin",
         "//tana/graph:loader",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

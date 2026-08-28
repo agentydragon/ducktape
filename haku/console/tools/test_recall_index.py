@@ -15,7 +15,7 @@ from haku.console.conversation_read_access import (
     ProfileScopedReads,
     UnrestrictedReads,
 )
-from haku.console.grant_principal import RequestPrincipal
+from haku.console.grants.principal import RequestPrincipal
 from haku.console.mcp_config import AccessProfile
 from haku.console.mcp_execution import (
     AgentMcpExecutionCaller,

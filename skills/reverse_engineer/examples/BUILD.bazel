@@ -1,5 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
-load("@rules_python//python:defs.bzl", "py_binary")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load(":defs.bzl", "garble_binary", "plain_binary")
 
@@ -26,9 +26,15 @@ go_binary(
     deps = ["@com_github_spf13_cobra//:cobra"],
 )
 
-py_binary(
+py_library(
     name = "inline_strings",
     srcs = ["inline_strings.py"],
+)
+
+py_binary(
+    name = "inline_strings_bin",
+    main_module = "skills.reverse_engineer.examples.inline_strings",
+    deps = [":inline_strings"],
 )
 
 sh_test(

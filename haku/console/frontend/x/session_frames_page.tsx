@@ -62,7 +62,7 @@ function FrameRow({ frame }: { frame: SessionFrame }) {
  * frames stay in wire order and the view opens at the top of it, since reading a protocol log
  * backwards is not reading it. Each row's payload builds its editor only once it nears the
  * viewport, which keeps a page of fifty JSON blocks off the main thread. */
-export function SessionFramesPage({ sessionId }: { sessionId: string }) {
+export function SessionFramesPage({ sessionId }: { sessionId: string }): JSX.Element {
   const [reloads, setReloads] = useState(0);
   const [loaded, setLoaded] = useState<SessionFramePage | null>(null);
   const [error, setError] = useState<string | null>(null);

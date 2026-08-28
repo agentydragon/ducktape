@@ -4,20 +4,82 @@ load("//devinfra/python:defs.bzl", "py_test")
 exports_files(["harness_monitor.html"])
 
 py_library(
-    name = "proxy_lib",
-    srcs = [
-        "addon.py",
-        "core.py",
-        "mitmproxy_script.py",
-        "package_tree.py",
-        "responses.py",
-        "serve.py",
-        "server.py",
-        "vendor_runtime.py",
-    ],
-    imports = ["../../../.."],
+    name = "addon",
+    srcs = ["addon.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":core",
+        ":responses",
+        "@pypi//mitmproxy",
+    ],
+)
+
+py_library(
+    name = "core",
+    srcs = ["core.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":vendor_runtime",
+        "@pypi//mitmproxy",
+    ],
+)
+
+py_library(
+    name = "mitmproxy_script",
+    srcs = ["mitmproxy_script.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":addon",
+        "@pypi//mitmproxy",
+    ],
+)
+
+py_library(
+    name = "package_tree",
+    srcs = ["package_tree.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//mitmproxy",
+    ],
+)
+
+py_library(
+    name = "responses",
+    srcs = ["responses.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":core",
+        "@pypi//mitmproxy",
+    ],
+)
+
+py_library(
+    name = "serve",
+    srcs = ["serve.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":server",
+        "@pypi//mitmproxy",
+    ],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":addon",
+        ":core",
+        "@pypi//mitmproxy",
+    ],
+)
+
+py_library(
+    name = "vendor_runtime",
+    srcs = ["vendor_runtime.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":package_tree",
         "@pypi//mitmproxy",
     ],
 )
@@ -30,7 +92,14 @@ py_library(
     imports = ["../../../.."],
     visibility = ["//visibility:public"],
     deps = [
-        ":proxy_lib",
+        ":addon",
+        ":core",
+        ":mitmproxy_script",
+        ":package_tree",
+        ":responses",
+        ":serve",
+        ":server",
+        ":vendor_runtime",
         "@pypi//playwright",
     ],
 )
@@ -39,14 +108,30 @@ py_binary(
     name = "serve_bin",
     main_module = "devinfra.js.debundle.live_proxy.serve",
     visibility = ["//visibility:public"],
-    deps = [":proxy_lib"],
+    deps = [
+        ":addon",
+        ":core",
+        ":mitmproxy_script",
+        ":package_tree",
+        ":responses",
+        ":serve",
+        ":server",
+        ":vendor_runtime",
+    ],
 )
 
 py_test(
     name = "core_test",
     srcs = ["core_test.py"],
     deps = [
-        ":proxy_lib",
+        ":addon",
+        ":core",
+        ":mitmproxy_script",
+        ":package_tree",
+        ":responses",
+        ":serve",
+        ":server",
+        ":vendor_runtime",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -56,7 +141,14 @@ py_test(
     name = "package_tree_test",
     srcs = ["package_tree_test.py"],
     deps = [
-        ":proxy_lib",
+        ":addon",
+        ":core",
+        ":mitmproxy_script",
+        ":package_tree",
+        ":responses",
+        ":serve",
+        ":server",
+        ":vendor_runtime",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -66,7 +158,14 @@ py_test(
     name = "server_test",
     srcs = ["server_test.py"],
     deps = [
-        ":proxy_lib",
+        ":addon",
+        ":core",
+        ":mitmproxy_script",
+        ":package_tree",
+        ":responses",
+        ":serve",
+        ":server",
+        ":vendor_runtime",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

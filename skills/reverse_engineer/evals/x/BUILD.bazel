@@ -43,7 +43,7 @@ py_library(
 
 # The real eval: react agent against the garbled binary, then rubric_judge
 # grades the recovered /work/.
-py_binary(
+py_library(
     name = "run",
     srcs = ["run.py"],
     deps = [
@@ -52,11 +52,17 @@ py_binary(
     ] + _INSPECT_PROVIDER_DEPS,
 )
 
+py_binary(
+    name = "run_bin",
+    main_module = "skills.reverse_engineer.evals.x.run",
+    deps = [":run"],
+)
+
 # Judge floor/ceiling sanity checks. NOT an agent eval — these only
 # exercise the rubric_judge scorer against a known /grade/recovered/.
 # Each `:validate_<case>` target is a thin wrapper around
 # `validate_judge.py --case=<case>`.
-py_binary(
+py_library(
     name = "validate_judge",
     srcs = ["validate_judge.py"],
     deps = [
@@ -66,25 +72,23 @@ py_binary(
 )
 
 py_binary(
+    name = "validate_judge_bin",
+    main_module = "skills.reverse_engineer.evals.x.validate_judge",
+    deps = [":validate_judge"],
+)
+
+py_binary(
     name = "validate_empty",
-    srcs = ["validate_judge.py"],
     args = ["--case=empty"],
-    main = "validate_judge.py",
-    deps = [
-        ":_runner",
-        ":task",
-    ] + _INSPECT_PROVIDER_DEPS,
+    main_module = "skills.reverse_engineer.evals.x.validate_judge",
+    deps = [":validate_judge"],
 )
 
 py_binary(
     name = "validate_reference",
-    srcs = ["validate_judge.py"],
     args = ["--case=reference"],
-    main = "validate_judge.py",
-    deps = [
-        ":_runner",
-        ":task",
-    ] + _INSPECT_PROVIDER_DEPS,
+    main_module = "skills.reverse_engineer.evals.x.validate_judge",
+    deps = [":validate_judge"],
 )
 
 # No Bazel `:view` target on purpose — Inspect's view server mounts its

@@ -1,9 +1,9 @@
+load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/python:defs.bzl", "py_binary")
 
-py_binary(
+py_library(
     name = "re_rollout",
     srcs = ["re_rollout.py"],
-    data = ["//skills/reverse_engineer/evals/tasks/go_crypto_server:go_crypto_server_garbled"],
     deps = [
         "//openai_utils:pydantic_strict_mode",
         "//skills/eval_infra:af_chat_client",
@@ -22,4 +22,11 @@ py_binary(
         "@pypi//agent_framework_openai",
         "@pypi//pydantic",
     ],
+)
+
+py_binary(
+    name = "re_rollout_bin",
+    data = ["//skills/reverse_engineer/evals/tasks/go_crypto_server:go_crypto_server_garbled"],
+    main_module = "skills.reverse_engineer.evals.agent_framework.re_rollout",
+    deps = [":re_rollout"],
 )

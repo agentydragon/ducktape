@@ -7,7 +7,7 @@ oci_layout_rloc(
 )
 
 py_library(
-    name = "run_eval_lib",
+    name = "run_eval",
     srcs = ["run_eval.py"],
     deps = [
         "//mcp_infra/exec/docker:types",
@@ -22,7 +22,7 @@ py_library(
 )
 
 py_binary(
-    name = "run_eval",
+    name = "run_eval_bin",
     data = [
         "baseplate/CHECKLIST.md",
         "baseplate/TASK.md",
@@ -30,5 +30,5 @@ py_binary(
         "//mcp_infra/exec:docker_launcher",
     ],
     main_module = "skills.freecad.eval.run_eval",
-    deps = [":run_eval_lib"],
+    deps = [":run_eval"],
 )

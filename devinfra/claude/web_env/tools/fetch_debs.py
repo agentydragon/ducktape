@@ -16,7 +16,7 @@ to cover packages that were at intermediate versions when the live container was
 built.
 
 Usage:
-    bazel run //devinfra/claude/web_env/tools:fetch_debs
+    bazel run //devinfra/claude/web_env/tools:fetch_debs_bin
 """
 
 import gzip

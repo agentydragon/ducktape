@@ -7,7 +7,7 @@ stable public Tana API.
 ## Usage
 
 ```bash
-bazelisk run //tana/litellm_proxy:demo -- \
+bazelisk run //tana/litellm_proxy:demo_bin -- \
   --model tana/claude-3-5-sonnet-latest \
   --prompt 'Reply with exactly: tana-litellm-ok'
 ```
@@ -15,7 +15,7 @@ bazelisk run //tana/litellm_proxy:demo -- \
 Tool-call smoke:
 
 ```bash
-bazelisk run //tana/litellm_proxy:demo -- \
+bazelisk run //tana/litellm_proxy:demo_bin -- \
   --model tana/claude-3-5-sonnet-latest \
   --tool-demo
 ```
@@ -23,7 +23,7 @@ bazelisk run //tana/litellm_proxy:demo -- \
 Streaming smoke:
 
 ```bash
-bazelisk run //tana/litellm_proxy:demo -- \
+bazelisk run //tana/litellm_proxy:demo_bin -- \
   --model tana/claude-3-5-sonnet-latest \
   --stream \
   --prompt 'Reply with exactly: tana-stream-ok'
@@ -32,7 +32,7 @@ bazelisk run //tana/litellm_proxy:demo -- \
 Streaming tool-call smoke:
 
 ```bash
-bazelisk run //tana/litellm_proxy:demo -- \
+bazelisk run //tana/litellm_proxy:demo_bin -- \
   --model tana/claude-3-5-sonnet-latest \
   --stream \
   --tool-demo

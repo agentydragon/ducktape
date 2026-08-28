@@ -10,9 +10,10 @@ from fastmcp import FastMCP
 from pydantic import Field
 
 from haku.console.agents.enrollment import AgentEnrollmentService
-from haku.console.grant_principal import GrantPrincipalKind, grant_principal_for
-from haku.console.http_grant_models import HttpGrant, HttpGrantNotFoundError, HttpGrantSpec
-from haku.console.http_grant_service import HttpGrantService
+from haku.console.grants.envelope import GRANT_SET_LIMIT, GrantNotFoundError
+from haku.console.grants.http.models import HttpGrant, HttpGrantSpec
+from haku.console.grants.http.service import HttpGrantService
+from haku.console.grants.principal import GrantPrincipalKind, grant_principal_for
 from haku.console.mcp_execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext, OperatorMcpExecutionCaller
 
 HTTP_GRANTS_SERVER_ID = "http_grants"
@@ -65,7 +66,7 @@ class HttpToolsService:
             raise PermissionError("grant revocation requires Operator-direct execution")
         owned = await self.agents.list_agents(operator_id=context.caller.operator_id)
         if owner_agent_id not in {agent.agent_id for agent in owned}:
-            raise HttpGrantNotFoundError(str(owner_agent_id))
+            raise GrantNotFoundError(str(owner_agent_id))
         return await self.grants.revoke_grants(owner_agent_id=owner_agent_id, grant_ids=grant_ids, reason=reason)
 
 
@@ -94,7 +95,7 @@ def build_mcp(service: HttpToolsService) -> FastMCP:
             list[HttpGrantSpec],
             Field(
                 min_length=1,
-                max_length=32,
+                max_length=GRANT_SET_LIMIT,
                 description="Exact coverage items to grant atomically with one shared start and expiry.",
             ),
         ],
@@ -141,7 +142,7 @@ def build_mcp(service: HttpToolsService) -> FastMCP:
             list[UUID],
             Field(
                 min_length=1,
-                max_length=32,
+                max_length=GRANT_SET_LIMIT,
                 description="Grant UUIDs returned by create_grant; released sequentially in the supplied order.",
             ),
         ],
@@ -155,7 +156,11 @@ def build_mcp(service: HttpToolsService) -> FastMCP:
         owner_agent_id: Annotated[UUID, Field(description="The acting Operator's owned Agent whose grants to end.")],
         grant_ids: Annotated[
             list[UUID],
-            Field(min_length=1, max_length=32, description="Grant UUIDs revoked sequentially in the supplied order."),
+            Field(
+                min_length=1,
+                max_length=GRANT_SET_LIMIT,
+                description="Grant UUIDs revoked sequentially in the supplied order.",
+            ),
         ],
         reason: Annotated[str, Field(min_length=1, max_length=500)],
         context: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,

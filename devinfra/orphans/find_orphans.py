@@ -9,8 +9,8 @@ Also reports whitelist entries that are no longer needed (dead patterns),
 and for each pattern shows how many matching files are covered by Bazel.
 
 Usage:
-    bazel run //devinfra/orphans:find_orphans           # List orphans + dead whitelist entries
-    bazel run //devinfra/orphans:find_orphans -- --check  # Fail if orphans or dead entries exist
+    bazel run //devinfra/orphans:find_orphans_bin           # List orphans + dead whitelist entries
+    bazel run //devinfra/orphans:find_orphans_bin -- --check  # Fail if orphans or dead entries exist
 """
 
 import argparse

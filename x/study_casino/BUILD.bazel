@@ -184,7 +184,7 @@ py_library(
 )
 
 py_library(
-    name = "export_schema_lib",
+    name = "export_schema",
     srcs = ["export_schema.py"],
     deps = [
         ":app",
@@ -199,7 +199,7 @@ py_binary(
     name = "export_schema_bin",
     main_module = "x.study_casino.export_schema",
     visibility = ["//visibility:public"],
-    deps = [":export_schema_lib"],
+    deps = [":export_schema"],
 )
 
 py_binary(

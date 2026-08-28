@@ -17,7 +17,7 @@ export function ToolCallMeta({
   callerDisplayName: string;
   createdAt: string | null;
   toolCallId: string;
-}) {
+}): JSX.Element {
   const requested = createdAt ? formatTimestamp(createdAt) : null;
   return (
     <details className="haku-shell-disclosure">

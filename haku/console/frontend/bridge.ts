@@ -73,7 +73,7 @@ export const OPEN_LINK_WHITELIST = [
   "drive.google.com",
   "calendar.google.com",
   "app.tana.inc",
-];
+] as const;
 
 export type LinkVerdict = { action: "open" } | { action: "confirm" } | { action: "reject"; reason: string };
 

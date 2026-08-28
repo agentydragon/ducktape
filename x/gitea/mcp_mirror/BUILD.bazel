@@ -1,11 +1,16 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
+py_library(
+    name = "launcher",
+    srcs = ["launcher.py"],
+    deps = [":server"],
+)
+
 py_binary(
     name = "gitea_mirror_launcher",
-    srcs = ["launcher.py"],
-    main = "launcher.py",
+    main_module = "x.gitea.mcp_mirror.launcher",
     visibility = ["//visibility:public"],
-    deps = [":server"],
+    deps = [":launcher"],
 )
 
 py_test(

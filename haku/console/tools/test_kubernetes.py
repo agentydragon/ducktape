@@ -32,27 +32,27 @@ from haku.console.conftest import (
     insert_approved_tool_call,
     insert_live_session,
 )
-from haku.console.grant_principal import (
-    AgentGrantPrincipal,
-    GrantPrincipalKind,
-    RequestPrincipal,
-    SessionGrantPrincipal,
-)
-from haku.console.kubernetes_authorization import (
+from haku.console.grants.envelope import GrantStatus
+from haku.console.grants.kubernetes.authorization import (
     KubernetesAuthorizationService,
     KubernetesAuthorizationSource,
     RequestAttributes,
     SubjectAccessReviewResult,
 )
-from haku.console.kubernetes_grant_models import (
+from haku.console.grants.kubernetes.models import (
     KubernetesClusterGrantScope,
     KubernetesGrantScopeKind,
     KubernetesGrantSpec,
-    KubernetesGrantStatus,
     KubernetesNamespacesGrantScope,
     KubernetesRule,
 )
-from haku.console.kubernetes_grant_service import KubernetesGrantService
+from haku.console.grants.kubernetes.service import KubernetesGrantService
+from haku.console.grants.principal import (
+    AgentGrantPrincipal,
+    GrantPrincipalKind,
+    RequestPrincipal,
+    SessionGrantPrincipal,
+)
 from haku.console.mcp_execution import (
     AgentMcpExecutionCaller,
     McpExecutionContext,
@@ -204,7 +204,7 @@ def test_create_persists_trusted_identity_provenance_and_exact_grants(console: _
             assert grant.owner_agent_id == console.agent_id
             assert grant.principal == AgentGrantPrincipal(agent_id=console.agent_id)
             assert grant.source_tool_call_id == context.tool_call_id
-            assert grant.status is KubernetesGrantStatus.ACTIVE
+            assert grant.status is GrantStatus.ACTIVE
         # One atomic set: shared timestamps, expiry bounded by the requested duration.
         assert len({(grant.created_at, grant.expires_at) for grant in created}) == 1
         assert timedelta() < created[0].expires_at - created[0].created_at <= timedelta(seconds=600)
@@ -295,10 +295,10 @@ def test_release_ends_grants_in_the_supplied_order(console: _Console) -> None:
             context=context, grant_ids=[second.grant_id, first.grant_id], reason="probe complete"
         )
         assert [grant.grant_id for grant in released] == [second.grant_id, first.grant_id]
-        assert all(grant.status is KubernetesGrantStatus.RELEASED for grant in released)
+        assert all(grant.status is GrantStatus.RELEASED for grant in released)
         assert {grant.end_reason for grant in released} == {"probe complete"}
         refetched = await console.service.get_grant(context=context, grant_id=first.grant_id)
-        assert refetched.status is KubernetesGrantStatus.RELEASED
+        assert refetched.status is GrantStatus.RELEASED
 
     console.call(exercise)
 

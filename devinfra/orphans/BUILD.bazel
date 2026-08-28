@@ -1,14 +1,21 @@
+load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/python:defs.bzl", "py_binary", "py_test")
 
-py_binary(
+py_library(
     name = "find_orphans",
     srcs = ["find_orphans.py"],
-    visibility = ["//:__subpackages__"],
     deps = [
         "//util/bazel:workspace",
         "@pypi//pathspec",
         "@pypi//pygit2",
     ],
+)
+
+py_binary(
+    name = "find_orphans_bin",
+    main_module = "devinfra.orphans.find_orphans",
+    visibility = ["//:__subpackages__"],
+    deps = [":find_orphans"],
 )
 
 py_test(

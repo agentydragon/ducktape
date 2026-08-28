@@ -1,10 +1,16 @@
 # OCI build helpers for this repository.
 # See defs.bzl for the oci_tarball macro.
 
-load("@rules_python//python:defs.bzl", "py_binary")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
-py_binary(
+py_library(
     name = "extract_image_subdir",
     srcs = ["extract_image_subdir.py"],
+)
+
+py_binary(
+    name = "extract_image_subdir_bin",
+    main_module = "devinfra.oci.extract_image_subdir",
     visibility = ["//visibility:public"],
+    deps = [":extract_image_subdir"],
 )

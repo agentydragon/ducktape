@@ -177,7 +177,14 @@ function SetFieldOptionPreview({ args }: PreviewProps<SetFieldOptionArgs>) {
   );
 }
 
-export const tanaPreviews = {
+export const tanaPreviews: {
+  import_tana_paste: ToolPreview<typeof zImportTanaPasteArgs>;
+  get_or_create_calendar_node: ToolPreview<typeof zGetOrCreateCalendarNodeArgs>;
+  trash_node: ToolPreview<typeof zTrashNodeArgs>;
+  edit_node: ToolPreview<typeof zEditNodeArgs>;
+  move_node: ToolPreview<typeof zMoveNodeArgs>;
+  set_field_option: ToolPreview<typeof zSetFieldOptionArgs>;
+} = {
   import_tana_paste: definePreview(zImportTanaPasteArgs, ImportTanaPastePreview),
   get_or_create_calendar_node: definePreview(zGetOrCreateCalendarNodeArgs, GetOrCreateCalendarNodePreview),
   trash_node: definePreview(zTrashNodeArgs, TrashNodePreview),

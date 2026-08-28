@@ -7,4 +7,4 @@ import { shell } from "@codemirror/legacy-modes/mode/shell";
 
 /** Singleton — `StreamLanguage.define` output is immutable, so every `CodeBlock language="shell"`
  * reuses the same instance rather than rebuilding the grammar per render. */
-export const shellLanguage = StreamLanguage.define(shell);
+export const shellLanguage: ReturnType<typeof StreamLanguage.define> = StreamLanguage.define(shell);

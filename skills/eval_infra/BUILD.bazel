@@ -75,11 +75,17 @@ py_library(
     deps = _AGENT_FRAMEWORK_DEPS,
 )
 
-py_binary(
+py_library(
     name = "resurrect",
     srcs = ["resurrect.py"],
-    visibility = ["//skills:__subpackages__"],
     deps = [
         ":af_chat_client",
     ] + _AGENT_FRAMEWORK_DEPS,
+)
+
+py_binary(
+    name = "resurrect_bin",
+    main_module = "skills.eval_infra.resurrect",
+    visibility = ["//skills:__subpackages__"],
+    deps = [":resurrect"],
 )

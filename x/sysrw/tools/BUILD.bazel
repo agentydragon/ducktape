@@ -1,11 +1,18 @@
+load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/python:defs.bzl", "py_binary")
 
-py_binary(
+py_library(
     name = "show_rewritten_crush",
     srcs = ["show_rewritten_crush.py"],
-    visibility = ["//:__subpackages__"],
     deps = [
         "//x/sysrw:extract_common",
         "//x/sysrw:openai_typing",
     ],
+)
+
+py_binary(
+    name = "show_rewritten_crush_bin",
+    main_module = "x.sysrw.tools.show_rewritten_crush",
+    visibility = ["//:__subpackages__"],
+    deps = [":show_rewritten_crush"],
 )

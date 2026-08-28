@@ -22,7 +22,10 @@ py_library(
 py_library(
     name = "decision",
     srcs = ["decision.py"],
-    visibility = ["//haku/console:__pkg__"],
+    visibility = [
+        "//haku/console:__pkg__",
+        "//haku/console/grants/http:__pkg__",
+    ],
     deps = ["@pypi//pydantic"],
 )
 

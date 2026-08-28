@@ -11,7 +11,7 @@ import { useConsoleView } from "./routing";
 // plus the bridge that brokers the iframe's privileged requests (opening links, launching a run).
 // Product chrome lives in haku-ui; only the trusted confirm + capability firing are here.
 // Console-owned read surfaces have their own routes (routing.ts). See README + docs/containment.md.
-export default function App() {
+export default function App(): JSX.Element {
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { view, agentEnrollmentId, oauthResultId, toolCallId, conversationId, sessionFramesId, navigate } =

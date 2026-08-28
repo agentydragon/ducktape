@@ -120,14 +120,8 @@ descending order of "that can't be right":
       512Mi), `props` (1Gi → 1.5Gi), `activitywatch` readonly-proxy (64Mi →
       128Mi).
 
-Two follow-ups on the mechanism itself:
+Follow-up on the mechanism itself:
 
-- [ ] `langfuse` clickhouse is deliberately held on `RequestsAndLimits`: its
-      1.5Gi limit comes from the chart's `resourcesPreset: medium` rather than
-      this repo, and VPA's upper bound (~2Gi) exceeds it, so pinning it would
-      re-create the OOMKills the HelmRelease already documents. Replace the
-      preset with an explicit `resources:` block, then move it to RequestsOnly
-      with the rest.
 - [ ] Add a `cluster/validation` check that rejects unknown
       `goldilocks.fairwinds.com/*` annotation keys. `cpu-min` was invented
       twice (`litellm` #3856, `langfuse`), goldilocks ignored it silently both

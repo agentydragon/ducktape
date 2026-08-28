@@ -11,6 +11,7 @@ TSCONFIG = "//haku/console/frontend:tsconfig"
 ts_library(
     name = "schemas",
     srcs = ["schemas.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = ["//:node_modules/zod"],
 )
@@ -18,6 +19,7 @@ ts_library(
 ts_library(
     name = "actions",
     srcs = ["actions.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":schemas",
@@ -28,6 +30,7 @@ ts_library(
 ts_library(
     name = "requests",
     srcs = ["requests.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":schemas",
@@ -52,6 +55,7 @@ filegroup(
 ts_library(
     name = "requests_test",
     srcs = ["requests.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":requests",
@@ -63,6 +67,7 @@ ts_library(
 ts_library(
     name = "preview_harness",
     srcs = ["preview_harness.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         "//haku/console/frontend/tool_rendering",

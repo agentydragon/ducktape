@@ -32,10 +32,9 @@ py_test(
     ],
 )
 
-py_binary(
+py_library(
     name = "cli",
     srcs = ["cli.py"],
-    visibility = ["//:__subpackages__"],
     deps = [
         ":compare_eval_vs_ccr",
         ":extract_dataset_ccr",
@@ -50,9 +49,22 @@ py_binary(
 )
 
 py_binary(
+    name = "cli_bin",
+    main_module = "x.sysrw.cli",
+    visibility = ["//:__subpackages__"],
+    deps = [":cli"],
+)
+
+py_library(
     name = "compare_eval_vs_ccr",
     srcs = ["compare_eval_vs_ccr.py"],
+)
+
+py_binary(
+    name = "compare_eval_vs_ccr_bin",
+    main_module = "x.sysrw.compare_eval_vs_ccr",
     visibility = ["//:__subpackages__"],
+    deps = [":compare_eval_vs_ccr"],
 )
 
 py_library(
@@ -71,14 +83,20 @@ py_library(
     ],
 )
 
-py_binary(
+py_library(
     name = "extract_dataset",
     srcs = ["extract_dataset.py"],
-    visibility = ["//:__subpackages__"],
     deps = [
         ":extract_common",
         ":extract_dataset_ccr",
     ],
+)
+
+py_binary(
+    name = "extract_dataset_bin",
+    main_module = "x.sysrw.extract_dataset",
+    visibility = ["//:__subpackages__"],
+    deps = [":extract_dataset"],
 )
 
 py_library(
@@ -91,10 +109,9 @@ py_library(
     ],
 )
 
-py_binary(
+py_library(
     name = "extract_dataset_crush",
     srcs = ["extract_dataset_crush.py"],
-    visibility = ["//:__subpackages__"],
     deps = [
         ":constants",
         ":extract_common",
@@ -102,14 +119,27 @@ py_binary(
 )
 
 py_binary(
+    name = "extract_dataset_crush_bin",
+    main_module = "x.sysrw.extract_dataset_crush",
+    visibility = ["//:__subpackages__"],
+    deps = [":extract_dataset_crush"],
+)
+
+py_library(
     name = "leaderboard",
     srcs = ["leaderboard.py"],
-    visibility = ["//:__subpackages__"],
     deps = [
         "//x/sysrw/templates:loader",
         "@pypi//pydantic",
         "@pypi//rich",
     ],
+)
+
+py_binary(
+    name = "leaderboard_bin",
+    main_module = "x.sysrw.leaderboard",
+    visibility = ["//:__subpackages__"],
+    deps = [":leaderboard"],
 )
 
 py_library(

@@ -43,8 +43,8 @@ with an ad hoc script.
   (`workspace-gc …`). Check with `command -v workspace-gc` first; only if it is absent
   (e.g. a bare Ducktape source checkout without the package installed) do you fall back
   to building+running it under Bazel: load the devshell and prefix the same args with
-  `bb run //devinfra/gc:workspace_gc --` — so `workspace-gc worktrees` becomes
-  `bb run //devinfra/gc:workspace_gc -- worktrees`.
+  `bb run //devinfra/gc:workspace_gc_bin --` — so `workspace-gc worktrees` becomes
+  `bb run //devinfra/gc:workspace_gc_bin -- worktrees`.
 
 ## Inventory First
 

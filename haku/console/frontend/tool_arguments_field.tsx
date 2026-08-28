@@ -7,7 +7,7 @@ import type { PreviewVariant } from "./tool_rendering/vocabulary";
 /** The exact raw-arguments JSON behind a collapsed disclosure, byte-exact (`JSON.stringify`) so
  * reflow/truncation never costs the real, copyable payload. Shared by `ToolArgumentsField` and a
  * combined call widget's own detailed body (tool_call_card.tsx). */
-export function RawArgumentsDisclosure({ argumentsJson }: { argumentsJson: string }) {
+export function RawArgumentsDisclosure({ argumentsJson }: { argumentsJson: string }): JSX.Element {
   return (
     <details className="haku-shell-disclosure">
       <summary>Raw arguments</summary>
@@ -33,7 +33,7 @@ export function ToolArgumentsField({
   args: Record<string, unknown>;
   argumentsJson: string;
   variant: PreviewVariant;
-}) {
+}): JSX.Element {
   const nice = toolPreview(serverId, toolName, args, variant);
   if (!nice) {
     return (

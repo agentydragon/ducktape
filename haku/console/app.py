@@ -35,10 +35,6 @@ from starlette.middleware.sessions import SessionMiddleware
 from haku.console import (
     agent_bearer_authority,
     capabilities,
-    http_decide_routes,
-    http_grant_routes,
-    kube_proxy_authorization,
-    kubernetes_grant_routes,
     mcp_agent_auth,
     mcp_approval,
     mcp_catalog_reconciler,
@@ -62,20 +58,27 @@ from haku.console.conversation.history import ConversationHistory
 from haku.console.conversation.live_updates import ConversationLiveUpdates
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
+
+# The two grant domains both name their router module `routes`; alias at this one seam.
+from haku.console.grants.http import decide_routes, routes as http_grant_routes
+from haku.console.grants.http.decide_config import load_egress_decide
+from haku.console.grants.http.decide_service import HttpDecideService
+from haku.console.grants.http.repository import PostgresHttpGrantRepository
+from haku.console.grants.http.service import HttpGrantService
+from haku.console.grants.kubernetes import proxy_authorization, routes as kubernetes_grant_routes
+from haku.console.grants.kubernetes.authorization import (
+    KubernetesAuthorizationService,
+    KubernetesSubjectAccessReviewClient,
+)
+from haku.console.grants.kubernetes.repository import PostgresKubernetesGrantRepository
+from haku.console.grants.kubernetes.service import KubernetesGrantService
 from haku.console.hostexecd import service
-from haku.console.http_decide_config import load_egress_decide
-from haku.console.http_decide_service import HttpDecideService
-from haku.console.http_grant_repository import PostgresHttpGrantRepository
-from haku.console.http_grant_service import HttpGrantService
 from haku.console.in_process_servers import (
     HostexecServerConfig,
     InProcessServerDependencies,
     SandboxServerConfig,
     build_in_process_servers,
 )
-from haku.console.kubernetes_authorization import KubernetesAuthorizationService, KubernetesSubjectAccessReviewClient
-from haku.console.kubernetes_grant_repository import PostgresKubernetesGrantRepository
-from haku.console.kubernetes_grant_service import KubernetesGrantService
 from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver, install_operator_session_route_guard
 from haku.console.mcp_config import (
     InProcessBackend,
@@ -798,7 +801,7 @@ def create_app(
     app.include_router(session_runtime.internal_router)
     # Machine-to-machine, bearer-forwarding contract for the separate Kubernetes proxy. The
     # endpoint remains fail-closed unless standing SAR policy is configured.
-    app.include_router(kube_proxy_authorization.router)
+    app.include_router(proxy_authorization.router)
     # The colocated egress proxy's decision endpoint is deliberately NOT on this network app.
     # It is the oracle that turns placeholders into real credentials, so it must never be routable
     # from a sandbox workload — and every sandbox can reach this app through the haku-console
@@ -907,7 +910,7 @@ def build_internal_decide_app(http_decide: HttpDecideService) -> FastAPI:
     """
     internal = FastAPI(title="Haku console egress oracle")
     internal.state.http_decide = http_decide
-    internal.include_router(http_decide_routes.router)
+    internal.include_router(decide_routes.router)
     return internal
 
 

@@ -42,8 +42,8 @@ commit on a local test run — they open the PR and let CI run the tests
 ## Running the benchmark
 
 ```bash
-bazel run //devinfra/precommit/enforce_bazel_tests:bench
-bazel run //devinfra/precommit/enforce_bazel_tests:bench -- --profile  # with Bazel JSON trace profiles
+bazel run //devinfra/precommit/enforce_bazel_tests:bench_bin
+bazel run //devinfra/precommit/enforce_bazel_tests:bench_bin -- --profile  # with Bazel JSON trace profiles
 ```
 
 Uses a separate `--output_base` so cold-start measurements don't conflict

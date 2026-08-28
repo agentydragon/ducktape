@@ -1,15 +1,22 @@
+load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/python:defs.bzl", "py_binary")
 
 package(default_visibility = ["//visibility:public"])
 
-py_binary(
+py_library(
     name = "genome_analyzer",
     srcs = ["genome_analyzer.py"],
-    data = ["report_template.html.j2"],
     deps = [
         "@pypi//jinja2",
         "@pypi//pandas",
         "@pypi//pydantic",
         "@pypi//requests",
     ],
+)
+
+py_binary(
+    name = "genome_analyzer_bin",
+    data = ["report_template.html.j2"],
+    main_module = "x.genome_analyzer.genome_analyzer",
+    deps = [":genome_analyzer"],
 )

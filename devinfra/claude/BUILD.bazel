@@ -122,7 +122,7 @@ py_library(
 )
 
 py_library(
-    name = "scan_transcript_permissions_lib",
+    name = "scan_transcript_permissions",
     srcs = ["scan_transcript_permissions.py"],
     imports = ["../.."],
     deps = [
@@ -131,9 +131,9 @@ py_library(
 )
 
 py_binary(
-    name = "scan_transcript_permissions",
+    name = "scan_transcript_permissions_bin",
     main_module = "devinfra.claude.scan_transcript_permissions",
-    deps = [":scan_transcript_permissions_lib"],
+    deps = [":scan_transcript_permissions"],
 )
 
 # === Linting ===

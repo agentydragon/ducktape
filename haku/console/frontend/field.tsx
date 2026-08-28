@@ -13,7 +13,7 @@ export function Field({
   children: ReactNode;
   mono?: boolean;
   icon?: ReactNode;
-}) {
+}): JSX.Element {
   return (
     <div className={`haku-shell-field ${icon ? "haku-shell-field-inline" : ""}`}>
       {icon ? (

@@ -279,7 +279,7 @@ class StubConsole:
 async def stub_console(behavior: StubBehavior) -> AsyncIterator[StubConsole]:
     stub = StubConsole(behavior=behavior)
     app = web.Application()
-    # The path is pinned to Console's route (haku/console/http_decide_routes.py),
+    # The path is pinned to Console's route (haku/console/grants/http/decide_routes.py),
     # deliberately not imported from the client: drift on either side must fail here.
     app.router.add_post("/api/internal/http/decide", stub.handle)
     # handler_cancellation: a Hang handler outliving its disconnected client

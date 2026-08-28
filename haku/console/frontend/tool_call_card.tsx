@@ -43,7 +43,7 @@ export function ToolCallCard({
   footer?: ReactNode;
   /** Set by a surface that needs to scroll this specific card into view (a deep-linked call). */
   containerRef?: Ref<HTMLElement>;
-}) {
+}): JSX.Element {
   const detailed = variant === "detailed";
   const combined = toolCallPreview(fields.serverId, fields.toolName, args, result, variant);
   return (

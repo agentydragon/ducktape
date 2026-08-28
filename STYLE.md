@@ -117,11 +117,13 @@ attention past that.
 - **Directory-as-namespace, no redundant prefix**: inside a domain package the package
   name is the namespace — drop it from both filenames and the entities they define
   (`grants/kubernetes/models.py` defines `Grant`, not `kubernetes_grant_models.py` /
-  `KubernetesGrant`). Two seams keep meaningful names, never by rebaking the prefix: at a
+  `KubernetesGrant`). Three seams keep meaningful names, never by rebaking the prefix: at a
   cross-package collision, module-qualify (`kubernetes.Grant` vs `http.Grant`) or
   alias-with-comment; cross-cutting primitives (`HttpMethod`, `RequestAttributes`) live in
-  a shared home, they are not domain-specific entities. Worked example and the console
-  reorg it governs: <haku/console/docs/naming_and_layout.md>.
+  a shared home, they are not domain-specific entities; and a class name that is a
+  published schema-component key renames only as a coordinated wire change, never as a
+  package-move rider. Worked example and the console reorg it governs:
+  <haku/console/docs/naming_and_layout.md>.
 - **Identifiers carry their type**: a UUID travels as `UUID` end to end, the
   conversions absorbed by boundary adapters (Pydantic validators, ORM column types) —
   no scattered `UUID(x)`/`str(y)` in code. Where a str-typed library surface can't be

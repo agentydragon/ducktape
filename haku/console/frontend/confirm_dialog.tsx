@@ -61,7 +61,7 @@ export function ConfirmDialog({
   action: Escalation | null;
   onApprove: () => void;
   onCancel: () => void;
-}) {
+}): JSX.Element {
   const ref = useRef<HTMLDialogElement>(null);
   const [armed, setArmed] = useState(false);
   const actionIdentity = action ? escalationIdentity(action) : null;

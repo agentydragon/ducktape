@@ -8,12 +8,13 @@ import type { z } from "zod";
 
 import { CodeBlock } from "../../code_block";
 import { Field } from "../../field";
-import { mcpToolSchema } from "../../mcp_tool_schema";
+import { mcpToolSchema, type McpToolArgumentsFor } from "../../mcp_tool_schema";
 import { definePreview, type ToolPreview } from "../entry";
 import { clampBlock, PreviewText, type PreviewProps } from "../vocabulary";
 import { HAKU_ROUTINE_SERVER_ID } from "../server_ids";
 
-const zLaunchRoutineArgs = mcpToolSchema(HAKU_ROUTINE_SERVER_ID, "launch_routine");
+const zLaunchRoutineArgs: z.ZodType<McpToolArgumentsFor<typeof HAKU_ROUTINE_SERVER_ID, "launch_routine">> =
+  mcpToolSchema(HAKU_ROUTINE_SERVER_ID, "launch_routine");
 type LaunchRoutineArgs = z.infer<typeof zLaunchRoutineArgs>;
 
 function LaunchRoutinePreview({ args, variant }: PreviewProps<LaunchRoutineArgs>) {
@@ -26,6 +27,8 @@ function LaunchRoutinePreview({ args, variant }: PreviewProps<LaunchRoutineArgs>
   );
 }
 
-export const hakuRoutinePreviews = {
+export const hakuRoutinePreviews: {
+  launch_routine: ToolPreview<typeof zLaunchRoutineArgs>;
+} = {
   launch_routine: definePreview(zLaunchRoutineArgs, LaunchRoutinePreview),
 } satisfies Record<string, ToolPreview>;

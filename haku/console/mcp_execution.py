@@ -7,7 +7,7 @@ an actor is a request principal plus the accountability identities (owning Opera
 credential binding) that authorization and audit read and applicability must not; grant principals
 are stored selectors those request principals are tested against; tool-call principal rows are the
 durable submitter provenance both are revalidated from. The other four definitions: the actor
-`RuntimeActor` (`tool_call_actor.py`), `RequestPrincipal` and `GrantPrincipal` (`grant_principal.py`),
+`RuntimeActor` (`tool_call_actor.py`), `RequestPrincipal` and `GrantPrincipal` (`grants/principal.py`),
 and the `McpToolCallPrincipal` submitter-provenance row (`database_schema.py`; wire in
 `haku/shared/haku/console/tool_calls.py`).
 
@@ -26,7 +26,7 @@ from fastmcp import Context
 from fastmcp.dependencies import CurrentContext, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
-from haku.console.grant_principal import RequestPrincipal
+from haku.console.grants.principal import RequestPrincipal
 
 _HAKU_EXECUTION_META_KEY = "haku_execution"
 _CURRENT_CONTEXT = CurrentContext()

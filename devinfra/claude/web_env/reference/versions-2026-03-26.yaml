@@ -1,6 +1,6 @@
 # Claude Code Web Container Versions
 # Captured: 2026-03-26T07:47:16.722581+00:00
-# Use 'bazel run //devinfra/claude/web_env/tools:capture_versions -- --diff <prev>.yaml' to compare
+# Use 'bazel run //devinfra/claude/web_env/tools:capture_versions_bin -- --diff <prev>.yaml' to compare
 
 os:
   release: Ubuntu 24.04.3 LTS

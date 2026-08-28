@@ -6,22 +6,22 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 # ── Build-time spec fixup ────────────────────────────────────────────────────
 
 py_library(
-    name = "fix_openapi_spec_lib",
+    name = "fix_openapi_spec",
     srcs = ["fix_openapi_spec.py"],
 )
 
 py_binary(
-    name = "fix_openapi_spec",
+    name = "fix_openapi_spec_bin",
     main_module = "grocy_mcp.fix_openapi_spec",
-    deps = [":fix_openapi_spec_lib"],
+    deps = [":fix_openapi_spec"],
 )
 
 genrule(
     name = "grocy_openapi_fixed",
     srcs = ["@grocy_openapi_spec//file"],
     outs = ["grocy.openapi.fixed.json"],
-    cmd = "$(execpath :fix_openapi_spec) $(SRCS) $@",
-    tools = [":fix_openapi_spec"],
+    cmd = "$(execpath :fix_openapi_spec_bin) $(SRCS) $@",
+    tools = [":fix_openapi_spec_bin"],
 )
 
 # ── Libraries ────────────────────────────────────────────────────────────────
@@ -204,7 +204,7 @@ py_test(
     data = [":grocy_openapi_fixed"],
     deps = [
         ":conftest",
-        ":fix_openapi_spec_lib",
+        ":fix_openapi_spec",
         ":grocy_types",
         "//:conftest",
         "//util/bazel:runfiles",
@@ -212,16 +212,21 @@ py_test(
     ],
 )
 
-py_binary(
+py_library(
     name = "dump_tools",
     srcs = ["dump_tools.py"],
-    main_module = "grocy_mcp.dump_tools",
     deps = [
         ":client",
         ":mcp_types",
         ":server",
         "//mcp_infra:request_scoped_openapi",
     ],
+)
+
+py_binary(
+    name = "dump_tools_bin",
+    main_module = "grocy_mcp.dump_tools",
+    deps = [":dump_tools"],
 )
 
 py_test(

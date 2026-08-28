@@ -21,7 +21,7 @@ import {
 } from "../../gmail_client";
 import { MailIcon } from "../../icons";
 import { ExternalLink } from "../../link";
-import { mcpToolSchema } from "../../mcp_tool_schema";
+import { mcpToolSchema, type McpToolArgumentsFor } from "../../mcp_tool_schema";
 import { definePreview, type ToolPreview } from "../entry";
 import { GMAIL_SERVER_ID } from "../server_ids";
 import {
@@ -34,11 +34,22 @@ import {
   type PreviewProps,
 } from "../vocabulary";
 
-const zModifyGmailThreadLabelsArgs = mcpToolSchema(GMAIL_SERVER_ID, "threads_modify_labels");
-export const zCreateGmailDraftArgs = mcpToolSchema(GMAIL_SERVER_ID, "drafts_create");
-const zGetGmailThreadArgs = mcpToolSchema(GMAIL_SERVER_ID, "threads_get");
-const zSearchGmailThreadsArgs = mcpToolSchema(GMAIL_SERVER_ID, "threads_list");
-const zGetGmailMessageArgs = mcpToolSchema(GMAIL_SERVER_ID, "messages_get");
+const zModifyGmailThreadLabelsArgs: z.ZodType<McpToolArgumentsFor<typeof GMAIL_SERVER_ID, "threads_modify_labels">> =
+  mcpToolSchema(GMAIL_SERVER_ID, "threads_modify_labels");
+export const zCreateGmailDraftArgs: z.ZodType<McpToolArgumentsFor<typeof GMAIL_SERVER_ID, "drafts_create">> =
+  mcpToolSchema(GMAIL_SERVER_ID, "drafts_create");
+const zGetGmailThreadArgs: z.ZodType<McpToolArgumentsFor<typeof GMAIL_SERVER_ID, "threads_get">> = mcpToolSchema(
+  GMAIL_SERVER_ID,
+  "threads_get"
+);
+const zSearchGmailThreadsArgs: z.ZodType<McpToolArgumentsFor<typeof GMAIL_SERVER_ID, "threads_list">> = mcpToolSchema(
+  GMAIL_SERVER_ID,
+  "threads_list"
+);
+const zGetGmailMessageArgs: z.ZodType<McpToolArgumentsFor<typeof GMAIL_SERVER_ID, "messages_get">> = mcpToolSchema(
+  GMAIL_SERVER_ID,
+  "messages_get"
+);
 
 type ModifyGmailThreadLabelsArgs = z.infer<typeof zModifyGmailThreadLabelsArgs>;
 export type CreateGmailDraftArgs = z.infer<typeof zCreateGmailDraftArgs>;
@@ -151,7 +162,7 @@ function ModifyGmailThreadLabelsPreview({ args, variant }: PreviewProps<ModifyGm
 
 // Exported for gmail/responses.tsx's drafts_create finished view — it re-shows the same clamped
 // body the pending preview did, since the operator still cares whether the sent text matches.
-export function CompactBody({ body }: { body: string }) {
+export function CompactBody({ body }: { body: string }): JSX.Element {
   const { text, truncated } = firstLines(body, 2);
   return (
     <PreviewText c="dimmed" style={{ whiteSpace: "pre-wrap" }}>
@@ -163,7 +174,7 @@ export function CompactBody({ body }: { body: string }) {
 
 // Exported for gmail/calls.tsx's combined drafts_create widget, which renders this pre-execution
 // and CreateGmailDraftResultView (responses.tsx) once the call has finished.
-export function CreateGmailDraftPreview({ args, variant }: PreviewProps<CreateGmailDraftArgs>) {
+export function CreateGmailDraftPreview({ args, variant }: PreviewProps<CreateGmailDraftArgs>): JSX.Element {
   // Subject leads as the draft's title; recipients ride one mail-icon line (cc folded in when
   // detailed); the body follows unlabelled — clamped compact, full detailed. A reply draft links to
   // the thread it lands in rather than printing the raw thread id, whose value the href carries.
@@ -269,7 +280,12 @@ function SearchGmailThreadsPreview({ args }: PreviewProps<SearchGmailThreadsArgs
  * pending/finished states are one combined widget (calls.tsx), not a separate args-only one. The
  * remaining read tools (`labels_list`, `filters_list`, `drafts_list`, …) have no entry either —
  * their args are empty or self-descriptive, so the raw-JSON fallback serves. */
-export const gmailPreviews = {
+export const gmailPreviews: {
+  threads_modify_labels: ToolPreview<typeof zModifyGmailThreadLabelsArgs>;
+  threads_get: ToolPreview<typeof zGetGmailThreadArgs>;
+  threads_list: ToolPreview<typeof zSearchGmailThreadsArgs>;
+  messages_get: ToolPreview<typeof zGetGmailMessageArgs>;
+} = {
   threads_modify_labels: definePreview(zModifyGmailThreadLabelsArgs, ModifyGmailThreadLabelsPreview),
   threads_get: definePreview(zGetGmailThreadArgs, GetGmailThreadPreview),
   threads_list: definePreview(zSearchGmailThreadsArgs, SearchGmailThreadsPreview),

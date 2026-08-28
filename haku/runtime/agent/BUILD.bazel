@@ -25,15 +25,12 @@ py_library(
     srcs = ["agent.py"],
     deps = [
         ":config",
-        "@pypi//httpx",
-        # agent_framework core's __init__ references the openai/anthropic/claude stub
-        # modules, so all four packages must be present even though we import only
-        # core + openai (see skills/info_gathering/evals/.../agent_framework/BUILD.bazel).
-        "@pypi//agent_framework_anthropic",
-        "@pypi//agent_framework_claude",
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",
+        "@pypi//agent_framework_openai",  # keep: manifest maps agent_framework.openai to core; the dist must still be present
         "@pypi//agent_framework_redis",
+        "@pypi//httpx",
     ],
 )
 
@@ -60,10 +57,10 @@ py_library(
         ":agent",
         ":bootstrap",
         ":config",
-        "@pypi//agent_framework_anthropic",
-        "@pypi//agent_framework_claude",
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//apscheduler",
         "@pypi//fastapi",
         "@pypi//uvicorn",
@@ -83,12 +80,10 @@ py_test(
         ":agent",
         ":config",
         "//:conftest",
-        # agent_framework's stub __init__ chains into the openai/anthropic/claude stubs,
-        # so mypy needs all four present to resolve `from agent_framework import ...`.
-        "@pypi//agent_framework_anthropic",
-        "@pypi//agent_framework_claude",
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
     ],
