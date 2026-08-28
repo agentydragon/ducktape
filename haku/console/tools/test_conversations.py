@@ -228,9 +228,10 @@ async def test_tool_surface() -> None:
 
 
 async def test_runtime_and_harness_kind_are_required_closed_identity_fields_on_a_session() -> None:
-    # Expand step of the runtime_kind→harness_kind wire rename (naming_and_layout.md §3.1, #4772):
-    # a session publishes both names, each a required carrier of the same closed enum, so a
-    # consumer can move to `harness_kind` before `runtime_kind` is dropped in the contract step.
+    # runtime_kind→harness_kind wire rename (naming_and_layout.md §3.1, #4772): readers are on
+    # `harness_kind`; a session keeps publishing both names, each a required carrier of the same
+    # closed enum, until the contract step drops `runtime_kind` after the reader-switch image
+    # rolls out.
     async with Client(_mcp(_Reader())) as client:
         list_sessions = one(tool for tool in await client.list_tools() if tool.name == "list_sessions")
 
@@ -314,7 +315,7 @@ async def test_a_session_names_its_thread_and_the_channels_holding_a_copy_of_it(
     assert not result.is_error
     page = SessionPage.model_validate(result.structured_content)
     assert page.items[0].conversation_id == CONVERSATION
-    assert page.items[0].runtime_kind == "claude_code"
+    assert page.items[0].harness_kind == "claude_code"
     assert [attachment.address for attachment in page.items[0].attachments] == ["!room:example.org"]
 
 

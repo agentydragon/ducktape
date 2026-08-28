@@ -391,11 +391,15 @@ conversation-domain quiet gap.
   - the prompt-origin models (`SpaOrigin`/`MatrixOrigin`/`HarnessOrigin`/`PromptOriginKind`) and
     `PromptRejection` → the prompt vocabulary (conversation lane)
 - **C4d · `runtime_kind` → `harness_kind`** _(semantic — coordinated stored + wire + OpenAPI)_ — the
-  harness-kind discriminator (§3.1). #4431 made it a closed, published, read-only wire field, so the
-  rename rides expand/contract with its schema consumers, same care as C4b. The console harness
-  adapters (`x/claude_code`, `x/codex_app_server`) are deleted by the #4667 cutover (native projection
-  moves runner-ward), so there is no console `runtimes/`→`harnesses/` move to schedule — only this
-  discriminator rename and the small `harnesses/` selection residue.
+  harness-kind discriminator (§3.1), mid-roll: every wire surface publishes both names and every
+  reader is on `harness_kind`. Remaining: drop `runtime_kind` from the writers (wire models, their
+  schema pins, the SPA mirror) once the reader-switch image is rolled out — earlier breaks a
+  still-deployed reader mid-roll; then the stored `conversation.runtime_kind` column and the
+  `RuntimeKind` enum / OpenAPI component → `HarnessKind`, a stored + published rename that needs its
+  own expand/contract roll story, same care as C4b. The console harness adapters (`x/claude_code`,
+  `x/codex_app_server`) are deleted by the #4667 cutover (native projection moves runner-ward), so
+  there is no console `runtimes/`→`harnesses/` move to schedule — only this discriminator rename and
+  the small `harnesses/` selection residue.
 - **C4e · `allowed_chat_runtimes` → `allowed_harnesses`** _(semantic — per-profile config field,
   deploy-coordinated expand/contract, same recipe as the `chat_runtimes` → `harnesses` key flip)_.
 - **C5 · One Pydantic conversation-event vocabulary** _(semantic — the contested one)_ — merge the

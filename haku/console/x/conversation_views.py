@@ -67,6 +67,9 @@ class ConversationSummary(BaseModel):
     conversation_id: UUID
     agent_id: UUID | None = None
     access_profile_id: str | None = None
+    # CLEANUP(added 2026-08-28): contract step of runtime_kind→harness_kind (naming_and_layout.md
+    #   §3.1, #4772). Readers are on `harness_kind`; drop this field once the image carrying the
+    #   switched readers is rolled out.
     runtime_kind: RuntimeKind
     created_at: datetime
     last_activity_at: datetime = Field(
@@ -83,9 +86,6 @@ class ConversationSummary(BaseModel):
     item_count: int = Field(
         description="How many transcript rows this conversation holds — prompts, answers and calls alike."
     )
-    # CLEANUP(added 2026-08-27): expand step of runtime_kind→harness_kind (naming_and_layout.md
-    #   §3.1, #4772). A read-only mirror of `runtime_kind`, so a consumer can move to `harness_kind`
-    #   before the contract step renames the field and drops `runtime_kind`.
     harness_kind: RuntimeKind
 
 
@@ -157,6 +157,9 @@ class ConversationView(BaseModel):
     conversation_id: UUID
     agent_id: UUID | None = None
     access_profile_id: str | None = None
+    # CLEANUP(added 2026-08-28): contract step of runtime_kind→harness_kind (naming_and_layout.md
+    #   §3.1, #4772). Readers are on `harness_kind`; drop this field once the image carrying the
+    #   switched readers is rolled out.
     runtime_kind: RuntimeKind
     created_at: datetime
     attachments: list[ChannelAttachment]
@@ -166,9 +169,6 @@ class ConversationView(BaseModel):
     )
     session: ConversationSessionView
     earlier_sessions: list[EarlierSession]
-    # CLEANUP(added 2026-08-27): expand step of runtime_kind→harness_kind (naming_and_layout.md
-    #   §3.1, #4772). A read-only mirror of `runtime_kind`, so a consumer can move to `harness_kind`
-    #   before the contract step renames the field and drops `runtime_kind`.
     harness_kind: RuntimeKind
 
 
@@ -263,6 +263,9 @@ class SessionProvisioningView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     session_id: UUID
+    # CLEANUP(added 2026-08-28): contract step of runtime_kind→harness_kind (naming_and_layout.md
+    #   §3.1, #4772). Readers are on `harness_kind`; drop this field once the image carrying the
+    #   switched readers is rolled out.
     runtime_kind: RuntimeKind = Field(
         description="The immutable runner implementation pinned by this session's conversation."
     )
@@ -275,9 +278,6 @@ class SessionProvisioningView(BaseModel):
         "is idle and has never asked for one; `claim_absent` means one was requested but Kubernetes "
         "does not have it now."
     )
-    # CLEANUP(added 2026-08-27): expand step of runtime_kind→harness_kind (naming_and_layout.md
-    #   §3.1, #4772). A read-only mirror of `runtime_kind`, so a consumer can move to `harness_kind`
-    #   before the contract step renames the field and drops `runtime_kind`.
     harness_kind: RuntimeKind = Field(
         description="The immutable runner implementation pinned by this session's conversation."
     )
@@ -318,13 +318,13 @@ class SessionFramePage(BaseModel):
         description="The thread this session ran. The inspector is addressed by session, so this is what its reader "
         "needs to get back to the conversation the session belongs to."
     )
+    # CLEANUP(added 2026-08-28): contract step of runtime_kind→harness_kind (naming_and_layout.md
+    #   §3.1, #4772). Readers are on `harness_kind`; drop this field once the image carrying the
+    #   switched readers is rolled out.
     runtime_kind: RuntimeKind = Field(description="The immutable runner implementation whose wire these frames use.")
     next_before_seq: int | None = Field(
         description="Pass back as `before_seq` for the page of earlier frames, or absent at the start of the log."
     )
-    # CLEANUP(added 2026-08-27): expand step of runtime_kind→harness_kind (naming_and_layout.md
-    #   §3.1, #4772). A read-only mirror of `runtime_kind`, so a consumer can move to `harness_kind`
-    #   before the contract step renames the field and drops `runtime_kind`.
     harness_kind: RuntimeKind = Field(description="The immutable runner implementation whose wire these frames use.")
 
 

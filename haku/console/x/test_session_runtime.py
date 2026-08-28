@@ -2464,7 +2464,7 @@ async def test_a_session_that_failed_to_come_up_still_says_what_it_was_stuck_beh
     view = await chat_service.sandbox_provisioning(operator_id, session.session_id)
 
     assert view.status is SessionStatus.FAILED
-    assert view.runtime_kind == "claude_code"
+    assert view.harness_kind == "claude_code"
     assert view.sandbox.step is ProvisioningStep.WAITING_FOR_POD
     assert view.sandbox.claim_message == "no warm sandbox available"
 
