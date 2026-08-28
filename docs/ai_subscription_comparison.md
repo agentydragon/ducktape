@@ -614,7 +614,7 @@ converts these into tasks, which are:
 
 Cerebras's multiple buys index-34 tokens while Z.ai's buys index-60 ones, so these rows are not comparable at face value. Z.ai rows convert its published 15-30x multiple at GLM-5.3 blended $2.00/M. The Claude row back-solves from a four-figure API bill displaced at Opus 5 blended ~$9/M, so it is an estimate with wide error bars. The spread is still roughly **30x between the cheapest and most expensive token pools** — and they are not interchangeable tokens.
 
-**The frontier vendors subsidize least — except they do not, once measured.** The intuition is that serving Opus 5 and GPT-5.6 costs more so the plans must price accordingly, and a marginal capacity dollar therefore buys more tokens at Cerebras or Z.ai. Measurement contradicts it: this cluster's Langfuse traces put ChatGPT Pro at a **12x floor** (below), already inside Z.ai's _claimed_ 15-30x band while serving GPT-5.6 Sol rather than GLM. The reason applies to Anthropic too — a subscription does not meter cache reads separately, and cache reads are ~99% of agentic token volume, so the vendors serving the priciest models absorb the most replayed context. Retained as the intuition to distrust, not as a finding.
+**The frontier vendors subsidize least — unverified, and harder to state than it looks.** The intuition is that serving Opus 5 and GPT-5.6 costs more so the plans must price accordingly, and a marginal capacity dollar therefore buys more tokens at Cerebras or Z.ai. It cannot be checked as written, because a flat plan with a quota has no per-token cost to compare: the marginal token is free until the quota binds, then unavailable. What measurement does show (below) is that ChatGPT Pro absorbs a very large token volume — 3.25B input in 15 days — at a flat $200, which is at least the right shape for a deep subsidy even though the multiple is not computable. Treat the ranking of subsidies across metered and flat plans as undefined rather than resolved.
 
 **Extra-usage credits are not a discount.** Anthropic's overflow bills at list API rates, which is a 1x subsidy — precisely the pricing a subscription exists to avoid. It buys availability, never economy. For a workload large enough to justify Max 20x, leaving it enabled without a hard cap reproduces the four-figure API bill that the subscriptions replaced. Treat it as an emergency valve with a cap set low enough to hurt, not as a capacity plan.
 
@@ -820,32 +820,45 @@ either AA's benchmark tasks (39:1 for Luna at max effort) or a single long Claud
 session (326:1). A fleet replaying large contexts across many short turns sits at the
 far end of that distribution.
 
-**Priced at API list, that subscription is worth $2,400-$22,100/month.** Against a $200
-fee that is a **12x-111x subsidy** — and the low end of that range assumes every input
-token is a cache read, which is the most generous assumption available to OpenAI, not
-the least. So **12x is a floor.**
+**What this does not establish is a cost, or a subsidy.** These models sit behind a
+flat subscription with a quota. Their marginal cost per token is **zero**, and their
+marginal cost per request is zero, right up until the quota binds and it becomes
+infinite. There is no per-token price to record, so `totalCost` reading `0` throughout
+is not a gap in the data — it is the correct value.
 
-**The range is 9x wide for one missing number: the cache rate.** Langfuse cannot supply
-it. Its aggregate metrics API offers no cache measure (valid measures are `count`,
-`latency`, `inputTokens`, `outputTokens`, `totalTokens`, cost and latency variants,
-`toolCalls` — nothing cache-related), and `totalCost` is `0` throughout because no
-pricing is configured for these custom model names. The split exists only in
-per-observation `usageDetails`, which means reading trace bodies. Configuring model
-prices in Langfuse would make `totalCost` self-computing and close this permanently —
-a smaller job than any other measurement this document asks for.
+Multiplying the volume by API list rates gives $2,400-$22,100/month against a $200 fee,
+and an earlier revision reported that as a "12x-111x subsidy, 12x floor". That framing
+is withdrawn, for two reasons beyond the width of the range:
 
-**What this does to the frontier-versus-cheap-tier comparison.** The claim that
-frontier vendors subsidize least does not survive measurement. At 12x floor, ChatGPT
-Pro is already in the same band as Z.ai's _claimed_ 15-30x, and it delivers GPT-5.6 Sol
-and Terra rather than GLM. The reason is structural and applies to Anthropic equally:
-a subscription does not meter cache reads separately, and cache reads are ~99% of
-agentic token volume. The vendors serving the most expensive models are also the ones
-absorbing the most replayed context.
+- **The counterfactual is not the same work at API prices.** A flat plan with a quota
+  makes each token free at the margin, and free-at-the-margin traffic is not the
+  traffic you would buy when metered. Much of that 3.25B exists _because_ nothing was
+  counting it. Pricing induced volume at list and calling the product "value delivered"
+  inflates it by however much of the volume the meter would have suppressed — an
+  unknown fraction, plausibly a large one at 599:1.
+- **The cache rate is still missing**, and it alone spans 9x. Langfuse cannot supply
+  it: the aggregate metrics API has no cache measure (valid measures are `count`,
+  `latency`, `inputTokens`, `outputTokens`, `totalTokens`, cost and latency variants,
+  `toolCalls`), and the split exists only in per-observation `usageDetails`, behind
+  trace bodies.
 
-**And it reframes the buying question.** The loadout already in place is delivering a
-subsidy at least as large as anything on offer elsewhere. What it does not deliver is
-_more_ capacity once the weekly cap binds — which is the actual constraint, and the
-thing no additional subscription fixes better than pay-per-token overflow does.
+**Configuring model prices in Langfuse would not fix this**, which an earlier revision
+also proposed. It would populate `totalCost` with a counterfactual list price for
+traffic that costs nothing at the margin — a fabricated number in a field whose name
+claims it is real. The right treatment for a flat plan is to leave cost empty and track
+volume, which is what the deployment already does.
+
+**What the measurement does establish** is volume, and volume is the thing this
+document was previously guessing at: 3.25B input tokens over 15 days on one
+subscription, against a back-solved estimate of 1.3-2.6B/month for the _whole_ loadout.
+The estimate was low by more than an order of magnitude, and that correction stands on
+counted tokens alone.
+
+**The unit a flat plan is actually denominated in is quota, and nothing here measures
+it.** Tokens are not quota; the vendor's percentage gauge is quota with no denominator.
+Until one is pinned to the other, "how much of what I bought am I using" stays
+unanswered for ChatGPT exactly as it does for Claude — the difference being that for
+ChatGPT the numerator is now known.
 
 #### Where it still cannot be derived: Claude
 
@@ -1057,13 +1070,21 @@ only the shape: a request allowance is a hard ceiling independent of how much wo
 request does, so Copilot Pro+ at 1,500 requests a month runs out on call count long
 before token volume becomes the constraint.
 
-**ChatGPT Pro is now measured; Claude Max 20x is not.** Langfuse traces from this
-cluster put ChatGPT Pro's subsidy at a **12x floor** — 3.25B input tokens over 15
-sampled days at 599:1 input-to-output, worth $2,400-$22,100/month at API list against a
-$200 fee. That makes the loadout already in place at least as subsidised as anything on
-offer elsewhere, which is the single most decision-relevant thing in this document.
-Claude stays unranked only because Claude Code bypasses the instrumented proxy; the
-calibration for it is local and cheap, and remains the highest-value follow-up.
+**ChatGPT Pro's volume is now measured; its cost per task is not, and cannot be.**
+Langfuse traces from this cluster record **3.25B input tokens over 15 sampled days** at
+599:1 input-to-output on a flat $200 plan. That is a real number and it corrects this
+document's consumption estimate by more than an order of magnitude. It is not a cost:
+a flat plan with a quota prices the marginal token at zero until the quota binds, so
+there is no per-task figure to put in the table above, and an earlier revision's
+"12x floor subsidy" is withdrawn — see the measured section for why multiplying
+free-at-the-margin volume by list rates overstates it.
+
+**Which means the table's asymmetry is sharper than it looks.** The pay-per-token rows
+have a cost per task because someone is metering them. The flat plans do not have one
+_in principle_, not merely for want of data — Claude, ChatGPT and any quota-metered
+plan included. Comparing a metered rate against a flat plan is a category error the
+whole document has been quietly performing, and the honest form of the comparison is
+capacity against volume, not dollars against dollars.
 
 ### Two caveats that could move the ranking
 
