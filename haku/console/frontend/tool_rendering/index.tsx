@@ -43,7 +43,21 @@ import {
 import { tanaPreviews } from "./tana/requests";
 import type { PreviewVariant } from "./vocabulary";
 
-const REGISTRY = {
+// isolatedDeclarations cannot infer a computed-key object literal's type, so the shape is spelled
+// out once here; REGISTRY's explicit annotation makes `typeof REGISTRY` below resolve to exactly
+// this (still-literal, per-server) type instead of forcing a widened one.
+type PreviewRegistryShape = {
+  [GMAIL_SERVER_ID]: typeof gmailPreviews;
+  [GOOGLE_CALENDAR_SERVER_ID]: typeof googleCalendarPreviews;
+  [GROCY_SERVER_ID]: typeof grocyPreviews;
+  [HAKU_ROUTINE_SERVER_ID]: typeof hakuRoutinePreviews;
+  [HOSTEXEC_SERVER_ID]: typeof hostexecPreviews;
+  [KUBECTL_SERVER_ID]: typeof kubectlPreviews;
+  [KUBERNETES_SERVER_ID]: typeof kubernetesPreviews;
+  [TANA_RW_SERVER_ID]: typeof tanaPreviews;
+};
+
+const REGISTRY: PreviewRegistryShape = {
   [GMAIL_SERVER_ID]: gmailPreviews,
   [GOOGLE_CALENDAR_SERVER_ID]: googleCalendarPreviews,
   [GROCY_SERVER_ID]: grocyPreviews,
@@ -52,28 +66,41 @@ const REGISTRY = {
   [KUBECTL_SERVER_ID]: kubectlPreviews,
   [KUBERNETES_SERVER_ID]: kubernetesPreviews,
   [TANA_RW_SERVER_ID]: tanaPreviews,
-} as const satisfies Record<string, Record<string, ToolPreview>>;
+} satisfies Record<string, Record<string, ToolPreview>>;
 
 type PreviewRegistry = typeof REGISTRY;
 const RUNTIME_REGISTRY: Record<string, Record<string, ToolPreview>> = REGISTRY;
 
 // `as const` (like REGISTRY) so RegisteredResultPayload below can resolve each tool's literal
 // result schema; RUNTIME_RESULT_REGISTRY is the widened twin toolResultPreview indexes by string.
-const RESULT_REGISTRY = {
+type ResultRegistryShape = {
+  [GMAIL_SERVER_ID]: typeof gmailResultPreviews;
+  [GOOGLE_CALENDAR_SERVER_ID]: typeof googleCalendarResultPreviews;
+  [GROCY_SERVER_ID]: typeof grocyResultPreviews;
+  [HOSTEXEC_SERVER_ID]: typeof hostexecResultPreviews;
+  [KUBERNETES_SERVER_ID]: typeof kubernetesResultPreviews;
+};
+
+const RESULT_REGISTRY: ResultRegistryShape = {
   [GMAIL_SERVER_ID]: gmailResultPreviews,
   [GOOGLE_CALENDAR_SERVER_ID]: googleCalendarResultPreviews,
   [GROCY_SERVER_ID]: grocyResultPreviews,
   [HOSTEXEC_SERVER_ID]: hostexecResultPreviews,
   [KUBERNETES_SERVER_ID]: kubernetesResultPreviews,
-} as const satisfies Record<string, Record<string, ToolResultPreview>>;
+} satisfies Record<string, Record<string, ToolResultPreview>>;
 type ResultRegistry = typeof RESULT_REGISTRY;
 const RUNTIME_RESULT_REGISTRY: Record<string, Record<string, ToolResultPreview>> = RESULT_REGISTRY;
 
 // Combined pending/finished widgets — see call_entry.tsx.
-const CALL_REGISTRY = {
+type CallRegistryShape = {
+  [GMAIL_SERVER_ID]: typeof gmailCallPreviews;
+  [GOOGLE_CALENDAR_SERVER_ID]: typeof googleCalendarCallPreviews;
+};
+
+const CALL_REGISTRY: CallRegistryShape = {
   [GMAIL_SERVER_ID]: gmailCallPreviews,
   [GOOGLE_CALENDAR_SERVER_ID]: googleCalendarCallPreviews,
-} as const satisfies Record<string, Record<string, ToolCallPreview>>;
+} satisfies Record<string, Record<string, ToolCallPreview>>;
 type CallRegistry = typeof CALL_REGISTRY;
 const RUNTIME_CALL_REGISTRY: Record<string, Record<string, ToolCallPreview>> = CALL_REGISTRY;
 

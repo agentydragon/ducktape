@@ -47,6 +47,7 @@ def ts_library(name, srcs, tsconfig, deps = [], **kwargs):
         # type error fails the build. A faster transpiler (swc, esbuild) would split
         # emitting from checking and let `bazel build` go green on code tsc rejects.
         transpiler = "tsc",
+        isolated_typecheck = True,
         declaration = True,
         source_map = True,
         resolve_json_module = True,

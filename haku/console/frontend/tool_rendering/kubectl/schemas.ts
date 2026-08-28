@@ -8,11 +8,19 @@
 
 import { z } from "zod";
 
-export const zResourcesCreateOrUpdateArgs = z.object({
+export const zResourcesCreateOrUpdateArgs: ReturnType<typeof z.object<{ resource: z.ZodString }>> = z.object({
   resource: z.string(),
 });
 
-export const zResourcesDeleteArgs = z.object({
+export const zResourcesDeleteArgs: ReturnType<
+  typeof z.object<{
+    apiVersion: z.ZodString;
+    kind: z.ZodString;
+    name: z.ZodString;
+    namespace: z.ZodOptional<z.ZodString>;
+    gracePeriodSeconds: z.ZodOptional<z.ZodNumber>;
+  }>
+> = z.object({
   apiVersion: z.string(),
   kind: z.string(),
   name: z.string(),
@@ -20,11 +28,21 @@ export const zResourcesDeleteArgs = z.object({
   gracePeriodSeconds: z.number().optional(),
 });
 
-export const zPodsDeleteArgs = z.object({
+export const zPodsDeleteArgs: ReturnType<
+  typeof z.object<{ name: z.ZodString; namespace: z.ZodOptional<z.ZodString> }>
+> = z.object({
   name: z.string(),
   namespace: z.string().optional(),
 });
-export const zPodsLogArgs = z.object({
+export const zPodsLogArgs: ReturnType<
+  typeof z.object<{
+    name: z.ZodString;
+    namespace: z.ZodOptional<z.ZodString>;
+    container: z.ZodOptional<z.ZodString>;
+    previous: z.ZodOptional<z.ZodBoolean>;
+    tail: z.ZodOptional<z.ZodNumber>;
+  }>
+> = z.object({
   name: z.string(),
   namespace: z.string().optional(),
   container: z.string().optional(),

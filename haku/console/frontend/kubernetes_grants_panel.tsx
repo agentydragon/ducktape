@@ -222,7 +222,7 @@ function RevokeDialog({
   );
 }
 
-export function KubernetesGrantsPanel() {
+export function KubernetesGrantsPanel(): JSX.Element {
   const [grants, setGrants] = useState<OperatorKubernetesGrant[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);

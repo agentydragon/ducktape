@@ -5,7 +5,7 @@ import { fetchOperator } from "./client";
 // How long before the deadline the shell starts saying so. The operator session has a hard,
 // non-sliding one-hour lifetime, so expiry always arrives — as a warning here, or as a tab that
 // navigates itself to Authentik mid-task.
-export const SESSION_WARNING_LEAD_MS = 5 * 60_000;
+export const SESSION_WARNING_LEAD_MS: number = 5 * 60_000;
 const TICK_MS = 30_000;
 
 /** The absolute deadline of the current operator session, or `null` until it is known.

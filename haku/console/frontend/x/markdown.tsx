@@ -41,7 +41,7 @@ export function sanitizedMarkdown(source: string): string {
   });
 }
 
-export function Markdown({ source, className = "" }: { source: string; className?: string }) {
+export function Markdown({ source, className = "" }: { source: string; className?: string }): JSX.Element {
   const html = useMemo(() => sanitizedMarkdown(source), [source]);
   return <div className={`md ${className}`.trim()} dangerouslySetInnerHTML={{ __html: html }} />;
 }

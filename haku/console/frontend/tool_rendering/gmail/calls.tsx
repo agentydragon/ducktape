@@ -20,6 +20,8 @@ function CreateDraftCall({
 }
 
 /** Combined pending/finished widgets for the `gmail` server. */
-export const gmailCallPreviews = {
+export const gmailCallPreviews: {
+  drafts_create: ToolCallPreview<typeof zCreateGmailDraftArgs, typeof zDraft>;
+} = {
   drafts_create: defineCallPreview(zCreateGmailDraftArgs, zDraft, CreateDraftCall),
 } satisfies Record<string, ToolCallPreview>;

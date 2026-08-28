@@ -1,4 +1,4 @@
-import { createTheme, type MantineColorsTuple } from "@mantine/core";
+import { createTheme, type MantineColorsTuple, type MantineThemeOverride } from "@mantine/core";
 
 const haku: MantineColorsTuple = [
   "#edf9f5",
@@ -29,7 +29,7 @@ const hakuSpirit: MantineColorsTuple = [
 export const ACTION_COLOR = "hakuSpirit";
 export const SUCCESS_COLOR = "haku";
 
-export const hakuTheme = createTheme({
+export const hakuTheme: MantineThemeOverride = createTheme({
   primaryColor: ACTION_COLOR,
   colors: { haku, hakuSpirit },
 });

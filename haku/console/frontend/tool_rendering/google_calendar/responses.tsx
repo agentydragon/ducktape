@@ -8,16 +8,22 @@ import type { z } from "zod";
 import { Field } from "../../field";
 import { ClockIcon, GoogleCalendarIcon, MapPinIcon, UsersIcon } from "../../icons";
 import { ExternalLink } from "../../link";
-import { mcpToolResultSchema } from "../../mcp_tool_result_schema";
+import { mcpToolResultSchema, type McpToolResultFor } from "../../mcp_tool_result_schema";
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry";
 import { COMPACT_ITEM_LIMIT, MoreLine, PreviewText, PreviewTitle } from "../vocabulary";
 import { GOOGLE_CALENDAR_SERVER_ID } from "../server_ids";
 import { formatEventDateTimeRange, RecurrenceField } from "./requests";
 
-export const zCreateEventResult = mcpToolResultSchema(GOOGLE_CALENDAR_SERVER_ID, "create_event");
-const zGetEventResult = mcpToolResultSchema(GOOGLE_CALENDAR_SERVER_ID, "get_event");
-const zListEventsResult = mcpToolResultSchema(GOOGLE_CALENDAR_SERVER_ID, "list_events");
-const zListEventInstancesResult = mcpToolResultSchema(GOOGLE_CALENDAR_SERVER_ID, "list_event_instances");
+export const zCreateEventResult: z.ZodType<McpToolResultFor<typeof GOOGLE_CALENDAR_SERVER_ID, "create_event">> =
+  mcpToolResultSchema(GOOGLE_CALENDAR_SERVER_ID, "create_event");
+const zGetEventResult: z.ZodType<McpToolResultFor<typeof GOOGLE_CALENDAR_SERVER_ID, "get_event">> = mcpToolResultSchema(
+  GOOGLE_CALENDAR_SERVER_ID,
+  "get_event"
+);
+const zListEventsResult: z.ZodType<McpToolResultFor<typeof GOOGLE_CALENDAR_SERVER_ID, "list_events">> =
+  mcpToolResultSchema(GOOGLE_CALENDAR_SERVER_ID, "list_events");
+const zListEventInstancesResult: z.ZodType<McpToolResultFor<typeof GOOGLE_CALENDAR_SERVER_ID, "list_event_instances">> =
+  mcpToolResultSchema(GOOGLE_CALENDAR_SERVER_ID, "list_event_instances");
 
 export type CalendarEvent = z.infer<typeof zCreateEventResult>;
 type CalendarEventsPage = z.infer<typeof zListEventsResult>;
@@ -82,7 +88,7 @@ function CalendarEventView({ event, variant }: { event: CalendarEvent; variant: 
 // Exported for google_calendar/calls.tsx's combined create_event widget, rendered once the tool has
 // executed — the same full event view get_event/list_events use, and the only place the event's
 // when/recurrence/location shows after the call finishes.
-export function CalendarEventResultView({ result, variant }: ResultPreviewProps<CalendarEvent>) {
+export function CalendarEventResultView({ result, variant }: ResultPreviewProps<CalendarEvent>): JSX.Element {
   return <CalendarEventView event={result} variant={variant} />;
 }
 
@@ -109,7 +115,11 @@ function CalendarEventsPageResultView({ result, variant }: ResultPreviewProps<Ca
 /** Per-tool result widgets for the `google_calendar` server. `create_event` has no entry here —
  * its pending/finished states are one combined widget (calls.tsx), not a separate result-only
  * one. */
-export const googleCalendarResultPreviews = {
+export const googleCalendarResultPreviews: {
+  get_event: ToolResultPreview<typeof zGetEventResult>;
+  list_events: ToolResultPreview<typeof zListEventsResult>;
+  list_event_instances: ToolResultPreview<typeof zListEventInstancesResult>;
+} = {
   get_event: defineResultPreview(zGetEventResult, CalendarEventResultView),
   list_events: defineResultPreview(zListEventsResult, CalendarEventsPageResultView),
   list_event_instances: defineResultPreview(zListEventInstancesResult, CalendarEventsPageResultView),

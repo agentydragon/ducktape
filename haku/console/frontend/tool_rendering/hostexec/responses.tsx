@@ -8,12 +8,15 @@ import prettyMs from "pretty-ms";
 import type { z } from "zod";
 
 import { CodeBlock } from "../../code_block";
-import { mcpToolResultSchema } from "../../mcp_tool_result_schema";
+import { mcpToolResultSchema, type McpToolResultFor } from "../../mcp_tool_result_schema";
 import { clampBlock, PreviewBadge, PreviewText, type PreviewVariant } from "../vocabulary";
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry";
 import { HOSTEXEC_SERVER_ID } from "../server_ids";
 
-const zBashResult = mcpToolResultSchema(HOSTEXEC_SERVER_ID, "bash");
+const zBashResult: z.ZodType<McpToolResultFor<typeof HOSTEXEC_SERVER_ID, "bash">> = mcpToolResultSchema(
+  HOSTEXEC_SERVER_ID,
+  "bash"
+);
 
 export type BashResult = z.infer<typeof zBashResult>;
 type ExitStatus = BashResult["exit"];
@@ -77,6 +80,8 @@ function BashResultView({ result, variant }: ResultPreviewProps<BashResult>) {
   );
 }
 
-export const hostexecResultPreviews = {
+export const hostexecResultPreviews: {
+  bash: ToolResultPreview<typeof zBashResult>;
+} = {
   bash: defineResultPreview(zBashResult, BashResultView),
 } satisfies Record<string, ToolResultPreview>;

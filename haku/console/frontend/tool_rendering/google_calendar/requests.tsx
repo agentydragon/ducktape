@@ -13,15 +13,21 @@ import { fetchCalendarSummary, type CalendarSummary } from "../../calendar_clien
 import { Field } from "../../field";
 import { BellIcon, CalendarIcon, ClockIcon, MapPinIcon, RepeatIcon, UsersIcon } from "../../icons";
 import { ExternalLink } from "../../link";
-import { mcpToolSchema } from "../../mcp_tool_schema";
+import { mcpToolSchema, type McpToolArgumentsFor } from "../../mcp_tool_schema";
 import { definePreview, type ToolPreview } from "../entry";
 import { PreviewText, PreviewTitle, type PreviewProps } from "../vocabulary";
 import { GOOGLE_CALENDAR_SERVER_ID } from "../server_ids";
 
-export const zCreateCalendarEventArgs = mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "create_event");
-const zGetCalendarEventArgs = mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "get_event");
-const zListCalendarEventsArgs = mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "list_events");
-const zListCalendarEventInstancesArgs = mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "list_event_instances");
+export const zCreateCalendarEventArgs: z.ZodType<
+  McpToolArgumentsFor<typeof GOOGLE_CALENDAR_SERVER_ID, "create_event">
+> = mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "create_event");
+const zGetCalendarEventArgs: z.ZodType<McpToolArgumentsFor<typeof GOOGLE_CALENDAR_SERVER_ID, "get_event">> =
+  mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "get_event");
+const zListCalendarEventsArgs: z.ZodType<McpToolArgumentsFor<typeof GOOGLE_CALENDAR_SERVER_ID, "list_events">> =
+  mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "list_events");
+const zListCalendarEventInstancesArgs: z.ZodType<
+  McpToolArgumentsFor<typeof GOOGLE_CALENDAR_SERVER_ID, "list_event_instances">
+> = mcpToolSchema(GOOGLE_CALENDAR_SERVER_ID, "list_event_instances");
 
 export type CreateCalendarEventArgs = z.infer<typeof zCreateCalendarEventArgs>;
 type GetCalendarEventArgs = z.infer<typeof zGetCalendarEventArgs>;
@@ -151,7 +157,13 @@ export function humanizeRRule(line: string): string {
   }
 }
 
-export function RecurrenceField({ recurrence, variant }: { recurrence: string[]; variant: "compact" | "detailed" }) {
+export function RecurrenceField({
+  recurrence,
+  variant,
+}: {
+  recurrence: string[];
+  variant: "compact" | "detailed";
+}): JSX.Element {
   return (
     <Stack gap={2}>
       <Field icon={<RepeatIcon size={15} />} label="Repeats">
@@ -207,7 +219,7 @@ function CalendarField({ calendarId }: { calendarId: string }) {
 
 // Exported for google_calendar/calls.tsx's combined create_event widget, which renders this
 // pre-execution and CalendarEventResultView (responses.tsx) once the call has finished.
-export function CreateCalendarEventPreview({ args, variant }: PreviewProps<CreateCalendarEventArgs>) {
+export function CreateCalendarEventPreview({ args, variant }: PreviewProps<CreateCalendarEventArgs>): JSX.Element {
   // The summary is the event's own name, so it leads as an unlabelled heading; the rest use inline
   // icon fields (🕐 time, 📍 location, …), denser than a stacked uppercase label per row.
   const when = formatEventDateTimeRange(args.start, args.end);
@@ -289,7 +301,11 @@ function ListCalendarEventInstancesPreview({ args, variant }: PreviewProps<ListC
 
 /** Per-tool preview widgets for the `google_calendar` server. `create_event` has no entry here —
  * its pending/finished states are one combined widget (calls.tsx), not a separate args-only one. */
-export const googleCalendarPreviews = {
+export const googleCalendarPreviews: {
+  get_event: ToolPreview<typeof zGetCalendarEventArgs>;
+  list_events: ToolPreview<typeof zListCalendarEventsArgs>;
+  list_event_instances: ToolPreview<typeof zListCalendarEventInstancesArgs>;
+} = {
   get_event: definePreview(zGetCalendarEventArgs, GetCalendarEventPreview),
   list_events: definePreview(zListCalendarEventsArgs, ListCalendarEventsPreview),
   list_event_instances: definePreview(zListCalendarEventInstancesArgs, ListCalendarEventInstancesPreview),

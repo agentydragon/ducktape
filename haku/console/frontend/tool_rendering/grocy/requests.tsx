@@ -20,7 +20,7 @@ import { z } from "zod";
 
 import { Field } from "../../field";
 import { fetchGrocyReferenceData, type GrocyReferenceData } from "../../grocy_client";
-import { mcpToolSchema } from "../../mcp_tool_schema";
+import { mcpToolSchema, type McpToolArgumentsFor } from "../../mcp_tool_schema";
 import { definePreview, type ToolPreview } from "../entry";
 import { GROCY_SERVER_ID } from "../server_ids";
 import {
@@ -37,19 +37,48 @@ import {
 // the batch tools are reflected at build time (haku/console/export_mcp_tool_schemas.py) so these
 // stay in lockstep with the server instead of being hand-copied. `int | str` name-or-ID fields
 // come through as `string | number`; a `date` field as `string`; a `set` as an array.
-const zStockAddArgs = mcpToolSchema(GROCY_SERVER_ID, "stock_add");
-const zStockConsumeArgs = mcpToolSchema(GROCY_SERVER_ID, "stock_consume");
-const zStockEntryEditArgs = mcpToolSchema(GROCY_SERVER_ID, "stock_entry_edit");
-const zStockGetArgs = mcpToolSchema(GROCY_SERVER_ID, "stock_get");
-const zProductsListArgs = mcpToolSchema(GROCY_SERVER_ID, "products_list");
-const zQuantityUnitsListArgs = mcpToolSchema(GROCY_SERVER_ID, "quantity_units_list");
-const zGetSystemInfoArgs = z.strictObject({});
-const zProductsCreateArgs = mcpToolSchema(GROCY_SERVER_ID, "products_create");
-const zProductsEditArgs = mcpToolSchema(GROCY_SERVER_ID, "products_edit");
-const zShoppingListGetArgs = mcpToolSchema(GROCY_SERVER_ID, "shopping_list_get");
-const zShoppingListItemsAddArgs = mcpToolSchema(GROCY_SERVER_ID, "shopping_list_items_add");
-const zShoppingListItemsRemoveArgs = mcpToolSchema(GROCY_SERVER_ID, "shopping_list_items_remove");
-const zShoppingListItemEditArgs = mcpToolSchema(GROCY_SERVER_ID, "shopping_list_item_edit");
+const zStockAddArgs: z.ZodType<McpToolArgumentsFor<typeof GROCY_SERVER_ID, "stock_add">> = mcpToolSchema(
+  GROCY_SERVER_ID,
+  "stock_add"
+);
+const zStockConsumeArgs: z.ZodType<McpToolArgumentsFor<typeof GROCY_SERVER_ID, "stock_consume">> = mcpToolSchema(
+  GROCY_SERVER_ID,
+  "stock_consume"
+);
+const zStockEntryEditArgs: z.ZodType<McpToolArgumentsFor<typeof GROCY_SERVER_ID, "stock_entry_edit">> = mcpToolSchema(
+  GROCY_SERVER_ID,
+  "stock_entry_edit"
+);
+const zStockGetArgs: z.ZodType<McpToolArgumentsFor<typeof GROCY_SERVER_ID, "stock_get">> = mcpToolSchema(
+  GROCY_SERVER_ID,
+  "stock_get"
+);
+const zProductsListArgs: z.ZodType<McpToolArgumentsFor<typeof GROCY_SERVER_ID, "products_list">> = mcpToolSchema(
+  GROCY_SERVER_ID,
+  "products_list"
+);
+const zQuantityUnitsListArgs: z.ZodType<McpToolArgumentsFor<typeof GROCY_SERVER_ID, "quantity_units_list">> =
+  mcpToolSchema(GROCY_SERVER_ID, "quantity_units_list");
+const zGetSystemInfoArgs: z.ZodType<Record<string, never>> = z.strictObject({});
+const zProductsCreateArgs: z.ZodType<McpToolArgumentsFor<typeof GROCY_SERVER_ID, "products_create">> = mcpToolSchema(
+  GROCY_SERVER_ID,
+  "products_create"
+);
+const zProductsEditArgs: z.ZodType<McpToolArgumentsFor<typeof GROCY_SERVER_ID, "products_edit">> = mcpToolSchema(
+  GROCY_SERVER_ID,
+  "products_edit"
+);
+const zShoppingListGetArgs: z.ZodType<McpToolArgumentsFor<typeof GROCY_SERVER_ID, "shopping_list_get">> = mcpToolSchema(
+  GROCY_SERVER_ID,
+  "shopping_list_get"
+);
+const zShoppingListItemsAddArgs: z.ZodType<McpToolArgumentsFor<typeof GROCY_SERVER_ID, "shopping_list_items_add">> =
+  mcpToolSchema(GROCY_SERVER_ID, "shopping_list_items_add");
+const zShoppingListItemsRemoveArgs: z.ZodType<
+  McpToolArgumentsFor<typeof GROCY_SERVER_ID, "shopping_list_items_remove">
+> = mcpToolSchema(GROCY_SERVER_ID, "shopping_list_items_remove");
+const zShoppingListItemEditArgs: z.ZodType<McpToolArgumentsFor<typeof GROCY_SERVER_ID, "shopping_list_item_edit">> =
+  mcpToolSchema(GROCY_SERVER_ID, "shopping_list_item_edit");
 
 type StockAddArgs = z.infer<typeof zStockAddArgs>;
 type StockConsumeArgs = z.infer<typeof zStockConsumeArgs>;
@@ -739,7 +768,21 @@ function ShoppingListItemEditPreview({ args, variant }: PreviewProps<ShoppingLis
 }
 
 /** Per-tool preview widgets for the `grocy-sf` server's stock, product, and shopping-list tools. */
-export const grocyPreviews = {
+export const grocyPreviews: {
+  stock_add: ToolPreview<typeof zStockAddArgs>;
+  stock_consume: ToolPreview<typeof zStockConsumeArgs>;
+  stock_entry_edit: ToolPreview<typeof zStockEntryEditArgs>;
+  stock_get: ToolPreview<typeof zStockGetArgs>;
+  products_list: ToolPreview<typeof zProductsListArgs>;
+  quantity_units_list: ToolPreview<typeof zQuantityUnitsListArgs>;
+  get_system_info: ToolPreview<typeof zGetSystemInfoArgs>;
+  products_create: ToolPreview<typeof zProductsCreateArgs>;
+  products_edit: ToolPreview<typeof zProductsEditArgs>;
+  shopping_list_get: ToolPreview<typeof zShoppingListGetArgs>;
+  shopping_list_items_add: ToolPreview<typeof zShoppingListItemsAddArgs>;
+  shopping_list_items_remove: ToolPreview<typeof zShoppingListItemsRemoveArgs>;
+  shopping_list_item_edit: ToolPreview<typeof zShoppingListItemEditArgs>;
+} = {
   stock_add: definePreview(zStockAddArgs, StockAddPreview),
   stock_consume: definePreview(zStockConsumeArgs, StockConsumePreview),
   stock_entry_edit: definePreview(zStockEntryEditArgs, StockEntryEditPreview),

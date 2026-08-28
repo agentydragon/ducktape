@@ -236,7 +236,7 @@ export function geolocationApprovalBody(approval: GeolocationApproval): string {
 // Same wording for a first grant and for a resume after the operator stopped sharing: either way
 // approving opens the browser's own tab-share picker.
 export const SCREENSHOT_APPROVAL_TITLE = "Allow screen capture for a screenshot?";
-export const SCREENSHOT_APPROVAL_BODY =
+export const SCREENSHOT_APPROVAL_BODY: string =
   "Haku is asking to capture a screenshot of this page. Approving opens your browser's own " +
   "share-this-tab picker; once granted, further screenshots are instant until you withdraw or " +
   "stop sharing.";

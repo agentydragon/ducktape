@@ -93,7 +93,12 @@ function PodsLogPreview({ args }: PreviewProps<PodsLogArgs>) {
 
 /** Per-tool preview widgets for the `kubectl-passthrough-mcp` server's highest-stakes tools
  * (apply and delete). */
-export const kubectlPreviews = {
+export const kubectlPreviews: {
+  resources_create_or_update: ToolPreview<typeof zResourcesCreateOrUpdateArgs>;
+  resources_delete: ToolPreview<typeof zResourcesDeleteArgs>;
+  pods_delete: ToolPreview<typeof zPodsDeleteArgs>;
+  pods_log: ToolPreview<typeof zPodsLogArgs>;
+} = {
   resources_create_or_update: definePreview(zResourcesCreateOrUpdateArgs, ResourcesApplyPreview),
   resources_delete: definePreview(zResourcesDeleteArgs, ResourcesDeletePreview),
   pods_delete: definePreview(zPodsDeleteArgs, PodsDeletePreview),

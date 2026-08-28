@@ -318,7 +318,7 @@ export const SAMPLE_MCP_PROBES: Record<string, McpServerProbe> = Object.fromEntr
   ])
 );
 
-export const SAMPLE_KUBERNETES_GRANTS = {
+export const SAMPLE_KUBERNETES_GRANTS: KubernetesGrantListResponse = {
   grants: [
     {
       agent_display_name: "Public Coder",

@@ -22,7 +22,7 @@ export function PendingToolCallActions({
   armed?: boolean;
   onApprove: () => void;
   onDeny: (reason?: string) => void;
-}) {
+}): JSX.Element {
   const [reason, setReason] = useState("");
   const disabled = busy || !armed;
   return (

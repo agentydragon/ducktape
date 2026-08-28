@@ -21,7 +21,7 @@ export function VariantControl({
 }: {
   variant: PreviewVariant;
   onChange: (v: PreviewVariant) => void;
-}) {
+}): JSX.Element {
   return (
     <SegmentedControl
       size="xs"

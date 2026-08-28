@@ -8,7 +8,7 @@ import { toolResultPreview } from "./tool_rendering/index";
  * envelope, not the unwrapped payload), so a widget's ranking never costs the real, copyable
  * result. Shared by `ToolResultField` and a combined call widget's own detailed body
  * (tool_call_card.tsx). */
-export function RawResultDisclosure({ result }: { result: unknown }) {
+export function RawResultDisclosure({ result }: { result: unknown }): JSX.Element {
   return (
     <details className="haku-shell-disclosure">
       <summary>Raw result</summary>
@@ -33,7 +33,7 @@ export function ToolResultField({
   toolName: string;
   result: unknown;
   variant: PreviewVariant;
-}) {
+}): JSX.Element | null {
   if (result == null) return null;
   const nice = toolResultPreview(serverId, toolName, unwrapToolResult(result), variant);
   if (!nice) {

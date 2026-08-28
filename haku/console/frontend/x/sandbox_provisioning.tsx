@@ -25,7 +25,7 @@ function readiness(value: boolean | null | undefined, pending: string): { color:
  * session that never comes up says which of the four it is stuck behind — which is the whole
  * account for a session that dies before the CLI produces a single frame.
  */
-export function SandboxProvisioning({ provisioning }: { provisioning: Provisioning }) {
+export function SandboxProvisioning({ provisioning }: { provisioning: Provisioning }): JSX.Element {
   return (
     <Paper withBorder p="md">
       <Stack gap="md">

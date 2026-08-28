@@ -10,6 +10,7 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
+    "isolatedDeclarations": true,
     "skipLibCheck": true,
     "strict": true,
     "types": []

@@ -31,7 +31,7 @@ export function ConversationComposer({
   sessionId: string;
   status: ConversationSession["status"];
   onSent: () => void;
-}) {
+}): JSX.Element {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [aborting, setAborting] = useState(false);

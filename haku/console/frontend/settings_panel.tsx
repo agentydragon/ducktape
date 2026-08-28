@@ -590,7 +590,7 @@ function IndexStatusCard({ index }: { index: IndexState }) {
   );
 }
 
-export function SettingsPanel() {
+export function SettingsPanel(): JSX.Element {
   const [activeTab, setActiveTab] = useState<SettingsTab>(settingsTabFromLocation);
   const [savingAgentId, setSavingAgentId] = useState<string | null>(null);
   const loadMcpServers = useCallback<AsyncResourceLoader<McpServerView[]>>(async (emit, previous) => {

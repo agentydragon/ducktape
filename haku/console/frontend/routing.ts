@@ -3,11 +3,11 @@ import { useCallback, useEffect, useState } from "react";
 // The trusted console owns one reserved namespace. Every other pathname belongs to the
 // cross-origin Haku UI frame.
 export const CONSOLE_ROOT_PATH = "/_console";
-export const SETTINGS_PATH = `${CONSOLE_ROOT_PATH}/settings`;
-export const TOOL_CALLS_PATH = `${CONSOLE_ROOT_PATH}/tool-calls`;
-export const CONVERSATIONS_PATH = `${CONSOLE_ROOT_PATH}/conversations`;
-export const OAUTH_RESULT_PATH_PREFIX = `${CONSOLE_ROOT_PATH}/oauth-result`;
-export const AGENT_ENROLLMENT_PATH_PREFIX = `${SETTINGS_PATH}/agents/enroll`;
+export const SETTINGS_PATH: string = `${CONSOLE_ROOT_PATH}/settings`;
+export const TOOL_CALLS_PATH: string = `${CONSOLE_ROOT_PATH}/tool-calls`;
+export const CONVERSATIONS_PATH: string = `${CONSOLE_ROOT_PATH}/conversations`;
+export const OAUTH_RESULT_PATH_PREFIX: string = `${CONSOLE_ROOT_PATH}/oauth-result`;
+export const AGENT_ENROLLMENT_PATH_PREFIX: string = `${SETTINGS_PATH}/agents/enroll`;
 export const HOME_PATH = "/";
 const LAST_EMBED_PATH_KEY = "haku-console:last-embed-path";
 

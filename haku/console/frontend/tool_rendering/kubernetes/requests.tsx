@@ -2,7 +2,7 @@ import { Group, Stack } from "@mantine/core";
 import type { z } from "zod";
 
 import { Field } from "../../field";
-import { mcpToolSchema } from "../../mcp_tool_schema";
+import { mcpToolSchema, type McpToolArgumentsFor } from "../../mcp_tool_schema";
 import { definePreview, type ToolPreview } from "../entry";
 import { KUBERNETES_SERVER_ID } from "../server_ids";
 import {
@@ -15,8 +15,12 @@ import {
   type PreviewProps,
 } from "../vocabulary";
 
-export const zCreateGrantArgs = mcpToolSchema(KUBERNETES_SERVER_ID, "create_grant");
-const zReleaseGrantsArgs = mcpToolSchema(KUBERNETES_SERVER_ID, "release_grants");
+export const zCreateGrantArgs: z.ZodType<McpToolArgumentsFor<typeof KUBERNETES_SERVER_ID, "create_grant">> =
+  mcpToolSchema(KUBERNETES_SERVER_ID, "create_grant");
+const zReleaseGrantsArgs: z.ZodType<McpToolArgumentsFor<typeof KUBERNETES_SERVER_ID, "release_grants">> = mcpToolSchema(
+  KUBERNETES_SERVER_ID,
+  "release_grants"
+);
 
 type CreateGrantArgs = z.infer<typeof zCreateGrantArgs>;
 type ReleaseGrantsArgs = z.infer<typeof zReleaseGrantsArgs>;
@@ -72,7 +76,13 @@ function RuleLine({ rule }: { rule: GrantRule }) {
   );
 }
 
-export function GrantScopeAndRules({ grant, variant }: { grant: GrantShape; variant: "compact" | "detailed" }) {
+export function GrantScopeAndRules({
+  grant,
+  variant,
+}: {
+  grant: GrantShape;
+  variant: "compact" | "detailed";
+}): JSX.Element {
   const rules = variant === "compact" ? grant.rules.slice(0, 1) : grant.rules;
   return (
     <Stack gap={4}>
@@ -138,7 +148,10 @@ function ReleaseGrantsPreview({ args, variant }: PreviewProps<ReleaseGrantsArgs>
   );
 }
 
-export const kubernetesPreviews = {
+export const kubernetesPreviews: {
+  create_grant: ToolPreview<typeof zCreateGrantArgs>;
+  release_grants: ToolPreview<typeof zReleaseGrantsArgs>;
+} = {
   create_grant: definePreview(zCreateGrantArgs, CreateGrantPreview),
   release_grants: definePreview(zReleaseGrantsArgs, ReleaseGrantsPreview),
 } satisfies Record<string, ToolPreview>;

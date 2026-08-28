@@ -12,7 +12,7 @@ import { Group, Stack } from "@mantine/core";
 import type { ReactNode } from "react";
 import { z } from "zod";
 
-import { mcpToolResultSchema } from "../../mcp_tool_result_schema";
+import { mcpToolResultSchema, type McpToolResultFor } from "../../mcp_tool_result_schema";
 import {
   COMPACT_ITEM_LIMIT,
   MoreLine,
@@ -31,14 +31,29 @@ import { GROCY_SERVER_ID } from "../server_ids";
 type ErrorRow = { error: string };
 type OkRowOf<Result> = Result extends (infer Element)[] ? Exclude<Element, ErrorRow> : never;
 
-const zStockAddResult = mcpToolResultSchema(GROCY_SERVER_ID, "stock_add");
-const zProductsCreateResult = mcpToolResultSchema(GROCY_SERVER_ID, "products_create");
-const zShoppingListItemsAddResult = mcpToolResultSchema(GROCY_SERVER_ID, "shopping_list_items_add");
-const zShoppingListItemsRemoveResult = mcpToolResultSchema(GROCY_SERVER_ID, "shopping_list_items_remove");
-const zStockEntryEditResult = mcpToolResultSchema(GROCY_SERVER_ID, "stock_entry_edit");
-const zStockGetResult = mcpToolResultSchema(GROCY_SERVER_ID, "stock_get");
-const zProductsListResult = mcpToolResultSchema(GROCY_SERVER_ID, "products_list");
-const zQuantityUnitsListResult = mcpToolResultSchema(GROCY_SERVER_ID, "quantity_units_list");
+const zStockAddResult: z.ZodType<McpToolResultFor<typeof GROCY_SERVER_ID, "stock_add">> = mcpToolResultSchema(
+  GROCY_SERVER_ID,
+  "stock_add"
+);
+const zProductsCreateResult: z.ZodType<McpToolResultFor<typeof GROCY_SERVER_ID, "products_create">> =
+  mcpToolResultSchema(GROCY_SERVER_ID, "products_create");
+const zShoppingListItemsAddResult: z.ZodType<McpToolResultFor<typeof GROCY_SERVER_ID, "shopping_list_items_add">> =
+  mcpToolResultSchema(GROCY_SERVER_ID, "shopping_list_items_add");
+const zShoppingListItemsRemoveResult: z.ZodType<
+  McpToolResultFor<typeof GROCY_SERVER_ID, "shopping_list_items_remove">
+> = mcpToolResultSchema(GROCY_SERVER_ID, "shopping_list_items_remove");
+const zStockEntryEditResult: z.ZodType<McpToolResultFor<typeof GROCY_SERVER_ID, "stock_entry_edit">> =
+  mcpToolResultSchema(GROCY_SERVER_ID, "stock_entry_edit");
+const zStockGetResult: z.ZodType<McpToolResultFor<typeof GROCY_SERVER_ID, "stock_get">> = mcpToolResultSchema(
+  GROCY_SERVER_ID,
+  "stock_get"
+);
+const zProductsListResult: z.ZodType<McpToolResultFor<typeof GROCY_SERVER_ID, "products_list">> = mcpToolResultSchema(
+  GROCY_SERVER_ID,
+  "products_list"
+);
+const zQuantityUnitsListResult: z.ZodType<McpToolResultFor<typeof GROCY_SERVER_ID, "quantity_units_list">> =
+  mcpToolResultSchema(GROCY_SERVER_ID, "quantity_units_list");
 
 type StockAddOkRow = OkRowOf<z.infer<typeof zStockAddResult>>;
 type ProductsCreateOkRow = OkRowOf<z.infer<typeof zProductsCreateResult>>;
@@ -46,7 +61,18 @@ type ShoppingListItemOkRow = OkRowOf<z.infer<typeof zShoppingListItemsAddResult>
 type StockEntryEditOkRow = OkRowOf<z.infer<typeof zStockEntryEditResult>>;
 
 // These two have no reliable generated result schema, so they stay hand-authored (see header).
-const zShoppingListGetResult = z.looseObject({
+const zShoppingListGetResult: z.ZodType<{
+  name: string;
+  description?: string | null;
+  items: {
+    item_id: number;
+    product_name?: string | null;
+    amount: number;
+    qu_name?: string | null;
+    note?: string | null;
+    done: boolean;
+  }[];
+}> = z.looseObject({
   name: z.string(),
   description: z.string().nullish(),
   items: z.array(
@@ -63,7 +89,14 @@ const zShoppingListGetResult = z.looseObject({
 // Grocy's `GET /system/info` nests the app version in its own object ({Version, ReleaseDate, …})
 // rather than a bare string, typed explicitly so the widget formats it instead of falling through
 // to a blind `String(value)` that prints "[object Object]".
-const zSystemInfoResult = z.looseObject({
+const zSystemInfoResult: z.ZodType<{
+  grocy_version?: { Version: string; ReleaseDate?: string | null } | null;
+  php_version?: string | null;
+  sqlite_version?: string | null;
+  db_version?: string | number | null;
+  os?: string | null;
+  client?: string | null;
+}> = z.looseObject({
   grocy_version: z.looseObject({ Version: z.string(), ReleaseDate: z.string().nullish() }).nullish(),
   php_version: z.string().nullish(),
   sqlite_version: z.string().nullish(),
@@ -403,7 +436,18 @@ function ShoppingListItemsRemoveResultView({
 }
 
 /** Per-tool result widgets for the `grocy-sf` server's list-returning batch tools. */
-export const grocyResultPreviews = {
+export const grocyResultPreviews: {
+  stock_add: ToolResultPreview<typeof zStockAddResult>;
+  stock_entry_edit: ToolResultPreview<typeof zStockEntryEditResult>;
+  stock_get: ToolResultPreview<typeof zStockGetResult>;
+  products_list: ToolResultPreview<typeof zProductsListResult>;
+  quantity_units_list: ToolResultPreview<typeof zQuantityUnitsListResult>;
+  get_system_info: ToolResultPreview<typeof zSystemInfoResult>;
+  shopping_list_get: ToolResultPreview<typeof zShoppingListGetResult>;
+  shopping_list_items_remove: ToolResultPreview<typeof zShoppingListItemsRemoveResult>;
+  products_create: ToolResultPreview<typeof zProductsCreateResult>;
+  shopping_list_items_add: ToolResultPreview<typeof zShoppingListItemsAddResult>;
+} = {
   stock_add: defineResultPreview(zStockAddResult, StockAddResultView),
   stock_entry_edit: defineResultPreview(zStockEntryEditResult, StockEntryEditResultView),
   stock_get: defineResultPreview(zStockGetResult, StockGetResultView),

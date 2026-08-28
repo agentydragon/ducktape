@@ -58,7 +58,12 @@ export async function executeToolCallDecision(
   return record;
 }
 
-export function useToolCallDecision({ dependencies, onSuccess, onSettled }: ToolCallDecisionOptions = {}) {
+export function useToolCallDecision({ dependencies, onSuccess, onSettled }: ToolCallDecisionOptions = {}): {
+  decidingToolCallIds: ReadonlySet<string>;
+  isDeciding: (toolCallId: string) => boolean;
+  approve: (call: ToolCallRecord) => Promise<void>;
+  deny: (call: ToolCallRecord, reason?: string) => Promise<void>;
+} {
   const [decidingToolCallIds, setDecidingToolCallIds] = useState<ReadonlySet<string>>(() => new Set());
 
   const decide = useCallback(

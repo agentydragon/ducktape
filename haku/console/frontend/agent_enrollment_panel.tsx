@@ -20,7 +20,7 @@ export function AgentEnrollmentPanel({
   interactionId: string;
   initialChoice?: EnrollmentChoice;
   onReturnToSettings: () => void;
-}) {
+}): JSX.Element {
   const [enrollment, setEnrollment] = useState<EnrollmentView | null>(null);
   const [choice, setChoice] = useState<EnrollmentChoice>(initialChoice);
   const [displayName, setDisplayName] = useState("");
