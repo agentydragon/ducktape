@@ -53,12 +53,12 @@ from haku.console.session.store import (
     WakeTurn,
 )
 from haku.console.session.system_prompt import HistoryMessage, HistorySender, SessionIntroduction
-from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
 from haku.console.x.conversation_events import ConversationEvent, TurnAborted, TurnAnswered, TurnEnd, TurnFailed
 from haku.console.x.runtime import (
     Checkpoint,
     ConfiguredRuntime,
     OpenItemSeed,
+    RuntimeAdapter,
     RuntimeClient,
     RuntimeLaunch,
     RuntimeMcpServer,
@@ -296,11 +296,8 @@ class SessionService:
         # `OBSERVATION_TTL` as it goes.
         self._observations: dict[UUID, SandboxProvisioningView] = {}
 
-    async def _runtime(self, session_id: UUID) -> ClaudeRuntimeAdapter:
-        """The v3 turn loop's adapter: only Claude projects native frames console-side now (#4667)."""
-        adapter = self._runtimes[await self._store.runtime_kind_of(session_id)]
-        assert isinstance(adapter, ClaudeRuntimeAdapter)
-        return adapter
+    async def _runtime(self, session_id: UUID) -> RuntimeAdapter:
+        return self._runtimes[await self._store.runtime_kind_of(session_id)]
 
     async def _configured(self, session_id: UUID) -> ConfiguredRuntime:
         identity = await self._store.session_identity(session_id)
@@ -605,8 +602,6 @@ class SessionService:
         # here and delivered fresh: `RolloutRecorder.received` records a frame at the moment
         # the runtime client's reader routes it, and nothing is being read on this connection yet.
         runtime = configured.adapter
-        # The v3 turn loop projects native frames console-side, which only Claude does now (#4667).
-        assert isinstance(runtime, ClaudeRuntimeAdapter)
         resources = configured.resources
         resumed = await self._store.adopt_open_turn(session_id)
         if resumed is not None:

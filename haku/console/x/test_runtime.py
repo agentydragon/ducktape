@@ -11,7 +11,6 @@ import pytest_bazel
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.x.claude_code import projection
-from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
 from haku.console.x.claude_code.testing.fold import whole_capture
 from haku.console.x.claude_code.testing.wire import assistant, recorded, text_block
 from haku.console.x.runtime import (
@@ -78,8 +77,7 @@ def test_execution_resources_are_selected_by_agent_runtime_and_pinned_profile() 
 
 def test_runtime_adapter_keeps_claude_projection_behavior_unchanged() -> None:
     payload = assistant(text_block("hello"), message_id="msg_1")
-    # Projection is Claude's own now — the neutral registry adapter is launch-only (#4667).
-    adapter = ClaudeRuntimeAdapter()
+    adapter = projection_registry()[HarnessKind.CLAUDE_CODE]
 
     through_adapter = adapter.turn_handler().apply(frame_seq=7, frame=HarnessFrame(frame=payload)).events
     through_native = (
@@ -92,7 +90,7 @@ def test_runtime_adapter_keeps_claude_projection_behavior_unchanged() -> None:
 
 
 def test_claude_adapter_keeps_opaque_native_frames_inspectable() -> None:
-    adapter = ClaudeRuntimeAdapter()
+    adapter = projection_registry()[HarnessKind.CLAUDE_CODE]
     payload = {"jsonrpc": "2.0", "method": "future/event", "params": {"opaque": True}}
     undiscriminated = {"jsonrpc": "2.0", "id": 1, "result": {}}
 

@@ -86,9 +86,8 @@ from haku.console.session.status import (
     SessionStatus,
 )
 from haku.console.session.subscription import stream_head
-from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
 from haku.console.x.conversation_events import ConversationEvent, ItemSegment, MessageCompleted, MessageStarted, OpenRef
-from haku.console.x.runtime import RuntimeRegistry
+from haku.console.x.runtime import RuntimeAdapter, RuntimeRegistry
 from haku.runtime.x.bridge.client import ReceivedFrame, RecordedFrame
 from haku.runtime.x.bridge.protocol import HarnessFrame
 
@@ -1185,11 +1184,9 @@ class Store:
             if turn is None:
                 return None
             turn_id, first_frame_seq = turn.turn_id, turn.first_frame_seq
-            adapter = self._runtime_registry[runtime_kind]
-            # Adoption re-projects native frames console-side, which only Claude does now — Codex
-            # projects runner-side (#4667).
-            assert isinstance(adapter, ClaudeRuntimeAdapter)
-            if not await _prompt_left(db, session_id, first_frame_seq or 0, runtime=adapter):
+            if not await _prompt_left(
+                db, session_id, first_frame_seq or 0, runtime=self._runtime_registry[runtime_kind]
+            ):
                 await _requeue(db, turn_id)
                 await notify(db, SessionEventKind.PROMPT, session_id)
             else:
@@ -1791,7 +1788,7 @@ class Store:
         recorded. None is a session whose log holds nothing a runner numbered, and the runner
         reading it replays its whole window.
 
-        It is a **floor**, and the runner treats it as one (`SessionApi.seed`). Console-authored
+        It is a **floor**, and the runner treats it as one (`SessionPump.seed`). Console-authored
         `setup_output` rows do not participate in this native-frame cursor, so holes in the
         recorded runner numbers are expected — a gap is not evidence of loss, and nothing yet
         checks for one.
@@ -2675,9 +2672,7 @@ async def _open_turn(db: AsyncSession, conversation_id: UUID) -> UUID | None:
     return turn_id
 
 
-async def _prompt_left(
-    db: AsyncSession, session_id: UUID, first_frame_seq: int, *, runtime: ClaudeRuntimeAdapter
-) -> bool:
+async def _prompt_left(db: AsyncSession, session_id: UUID, first_frame_seq: int, *, runtime: RuntimeAdapter) -> bool:
     """Whether the turn starting at *first_frame_seq* ever wrote its prompt to the agent.
 
     **The console's own record is the evidence, not the harness's acknowledgement.** `sent()` records

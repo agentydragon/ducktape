@@ -6,9 +6,8 @@ The in-memory vocabulary the v3 native projectors produce. Nothing in it is Clau
 (`conversation/conversation_event.py`), which is what every reader consumes.
 
 CLEANUP(added 2026-08-28): the v3 native-projection path — this fold, the console-side
-`claude_code` projection, and `session_runtime.handle_runner` — deletes once the journal
-generation is the only runner path left in the tree (#4667). Codex's console projection already
-moved runner-ward with the stage-5 seam.
+`claude_code`/`codex_app_server` projections, and `session_runtime.handle_runner` — deletes at
+#4667 stage 5, once the journal generation is the only runner path left in the tree.
 
 **Everything is an item, and an item is a type and three events**: started, then any number of
 segments, then completed. Both stream-native harness protocols reached that decomposition

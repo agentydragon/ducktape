@@ -59,7 +59,6 @@ from haku.console.database_schema import (
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.session_frames import BridgeFrameKind
 from haku.console.x import conversation_events
-from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
 from haku.console.x.runtime import RuntimeRegistry
 from haku.runtime.x.bridge.protocol import HarnessFrame
 from util.enum_vocab import UnknownValue
@@ -382,11 +381,7 @@ def _expected(
     """What each of a turn's recorded frames would be written as, through the writer's own two
     functions — folded with one state across the turn, because that is how the writer folds it.
     """
-    adapter = runtimes[runtime_kind]
-    # Re-projection re-folds native frames console-side, which only Claude does now: Codex projects
-    # runner-side, so a Codex session has no console re-projection to check against (#4667).
-    assert isinstance(adapter, ClaudeRuntimeAdapter)
-    handler = adapter.turn_handler()
+    handler = runtimes[runtime_kind].turn_handler()
     said: defaultdict[int, list[ProjectedRow]] = defaultdict(list)
     for frame in frames:
         # A frame with no events still belongs in coverage and can have stored rows to disagree
