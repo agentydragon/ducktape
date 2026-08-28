@@ -120,7 +120,8 @@
       # directory of `<name>/` subdirs. Registry: skills/skills_registry.json.
       skillsUnpacked =
         let
-          inherit (builtins.fromJSON (builtins.readFile ./skills/skills_registry.json)) skills;
+          registry = builtins.fromJSON (builtins.readFile ./skills/skills_registry.json);
+          skills = builtins.filter (skill: builtins.hasAttr "skill-${skill.name}" artifacts) registry.skills;
         in
         pkgs.runCommand "skills" { nativeBuildInputs = [ pkgs.libarchive ]; } (
           "mkdir $out\n"
