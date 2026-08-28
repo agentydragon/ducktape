@@ -2,7 +2,9 @@
 
 This change replaces the old analytics ClickHouse installation with the
 central `clickhouse` installation in the `clickhouse` namespace. It also
-switches Langfuse from its chart-owned ClickHouse to the central service.
+switches Langfuse from its chart-owned ClickHouse to the central service. The
+chart-owned ClickHouse remains deployed temporarily during the copy so it can
+serve as the source; a follow-up change disables it after the rollback window.
 
 The central installation is one shard with two ClickHouse replicas and three
 Keeper replicas. The replicas share data through ClickHouse replication, but
@@ -53,23 +55,26 @@ counts before the cutover.
    `clickhouse.clickhouse.svc.cluster.local:9000` endpoint and compare the
    recorded counts/checksums. The AIQuota application can remain paused until
    this check passes.
-5. Enter the Langfuse maintenance window and reconcile the external
-   ClickHouse configuration. Let Langfuse's automatic migrations create the
-   target table definitions, then stop web/worker ingestion for the final
-   copy.
-6. Copy the backed-up Langfuse rows into the target tables and validate the
-   main trace/observation tables plus `schema_migrations`.
-7. Resume Langfuse. Its bundled ClickHouse is disabled; HTTP traffic uses
-   port 8123, migrations use port 9000, and automatic migrations remain
-   enabled because the logical cluster name is `default`. Verify login, trace
-   ingestion, trace lookup, and
-   background worker activity. Verify AIQuota ingestion and the Grafana
-   dashboard separately.
-8. After the rollback window, remove any remaining source ClickHouse/PVC
-   resources and delete the temporary `analytics` watch entry from the
-   operator HelmRelease. Remove the local dump after the restore is accepted.
+5. Enter the Langfuse maintenance window. Stop the Langfuse web/worker and
+   AIQuota writer, but leave the old chart-owned ClickHouse running. Reconcile
+   the external ClickHouse configuration; the chart temporarily keeps its old
+   ClickHouse deployment alive as the source while the application points at
+   the central service. Let Langfuse's automatic migrations create the target
+   table definitions.
+6. Copy the old Langfuse rows into the target tables over the native protocol
+   and validate the main trace/observation tables plus `schema_migrations`.
+7. Resume Langfuse. HTTP traffic uses port 8123, migrations use port 9000,
+   and automatic migrations remain enabled because the logical cluster name is
+   `default`. Verify login, trace ingestion, trace lookup, and background
+   worker activity. Verify AIQuota ingestion and the Grafana dashboard
+   separately.
+8. After the rollback window, set the Langfuse chart's ClickHouse deployment
+   to `false` in a follow-up change, remove the old source resources/PVCs, and
+   delete the temporary `analytics` watch entry from the operator HelmRelease.
+   Remove the local dump after the restore is accepted.
 
-The old Langfuse chart-owned PVC should not be treated as the rollback copy:
-changing `clickhouse.deploy` to `false` removes the chart-managed workload.
-The independent backup is the rollback artifact; rollback to the old
-HelmRelease values only while that backup/source data is still available.
+The old Langfuse chart-owned PVC is kept as a source only during the copy and
+should not be treated as the durable rollback artifact. Changing
+`clickhouse.deploy` to `false` removes the chart-managed workload. The
+independent backup is the rollback artifact; rollback to the old HelmRelease
+values only while that backup/source data is still available.

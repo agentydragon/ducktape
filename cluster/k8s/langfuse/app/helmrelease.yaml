@@ -163,11 +163,11 @@ spec:
         secretKeys:
           userPasswordKey: password
 
-    # ClickHouse is managed centrally in the clickhouse namespace. The
-    # bundled chart deployment stays disabled so this HelmRelease owns only
-    # Langfuse's application configuration and migration settings.
+    # ClickHouse is managed centrally in the clickhouse namespace. Keep the
+    # bundled deployment alive temporarily as the rollback/source copy while
+    # the new instance is populated; disable it in the post-migration change.
     clickhouse:
-      deploy: false
+      deploy: true
       host: clickhouse.clickhouse.svc.cluster.local
       httpPort: 8123
       nativePort: 9000
