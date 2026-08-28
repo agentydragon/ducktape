@@ -614,7 +614,7 @@ converts these into tasks, which are:
 
 Cerebras's multiple buys index-34 tokens while Z.ai's buys index-60 ones, so these rows are not comparable at face value. Z.ai rows convert its published 15-30x multiple at GLM-5.3 blended $2.00/M. The Claude row back-solves from a four-figure API bill displaced at Opus 5 blended ~$9/M, so it is an estimate with wide error bars. The spread is still roughly **30x between the cheapest and most expensive token pools** — and they are not interchangeable tokens.
 
-**The frontier vendors subsidize least — unverified, and harder to state than it looks.** The intuition is that serving Opus 5 and GPT-5.6 costs more so the plans must price accordingly, and a marginal capacity dollar therefore buys more tokens at Cerebras or Z.ai. It cannot be checked as written, because a flat plan with a quota has no per-token cost to compare: the marginal token is free until the quota binds, then unavailable. What measurement does show (below) is that ChatGPT Pro absorbs a very large token volume — 3.25B input in 15 days — at a flat $200, which is at least the right shape for a deep subsidy even though the multiple is not computable. Treat the ranking of subsidies across metered and flat plans as undefined rather than resolved.
+**The frontier vendors subsidize least — unverified, because the comparison needs a quota nobody publishes.** The intuition is that serving Opus 5 and GPT-5.6 costs more so the plans must price accordingly, and a marginal capacity dollar therefore buys more tokens at Cerebras or Z.ai. The subsidy it appeals to is well-posed — API list value of a quota's worth of work, over the fee — but computing it needs the quota, and Anthropic and OpenAI publish none. Measurement gets partway: ChatGPT Pro absorbs 3.25B input tokens in 15 days at a flat $200 (below), which is the right shape for a deep subsidy without fixing the multiple, since usage is bounded by what was sent rather than by what the plan allows. Treat the ranking as unresolved rather than settled either way.
 
 **Extra-usage credits are not a discount.** Anthropic's overflow bills at list API rates, which is a 1x subsidy — precisely the pricing a subscription exists to avoid. It buys availability, never economy. For a workload large enough to justify Max 20x, leaving it enabled without a hard cap reproduces the four-figure API bill that the subscriptions replaced. Treat it as an emergency valve with a cap set low enough to hurt, not as a capacity plan.
 
@@ -820,11 +820,31 @@ either AA's benchmark tasks (39:1 for Luna at max effort) or a single long Claud
 session (326:1). A fleet replaying large contexts across many short turns sits at the
 far end of that distribution.
 
-**What this does not establish is a cost, or a subsidy.** These models sit behind a
-flat subscription with a quota. Their marginal cost per token is **zero**, and their
-marginal cost per request is zero, right up until the quota binds and it becomes
-infinite. There is no per-token price to record, so `totalCost` reading `0` throughout
-is not a gap in the data — it is the correct value.
+**What this does not establish is a cost, or a subsidy — though a subsidy does exist,
+constructed differently.** These models sit behind a flat subscription with a quota.
+Their marginal cost per token is **zero**, and their marginal cost per request is zero,
+right up until the quota binds and it becomes infinite. There is no per-token price to
+record, so `totalCost` reading `0` throughout is not a gap in the data — it is the
+correct value.
+
+The subsidy that _is_ real is a property of the plan rather than of anyone's usage:
+
+    subsidy  =  API list value of one quota's worth of work  ÷  the fee
+
+That is a well-posed quantity, and it is what Z.ai's "15-30x the monthly fee" claims to
+be. It is not what measuring your own traffic produces, because your traffic is bounded
+by what you happened to send rather than by what the plan entitles you to — under a
+quota those differ in both directions, and the gap is not an error term but the thing
+being asked about.
+
+Two properties make it hard to use even so. It is **rarely computable from outside**:
+the frontier plans publish no quota, and a quota denominated in credits, prompts or
+requests needs a conversion the vendor also does not publish. And it is
+**non-stationary**: the API value of a fixed quota moves whenever the vendor changes
+the model menu, the prices, or the quota — Cerebras swapping GLM-4.6 for 4.7, Z.ai's
+2026-07-30 credits migration and 3x peak multiplier, OpenAI's 80% Luna cut. A subsidy
+multiple is a snapshot of a moving quantity, which is worth remembering before treating
+any of them, vendor-published or derived, as a durable property of a plan.
 
 Multiplying the volume by API list rates gives $2,400-$22,100/month against a $200 fee,
 and an earlier revision reported that as a "12x-111x subsidy, 12x floor". That framing
