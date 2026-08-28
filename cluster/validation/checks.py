@@ -6,22 +6,22 @@ from collections import defaultdict
 from pathlib import Path
 
 from cluster.validation.cluster import ParsedCluster
-from cluster.validation.k8s import CiliumPolicyResource, HelmReleaseResource, K8sResource, SecretResource
+from cluster.validation.k8s import (
+    CiliumPolicyResource,
+    CronJobResource,
+    HelmReleaseResource,
+    K8sResource,
+    PodTemplateWorkloadResource,
+    SandboxTemplateResource,
+    SecretResource,
+)
 from cluster.validation.kustomize import KustomizeBuildResult
 
 _FORGEJO_REGISTRY = "git.allegedly.works"
 _FORGEJO_CREDENTIAL_SECRET = "forgejo-images-creds"
 _REFLECTION_ALLOWED_NAMESPACES = "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"
 _REFLECTION_AUTO_NAMESPACES = "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"
-_FORGEJO_IMAGE_WORKLOAD_KINDS = {
-    "CronJob",
-    "DaemonSet",
-    "Deployment",
-    "Job",
-    "SandboxTemplate",
-    "StatefulSet",
-    "VirtualMachine",
-}
+_FORGEJO_IMAGE_WORKLOAD_TYPES = (CronJobResource, PodTemplateWorkloadResource, SandboxTemplateResource)
 
 
 def find_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
@@ -99,36 +99,13 @@ def _rendered_or_source_resources(cluster: ParsedCluster) -> list[tuple[Path, K8
     ]
 
 
-def _mapping(value: object) -> dict:
-    return value if isinstance(value, dict) else {}
-
-
-def _forgejo_workload_pod_specs(resource: K8sResource) -> list[dict]:
-    """Extract the pod-like specs used by the Forgejo-image workload kinds in this cluster."""
-    spec = _mapping(resource.spec)
-    if resource.kind == "SandboxTemplate":
-        return [_mapping(_mapping(spec.get("podTemplate")).get("spec"))]
-    if resource.kind == "CronJob":
-        job_spec = _mapping(spec.get("jobTemplate")).get("spec")
-        template = _mapping(_mapping(job_spec).get("template"))
-    else:
-        template = _mapping(spec.get("template"))
-    return [_mapping(template.get("spec"))]
-
-
-def _forgejo_images(resource: K8sResource) -> set[str]:
-    images: set[str] = set()
-    for pod_spec in _forgejo_workload_pod_specs(resource):
-        for container in [*pod_spec.get("containers", []), *pod_spec.get("initContainers", [])]:
-            image = _mapping(container).get("image")
-            if isinstance(image, str) and image.split("/", 1)[0] == _FORGEJO_REGISTRY:
-                images.add(image)
-        # KubeVirt VirtualMachines pull containerDisk images through the VM pod.
-        for volume in pod_spec.get("volumes", []):
-            image = _mapping(_mapping(volume).get("containerDisk")).get("image")
-            if isinstance(image, str) and image.split("/", 1)[0] == _FORGEJO_REGISTRY:
-                images.add(image)
-    return images
+def _forgejo_images(resource: CronJobResource | PodTemplateWorkloadResource | SandboxTemplateResource) -> set[str]:
+    return {
+        image
+        for pod_spec in resource.pod_specs
+        for image in pod_spec.images
+        if image.split("/", 1)[0] == _FORGEJO_REGISTRY
+    }
 
 
 def check_forgejo_image_namespace_reflection(cluster: ParsedCluster) -> list[str]:
@@ -139,7 +116,7 @@ def check_forgejo_image_namespace_reflection(cluster: ParsedCluster) -> list[str
             resource.metadata.annotations.get(_REFLECTION_AUTO_NAMESPACES, ""),
         )
         for _, resource in _rendered_or_source_resources(cluster)
-        if resource.kind == "Secret"
+        if isinstance(resource, SecretResource)
         and resource.name == _FORGEJO_CREDENTIAL_SECRET
         and resource.namespace == "forgejo-images"
     }
@@ -155,7 +132,7 @@ def check_forgejo_image_namespace_reflection(cluster: ParsedCluster) -> list[str
     }
     errors: list[str] = []
     for origin, resource in _rendered_or_source_resources(cluster):
-        if resource.kind not in _FORGEJO_IMAGE_WORKLOAD_KINDS:
+        if not isinstance(resource, _FORGEJO_IMAGE_WORKLOAD_TYPES):
             continue
         images = _forgejo_images(resource)
         if not images:

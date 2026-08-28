@@ -2,15 +2,14 @@
 
 `parse_k8s_resources` is a small kind-discriminated parser: it returns the typed subclass
 for the kinds that carry extra spec fields checks care about (HelmRelease, ImageRepository,
-ImagePolicy, Receiver); every other kind stays as the generic `K8sResource` base. Consumers
-isinstance-narrow to the variant they need.
+ImagePolicy, Receiver, and selected workloads); every other kind stays as the generic
+`K8sResource` base. Consumers isinstance-narrow to the variant they need.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -54,9 +53,6 @@ class K8sResource(BaseModel):
     kind: str
     api_version: str = Field(default="", alias="apiVersion")
     metadata: K8sMetadata = Field(default_factory=K8sMetadata)
-    # Keep the generic spec for checks that need fields below the metadata level.
-    # Typed resource variants override this with a narrower model where useful.
-    spec: Any = Field(default_factory=dict)
 
     @property
     def name(self) -> str:
@@ -65,6 +61,96 @@ class K8sResource(BaseModel):
     @property
     def namespace(self) -> str:
         return self.metadata.namespace
+
+
+class PodContainer(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+
+    image: str | None = None
+
+
+class ContainerDisk(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+
+    image: str | None = None
+
+
+class PodVolume(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+
+    container_disk: ContainerDisk | None = None
+
+
+class PodSpec(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+
+    containers: list[PodContainer] = Field(default_factory=list)
+    init_containers: list[PodContainer] = Field(default_factory=list)
+    volumes: list[PodVolume] = Field(default_factory=list)
+
+    @property
+    def images(self) -> list[str]:
+        images = [container.image for container in [*self.containers, *self.init_containers] if container.image]
+        images.extend(
+            volume.container_disk.image
+            for volume in self.volumes
+            if volume.container_disk and volume.container_disk.image
+        )
+        return images
+
+
+class PodTemplateSpec(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+
+    spec: PodSpec = Field(default_factory=PodSpec)
+
+
+class PodTemplateWorkloadSpec(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+
+    template: PodTemplateSpec = Field(default_factory=PodTemplateSpec)
+
+
+class PodTemplateWorkloadResource(K8sResource):
+    spec: PodTemplateWorkloadSpec = Field(default_factory=PodTemplateWorkloadSpec)
+
+    @property
+    def pod_specs(self) -> list[PodSpec]:
+        return [self.spec.template.spec]
+
+
+class CronJobJobTemplate(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+
+    template: PodTemplateSpec = Field(default_factory=PodTemplateSpec)
+
+
+class CronJobSpec(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+
+    job_template: CronJobJobTemplate = Field(default_factory=CronJobJobTemplate)
+
+
+class CronJobResource(K8sResource):
+    spec: CronJobSpec = Field(default_factory=CronJobSpec)
+
+    @property
+    def pod_specs(self) -> list[PodSpec]:
+        return [self.spec.job_template.template.spec]
+
+
+class SandboxTemplateSpec(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+
+    pod_template: PodTemplateSpec = Field(default_factory=PodTemplateSpec)
+
+
+class SandboxTemplateResource(K8sResource):
+    spec: SandboxTemplateSpec = Field(default_factory=SandboxTemplateSpec)
+
+    @property
+    def pod_specs(self) -> list[PodSpec]:
+        return [self.spec.pod_template.spec]
 
 
 class HelmChartSpec(BaseModel):
@@ -226,6 +312,13 @@ _KIND_MODELS: dict[str, type[K8sResource]] = {
     "Secret": SecretResource,
     "CiliumNetworkPolicy": CiliumPolicyResource,
     "CiliumClusterwideNetworkPolicy": CiliumPolicyResource,
+    "CronJob": CronJobResource,
+    "DaemonSet": PodTemplateWorkloadResource,
+    "Deployment": PodTemplateWorkloadResource,
+    "Job": PodTemplateWorkloadResource,
+    "SandboxTemplate": SandboxTemplateResource,
+    "StatefulSet": PodTemplateWorkloadResource,
+    "VirtualMachine": PodTemplateWorkloadResource,
 }
 
 
