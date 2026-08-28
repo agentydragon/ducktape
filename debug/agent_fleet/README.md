@@ -113,11 +113,12 @@ codex exec --json --skip-git-repo-check -C <dir> '<prompt>' </dev/null
   real `sk-...` virtual key completes.
 - **Codex has the same metadata gap, but softer:** `item.completed` emits `Model metadata for
 'chatgpt/oai-responses/gpt-5.6-luna' not found. Defaulting to fallback metadata; this can degrade
-performance and cause issues.` It warns and proceeds rather than clamping. Codex accepts explicit
-  `model_context_window` / `model_max_output_tokens` config keys (verified under `--strict-config`,
-  no "unrecognized field") — so the same 372000/128000 belongs in the baked codex configs
-  (`agent-sandbox/workspace-image/codex-config.toml`, `x/codex_pod_image`, `nix/home/codex`), none
-  of which set them today. Not landed here (separate change surface).
+performance and cause issues.` It warns and proceeds rather than clamping. codex **accepts**
+  `model_context_window` / `model_max_output_tokens` config keys (no `--strict-config` rejection),
+  **but setting them does not silence the warning** — it still fired with `model_context_window =
+  372000` in the config (observed 2026-08-28). So whether those keys change codex's actual accounting
+  is unverified; do not assume they "fix" the gap. The warning is non-blocking (workers completed
+  correctly). Left for a separate change surface.
 - `gotcha`: `codex exec '<prompt>'` still blocks on stdin when stdin isn't a TTY (it appends a
   `<stdin>` block); always redirect `</dev/null` in a non-interactive driver, or it hangs to timeout.
 - `gotcha`: `CODEX_HOME` under `/tmp` makes codex refuse to create PATH-alias helper binaries
