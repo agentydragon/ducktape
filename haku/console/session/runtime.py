@@ -19,11 +19,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 
-from haku.console.chat_models import ItemType, RuntimeKind
+from haku.console.chat_models import ItemType
 from haku.console.conversation import conversation_event
 from haku.console.conversation.history import ConversationHistory
 from haku.console.conversation.journal_consumer import JournalConsumer, JournalViolationError
 from haku.console.conversation.prompt_origin import SPA_ORIGIN, PromptOrigin
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.notifications.session_wakes import SessionEvent, SessionEventKind, SessionWakes
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.session.conversation_views import (
@@ -146,7 +147,7 @@ class ConversationCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     agent_id: UUID
-    runtime: RuntimeKind
+    runtime: HarnessKind
 
 
 class PromptAccepted(BaseModel):
@@ -279,7 +280,7 @@ class SessionService:
         conversation_history: ConversationHistory | None = None,
         launch_authorizer: LaunchAuthorizer | None = None,
         default_agent_id: UUID | None = None,
-        default_runtime_kind: RuntimeKind = RuntimeKind.CLAUDE_CODE,
+        default_runtime_kind: HarnessKind = HarnessKind.CLAUDE_CODE,
     ):
         self._runtimes = runtimes
         self._store = store
@@ -324,7 +325,7 @@ class SessionService:
         *,
         conversation_id: UUID | None = None,
         agent_id: UUID | None = None,
-        runtime_kind: RuntimeKind | None = None,
+        runtime_kind: HarnessKind | None = None,
     ) -> SessionView:
         if self._launch_authorizer is not None:
             selected_agent = agent_id or self._default_agent_id
@@ -346,7 +347,7 @@ class SessionService:
                 operator_id,
                 conversation_id=conversation_id,
                 agent_id=agent_id,
-                runtime_kind=runtime_kind or RuntimeKind.CLAUDE_CODE,
+                runtime_kind=runtime_kind or HarnessKind.CLAUDE_CODE,
             )
         assert not token, "an idle session must not expose a runner credential"
         return view
@@ -410,7 +411,7 @@ class SessionService:
             raise
 
     async def create_conversation(
-        self, operator_id: UUID, *, agent_id: UUID | None = None, runtime_kind: RuntimeKind | None = None
+        self, operator_id: UUID, *, agent_id: UUID | None = None, runtime_kind: HarnessKind | None = None
     ) -> ConversationView:
         """Open a thread and the session that runs it, and read the thread back."""
         view = await self.create(operator_id, agent_id=agent_id, runtime_kind=runtime_kind)

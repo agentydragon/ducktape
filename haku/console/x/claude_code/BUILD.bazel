@@ -61,7 +61,7 @@ py_library(
         ":frames",
         ":projection",
         ":wake",
-        "//haku/console:chat_models",
+        "//haku/console/harnesses:kind",
         "//haku/console/x:conversation_events",
         "//haku/console/x:runtime",
         "//haku/runtime/x/bridge:claude_options",

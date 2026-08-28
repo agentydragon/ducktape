@@ -27,7 +27,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
-from haku.console.chat_models import ItemStatus, ItemType, RuntimeKind, ToolOutcome
+from haku.console.chat_models import ItemStatus, ItemType, ToolOutcome
 from haku.console.config import ChatRuntimesConfig, ClaudeCodeImplementationConfig, RuntimeRegistrationConfig
 from haku.console.conftest import console_sessions
 from haku.console.conversation import conversation_event, reprojection
@@ -46,6 +46,7 @@ from haku.console.database_schema import (
     Session,
     SessionFrame,
 )
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.notifications.session_wakes import SessionWakes
 from haku.console.session.conftest import (
@@ -131,11 +132,11 @@ def test_runtime_deployment_wiring_has_no_application_defaults() -> None:
 def test_new_conversation_request_rejects_client_supplied_access_profile() -> None:
     with pytest.raises(ValidationError, match="extra_forbidden"):
         ConversationCreateRequest.model_validate(
-            {"agent_id": str(uuid4()), "runtime": RuntimeKind.CLAUDE_CODE, "access_profile_id": "admin"}
+            {"agent_id": str(uuid4()), "runtime": HarnessKind.CLAUDE_CODE, "access_profile_id": "admin"}
         )
 
 
-@pytest.mark.parametrize("body", [{"agent_id": str(uuid4())}, {"runtime": RuntimeKind.CLAUDE_CODE}])
+@pytest.mark.parametrize("body", [{"agent_id": str(uuid4())}, {"runtime": HarnessKind.CLAUDE_CODE}])
 def test_new_conversation_request_requires_the_complete_launch_pair(body: dict[str, object]) -> None:
     with pytest.raises(ValidationError, match="Field required"):
         ConversationCreateRequest.model_validate(body)
@@ -149,7 +150,7 @@ async def test_post_conversation_launch_rejection_is_generic_403() -> None:
     actor = type("Actor", (), {"operator_id": uuid4()})()
     with pytest.raises(HTTPException) as error:
         await create_conversation(
-            ConversationCreateRequest(agent_id=uuid4(), runtime=RuntimeKind.CLAUDE_CODE),
+            ConversationCreateRequest(agent_id=uuid4(), runtime=HarnessKind.CLAUDE_CODE),
             actor,
             cast(SessionService, RejectingService()),
         )
@@ -169,7 +170,7 @@ class _RecordingLaunchAuthorizer:
         db: AsyncSession,
         operator_id: UUID,
         agent_id: UUID,
-        runtime_kind: RuntimeKind,
+        runtime_kind: HarnessKind,
         *,
         expected_profile_id: str | None = None,
     ) -> LaunchIdentity:
@@ -210,8 +211,8 @@ async def test_replacement_pins_identity_after_agent_profile_change_and_shares_s
         ChatLaunchAuthorizer(
             authority,
             launchable_agent_ids={agent_id},
-            registered_runtime_identities={RuntimeKey(agent_id, RuntimeKind.CLAUDE_CODE)},
-            profile_runtime_kinds={"pinned": {RuntimeKind.CLAUDE_CODE}, "current": {RuntimeKind.CLAUDE_CODE}},
+            registered_runtime_identities={RuntimeKey(agent_id, HarnessKind.CLAUDE_CODE)},
+            profile_runtime_kinds={"pinned": {HarnessKind.CLAUDE_CODE}, "current": {HarnessKind.CLAUDE_CODE}},
         )
     )
     runtimes = configured_runtimes(recording_claims)
@@ -236,7 +237,7 @@ async def test_replacement_pins_identity_after_agent_profile_change_and_shares_s
     assert (conversation.agent_id, conversation.access_profile_id, conversation.runtime_kind) == (
         agent_id,
         "pinned",
-        RuntimeKind.CLAUDE_CODE,
+        HarnessKind.CLAUDE_CODE,
     )
     assert replacement.conversation_id == conversation_id
     assert (replacement.operator_id, replacement.session_id) == (operator_id, second.session_id)
@@ -410,7 +411,7 @@ def test_claude_registration_uses_the_shared_discriminated_model() -> None:
     assert wire["implementation"] == {"kind": "claude_code", "oauth_placeholder": "not-a-secret"}
     assert RuntimeRegistrationConfig.model_validate(wire) == config
     assert isinstance(config.implementation, ClaudeCodeImplementationConfig)
-    assert config.kind is RuntimeKind.CLAUDE_CODE
+    assert config.kind is HarnessKind.CLAUDE_CODE
     assert (config.agent_id, config.claim_prefix, config.runtime_label) == (
         UUID("00000000-0000-4000-8000-000000000001"),
         "claude",
@@ -582,7 +583,7 @@ class _UnrelatedTurnHandler:
 
 
 class _UnrelatedRuntimeAdapter:
-    kind = RuntimeKind.CLAUDE_CODE
+    kind = HarnessKind.CLAUDE_CODE
     display_name = "Unrelated test harness"
 
     def turn_handler(self, seed: TurnProjectionSeed = EMPTY_TURN_PROJECTION_SEED) -> _UnrelatedTurnHandler:
@@ -630,7 +631,7 @@ async def _one_failed_turn(session_store, session_wakes, operator_id, *, unusabl
     await session_store.enqueue_prompt(operator_id, view.session_id, "go", SPA_ORIGIN)
     turn = await session_store.next_prompt(view.session_id)
     assert turn is not None
-    runtimes = RuntimeRegistry({RuntimeKind.CLAUDE_CODE: _GivingUpRuntimeAdapter(unusable=unusable)})
+    runtimes = RuntimeRegistry({HarnessKind.CLAUDE_CODE: _GivingUpRuntimeAdapter(unusable=unusable)})
     service = SessionService(runtimes, session_store, session_wakes)
     client = _FakeCli([{"done": True}])
     await service._run_turn(client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event())
@@ -680,7 +681,7 @@ async def test_generic_turn_loop_is_opaque_to_a_discriminator_free_harness(
     duplicate = await recorder.received(native[1])
     assert duplicate.frame_seq == recorded[1].frame_seq
 
-    runtimes = RuntimeRegistry({RuntimeKind.CLAUDE_CODE: _UnrelatedRuntimeAdapter()})
+    runtimes = RuntimeRegistry({HarnessKind.CLAUDE_CODE: _UnrelatedRuntimeAdapter()})
     service = SessionService(runtimes, session_store, session_wakes)
     client = _FakeCli(
         [frame.frame for frame in native],
@@ -1489,7 +1490,7 @@ async def test_an_incapable_rolling_replica_retries_before_taking_the_lease(
     session = await _allocated_session(capable, recording_claims, operator_id)
     token = recording_claims.tokens[session.session_id]
     incapable = SessionService(
-        RuntimeRegistry({RuntimeKind.CLAUDE_CODE: ClaudeRuntimeAdapter()}), session_store, session_wakes
+        RuntimeRegistry({HarnessKind.CLAUDE_CODE: ClaudeRuntimeAdapter()}), session_store, session_wakes
     )
     websocket = _LifecycleWebSocket()
 
@@ -2545,7 +2546,8 @@ async def test_transient_database_error_rejects_an_integrity_error(
                     conversation_id=uuid4(),
                     # References no operator row, so the INSERT is a foreign-key violation.
                     operator_id=uuid4(),
-                    runtime_kind=RuntimeKind.CLAUDE_CODE,
+                    harness_kind=HarnessKind.CLAUDE_CODE,
+                    runtime_kind=HarnessKind.CLAUDE_CODE,
                     created_at=datetime.now(UTC),
                 )
             )

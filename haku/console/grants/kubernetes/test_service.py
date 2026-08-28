@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 
-from haku.console.grants.envelope import GrantNotFoundError, GrantStatus
+from haku.console.grants.envelope import GrantNotFoundError, GrantStatus, derive_status
 from haku.console.grants.kubernetes.models import Grant, GrantSpec, NamespacesGrantScope, Rule
 from haku.console.grants.kubernetes.service import GrantService
 from haku.console.grants.principal import (
@@ -31,11 +31,21 @@ def _rule(verb: str = "get") -> Rule:
 
 
 class FakeRepository:
+    """Facts-holding in-memory double: like the real store, status is derived at read time."""
+
     def __init__(self) -> None:
         self.grants: dict[UUID, Grant] = {}
-        self.expire_calls: list[tuple[UUID | None, datetime]] = []
         self.release_calls: list[tuple[UUID, UUID, str, datetime]] = []
         self.revoke_source_calls: list[tuple[UUID, str, str, datetime]] = []
+
+    @staticmethod
+    def _active(grant: Grant, now: datetime) -> bool:
+        return (
+            derive_status(
+                released_at=grant.released_at, revoked_at=grant.revoked_at, expires_at=grant.expires_at, now=now
+            )
+            is GrantStatus.ACTIVE
+        )
 
     async def create(
         self, *, owner_agent_id, grant_principal, source_tool_call_id, scope, rules, created_at, expires_at
@@ -61,7 +71,6 @@ class FakeRepository:
                 source_tool_call_id=source_tool_call_id,
                 scope=grant.scope,
                 rules=grant.rules,
-                status=GrantStatus.ACTIVE,
                 created_at=created_at,
                 expires_at=expires_at,
             )
@@ -70,30 +79,15 @@ class FakeRepository:
         self.grants.update((grant.grant_id, grant) for grant in created)
         return created
 
-    async def expire(self, *, owner_agent_id=None, now):
-        self.expire_calls.append((owner_agent_id, now))
-        expired = 0
-        for grant_id, grant in tuple(self.grants.items()):
-            if (
-                grant.status is GrantStatus.ACTIVE
-                and grant.expires_at <= now
-                and (owner_agent_id is None or grant.owner_agent_id == owner_agent_id)
-            ):
-                self.grants[grant_id] = grant.model_copy(
-                    update={"status": GrantStatus.EXPIRED, "ended_at": now, "end_reason": "expired"}
-                )
-                expired += 1
-        return expired
-
-    async def list(self, *, owner_agent_id, include_terminal=True):
+    async def list(self, *, owner_agent_id, now, include_terminal=True):
         return tuple(g for g in self.grants.values() if g.owner_agent_id == owner_agent_id)
 
-    async def list_for_request_principal(self, *, request_principal, include_terminal=True):
+    async def list_for_request_principal(self, *, request_principal, now, include_terminal=True):
         return tuple(
             grant
             for grant in self.grants.values()
             if grant_principal_applies_to(grant.principal, request_principal)
-            and (include_terminal or grant.status is GrantStatus.ACTIVE)
+            and (include_terminal or self._active(grant, now))
         )
 
     async def get(self, *, owner_agent_id, grant_id):
@@ -105,24 +99,22 @@ class FakeRepository:
         return tuple(
             g
             for g in self.grants.values()
-            if grant_principal_applies_to(g.principal, request_principal)
-            and g.status is GrantStatus.ACTIVE
-            and g.expires_at > now
+            if grant_principal_applies_to(g.principal, request_principal) and self._active(g, now)
         )
 
-    async def release(self, *, owner_agent_id, grant_id, reason, ended_at):
-        self.release_calls.append((owner_agent_id, grant_id, reason, ended_at))
+    async def release(self, *, owner_agent_id, grant_id, reason, now):
+        self.release_calls.append((owner_agent_id, grant_id, reason, now))
         grant = self.grants[grant_id]
         assert grant.owner_agent_id == owner_agent_id
-        released = grant.model_copy(update={"status": GrantStatus.RELEASED, "ended_at": ended_at, "end_reason": reason})
+        released = grant.model_copy(update={"released_at": now, "end_reason": reason})
         self.grants[grant_id] = released
         return released
 
     async def revoke(self, **kwargs):
         raise AssertionError("not used by this test")
 
-    async def revoke_source(self, *, owner_agent_id, source_tool_call_id, reason, ended_at):
-        self.revoke_source_calls.append((owner_agent_id, source_tool_call_id, reason, ended_at))
+    async def revoke_source(self, *, owner_agent_id, source_tool_call_id, reason, now):
+        self.revoke_source_calls.append((owner_agent_id, source_tool_call_id, reason, now))
         return tuple(
             grant
             for grant in self.grants.values()
@@ -159,7 +151,6 @@ async def test_create_and_match_require_the_explicit_agent_id() -> None:
             required_rules=(_rule(),),
         )
     ).allowed
-    assert repo.expire_calls == []
 
 
 @pytest.mark.asyncio
@@ -354,7 +345,6 @@ async def test_match_ignores_expired_rows_without_writing() -> None:
         source_tool_call_id="tool-call-1",
         scope=_SCOPE,
         rules=(_rule(),),
-        status=GrantStatus.ACTIVE,
         created_at=_NOW - timedelta(minutes=10),
         expires_at=_NOW - timedelta(minutes=1),
     )
@@ -368,11 +358,10 @@ async def test_match_ignores_expired_rows_without_writing() -> None:
             required_rules=(_rule(),),
         )
     ).allowed
-    assert repo.expire_calls == []
 
 
 @pytest.mark.asyncio
-async def test_get_uses_one_timestamp_when_expiring_a_grant() -> None:
+async def test_get_returns_status_derived_from_facts_without_a_sweep() -> None:
     repo = FakeRepository()
     grant = Grant(
         grant_id=uuid4(),
@@ -381,25 +370,17 @@ async def test_get_uses_one_timestamp_when_expiring_a_grant() -> None:
         source_tool_call_id="tool-call-1",
         scope=_SCOPE,
         rules=(_rule(),),
-        status=GrantStatus.ACTIVE,
         created_at=_NOW - timedelta(minutes=10),
         expires_at=_NOW - timedelta(minutes=1),
     )
     repo.grants[grant.grant_id] = grant
-    clock_calls = 0
-
-    def clock() -> datetime:
-        nonlocal clock_calls
-        clock_calls += 1
-        return _NOW
-
-    service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=clock)
+    service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
 
     result = await service.get_grant(owner_agent_id=_AGENT, grant_id=grant.grant_id)
 
+    # Past expiry with no end fact derives EXPIRED; the row is neither swept nor mutated.
     assert result.status is GrantStatus.EXPIRED
-    assert repo.expire_calls == [(_AGENT, _NOW)]
-    assert clock_calls == 1
+    assert repo.grants[grant.grant_id] is grant
 
 
 @pytest.mark.asyncio

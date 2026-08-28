@@ -7,21 +7,9 @@ modules sit above the schema — moving one there today would import-cycle throu
 
 # CLEANUP(added 2026-08-28): transitional grab-bag, dissolved enum-by-enum
 #   (docs/naming_and_layout.md §6 C4). Delete the module once the last vocabulary leaves:
-#   the item enums with C6, `RuntimeKind` with C4d, `ChannelSurface` with the channels/ packaging.
+#   the item enums with C6, `ChannelSurface` with the channels/ packaging.
 
 from enum import StrEnum
-
-
-class RuntimeKind(StrEnum):
-    """Which concrete runner implementation a conversation is pinned to.
-
-    Stored as text plus an ordinary CHECK rather than as a PostgreSQL enum. The application enum
-    keeps readers closed, while widening the database constraint for the next implementation is a
-    transactional migration instead of a PostgreSQL enum-type lifecycle.
-    """
-
-    CLAUDE_CODE = "claude_code"
-    CODEX_APP_SERVER = "codex_app_server"
 
 
 class ChannelSurface(StrEnum):

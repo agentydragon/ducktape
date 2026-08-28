@@ -9,7 +9,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.chat_models import RuntimeKind
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.x.runtime import RuntimeKey
 
 
@@ -20,7 +20,7 @@ class LaunchIdentity:
     agent_id: UUID
     binding_id: UUID
     access_profile_id: str
-    runtime_kind: RuntimeKind
+    runtime_kind: HarnessKind
 
 
 class LaunchAgentRejectedError(Exception):
@@ -64,7 +64,7 @@ class ChatLaunchAuthorizer:
         *,
         launchable_agent_ids: Collection[UUID],
         registered_runtime_identities: Collection[RuntimeKey],
-        profile_runtime_kinds: Mapping[str, Collection[RuntimeKind]],
+        profile_runtime_kinds: Mapping[str, Collection[HarnessKind]],
     ) -> None:
         self._authority = authority
         self._launchable_agent_ids = frozenset(launchable_agent_ids)
@@ -78,7 +78,7 @@ class ChatLaunchAuthorizer:
         db: AsyncSession,
         operator_id: UUID,
         agent_id: UUID,
-        runtime_kind: RuntimeKind,
+        runtime_kind: HarnessKind,
         *,
         expected_profile_id: str | None = None,
     ) -> LaunchIdentity:
@@ -108,7 +108,7 @@ class LaunchAuthorizer(Protocol):
         db: AsyncSession,
         operator_id: UUID,
         agent_id: UUID,
-        runtime_kind: RuntimeKind,
+        runtime_kind: HarnessKind,
         *,
         expected_profile_id: str | None = None,
     ) -> LaunchIdentity: ...

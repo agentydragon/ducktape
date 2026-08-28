@@ -69,6 +69,7 @@ function GrantCoverage({ view, variant }: { view: GrantView; variant: PreviewVar
 
 function GrantResult({ view, variant }: { view: GrantView; variant: PreviewVariant }) {
   const grant = view.grant;
+  const endedAt = grant.released_at ?? grant.revoked_at;
   return (
     <Stack gap="xs">
       <Group gap={6}>
@@ -84,6 +85,7 @@ function GrantResult({ view, variant }: { view: GrantView; variant: PreviewVaria
           <Field label="Applies to">{principalText(grant.principal)}</Field>
           <Timestamp label="Created" value={grant.created_at} />
           <Timestamp label="Expires" value={grant.expires_at} />
+          {endedAt && <Timestamp label="Ended" value={endedAt} />}
           {grant.end_reason && <Field label="End reason">{grant.end_reason}</Field>}
         </Stack>
       )}

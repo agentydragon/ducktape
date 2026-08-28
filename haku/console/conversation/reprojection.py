@@ -42,7 +42,6 @@ from sqlalchemy import Select, func, literal_column, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.chat_models import RuntimeKind
 from haku.console.conversation.conversation_event import (
     ConversationEventKind,
     EventProvenance,
@@ -57,6 +56,7 @@ from haku.console.database_schema import (
     Session,
     SessionFrame,
 )
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.session_frames import BridgeFrameKind
 from haku.console.x import conversation_events
 from haku.console.x.runtime import RuntimeRegistry
@@ -271,7 +271,7 @@ async def _check_turn(
     *,
     cursor: int | None,
     ends_before: int | None,
-    runtime_kind: RuntimeKind,
+    runtime_kind: HarnessKind,
     runtimes: RuntimeRegistry,
 ) -> TurnReport:
     frames = await _turn_frames(db, turn, ends_before=ends_before)
@@ -376,7 +376,7 @@ def _differences(projected: ProjectedRow, stored: ConversationEventRow) -> list[
 
 
 def _expected(
-    frames: Sequence[SessionFrame], *, runtime_kind: RuntimeKind, runtimes: RuntimeRegistry
+    frames: Sequence[SessionFrame], *, runtime_kind: HarnessKind, runtimes: RuntimeRegistry
 ) -> dict[int, tuple[ProjectedRow, ...]]:
     """What each of a turn's recorded frames would be written as, through the writer's own two
     functions — folded with one state across the turn, because that is how the writer folds it.

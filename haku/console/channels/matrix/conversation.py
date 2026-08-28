@@ -21,11 +21,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from haku.console.channels.matrix.client import InboundMessage, UnmappableEvent
 from haku.console.channels.matrix.config import Config
 from haku.console.channels.matrix.ingress_ledger import IngressLedger
-from haku.console.chat_models import ChannelSurface, RuntimeKind
+from haku.console.chat_models import ChannelSurface
 from haku.console.conversation import conversation_event
 from haku.console.conversation.conversation_event import PromptRejection
 from haku.console.conversation.prompt_origin import MatrixOrigin
 from haku.console.database_schema import ChannelAttachmentRow, Conversation, Operator
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.session.launch_identity import LaunchAuthorizer, LaunchIdentity
 from haku.console.session.store import PromptRefusedError, Store
@@ -103,7 +104,7 @@ class ConversationStore:
         *,
         launch_authorizer: LaunchAuthorizer | None = None,
         default_agent_id: UUID | None = None,
-        default_runtime_kind: RuntimeKind = RuntimeKind.CLAUDE_CODE,
+        default_runtime_kind: HarnessKind = HarnessKind.CLAUDE_CODE,
     ):
         self._sessions = sessions
         self._launch_authorizer = launch_authorizer
@@ -115,7 +116,7 @@ class ConversationStore:
         authorizer: LaunchAuthorizer,
         *,
         default_agent_id: UUID,
-        default_runtime_kind: RuntimeKind = RuntimeKind.CLAUDE_CODE,
+        default_runtime_kind: HarnessKind = HarnessKind.CLAUDE_CODE,
     ) -> None:
         """Configure production first-bind identity selection after app composition."""
         self._launch_authorizer = authorizer
@@ -186,7 +187,7 @@ class ConversationStore:
                     operator_id=operator_id,
                     agent_id=None if identity is None else identity.agent_id,
                     access_profile_id=None if identity is None else identity.access_profile_id,
-                    runtime_kind=RuntimeKind.CLAUDE_CODE if identity is None else identity.runtime_kind,
+                    runtime_kind=HarnessKind.CLAUDE_CODE if identity is None else identity.runtime_kind,
                     created_at=now,
                 )
             )

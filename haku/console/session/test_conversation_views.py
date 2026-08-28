@@ -8,10 +8,10 @@ from uuid import uuid4
 
 import pytest_bazel
 
-from haku.console.chat_models import RuntimeKind
 from haku.console.conversation.prompt_origin import SPA_ORIGIN
 from haku.console.conversation.reads import ToolCallEntry
 from haku.console.database_schema import SessionFrame
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.session import conversation_views
 from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
 from haku.console.session.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
@@ -133,7 +133,7 @@ _INSPECTED = [
 
 def test_the_inspector_keeps_native_payloads_opaque() -> None:
     page = conversation_views.frame_page(
-        _INSPECTED, limit=len(_INSPECTED), conversation_id=uuid4(), runtime_kind=RuntimeKind.CLAUDE_CODE
+        _INSPECTED, limit=len(_INSPECTED), conversation_id=uuid4(), runtime_kind=HarnessKind.CLAUDE_CODE
     )
 
     assert [(frame.kind, frame.payload) for frame in page.frames] == [(row.kind, row.payload) for row in _INSPECTED]

@@ -19,9 +19,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.chat_models import RuntimeKind
 from haku.console.conversation.reads import ChannelAttachment, ConversationEntry, SetupOutputRecord
 from haku.console.database_schema import Session, SessionFrame
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.sandbox_claims import SandboxProvisioningView
 from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
 from haku.console.session.setup_output import SETUP_OUTPUT_KIND
@@ -77,7 +77,7 @@ class ConversationSummary(BaseModel):
     item_count: int = Field(
         description="How many transcript rows this conversation holds — prompts, answers and calls alike."
     )
-    harness_kind: RuntimeKind
+    harness_kind: HarnessKind
 
 
 class ConversationCursor(BaseModel):
@@ -139,7 +139,7 @@ class ConversationView(BaseModel):
         "conversation outlives its sessions, so a thread whose sandbox died has more than one, each "
         "with its own frame log; this is the handle that keeps them reachable."
     )
-    harness_kind: RuntimeKind
+    harness_kind: HarnessKind
 
 
 class ConversationSnapshot(BaseModel):
@@ -241,7 +241,7 @@ class SessionProvisioningView(BaseModel):
         "is idle and has never asked for one; `claim_absent` means one was requested but Kubernetes "
         "does not have it now."
     )
-    harness_kind: RuntimeKind = Field(
+    harness_kind: HarnessKind = Field(
         description="The immutable runner implementation pinned by this session's conversation."
     )
 
@@ -284,11 +284,11 @@ class SessionFramePage(BaseModel):
     next_before_seq: int | None = Field(
         description="Pass back as `before_seq` for the page of earlier frames, or absent at the start of the log."
     )
-    harness_kind: RuntimeKind = Field(description="The immutable runner implementation whose wire these frames use.")
+    harness_kind: HarnessKind = Field(description="The immutable runner implementation whose wire these frames use.")
 
 
 def frame_page(
-    rows: Sequence[SessionFrame], *, limit: int, conversation_id: UUID, runtime_kind: RuntimeKind
+    rows: Sequence[SessionFrame], *, limit: int, conversation_id: UUID, runtime_kind: HarnessKind
 ) -> SessionFramePage:
     """One page of rollout rows in wire order, with the cursor for the page before it.
 

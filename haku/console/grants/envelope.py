@@ -15,12 +15,11 @@ with per-domain bindings: applicability filters need no join, no principal row c
 orphaned, and each row mirrors the :data:`~haku.console.grants.principal.GrantPrincipal`
 discriminated union under its table's principal-shape CHECK.
 
-The end-facts half of the lifecycle is deliberately not here yet: Kubernetes stores a
-``status`` column with ``ended_at`` while HTTP derives status from ``released_at``/
-``revoked_at`` (#4883 dissolves the stored column onto the derived shape, once, against
-this envelope). The source-provenance query invariant lives in
-:mod:`haku.console.grants.provenance`, split from this module so ``database_schema`` can
-import the column mixin without a cycle.
+Every domain derives status from the same end facts: the row records ``released_at``/
+``revoked_at`` and :func:`derive_status` computes the vocabulary from them and the clock,
+so no domain stores a status column and expiry needs no sweeper. The source-provenance
+query invariant lives in :mod:`haku.console.grants.provenance`, split from this module so
+``database_schema`` can import the column mixin without a cycle.
 """
 
 from __future__ import annotations
@@ -101,9 +100,9 @@ class GrantEnvelope(BaseModel):
 
     The end facts — ``released_at``, ``revoked_at``, ``end_reason`` — live here: at most one
     end action ever exists, and :func:`derive_status` computes the lifecycle vocabulary from
-    the facts and the clock. ``status`` is deliberately not an envelope field: HTTP computes
-    it from these facts (`HttpGrant.status`), while Kubernetes still carries its stored
-    column until the #4883 contract step flips its readers onto the facts.
+    the facts and the clock. ``status`` is deliberately not an envelope field; each domain's
+    returned model exposes it as a computed field over these facts (`HttpGrant.status`,
+    `KubernetesGrant.status`).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -187,6 +186,14 @@ def grant_envelope_table_args(table: str) -> tuple[CheckConstraint | Index, ...]
             name=f"ck_{table}_principal_shape",
         ),
         CheckConstraint("expires_at > created_at", name=f"ck_{table}_expiration_after_creation"),
+        # The fact shape derive_status reads: at most one end action, and a reason exactly when one
+        # is recorded. Expiry records no fact, so an expired row carries neither.
+        CheckConstraint(
+            "num_nonnulls(released_at, revoked_at) <= 1 "
+            "AND ((num_nonnulls(released_at, revoked_at) = 1) = (end_reason IS NOT NULL)) "
+            "AND (end_reason IS NULL OR btrim(end_reason) <> '')",
+            name=f"ck_{table}_end_shape",
+        ),
         Index(f"idx_{table}_source_tool_call", "source_tool_call_id"),
     )
 

@@ -12,7 +12,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from haku.console.chat_models import RuntimeKind
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.x.claude_code import frames, projection
 from haku.console.x.claude_code.client import cli_over_websocket
 from haku.console.x.claude_code.wake import ClaudeWakeWatcher
@@ -41,8 +41,8 @@ class ClaudeRuntimeAdapter:
     client_factory: RuntimeClientFactory = cli_over_websocket
 
     @property
-    def kind(self) -> RuntimeKind:
-        return RuntimeKind.CLAUDE_CODE
+    def kind(self) -> HarnessKind:
+        return HarnessKind.CLAUDE_CODE
 
     @property
     def display_name(self) -> str:

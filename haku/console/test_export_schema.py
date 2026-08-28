@@ -39,18 +39,18 @@ def test_a_message_carries_the_components_a_read_returns() -> None:
 
 
 def test_harness_kind_is_a_read_only_closed_identity_field() -> None:
-    # runtime_kind→harness_kind wire rename (naming_and_layout.md §3.1, #4772): the contract step
-    # dropped `runtime_kind` from the wire, so every identity-bearing model publishes only
-    # `harness_kind` — a required reference to the closed harness enum. (The enum's OpenAPI
-    # component stays named `RuntimeKind` until the C4d phase-2 stored+published rename.)
+    # harness_kind identity field (naming_and_layout.md §3.1, #4772 C4d): every identity-bearing
+    # model publishes `harness_kind` — a required reference to the closed harness enum, whose OpenAPI
+    # component is `HarnessKind` (the C4d phase-2 stored+published rename of `RuntimeKind`; the wire
+    # values stay `claude_code`/`codex_app_server`, so SPA consumers reading the field are unaffected).
     published = schemas()
-    runtime_ref = {"$ref": "#/components/schemas/RuntimeKind"}
-    assert published["RuntimeKind"]["enum"] == ["claude_code", "codex_app_server"]
+    harness_ref = {"$ref": "#/components/schemas/HarnessKind"}
+    assert published["HarnessKind"]["enum"] == ["claude_code", "codex_app_server"]
     for model in ("ConversationSummary", "ConversationView", "SessionFramePage", "SessionProvisioningView"):
         properties = published[model]["properties"]
         field = properties["harness_kind"]
         # Pydantic wraps a referenced enum in `allOf` when the field also carries a description.
-        assert field.get("$ref") == runtime_ref["$ref"] or field.get("allOf") == [runtime_ref]
+        assert field.get("$ref") == harness_ref["$ref"] or field.get("allOf") == [harness_ref]
         assert "harness_kind" in published[model]["required"]
         assert "runtime_kind" not in properties
 

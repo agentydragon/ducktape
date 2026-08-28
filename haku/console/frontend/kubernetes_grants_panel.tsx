@@ -105,7 +105,8 @@ function GrantSetCard({ item, onRevoke }: { item: KubernetesGrantSet; onRevoke: 
       <Stack gap="xs" mt="sm">
         {item.grants.map(({ grant }) => {
           const status = STATUS_DISPLAY[grant.status];
-          const ended = grant.ended_at ? formatTimestamp(grant.ended_at) : null;
+          const endedAt = grant.released_at ?? grant.revoked_at;
+          const ended = endedAt ? formatTimestamp(endedAt) : null;
           return (
             <Stack
               key={grant.grant_id}

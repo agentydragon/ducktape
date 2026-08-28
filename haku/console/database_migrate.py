@@ -14,6 +14,10 @@ from sqlalchemy.engine import make_url
 from haku.console.database_schema import metadata
 from haku.recall_index.schema import Base as RecallIndexBase
 
+# SQLAlchemy loads the psycopg dialect at runtime via the `postgresql+psycopg://`
+# URL scheme; nothing imports it directly, so Gazelle cannot see the dependency.
+# gazelle:include_dep @pypi//psycopg
+
 _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
 # Arbitrary fixed key, unique to this lock's purpose (no meaning beyond that). The release Job
