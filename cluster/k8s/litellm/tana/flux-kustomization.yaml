@@ -13,6 +13,8 @@ spec:
     namespace: ducktape-flux
   timeout: 10m
   dependsOn:
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: litellm-namespace
       namespace: ducktape-flux
     - name: litellm-secrets

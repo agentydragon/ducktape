@@ -1,8 +1,0 @@
-apiVersion: image.toolkit.fluxcd.io/v1beta2
-kind: ImageRepository
-metadata:
-  name: budget-exporter
-  namespace: flux-system
-spec:
-  image: ghcr.io/agentydragon/budget-exporter
-  interval: 5m

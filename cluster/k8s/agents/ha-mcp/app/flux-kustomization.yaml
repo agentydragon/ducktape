@@ -30,6 +30,8 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: home-assistant
       namespace: ducktape-flux
     - name: ha-mcp-namespace

@@ -1,0 +1,24 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: haku-openclaw-spike
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/haku-openclaw-spike
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: haku-openclaw-spike
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: haku-openclaw-spike
+  filterTags:
+    pattern: '^devel-\d{14}-[0-9a-f]{7}$'
+  policy:
+    alphabetical:
+      order: asc

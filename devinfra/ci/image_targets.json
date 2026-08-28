@@ -2,11 +2,18 @@
   "images": {
     "airlock": {
       "target": "//airlock:image",
-      "test": "//airlock/..."
+      "test": "//airlock/...",
+      "registry": "forgejo"
     },
     "aiquota-api": {
       "target": "//aiquota:api_image",
-      "test": "//aiquota:all"
+      "test": "//aiquota:all",
+      "registry": "forgejo"
+    },
+    "aw-server": {
+      "target": "@ducktape_activitywatch//:image",
+      "test": "@ducktape_activitywatch//:aw_sync_tests",
+      "registry": "forgejo"
     },
     "augur": {
       "target": "//finance/augur/api:image",
@@ -34,7 +41,8 @@
     },
     "loki-read-proxy": {
       "target": "//cluster/proxies/loki_read_proxy:image",
-      "test": "//cluster/proxies/loki_read_proxy/..."
+      "test": "//cluster/proxies/loki_read_proxy/...",
+      "registry": "forgejo"
     },
     "exec-backend": {
       "target": "//mcp_infra/exec:direct_image",
@@ -53,18 +61,22 @@
       "test": "//props/registry_proxy/..."
     },
     "tana-firebase-resigner": {
-      "target": "//tana/firebase_resigner:image"
+      "target": "//tana/firebase_resigner:image",
+      "registry": "forgejo"
     },
     "tana-litellm-proxy": {
       "target": "//tana/litellm_proxy:image",
-      "test": "//tana/litellm_proxy/..."
+      "test": "//tana/litellm_proxy/...",
+      "registry": "forgejo"
     },
     "mcp-oauth-facade": {
       "target": "//x/mcp_oauth_facade:image",
-      "test": "//mcp_infra/oauth_facade/... //x/mcp_oauth_facade/..."
+      "test": "//mcp_infra/oauth_facade/... //x/mcp_oauth_facade/...",
+      "registry": "forgejo"
     },
     "manifold-mcp-server": {
-      "target": "@ducktape_manifold_mcp_server//:image"
+      "target": "@ducktape_manifold_mcp_server//:image",
+      "registry": "forgejo"
     },
     "osm-mcp": {
       "target": "//third_party/osmmcp:image",
@@ -72,7 +84,8 @@
     },
     "postscanmail-mcp-server": {
       "target": "//x/postscanmail_mcp_server:image",
-      "test": "//x/postscanmail_mcp_server/..."
+      "test": "//x/postscanmail_mcp_server/...",
+      "registry": "forgejo"
     },
     "authentik-mcp-poc-server": {
       "target": "//x/authentik_mcp_poc:server_image",
@@ -84,7 +97,8 @@
     },
     "grocy-mcp": {
       "target": "//grocy_mcp:server_image",
-      "test": "//grocy_mcp/..."
+      "test": "//grocy_mcp/...",
+      "registry": "forgejo"
     },
     "haku-console": {
       "target": "//haku/console:server_image",
@@ -105,7 +119,8 @@
     },
     "plaid-mcp-server": {
       "target": "//finance/plaid/link:server_image",
-      "test": "//finance/plaid/..."
+      "test": "//finance/plaid/...",
+      "registry": "forgejo"
     },
     "plaid-mcp-sync": {
       "target": "//finance/plaid/sync:sync_image",
@@ -117,7 +132,8 @@
     },
     "study-casino": {
       "target": "//x/study_casino:image",
-      "test": "//x/study_casino/..."
+      "test": "//x/study_casino/...",
+      "registry": "forgejo"
     },
     "loom-gym-eval": {
       "target": "//loom/gym:eval_image",
@@ -168,7 +184,8 @@
       "target": "//inventree_utils/rai_plugin:image"
     },
     "stalwart": {
-      "target": "//cluster/k8s/haku/mailbox/image:image"
+      "target": "//cluster/k8s/haku/mailbox/image:image",
+      "registry": "forgejo"
     },
     "cpap-sync": {
       "target": "//cpap:image"

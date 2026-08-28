@@ -18,10 +18,10 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.console.agents.models import AgentStatus
-from haku.console.chat_models import SessionStatus
 from haku.console.database_schema import Agent, CredentialBinding, McpToolCall, McpToolCallPrincipal, Session
 from haku.console.grants.envelope import GrantNotFoundError, GrantOwnershipError, GrantSourceError
 from haku.console.grants.principal import AgentGrantPrincipal, GrantPrincipal
+from haku.console.session.status import SessionStatus
 from haku.console.tool_calls import ToolCallStatus
 
 

@@ -11,8 +11,8 @@ import {
   type Conversation,
   type ConversationCursor,
   type ConversationEntry,
-  type ConversationSession,
   type ConversationSummary,
+  type Session,
 } from "../client";
 import { useCoalescedRefresh } from "../coalesced_refresh";
 import {
@@ -32,7 +32,7 @@ import { Markdown } from "./markdown";
 import { SandboxProvisioning } from "./sandbox_provisioning";
 
 /** A session that has ended takes no more prompts, so it gets no composer. */
-const SETTLED = new Set<ConversationSession["status"]>(["closing", "closed", "failed"]);
+const SETTLED = new Set<Session["status"]>(["closing", "closed", "failed"]);
 
 function openConversation(conversationId: string): void {
   navigateToConsolePath(conversationPath(conversationId));
@@ -42,7 +42,7 @@ function backToConversations(): void {
   navigateToConsolePath(CONVERSATIONS_PATH);
 }
 
-function statusColor(status: ConversationSession["status"]): string {
+function statusColor(status: Session["status"]): string {
   if (status === "ready") return "teal";
   if (status === "responding" || status === "provisioning") return "blue";
   if (status === "failed") return "red";
@@ -479,7 +479,7 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
 
   const { session } = conversation;
   const conversationEmpty = conversation.entries.length === 0;
-  const narration = bootstrapNarration(session, conversationEmpty);
+  const narration = bootstrapNarration(conversation, conversationEmpty);
   // In opening order — the row's position for its whole life, so the transcript is stable while
   // its newest items are still being written.
   const rows = [...conversation.entries].sort((left, right) => left.opened_seq - right.opened_seq);
@@ -554,11 +554,11 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
         >
           <div className="haku-page-list haku-chat-messages">
             {conversation.earlier_sessions.length > 0 && <EarlierSessions sessions={conversation.earlier_sessions} />}
-            {session.provisioning && <SandboxProvisioning provisioning={session.provisioning} />}
+            {conversation.provisioning && <SandboxProvisioning provisioning={conversation.provisioning} />}
             {narration && (
               <BootstrapNarrationPanel narration={narration} starting={session.status === "provisioning"} />
             )}
-            {conversationEmpty && !narration && !session.provisioning && (
+            {conversationEmpty && !narration && !conversation.provisioning && (
               <Text c="dimmed" size="sm">
                 Nothing was recorded for this conversation.
               </Text>

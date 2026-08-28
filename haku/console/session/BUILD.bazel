@@ -33,7 +33,9 @@ py_library(
     srcs = ["conversation_views.py"],
     deps = [
         ":sandbox_claims",
+        ":session_frames",
         ":setup_output",
+        ":status",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
         "//haku/console/conversation:reads",
@@ -59,6 +61,8 @@ py_library(
         ":conversation_views",
         ":launch_identity",
         ":sandbox_claims",
+        ":session_frames",
+        ":status",
         ":store",
         ":system_prompt",
         "//haku/console:chat_models",
@@ -66,6 +70,7 @@ py_library(
         "//haku/console/conversation:conversation_event",
         "//haku/console/conversation:history",
         "//haku/console/conversation:journal_consumer",
+        "//haku/console/conversation:prompt_origin",
         "//haku/console/notifications:session_wakes",
         "//haku/console/x:conversation_events",
         "//haku/console/x:runtime",
@@ -102,9 +107,19 @@ py_library(
 )
 
 py_library(
+    name = "session_frames",
+    srcs = ["session_frames.py"],
+)
+
+py_library(
     name = "setup_output",
     srcs = ["setup_output.py"],
-    deps = ["//haku/console:chat_models"],
+    deps = [":session_frames"],
+)
+
+py_library(
+    name = "status",
+    srcs = ["status.py"],
 )
 
 py_library(
@@ -113,7 +128,9 @@ py_library(
     deps = [
         ":conversation_views",
         ":launch_identity",
+        ":session_frames",
         ":setup_output",
+        ":status",
         ":subscription",
         "//haku/console:chat_models",
         "//haku/console:conversation_read_access",
@@ -122,6 +139,7 @@ py_library(
         "//haku/console/conversation:item_reads",
         "//haku/console/conversation:log",
         "//haku/console/conversation:prompt_inbox",
+        "//haku/console/conversation:prompt_origin",
         "//haku/console/conversation:reads",
         "//haku/console/grants:envelope",
         "//haku/console/grants:principal",
@@ -159,12 +177,14 @@ py_test(
     deps = [
         ":conftest",
         ":conversation_views",
+        ":session_frames",
         ":setup_output",
         ":store",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
         "//haku/console:database_schema",
+        "//haku/console/conversation:prompt_origin",
         "//haku/console/conversation:reads",
         "//haku/console/x/claude_code:projection",
         "//haku/console/x/claude_code/testing:fold",
@@ -183,6 +203,8 @@ py_test(
         ":launch_identity",
         ":runtime",
         ":sandbox_claims",
+        ":session_frames",
+        ":status",
         ":store",
         ":system_prompt",
         "//:conftest",
@@ -196,6 +218,7 @@ py_test(
         "//haku/console/conversation:conversation_event",
         "//haku/console/conversation:history",
         "//haku/console/conversation:item_reads",
+        "//haku/console/conversation:prompt_origin",
         "//haku/console/conversation:reads",
         "//haku/console/conversation:reprojection",
         "//haku/console/notifications:session_wakes",
@@ -226,9 +249,10 @@ py_test(
     deps = [
         ":conftest",
         ":sandbox_allocation",
+        ":status",
         "//:conftest",
-        "//haku/console:chat_models",
         "//haku/console:conftest",
+        "//haku/console/conversation:prompt_origin",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
     ],
@@ -256,7 +280,9 @@ py_test(
     srcs = ["test_store.py"],
     deps = [
         ":conftest",
+        ":session_frames",
         ":setup_output",
+        ":status",
         ":store",
         "//:conftest",
         "//haku/console:chat_models",
@@ -265,6 +291,7 @@ py_test(
         "//haku/console:database_schema",
         "//haku/console/conversation:conversation_event",
         "//haku/console/conversation:item_reads",
+        "//haku/console/conversation:prompt_origin",
         "//haku/console/conversation:reads",
         "//haku/console/grants:envelope",
         "//haku/console/grants:principal",
@@ -292,9 +319,9 @@ py_test(
         ":store",
         ":subscription",
         "//:conftest",
-        "//haku/console:chat_models",
         "//haku/console:conftest",
         "//haku/console/conversation:conversation_event",
+        "//haku/console/conversation:prompt_origin",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import

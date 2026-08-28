@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Conversation, ConversationEntry, ConversationUpdate } from "../client";
+import type { Conversation, ConversationEntry, ConversationUpdate, Session } from "../client";
 import { followed } from "./conversation_follow";
 
 function message(opened: number, text: string, status: ConversationEntry["status"] = "complete"): ConversationEntry {
@@ -15,6 +15,17 @@ function message(opened: number, text: string, status: ConversationEntry["status
   };
 }
 
+function session(fields: Partial<Session>): Session {
+  return {
+    session_id: "s1",
+    status: "ready",
+    error: null,
+    created_at: "2026-08-18T00:00:00Z",
+    updated_at: "2026-08-18T00:00:00Z",
+    ...fields,
+  };
+}
+
 function conversation(entries: ConversationEntry[]): Conversation {
   return {
     conversation_id: "c1",
@@ -23,15 +34,9 @@ function conversation(entries: ConversationEntry[]): Conversation {
     created_at: "2026-08-18T00:00:00Z",
     attachments: [],
     entries,
-    session: {
-      session_id: "s1",
-      status: "ready",
-      error: null,
-      created_at: "2026-08-18T00:00:00Z",
-      updated_at: "2026-08-18T00:00:00Z",
-      provisioning: null,
-      narration: [],
-    },
+    session: session({}),
+    provisioning: null,
+    narration: [],
     earlier_sessions: [],
   };
 }
@@ -40,11 +45,7 @@ function update(fields: Partial<ConversationUpdate>): ConversationUpdate {
   return {
     message_type: "update",
     position: 10,
-    session_id: "s1",
-    status: "ready",
-    error: null,
-    created_at: "2026-08-18T00:00:00Z",
-    updated_at: "2026-08-18T00:00:01Z",
+    session: session({ updated_at: "2026-08-18T00:00:01Z" }),
     provisioning: null,
     narration: [],
     attachments: [],
@@ -110,10 +111,12 @@ describe("followed", () => {
     const next = followed(
       held,
       update({
-        session_id: "s2",
-        created_at: "2026-08-18T01:00:00Z",
-        updated_at: "2026-08-18T01:00:05Z",
-        earlier_sessions: [{ session_id: "s1", status: "failed", created_at: "2026-08-18T00:00:00Z" }],
+        session: session({
+          session_id: "s2",
+          created_at: "2026-08-18T01:00:00Z",
+          updated_at: "2026-08-18T01:00:05Z",
+        }),
+        earlier_sessions: [session({ session_id: "s1", status: "failed" })],
       })
     );
 

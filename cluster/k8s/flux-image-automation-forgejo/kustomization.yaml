@@ -1,23 +1,27 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - agent-workspace-image-repository.yaml
-  - agent-workspace-image-policy.yaml
-  - haku-sandbox-image-repository.yaml
-  - haku-sandbox-image-policy.yaml
-  - haku-openclaw-spike-image-repository.yaml
-  - haku-openclaw-spike-image-policy.yaml
-  - codex-pod-image-repository.yaml
-  - codex-pod-image-policy.yaml
-  - iron-proxy-image-repository.yaml
-  - iron-proxy-image-policy.yaml
-  - squid-ssl-image-repository.yaml
-  - squid-ssl-image-policy.yaml
-  - haku-matrix-adapter-image-repository.yaml
-  - haku-matrix-adapter-image-policy.yaml
-  - grocy-user-perms-provisioner-image-repository.yaml
-  - grocy-user-perms-provisioner-image-policy.yaml
-  - osm-mcp-image-repository.yaml
-  - osm-mcp-image-policy.yaml
-  - cpap-gateway-image-repository.yaml
-  - cpap-gateway-image-policy.yaml
+  - aiquota-api-image.yaml
+  - airlock-image.yaml
+  - aw-server-image.yaml
+  - grocy-mcp-oidc-server-image.yaml
+  - loki-read-proxy-image.yaml
+  - manifold-mcp-server-image.yaml
+  - mcp-oauth-facade-image.yaml
+  - plaid-mcp-server-image.yaml
+  - postscanmail-mcp-server-image.yaml
+  - stalwart-image.yaml
+  - study-casino-image.yaml
+  - tana-firebase-resigner-image.yaml
+  - tana-litellm-proxy-image.yaml
+  - tana-mcp-image.yaml
+  - agent-workspace-image.yaml
+  - haku-sandbox-image.yaml
+  - haku-openclaw-spike-image.yaml
+  - codex-pod-image.yaml
+  - iron-proxy-image.yaml
+  - squid-ssl-image.yaml
+  - haku-matrix-adapter-image.yaml
+  - grocy-user-perms-provisioner-image.yaml
+  - osm-mcp-image.yaml
+  - cpap-gateway-image.yaml

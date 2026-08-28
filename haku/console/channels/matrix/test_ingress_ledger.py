@@ -13,8 +13,8 @@ import pytest
 import pytest_bazel
 
 from haku.console.channels.matrix.ingress_ledger import IngressLedger
-from haku.console.chat_models import MatrixOrigin
 from haku.console.conversation.conversation_event import TurnAnswered
+from haku.console.conversation.prompt_origin import MatrixOrigin
 from haku.console.session.store import BridgeAuthentication, PromptRefusedError, Store
 
 ROOM = "!room:allegedly.works"

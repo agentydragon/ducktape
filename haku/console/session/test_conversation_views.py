@@ -8,10 +8,12 @@ from uuid import uuid4
 
 import pytest_bazel
 
-from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, FrameDirection, RuntimeKind
+from haku.console.chat_models import RuntimeKind
+from haku.console.conversation.prompt_origin import SPA_ORIGIN
 from haku.console.conversation.reads import ToolCallEntry
 from haku.console.database_schema import SessionFrame
 from haku.console.session import conversation_views
+from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
 from haku.console.session.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
 from haku.console.session.store import BridgeAuthentication
 from haku.console.x.claude_code import projection
@@ -31,14 +33,12 @@ async def test_narration_reads_back_in_the_order_the_sandbox_produced_it(session
 
     detail = await _detail(session_store, operator_id, session.session_id)
 
-    assert [line.text for line in detail.session.narration] == [
+    assert [line.text for line in detail.narration] == [
         "Cloning into 'haku-state'...",
         "done.",
         "Starting Claude Code.",
     ]
-    assert [line.frame_seq for line in detail.session.narration] == sorted(
-        line.frame_seq for line in detail.session.narration
-    )
+    assert [line.frame_seq for line in detail.narration] == sorted(line.frame_seq for line in detail.narration)
 
 
 async def test_two_identical_narration_lines_are_two_lines(session_store, operator_id) -> None:
@@ -50,8 +50,8 @@ async def test_two_identical_narration_lines_are_two_lines(session_store, operat
 
     detail = await _detail(session_store, operator_id, session.session_id)
 
-    assert [line.text for line in detail.session.narration] == ["retrying", "retrying"]
-    assert len({line.frame_seq for line in detail.session.narration}) == 2
+    assert [line.text for line in detail.narration] == ["retrying", "retrying"]
+    assert len({line.frame_seq for line in detail.narration}) == 2
 
 
 async def test_narration_carries_only_this_session_and_only_setup_output(session_store, operator_id) -> None:
@@ -65,7 +65,7 @@ async def test_narration_carries_only_this_session_and_only_setup_output(session
 
     detail = await _detail(session_store, operator_id, session.session_id)
 
-    assert [line.text for line in detail.session.narration] == ["mine"]
+    assert [line.text for line in detail.narration] == ["mine"]
 
 
 async def test_a_session_that_narrated_nothing_reports_no_narration(session_store, operator_id) -> None:
@@ -73,7 +73,7 @@ async def test_a_session_that_narrated_nothing_reports_no_narration(session_stor
 
     detail = await _detail(session_store, operator_id, session.session_id)
 
-    assert detail.session.narration == []
+    assert detail.narration == []
 
 
 async def test_a_calls_output_reads_back_as_the_items_text(session_store, operator_id) -> None:

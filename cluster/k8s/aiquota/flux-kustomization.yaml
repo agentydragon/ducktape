@@ -21,6 +21,8 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
+    - name: forgejo-images
+      namespace: ducktape-flux
     # Provides the shared namespace and the CLIProxyAPI integration Secret.
     - name: cli-proxy-api
       namespace: ducktape-flux

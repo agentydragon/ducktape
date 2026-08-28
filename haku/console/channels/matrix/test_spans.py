@@ -22,7 +22,7 @@ from haku.console.channels.matrix.spans import (
     Span,
     SpanKind,
 )
-from haku.console.chat_models import LeaseExpiryReason, SessionStatus, ToolOutcome
+from haku.console.chat_models import ToolOutcome
 from haku.console.conversation.conversation_event import (
     LeaseExpired,
     MessageCompleted,
@@ -36,6 +36,7 @@ from haku.console.conversation.conversation_event import (
     TurnAnswered,
     TurnOpened,
 )
+from haku.console.session.status import LeaseExpiryReason, SessionStatus
 from haku.console.session.subscription import StreamedEvent, StreamPosition
 
 CONVERSATION = UUID("00000000-0000-4000-8000-00000000c0c0")

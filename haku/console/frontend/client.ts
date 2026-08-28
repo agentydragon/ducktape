@@ -43,7 +43,7 @@ export type ConversationSummary = components["schemas"]["ConversationSummary"];
 export type ConversationPage = components["schemas"]["ConversationPage"];
 export type ConversationCursor = components["schemas"]["ConversationCursor"];
 export type Conversation = components["schemas"]["ConversationView"];
-export type ConversationSession = components["schemas"]["ConversationSessionView"];
+export type Session = components["schemas"]["SessionView"];
 // What `WS /api/conversations/{id}/follow` sends. Generated like every type above: the schema
 // carries these components because the exporter publishes them (//haku/console:export_schema),
 // a WebSocket having no route for FastAPI to document.

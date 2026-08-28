@@ -1,0 +1,24 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: cpap-gateway
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/cpap-gateway
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: cpap-gateway
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: cpap-gateway
+  filterTags:
+    pattern: '^devel-\d{14}-[0-9a-f]{7}$'
+  policy:
+    alphabetical:
+      order: asc

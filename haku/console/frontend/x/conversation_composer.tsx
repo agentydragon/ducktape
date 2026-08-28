@@ -1,9 +1,9 @@
 import { Alert, Button, Group, Stack, Text, Textarea } from "@mantine/core";
 import { useState } from "react";
 
-import { abortSessionTurn, displayableError, PromptRefused, sendChatPrompt, type ConversationSession } from "../client";
+import { abortSessionTurn, displayableError, PromptRefused, sendChatPrompt, type Session } from "../client";
 
-function placeholder(status: ConversationSession["status"]): string {
+function placeholder(status: Session["status"]): string {
   if (status === "idle" || status === "ready") return "Send a message…";
   if (status === "responding") return "A turn is running — a message sent now would be refused.";
   return "The session is not ready for a message yet.";
@@ -29,7 +29,7 @@ export function ConversationComposer({
 }: {
   conversationId: string;
   sessionId: string;
-  status: ConversationSession["status"];
+  status: Session["status"];
   onSent: () => void;
 }): JSX.Element {
   const [text, setText] = useState("");

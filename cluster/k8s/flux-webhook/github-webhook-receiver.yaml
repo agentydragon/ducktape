@@ -39,12 +39,6 @@ spec:
       namespace: ducktape-flux
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
-      name: airlock
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
-      name: aiquota-api
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
       name: authentik-jwt-rotation
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
@@ -52,9 +46,6 @@ spec:
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
       name: attic-jwt-rotation
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
-      name: grocy-mcp-oidc-server
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
       name: haku-console
@@ -81,9 +72,6 @@ spec:
       name: haku-harness-runner
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
-      name: loki-read-proxy
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
       name: openclaw
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
@@ -96,37 +84,13 @@ spec:
       name: props-registry-proxy
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
-      name: manifold-mcp-server
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
       name: budget-exporter
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
-      name: plaid-mcp-server
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
       name: plaid-mcp-sync
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
-      name: postscanmail-mcp-server
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
-      name: mcp-oauth-facade
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
-      name: tana-mcp
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
-      name: study-casino
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
       name: wayback-archive
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
-      name: tana-firebase-resigner
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
-      name: tana-litellm-proxy
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
       name: token-provisioner
@@ -139,9 +103,6 @@ spec:
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
       name: cpap-sync
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
-      name: stalwart
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
       name: rtl-tcp

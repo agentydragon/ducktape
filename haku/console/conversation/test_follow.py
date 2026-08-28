@@ -18,9 +18,10 @@ import pytest_bazel
 from more_itertools import one
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, FrameDirection, ItemStatus, ItemType, SessionStatus
+from haku.console.chat_models import ItemStatus, ItemType
 from haku.console.conversation.conversation_event import FrameRange, TurnAnswered
 from haku.console.conversation.follow import ConversationFollow
+from haku.console.conversation.prompt_origin import SPA_ORIGIN
 from haku.console.conversation.reads import ConversationEntry, MessageEntry, PromptEntry
 from haku.console.notifications.conversation_wakes import ConversationWakes
 from haku.console.session.conftest import attach_channel
@@ -31,6 +32,8 @@ from haku.console.session.conversation_views import (
     ConversationView,
 )
 from haku.console.session.runtime import SessionService
+from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
+from haku.console.session.status import SessionStatus
 from haku.console.session.store import Store
 from haku.console.x.conversation_events import ItemSegment, MessageCompleted, MessageStarted, OpenRef
 from haku.console.x.testing.recording_claims import RecordingClaims
@@ -216,7 +219,7 @@ async def test_a_streaming_turns_segments_become_one_update(
     assert isinstance(update, ConversationUpdate)
     writing = one(entry for entry in update.entries if isinstance(entry, MessageEntry))
     assert (writing.status, writing.text) == (ItemStatus.OPEN, "the answer so far")
-    assert update.status == SessionStatus.RESPONDING
+    assert update.session.status == SessionStatus.RESPONDING
     await _nothing_more(messages)
     await messages.aclose()
 
@@ -237,14 +240,14 @@ async def test_a_replacement_sessions_rows_reach_a_follower_that_never_named_it(
     update = await _next(messages)
 
     assert isinstance(update, ConversationUpdate)
-    assert update.session_id == replacement.session_id
+    assert update.session.session_id == replacement.session_id
     assert _prose(update.entries) == ["carry on", "carrying on"]
     # And the session it replaced is now one of the thread's earlier ones, which a follower is told
     # rather than left to infer from a `session_id` it does not recognise.
     assert [earlier.session_id for earlier in update.earlier_sessions] == [first]
     # The whole of the live session's row, so nothing a follower holds still describes the session
     # it has just been told was replaced.
-    assert update.created_at == replacement.created_at
+    assert update.session.created_at == replacement.created_at
     await messages.aclose()
 
 
@@ -328,7 +331,7 @@ async def test_a_sandbox_still_coming_up_is_read_again_with_no_wake_to_carry_it(
     opened = await _next(messages)
     assert isinstance(opened, ConversationSnapshot)
     assert opened.conversation.session.status == SessionStatus.PROVISIONING
-    assert opened.conversation.session.provisioning is not None
+    assert opened.conversation.provisioning is not None
 
     # Nothing is written between these two, and the second still arrives.
     polled = await _next(messages)
@@ -348,7 +351,7 @@ async def test_a_session_past_provisioning_is_not_polled(
     messages = following.follow(operator_id, conversation_id)
     opened = await _next(messages)
     assert isinstance(opened, ConversationSnapshot)
-    assert opened.conversation.session.provisioning is None
+    assert opened.conversation.provisioning is None
 
     await _nothing_more(messages)
 

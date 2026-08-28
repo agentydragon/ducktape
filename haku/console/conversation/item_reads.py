@@ -21,8 +21,9 @@ from dataclasses import dataclass
 
 from pydantic import TypeAdapter
 
-from haku.console.chat_models import ItemType, PromptOrigin
+from haku.console.chat_models import ItemType
 from haku.console.conversation.conversation_event import TurnAborted, TurnAnswered, TurnEnd, TurnFailed, TurnOutcome
+from haku.console.conversation.prompt_origin import PromptOrigin
 from haku.console.conversation.reads import (
     ConsoleAuthored,
     ConversationEntry,

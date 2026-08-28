@@ -20,6 +20,8 @@ HTTP routes. Around them:
 | `system_prompt.py`      | The system prompt a chat session is started with (the template is deploy config).                                         |
 | `launch_identity.py`    | Neutral launch-identity types shared by channel and runtime stores.                                                       |
 | `setup_output.py`       | The bridge envelope's `kind`; the setup-narration compatibility frame.                                                    |
+| `session_frames.py`     | Vocabulary of the durable session wire log (`session_frames` rows).                                                       |
+| `status.py`             | The session lifecycle vocabulary: status, the status sets, and how a lease can fail one.                                  |
 
 The elected loops here — runtime supervision (`CRUN`) and allocation (`SBOX`) — hold
 independent advisory locks and can land on different replicas, so a stalled claim cannot wedge

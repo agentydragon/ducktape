@@ -34,7 +34,7 @@ history, #4271). Records from that era, kept for their lessons:
 ## Design
 
 One pod (`cluster/k8s/x/activitywatch/`, namespace `activitywatch`, `Recreate`), pinned
-to the Proxmox region next to its PVC: `aw-server` (`ghcr.io/agentydragon/aw-server`,
+to the Proxmox region next to its PVC: `aw-server` (`git.allegedly.works/ducktape-ci/aw-server`,
 Bazel-built `@ducktape_activitywatch//:image`) with device id `activitywatch-cluster` and
 SQLite at `/data/db.sqlite3` on `activitywatch-data` (`local-path-proxmox`, 10Gi), plus
 two nginx sidecars that are its only auth — aw-server itself has none:

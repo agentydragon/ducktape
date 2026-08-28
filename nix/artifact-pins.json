@@ -21,8 +21,8 @@
       "sha256": "0hCLIpgGUB520y35/NUeFzhXyyEjM1JK1gE6HpDZcrI="
     },
     "ducktape-util": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-util-1be41f69b3aa/ducktape_util-0.1.0-py3-none-any.whl",
-      "sha256": "G+QfabOqAAKTa0E5X7i2NL+SS2eTi1JkWdpnUuxmh/g="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-util-06b615368df0/ducktape_util-0.1.0-py3-none-any.whl",
+      "sha256": "BrYVNo3wtvwc3rsfLVYm1YOAJ1ebkFbduAO8j7oQ+hg="
     },
     "ducktape": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-607778f4b210/ducktape-0.1.0-py3-none-any.whl",
@@ -81,16 +81,16 @@
       "sha256": "eCzQ/g/btogW4ragke8gHosEy25k1M8rLmJeY2D3Woo="
     },
     "skill-cihealth": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cihealth-08367a53086d/cihealth.skill",
-      "sha256": "CDZ6Uwhtce6dDrzgwCNxSjM4Zh6abRprz8R40myS3YY="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cihealth-dde7cda49f3b/cihealth.skill",
+      "sha256": "3efNpJ87Cnpl6PjHYw1+IXpExC2esb5f1Cyz0hCiBAQ="
     },
     "skill-web_selfcheck": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-web_selfcheck-f5e75a4080ee/web_selfcheck.skill",
       "sha256": "9edaQIDuR/JVVUW0PfrqMUPDkiHnwB4S4SkLwrMn9Qk="
     },
     "skill-workspace-gc": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-workspace-gc-48058bb6ca4d/workspace-gc.skill",
-      "sha256": "SAWLtspNS/Jj4O15Q+/nnu0iTFthJ3qPOPRU9VuSbo4="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-workspace-gc-c2a069ff97d8/workspace-gc.skill",
+      "sha256": "wqBp/5fYlrH0cocia4iXp74lwZQLTzULLKw7bCYmHNw="
     },
     "skill-debundle_architect": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-debundle_architect-1541b2e0f930/debundle_architect.skill",
@@ -141,8 +141,8 @@
       "sha256": "0SkX0TuL0kOeqm4L3Ucl1xuL0LE+BeDe9nZD/eLqzgc="
     },
     "skill-freecad": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-freecad-b7606ce9f741/freecad.skill",
-      "sha256": "t2Bs6fdBXlb1OcZF3K/p3WxN3W0C6QZ9sMp38dD/87U="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-freecad-01cfca8e9c48/freecad.skill",
+      "sha256": "Ac/KjpxIqQBlbYgT2RtgxxnR57xAhYjDQau3KrMk3fE="
     },
     "skill-google_photos_link": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-google_photos_link-80fcb23ce80a/google_photos_link.skill",

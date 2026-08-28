@@ -22,34 +22,21 @@ from sqlalchemy import select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from haku.console.chat_models import (
-    OPEN_SESSION_STATUSES,
-    SPA_ORIGIN,
-    BridgeFrameKind,
-    FrameDirection,
-    ItemStatus,
-    ItemType,
-    LeaseExpiryReason,
-    MatrixOrigin,
-    PromptOriginKind,
-    PromptRejection,
-    RuntimeKind,
-    SessionStatus,
-    SpaOrigin,
-    ToolOutcome,
-)
+from haku.console.chat_models import ItemStatus, ItemType, RuntimeKind, ToolOutcome
 from haku.console.conversation.conversation_event import (
     AuthoredEventKind,
     ConversationEventKind,
     EventProvenance,
     FrameRange,
     PromptOpened,
+    PromptRejection,
     TurnAborted,
     TurnAnswered,
     TurnFailed,
     TurnOutcome,
 )
 from haku.console.conversation.item_reads import entry_of
+from haku.console.conversation.prompt_origin import SPA_ORIGIN, MatrixOrigin, PromptOriginKind, SpaOrigin
 from haku.console.conversation.reads import (
     FrameRecord,
     FromFrames,
@@ -79,7 +66,9 @@ from haku.console.grants.kubernetes.models import KubernetesNamespacesGrantScope
 from haku.console.grants.principal import GrantPrincipalKind
 from haku.console.notifications.session_wakes import SessionEvent, SessionEventKind
 from haku.console.session.conftest import age_lease, answers, attach_channel, lease_of, make_idle
+from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
 from haku.console.session.setup_output import SETUP_OUTPUT_KIND
+from haku.console.session.status import OPEN_SESSION_STATUSES, LeaseExpiryReason, SessionStatus
 from haku.console.session.store import (
     ADOPTION_GRACE,
     REPLICA,
@@ -2173,7 +2162,7 @@ async def test_an_update_carries_what_a_replaced_session_wrote_after_the_positio
         "after it was replaced",
         "answered again",
     ]
-    assert changes.session_id == second.session_id
+    assert changes.session.session_id == second.session_id
 
 
 async def test_a_claimed_prompt_reaches_a_reader_as_the_responding_status(session_store, operator_id) -> None:
@@ -2195,7 +2184,7 @@ async def test_a_claimed_prompt_reaches_a_reader_as_the_responding_status(sessio
     )
 
     assert claimed.entries == []
-    assert claimed.status == SessionStatus.RESPONDING
+    assert claimed.session.status == SessionStatus.RESPONDING
 
 
 async def test_a_position_the_log_cannot_answer_from_is_refused_rather_than_read_as_empty(

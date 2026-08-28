@@ -52,15 +52,9 @@ export function followed(held: Conversation | null, message: ConversationFollowM
     attachments: message.attachments,
     earlier_sessions: message.earlier_sessions,
     entries: mergedEntries(held.entries, message.entries),
-    session: {
-      session_id: message.session_id,
-      status: message.status,
-      error: message.error,
-      created_at: message.created_at,
-      updated_at: message.updated_at,
-      provisioning: message.provisioning,
-      narration: message.narration,
-    },
+    session: message.session,
+    provisioning: message.provisioning,
+    narration: message.narration,
   };
 }
 

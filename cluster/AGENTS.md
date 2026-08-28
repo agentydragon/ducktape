@@ -125,6 +125,16 @@ when it rewrites a tag, and its emitter writes `{a: 1}` where prettier writes
 [skip ci]` — no PR, no CI — the branch goes red _after_ your green PR merged, and
 re-reds on every image update. Use block style in those files.
 
+### Colocating image repository and policy
+
+When an image has exactly one `ImageRepository` and one `ImagePolicy`, and neither
+resource is intentionally reused by another independent policy or automation
+ownership path, define both resources in one multi-document `<name>-image.yaml` file,
+with `ImageRepository` first and `ImagePolicy` second. Keep an
+`ImageUpdateAutomation` in its own file: it normally serves multiple image policies
+or a separate `GitRepository`. A Receiver reference alone does not require splitting
+the pair; Receivers address the Kubernetes resource by name.
+
 ## Agent RBAC Architecture
 
 When adding agent read access to a new service namespace, create a new `agent-rbac/`

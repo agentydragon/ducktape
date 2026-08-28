@@ -25,6 +25,8 @@ spec:
       name: airlock
       namespace: airlock
   dependsOn:
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux
     - name: authentik

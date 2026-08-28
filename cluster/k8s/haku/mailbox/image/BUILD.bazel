@@ -44,5 +44,5 @@ oci_image(
 oci_load(
     name = "load",
     image = ":image",
-    repo_tags = ["ghcr.io/agentydragon/stalwart:latest"],
+    repo_tags = ["git.allegedly.works/ducktape-ci/stalwart:latest"],
 )

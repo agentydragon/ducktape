@@ -60,7 +60,6 @@ from uuid import UUID
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from haku.console import operator_auth
-from haku.console.chat_models import SessionStatus
 from haku.console.notifications.console_events import OPERATOR_SESSION_EXPIRED_CLOSE_CODE
 from haku.console.notifications.conversation_wakes import ConversationWakeEvent, ConversationWakes, RecheckHeld
 from haku.console.session.conversation_views import (
@@ -70,6 +69,7 @@ from haku.console.session.conversation_views import (
     ConversationView,
 )
 from haku.console.session.sandbox_claims import SandboxProvisioningView
+from haku.console.session.status import SessionStatus
 from haku.console.session.store import PositionUnusableError, Store
 
 router = APIRouter(tags=["conversations"])
@@ -223,7 +223,7 @@ class ConversationFollow:
             return await self._snapshot(
                 operator_id, conversation_id, await self._store.conversation_position(conversation_id)
             )
-        sandbox = await self._reader.provisioning_of(update.session_id, update.status)
+        sandbox = await self._reader.provisioning_of(update.session.session_id, update.session.status)
         return update.model_copy(update={"provisioning": sandbox})
 
     async def _snapshot(self, operator_id: UUID, conversation_id: UUID, position: int) -> ConversationSnapshot:
@@ -239,7 +239,7 @@ class ConversationFollow:
 
 def _still_coming_up(message: ConversationFollowMessage) -> bool:
     """Whether the session this message describes is still waiting on its sandbox."""
-    status = message.conversation.session.status if isinstance(message, ConversationSnapshot) else message.status
+    status = (message.conversation if isinstance(message, ConversationSnapshot) else message).session.status
     return status == SessionStatus.PROVISIONING
 
 

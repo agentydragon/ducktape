@@ -26,24 +26,11 @@ from sqlalchemy import CursorResult, Select, Subquery, func, literal, select, te
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import (
-    ENDED_SESSION_STATUSES,
-    HARNESS_ORIGIN,
-    LEASED_SESSION_STATUSES,
-    OPEN_SESSION_STATUSES,
-    BridgeFrameKind,
-    FrameDirection,
-    ItemStatus,
-    ItemType,
-    LeaseExpiryReason,
-    PromptOrigin,
-    PromptRejection,
-    RuntimeKind,
-    SessionStatus,
-)
+from haku.console.chat_models import ItemStatus, ItemType, RuntimeKind
 from haku.console.conversation import conversation_event, log, prompt_inbox
-from haku.console.conversation.conversation_event import FrameRange
+from haku.console.conversation.conversation_event import FrameRange, PromptRejection
 from haku.console.conversation.item_reads import ConversationPageRow, entry_of, turn_end_of
+from haku.console.conversation.prompt_origin import HARNESS_ORIGIN, PromptOrigin
 from haku.console.conversation.reads import (
     ChannelAttachment,
     FrameRecord,
@@ -79,21 +66,25 @@ from haku.console.notifications.session_wakes import SessionEventKind, notify
 from haku.console.session.conversation_views import (
     ConversationCursor,
     ConversationPage,
-    ConversationSessionView,
     ConversationSummary,
     ConversationUpdate,
     ConversationView,
-    EarlierSession,
-    LiveSession,
     SessionFramePage,
     SessionView,
     frame_page,
-    live_status,
     session_view,
     setup_narration,
 )
 from haku.console.session.launch_identity import LaunchAgentRejectedError, LaunchAuthorizer
+from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
 from haku.console.session.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
+from haku.console.session.status import (
+    ENDED_SESSION_STATUSES,
+    LEASED_SESSION_STATUSES,
+    OPEN_SESSION_STATUSES,
+    LeaseExpiryReason,
+    SessionStatus,
+)
 from haku.console.session.subscription import stream_head
 from haku.console.x.conversation_events import ConversationEvent, ItemSegment, MessageCompleted, MessageStarted, OpenRef
 from haku.console.x.runtime import RuntimeAdapter, RuntimeRegistry
@@ -228,15 +219,14 @@ async def _item_counts(db: AsyncSession, conversations: set[UUID]) -> dict[UUID,
     return {conversation: counted.get(conversation, 0) for conversation in conversations}
 
 
-async def _live_sessions(db: AsyncSession, conversations: set[UUID]) -> dict[UUID, LiveSession]:
+async def _live_sessions(db: AsyncSession, conversations: set[UUID]) -> dict[UUID, SessionView]:
     """The session holding each of *conversations*, for those a session is holding.
 
     At most one per conversation — the rule neutral runtime supervision keeps — so a duplicate is a bug. No
     index enforces it and a listing is the wrong place to raise over it, so the newest wins.
 
-    **`responding` is derived, not read**, the same way `session_view` derives it: the column
-    carries no turn state, so a session with an open turn reports `responding` however its row
-    reads.
+    **`responding` is derived, not read** (`session_view`): the column carries no turn state, so a
+    session with an open turn reports `responding` however its row reads.
     """
     rows = (
         await db.scalars(
@@ -255,12 +245,7 @@ async def _live_sessions(db: AsyncSession, conversations: set[UUID]) -> dict[UUI
             )
         ).all()
     )
-    return {
-        row.conversation_id: LiveSession(
-            session_id=row.session_id, status=SessionStatus.RESPONDING if row.session_id in responding else row.status
-        )
-        for row in rows
-    }
+    return {row.conversation_id: session_view(row, responding=row.session_id in responding) for row in rows}
 
 
 async def _last_ended_sessions(db: AsyncSession, conversations: set[UUID]) -> dict[UUID, SessionStatus]:
@@ -1009,13 +994,12 @@ class Store:
                 )
             ).all()
             attachments = (await _live_attachments(db, {conversation_id}))[conversation_id]
-        if not sessions:
-            # A conversation is only ever created alongside its first session, so this is a writer
-            # that committed one without the other rather than a thread waiting to start.
-            raise ValueError(f"a conversation has no sessions: {conversation_id=}")
-        current, *earlier = sessions
-        view = await self.get(operator_id, current.session_id)
-        async with self._sessions() as db:
+            if not sessions:
+                # A conversation is only ever created alongside its first session, so this is a writer
+                # that committed one without the other rather than a thread waiting to start.
+                raise ValueError(f"a conversation has no sessions: {conversation_id=}")
+            current, *earlier = sessions
+            responding = await _open_turn(db, conversation_id) is not None
             narration = await setup_narration(db, current.session_id)
             rows = await _item_page_rows(db, conversation_id, after_seq=None, limit=None)
         return ConversationView(
@@ -1027,18 +1011,9 @@ class Store:
             created_at=conversation.created_at,
             attachments=attachments,
             entries=[entry_of(row) for row in rows],
-            session=ConversationSessionView(
-                session_id=view.session_id,
-                status=view.status,
-                error=view.error,
-                created_at=view.created_at,
-                updated_at=view.updated_at,
-                narration=narration,
-            ),
-            earlier_sessions=[
-                EarlierSession(session_id=row.session_id, status=row.status, created_at=row.created_at)
-                for row in earlier
-            ],
+            session=session_view(current, responding=responding),
+            narration=narration,
+            earlier_sessions=[session_view(row, responding=False) for row in earlier],
         )
 
     async def read_operator_conversation_changes(
@@ -1091,17 +1066,10 @@ class Store:
             responding = await _open_turn(db, conversation_id) is not None
         return ConversationUpdate(
             position=position,
-            session_id=current.session_id,
-            status=live_status(current, responding=responding),
-            error=current.error,
-            created_at=current.created_at,
-            updated_at=current.updated_at,
+            session=session_view(current, responding=responding),
             narration=narration,
             attachments=attachments,
-            earlier_sessions=[
-                EarlierSession(session_id=row.session_id, status=row.status, created_at=row.created_at)
-                for row in earlier
-            ],
+            earlier_sessions=[session_view(row, responding=False) for row in earlier],
             entries=[entry_of(row) for row in rows],
         )
 

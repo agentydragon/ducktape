@@ -12,7 +12,7 @@ from fastmcp import Client
 from fastmcp.client.client import CallToolResult
 from more_itertools import one
 
-from haku.console.chat_models import BridgeFrameKind, ItemStatus, RuntimeKind
+from haku.console.chat_models import ItemStatus, RuntimeKind
 from haku.console.conversation.conversation_event import TurnAnswered
 from haku.console.conversation.reads import (
     ChannelAttachment,
@@ -41,6 +41,7 @@ from haku.console.mcp_execution import (
     OperatorMcpExecutionCaller,
     mcp_execution_request_meta,
 )
+from haku.console.session.session_frames import BridgeFrameKind
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tools.conversations import FramePage, ItemPage, SessionPage, build_mcp
 

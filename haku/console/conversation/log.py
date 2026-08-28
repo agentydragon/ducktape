@@ -44,7 +44,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.chat_models import ItemStatus, ItemType, PromptOrigin, ToolOutcome
+from haku.console.chat_models import ItemStatus, ItemType, ToolOutcome
 from haku.console.conversation.conversation_event import (
     AuthoredEvent,
     AuthoredEventKind,
@@ -80,6 +80,7 @@ from haku.console.conversation.conversation_event import (
     UnknownEventBody,
     UnreadableInput,
 )
+from haku.console.conversation.prompt_origin import PromptOrigin
 from haku.console.database_schema import Conversation, ConversationEventRow, ConversationItem, ConversationTurn
 from haku.console.x import conversation_events
 from haku.console.x.conversation_events import CallRef, ItemRef, OpenRef

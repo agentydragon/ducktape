@@ -1,0 +1,29 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: stalwart
+  namespace: flux-system
+  annotations:
+    description: >-
+      In-repo repack of the Stalwart mailserver with stalwart-cli layered in
+      (//cluster/k8s/haku/mailbox/image), consumed by the haku-mailbox
+      Deployment.
+spec:
+  image: git.allegedly.works/ducktape-ci/stalwart
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: stalwart
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: stalwart
+  filterTags:
+    pattern: '^devel-\d{14}-[0-9a-f]{7}$'
+  policy:
+    alphabetical:
+      order: asc

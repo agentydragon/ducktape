@@ -12,6 +12,9 @@ spec:
   path: ./cluster/k8s/agents/loki-read-proxy
   prune: true
   wait: true
+  dependsOn:
+    - name: forgejo-images
+      namespace: ducktape-flux
   sourceRef:
     kind: GitRepository
     name: ducktape
