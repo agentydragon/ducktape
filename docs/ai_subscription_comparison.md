@@ -1025,7 +1025,7 @@ window shape says how much survives contact with a fleet.
 | Grok 4.6             | $2.00                | $6.00                  | $4.00/$12.00 once prompt ≥200K; cached $0.50  |
 | Qwen3.8-Max          | $2.00                | $6.00                  | flat, since 2026-08-03                        |
 | GLM-5.3              | $1.40                | $4.40                  | same rate as GLM-5.2                          |
-| Gemma 4 31B          | $0.99                | $1.49                  | via Cerebras on OpenRouter; 262K context      |
+| Gemma 4 31B          | $0.99                | $1.49                  | via Cerebras on OpenRouter; **131K** served³  |
 | Gemini 3.7 Flash     | $0.75                | $3.75                  | promo; doubles 2027-01-01                     |
 | DeepSeek V4-Pro 0813 | $0.66                | $1.98                  | off-peak; $1.32/$3.96 peak²                   |
 | gpt-oss-120b         | $0.35                | $0.75                  | via Cerebras on OpenRouter; 131K context      |
@@ -1033,6 +1033,7 @@ window shape says how much survives contact with a fleet.
 
 ¹ Sonnet 5 introductory rate runs through 2026-08-31.
 ² DeepSeek peak hours are 01:00–04:00 and 06:00–10:00 UTC.
+³ OpenRouter advertises Gemma 4 31B's native 262K, but Cerebras's own model page serves it at [65K free / 131K paid](https://inference-docs.cerebras.ai/models/gemma-4-31b). The served window is the one that binds.
 
 ## Subscription comparison
 
