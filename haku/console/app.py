@@ -33,16 +33,12 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.middleware.sessions import SessionMiddleware
 
 from haku.console import (
-    agent_bearer_authority,
     capabilities,
-    mcp_agent_auth,
     mcp_approval,
     mcp_catalog_reconciler,
     mcp_mount,
     mcp_operator_oauth,
     mcp_server,
-    operator_auth,
-    operator_login_flow,
     tool_call_service,
 )
 from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
@@ -73,7 +69,13 @@ from haku.console.grants.kubernetes.repository import PostgresGrantRepository as
 from haku.console.grants.kubernetes.service import GrantService as KubernetesGrantService
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.hostexecd import service
-from haku.console.identity import enrollment_routes
+from haku.console.identity import (
+    agent_bearer_authority,
+    enrollment_routes,
+    mcp_agent_auth,
+    operator_auth,
+    operator_login_flow,
+)
 from haku.console.identity.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.identity.fastmcp_adapter import HakuMcpActorResolver, install_operator_session_route_guard
