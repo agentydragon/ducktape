@@ -83,6 +83,40 @@ def test_repository_enforces_source_provenance_and_lifecycle(make_client: Any) -
         client.portal.call(exercise)
 
 
+def test_repository_persists_the_allow_prohibited_address_flag(make_client: Any) -> None:
+    """The capability column round-trips through create and a fresh read; the default-false shape is
+    covered by the specs above, whose equality holds only if the reread flag matches."""
+    with make_client() as client:
+        app = cast(FastAPI, client.app)
+        sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
+        assert client.portal is not None
+        agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
+        source_tool_call_id = client.portal.call(
+            partial(_insert_http_source, sessions, binding_id=binding_id, now=_NOW)
+        )
+        repository = PostgresHttpGrantRepository(sessions)
+        flagged = HttpGrantSpec(
+            origin=HttpOrigin(scheme=HttpScheme.HTTP, host="gateway.internal.example", port=4000),
+            coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.POST})),
+            allow_prohibited_address=True,
+        )
+
+        async def exercise() -> None:
+            (grant,) = await repository.create_many(
+                owner_agent_id=agent_id,
+                grant_principal=AgentGrantPrincipal(agent_id=agent_id),
+                source_tool_call_id=source_tool_call_id,
+                grants=(flagged,),
+                created_at=_NOW,
+                expires_at=_NOW + timedelta(hours=1),
+            )
+            assert grant.spec == flagged
+            reread = await repository.get(owner_agent_id=agent_id, grant_id=grant.grant_id)
+            assert reread.spec.allow_prohibited_address is True
+
+        client.portal.call(exercise)
+
+
 def test_expiry_is_derived_and_ending_an_expired_grant_records_nothing(make_client: Any) -> None:
     with make_client() as client:
         app = cast(FastAPI, client.app)

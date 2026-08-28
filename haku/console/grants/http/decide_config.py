@@ -146,6 +146,18 @@ class EgressStandingPolicyEntry(BaseModel):
             "is pure reachability."
         ),
     )
+    allow_prohibited_address: bool = Field(
+        default=False,
+        description=(
+            "Capability: when set, requests this entry admits may reach its origins even when the "
+            "host resolves entirely into otherwise-prohibited address space — the always-prohibited "
+            "classes or a deploy `prohibited_cidrs` entry (`decide_service`). Scoped to this entry's "
+            "own origins, never a global private-address allow; a mixed public+internal answer stays "
+            "denied as a rebinding signature. Default False keeps the private-address boundary. This "
+            "is the reviewed primitive for granting an Agent one exact cluster-internal destination "
+            "(e.g. an in-cluster model gateway)."
+        ),
+    )
 
 
 class EgressDecideConfig(BaseModel):

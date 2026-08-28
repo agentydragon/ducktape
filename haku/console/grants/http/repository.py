@@ -31,6 +31,7 @@ def _row_spec(row: HttpGrantRow) -> HttpGrantSpec:
         origin=HttpOrigin(scheme=row.scheme, host=row.host, port=row.port),
         coverage=HttpRequestCoverage(methods=row.methods, path_regex=row.path_regex),
         credential_handle=row.credential_handle,
+        allow_prohibited_address=row.allow_prohibited_address,
     )
 
 
@@ -115,6 +116,7 @@ class PostgresHttpGrantRepository:
                     methods=spec.coverage.methods,
                     path_regex=spec.coverage.path_regex,
                     credential_handle=spec.credential_handle,
+                    allow_prohibited_address=spec.allow_prohibited_address,
                     created_at=created_at,
                     expires_at=expires_at,
                     released_at=None,

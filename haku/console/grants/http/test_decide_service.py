@@ -691,6 +691,88 @@ def test_configured_prohibited_cidrs_extend_the_always_on_classes(make_client: A
         assert public.allowed
 
 
+def test_flagged_standing_entry_reaches_a_fully_internal_destination(make_client: Any) -> None:
+    """allow_prohibited_address lifts the private-address denial for the entry's own origin when the
+    host resolves entirely into prohibited space, and the registry credential still redeems there —
+    the cluster-internal-service primitive, credential substitution and all. An unflagged entry at
+    the same origin stays default-deny."""
+    internal = IPv4Address("10.0.0.5")
+    with make_client() as client:
+        flagged = _harness(
+            client,
+            credentials=lambda agent_id: [_github_credential(agent_id)],
+            standing=lambda agent_id: [
+                _standing_entry(agent_id, allow_prohibited_address=True, credential_handle="github-bot")
+            ],
+        )
+        unflagged = _harness(client, standing=lambda agent_id: [_standing_entry(agent_id)])
+
+        allowed = client.portal.call(
+            partial(
+                flagged.decide.decide,
+                _request(path="/repos/agentydragon/ducktape", resolved_ips=frozenset({internal}), upstream_ip=internal),
+            )
+        )
+        assert isinstance(allowed, DecideAllowed)
+        assert allowed.source is DecisionSource.STANDING
+        assert [substitution.value for substitution in allowed.substitutions] == [_GITHUB_VALUE]
+
+        denied = client.portal.call(
+            partial(unflagged.decide.decide, _request(resolved_ips=frozenset({internal}), upstream_ip=internal))
+        )
+        assert denied == DecideDenied(reason="resolved address 10.0.0.5 is in a private range")
+
+
+def test_flagged_grant_reaches_a_destination_in_a_configured_prohibited_cidr(make_client: Any) -> None:
+    """The override spans deploy prohibited_cidrs, not only the always-on classes: a flagged grant
+    admits an origin resolving entirely into a configured cluster CIDR."""
+    internal = IPv4Address("10.42.0.9")
+    with make_client() as client:
+        harness = _harness(client, prohibited_cidrs=frozenset({IPv4Network("10.42.0.0/16")}))
+        flagged_spec = HttpGrantSpec(
+            origin=_ORIGIN,
+            coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})),
+            allow_prohibited_address=True,
+        )
+        (grant_id,) = _create_grants(client, harness, flagged_spec, expires_at=_NOW + timedelta(minutes=30))
+
+        allowed = client.portal.call(
+            partial(harness.decide.decide, _request(resolved_ips=frozenset({internal}), upstream_ip=internal))
+        )
+        assert isinstance(allowed, DecideAllowed)
+        assert allowed.source is DecisionSource.GRANT
+        assert allowed.decision_id == f"grant:{grant_id}"
+
+
+def test_prohibited_address_override_is_scoped_to_its_own_origin(make_client: Any) -> None:
+    """Never a global private-address allow: a flagged entry admits an internal resolution only at
+    the origin it names; the same internal answer at any other origin stays denied."""
+    internal = IPv4Address("10.0.0.5")
+    with make_client() as client:
+        harness = _harness(client, standing=lambda agent_id: [_standing_entry(agent_id, allow_prohibited_address=True)])
+        decide = partial(client.portal.call, harness.decide.decide)
+
+        assert decide(_request(resolved_ips=frozenset({internal}), upstream_ip=internal)).allowed
+        other = decide(_request(host="other.example", resolved_ips=frozenset({internal}), upstream_ip=internal))
+        assert other == DecideDenied(reason="resolved address 10.0.0.5 is in a private range")
+
+
+def test_flag_never_overrides_a_mixed_public_and_prohibited_answer(make_client: Any) -> None:
+    """The flag lifts a *fully* internal resolution only. A mixed public+prohibited answer is the
+    #4948 rebinding signature and stays denied at a flagged origin, whatever the pinned address."""
+    with make_client() as client:
+        harness = _harness(client, standing=lambda agent_id: [_standing_entry(agent_id, allow_prohibited_address=True)])
+
+        decision = client.portal.call(
+            partial(
+                harness.decide.decide,
+                _request(resolved_ips=frozenset({_PUBLIC_V4, IPv4Address("10.0.0.5")}), upstream_ip=_PUBLIC_V4),
+            )
+        )
+
+        assert decision == DecideDenied(reason="resolved address 10.0.0.5 is in a private range")
+
+
 async def test_grant_authority_failure_raises_unavailable() -> None:
     # An unreachable database is the authority failure the service must convert into a refusal;
     # nothing here needs the container.

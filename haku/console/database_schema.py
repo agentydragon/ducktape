@@ -572,6 +572,11 @@ class HttpGrantRow(GrantEnvelopeColumns, Base):
     # The handle is an inert config-registry name (`grants.http.decide_config`); the credential
     # value it resolves to lives in a deployment env reference and never enters Postgres.
     credential_handle: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Capability flag: this grant may reach its origin even when the host resolves entirely into
+    # otherwise-prohibited (cluster-internal) address space. The address check itself is the decide
+    # oracle's (`grants.http.decide_service`); the flag only scopes the override to this grant's
+    # origin. Defaults false server-side so any row inserted without it stays default-deny.
+    allow_prohibited_address: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
 
 
 class StaticCredential(Base):
