@@ -423,10 +423,16 @@ access_profiles:
     in_process_server_ids:
       - kubernetes
       - haku_index
+      - http_grants
   - id: manual-review
     auto_approval_policy: manual_review
     allowed_chat_runtimes: []
     can_read_profiles: []
+    # Even the fallback profile may ASK for egress: every http_grants call queues for the
+    # operator, and create_grant is never auto-approvable (operator ruling on #4986; pinned in
+    # haku/console/test_deployment_config.py).
+    in_process_server_ids:
+      - http_grants
 default_access_profile_id: manual-review
 # Evaluate standing Kubernetes access as a synthetic, non-login access-profile identity. The
 # username satisfies Console's explicit SAR subject schema; RBAC grants the same deploy-owned group.
@@ -694,9 +700,10 @@ mcp:
     # Temporary HTTP egress grants (#4670; first exercised by the #4943 spike): create/list/get/
     # release for the calling Agent's own exact-origin allowances, evaluated by the egress decide
     # endpoint after standing policy. Credential-free — the grant ledger is Console's own Postgres.
-    # Deliberately in NO auto-approval policy: grant creation requires a manually approved source
-    # ToolCall (an auto-approved call cannot mint a grant), and the reads stay behind the same
-    # queue until there is a reason to open them.
+    # Exposed to EVERY access profile (operator ruling on #4986): any Agent may ask. Deliberately
+    # in NO auto-approval policy: grant creation requires a manually approved source ToolCall (an
+    # auto-approved call cannot mint a grant), and the reads stay behind the same queue until
+    # there is a reason to open them.
     - id: http_grants
       backend:
         kind: in_process

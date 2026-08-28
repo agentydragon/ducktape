@@ -61,6 +61,11 @@ def test_deployed_console_config_is_valid() -> None:
     assert "kubernetes_reads" in policies["haku_v1"]["policies"]
     assert "kubernetes_reads" in policies["public_coder_safe_reads"]["policies"]
 
+    # Every Agent may ASK for egress: http_grants is exposed to every access profile (operator
+    # ruling on #4986). Safe only together with the pin below — nothing in it auto-approves.
+    for profile in config.access_profiles:
+        assert "http_grants" in profile.in_process_server_ids, profile.id
+
     # An auto-approved source ToolCall cannot mint a grant (the repository's provenance check
     # requires approval_policy_id absent), so auto-approving create_grant would make every HTTP
     # grant creation fail after the fact instead of queueing for the Operator.

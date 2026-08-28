@@ -45,11 +45,11 @@ iron proxy remains the agent's production GitHub path, untouched by this exercis
   for smart HTTP), both redeeming `github-bot` — authored against the **haku** agent id, the
   identity fenced traffic actually presents (see above). `codeload.github.com` is deliberately
   _not_ standing — it is the temporary-grant leg's target.
-- **`http_grants`** in-process MCP server, granted to the `haku` access profile — the haku
-  Agent, matching the grant-identity constraint above; giving it to `public-coder` would mint
-  grants no fenced request can match today. Deliberately in no auto-approval policy:
-  `create_grant` must be manually approved (auto-approved calls cannot mint grants), so every
-  call here queues for the operator.
+- **`http_grants`** in-process MCP server, exposed to every access profile (operator ruling on
+  #4986): any Agent may ask for egress. Deliberately in no auto-approval policy: `create_grant`
+  must be manually approved (auto-approved calls cannot mint grants), so every call here queues
+  for the operator. The identity constraint above still binds the spike: only a grant owned by
+  the haku Agent matches fenced traffic today, so the grant leg below runs as haku.
 
 ## Pre-checks (read-only)
 

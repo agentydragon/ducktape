@@ -43,6 +43,7 @@ import pytest
 import pytest_bazel
 
 from cluster.validation.kyverno.apply import apply_policy, apply_twice, assert_not_mutated
+from cluster.validation.kyverno.paths import manifest
 from util.bazel.runfiles import get_required_path
 
 # What every proxy-injection policy must inject. Split into the two halves it is
@@ -181,7 +182,7 @@ def test_injection_is_idempotent_under_reinvocation(reinvoked: dict) -> None:
         assert _dupes([e["name"] for e in container["env"]]) == [], container["name"]
 
 
-def test_pod_carrying_its_own_wiring_is_left_alone(tmp_path: Path) -> None:
+def test_pod_carrying_its_own_wiring_is_left_alone() -> None:
     """A pod that already holds the policy's proxy wiring is skipped whole, env included.
 
     Every rule preconditions on the thing it appends being absent — the volume rule on the CA
@@ -193,34 +194,10 @@ def test_pod_carrying_its_own_wiring_is_left_alone(tmp_path: Path) -> None:
     a widening of this policy's namespace match to its namespace would skip it rather than stamp
     port-8080 values over its iron-proxy env.
     """
-    resource = tmp_path / "pod.yaml"
-    resource.write_text(
-        textwrap.dedent("""
-            apiVersion: v1
-            kind: Pod
-            metadata:
-              name: self-wired-probe
-              namespace: haku-sandbox
-            spec:
-              containers:
-                - name: app
-                  image: curlimages/curl:latest
-                  env:
-                    - name: HTTP_PROXY
-                      value: http://haku-egress-proxy.haku-console.svc.cluster.local:8888
-                    - name: HTTPS_PROXY
-                      value: http://haku-egress-proxy.haku-console.svc.cluster.local:8888
-                  volumeMounts:
-                    - name: haku-egress-proxy-ca-cert
-                      mountPath: /egress-proxy-ca
-                      readOnly: true
-              volumes:
-                - name: haku-egress-proxy-ca-cert
-                  configMap:
-                    name: haku-egress-proxy-ca-cert
-            """)
+    assert_not_mutated(
+        get_required_path("_main/cluster/k8s/kyverno/policies/inject-haku-egress-proxy.yaml"),
+        manifest("pod_self_wired_egress_proxy.yaml"),
     )
-    assert_not_mutated(get_required_path("_main/cluster/k8s/kyverno/policies/inject-haku-egress-proxy.yaml"), resource)
 
 
 def _env(container: dict) -> dict[str, str]:
