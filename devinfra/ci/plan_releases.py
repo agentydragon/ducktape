@@ -51,30 +51,27 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from urllib.parse import quote
 
-from devinfra.ci.bes import BuildBuddyError, Invocation, read
+from devinfra.ci.bes import BuildBuddyError, Output, artifact_output, merge, read
 from devinfra.ci.release_content_hash import release_content_hash_from_digests
 
 TAG_HASH_LENGTH = 12
 
-# artifact_targets.json spells every output the way `bb remote build` used to
-# materialize it on the GitHub runner, under a `bb-out/` prefix. A build event
-# stream reports the same file without it, relative to the workspace.
-BB_OUT_PREFIX = "bb-out/"
 REPO = "agentydragon/ducktape"
-
-
-def bes_path(output: str) -> str:
-    """Where `output`, as artifact_targets.json spells it, appears in the stream."""
-    return output.removeprefix(BB_OUT_PREFIX)
-
 
 @dataclasses.dataclass(frozen=True)
 class Release:
-    """One row of the release matrix. Field names are the matrix keys release.yml reads."""
+    """One row of the release matrix.
+
+    Field names are the matrix keys release.yml reads — except `filenames`,
+    which only the planner's own identity derivation consumes.
+    """
 
     pkg: str
     targets: str
-    outputs: str
+    #: Each target's released asset name, aligned with `targets`. The name is a
+    #: contract: sync_pins.py derives every pin's download URL from it, and
+    #: release_assets.py refuses a built file that carries a different name.
+    filenames: str
     tests: str
     bazel_flags: str
     release_metadata: str
@@ -86,11 +83,14 @@ class Release:
         return not self.bazel_flags
 
     @property
-    def output_paths(self) -> list[str]:
-        return self.outputs.split()
+    def assets(self) -> list[tuple[str, str]]:
+        """(target, filename) pairs, aligned by position."""
+        return list(zip(self.targets.split(), self.filenames.split(), strict=True))
 
     def as_matrix_row(self) -> dict[str, str]:
-        return dataclasses.asdict(self)
+        row = dataclasses.asdict(self)
+        del row["filenames"]
+        return row
 
 
 def load_releases(artifact_targets: Path, skills_registry: Path) -> list[Release]:
@@ -101,7 +101,7 @@ def load_releases(artifact_targets: Path, skills_registry: Path) -> list[Release
         Release(
             pkg=name,
             targets=" ".join(pin["target"] for pin in owned),
-            outputs=" ".join(pin["output"] for pin in owned),
+            filenames=" ".join(pin["filename"] for pin in owned),
             tests=entry.get("tests", ""),
             bazel_flags=entry.get("bazelFlags", ""),
             release_metadata=str(entry.get("releaseMetadata", False)).lower(),
@@ -117,7 +117,7 @@ def load_releases(artifact_targets: Path, skills_registry: Path) -> list[Release
         Release(
             pkg=skill["pkg"],
             targets=skill["target"],
-            outputs=skill["output"],
+            filenames=skill["filename"],
             tests="",
             bazel_flags="",
             release_metadata="false",
@@ -132,23 +132,30 @@ def content_tag(pkg: str, content_hash: str) -> str:
     return f"{pkg}-{content_hash[:TAG_HASH_LENGTH]}"
 
 
-def content_hash(release: Release, digests: Mapping[str, str]) -> str | None:
+def content_hash(release: Release, by_label: Mapping[str, list[Output]]) -> str | None:
     """This release's published identity, or None if the build did not report it.
 
-    An external-repo target is the expected absence: bazel-ci builds `//...`, which
-    does not reach `@ducktape_activitywatch//...`, so aw-importer is never in the
-    stream and always takes the slow path.
+    A target absent from the stream is the expected case: bazel-ci builds `//...`,
+    which reaches neither `@ducktape_activitywatch//...` (aw-importer) nor `manual`
+    targets (gterm-theme), so those always take the slow path. A target that *is*
+    in the stream but resolves to no single artifact, or to a file whose name
+    contradicts the pin's `filename`, raises instead — that is SSOT drift worth a
+    warning, and the row's own job then fails loudly on the same check.
     """
     assets = []
-    for output in release.output_paths:
-        digest = digests.get(bes_path(output))
-        if not digest:
-            return None
-        assets.append((Path(output).name, digest))
+    for target, filename in release.assets:
+        artifact = artifact_output(by_label, target)
+        if isinstance(artifact, str):
+            if target not in by_label:
+                return None
+            raise ValueError(artifact)
+        if (built := Path(artifact.path).name) != filename:
+            raise ValueError(f"{target} built {built!r} but its pin says filename={filename!r}")
+        assets.append((filename, artifact.digest))
     return release_content_hash_from_digests(assets)
 
 
-def is_published(release: Release, digests: Mapping[str, str], tag_exists: Callable[[str], bool]) -> bool:
+def is_published(release: Release, by_label: Mapping[str, list[Output]], tag_exists: Callable[[str], bool]) -> bool:
     """True only when this release's exact content is already published.
 
     Every uncertain path returns False so the row stays in the matrix.
@@ -156,7 +163,7 @@ def is_published(release: Release, digests: Mapping[str, str], tag_exists: Calla
     if not release.uses_default_config:
         return False
     try:
-        digest = content_hash(release, digests)
+        digest = content_hash(release, by_label)
     except ValueError as e:
         print(f"::warning::{release.pkg}: could not derive its identity ({e}); releasing it anyway", file=sys.stderr)
         return False
@@ -180,16 +187,12 @@ def gh_tag_exists(tag: str) -> bool:
     return result.returncode == 0
 
 
-def digests_from(invocation: Invocation) -> dict[str, str]:
-    return {path: output.digest for path, output in invocation.by_path().items()}
-
-
 def plan(
-    releases: list[Release], digests: Mapping[str, str], tag_exists: Callable[[str], bool], workers: int
+    releases: list[Release], by_label: Mapping[str, list[Output]], tag_exists: Callable[[str], bool], workers: int
 ) -> list[tuple[Release, bool]]:
     """Pair every release with whether it is already published. Tag lookups dominate."""
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
-        published = pool.map(lambda r: is_published(r, digests, tag_exists), releases)
+        published = pool.map(lambda r: is_published(r, by_label, tag_exists), releases)
     return list(zip(releases, published, strict=True))
 
 
@@ -230,19 +233,22 @@ def main(argv: list[str] | None = None) -> None:
 
     # bazel-ci runs `bazel test` then `bazel build`, so it reports more than one
     # invocation; merge them rather than guess which one holds a given output.
-    invocations = [i for i in args.invocations.split(",") if i]
-    digests: dict[str, str] = {}
-    if not invocations:
+    invocation_ids = [i for i in args.invocations.split(",") if i]
+    if not invocation_ids:
         print("::warning::no bazel-ci invocation to read; releasing everything", file=sys.stderr)
-    for invocation in invocations:
+    readable = []
+    for invocation_id in invocation_ids:
         try:
-            digests.update(digests_from(read(invocation)))
+            readable.append(read(invocation_id))
         except BuildBuddyError as e:
             print(
-                f"::warning::could not read invocation {invocation} ({e}); releasing more than needed", file=sys.stderr
+                f"::warning::could not read invocation {invocation_id} ({e}); releasing more than needed",
+                file=sys.stderr,
             )
+    merged = merge(readable)
+    by_label = merged.by_label() if merged is not None else {}
 
-    decided = plan(releases, digests, gh_tag_exists, args.workers)
+    decided = plan(releases, by_label, gh_tag_exists, args.workers)
     include = matrix_include(decided)
 
     for release, published in sorted(decided, key=lambda d: d[0].pkg):

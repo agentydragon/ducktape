@@ -1,7 +1,7 @@
 import pytest
 import pytest_bazel
 
-from devinfra.ci.bes import BuildBuddyError, merge, parse
+from devinfra.ci.bes import BuildBuddyError, Output, artifact_output, merge, parse
 
 # Shaped exactly as BuildBuddy serves it. "outer" nests "inner" because Bazel
 # shares file subsets between targets instead of repeating their contents.
@@ -110,6 +110,53 @@ def test_a_file_reachable_through_two_sets_is_one_output() -> None:
        "outputGroup":[{"name":"default","fileSets":[{"id":"a"},{"id":"b"}]}]}}
     ]"""
     assert len(parse(shared).by_label()["//pkg:image.digest"]) == 1
+
+
+def test_an_aspect_completion_is_attributed_to_its_aspect() -> None:
+    """bazel-ci's lint aspects complete under the same label as the target; the
+    aspect field is what lets a caller tell the report files from the artifact."""
+    stream = b"""[
+     {"id":{"namedSet":{"id":"lint"}},
+      "namedSetOfFiles":{"files":[
+        {"pathPrefix":["bazel-out","k8-fastbuild","bin"],"name":"p/t.mypy_stdout",
+         "uri":"bytestream://h/blobs/lint/5","digest":"lint","length":"5"}]}},
+     {"id":{"targetCompleted":{"label":"//p:t","aspect":"//devinfra/lint:linters.bzl%mypy_aspect"}},
+      "completed":{"success":true,"outputGroup":[{"name":"mypy","fileSets":[{"id":"lint"}]}]}}
+    ]"""
+    outputs = parse(stream).outputs
+    assert [(o.label, o.aspect, o.output_group) for o in outputs] == [
+        ("//p:t", "//devinfra/lint:linters.bzl%mypy_aspect", "mypy")
+    ]
+
+
+def artifact(path: str, output_group: str = "default", aspect: str = "") -> Output:
+    return Output(label="//p:t", path=path, uri="u", digest="d", size=1, output_group=output_group, aspect=aspect)
+
+
+def test_artifact_output_resolves_the_targets_own_default_output() -> None:
+    """Lint-aspect reports and `_validation` outputs share the label; the target's
+    published artifact is the one default-group, non-aspect file."""
+    by_label = {
+        "//p:t": [
+            artifact("bazel-out/bin/p/t.mypy_stdout", output_group="mypy", aspect="lint%mypy_aspect"),
+            artifact("bazel-out/bin/p/t.whl"),
+            artifact("bazel-out/bin/p/t.check", output_group="_validation"),
+        ]
+    }
+    assert artifact_output(by_label, "//p:t") == artifact("bazel-out/bin/p/t.whl")
+
+
+def test_artifact_output_names_an_absent_target() -> None:
+    reason = artifact_output({}, "//p:t")
+    assert isinstance(reason, str)
+    assert "not reported" in reason
+
+
+def test_artifact_output_refuses_to_guess_between_two_artifacts() -> None:
+    by_label = {"//p:t": [artifact("bazel-out/bin/p/a"), artifact("bazel-out/bin/p/b")]}
+    reason = artifact_output(by_label, "//p:t")
+    assert isinstance(reason, str)
+    assert "2 default outputs" in reason
 
 
 def test_merging_the_test_and_build_invocations_collapses_what_both_report() -> None:

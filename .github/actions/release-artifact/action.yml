@@ -8,9 +8,6 @@ inputs:
   bazel_targets:
     description: "Space-separated Bazel targets that produce the release assets"
     required: true
-  outputs:
-    description: "Space-separated release asset paths under bb-out/"
-    required: true
   release_metadata:
     description: "Upload <pkg>.release.json for a single-asset release"
     required: false
@@ -38,6 +35,7 @@ runs:
   steps:
     # Build 1: unstamped (default, --stamp off) — deterministic, for skip decision
     - name: Build artifact (unstamped)
+      id: build
       uses: ./.github/actions/bb-remote
       with:
         args: build ${{ inputs.bazel_targets }} ${{ inputs.bazel_flags }}
@@ -49,6 +47,7 @@ runs:
       env:
         GH_TOKEN: ${{ env.GH_RELEASE_PAT }}
         PKG: ${{ inputs.pkg }}
+        INVOCATIONS: ${{ steps.build.outputs.bazel_invocation_ids }}
       run: |
         set -euo pipefail
 
@@ -60,15 +59,20 @@ runs:
           exit 0
         fi
 
-        artifacts=()
-        for artifact in ${{ inputs.outputs }}; do
+        # Where the build put each asset: the SSOT names targets and released
+        # filenames; the build's own event stream says where the files landed
+        # (and under which configuration — debundle's -c opt included).
+        paths=$(python3 -m devinfra.ci.release_assets release-paths \
+          --release "$PKG" --invocations "$INVOCATIONS")
+        mapfile -t artifacts <<<"$paths"
+        for artifact in "${artifacts[@]}"; do
           if [[ ! -f "$artifact" ]]; then
             echo "::error::Artifact not found at $artifact"
             ls -R bb-out/ 2>/dev/null || echo "bb-out/ does not exist"
             exit 1
           fi
-          artifacts+=("$artifact")
         done
+        echo "artifacts=${artifacts[*]}" >> "$GITHUB_OUTPUT"
 
         # Content-addressed skip check: tag by the complete release asset set.
         # Single-artifact hashes retain their historical value so this change
@@ -88,7 +92,8 @@ runs:
 
         echo "should_release=true" >> "$GITHUB_OUTPUT"
 
-    # Build 2: stamped — injects GIT_COMMIT via expand_template.
+    # Build 2: stamped — injects GIT_COMMIT via expand_template. Same config, so
+    # the outputs land at the same paths the check step resolved.
     # Only _build_info_gen + wheel targets re-run; everything else is cache-hit.
     - name: Build artifact (stamped)
       if: steps.check.outputs.should_release == 'true'
@@ -108,7 +113,7 @@ runs:
 
         tag="${{ steps.check.outputs.tag }}"
         files=()
-        for artifact in ${{ inputs.outputs }}; do
+        for artifact in ${{ steps.check.outputs.artifacts }}; do
           files+=("$artifact")
         done
 
