@@ -32,11 +32,6 @@ out makes a test pass for the wrong reason:
   it away rather than exercising it. `_speak` puts each frame through the console's own reader
   (`haku/cli_protocol/frame_identity.py`) rather than through a rule copied by hand here.
 
-`HAKU_STUB_GREETING`, when set, is written to stderr before anything else. Whatever the CLI writes
-to stderr is the sandbox's narration, which the runner forwards as its own frame kind; it is the
-console's one account of a session that never reached the model, so a test about that path
-(`../../test_bridge_e2e.py`) needs a line printed before any turn.
-
 The launch argv is **not acted on**: what the console passes is pinned by
 `haku/runtime/x/bridge/test_claude_options.py`, and duplicating it here would be a second copy to
 keep in step. One value is copied out of it rather than obeyed — `--append-system-prompt`, appended
@@ -176,9 +171,6 @@ def _record_system_prompt(state: Path) -> None:
 def main() -> None:
     state = Path(os.environ["HAKU_STUB_STATE"])
     _record_system_prompt(state)
-    if (greeting := os.environ.get("HAKU_STUB_GREETING")) is not None:
-        print(greeting, file=sys.stderr, flush=True)
-
     answered = 0
     while line := sys.stdin.readline():
         frame = json.loads(line)

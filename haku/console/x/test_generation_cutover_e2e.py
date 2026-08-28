@@ -1,8 +1,8 @@
 """The post-cut full stack, end to end — the operator's health gate for the generation window.
 
 A real runner process (`//haku/runtime/x/bridge:runner_bin`) over a real websocket to a real Console
-journal handler, with the stub `claude` as the only stand-in — the neutral-operation generation's
-answer to `test_bridge_e2e.py`, which pins the v3 fold. This is stage 4's health gate
+journal handler, with the stub `claude` as the only stand-in — replacing the v3 bridge e2e, which
+went with the fold it pinned. This is stage 4's health gate
 (#4667 comment 5422375226 step 5): the same flow the operator runs after rolling the images to
 prove the cut before reopening admission — handshake, a streamed message carried as journal batches,
 a tool call and its result, prompt admission materialising the authored item, cumulative ACK, and a

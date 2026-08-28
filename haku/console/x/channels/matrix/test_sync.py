@@ -124,7 +124,7 @@ class _FakeTurns:
         self.offered.append([message.body for message in messages])
         self.offered_to.append((binding.room_id, binding.conversation_id))
         if self.accepts:
-            return PromptAccepted(item_id=uuid4())
+            return PromptAccepted(prompt_id=uuid4())
         return PromptRejected(
             reason=self.reason,
             facts=self._facts(binding, PromptRejectedBody(reason=self.reason, text="\n".join(self.offered[-1]))),

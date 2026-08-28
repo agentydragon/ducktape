@@ -1848,7 +1848,7 @@ class SessionStore:
         recorded. None is a session whose log holds nothing a runner numbered, and the runner
         reading it replays its whole window.
 
-        It is a **floor**, and the runner treats it as one (`OutboundLog.seed`). Console-authored
+        It is a **floor**, and the runner treats it as one (`SessionPump.seed`). Console-authored
         `setup_output` rows do not participate in this native-frame cursor, so holes in the
         recorded runner numbers are expected — a gap is not evidence of loss, and nothing yet
         checks for one.
