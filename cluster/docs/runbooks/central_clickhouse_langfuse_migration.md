@@ -64,8 +64,11 @@ counts before the cutover.
    ClickHouse deployment alive as the source while the application points at
    the central service. Let Langfuse's automatic migrations create the target
    table definitions.
-6. Copy the old Langfuse rows into the target tables over the native protocol
-   and validate the main trace/observation tables plus `schema_migrations`.
+6. Copy the old Langfuse rows from
+   `langfuse-clickhouse.langfuse.svc.cluster.local:9000` into the target tables
+   over the native protocol and validate the main trace/observation tables
+   plus `schema_migrations`. The central NetworkPolicy temporarily admits only
+   the old Langfuse ClickHouse pod for this native copy.
 7. Resume Langfuse. HTTP traffic uses port 8123, migrations use port 9000,
    and automatic migrations remain enabled because the logical cluster name is
    `default`. Verify login, trace ingestion, trace lookup, and background
