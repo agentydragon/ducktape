@@ -28,7 +28,6 @@ from haku.runtime.x.bridge.claude_options import ClaudeSession, HttpMcpServer, b
 from haku.runtime.x.bridge.neutral_operations import (
     BatchAck,
     ConsoleResume,
-    FrameRange,
     OperationBatch,
     PromptsCause,
     TurnAnswered,
@@ -36,7 +35,7 @@ from haku.runtime.x.bridge.neutral_operations import (
     TurnOpened,
     WakeCause,
 )
-from haku.runtime.x.bridge.projection import Projected
+from haku.runtime.x.bridge.projection import Projected, at
 from haku.runtime.x.bridge.protocol import (
     FINE_GRAINED_TOOL_STREAMING_ENV,
     KUBERNETES_PROXY_URL_ENV,
@@ -56,10 +55,6 @@ from haku.runtime.x.bridge.runner import (
     run,
 )
 from haku.runtime.x.bridge.session_api import SessionApi
-
-
-def _at(seq: int) -> FrameRange:
-    return FrameRange(first_frame_seq=seq, last_frame_seq=seq)
 
 
 def _no_answer(_payload: dict[str, Any]) -> None:
@@ -242,7 +237,7 @@ async def test_the_session_numbers_everything_it_sends_on_one_dense_sequence() -
     sender, receiver = anyio.create_memory_object_stream[str](32)
     session = SessionApi(sender, window=8)
     await session.observe(
-        {"type": "assistant"}, _observe(TurnOpened(turn_id=uuid4(), cause=WakeCause(), provenance=_at(1))), _no_answer
+        {"type": "assistant"}, _observe(TurnOpened(turn_id=uuid4(), cause=WakeCause(), provenance=at(1))), _no_answer
     )
     sent = await _drain(receiver)
     frame = RUNNER_TO_CONSOLE.validate_json(sent[0])
@@ -262,7 +257,7 @@ async def test_a_dispatched_prompt_is_injected_echoed_and_journalled() -> None:
     payload = await session.admit(
         prompt_id,
         lambda: native,
-        _admission(TurnOpened(turn_id=uuid4(), cause=PromptsCause(prompt_ids=(prompt_id,)), provenance=_at(1))),
+        _admission(TurnOpened(turn_id=uuid4(), cause=PromptsCause(prompt_ids=(prompt_id,)), provenance=at(1))),
     )
     assert payload == native, "the native input to write to the CLI"
     sent = await _drain(receiver)
@@ -289,7 +284,7 @@ async def test_an_interrupt_rewrites_the_next_turn_end_to_aborted() -> None:
     session = SessionApi(sender, window=8)
     await session.interrupt(lambda: {"type": "interrupt"})
     await session.observe(
-        {"type": "result"}, _observe(TurnEnded(turn_id=turn_id, end=TurnAnswered(), provenance=_at(2))), _no_answer
+        {"type": "result"}, _observe(TurnEnded(turn_id=turn_id, end=TurnAnswered(), provenance=at(2))), _no_answer
     )
     sent = await _drain(receiver)
     ended = [
@@ -308,10 +303,10 @@ async def test_the_journal_coalesces_behind_an_unacked_batch_and_releases_on_ack
     sender, receiver = anyio.create_memory_object_stream[str](32)
     session = SessionApi(sender, window=8)
     await session.observe(
-        {"n": 1}, _observe(TurnOpened(turn_id=uuid4(), cause=WakeCause(), provenance=_at(1))), _no_answer
+        {"n": 1}, _observe(TurnOpened(turn_id=uuid4(), cause=WakeCause(), provenance=at(1))), _no_answer
     )  # cuts batch 1 (nothing in flight)
     await session.observe(
-        {"n": 2}, _observe(TurnEnded(turn_id=uuid4(), end=TurnAnswered(), provenance=_at(2))), _no_answer
+        {"n": 2}, _observe(TurnEnded(turn_id=uuid4(), end=TurnAnswered(), provenance=at(2))), _no_answer
     )  # coalesces behind the unacked batch 1
     before_ack = _journal_batches(await _drain(receiver))
     assert [batch.runner_batch_seq for batch in before_ack] == [1], "only the first batch went; the second is held"
@@ -324,7 +319,7 @@ async def test_resume_replays_retained_batches_above_the_cursor() -> None:
     sender, receiver = anyio.create_memory_object_stream[str](32)
     session = SessionApi(sender, window=8)
     await session.observe(
-        {"n": 1}, _observe(TurnOpened(turn_id=uuid4(), cause=WakeCause(), provenance=_at(1))), _no_answer
+        {"n": 1}, _observe(TurnOpened(turn_id=uuid4(), cause=WakeCause(), provenance=at(1))), _no_answer
     )
     await _drain(receiver)
     replay = _journal_batches(session.resumed(ConsoleResume(neutral_protocol_version=1, acked_batch_seq=None)))
