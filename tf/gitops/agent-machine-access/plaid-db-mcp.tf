@@ -44,14 +44,31 @@ resource "authentik_policy_binding" "plaid_db_mcp_users" {
   order  = 0
 }
 
-resource "kubernetes_secret" "plaid_db_mcp_oidc" {
+# Canonical OIDC client credentials. Reflector mirrors this Secret into the
+# facade namespace after that namespace has been created.
+resource "kubernetes_secret" "plaid_db_mcp_oidc_source" {
   metadata {
     name      = "plaid-db-mcp-oidc"
-    namespace = "plaid-mcp"
+    namespace = "authentik"
+    annotations = {
+      description                                                     = "Plaid DB MCP OIDC client credentials"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "plaid-mcp"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "plaid-mcp"
+    }
   }
 
   data = {
     client_id     = authentik_provider_oauth2.plaid_db_mcp.client_id
     client_secret = authentik_provider_oauth2.plaid_db_mcp.client_secret
+  }
+}
+
+removed {
+  from = kubernetes_secret.plaid_db_mcp_oidc
+
+  lifecycle {
+    destroy = false
   }
 }

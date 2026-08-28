@@ -49,15 +49,32 @@ resource "authentik_policy_binding" "manifold_mcp_users" {
   order  = 0
 }
 
-resource "kubernetes_secret" "manifold_mcp_oidc" {
+# Canonical OIDC client credentials. Reflector mirrors this Secret into the
+# facade namespace after that namespace has been created.
+resource "kubernetes_secret" "manifold_mcp_oidc_source" {
   metadata {
     name      = "manifold-mcp-oidc"
-    namespace = "manifold-mcp"
+    namespace = "authentik"
+    annotations = {
+      description                                                     = "Manifold MCP OIDC client credentials"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "manifold-mcp"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "manifold-mcp"
+    }
   }
 
   data = {
     client_id     = authentik_provider_oauth2.manifold_mcp.client_id
     client_secret = authentik_provider_oauth2.manifold_mcp.client_secret
+  }
+}
+
+removed {
+  from = kubernetes_secret.manifold_mcp_oidc
+
+  lifecycle {
+    destroy = false
   }
 }
 

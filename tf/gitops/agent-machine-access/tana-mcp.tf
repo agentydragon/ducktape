@@ -44,15 +44,32 @@ resource "authentik_policy_binding" "tana_mcp_facade_account_access" {
   order  = 0
 }
 
-resource "kubernetes_secret" "tana_mcp_facade_oidc" {
+# Canonical OIDC client credentials. Reflector mirrors this Secret into the
+# facade namespace after that namespace has been created.
+resource "kubernetes_secret" "tana_mcp_facade_oidc_source" {
   metadata {
     name      = "tana-mcp-facade-oidc"
-    namespace = "tana-mcp"
+    namespace = "authentik"
+    annotations = {
+      description                                                     = "Tana MCP facade OIDC client credentials"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "tana-mcp"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "tana-mcp"
+    }
   }
 
   data = {
     client_id     = authentik_provider_oauth2.tana_mcp_facade.client_id
     client_secret = authentik_provider_oauth2.tana_mcp_facade.client_secret
+  }
+}
+
+removed {
+  from = kubernetes_secret.tana_mcp_facade_oidc
+
+  lifecycle {
+    destroy = false
   }
 }
 

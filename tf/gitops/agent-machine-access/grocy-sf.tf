@@ -94,15 +94,32 @@ moved {
   to   = authentik_policy_binding.grocy_mcp_sf_household
 }
 
-resource "kubernetes_secret" "grocy_mcp_oidc_sf" {
+# Canonical OIDC client credentials. Reflector mirrors this Secret into the
+# household namespace after that namespace has been created.
+resource "kubernetes_secret" "grocy_mcp_oidc_sf_source" {
   metadata {
     name      = "grocy-mcp-oidc-sf"
-    namespace = "grocy-sf"
+    namespace = "authentik"
+    annotations = {
+      description                                                     = "Grocy SF MCP OIDC client credentials"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "grocy-sf"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "grocy-sf"
+    }
   }
 
   data = {
     client_id             = authentik_provider_oauth2.grocy_mcp_sf.client_id
     client_secret         = authentik_provider_oauth2.grocy_mcp_sf.client_secret
     grocy_proxy_client_id = authentik_provider_proxy.grocy_sf.client_id
+  }
+}
+
+removed {
+  from = kubernetes_secret.grocy_mcp_oidc_sf
+
+  lifecycle {
+    destroy = false
   }
 }

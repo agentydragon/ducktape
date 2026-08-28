@@ -119,12 +119,18 @@ resource "random_password" "haku_console_operator_session" {
   special = false
 }
 
-resource "kubernetes_secret" "haku_console_oidc" {
+# Canonical OAuth client credentials and session key. Reflector mirrors this
+# Secret into haku-console after that namespace has been created.
+resource "kubernetes_secret" "haku_console_oidc_source" {
   metadata {
     name      = "haku-console-oidc"
-    namespace = "haku-console"
+    namespace = "authentik"
     annotations = {
-      description = "haku-console OAuth client credentials: the MCP OIDCProxy upstream client (haku-console-mcp), the operator browser-login client (haku-console), and the operator session-cookie signing secret"
+      description                                                     = "haku-console OAuth client credentials and operator session secret"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-console"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-console"
     }
   }
 
@@ -143,6 +149,14 @@ resource "kubernetes_secret" "haku_console_oidc" {
   }
 }
 
+removed {
+  from = kubernetes_secret.haku_console_oidc
+
+  lifecycle {
+    destroy = false
+  }
+}
+
 # Dedicated static-Agent bearer for public-coder-agent -> Haku Console MCP. The real value is
 # delivered only to Haku Console and public-coder-agent's iron-proxy; the OpenClaw container gets
 # a non-secret placeholder that the proxy replaces only for haku.allegedly.works Authorization
@@ -154,18 +168,33 @@ resource "random_password" "haku_console_public_coder_agent" {
   special = false
 }
 
-resource "kubernetes_secret" "haku_console_public_coder_agent" {
-  for_each = toset(["haku-console", "public-coder-agent"])
-
+# Canonical static-Agent bearer. Reflector mirrors it into both the Console and
+# proxy namespaces so both hops use one generated value.
+resource "kubernetes_secret" "haku_console_public_coder_agent_source" {
   metadata {
     name      = "haku-console-public-coder-agent"
-    namespace = each.value
+    namespace = "authentik"
     annotations = {
-      description = "Proxy-mediated static-Agent bearer for public-coder-agent -> Haku Console MCP"
+      description                                                     = "Proxy-mediated static-Agent bearer for public-coder-agent -> Haku Console MCP"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-console,public-coder-agent"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-console,public-coder-agent"
     }
   }
 
   data = {
     token = random_password.haku_console_public_coder_agent.result
+  }
+}
+
+removed {
+  # The old resource managed both target copies through for_each. Remove the
+  # whole state-only resource without deleting either object; Reflector takes
+  # ownership of both target copies after the source is created.
+  from = kubernetes_secret.haku_console_public_coder_agent
+
+  lifecycle {
+    destroy = false
   }
 }
