@@ -33,21 +33,14 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.middleware.sessions import SessionMiddleware
 
 from haku.console import (
-    agent_bearer_authority,
     capabilities,
-    mcp_agent_auth,
     mcp_approval,
     mcp_catalog_reconciler,
     mcp_mount,
     mcp_operator_oauth,
     mcp_server,
-    operator_auth,
-    operator_login_flow,
     tool_call_service,
 )
-from haku.console.agents import enrollment_routes
-from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
-from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
 from haku.console.config import MCP_PATH, Settings
 
@@ -62,24 +55,38 @@ from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.grants.http import decide_routes, routes as http_grant_routes
 from haku.console.grants.http.decide_config import load_egress_decide
 from haku.console.grants.http.decide_service import HttpDecideService
-from haku.console.grants.http.repository import PostgresHttpGrantRepository
-from haku.console.grants.http.service import HttpGrantService
+
+# Both grant domains now define `GrantService`/`PostgresGrantRepository` (§4.1 entity-prefix drop);
+# alias per domain at this one import seam to keep the two straight (STYLE permits collision aliases).
+from haku.console.grants.http.repository import PostgresGrantRepository as PostgresHttpGrantRepository
+from haku.console.grants.http.service import GrantService as HttpGrantService
 from haku.console.grants.kubernetes import proxy_authorization, routes as kubernetes_grant_routes
 from haku.console.grants.kubernetes.authorization import (
     KubernetesAuthorizationService,
     KubernetesSubjectAccessReviewClient,
 )
-from haku.console.grants.kubernetes.repository import PostgresKubernetesGrantRepository
-from haku.console.grants.kubernetes.service import KubernetesGrantService
+from haku.console.grants.kubernetes.repository import PostgresGrantRepository as PostgresKubernetesGrantRepository
+from haku.console.grants.kubernetes.service import GrantService as KubernetesGrantService
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.hostexecd import service
+from haku.console.identity import (
+    agent_bearer_authority,
+    enrollment_routes,
+    mcp_agent_auth,
+    operator_auth,
+    operator_login_flow,
+)
+from haku.console.identity.authentik_operator_token import PostgresAuthentikOperatorTokenStore
+from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
+from haku.console.identity.fastmcp_adapter import HakuMcpActorResolver, install_operator_session_route_guard
+from haku.console.identity.operator_identity import OperatorIdentityTrust
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.in_process_servers import (
     HostexecServerConfig,
     InProcessServerDependencies,
     SandboxServerConfig,
     build_in_process_servers,
 )
-from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver, install_operator_session_route_guard
 from haku.console.mcp_config import (
     InProcessBackend,
     InProcessServers,
@@ -95,8 +102,6 @@ from haku.console.notifications import connection_metrics, console_events, push,
 from haku.console.notifications.conversation_wakes import ConversationWakes
 from haku.console.notifications.session_wakes import SessionWakes
 from haku.console.oauth import association_maintenance, connection_result, provider_connection, token_state
-from haku.console.operator_identity import OperatorIdentityTrust
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.session import runtime as session_runtime, sandbox_allocation, sandbox_claims
 from haku.console.session.launch_identity import ChatLaunchAuthorizer
@@ -104,7 +109,7 @@ from haku.console.session.store import Store
 from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.tools import (
     gmail as gmail_tools,
-    http_grants as http_grants_tools,
+    grants as grants_tools,
     kubernetes as kubernetes_tools,
     routine as routine_tools,
     sandbox as sandbox_tools,
@@ -595,17 +600,17 @@ def create_app(
                 # tools would reflect an always-empty corpus.
                 conversations=(reader.ConversationReads(session_store) if runtime_registry.configured_kinds else None),
                 sandbox=sandbox_server,
-                kubernetes=(
-                    kubernetes_tools.KubernetesToolsService(
-                        grants=kubernetes_grants, authorization=kubernetes_authorization
+                # One `grants` server fronts both grant domains plus the kubernetes SAR check
+                # (`kubernetes_can_i`, #4918), so it needs the kubernetes authorization service; it
+                # registers only when that is configured (as it always is in the deployed config).
+                grants=(
+                    grants_tools.GrantsToolsService(
+                        kubernetes=kubernetes_grants,
+                        http=http_grants,
+                        agents=agent_authority,
+                        can_i=kubernetes_tools.KubernetesToolsService(authorization=kubernetes_authorization),
                     )
-                    if kubernetes_authorization is not None
-                    and kubernetes_tools.KUBERNETES_SERVER_ID in configured_server_ids
-                    else None
-                ),
-                http_grants=(
-                    http_grants_tools.HttpToolsService(grants=http_grants, agents=agent_authority)
-                    if http_grants_tools.HTTP_GRANTS_SERVER_ID in configured_server_ids
+                    if kubernetes_authorization is not None and grants_tools.GRANTS_SERVER_ID in configured_server_ids
                     else None
                 ),
             )

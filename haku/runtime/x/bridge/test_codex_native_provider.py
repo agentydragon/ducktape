@@ -12,12 +12,8 @@ from typing import Any, cast
 
 import pytest_bazel
 
-from haku.runtime.x.bridge.codex_options import (
-    CodexAppServerSession,
-    CodexModelProvider,
-    build_codex_launch,
-    codex_app_server_backend,
-)
+from haku.runtime.x.bridge.codex_harness import codex_harness
+from haku.runtime.x.bridge.codex_options import CodexAppServerSession, CodexModelProvider, build_codex_launch
 from util.bazel.runfiles import get_required_path
 
 _PROVIDER_SECRET = "provider-secret"
@@ -79,7 +75,7 @@ def test_app_server_uses_the_configured_provider_environment_key(tmp_path: Path)
         )
     )
     binary = get_required_path("codex_cli_linux_x64/bin/codex")
-    resolved = codex_app_server_backend(binary).resolve(launch)
+    resolved = codex_harness(binary).resolve(launch)
     process = subprocess.Popen(
         resolved.command,
         cwd=resolved.cwd,

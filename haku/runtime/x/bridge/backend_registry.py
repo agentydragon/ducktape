@@ -1,7 +1,7 @@
-"""Harness backends linked into the shared runner binary.
+"""Harnesses linked into the shared runner binary.
 
-The runner itself depends only on ``CliBackend`` and receives this registry at its process-entry
-composition boundary. Adding another harness registers another backend here; it does not add a
+The runner itself depends only on ``Harness`` and receives this registry at its process-entry
+composition boundary. Adding another harness registers another factory here; it does not add a
 provider branch to the transport loop.
 """
 
@@ -10,12 +10,12 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
-from haku.runtime.x.bridge.backend import CliBackend
-from haku.runtime.x.bridge.claude_options import ClaudeBackend, claude_backend
-from haku.runtime.x.bridge.codex_options import CodexAppServerBackend, codex_app_server_backend
+from haku.runtime.x.bridge.backend import Harness
+from haku.runtime.x.bridge.claude_harness import ClaudeHarness, claude_harness
+from haku.runtime.x.bridge.codex_harness import CodexHarness, codex_harness
 
-BackendFactory = Callable[[Path | None], CliBackend]
+HarnessFactory = Callable[[Path | None], Harness]
 
 
-def runner_backends() -> Mapping[str, BackendFactory]:
-    return {ClaudeBackend.name: claude_backend, CodexAppServerBackend.name: codex_app_server_backend}
+def runner_harnesses() -> Mapping[str, HarnessFactory]:
+    return {ClaudeHarness.name: claude_harness, CodexHarness.name: codex_harness}

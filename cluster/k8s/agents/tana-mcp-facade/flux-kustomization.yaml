@@ -31,3 +31,5 @@ spec:
       namespace: ducktape-flux
     - name: agent-machine-access-tf
       namespace: ducktape-flux
+    - name: reflector
+      namespace: ducktape-flux

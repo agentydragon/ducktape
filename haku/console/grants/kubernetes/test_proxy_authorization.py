@@ -23,9 +23,9 @@ from haku.console.grants.kubernetes.authorization import (
     RequestAttributes,
     SubjectAccessReviewResult,
 )
-from haku.console.grants.kubernetes.models import KubernetesGrantDecision, KubernetesGrantScopeKind
+from haku.console.grants.kubernetes.models import GrantDecision, GrantScopeKind
 from haku.console.grants.kubernetes.proxy_authorization import router
-from haku.console.grants.kubernetes.service import KubernetesGrantService
+from haku.console.grants.kubernetes.service import GrantService
 from haku.console.grants.principal import RequestPrincipal
 from haku.console.tool_call_actor import AgentActor
 
@@ -148,7 +148,7 @@ def _service(
     bearer_authority = bearer_authority or FakeAgentBearerAuthority()
     if grants is None:
         grants = AsyncMock()
-        grants.match_request.return_value = KubernetesGrantDecision(allowed=False)
+        grants.match_request.return_value = GrantDecision(allowed=False)
     return KubernetesAuthorizationService(
         config=KubernetesAuthorizationConfig(
             subjects_by_access_profile={
@@ -219,7 +219,7 @@ def test_endpoint_returns_sar_decision() -> None:
 
 @pytest.mark.asyncio
 async def test_clean_sar_denial_with_real_empty_grant_service_remains_denied() -> None:
-    grants = KubernetesGrantService(
+    grants = GrantService(
         cast(Any, EmptyGrantRepository()),
         max_lifetime=datetime.timedelta(hours=1),
         clock=lambda: datetime.datetime(2026, 8, 23, tzinfo=datetime.UTC),
@@ -325,7 +325,7 @@ async def test_service_fails_closed_when_sar_times_out() -> None:
 @pytest.mark.asyncio
 async def test_active_grant_is_consulted_only_after_clean_sar_denial() -> None:
     grants = AsyncMock()
-    grants.match_request.return_value = KubernetesGrantDecision(
+    grants.match_request.return_value = GrantDecision(
         allowed=True,
         grant_id=UUID("00000000-0000-4000-8000-000000000099"),
         expires_at=datetime.datetime(2026, 8, 21, tzinfo=datetime.UTC),
@@ -343,7 +343,7 @@ async def test_active_grant_is_consulted_only_after_clean_sar_denial() -> None:
     assert kwargs["request_principal"] == RequestPrincipal(
         agent_id=_agent().agent_id, session_id=None, access_profile_id="public-diagnostics"
     )
-    assert kwargs["required_scope"].kind is KubernetesGrantScopeKind.NAMESPACES
+    assert kwargs["required_scope"].kind is GrantScopeKind.NAMESPACES
     assert kwargs["required_scope"].namespaces == {"demo"}
 
 
@@ -358,7 +358,7 @@ async def test_session_bearer_passes_exact_session_to_grant_matching() -> None:
         session_id=session_id,
     )
     grants = AsyncMock()
-    grants.match_request.return_value = KubernetesGrantDecision(allowed=False)
+    grants.match_request.return_value = GrantDecision(allowed=False)
     await _service(
         FakeSarClient(result=SubjectAccessReviewResult(allowed=False, reason="RBAC denied")),
         bearer_authority=FakeAgentBearerAuthority(actor),
@@ -385,7 +385,7 @@ async def test_sar_allow_does_not_consult_grants() -> None:
 @pytest.mark.asyncio
 async def test_sar_outage_does_not_fall_back_to_a_matching_grant() -> None:
     grants = AsyncMock()
-    grants.match_request.return_value = KubernetesGrantDecision(allowed=True)
+    grants.match_request.return_value = GrantDecision(allowed=True)
     service = _service(FakeSarClient(error=KubernetesAuthorizationUnavailableError("SAR unavailable")), grants=grants)
     with pytest.raises(KubernetesAuthorizationUnavailableError):
         await service.authorize(bearer="Bearer caller-token", request=AuthorizationRequest.model_validate(REQUEST))

@@ -86,10 +86,23 @@ harnesses:
     runtime_label: codex-chat
     cwd: /workspace
     session_ttl_seconds: 7200
-    https_proxy: http://public-coder-codex-runner-proxy.public-coder-agent.svc.cluster.local:8080
+    # Colocated Console egress fence (#4670): replaces the dedicated public-coder-codex-runner-proxy
+    # iron proxy. Codex's two credentialed hosts — the internal LiteLLM model gateway and GitHub —
+    # are registered in `egress_decide` below with matching standing policies; LiteLLM's carries
+    # `allow_prohibited_address` because it resolves into the cluster service CIDR, the boundary the
+    # fence otherwise denies. The iron proxy's :8080 network rule stays (public-coder-runner-egress)
+    # so reverting this line needs no policy change; the CA differs (below), so a full revert also
+    # restores the iron CA mount.
+    https_proxy: http://haku-egress-proxy.haku-console.svc.cluster.local:8888
+    # The Codex sandbox now mounts the fence's trust bundle (haku-egress-proxy-ca-cert — full
+    # public + cluster + interception roots) at this path in place of the iron proxy's CA
+    # (sandboxtemplate-haku-public-coder-codex.yaml), so every TLS client — GnuTLS git included —
+    # trusts the fence.
     ca_bundle: /etc/ssl/certs/ca-certificates.crt
-    # Control-plane traffic stays direct while LiteLLM provider authentication traverses the
-    # least-credential runner proxy.
+    # Control-plane traffic (Console bridge/MCP, the Kubernetes auth proxy) stays direct. LiteLLM is
+    # deliberately NOT in no_proxy: its model traffic must traverse the fence for the virtual-key
+    # substitution, and the fence admits its cluster-internal resolution through the standing
+    # policy's allow_prohibited_address. Other cluster-internal hosts stay direct.
     no_proxy: 127.0.0.1,localhost,haku-console.haku-console.svc.cluster.local,haku-kube-api-proxy.haku-console.svc.cluster.local
     mcp_url: http://haku-console.haku-console.svc.cluster.local:9090/mcp
     implementation:
@@ -272,15 +285,26 @@ auto_approval_policies:
       - public_ducktape_fork_reads
       - public_gaffer_private_reads
       - public_github_reads
-  # Kubernetes access inspection and grant reads are side-effect-free. Grant creation and release
-  # remain manual because they change the Agent's temporary authority or its lifecycle.
+  # Side-effect-free reads on the shared `grants` server (#4918): `kubernetes_can_i` (SAR access
+  # inspection) and `get_grant`. `get_grant` is actor-scoped by construction — it returns only a
+  # grant owned by and applicable to the calling Agent (else not-found), and an Operator cannot call
+  # it over MCP at all — so auto-approving it never exposes another principal's grant. `list_grants`
+  # is auto-approved separately, only for the explicit own scope (see `grants_own_list`).
+  # `create_grant`/`release_grants`/`revoke_grants` stay manual: they change the Agent's temporary
+  # authority or its lifecycle.
   - id: kubernetes_reads
     type: exact_tools
     tools:
-      kubernetes:
-        - can_i
-        - list_grants
+      grants:
+        - kubernetes_can_i
         - get_grant
+  # An Agent listing its OWN grants — `list_grants(principal=self)` — is click-free (argument-
+  # conditional, the same shape as `public_*_github_reads` confirming a safe scope before approving).
+  # The read is actor-scoped regardless (the grant service filters to the caller's own grants), so
+  # this only removes the click; omitting `principal` (the reserved broader read) stays manual.
+  - id: grants_own_list
+    type: grant_self_list
+    server: grants
   # public-coder's profile already declares recall_index_ids: [ducktape-public] below, but that
   # grant was dead without server access — haku_index wasn't in its in_process_server_ids. This is
   # narrower than haku_recall_reads: haku_index enforces per-call index scoping against the caller's
@@ -310,6 +334,7 @@ auto_approval_policies:
     policies:
       - public_coder_github_reads
       - kubernetes_reads
+      - grants_own_list
       - public_coder_recall_reads
       - kubectl_passthrough_redundancy_check
   - id: tana_safe_tools
@@ -412,6 +437,7 @@ auto_approval_policies:
       - haku_sandbox_control
       - managed_gmail_labels
       - kubernetes_reads
+      - grants_own_list
   - id: manual_review
     type: never
 # Access profiles, not credential bindings, own durable Agent authority. A static bearer and a
@@ -431,9 +457,8 @@ access_profiles:
     # The configured Claude runtime's static Haku Agent is assigned this profile.
     in_process_server_ids:
       - haku_conversations
-      - kubernetes
+      - grants
       - sandbox
-      - http_grants
   - id: public-coder
     auto_approval_policy: public_coder_safe_reads
     allowed_chat_runtimes:
@@ -442,18 +467,18 @@ access_profiles:
     recall_index_ids:
       - ducktape-public
     in_process_server_ids:
-      - kubernetes
+      - grants
       - haku_index
-      - http_grants
   - id: manual-review
     auto_approval_policy: manual_review
     allowed_chat_runtimes: []
     can_read_profiles: []
-    # Even the fallback profile may ASK for egress: every http_grants call queues for the
-    # operator, and create_grant is never auto-approvable (operator ruling on #4986; pinned in
-    # haku/console/test_deployment_config.py).
+    # Even the fallback profile may ASK for a grant: every `grants` call queues for the operator,
+    # and create_grant is never auto-approvable (operator ruling on #4986; pinned in
+    # haku/console/test_deployment_config.py). Consolidating onto one `grants` server (#4918) means
+    # this profile may now also ASK for a kubernetes grant, not only HTTP egress — still manual-only.
     in_process_server_ids:
-      - http_grants
+      - grants
 default_access_profile_id: manual-review
 # Evaluate standing Kubernetes access as a synthetic, non-login access-profile identity. The
 # username satisfies Console's explicit SAR subject schema; RBAC grants the same deploy-owned group.
@@ -536,6 +561,42 @@ egress_decide:
         - scheme: https
           host: postman-echo.com
           port: 443
+    # The Console-launched Codex runner's egress credentials, mirrored from the retiring
+    # public-coder-codex-runner-proxy iron proxy (cluster/k8s/agents/public-coder-agent/proxy/
+    # codex-runner-iron.yaml) as the runner moves onto this colocated fence (#4670). Authored
+    # against the haku agent id like every entry here: the sidecar presents the one shared fence
+    # credential, so the decide service resolves every fenced request to the haku Agent regardless
+    # of which pod sent it. The sandbox only ever holds the inert placeholder.
+    #   The public-coder LiteLLM virtual key, substituted only on the internal LiteLLM model gateway;
+    #   its standing policy carries allow_prohibited_address because the gateway is a cluster ClusterIP.
+    - handle: codex-litellm
+      placeholder: proxy-litellm-public-coder-placeholder
+      value_env_var: HAKU_EGRESS_CREDENTIAL_LITELLM_PUBLIC_CODER
+      match_headers: [authorization]
+      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      origins:
+        - scheme: http
+          host: litellm.litellm.svc.cluster.local
+          port: 4000
+    #   Codex's GitHub access is the same agentydragon-agent PAT as `github-bot`, presented under a
+    #   different inert placeholder (the Codex sandbox holds proxy-github-placeholder). A second
+    #   presentation of one credential is a second entry sharing its value_env_var under its own
+    #   handle and placeholder (decide_config.EgressCredentialEntry).
+    - handle: codex-github-bot
+      placeholder: proxy-github-placeholder
+      value_env_var: HAKU_EGRESS_CREDENTIAL_GITHUB_BOT
+      match_headers: [authorization]
+      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      origins:
+        - scheme: https
+          host: api.github.com
+          port: 443
+        - scheme: https
+          host: github.com
+          port: 443
+        - scheme: https
+          host: codeload.github.com
+          port: 443
   # Deploy-managed standing HTTP allowances (#4941), evaluated before temporary grants; admissions
   # carry `standing:<id>` provenance.
   standing_policies:
@@ -585,8 +646,8 @@ egress_decide:
     # The Console-launched Claude runner's model access: its inference reaches the in-cluster LiteLLM
     # gateway (-> CLIProxyAPI). LiteLLM resolves to a ClusterIP, so this entry carries
     # allow_prohibited_address (#5073) to lift the decide oracle's private-address denial for THIS
-    # origin only — exactly as the Codex reroute will for its own LiteLLM origin. GET+POST: Claude
-    # Code POSTs /v1/messages and (with gateway discovery) GETs /v1/models. Redeems the LiteLLM key.
+    # origin only — exactly as codex-litellm below does for the Codex runner. GET+POST: Claude Code
+    # POSTs /v1/messages and (with gateway discovery) GETs /v1/models. Redeems the LiteLLM key.
     - id: haku-claude-litellm
       agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
       origins:
@@ -595,11 +656,14 @@ egress_decide:
           port: 4000
       coverage:
         methods: [GET, POST]
-      allow_prohibited_address: true
       credential_handle: claude-litellm
+      allow_prohibited_address: true
     # The Console-launched Claude runner reached these under the iron fence; keep them standing so it
     # keeps the same reach (archive/tarball downloads via codeload; git clone / raw-file / release
     # redirects on the githubusercontent CDN, which serve pre-signed URLs and carry NO credential).
+    # Distinct from the codex- GitHub entries below only in credential (github-bot vs codex-github-bot):
+    # both resolve to the shared haku fence identity, so the proxy is handed both and swaps the one the
+    # sending sandbox presents.
     - id: haku-github-codeload
       agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
       origins:
@@ -610,6 +674,68 @@ egress_decide:
         methods: [GET, HEAD]
       credential_handle: github-bot
     - id: haku-githubusercontent
+      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      origins:
+        - scheme: https
+          host: objects.githubusercontent.com
+          port: 443
+        - scheme: https
+          host: raw.githubusercontent.com
+          port: 443
+        - scheme: https
+          host: release-assets.githubusercontent.com
+          port: 443
+      coverage:
+        methods: [GET, HEAD]
+    # The Console-launched Codex runner's standing reachability, mirroring the host set the retiring
+    # public-coder-codex-runner-proxy iron proxy allowed (codex-runner-iron.yaml). codex- ids keep
+    # these distinct from the haku- GitHub entries above: both resolve to the shared haku fence
+    # identity, so a GitHub request matches both and unions their credentials — the proxy is handed
+    # both placeholders and swaps only the one the sending sandbox actually presents.
+    #   The internal LiteLLM model gateway is Codex's model access. allow_prohibited_address admits
+    #   its cluster-internal resolution (litellm.litellm.svc → a ClusterIP inside prohibited_cidrs),
+    #   scoped to this exact origin — unrestricted methods, matching the iron rule's host-only
+    #   substitution so a denied method is never a broken model turn.
+    - id: codex-litellm
+      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      origins:
+        - scheme: http
+          host: litellm.litellm.svc.cluster.local
+          port: 4000
+      coverage:
+        methods: [DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT]
+      credential_handle: codex-litellm
+      allow_prohibited_address: true
+    - id: codex-github-api
+      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      origins:
+        - scheme: https
+          host: api.github.com
+          port: 443
+      coverage:
+        methods: [DELETE, GET, HEAD, PATCH, POST, PUT]
+      credential_handle: codex-github-bot
+    - id: codex-github-git
+      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      origins:
+        - scheme: https
+          host: github.com
+          port: 443
+      coverage:
+        methods: [GET, POST]
+      credential_handle: codex-github-bot
+    #   Archive/tarball downloads a git clone redirects to; reached freely under iron, so standing.
+    - id: codex-github-codeload
+      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      origins:
+        - scheme: https
+          host: codeload.github.com
+          port: 443
+      coverage:
+        methods: [GET, HEAD]
+      credential_handle: codex-github-bot
+    #   githubusercontent CDN (pre-signed URLs) — pure reachability, no credential, matching iron.
+    - id: codex-githubusercontent
       agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
       origins:
         - scheme: https
@@ -773,14 +899,17 @@ mcp:
         kind: in_process
         credential:
           kind: none
-    # Temporary HTTP egress grants (#4670; first exercised by the #4943 spike): create/list/get/
-    # release for the calling Agent's own exact-origin allowances, evaluated by the egress decide
-    # endpoint after standing policy. Credential-free — the grant ledger is Console's own Postgres.
-    # Exposed to EVERY access profile (operator ruling on #4986): any Agent may ask. Deliberately
-    # in NO auto-approval policy: grant creation requires a manually approved source ToolCall (an
-    # auto-approved call cannot mint a grant), and the reads stay behind the same queue until
-    # there is a reason to open them.
-    - id: http_grants
+    # One server fronting every temporary-grant domain (#4918): create/list/get/release/revoke over
+    # the shared #4889 envelope, each payload tagged with its `domain` (kubernetes | http), plus the
+    # kubernetes SAR check `kubernetes_can_i` (side-effect-free). HTTP egress grants (#4670; first
+    # exercised by the #4943 spike) are evaluated by the egress decide endpoint after standing
+    # policy; kubernetes grants are RBAC-like scope/rule coverage. Both ledgers are Console's own
+    # Postgres — credential-free. Exposed to EVERY access profile (operator ruling on #4986): any
+    # Agent may ask. The grant verbs are deliberately in NO auto-approval policy: grant creation
+    # requires a manually approved source ToolCall (an auto-approved call cannot mint a grant), and
+    # the reads (which now span both domains) stay behind the same queue until there is a reason to
+    # open them. `kubernetes_can_i` is auto-approved (see `kubernetes_reads`).
+    - id: grants
       backend:
         kind: in_process
         credential:
@@ -920,13 +1049,6 @@ mcp:
     # predecessor actually did instead of only the last few room messages. Read-only, and
     # credential-free — the corpus is the console's own database.
     - id: haku_conversations
-      backend:
-        kind: in_process
-        credential:
-          kind: none
-    # `kubernetes` is credential-free and profile-scoped. Trusted execution metadata supplies the
-    # Agent identity; standing SAR and the approval-created Postgres grant ledger decide access.
-    - id: kubernetes
       backend:
         kind: in_process
         credential:

@@ -16,7 +16,7 @@ from haku.console.grants.envelope import (
     match_replayed_grant_set,
     request_principal_clause,
 )
-from haku.console.grants.http.models import HttpGrant, HttpGrantSpec, HttpOrigin, HttpRequestCoverage
+from haku.console.grants.http.models import Grant, GrantSpec, HttpOrigin, HttpRequestCoverage
 from haku.console.grants.principal import (
     GrantPrincipal,
     RequestPrincipal,
@@ -26,8 +26,8 @@ from haku.console.grants.principal import (
 from haku.console.grants.provenance import assert_owner_principal_and_source
 
 
-def _row_spec(row: HttpGrantRow) -> HttpGrantSpec:
-    return HttpGrantSpec(
+def _row_spec(row: HttpGrantRow) -> GrantSpec:
+    return GrantSpec(
         origin=HttpOrigin(scheme=row.scheme, host=row.host, port=row.port),
         coverage=HttpRequestCoverage(methods=row.methods, path_regex=row.path_regex),
         credential_handle=row.credential_handle,
@@ -35,8 +35,8 @@ def _row_spec(row: HttpGrantRow) -> HttpGrantSpec:
     )
 
 
-def _row_to_model(row: HttpGrantRow) -> HttpGrant:
-    return HttpGrant(
+def _row_to_model(row: HttpGrantRow) -> Grant:
+    return Grant(
         grant_id=row.grant_id,
         owner_agent_id=row.owner_agent_id,
         principal=grant_principal_from_columns(
@@ -56,7 +56,7 @@ def _not_ended() -> ColumnElement[bool]:
     return and_(HttpGrantRow.released_at.is_(None), HttpGrantRow.revoked_at.is_(None))
 
 
-class PostgresHttpGrantRepository:
+class PostgresGrantRepository:
     """Small transactional repository with explicit lifecycle ownership and applicability."""
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
@@ -68,10 +68,10 @@ class PostgresHttpGrantRepository:
         owner_agent_id: UUID,
         grant_principal: GrantPrincipal,
         source_tool_call_id: str,
-        grants: Sequence[HttpGrantSpec],
+        grants: Sequence[GrantSpec],
         created_at: datetime.datetime,
         expires_at: datetime.datetime,
-    ) -> tuple[HttpGrant, ...]:
+    ) -> tuple[Grant, ...]:
         grants = tuple(grants)
         if not grants:
             raise ValueError("grants must not be empty")
@@ -131,7 +131,7 @@ class PostgresHttpGrantRepository:
 
     async def list(
         self, *, owner_agent_id: UUID, now: datetime.datetime, include_terminal: bool = True
-    ) -> tuple[HttpGrant, ...]:
+    ) -> tuple[Grant, ...]:
         async with self._sessions() as session:
             statement = select(HttpGrantRow).where(HttpGrantRow.owner_agent_id == owner_agent_id)
             if not include_terminal:
@@ -141,7 +141,7 @@ class PostgresHttpGrantRepository:
             ).all()
             return tuple(_row_to_model(row) for row in rows)
 
-    async def get(self, *, owner_agent_id: UUID, grant_id: UUID) -> HttpGrant:
+    async def get(self, *, owner_agent_id: UUID, grant_id: UUID) -> Grant:
         async with self._sessions() as session:
             row = await session.scalar(select(HttpGrantRow).where(HttpGrantRow.grant_id == grant_id))
             if row is None:
@@ -152,7 +152,7 @@ class PostgresHttpGrantRepository:
 
     async def _end(
         self, *, owner_agent_id: UUID, grant_id: UUID, release: bool, reason: str, now: datetime.datetime
-    ) -> HttpGrant:
+    ) -> Grant:
         reason = reason.strip()
         if not reason:
             raise ValueError("grant end reason must not be empty")
@@ -173,15 +173,15 @@ class PostgresHttpGrantRepository:
                 await session.flush()
             return _row_to_model(row)
 
-    async def release(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime) -> HttpGrant:
+    async def release(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime) -> Grant:
         return await self._end(owner_agent_id=owner_agent_id, grant_id=grant_id, release=True, reason=reason, now=now)
 
-    async def revoke(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime) -> HttpGrant:
+    async def revoke(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime) -> Grant:
         return await self._end(owner_agent_id=owner_agent_id, grant_id=grant_id, release=False, reason=reason, now=now)
 
     async def list_for_request_principal(
         self, *, request_principal: RequestPrincipal, now: datetime.datetime, include_terminal: bool = True
-    ) -> tuple[HttpGrant, ...]:
+    ) -> tuple[Grant, ...]:
         async with self._sessions() as session:
             statement = select(HttpGrantRow).where(request_principal_clause(HttpGrantRow, request_principal))
             if not include_terminal:
@@ -193,7 +193,7 @@ class PostgresHttpGrantRepository:
 
     async def active_for_request_principal(
         self, *, request_principal: RequestPrincipal, now: datetime.datetime
-    ) -> tuple[HttpGrant, ...]:
+    ) -> tuple[Grant, ...]:
         async with self._sessions() as session:
             rows = (
                 await session.scalars(

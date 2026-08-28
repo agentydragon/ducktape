@@ -59,7 +59,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
-from haku.console import operator_auth
+from haku.console.identity import operator_auth
 from haku.console.notifications.console_events import OPERATOR_SESSION_EXPIRED_CLOSE_CODE
 from haku.console.notifications.conversation_wakes import ConversationWakeEvent, ConversationWakes, RecheckHeld
 from haku.console.session.conversation_views import (

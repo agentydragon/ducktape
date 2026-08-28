@@ -54,9 +54,11 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
-from haku.console import operator_auth
 from haku.console.database_schema import McpOperatorOAuthAssociation, McpOperatorOAuthFlow
 from haku.console.deps import SettingsDep
+from haku.console.identity import operator_auth
+from haku.console.identity.operator_auth import OperatorActorDep
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.mcp_config import (
     DynamicOAuthClientRegistration,
     McpServerEntry,
@@ -92,8 +94,6 @@ from haku.console.oauth.token_support import (
     token_request_error_message,
     token_request_headers,
 )
-from haku.console.operator_auth import OperatorActorDep
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 
 logger = logging.getLogger(__name__)
 

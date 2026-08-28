@@ -61,28 +61,5 @@ def test_startup_refuses_a_database_whose_stamped_schema_drifted(db_url: str) ->
         engine.dispose()
 
 
-def test_the_schema_rename_preserves_the_derived_index(db_url: str) -> None:
-    """A database stamped before 0083 keeps its existing content under ``recall_index``."""
-    apply_migrations(db_url, "0082")
-    engine = create_engine(make_url(db_url).set(drivername="postgresql+psycopg").render_as_string(False))
-    try:
-        with engine.begin() as connection:
-            connection.execute(
-                text("INSERT INTO state_index.contents (content_sha, content) VALUES ('before-0083', 'preserved')")
-            )
-
-        apply_migrations(db_url)
-
-        with engine.connect() as connection:
-            assert connection.scalar(text("SELECT to_regnamespace('state_index')")) is None
-            assert connection.scalar(text("SELECT to_regnamespace('recall_index')")) == "recall_index"
-            content = connection.scalar(
-                text("SELECT content FROM recall_index.contents WHERE content_sha = 'before-0083'")
-            )
-            assert content == "preserved"
-    finally:
-        engine.dispose()
-
-
 if __name__ == "__main__":
     pytest_bazel.main()

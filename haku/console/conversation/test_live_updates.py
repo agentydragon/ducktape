@@ -21,9 +21,9 @@ from fastapi import WebSocket
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.conversation.live_updates import ConversationLiveUpdates
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.notifications.console_events import ConsoleEvent, ConsoleEventHub
 from haku.console.notifications.conversation_wakes import ConversationWakeKind, ConversationWakes, notify_conversation
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.session.store import Store
 
 # Long enough that several notifications land inside one window on a loaded machine, short enough

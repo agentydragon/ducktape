@@ -712,5 +712,56 @@ async def test_lookup_errors_are_logged_and_fail_closed(caplog: pytest.LogCaptur
     assert "gmail unavailable" in caplog.text
 
 
+# A registry whose only policy is the argument-conditional own-grant list read (#4918).
+_GRANT_READS_REGISTRY = AutoApprovalPolicyRegistry(
+    ConsoleConfigFile.model_validate(
+        {
+            "mcp": {"servers": [{"id": "grants", "backend": {"kind": "in_process", "credential": {"kind": "none"}}}]},
+            "auto_approval_policies": [{"id": "grants_own_list", "type": "grant_self_list", "server": "grants"}],
+            "access_profiles": [{"id": "haku", "auto_approval_policy": "grants_own_list"}],
+            "default_access_profile_id": "haku",
+            "static_agents": [
+                {
+                    "agent_id": str(AGENT_ACTOR.agent_id),
+                    "display_name": "Test Agent",
+                    "token_env_var": "TEST_AGENT_TOKEN",
+                    "operator_subject_env": "TEST_AGENT_OPERATOR",
+                    "access_profile_id": "haku",
+                }
+            ],
+        }
+    )
+)
+
+
+def test_grant_self_list_is_conditional_only_for_list_grants() -> None:
+    assert (
+        _GRANT_READS_REGISTRY.tool_mode(AGENT_ACTOR, "grants", "list_grants")
+        is ToolAutoApprovalMode.CONDITIONALLY_AUTO_APPROVED
+    )
+    # No other grant verb — including the unconditional reads served by a separate exact-tools policy
+    # in production — is auto-approvable through this argument-conditional one.
+    for tool in ("get_grant", "create_grant", "release_grants", "revoke_grants", "kubernetes_can_i"):
+        assert (
+            _GRANT_READS_REGISTRY.tool_mode(AGENT_ACTOR, "grants", tool)
+            is ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
+        )
+
+
+async def test_list_grants_auto_approves_only_the_explicit_self_scope() -> None:
+    approved = await _GRANT_READS_REGISTRY.evaluate(
+        actor=AGENT_ACTOR, server_id="grants", tool_name="list_grants", arguments={"principal": "self"}, gmail=None
+    )
+    assert not isinstance(approved, PolicyDenial)
+    assert approved[0] == AGENT_AUTO_APPROVAL_ID
+    # The omitted principal (the reserved broader read) and any non-self value stay manual.
+    for arguments in ({}, {"principal": None}):
+        manual = await _GRANT_READS_REGISTRY.evaluate(
+            actor=AGENT_ACTOR, server_id="grants", tool_name="list_grants", arguments=arguments, gmail=None
+        )
+        assert not isinstance(manual, PolicyDenial)
+        assert manual[0] is None
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.database_schema import Conversation, Session
 from haku.console.harnesses.kind import HarnessKind
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.session.conversation_views import live_status
 from haku.console.session.status import (
     ENDED_SESSION_STATUSES,

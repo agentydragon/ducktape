@@ -73,7 +73,7 @@ missed:
 ## Scope and retirement
 
 haku-Agent-only, one method, one path, one public origin. A temporary grant
-(`http_grants.create_grant` naming `credential_handle`) redeems the same registry, but the deployed
-config does not expose the `http_grants` server yet — the standing entry is the deployed path.
+(the `grants` server’s `create_grant`, http domain, naming `credential_handle`) redeems the same registry; this
+drill uses the standing entry, the deployed path exercised here.
 Retire the drill by deleting the credential entry, the standing entry, and the deployment env line
 together.

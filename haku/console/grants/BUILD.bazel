@@ -29,7 +29,7 @@ py_library(
         ":envelope",
         ":principal",
         "//haku/console:database_schema",
-        "//haku/console/agents:models",
+        "//haku/console/identity:agent",
         "//haku/console/session:status",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//sqlalchemy",

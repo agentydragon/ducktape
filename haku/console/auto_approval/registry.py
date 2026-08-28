@@ -27,6 +27,7 @@ from haku.console.mcp_config import (
     GitHubPublicRepositoryAutoApprovalPolicy,
     GitHubRepositoryAutoApprovalPolicy,
     GmailLabelNamespaceAutoApprovalPolicy,
+    GrantSelfListAutoApprovalPolicy,
     KubernetesPassthroughAutoApprovalPolicy,
     NeverAutoApprovalPolicy,
 )
@@ -41,6 +42,12 @@ logger = logging.getLogger(__name__)
 
 AGENT_AUTO_APPROVAL_ID = "agent_policy_v1"
 SCHEMA_AUTO_DENIAL_EVALUATION = "denied: arguments failed the registered tool schema"
+
+# The `grants` server's own-grant list read and the scope value that makes it click-free. Mirrors
+# `haku.console.tools.grants` (`list_grants`, `GrantReadScope`) without importing the tool layer into
+# the policy engine.
+_LIST_GRANTS_TOOL = "list_grants"
+_OWN_GRANT_SCOPE = "self"
 
 
 class ToolAutoApprovalMode(IntEnum):
@@ -157,6 +164,12 @@ class AutoApprovalPolicyRegistry:
                     if server_id == server and tool_name in tools
                     else ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
                 )
+            case GrantSelfListAutoApprovalPolicy(server=server):
+                return (
+                    ToolAutoApprovalMode.CONDITIONALLY_AUTO_APPROVED
+                    if server_id == server and tool_name == _LIST_GRANTS_TOOL
+                    else ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
+                )
             case KubernetesPassthroughAutoApprovalPolicy():
                 return ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
             case AnyOfAutoApprovalPolicy(policies=members):
@@ -246,6 +259,20 @@ class AutoApprovalPolicyRegistry:
                     return
                 decision = await evaluate_public_repository(tool_name, arguments, self._github_repository_visibility)
                 evaluation.record(current_path, decision)
+            case GrantSelfListAutoApprovalPolicy(server=server):
+                if server_id != server or tool_name != _LIST_GRANTS_TOOL:
+                    return
+                if arguments.get("principal") == _OWN_GRANT_SCOPE:
+                    evaluation.record(
+                        current_path, AutoApproved("list_grants is scoped to the caller's own grants (principal=self)")
+                    )
+                else:
+                    evaluation.record(
+                        current_path,
+                        NotAutoApproved(
+                            "list_grants auto-approves only with principal=self; the broader read is manual"
+                        ),
+                    )
             case KubernetesPassthroughAutoApprovalPolicy(server=server):
                 if server_id != server:
                     return

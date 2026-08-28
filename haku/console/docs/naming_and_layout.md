@@ -205,13 +205,13 @@ names graduate into <agent_authority.md>'s boundary section, not a separate doc.
 
 ### 3.3 Grant vocabulary (#4838)
 
-| Concept              | Canonical name                                                                               | Notes                                                                                                                                                                                              |
-| -------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Grant (domain / row) | `KubernetesGrant` / `KubernetesGrantRow` (`kubernetes_grants`); `HttpGrant` / `HttpGrantRow` | the `…Row`-at-definition pattern holds in both domains; rows stay at their central `database_schema.py` definitions. The in-package drop to `Grant`/`GrantSpec` waits on §4.1 seam 3 and rides C12 |
-| Principal axis       | `GrantPrincipalKind` {`AGENT`, `SESSION`, future `PROFILE`}                                  | the Agent-facing `applies_to` stays `{agent, session}` **permanently**; profile principals are operator-initiated only, never Agent-requestable (#4838's load-bearing asymmetry)                   |
-| Lifetime axis        | temporary \| permanent                                                                       | reject `permanent × session` and click-approved `permanent × profile` by construction                                                                                                              |
-| Lifecycle vocabulary | `GrantStatus` {`ACTIVE`, `RELEASED`, `REVOKED`, `EXPIRED`} + `derive_status`                 | one envelope enum (was per-domain `KubernetesGrantStatus`/`HttpGrantStatus`); status is derived from the end facts in both domains via `derive_status`, never stored                               |
-| Shared envelope      | `grants/envelope.py` + `grants/provenance.py` (#4889, landed)                                | principal columns, validity window, lifecycle owner, manual-approval source-ToolCall provenance, and the end facts (with their shared fact-shape CHECK, #4883) consolidated across both domains    |
+| Concept              | Canonical name                                                                                       | Notes                                                                                                                                                                                                                                                     |
+| -------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Grant (domain / row) | in-package `Grant` / `KubernetesGrantRow` (`kubernetes_grants`); in-package `Grant` / `HttpGrantRow` | the in-package entity dropped to `Grant`/`GrantSpec` in both domains (C12, module-qualified where they coexist — `kubernetes.Grant` vs `http.Grant`); the `…Row` classes keep the concept-name and stay at their central `database_schema.py` definitions |
+| Principal axis       | `GrantPrincipalKind` {`AGENT`, `SESSION`, future `PROFILE`}                                          | the Agent-facing `applies_to` stays `{agent, session}` **permanently**; profile principals are operator-initiated only, never Agent-requestable (#4838's load-bearing asymmetry)                                                                          |
+| Lifetime axis        | temporary \| permanent                                                                               | reject `permanent × session` and click-approved `permanent × profile` by construction                                                                                                                                                                     |
+| Lifecycle vocabulary | `GrantStatus` {`ACTIVE`, `RELEASED`, `REVOKED`, `EXPIRED`} + `derive_status`                         | one envelope enum (was per-domain `KubernetesGrantStatus`/`HttpGrantStatus`); status is derived from the end facts in both domains via `derive_status`, never stored                                                                                      |
+| Shared envelope      | `grants/envelope.py` + `grants/provenance.py` (#4889, landed)                                        | principal columns, validity window, lifecycle owner, manual-approval source-ToolCall provenance, and the end facts (with their shared fact-shape CHECK, #4883) consolidated across both domains                                                           |
 
 ### 3.4 De-Haku (#4865) — `Haku` → `<platform>`
 
@@ -224,13 +224,17 @@ docs. **"Haku" survives only as one configured agent/tenant.** Tool-server ids t
 
 ### 3.5 Tool-server names (#4918)
 
-**Decided 2026-08-28:** consolidate to one `grants` server with a domain discriminator
-(`kubernetes` | `http`), now that #4889's shared grants envelope landed (#5018); `can_i` splits into
-its own `kubernetes` server. The grants entity-prefix drop (`KubernetesGrant` → `Grant`,
-`HttpGrantSpec` → `GrantSpec`) rides this cutover. Remaining: the roster audit of
-`gmail`/`google_calendar`/`hostexec`/`sandbox`/`http_grants` for under/over-promise, then the
-coordinated cutover — config + auto-approval policies + frontend catalogs + docs in one release;
-stored ToolCall `server_id` audit history is left as-is.
+**Landed (C12):** one `grants` server exposes the shared grant verbs
+(`create_grant`/`list_grants`/`get_grant`/`release_grants`/`revoke_grants`) over #4889's envelope
+with a `domain` discriminator (`kubernetes` | `http`) on each per-domain capability payload; the
+kubernetes SAR check rides the same server as `kubernetes_can_i`, not a separate `kubernetes`
+server. The grants entity-prefix drop (`KubernetesGrant` → `Grant`, `HttpGrantSpec` → `GrantSpec`,
+the route wrapper/response models — §4.1 seam 3) landed with it. The old `http_grants` and
+`kubernetes` server ids are gone from config, auto-approval policies, frontend catalogs, and docs in
+one release; stored ToolCall `server_id` audit history keeps the old names (append-only, never
+rewritten). **Remaining:** the accuracy audit of the non-grant in-process server names
+(`gmail`/`google_calendar`/`hostexec`/`sandbox`) for under/over-promise; the `haku_*` tool-id
+de-prefix rides C14 (§3.4).
 
 ## 4. Naming conventions — the reviewer checklist
 
@@ -247,10 +251,10 @@ every package the split creates, not just `grants/`:
   `kubernetes_authorization.py` → `authorization.py`, `kube_proxy_authorization.py` →
   `proxy_authorization.py` (landed with C11; `kubectl_passthrough_policy.py` keeps its name —
   `kubectl` names the external kubectl-passthrough MCP server, not the package). The entity drop
-  (`KubernetesGrant` → `Grant`, `KubernetesGrantService` → `Service`, …) waits on seam 3 below.
+  (`KubernetesGrant` → `Grant`, `KubernetesGrantService` → `Service`, …) landed with C12 (seam 3).
 - **`grants/http/`**: symmetric — `http_grant_service.py` → `service.py`,
   `http_decide_config.py` → `decide_config.py`, etc. (landed with C11); `HttpGrantSpec` →
-  `GrantSpec` etc. wait on seam 3.
+  `GrantSpec` etc. landed with C12 (seam 3).
 - **`conversation/`** _(files landed, with `ConversationRuntime` → `Runtime`)_: C5 landed the
   vocabulary into the package; the remaining entity drops (`ConversationEvent` → `Event`,
   `ConversationItem` → `Item`, `ConversationTurn` → `Turn`) stay pending; the ORM rows stay
@@ -282,8 +286,12 @@ Three seams are handled deliberately — **do not reintroduce the prefix to dodg
    vocabulary's `GrantScope` all collide there, and pydantic degrades a collision to
    module-path-qualified component keys that the SPA's generated types then carry. So a model whose
    class name is a published component key renames with the C4d recipe — schema consumers in
-   lockstep — not as a package-extraction rider. C11 moved the files and left these class names;
-   the entity pass rides C12.
+   lockstep — not as a package-extraction rider. C11 moved the files and left these class names; the
+   entity pass **landed with C12**: `KubernetesGrant`/`HttpGrant` → `Grant`, `…GrantSpec` →
+   `GrantSpec`, `KubernetesGrantScope` → `GrantScope`, and the route wrapper/response models →
+   `OperatorGrant`/`GrantListResponse`/`RevokeGrantRequest`, whose OpenAPI collisions pydantic now
+   emits as module-path-qualified keys (e.g. `haku__console__grants__kubernetes__routes__OperatorGrant`)
+   that `frontend/client.ts` consumes.
 
 **Extension, gated on `<platform>` (#4865):** once the tree re-roots under `<platform>/console/`, the
 `Haku`/`haku_` prefix on internal entities and tool-server names is redundant by the identical logic.
@@ -325,15 +333,15 @@ narrow database role or a network-only boundary that the code layout does not en
 import from being violated silently; domain packages make the exclusion a build-time fact. Every
 package split below keeps these exclusions structurally enforceable.
 
-| Binary                  | Tree                                                             | May import                                                                                                                                                         | MUST NOT import                                                                                                                                          | Reaches console via                        |
-| ----------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| **runner**              | `haku/runtime/x/bridge`                                          | its own bridge + shared wire                                                                                                                                       | **console (any package)** — the import arrow is console→runner, never the reverse                                                                        | the neutral-operation socket (#4667)       |
-| **haku-console server** | `<platform>/console/*`                                           | its own domain packages; the runner's shared wire vocab                                                                                                            | —                                                                                                                                                        | in-process                                 |
-| **egress proxy**        | `haku/egress` (forthcoming; egress-grant work #4941/#4957/#4942) | the shared decision wire vocabulary only                                                                                                                           | console `identity/`, `grants/`, `mcp/` — anything beyond the shared decision vocab                                                                       | HTTP to console (not a Python import)      |
-| **indexer**             | `haku/indexer/` (forthcoming, #4887)                             | the shared `haku/recall_index/` schema only                                                                                                                        | any console package — `identity/`, `grants/`, `mcp/` (incl. the `mcp/tools/recall/` read path), approval; its DB role is narrow, the deps must mirror it | its narrow DB role                         |
-| **matrix adapter**      | `channels/matrix/` (worker.py, #4864)                            | its channel package; the conversation seam (the one pub/sub, positional read, offer-input); the schema; the narrow launch authority (`agents/launch_authority.py`) | `mcp/` and the auth stack (`mcp_auth/`, enrollment, bearer machinery), approval, oauth, push; its DB role is narrow, the deps must mirror it             | its narrow DB role                         |
-| **kube-api-proxy**      | `haku/kube_api_proxy` (Go)                                       | —                                                                                                                                                                  | zero console Python (it is Go)                                                                                                                           | —                                          |
-| **hostexecd**           | `haku/hostexec/hostexecd` (Rust, host-side)                      | —                                                                                                                                                                  | zero console Python (it is Rust)                                                                                                                         | HTTP to console's `hostexecd/` coordinator |
+| Binary                  | Tree                                                             | May import                                                                                                                                                           | MUST NOT import                                                                                                                                                                                                                                                                                                  | Reaches console via                        |
+| ----------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| **runner**              | `haku/runtime/x/bridge`                                          | its own bridge + shared wire                                                                                                                                         | **console (any package)** — the import arrow is console→runner, never the reverse                                                                                                                                                                                                                                | the neutral-operation socket (#4667)       |
+| **haku-console server** | `<platform>/console/*`                                           | its own domain packages; the runner's shared wire vocab                                                                                                              | —                                                                                                                                                                                                                                                                                                                | in-process                                 |
+| **egress proxy**        | `haku/egress` (forthcoming; egress-grant work #4941/#4957/#4942) | the shared decision wire vocabulary only                                                                                                                             | console `identity/`, `grants/`, `mcp/` — anything beyond the shared decision vocab                                                                                                                                                                                                                               | HTTP to console (not a Python import)      |
+| **indexer**             | `haku/indexer/` (forthcoming, #4887)                             | the shared `haku/recall_index/` schema only                                                                                                                          | any console package — `identity/`, `grants/`, `mcp/` (incl. the `mcp/tools/recall/` read path), approval; its DB role is narrow, the deps must mirror it                                                                                                                                                         | its narrow DB role                         |
+| **matrix adapter**      | `channels/matrix/` (worker.py, #4864)                            | its channel package; the conversation seam (the one pub/sub, positional read, offer-input); the schema; the narrow launch authority (`identity/launch_authority.py`) | `mcp/` and the identity auth stack (`identity/`'s `fastmcp_adapter`, `enrollment`, `authorization`, `agent_bearer_authority`, `mcp_agent_auth` — everything under `identity/` beyond `launch_authority` and the operator-identity leaves), approval, oauth, push; its DB role is narrow, the deps must mirror it | its narrow DB role                         |
+| **kube-api-proxy**      | `haku/kube_api_proxy` (Go)                                       | —                                                                                                                                                                    | zero console Python (it is Go)                                                                                                                                                                                                                                                                                   | —                                          |
+| **hostexecd**           | `haku/hostexec/hostexecd` (Rust, host-side)                      | —                                                                                                                                                                    | zero console Python (it is Rust)                                                                                                                                                                                                                                                                                 | HTTP to console's `hostexecd/` coordinator |
 
 Directionality notes, verified against `devel`:
 
@@ -433,20 +441,24 @@ Needs operator go **and** the `<auth-context>` name pick.
 - **C8 · Compose authentication-context (#4836 parts 1-4)** _(semantic, ~30 files)_ — compose the
   actor, reshape the execution caller onto the principal atom, slim `McpExecutionContext`, dissolve
   `ResolvedAgentBearer`. No schema/wire change.
-- **C10 · `identity/` package extraction** _(mechanical)_ — lands **with** the #4836 vocabulary, after
-  C8 settles the names. Splits `grants/principal.py`: `RequestPrincipal` → `identity/request_principal.py`;
-  the `GrantPrincipal` family + `applies_to` stay in `grants/principal.py`.
+- **C10 · `identity/` package extraction** _(mechanical)_ — the package fold landed independently of
+  C8: the flat `operator_*` modules, `agent_bearer_authority.py`, `mcp_agent_auth.py`, the `agents/`
+  package (`agents/models.py` → `identity/agent.py`), and `mcp_auth/fastmcp_adapter.py` moved into
+  `identity/`, each a one-file `py_library` so `channels/matrix` still deps only
+  `identity/launch_authority` (§5). Still riding the #4836 vocabulary, after C8 settles the names: the
+  `grants/principal.py` split (`RequestPrincipal` → `identity/request_principal.py`; the
+  `GrantPrincipal` family + `applies_to` stay), the `tool_call_actor.py` → `authentication_context.py`
+  rename, and the `ResolvedAgentBearer` dissolution.
 
 ### Grants lane
 
-- **C12 · Tool-server naming (#4918)** _(semantic — coordinated cutover)_ — **Decided 2026-08-28:**
-  consolidate to one `grants` server with a domain discriminator (`kubernetes` | `http`), now that
-  #4889's shared grants envelope landed (#5018); `can_i` splits into its own `kubernetes` server.
-  The grants **entity**-prefix drop deferred by §4.1 seam 3 (`KubernetesGrant` → `Grant`,
-  `HttpGrantSpec` → `GrantSpec`, the wrapper/response models) rides this cutover — the same
-  published-surface recipe, one schema-consumer move. Remaining: the roster audit, then the
-  coordinated cutover — config + auto-approval policies + frontend catalogs + docs in one release;
-  stored ToolCall `server_id` audit history left as-is.
+- **#4918 roster audit** _(mechanical)_ — the tool-server consolidation landed (C12: one `grants`
+  server over #4889's envelope with a `domain` discriminator, `can_i` folded in as
+  `kubernetes_can_i`, and the grants entity-prefix drop — §3.5, §4.1 seam 3 — in one coordinated
+  release across config, auto-approval policies, frontend catalogs, and docs; stored ToolCall
+  `server_id` audit history left as-is). Remaining: audit the non-grant in-process server names
+  (`gmail`/`google_calendar`/`hostexec`/`sandbox`) for under/over-promise; the `haku_*` tool-id
+  de-prefix rides C14.
 
 ### De-Haku and final packaging — last
 
@@ -464,7 +476,7 @@ Needs operator go **and** the `<auth-context>` name pick.
 ```text
 now ─┬─ C13               ← staged severing; ConversationItem home is the gate   [indexer lane, independent]
      ├─ C8 → C10          ← after operator go + <auth-context>  [identity lane]
-     ├─ C12               ← C11 landed with #4889's envelope    [grants lane]
+     ├─ #4918 audit       ← C12 landed (one `grants` server)    [grants lane]
      └─ C4e → C6                            ← packages + C5 landed         [conversation lane]
                   │
                   C14 (de-Haku) ────────────────→ after lanes settle names

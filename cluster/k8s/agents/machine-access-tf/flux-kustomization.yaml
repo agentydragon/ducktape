@@ -25,33 +25,7 @@ spec:
       namespace: ducktape-flux
     - name: authentik
       namespace: ducktape-flux
-    # TF writes grocy-mcp-oidc secrets into per-household namespaces.
-    - name: grocy-sf
-      namespace: ducktape-flux
-    - name: grocy-vallejo
-      namespace: ducktape-flux
-    - name: tana-mcp
-      namespace: ducktape-flux
-    # TF writes the `kubectl-sandbox-mcp` secret into the `kubectl-sandbox-mcp`
-    # namespace, so that namespace must exist first.
-    - name: kubectl-sandbox-mcp-namespace
-      namespace: ducktape-flux
-    # Same for manifold-mcp.
-    - name: manifold-mcp-namespace
-      namespace: ducktape-flux
-    # Same for postscanmail-mcp.
-    - name: postscanmail-mcp-namespace
-      namespace: ducktape-flux
-    # TF writes the `ha-mcp-oidc` Secret into the HA-MCP namespace.
+    # The HA OAuth Secret is retained as a rollback tombstone until the static
+    # bearer migration's expiry window; its namespace must still exist.
     - name: ha-mcp-namespace
-      namespace: ducktape-flux
-    # Same for plaid-mcp.
-    - name: plaid-mcp-namespace
-      namespace: ducktape-flux
-    # TF writes the `haku-console-oidc` secret (MCP OIDCProxy + operator-login client
-    # credentials + session secret) into the `haku-console` namespace.
-    - name: haku-console-namespace
-      namespace: ducktape-flux
-    # TF also writes public-coder-agent's proxy-held Haku Console bearer into this namespace.
-    - name: public-coder-agent-namespace
       namespace: ducktape-flux

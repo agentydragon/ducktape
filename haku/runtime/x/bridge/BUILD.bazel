@@ -23,10 +23,20 @@ py_library(
 )
 
 py_library(
+    name = "projection",
+    srcs = ["projection.py"],
+    visibility = ["//haku:__subpackages__"],
+    deps = [":neutral_operations"],
+)
+
+py_library(
     name = "claude_projection",
     srcs = ["claude_projection.py"],
     visibility = ["//haku:__subpackages__"],
-    deps = [":neutral_operations"],
+    deps = [
+        ":neutral_operations",
+        ":projection",
+    ],
 )
 
 py_library(
@@ -37,44 +47,26 @@ py_library(
 )
 
 py_library(
+    name = "session_api",
+    srcs = ["session_api.py"],
+    visibility = ["//haku:__subpackages__"],
+    deps = [
+        ":neutral_operations",
+        ":operation_journal",
+        ":projection",
+        ":protocol",
+        "@pypi//anyio",
+    ],
+)
+
+py_library(
     name = "backend",
     srcs = ["backend.py"],
     visibility = ["//haku:__subpackages__"],
     deps = [
-        ":claude_projection",
         ":protocol",
-    ],
-)
-
-py_library(
-    name = "claude_driver",
-    srcs = ["claude_driver.py"],
-    visibility = ["//haku:__subpackages__"],
-    deps = [
-        ":claude_projection",
-        "//haku/cli_protocol:frames",
-    ],
-)
-
-py_library(
-    name = "backend_registry",
-    srcs = ["backend_registry.py"],
-    visibility = ["//haku:__subpackages__"],
-    deps = [
-        ":backend",
-        ":claude_options",
-        ":codex_options",
-    ],
-)
-
-py_library(
-    name = "codex_options",
-    srcs = ["codex_options.py"],
-    visibility = ["//haku:__subpackages__"],
-    deps = [
-        ":backend",
-        ":protocol",
-        "@pypi//tomlkit",
+        ":session_api",
+        "@pypi//anyio",
     ],
 )
 
@@ -83,17 +75,6 @@ py_library(
     srcs = ["client.py"],
     visibility = ["//haku:__subpackages__"],
     deps = [":protocol"],
-)
-
-py_library(
-    name = "claude_options",
-    srcs = ["claude_options.py"],
-    visibility = ["//haku:__subpackages__"],
-    deps = [
-        ":backend",
-        ":claude_driver",
-        ":protocol",
-    ],
 )
 
 py_library(
@@ -107,16 +88,77 @@ py_library(
 )
 
 py_library(
-    name = "session_api",
-    srcs = ["session_api.py"],
+    name = "claude_options",
+    srcs = ["claude_options.py"],
+    visibility = ["//haku:__subpackages__"],
+    deps = [":protocol"],
+)
+
+py_library(
+    name = "claude_harness",
+    srcs = ["claude_harness.py"],
     visibility = ["//haku:__subpackages__"],
     deps = [
         ":backend",
+        ":claude_options",
         ":claude_projection",
-        ":neutral_operations",
-        ":operation_journal",
         ":protocol",
+        ":session_api",
+        "//haku/cli_protocol:frames",
         "@pypi//anyio",
+    ],
+)
+
+py_library(
+    name = "codex_options",
+    srcs = ["codex_options.py"],
+    visibility = ["//haku:__subpackages__"],
+    deps = [
+        ":protocol",
+        "@pypi//tomlkit",
+    ],
+)
+
+py_library(
+    name = "codex_protocol",
+    srcs = ["codex_protocol.py"],
+    visibility = ["//haku:__subpackages__"],
+)
+
+py_library(
+    name = "codex_projection",
+    srcs = ["codex_projection.py"],
+    visibility = ["//haku:__subpackages__"],
+    deps = [
+        ":codex_protocol",
+        ":neutral_operations",
+        ":projection",
+    ],
+)
+
+py_library(
+    name = "codex_harness",
+    srcs = ["codex_harness.py"],
+    visibility = ["//haku:__subpackages__"],
+    deps = [
+        ":backend",
+        ":codex_options",
+        ":codex_projection",
+        ":codex_protocol",
+        ":protocol",
+        ":session_api",
+        "@pypi//anyio",
+    ],
+)
+
+py_library(
+    name = "backend_registry",
+    srcs = ["backend_registry.py"],
+    visibility = ["//haku:__subpackages__"],
+    deps = [
+        ":backend",
+        ":claude_harness",
+        ":codex_harness",
     ],
 )
 
@@ -318,6 +360,7 @@ py_test(
     name = "test_claude_options",
     srcs = ["test_claude_options.py"],
     deps = [
+        ":claude_harness",
         ":claude_options",
         ":protocol",
         "//:conftest",
@@ -330,6 +373,7 @@ py_test(
     srcs = ["test_codex_options.py"],
     deps = [
         ":backend_registry",
+        ":codex_harness",
         ":codex_options",
         "//:conftest",
         "@pypi//pytest",
@@ -342,6 +386,7 @@ py_test(
     srcs = ["test_codex_native_provider.py"],
     data = ["@codex_cli_linux_x64//:files"],
     deps = [
+        ":codex_harness",
         ":codex_options",
         "//:conftest",
         "//util/bazel:runfiles",
@@ -350,14 +395,27 @@ py_test(
 )
 
 py_test(
+    name = "test_codex_projection",
+    srcs = ["test_codex_projection.py"],
+    deps = [
+        ":codex_projection",
+        ":neutral_operations",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_runner",
     srcs = ["test_runner.py"],
     deps = [
+        ":claude_harness",
         ":claude_options",
-        ":claude_projection",
         ":neutral_operations",
+        ":projection",
         ":protocol",
         ":runner",
+        ":session_api",
         "//:conftest",
         "@pypi//anyio",
         "@pypi//pytest",

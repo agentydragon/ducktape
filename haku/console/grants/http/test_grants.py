@@ -10,14 +10,7 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from haku.console.grants.envelope import GrantStatus, derive_status
-from haku.console.grants.http.models import (
-    HttpGrant,
-    HttpGrantSpec,
-    HttpMethod,
-    HttpOrigin,
-    HttpRequestCoverage,
-    HttpScheme,
-)
+from haku.console.grants.http.models import Grant, GrantSpec, HttpMethod, HttpOrigin, HttpRequestCoverage, HttpScheme
 from haku.console.grants.principal import AgentGrantPrincipal
 
 _CREATED = datetime.datetime(2026, 8, 21, tzinfo=datetime.UTC)
@@ -34,11 +27,11 @@ def coverage(**overrides: object) -> HttpRequestCoverage:
     return HttpRequestCoverage.model_validate(payload)
 
 
-def spec(**overrides: object) -> HttpGrantSpec:
+def spec(**overrides: object) -> GrantSpec:
     """Build a grant spec; ``methods``/``path_regex`` overrides populate the nested coverage."""
     coverage_fields = {key: overrides.pop(key) for key in ("methods", "path_regex") if key in overrides}
     payload: dict[str, object] = {"origin": origin(), "coverage": coverage(**coverage_fields), **overrides}
-    return HttpGrantSpec.model_validate(payload)
+    return GrantSpec.model_validate(payload)
 
 
 @pytest.mark.parametrize(
@@ -155,7 +148,7 @@ def test_grant_spec_allow_prohibited_address_defaults_off_and_round_trips() -> N
     flagged = spec(allow_prohibited_address=True)
     assert flagged.allow_prohibited_address is True
     assert flagged.model_dump(mode="json")["allow_prohibited_address"] is True
-    assert HttpGrantSpec.model_validate(flagged.model_dump(mode="json")) == flagged
+    assert GrantSpec.model_validate(flagged.model_dump(mode="json")) == flagged
 
 
 def test_status_is_derived_from_end_facts_and_the_clock() -> None:
@@ -192,7 +185,7 @@ def test_grant_timestamps_require_timezone_awareness(field: str) -> None:
     payload[field] = datetime.datetime(2026, 8, 21)
 
     with pytest.raises(ValidationError):
-        HttpGrant.model_validate(payload)
+        Grant.model_validate(payload)
 
 
 def test_agent_grant_principal_must_belong_to_lifecycle_owner() -> None:
@@ -200,7 +193,7 @@ def test_agent_grant_principal_must_belong_to_lifecycle_owner() -> None:
     payload["principal"] = AgentGrantPrincipal(agent_id=UUID(int=3))
 
     with pytest.raises(ValidationError, match="must belong to the lifecycle owner"):
-        HttpGrant.model_validate(payload)
+        Grant.model_validate(payload)
 
 
 def test_grant_end_facts_travel_together() -> None:
@@ -209,29 +202,29 @@ def test_grant_end_facts_travel_together() -> None:
     payload = _grant_payload()
     payload.update(released_at=early)
     with pytest.raises(ValidationError, match="end_reason travels exactly with a recorded end action"):
-        HttpGrant.model_validate(payload)
+        Grant.model_validate(payload)
 
     payload = _grant_payload()
     payload.update(released_at=early, revoked_at=early, end_reason="both")
     with pytest.raises(ValidationError, match="cannot be both released and revoked"):
-        HttpGrant.model_validate(payload)
+        Grant.model_validate(payload)
 
 
 def test_status_is_computed_from_facts_and_clock() -> None:
     early = datetime.datetime(2026, 8, 21, 0, 30, tzinfo=datetime.UTC)
 
     # _EXPIRES is in the past, so with no end fact the computed status is EXPIRED.
-    expired = HttpGrant.model_validate(_grant_payload())
+    expired = Grant.model_validate(_grant_payload())
     assert expired.status is GrantStatus.EXPIRED
 
-    released = HttpGrant.model_validate({**_grant_payload(), "released_at": early, "end_reason": "done"})
+    released = Grant.model_validate({**_grant_payload(), "released_at": early, "end_reason": "done"})
     assert released.status is GrantStatus.RELEASED
     # The computed field still serializes: the wire keeps its status key.
     assert released.model_dump()["status"] is GrantStatus.RELEASED
 
     active_payload = _grant_payload()
     active_payload["expires_at"] = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=1)
-    assert HttpGrant.model_validate(active_payload).status is GrantStatus.ACTIVE
+    assert Grant.model_validate(active_payload).status is GrantStatus.ACTIVE
 
 
 if __name__ == "__main__":

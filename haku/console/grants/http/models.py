@@ -114,7 +114,7 @@ class HttpOrigin(BaseModel):
 
 class HttpRequestCoverage(BaseModel):
     """The request-matching half of an allowance at an already-matched origin: a method set plus
-    an optional path pin. Held as a field by temporary grants (`HttpGrantSpec`) and deploy-managed
+    an optional path pin. Held as a field by temporary grants (`GrantSpec`) and deploy-managed
     standing policy entries (`decide_config.EgressStandingPolicyEntry`) so both speak one
     matcher vocabulary."""
 
@@ -150,7 +150,7 @@ class HttpRequestCoverage(BaseModel):
         return self.path_regex is None or re.fullmatch(self.path_regex, path) is not None
 
 
-class HttpGrantSpec(BaseModel):
+class GrantSpec(BaseModel):
     """One requested coverage item: an exact origin, the request coverage at it, and optionally
     the Console-owned credential the grant redeems there."""
 
@@ -183,7 +183,7 @@ class HttpGrantSpec(BaseModel):
     )
 
 
-class HttpGrant(GrantEnvelope):
+class Grant(GrantEnvelope):
     """Durable grant returned by the service: the shared envelope plus origin/coverage spec.
 
     ``status`` is computed from the envelope's recorded end facts and the clock at access
@@ -191,10 +191,10 @@ class HttpGrant(GrantEnvelope):
     it cannot disagree with the facts.
     """
 
-    spec: HttpGrantSpec
+    spec: GrantSpec
 
     @model_validator(mode="after")
-    def validate_end_reason(self) -> HttpGrant:
+    def validate_end_reason(self) -> Grant:
         ended = self.released_at is not None or self.revoked_at is not None
         if ended != (self.end_reason is not None and bool(self.end_reason.strip())):
             raise ValueError("end_reason travels exactly with a recorded end action")
@@ -240,4 +240,4 @@ class HttpRequestDenied(BaseModel):
     reason: NON_EMPTY
 
 
-type HttpGrantDecision = HttpRequestAllowed | HttpRequestDenied
+type GrantDecision = HttpRequestAllowed | HttpRequestDenied

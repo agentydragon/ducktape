@@ -58,6 +58,7 @@ from pydantic import (
 from haku.console.auto_approval.registry import AutoApprovalPolicyRegistry, ToolAutoApprovalMode
 from haku.console.config import Settings, tool_call_console_url
 from haku.console.hostexecd.service import DaemonStatusResponse, Service
+from haku.console.identity.fastmcp_adapter import HakuMcpActorResolver
 from haku.console.mcp_approval import (
     DegradedReflection,
     DegradedServerState,
@@ -68,7 +69,6 @@ from haku.console.mcp_approval import (
     metadata_for_operator,
     server_metadata_response,
 )
-from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver
 from haku.console.mcp_catalog_reconciler import OperatorCatalogReconciler
 from haku.console.mcp_config import (
     InProcessBackend,
@@ -770,7 +770,7 @@ def build_console_mcp(
 ) -> FastMCP:
     """Build the console MCP server with request-local proxy tools + auth.
 
-    Authentication is composed by :mod:`haku.console.mcp_agent_auth`. The
+    Authentication is composed by :mod:`haku.console.identity.mcp_agent_auth`. The
     provider reflects connected-server tools for the authenticated principal's
     canonical Operator on each discovery and dispatch request.
     """

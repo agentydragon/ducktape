@@ -40,6 +40,7 @@ _EXPECTED_TOOLS = {
         "threads_modify_labels",
     ),
     "google_calendar": ("create_event", "get_event", "list_event_instances", "list_events"),
+    "grants": ("create_grant", "get_grant", "kubernetes_can_i", "list_grants", "release_grants", "revoke_grants"),
     # grocy-sf is reflected only for the batch tools the console renders previews for.
     "grocy-sf": (
         "locations_list",
@@ -61,20 +62,10 @@ _EXPECTED_TOOLS = {
     "haku_index": ("index_status", "search"),
     "haku_routine": ("launch_routine",),
     "hostexec": ("bash",),
-    "http_grants": ("create_grant", "get_grant", "list_grants", "release_grants", "revoke_grants"),
-    "kubernetes": ("can_i", "create_grant", "get_grant", "list_grants", "release_grants"),
 }
 _SERVER_IDS = list(_EXPECTED_TOOLS)
 _RESULT_SERVER_IDS = [*_SERVER_IDS, "haku-console"]
-_RESULT_TOOLS_MATCH_ARGUMENTS = (
-    "google_calendar",
-    "grocy-sf",
-    "haku_index",
-    "haku_routine",
-    "hostexec",
-    "http_grants",
-    "kubernetes",
-)
+_RESULT_TOOLS_MATCH_ARGUMENTS = ("google_calendar", "grants", "grocy-sf", "haku_index", "haku_routine", "hostexec")
 
 
 def _assert_catalog_shape(schema: dict[str, object], title: str, server_ids: list[str] = _SERVER_IDS) -> None:

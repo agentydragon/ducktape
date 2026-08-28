@@ -33,6 +33,7 @@ from haku.console import mcp_catalog_reconciler as mcp_catalog_reconciler_module
 from haku.console.app import create_app
 from haku.console.config import McpOAuthConfig, OperatorOidcConfig
 from haku.console.conftest import console_settings, operator_session_cookie, resolve_operator_identity, write_config
+from haku.console.identity.operator_identity import ResolvedOperatorIdentity
 from haku.console.mcp_approval import DegradedReflection, ReflectionFailureStage
 from haku.console.mcp_config import ConsoleConfigFile, const_in_process_server
 from haku.console.mcp_guidance import SERVER_INSTRUCTIONS
@@ -44,7 +45,6 @@ from haku.console.mcp_operator_oauth import (
 )
 from haku.console.mcp_reflection_cache import ReflectedCatalog
 from haku.console.oauth.provider_connection import ProviderConnected, ProviderConnectionStatusResponse
-from haku.console.operator_identity import ResolvedOperatorIdentity
 from haku.console.tool_call_actor import AgentActor, RuntimeActor
 from haku.console.tool_call_service import ToolCallApplicationService, ToolCallNotFoundError
 from haku.console.tool_calls import (

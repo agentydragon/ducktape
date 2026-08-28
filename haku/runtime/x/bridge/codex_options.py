@@ -1,25 +1,32 @@
-"""Codex app-server as a bridge backend: native process launch and executable resolution.
+"""Codex app-server launch material: the exact app-server argv, and the thread params the runner
+needs to drive it.
 
-The Console-side adapter owns the JSON-RPC handshake, thread configuration, prompts and
-projection. This module owns only what the shared runner needs: the exact app-server argv and the
-binary that answers it. Native messages remain opaque ``HarnessFrame`` payloads to the runner.
+The `CodexHarness` (<codex_harness.py>) owns the JSON-RPC handshake, thread lifecycle, prompts and
+projection. This module owns what selects and configures the process: the app-server argv, the
+executable variable, and the `thread/start` params — model, reasoning effort, developer
+instructions — that the runner now sends and so must receive in the launch.
 """
 
 from __future__ import annotations
 
-import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import ClassVar
 
 from tomlkit import document, dumps, inline_table
 from tomlkit.items import InlineTable
 
-from haku.runtime.x.bridge.backend import HarnessDriver, ProcessLaunch, child_environment
 from haku.runtime.x.bridge.protocol import HarnessLaunch
 
 EXECUTABLE_VARIABLE = "HAKU_CODEX_PATH"
+
+# Codex's `thread/start` params the runner owns now — model, reasoning effort, developer
+# instructions — travel to the runner in the launch environment under these keys: the launch argv
+# is process config, and these are per-thread. The console writes them (`build_codex_launch`);
+# `CodexHarness` reads them (<codex_harness.py>).
+CODEX_MODEL_ENV = "HAKU_CODEX_MODEL"
+CODEX_REASONING_EFFORT_ENV = "HAKU_CODEX_REASONING_EFFORT"
+CODEX_DEVELOPER_INSTRUCTIONS_ENV = "HAKU_CODEX_DEVELOPER_INSTRUCTIONS"
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,12 +49,21 @@ class CodexModelProvider:
 
 @dataclass(frozen=True, slots=True)
 class CodexAppServerSession:
-    """Everything the Console chooses about one Codex app-server process."""
+    """Everything the Console chooses about one Codex app-server process and its one thread.
+
+    The process fields (`mcp_servers`, `model_provider`) become argv; the thread fields (`model`,
+    `reasoning_effort`, `developer_instructions`) become launch-environment keys the runner reads
+    for `thread/start`. `reasoning_effort` is a plain string here — the pinned Codex vocabulary
+    (`ReasoningEffort`) is validated by the console's deploy config, not re-declared runner-side.
+    """
 
     cwd: Path | None = None
     environment: Mapping[str, str] = field(default_factory=dict)
     mcp_servers: Mapping[str, HttpMcpServer] = field(default_factory=dict)
     model_provider: CodexModelProvider | None = None
+    model: str | None = None
+    reasoning_effort: str | None = None
+    developer_instructions: str | None = None
 
 
 def _toml_inline_table(values: Mapping[str, object]) -> InlineTable:
@@ -122,36 +138,18 @@ def build_codex_launch(session: CodexAppServerSession, *, resume_from: int | Non
     return HarnessLaunch(
         arguments=tuple(arguments),
         cwd=str(session.cwd) if session.cwd is not None else ".",
-        environment=dict(session.environment),
+        environment=_launch_environment(session),
         resume_from=resume_from,
     )
 
 
-@dataclass(frozen=True, slots=True)
-class CodexAppServerBackend:
-    """Codex app-server, as the sandbox runner starts it and reads it back."""
-
-    name: ClassVar[str] = "codex-app-server"
-    executable: Path
-
-    def resolve(self, launch: HarnessLaunch) -> ProcessLaunch:
-        return ProcessLaunch(
-            executable=self.executable,
-            arguments=launch.arguments,
-            cwd=launch.cwd,
-            environment=child_environment(launch),
-        )
-
-    def driver(self) -> HarnessDriver:
-        # CLEANUP(added 2026-08-27): implement with the Codex runner-side projector (#4667
-        # stage 5) and delete this refusal.
-        raise NotImplementedError(
-            "codex-app-server is not yet ported to the neutral-operation generation (#4667 stage 5)"
-        )
-
-
-def codex_app_server_backend(executable: Path | None = None) -> CodexAppServerBackend:
-    """Codex at the image-selected path, or at *executable* for a test/local run."""
-    return CodexAppServerBackend(
-        executable=executable if executable is not None else Path(os.environ.get(EXECUTABLE_VARIABLE, "codex"))
-    )
+def _launch_environment(session: CodexAppServerSession) -> dict[str, str]:
+    """The child environment: the console's, plus the thread params the runner reads for
+    `thread/start` (<codex_harness.py>). A thread param that is None is simply absent — Codex then
+    falls back to its configured default."""
+    thread_params = {
+        CODEX_MODEL_ENV: session.model,
+        CODEX_REASONING_EFFORT_ENV: session.reasoning_effort,
+        CODEX_DEVELOPER_INSTRUCTIONS_ENV: session.developer_instructions,
+    }
+    return {**session.environment, **{key: value for key, value in thread_params.items() if value is not None}}

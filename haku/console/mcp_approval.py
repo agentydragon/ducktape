@@ -29,7 +29,6 @@ from sqlalchemy import and_, literal, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.sql import Select
 
-from haku.console.agents.models import AgentStatus, CredentialBindingStatus
 from haku.console.database_schema import (
     Agent,
     AgentNameReservation,
@@ -40,6 +39,9 @@ from haku.console.database_schema import (
     Operator,
     Session,
 )
+from haku.console.identity.agent import AgentStatus, CredentialBindingStatus
+from haku.console.identity.operator_auth import OperatorActorDep
+from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.mcp_config import (
     InProcessBackend,
     InProcessServers,
@@ -56,8 +58,6 @@ from haku.console.mcp_config import (
 from haku.console.mcp_execution import McpExecutionContext, mcp_execution_request_meta
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp_reflection_cache import ReflectedCatalog, ReflectionCache, ReflectionCacheKey
-from haku.console.operator_auth import OperatorActorDep
-from haku.console.operator_identity import OperatorStatus
 from haku.console.session.status import SessionStatus
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_call_service import (

@@ -16,8 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from tenacity import RetryCallState, Retrying, wait_exponential
 
 from haku.console.database_schema import OAuthTokenState
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.oauth.token_support import token_expires_at, token_is_fresh
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 
 logger = logging.getLogger(__name__)
 

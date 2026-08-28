@@ -37,7 +37,7 @@ from pydantic import SecretStr
 
 from haku.console.grants.http.decide_config import LoadedEgressDecide
 from haku.console.grants.http.models import HttpMethod, HttpOrigin, HttpRequestAllowed, HttpScheme
-from haku.console.grants.http.service import HttpGrantService
+from haku.console.grants.http.service import GrantService
 from haku.console.grants.principal import RequestPrincipal
 from haku.egress.decision import (
     DecideAllowed,
@@ -142,7 +142,7 @@ class HttpDecideService:
     def __init__(
         self,
         *,
-        grants: HttpGrantService,
+        grants: GrantService,
         credentials: LoadedEgressDecide,
         prohibited_cidrs: frozenset[IPv4Network | IPv6Network],
     ) -> None:
