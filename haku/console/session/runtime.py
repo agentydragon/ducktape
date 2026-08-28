@@ -70,10 +70,10 @@ from haku.console.x.runtime import (
     TurnProjectionSeed,
     UnsupportedRuntimeError,
 )
-from haku.runtime.x.bridge.backend import BRIDGE_CREDENTIAL_VARIABLE
-from haku.runtime.x.bridge.client import ReceivedFrame, RecordedFrame
-from haku.runtime.x.bridge.neutral_operations import OperationBatch, RunnerHello
-from haku.runtime.x.bridge.protocol import (
+from haku.runner.backend import BRIDGE_CREDENTIAL_VARIABLE
+from haku.runner.client import ReceivedFrame, RecordedFrame
+from haku.runner.neutral_operations import OperationBatch, RunnerHello
+from haku.runner.protocol import (
     GOING_AWAY_CODE,
     NOT_ADMITTED_CODE,
     RUNNER_TO_CONSOLE,

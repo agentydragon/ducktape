@@ -46,7 +46,7 @@ from haku.console.x.conversation_events import (
     ToolCallCompleted,
     ToolCallStarted,
 )
-from haku.runtime.x.bridge.protocol import HarnessFrame
+from haku.runner.protocol import HarnessFrame
 
 # What the CLI answers a backgrounded `Bash` with: the call returns at once, naming a shell.
 BACKGROUND_SHELL = {"shellId": "bash_1", "command": "sleep 60 && echo done", "stdout": "", "stderr": ""}

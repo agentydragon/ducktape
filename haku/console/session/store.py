@@ -88,8 +88,8 @@ from haku.console.session.status import (
 from haku.console.session.subscription import stream_head
 from haku.console.x.conversation_events import ConversationEvent, ItemSegment, MessageCompleted, MessageStarted, OpenRef
 from haku.console.x.runtime import RuntimeAdapter, RuntimeRegistry
-from haku.runtime.x.bridge.client import ReceivedFrame, RecordedFrame
-from haku.runtime.x.bridge.protocol import HarnessFrame
+from haku.runner.client import ReceivedFrame, RecordedFrame
+from haku.runner.protocol import HarnessFrame
 
 logger = logging.getLogger(__name__)
 

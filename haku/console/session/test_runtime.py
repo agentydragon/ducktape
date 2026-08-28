@@ -118,8 +118,8 @@ from haku.console.x.runtime import (
     TurnProjectionSeed,
 )
 from haku.console.x.testing.recording_claims import RecordingClaims
-from haku.runtime.x.bridge.client import FrameSink, ReceivedFrame, SentPrompt
-from haku.runtime.x.bridge.protocol import NOT_ADMITTED_CODE, HarnessFrame
+from haku.runner.client import FrameSink, ReceivedFrame, SentPrompt
+from haku.runner.protocol import NOT_ADMITTED_CODE, HarnessFrame
 
 
 def test_runtime_deployment_wiring_has_no_application_defaults() -> None:

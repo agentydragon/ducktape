@@ -118,7 +118,7 @@ from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
 from haku.console.x import runtime as console_runtime, runtime_catalog
 from haku.recall_index.config import EmbedderConfig
 from haku.recall_index.openai_embedder import OpenAIEmbedder
-from haku.runtime.x.bridge.protocol import KUBERNETES_PROXY_URL_ENV, RUNNER_SETUP_ENV
+from haku.runner.protocol import KUBERNETES_PROXY_URL_ENV, RUNNER_SETUP_ENV
 from haku.sandbox.kubernetes_client import InClusterSandboxClient
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 

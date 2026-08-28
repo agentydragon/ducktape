@@ -23,7 +23,7 @@ from haku.console.x.claude_code.projection import RecordedFrame
 from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
 from haku.console.x.claude_code.testing.fold import whole_capture
 from haku.console.x.conversation_events import ToolCallCompleted, ToolCallStarted
-from haku.runtime.x.bridge.protocol import HarnessFrame
+from haku.runner.protocol import HarnessFrame
 
 # A bearer smuggled into the log the only realistic way one gets there: an operator ran a command
 # that carried it. If this string reaches an exported line, the export is unusable.

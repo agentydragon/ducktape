@@ -84,7 +84,7 @@ from haku.console.conversation.prompt_origin import PromptOrigin
 from haku.console.database_schema import Conversation, ConversationEventRow, ConversationItem, ConversationTurn
 from haku.console.x import conversation_events
 from haku.console.x.conversation_events import CallRef, ItemRef, OpenRef
-from haku.runtime.x.bridge import neutral_operations
+from haku.runner import neutral_operations
 from util.enum_vocab import UnknownValue
 
 

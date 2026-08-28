@@ -19,7 +19,7 @@ from haku.console.x.claude_code.testing.fold import whole_capture
 from haku.console.x.claude_code.testing.wire import prompt, tool_result
 from haku.console.x.claude_code.wake import GENERIC_WAKE_DESCRIPTION, ClaudeWakeWatcher
 from haku.console.x.conversation_events import TurnCompleted
-from haku.runtime.x.bridge.protocol import HarnessFrame
+from haku.runner.protocol import HarnessFrame
 from util.bazel.runfiles import get_required_path
 
 

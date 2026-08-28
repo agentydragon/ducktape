@@ -33,7 +33,7 @@ out makes a test pass for the wrong reason:
   (`haku/cli_protocol/frame_identity.py`) rather than through a rule copied by hand here.
 
 The launch argv is **not acted on**: what the console passes is pinned by
-`haku/runtime/x/bridge/test_claude_options.py`, and duplicating it here would be a second copy to
+`haku/runner/claude/test_options.py`, and duplicating it here would be a second copy to
 keep in step. One value is copied out of it rather than obeyed — `--append-system-prompt`, appended
 to `system-prompts.jsonl` in `HAKU_STUB_STATE`, one line per CLI this run launched. It is the only
 way a test can see what a session was woken with, and what a *replacement* session is woken with

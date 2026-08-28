@@ -819,5 +819,5 @@ turn's rows.
   (`ClaudeCli` owns `initialize` and `interrupt` in Claude's `control_request`/`control_response`
   spelling) and choosing a backend per session, which the console cannot do while
   `session_runtime.py` imports `build_claude_launch` statically. Both are seams with one caller, and
-  <../../runtime/x/bridge/docs/second_backend.md> is right that a registry before a second backend
+  <../../runner/docs/second_backend.md> is right that a registry before a second backend
   exists is a mechanism with one user.

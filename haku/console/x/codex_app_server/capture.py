@@ -22,8 +22,8 @@ from haku.console.x.codex_app_server import frames
 from haku.console.x.codex_app_server.client import CodexAppServer, CodexThread
 from haku.console.x.codex_app_server.config import SandboxMode
 from haku.console.x.codex_app_server.protocol import Direction
-from haku.runtime.x.bridge.client import RecordedFrame
-from haku.runtime.x.bridge.protocol import HarnessFrame
+from haku.runner.client import RecordedFrame
+from haku.runner.protocol import HarnessFrame
 
 _SENSITIVE_KEY = re.compile(
     r"^(?:.*(?:authorization|credential|password|secret|api[_-]?key|token|cookie|jwt|signature)|sig)$", re.IGNORECASE

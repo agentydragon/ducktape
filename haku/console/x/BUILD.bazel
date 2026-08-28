@@ -10,9 +10,9 @@ py_library(
         "//haku/console/harnesses:kind",
         "//haku/console/session:sandbox_claims",
         "//haku/console/session:system_prompt",
-        "//haku/runtime/x/bridge:client",
-        "//haku/runtime/x/bridge:protocol",
-        "//haku/runtime/x/bridge:transport",
+        "//haku/runner:client",
+        "//haku/runner:protocol",
+        "//haku/runner:transport",
     ],
 )
 
@@ -29,7 +29,7 @@ py_library(
         "//haku/console/x/claude_code:runtime",
         "//haku/console/x/codex_app_server:config",
         "//haku/console/x/codex_app_server:runtime",
-        "//haku/runtime/x/bridge:codex_options",
+        "//haku/runner/codex:options",
     ],
 )
 
@@ -47,7 +47,7 @@ py_test(
         "//haku/console/x/claude_code:projection",
         "//haku/console/x/claude_code/testing:fold",
         "//haku/console/x/claude_code/testing:wire",
-        "//haku/runtime/x/bridge:protocol",
+        "//haku/runner:protocol",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -84,7 +84,7 @@ py_test(
         "//haku/console/x/claude_code:runtime",
         "//haku/console/x/claude_code/testing:fold",
         "//haku/console/x/claude_code/testing:wire",
-        "//haku/runtime/x/bridge:protocol",
+        "//haku/runner:protocol",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
     ],
@@ -96,7 +96,7 @@ py_test(
     srcs = ["test_generation_cutover_e2e.py"],
     data = [
         "//haku/console/x/claude_code/testing:stub_claude_bin",
-        "//haku/runtime/x/bridge:runner_bin",
+        "//haku/runner:runner_bin",
         "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
     ],

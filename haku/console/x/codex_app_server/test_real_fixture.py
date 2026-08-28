@@ -22,7 +22,7 @@ from haku.console.x.conversation_events import (
     TurnCompleted,
     TurnFailed,
 )
-from haku.runtime.x.bridge.protocol import HarnessFrame
+from haku.runner.protocol import HarnessFrame
 from util.bazel.runfiles import get_required_path
 
 _TESTDATA = "haku/console/x/codex_app_server/testdata"

@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from haku.console.x.runtime import WakeStart
-from haku.runtime.x.bridge.protocol import HarnessFrame
+from haku.runner.protocol import HarnessFrame
 
 # What a wake says when none of its frames said anything — the ScheduleWakeup shape.
 GENERIC_WAKE_DESCRIPTION = "The session woke itself."

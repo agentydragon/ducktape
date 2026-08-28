@@ -17,9 +17,9 @@ from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.sandbox_claims import SandboxClaims
 from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.x.conversation_events import ConversationEvent, TurnEnd
-from haku.runtime.x.bridge.client import FrameSink, ReceivedFrame, SentPrompt
-from haku.runtime.x.bridge.protocol import HarnessFrame, HarnessLaunch, TextWebSocket
-from haku.runtime.x.bridge.transport import ProgressSink
+from haku.runner.client import FrameSink, ReceivedFrame, SentPrompt
+from haku.runner.protocol import HarnessFrame, HarnessLaunch, TextWebSocket
+from haku.runner.transport import ProgressSink
 
 
 class RuntimeClient(Protocol):

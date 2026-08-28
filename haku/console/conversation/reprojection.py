@@ -60,7 +60,7 @@ from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.session_frames import BridgeFrameKind
 from haku.console.x import conversation_events
 from haku.console.x.runtime import RuntimeRegistry
-from haku.runtime.x.bridge.protocol import HarnessFrame
+from haku.runner.protocol import HarnessFrame
 from util.enum_vocab import UnknownValue
 
 

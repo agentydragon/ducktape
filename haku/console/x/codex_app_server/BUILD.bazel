@@ -15,7 +15,7 @@ py_library(
     deps = [
         "//haku/console:http_url",
         "//haku/console/harnesses:kind",
-        "//haku/runtime/x/bridge:backend",
+        "//haku/runner:backend",
         "@pypi//pydantic",
     ],
 )
@@ -28,9 +28,9 @@ py_library(
         ":frames",
         ":protocol",
         "//haku/console/x:runtime",
-        "//haku/runtime/x/bridge:client",
-        "//haku/runtime/x/bridge:protocol",
-        "//haku/runtime/x/bridge:transport",
+        "//haku/runner:client",
+        "//haku/runner:protocol",
+        "//haku/runner:transport",
     ],
 )
 
@@ -61,10 +61,10 @@ py_library(
         "//haku/console/harnesses:kind",
         "//haku/console/x:conversation_events",
         "//haku/console/x:runtime",
-        "//haku/runtime/x/bridge:client",
-        "//haku/runtime/x/bridge:codex_options",
-        "//haku/runtime/x/bridge:protocol",
-        "//haku/runtime/x/bridge:transport",
+        "//haku/runner:client",
+        "//haku/runner:protocol",
+        "//haku/runner:transport",
+        "//haku/runner/codex:options",
     ],
 )
 
@@ -77,8 +77,8 @@ py_library(
         ":config",
         ":frames",
         ":protocol",
-        "//haku/runtime/x/bridge:client",
-        "//haku/runtime/x/bridge:protocol",
+        "//haku/runner:client",
+        "//haku/runner:protocol",
     ],
 )
 
@@ -117,8 +117,8 @@ py_test(
         "//:conftest",
         "//haku/console:conftest",
         "//haku/console/x:conftest",
-        "//haku/runtime/x/bridge:client",
-        "//haku/runtime/x/bridge:protocol",
+        "//haku/runner:client",
+        "//haku/runner:protocol",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
@@ -140,9 +140,9 @@ py_test(
         "//haku/console/x:conftest",
         "//haku/console/x:conversation_events",
         "//haku/console/x:runtime",
-        "//haku/runtime/x/bridge:client",
-        "//haku/runtime/x/bridge:codex_options",
-        "//haku/runtime/x/bridge:protocol",
+        "//haku/runner:client",
+        "//haku/runner:protocol",
+        "//haku/runner/codex:options",
         "@pypi//pytest_bazel",
     ],
 )
@@ -198,7 +198,7 @@ py_test(
         "//haku/console/x:conftest",
         "//haku/console/x:conversation_events",
         "//haku/console/x/codex_app_server/testing:fold",
-        "//haku/runtime/x/bridge:protocol",
+        "//haku/runner:protocol",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],

@@ -43,7 +43,7 @@ py_library(
         ":console_replica_bin",
         "//cluster/k8s:haku_console_system_prompt",
         "//haku/console/x/claude_code/testing:stub_claude_bin",
-        "//haku/runtime/x/bridge:runner_bin",
+        "//haku/runner:runner_bin",
     ],
     deps = [
         "//haku/console:chat_models",

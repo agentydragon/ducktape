@@ -25,9 +25,9 @@ from haku.console.x.codex_app_server import frames
 from haku.console.x.codex_app_server.config import ApprovalPolicy, ReasoningEffort, SandboxMode
 from haku.console.x.codex_app_server.protocol import Notification, Request, RequestId, Response, parse_message
 from haku.console.x.runtime import RuntimeClient
-from haku.runtime.x.bridge.client import FrameSink, ReceivedFrame, SentPrompt
-from haku.runtime.x.bridge.protocol import HarnessFrame, HarnessLaunch, TextWebSocket
-from haku.runtime.x.bridge.transport import ProgressSink, WebSocketTransport
+from haku.runner.client import FrameSink, ReceivedFrame, SentPrompt
+from haku.runner.protocol import HarnessFrame, HarnessLaunch, TextWebSocket
+from haku.runner.transport import ProgressSink, WebSocketTransport
 
 logger = logging.getLogger(__name__)
 REQUEST_TIMEOUT_SECONDS = 60.0

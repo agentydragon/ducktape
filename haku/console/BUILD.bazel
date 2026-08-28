@@ -698,7 +698,7 @@ py_library(
         "//haku/console/x:runtime_catalog",
         "//haku/recall_index:config",
         "//haku/recall_index:openai_embedder",
-        "//haku/runtime/x/bridge:protocol",
+        "//haku/runner:protocol",
         "//haku/sandbox:kubernetes_client",
         "//mcp_infra/authentik_auth:config",
         "@pypi//fastapi",

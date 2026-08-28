@@ -15,9 +15,9 @@ from haku.console.x.codex_app_server.config import ReasoningEffort
 from haku.console.x.codex_app_server.runtime import CodexRuntimeAdapter, CodexTurnHandler
 from haku.console.x.conversation_events import ItemSegment, TurnAnswered, TurnCompleted, TurnFailed
 from haku.console.x.runtime import OpenItemSeed, RuntimeLaunch, RuntimeMcpServer, TurnProjectionSeed
-from haku.runtime.x.bridge.client import FrameSink
-from haku.runtime.x.bridge.codex_options import CodexModelProvider
-from haku.runtime.x.bridge.protocol import HarnessFrame, TextWebSocket
+from haku.runner.client import FrameSink
+from haku.runner.codex.options import CodexModelProvider
+from haku.runner.protocol import HarnessFrame, TextWebSocket
 
 
 def _launch(**overrides: Any) -> RuntimeLaunch:

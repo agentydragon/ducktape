@@ -28,10 +28,10 @@ from haku.console.x.runtime import (
     TurnCompletion,
     TurnProjectionSeed,
 )
-from haku.runtime.x.bridge.claude_options import ClaudeSession, HttpMcpServer, build_claude_launch
-from haku.runtime.x.bridge.client import FrameSink
-from haku.runtime.x.bridge.protocol import HarnessFrame, HarnessLaunch, TextWebSocket
-from haku.runtime.x.bridge.transport import ProgressSink
+from haku.runner.claude.options import ClaudeSession, HttpMcpServer, build_claude_launch
+from haku.runner.client import FrameSink
+from haku.runner.protocol import HarnessFrame, HarnessLaunch, TextWebSocket
+from haku.runner.transport import ProgressSink
 
 
 @dataclass(frozen=True, slots=True)

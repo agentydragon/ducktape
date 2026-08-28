@@ -28,7 +28,7 @@ from haku.console.session.store import Store
 
 # The wire's outcome vocabulary collides with the stored one imported above; the alias says whose
 # value crosses which boundary.
-from haku.runtime.x.bridge.neutral_operations import (
+from haku.runner.neutral_operations import (
     NEUTRAL_PROTOCOL_VERSION,
     RUNNER_TO_CONSOLE,
     BatchAck,
@@ -51,7 +51,7 @@ from haku.runtime.x.bridge.neutral_operations import (
 )
 from util.bazel.runfiles import get_required_path
 
-_TESTDATA = "haku/runtime/x/bridge/testdata"
+_TESTDATA = "haku/runner/testdata"
 _PROMPT_ONE = UUID("11111111-1111-4111-8111-111111111101")
 _PROMPT_TWO = UUID("11111111-1111-4111-8111-111111111102")
 _GOLDEN_TURNS = tuple(UUID(f"22222222-2222-4222-8222-2222222222{n:02}") for n in (1, 2, 3, 4))

@@ -12,8 +12,8 @@ import pytest_bazel
 
 from haku.console.x.codex_app_server.client import CodexAppServer, CodexAppServerError, CodexThread
 from haku.console.x.codex_app_server.config import ReasoningEffort
-from haku.runtime.x.bridge.client import RecordedFrame
-from haku.runtime.x.bridge.protocol import HarnessFrame
+from haku.runner.client import RecordedFrame
+from haku.runner.protocol import HarnessFrame
 
 
 class CountingSink:

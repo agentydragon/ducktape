@@ -20,7 +20,7 @@ from haku.console.x.runtime import (
     RuntimeKey,
     RuntimeRegistry,
 )
-from haku.runtime.x.bridge.codex_options import CodexModelProvider
+from haku.runner.codex.options import CodexModelProvider
 
 
 def projection_registry() -> RuntimeRegistry:

@@ -27,15 +27,10 @@ from haku.console.x.runtime import (
     TurnCompletion,
     TurnProjectionSeed,
 )
-from haku.runtime.x.bridge.client import FrameSink
-from haku.runtime.x.bridge.codex_options import (
-    CodexAppServerSession,
-    CodexModelProvider,
-    HttpMcpServer,
-    build_codex_launch,
-)
-from haku.runtime.x.bridge.protocol import HarnessFrame, HarnessLaunch, TextWebSocket
-from haku.runtime.x.bridge.transport import ProgressSink
+from haku.runner.client import FrameSink
+from haku.runner.codex.options import CodexAppServerSession, CodexModelProvider, HttpMcpServer, build_codex_launch
+from haku.runner.protocol import HarnessFrame, HarnessLaunch, TextWebSocket
+from haku.runner.transport import ProgressSink
 
 
 @dataclass(frozen=True, slots=True)

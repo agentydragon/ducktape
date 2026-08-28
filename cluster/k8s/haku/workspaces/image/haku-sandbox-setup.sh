@@ -10,7 +10,7 @@
 #
 # TWO IMAGES RUN THIS, and a change here lands in both:
 #   - the haku-sandbox exec target (this directory's Dockerfile), via Console's bootstrap;
-#   - the Console-owned Claude runner (//haku/runtime/x/bridge:runner_image),
+#   - the Console-owned Claude runner (//haku/runner:runner_image),
 #     which runs it itself before launching Claude Code, so that session comes up with
 #     Haku's manual and its git credential rather than an empty /workspace.
 # The steps a given box does not want are switched off by env, below — never by a second
@@ -119,7 +119,7 @@ fi
 # answers 501 (exec, port-forward, logs -f and watch all stream).
 #
 # The bearer goes in a mode-0600 tokenFile rather than inline, mirroring the Claude runner's
-# _materialize_proxy_kubeconfig (haku/runtime/x/bridge/runner.py). Both conditions must hold,
+# _materialize_proxy_kubeconfig (haku/runner/runner.py). Both conditions must hold,
 # which is also what keeps the two writers apart: the runner Pod has the proxy URL from its
 # claim env but no HAKU_CONSOLE_TOKEN, so it skips this and materializes its own kubeconfig
 # from the exact-session bearer instead.

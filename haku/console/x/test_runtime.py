@@ -21,7 +21,7 @@ from haku.console.x.runtime import (
     UnsupportedRuntimeError,
 )
 from haku.console.x.runtime_catalog import projection_registry
-from haku.runtime.x.bridge.protocol import HarnessFrame
+from haku.runner.protocol import HarnessFrame
 
 
 def test_projection_registry_exposes_each_linked_provider_adapter() -> None:

@@ -10,8 +10,8 @@ import pytest
 import pytest_bazel
 
 from haku.console.x.claude_code.client import ClaudeCli, ClaudeCliError
-from haku.runtime.x.bridge.client import RecordedFrame
-from haku.runtime.x.bridge.protocol import HarnessFrame
+from haku.runner.client import RecordedFrame
+from haku.runner.protocol import HarnessFrame
 
 # The gap between one frame's number and the next. Deliberately not 1: the real sink is a Postgres
 # `Identity` column, which skips, so nothing may come to depend on adjacency.

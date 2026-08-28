@@ -8,7 +8,7 @@ class FrameDirection(StrEnum):
 
     Named for the agent rather than for the console and the runner, because which process sits
     at each end is exactly what session re-adoption changes
-    (haku/runtime/x/bridge/docs/design.md) and a stored record should survive that.
+    (haku/runner/docs/design.md) and a stored record should survive that.
     """
 
     TO_AGENT = "to_agent"

@@ -25,7 +25,7 @@ from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
 from haku.console.x.claude_code.testing.wire import content_block_stop, input_json_delta, tool_use_start
 from haku.console.x.runtime import Checkpoint
 from haku.console.x.runtime_catalog import projection_registry
-from haku.runtime.x.bridge.protocol import HarnessFrame
+from haku.runner.protocol import HarnessFrame
 
 RUNTIMES = projection_registry()
 

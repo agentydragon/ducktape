@@ -30,9 +30,9 @@ py_library(
     srcs = ["client.py"],
     deps = [
         "//haku/cli_protocol:frames",
-        "//haku/runtime/x/bridge:client",
-        "//haku/runtime/x/bridge:protocol",
-        "//haku/runtime/x/bridge:transport",
+        "//haku/runner:client",
+        "//haku/runner:protocol",
+        "//haku/runner:transport",
         "@pypi//pydantic",
     ],
 )
@@ -64,10 +64,10 @@ py_library(
         "//haku/console/harnesses:kind",
         "//haku/console/x:conversation_events",
         "//haku/console/x:runtime",
-        "//haku/runtime/x/bridge:claude_options",
-        "//haku/runtime/x/bridge:client",
-        "//haku/runtime/x/bridge:protocol",
-        "//haku/runtime/x/bridge:transport",
+        "//haku/runner:client",
+        "//haku/runner:protocol",
+        "//haku/runner:transport",
+        "//haku/runner/claude:options",
     ],
 )
 
@@ -76,7 +76,7 @@ py_library(
     srcs = ["wake.py"],
     deps = [
         "//haku/console/x:runtime",
-        "//haku/runtime/x/bridge:protocol",
+        "//haku/runner:protocol",
     ],
 )
 
@@ -88,8 +88,8 @@ py_test(
         "//:conftest",
         "//haku/console:conftest",
         "//haku/console/x:conftest",
-        "//haku/runtime/x/bridge:client",
-        "//haku/runtime/x/bridge:protocol",
+        "//haku/runner:client",
+        "//haku/runner:protocol",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
@@ -142,7 +142,7 @@ py_test(
         "//haku/console/x:conftest",
         "//haku/console/x:conversation_events",
         "//haku/console/x/claude_code/testing:fold",
-        "//haku/runtime/x/bridge:protocol",
+        "//haku/runner:protocol",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
@@ -232,7 +232,7 @@ py_test(
         "//haku/console/x:conversation_events",
         "//haku/console/x/claude_code/testing:fold",
         "//haku/console/x/claude_code/testing:wire",
-        "//haku/runtime/x/bridge:protocol",
+        "//haku/runner:protocol",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],

@@ -119,7 +119,7 @@ tree shows the packages, §3 and §4 settle what the files and classes inside th
 
   harnesses/           # harness *selection*, NOT projection — the only harness-specific code that stays
                        #   console-side after #4667. The native client + frame projection move runner-ward
-                       #   into haku/runtime/x/bridge (x/claude_code + x/codex_app_server projection are
+                       #   into haku/runner (x/claude_code + x/codex_app_server projection are
                        #   deletion-scheduled); the runner then emits neutral operations. Never "runtimes/"
                        #   — "runtime" is retired for the backend (§3.1).
     registry.py  catalog.py     # from x/runtime.py (RuntimeAdapter/Registry) + x/runtime_catalog.py
@@ -143,8 +143,8 @@ One concept → one name across every representation, with representation-role s
 only **on the definition** (never re-minted per import). The verb vocabulary aligns to the
 neutral-operation protocol (#4667): **opened / segment / completed** for items, a turn **ended**,
 and a required **`failure`** string. The neutral-operation protocol is the runner→console wire in
-the runner bridge package (`haku/runtime/x/bridge/`, framing today in
-<../../runtime/x/bridge/protocol.py>; the concrete `neutral_operations.py` vocabulary lands with the
+the runner bridge package (`haku/runner/`, framing today in
+<../../runner/protocol.py>; the concrete `neutral_operations.py` vocabulary lands with the
 #4667 cutover). The console-side native-projector fold (`x/conversation_events.py`) is
 deletion-scheduled by that cutover, so it is out of rename scope — new names align to the neutral
 protocol, not to the fold.
@@ -165,7 +165,7 @@ protocol, not to the fold.
 | channel copy          | `ChannelAttachment`                                                   | `ChannelAttachment`                                                   | `ChannelAttachment` / `channel_attachment`          | landed (C4b)                                                                                                                                                                                                                                                                                                             |
 | harness wire frame    | `SessionFrame`                                                        | `HarnessFrameRecord` / `…View`                                        | `SessionFrame` / `session_frames`                   | `session/session_frames.py` holds the frame vocabulary (`BridgeFrameKind`/`FrameDirection`); `x/session_events.py` (which held `conversation_event` bodies, not frames) dissolved into `conversation/conversation_event.py` (C5)                                                                                         |
 | front-end kind        | `ChannelSurface` (not `ChatSurface`)                                  |                                                                       | text col + CHECK                                    | landed (C4b)                                                                                                                                                                                                                                                                                                             |
-| harness (backend)     | `harness` — retire "runtime" for the backend                          | —                                                                     | —                                                   | Claude Code / Codex. Native client + frame projection move **runner-ward** into `haku/runtime/x/bridge` (#4667); the console residue is `harnesses/` (selection/registration). "runtime" survives only for a running incarnation (session/conversation), never the backend                                               |
+| harness (backend)     | `harness` — retire "runtime" for the backend                          | —                                                                     | —                                                   | Claude Code / Codex. Native client + frame projection move **runner-ward** into `haku/runner` (#4667); the console residue is `harnesses/` (selection/registration). "runtime" survives only for a running incarnation (session/conversation), never the backend                                                         |
 | harness kind (wire)   | `harness_kind` / `HarnessKind` (was `runtime_kind` / `RuntimeKind`)   | `HarnessKind` enum                                                    | `harness_kind` col + published `HarnessKind` schema | **rename, not free** — #4431 made `runtime_kind` a closed, read-only, **published** wire discriminator (`claude_code`\|`codex_app_server`) with a schema contract test; the rename is a coordinated stored + wire + OpenAPI change (expand/contract; published-schema consumers move in lockstep), not a mechanical swap |
 
 **The module-name inversion** (#4772 core) is fixed: the `conversation_event` row bodies that
@@ -265,7 +265,7 @@ every package the split creates, not just `grants/`:
 - **`mcp/`**: `mcp_server.py` → `server.py`, `mcp_approval.py` → `approval.py`, `mcp_execution.py` →
   `execution.py`; `McpExecutionContext` → `ExecutionContext`, `McpExecutionCaller` → `ExecutionCaller`.
 - **harness adapters**: the native client + `*_projection.py` move **runner-ward** into
-  `haku/runtime/x/bridge/` (#4667), where the backend-prefix drop applies (`claude_code_projection.py`
+  `haku/runner/` (#4667), where the backend-prefix drop applies (`claude_code_projection.py`
   → `projection.py`). Console keeps no `runtimes/`; the residual harness _selection_ is `harnesses/`
   (`RuntimeAdapter` → `Adapter`, `RuntimeRegistry` → `Registry`).
 
@@ -335,7 +335,7 @@ package split below keeps these exclusions structurally enforceable.
 
 | Binary                  | Tree                                                             | May import                                                                                                                                                           | MUST NOT import                                                                                                                                                                                                                                                                                                  | Reaches console via                        |
 | ----------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| **runner**              | `haku/runtime/x/bridge`                                          | its own bridge + shared wire                                                                                                                                         | **console (any package)** — the import arrow is console→runner, never the reverse                                                                                                                                                                                                                                | the neutral-operation socket (#4667)       |
+| **runner**              | `haku/runner`                                                    | its own bridge + shared wire                                                                                                                                         | **console (any package)** — the import arrow is console→runner, never the reverse                                                                                                                                                                                                                                | the neutral-operation socket (#4667)       |
 | **haku-console server** | `<platform>/console/*`                                           | its own domain packages; the runner's shared wire vocab                                                                                                              | —                                                                                                                                                                                                                                                                                                                | in-process                                 |
 | **egress proxy**        | `haku/egress` (forthcoming; egress-grant work #4941/#4957/#4942) | the shared decision wire vocabulary only                                                                                                                             | console `identity/`, `grants/`, `mcp/` — anything beyond the shared decision vocab                                                                                                                                                                                                                               | HTTP to console (not a Python import)      |
 | **indexer**             | `haku/indexer/` (forthcoming, #4887)                             | the shared `haku/recall_index/` schema only                                                                                                                          | any console package — `identity/`, `grants/`, `mcp/` (incl. the `mcp/tools/recall/` read path), approval; its DB role is narrow, the deps must mirror it                                                                                                                                                         | its narrow DB role                         |
@@ -345,7 +345,7 @@ package split below keeps these exclusions structurally enforceable.
 
 Directionality notes, verified against `devel`:
 
-- **console → runner, never the reverse.** No file under `haku/runtime` imports `haku.console`;
+- **console → runner, never the reverse.** No file under `haku/runner` imports `haku.console`;
   console's adapters import the runner's protocol. The runner emitting neutral operations must never
   gain a console dependency — that is the whole point of #4667's boundary.
 - **egress depends on the shared decision vocab, not on console.** The egress proxy reaches console

@@ -1,6 +1,6 @@
 """The post-cut full stack, end to end — the operator's health gate for the generation window.
 
-A real runner process (`//haku/runtime/x/bridge:runner_bin`) over a real websocket to a real Console
+A real runner process (`//haku/runner:runner_bin`) over a real websocket to a real Console
 journal handler, with the stub `claude` as the only stand-in — replacing the v3 bridge e2e, which
 went with the fold it pinned. This is stage 4's health gate
 (#4667 comment 5422375226 step 5): the same flow the operator runs after rolling the images to
@@ -43,7 +43,7 @@ from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
 from util.testing.asgi import serve_app
 
-RUNNER_BIN = "_main/haku/runtime/x/bridge/runner_bin"
+RUNNER_BIN = "_main/haku/runner/runner_bin"
 STUB_CLAUDE = "_main/haku/console/x/claude_code/testing/stub_claude_bin"
 
 

@@ -24,7 +24,7 @@ from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 from kubernetes_asyncio.config.config_exception import ConfigException
 from pydantic import BaseModel, ConfigDict
 
-from haku.runtime.x.bridge.backend import BRIDGE_CREDENTIAL_VARIABLE
+from haku.runner.backend import BRIDGE_CREDENTIAL_VARIABLE
 from util.kubernetes import CustomObjectsClient
 
 logger = logging.getLogger(__name__)

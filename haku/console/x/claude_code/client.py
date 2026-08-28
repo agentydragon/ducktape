@@ -39,9 +39,9 @@ from haku.cli_protocol.frames import (
     InitializeRequest,
     InterruptRequest,
 )
-from haku.runtime.x.bridge.client import FrameSink, ReceivedFrame, SentPrompt
-from haku.runtime.x.bridge.protocol import HarnessFrame, HarnessLaunch, TextWebSocket
-from haku.runtime.x.bridge.transport import ProgressSink, WebSocketTransport
+from haku.runner.client import FrameSink, ReceivedFrame, SentPrompt
+from haku.runner.protocol import HarnessFrame, HarnessLaunch, TextWebSocket
+from haku.runner.transport import ProgressSink, WebSocketTransport
 
 logger = logging.getLogger(__name__)
 

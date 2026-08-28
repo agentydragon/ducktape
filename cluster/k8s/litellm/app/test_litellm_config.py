@@ -276,7 +276,7 @@ def test_terraform_key_allowlists_only_name_models_the_proxy_serves() -> None:
 
 # haku-console picks its Codex chat runtime's model from Git YAML — the one Codex consumer
 # whose model choice lives outside the baked-config and Terraform pins above. The runner
-# hardcodes wire_api="responses" (haku/runtime/x/bridge/codex_options.py), so the model
+# hardcodes wire_api="responses" (haku/runner/codex/options.py), so the model
 # must be a Responses-wire entry; a Messages-wire name fails every turn at /v1/responses
 # (haku/console/x/codex_app_server/testdata/real_provider_failure.sanitized.jsonl).
 def test_console_codex_harnesses_use_oai_responses_wire_models() -> None:

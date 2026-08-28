@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.http_url import UncredentialedHttpUrl
-from haku.runtime.x.bridge.backend import BRIDGE_CREDENTIAL_VARIABLE
+from haku.runner.backend import BRIDGE_CREDENTIAL_VARIABLE
 
 
 class ReasoningEffort(StrEnum):
