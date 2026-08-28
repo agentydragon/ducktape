@@ -1138,6 +1138,123 @@ def test_haku_indexer_worker_contract(k8s_dir: Path) -> None:
     assert f"TO {role['name']}" in sql
 
 
+def test_haku_matrix_adapter_worker_contract(k8s_dir: Path) -> None:
+    """The Matrix credential and loop live on the adapter pod; the console API pod carries neither."""
+    console_dir = k8s_dir / "haku" / "console"
+    deployment = yaml.safe_load((console_dir / "deployment.yaml").read_text(encoding="utf-8"))
+    adapter_raw = (console_dir / "matrix-adapter-deployment.yaml").read_text(encoding="utf-8")
+    adapter = yaml.safe_load(adapter_raw)
+    adapter_pod = adapter["spec"]["template"]["spec"]
+    adapter_container = one(adapter_pod["containers"])
+    server = one(c for c in deployment["spec"]["template"]["spec"]["containers"] if c["name"] == "server")
+
+    assert adapter_raw.count('# {"$imagepolicy": "flux-system:haku-matrix-adapter"}') == 1
+    assert adapter["spec"]["strategy"]["rollingUpdate"]["maxUnavailable"] == 0
+    assert adapter_pod["automountServiceAccountToken"] is False
+
+    # The whole Matrix surface left the console pod: no matrix-shaped env, and the bot-password
+    # Secret's only consumer in this namespace is the adapter. The bot password is reflected in
+    # from the matrix namespace — the reflection source must allow this namespace and name the
+    # Secret the adapter mounts, so a rename on either side fails here rather than at runtime.
+    server_env = {entry["name"]: entry for entry in server["env"]}
+    assert not any("MATRIX" in name for name in server_env)
+    adapter_env = {entry["name"]: entry for entry in adapter_container["env"]}
+    password_secret = adapter_env["HAKU_MATRIX_ADAPTER_MATRIX__PASSWORD"]["valueFrom"]["secretKeyRef"]
+    assert password_secret["name"] not in _secret_refs(server)
+    assert "optional" not in password_secret
+    reflection_source = one(
+        doc
+        for doc in yaml.safe_load_all(
+            (k8s_dir / "matrix" / "secrets" / "haku-matrix-bot-password.sops.yaml").read_text(encoding="utf-8")
+        )
+        if doc.get("kind") == "Secret"
+    )
+    assert reflection_source["metadata"]["name"] == password_secret["name"]
+    reflection_namespaces = reflection_source["metadata"]["annotations"][
+        "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"
+    ]
+    assert adapter["metadata"]["namespace"] in reflection_namespaces.split(",")
+
+    # The image is a private Forgejo package: the pod's pull secret must be the ducktape-ci
+    # credential, whose reflection source must both name that Secret and grant this namespace —
+    # and the Flux scan must authenticate the same repository with the same credential.
+    pull_secret = one(adapter_pod["imagePullSecrets"])["name"]
+    registry_creds = one(
+        doc
+        for doc in yaml.safe_load_all(
+            (k8s_dir / "forgejo-images" / "registry-creds.sops.yaml").read_text(encoding="utf-8")
+        )
+        if doc.get("kind") == "Secret"
+    )
+    assert registry_creds["metadata"]["name"] == pull_secret
+    for scope in ("allowed", "auto"):
+        namespaces = registry_creds["metadata"]["annotations"][
+            f"reflector.v1.k8s.emberstack.com/reflection-{scope}-namespaces"
+        ]
+        assert adapter["metadata"]["namespace"] in namespaces.split(",")
+    image_repository = yaml.safe_load(
+        (k8s_dir / "flux-image-automation-forgejo" / "haku-matrix-adapter-image-repository.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert adapter_container["image"].startswith(image_repository["spec"]["image"] + ":")
+    assert image_repository["spec"]["secretRef"]["name"] == pull_secret
+
+    # The operator-subject mapping is shared state with the console (one SSOT key), and it is the
+    # only Secret the two pods share: the OIDC client secrets in that Secret's other keys stay off
+    # this pod, and everything else the adapter mounts is its own.
+    oidc_refs = [
+        entry["valueFrom"]["secretKeyRef"]
+        for entry in adapter_container["env"]
+        if "valueFrom" in entry
+        and "secretKeyRef" in entry["valueFrom"]
+        and entry["valueFrom"]["secretKeyRef"]["name"] in _secret_refs(server)
+    ]
+    assert {ref["key"] for ref in oidc_refs} == {"operator_subject"}
+    subject_secret = one({ref["name"] for ref in oidc_refs})
+    assert server_env["HAKU_CONSOLE_OPERATOR_OIDC__CLIENT_SECRET"]["valueFrom"]["secretKeyRef"]["name"] == (
+        subject_secret
+    )
+
+    # The adapter resolves that subject through anchor rows written at console login, so the two
+    # Deployments must name one trust domain.
+    assert (
+        adapter_env["HAKU_MATRIX_ADAPTER_OPERATOR_IDENTITY_TRUST_DOMAIN"]["value"]
+        == server_env["HAKU_CONSOLE_OPERATOR_IDENTITY__TRUST_DOMAIN"]["value"]
+    )
+
+    # The launch-identity registry is the one deploy-owned config file the console reads: the
+    # shared ConfigMap, mounted at the path the worker's config-file setting names.
+    config_volume = one(volume for volume in adapter_pod["volumes"] if volume["name"] == "config")
+    server_config_volume = one(
+        volume for volume in deployment["spec"]["template"]["spec"]["volumes"] if volume["name"] == "config"
+    )
+    assert config_volume["configMap"]["name"] == server_config_volume["configMap"]["name"]
+    config_mount = one(mount for mount in adapter_container["volumeMounts"] if mount["name"] == "config")
+    assert adapter_env["HAKU_MATRIX_ADAPTER_CONFIG_FILE"]["value"] == f"{config_mount['mountPath']}/config.yaml"
+
+    # Reloader watches exactly what the pod mounts.
+    annotations = adapter["metadata"]["annotations"]
+    assert annotations["configmap.reloader.stakater.com/reload"] == config_volume["configMap"]["name"]
+    assert set(annotations["secret.reloader.stakater.com/reload"].split(",")) == _secret_refs(adapter_container)
+
+    # The narrow database role, wired end to end: the Deployment consumes the ESO-generated
+    # Secret, CNPG syncs that Secret's password onto the managed role of the same name, and the
+    # provisioner SQL grants to that role — and never to it via a default-privileges blanket.
+    db_secret = adapter_env["HAKU_MATRIX_ADAPTER_DATABASE_URL"]["valueFrom"]["secretKeyRef"]["name"]
+    role_secret_docs = list(
+        yaml.safe_load_all((console_dir / "db" / "matrix-adapter-role-secret.yaml").read_text(encoding="utf-8"))
+    )
+    external_secret = one(doc for doc in role_secret_docs if doc["kind"] == "ExternalSecret")
+    assert external_secret["spec"]["target"]["name"] == db_secret
+    cluster_cr = yaml.safe_load((console_dir / "db" / "postgres-cluster.yaml").read_text(encoding="utf-8"))
+    role = one(role for role in cluster_cr["spec"]["managed"]["roles"] if role["passwordSecret"]["name"] == db_secret)
+    assert external_secret["spec"]["target"]["template"]["data"]["username"] == role["name"]
+    sql = (console_dir / "matrix-adapter-role.sql").read_text(encoding="utf-8")
+    assert f"TO {role['name']}" in sql
+    assert "ALTER DEFAULT PRIVILEGES" not in sql
+
+
 def test_haku_console_migration_release_gate(k8s_dir: Path) -> None:
     """Only the image-coupled, unprivileged Job owns Console DDL in a rollout."""
     console_dir = k8s_dir / "haku" / "console"

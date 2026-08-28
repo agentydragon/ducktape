@@ -41,6 +41,7 @@ from haku.console.agents.enrollment import (
     ReconnectableAgent,
     ReconnectAgentDecision,
 )
+from haku.console.agents.launch_authority import StaticAgentAuthorization, StaticLaunchAuthority
 from haku.console.agents.models import (
     AgentStatus,
     ClientRegistrationKind,
@@ -82,7 +83,6 @@ from haku.console.operator_identity import (
 )
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import AgentActor
-from haku.console.x.launch_identity import LaunchAgentRejectedError
 from mcp_infra.authentik_auth.oidc_principal import VerifiedOidcPrincipal
 
 _INTERACTION_LIFETIME = datetime.timedelta(minutes=10)
@@ -107,16 +107,6 @@ class StaticAgentDefinition:
     secret_reference: str
     token_fingerprint: bytes
     access_profile_id: str
-
-
-@dataclass(frozen=True, slots=True)
-class StaticAgentAuthorization:
-    """Canonical runtime identity of one currently authorized static binding."""
-
-    agent_id: UUID
-    binding_id: UUID
-    operator_id: UUID
-    access_profile_id: str | None = None
 
 
 class StaticAgentDefinitionError(ValueError):
@@ -210,6 +200,7 @@ class PostgresAgentAuthority:
         if default_access_profile_id not in self._access_profiles:
             raise ValueError("default access profile must be configured")
         self._default_access_profile_id = default_access_profile_id
+        self._launch_authority = StaticLaunchAuthority()
 
     def available_access_profiles(self) -> tuple[str, ...]:
         return self._access_profiles
@@ -618,58 +609,8 @@ class PostgresAgentAuthority:
         access_profile_id: str | None = None,
         binding_id: UUID | None = None,
     ) -> StaticAgentAuthorization:
-        """Resolve active launch authority at the caller's transaction linearization point."""
-        if not db.in_transaction():
-            raise RuntimeError("launch authorization requires an active caller transaction")
-        # Lock in a stable order (operators → agents → credential_bindings → static_credentials).
-        # The locks are held until the caller's transaction commits, so a concurrent
-        # disable/rotation cannot pass this check and then invalidate the conversation or
-        # attachment before it is durable.
-        #
-        # Guard locks, so FOR NO KEY UPDATE — never FOR UPDATE. A disable/rotation is a non-key
-        # UPDATE, which FOR NO KEY UPDATE already blocks. FOR UPDATE would additionally conflict
-        # with the implicit FOR KEY SHARE that any concurrent INSERT/UPDATE referencing these rows
-        # takes through its foreign-key check (a session or conversation write naming its
-        # operator). Such a writer already holds its own rows, so the stronger mode closes a lock
-        # cycle and deadlocks where this one merely waits its turn.
-        operator = await db.get(Operator, operator_id, with_for_update={"key_share": True})
-        agent = await db.get(Agent, agent_id, with_for_update={"key_share": True})
-        binding = await db.scalar(
-            select(CredentialBinding)
-            .where(
-                CredentialBinding.agent_id == agent_id,
-                CredentialBinding.kind == CredentialKind.STATIC,
-                CredentialBinding.status == CredentialBindingStatus.ACTIVE,
-                *((CredentialBinding.binding_id == binding_id,) if binding_id is not None else ()),
-            )
-            .order_by(CredentialBinding.activated_at.desc())
-            .limit(1)
-            .with_for_update(key_share=True)
-        )
-        credential = (
-            None
-            if binding is None
-            else await db.get(StaticCredential, binding.binding_id, with_for_update={"key_share": True})
-        )
-        if (
-            operator is None
-            or agent is None
-            or credential is None
-            or operator.status is not OperatorStatus.ACTIVE
-            or agent.owner_operator_id != operator_id
-            or agent.status is not AgentStatus.ACTIVE
-            or binding is None
-            or binding.kind is not CredentialKind.STATIC
-            or binding.status is not CredentialBindingStatus.ACTIVE
-        ):
-            raise LaunchAgentRejectedError
-        # Replacement sessions use the conversation's pinned profile.  The Agent's current profile
-        # is deliberately not required to equal it: profile changes must not retarget an old thread.
-        return StaticAgentAuthorization(
-            agent.agent_id,
-            binding.binding_id,
-            operator.operator_id,
-            access_profile_id if access_profile_id is not None else agent.access_profile_id,
+        return await self._launch_authority.launch_authorization(
+            db, operator_id=operator_id, agent_id=agent_id, access_profile_id=access_profile_id, binding_id=binding_id
         )
 
     async def static_authorization_for_fingerprint(

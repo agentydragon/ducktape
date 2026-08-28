@@ -61,13 +61,6 @@ def test_subprocess_does_not_import_from_cwd(tmp_path: Path):
     assert result.returncode == 0, f"Subprocess imported from CWD: {result.stderr}"
 
 
-def test_run_python_module_basic():
-    result = run_python_module("sys", capture_output=True, text=True, check=False)
-    # python -m sys doesn't exist as runnable, but the command should execute
-    # without FileNotFoundError (sys.executable is found)
-    assert isinstance(result.returncode, int)
-
-
 def test_run_python_module_version():
     result = run_python_module("platform", capture_output=True, text=True, check=False)
     # python -m platform prints platform info

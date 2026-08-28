@@ -785,7 +785,7 @@ async def test_a_frame_reaches_the_inspector_with_its_payload_whole(session_stor
 
     assert page.frames[0].payload == payload
     assert page.frames[0].direction == FrameDirection.TO_AGENT
-    assert page.runtime_kind == "claude_code"
+    assert page.harness_kind == "claude_code"
 
 
 async def test_sessions_come_back_newest_first_with_the_channels_holding_their_thread(
@@ -800,7 +800,7 @@ async def test_sessions_come_back_newest_first_with_the_channels_holding_their_t
     sessions = await session_store.list_sessions(cursor=None, limit=10, scope=UnrestrictedReads())
 
     assert sessions[0].session_id == matrix.session_id
-    assert sessions[0].runtime_kind == "claude_code"
+    assert sessions[0].harness_kind == "claude_code"
     assert [attachment.address for attachment in sessions[0].attachments] == ["!room:example.org"]
     assert sessions[1].attachments == []
 
@@ -1246,13 +1246,13 @@ async def test_operator_conversation_read_surface_keeps_inventory_and_transcript
     detail = await session_store.get_operator_conversation(operator_id, conversation_id)
 
     assert page.conversations[0].conversation_id == conversation_id
-    assert page.conversations[0].runtime_kind == "claude_code"
+    assert page.conversations[0].harness_kind == "claude_code"
     assert [attachment.address for attachment in page.conversations[0].attachments] == [ROOM]
     assert page.conversations[0].live_session is not None
     assert page.conversations[0].live_session.session_id == matrix.session_id
     assert page.conversations[0].item_count == 1
     assert [attachment.address for attachment in detail.attachments] == [ROOM]
-    assert detail.runtime_kind == "claude_code"
+    assert detail.harness_kind == "claude_code"
     assert detail.session.session_id == matrix.session_id
     asked = one(entry for entry in detail.entries if isinstance(entry, PromptEntry))
     assert asked.text == "What is happening?"
@@ -1295,8 +1295,8 @@ async def test_a_replacement_session_leaves_the_thread_and_its_attachment_where_
     detail = await session_store.get_operator_conversation(operator_id, conversation_id)
 
     assert [conversation.conversation_id for conversation in page.conversations] == [conversation_id]
-    assert page.conversations[0].runtime_kind == "claude_code"
-    assert detail.runtime_kind == "claude_code"
+    assert page.conversations[0].harness_kind == "claude_code"
+    assert detail.harness_kind == "claude_code"
     assert detail.session.session_id == second.session_id
     assert [session.session_id for session in detail.earlier_sessions] == [first.session_id]
     assert [attachment.address for attachment in detail.attachments] == [ROOM]

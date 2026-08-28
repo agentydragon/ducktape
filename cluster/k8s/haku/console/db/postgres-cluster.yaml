@@ -51,3 +51,13 @@ spec:
         passwordSecret:
           name: haku-console-db-indexer
         comment: "haku-indexer worker: recall_index schema read/write + SELECT on conversation_item (see cluster/k8s/haku/console/indexer-role.sql)"
+      # The haku-matrix-adapter worker's narrow credential: the Matrix channel's own tables,
+      # the conversation seam, and the identity/authority reads a room bind needs. Object
+      # GRANTs are applied by the matrix-adapter-role provisioner Job in ../ (they target
+      # tables the migration Job creates).
+      - name: haku_matrix_adapter
+        ensure: present
+        login: true
+        passwordSecret:
+          name: haku-console-db-matrix-adapter
+        comment: "haku-matrix-adapter worker: matrix/channel tables read/write + conversation seam + identity reads (see cluster/k8s/haku/console/matrix-adapter-role.sql)"

@@ -24,6 +24,8 @@ from haku.console.tools.hostexec_client import HostexecClient
 from haku.hostexec.wire import RunAsUser
 from mcp_infra.exec.models import BaseExecResult, TimeoutMs
 
+# Wire-frozen id: named by cluster/k8s/haku/console/config.yaml and persisted in
+# ledger `server_id` rows — renaming is a config + data migration.
 HOSTEXEC_SERVER_ID = "hostexec"
 
 # hostexec-specific: NOT `mcp_infra.exec.models.CMD_DESCRIPTION` (that constant documents the

@@ -1,0 +1,124 @@
+# The haku-matrix-adapter worker: the Matrix channel adapter (sync loop, room
+# subscription, notices reconciliation), extracted from the console API pod so a
+# homeserver outage, a matrix-nio upgrade, or an adapter bug never rolls or
+# disrupts the Console perimeter (#4864) — and so the Matrix credential lives
+# here and not on the console pod.
+#
+# Replicas may overlap freely — with each other, and with console replicas of a
+# release that still ran the loop: the sync loop runs on whichever replica holds
+# the cluster-wide MXSY advisory lock, so co-existence costs a lost election,
+# never a double-processed batch.
+#
+# Narrow identity by design: no ServiceAccount token, no operator/agent auth,
+# approval ledger, connector credentials, or Web Push identity. It holds the
+# Matrix bot password, the operator-subject mapping key, and the
+# haku_matrix_adapter database role (channel tables + the conversation seam +
+# identity reads, see matrix-adapter-role.sql).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: haku-matrix-adapter
+  namespace: haku-console
+  labels:
+    app.kubernetes.io/name: haku-matrix-adapter
+  annotations:
+    # The launch-identity registry lives in the shared console config; a config or
+    # credential change restarts only this worker's loop.
+    configmap.reloader.stakater.com/reload: haku-console-config
+    secret.reloader.stakater.com/reload: haku-console-db-matrix-adapter,haku-matrix-bot-password,haku-console-oidc
+spec:
+  replicas: 1
+  strategy:
+    # A replacement that cannot start (schema-incompatible image, bad config) crash-loops
+    # while the previous replica keeps serving the rooms; the advisory lock makes the
+    # surge overlap safe.
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-matrix-adapter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-matrix-adapter
+    spec:
+      # Same zone as the console's Postgres (cnpg_conventions R5); Matrix itself is
+      # also OVH-pinned.
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      # Private Forgejo package — ducktape-ci credential reflected into this
+      # namespace from cluster/k8s/forgejo-images/. A Forgejo outage means no new
+      # pull; acceptable for this non-critical worker (the running replica keeps
+      # serving, and the console API is untouched).
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: adapter
+          image: git.allegedly.works/ducktape-ci/haku-matrix-adapter:devel-20260828000636-964d71d # {"$imagepolicy": "flux-system:haku-matrix-adapter"}
+          imagePullPolicy: Always
+          env:
+            - name: HAKU_MATRIX_ADAPTER_CONFIG_FILE
+              value: /etc/haku-console/config/config.yaml
+            # The narrow haku_matrix_adapter role (db/matrix-adapter-role-secret.yaml),
+            # never the application owner: the worker cannot read the approval ledger,
+            # OAuth state, or session frames.
+            - name: HAKU_MATRIX_ADAPTER_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-db-matrix-adapter
+                  key: DATABASE_URL
+            - name: HAKU_MATRIX_ADAPTER_MATRIX__HOMESERVER
+              value: http://matrix-synapse.matrix.svc.cluster.local:8008
+            - name: HAKU_MATRIX_ADAPTER_MATRIX__USER_ID
+              value: "@haku:allegedly.works"
+            - name: HAKU_MATRIX_ADAPTER_MATRIX__OPERATOR_USER_ID
+              value: "@agentydragon:allegedly.works"
+            # The Authentik sub for the MXID above; Matrix has no OIDC identity of its
+            # own, so this pair is the whole sender-to-Operator mapping. One key of the
+            # console's OIDC Secret — the sub is shared state, and the client secrets in
+            # that Secret's other keys never reach this pod's env.
+            - name: HAKU_MATRIX_ADAPTER_MATRIX__OPERATOR_SUBJECT
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-oidc
+                  key: operator_subject
+            # The bot credential, reflected in from the matrix namespace. Required —
+            # running the sync loop is this pod's whole job, so kubelet holds the pod
+            # until the reflector lands it rather than starting an idle worker.
+            - name: HAKU_MATRIX_ADAPTER_MATRIX__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: haku-matrix-bot-password
+                  key: password
+            # Must equal the console's HAKU_CONSOLE_OPERATOR_IDENTITY__TRUST_DOMAIN: the
+            # operator subject resolves through anchor rows keyed by it, written at
+            # console login.
+            - name: HAKU_MATRIX_ADAPTER_OPERATOR_IDENTITY_TRUST_DOMAIN
+              value: auth.allegedly.works/authentik-user-id/v1
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/haku-console/config
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: config
+          configMap:
+            name: haku-console-config

@@ -3,8 +3,10 @@
 # configMapGenerator; NOT a k8s manifest (kubeconform-excluded,
 # cluster-manifest-ignored). Model lists must match the zone key in
 # tf/gitops/litellm-keys/main.tf and the generated workers-LiteLLM config —
-# parity-tested by //haku/x/dispatch:test_zones_config. The oai zone joins here
-# at build-order step 5.
+# parity-tested by //haku/x/dispatch:test_zones_config. Each zone's namespace
+# must be its stamped perimeter (cluster/k8s/x/haku/zones/<zone>/ + the
+# dispatcher's rbac-zone-<zone>.yaml); adding a zone is a reviewed, multi-file
+# change (build-order step 5 for oai).
 zai:
   namespace: haku-sandbox-zai
   models:

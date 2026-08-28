@@ -105,20 +105,7 @@ from haku.console.x import (
     sandbox_allocation,
     sandbox_claims,
     session_runtime,
-    subscription,
 )
-
-# Aliased: bare `conversation`, `sync` and `outbox` would each collide with something this module
-# already talks about (the console's own conversation record, the index sweeps, the push queue).
-from haku.console.x.channels.matrix import (
-    conversation as matrix_conversation,
-    ingress_ledger as matrix_ingress_ledger,
-    outbox as matrix_outbox,
-    outbox_wake as matrix_outbox_wake,
-    revisions as matrix_revisions,
-    sync as matrix_sync,
-)
-from haku.console.x.channels.matrix.room_copy import RoomCopy
 from haku.console.x.conversation_history import ConversationHistory
 from haku.console.x.conversation_live_updates import ConversationLiveUpdates
 from haku.console.x.conversation_wakes import ConversationWakes
@@ -422,35 +409,6 @@ def create_app(
 
         return tuple([await resolve_agent(agent) for agent in loaded_static_agents])
 
-    # Matrix chat surface, absent when unconfigured: the console serves its approval queue
-    # without it and simply does not run the sync loop. Neutral runtime supervision is composed
-    # after the configured runtime catalog because it provisions sessions through that service.
-    matrix_sync_service: matrix_sync.MatrixSyncService | None = None
-    matrix_conversation_store: matrix_conversation.MatrixConversationStore | None = None
-    if (matrix_config := settings.matrix) is not None and matrix_config.password is not None:
-        matrix_conversation_store = matrix_conversation.MatrixConversationStore(db_sessions)
-        matrix_ledger = matrix_ingress_ledger.IngressLedger(db_sessions)
-        # The sync service hosts one reconciler per live attachment — each room's subscriber to the
-        # conversation record and the drain of its reply outbox — so the record readers, the
-        # correspondence store and the outbox are all composed into it.
-        matrix_sync_service = matrix_sync.MatrixSyncService(
-            matrix_config,
-            matrix_config.password,
-            db_engine,
-            matrix_sync.MatrixSyncStore(db_sessions),
-            matrix_conversation_store,
-            operator_identity_store,
-            matrix_conversation.MatrixTurns(matrix_config, session_store, operator_identity_store, matrix_ledger),
-            matrix_outbox.RoomOutbox(db_sessions),
-            matrix_revisions.RevisionLog(db_sessions),
-            matrix_ledger,
-            RoomCopy(db_sessions),
-            # The channel's own wake wire; the sync leader starts and stops it with its reconcilers.
-            matrix_outbox_wake.OutboxWakes(database_url),
-            db_sessions,
-            subscription.ConversationStream(db_sessions),
-            conversation_wakes,
-        )
     # Execution exists only when a launch-capable adapter was configured. Read-only replicas keep
     # the same registry in their store above but expose no session-creation runtime service.
     default_runtime_kind: RuntimeKind | None = None
@@ -488,10 +446,6 @@ def create_app(
             default_agent_id=default_chat_agent_id,
             default_runtime_kind=default_runtime_kind,
         )
-        if matrix_conversation_store is not None:
-            matrix_conversation_store.configure_launch_identity(
-                authorize_chat_launch, default_agent_id=default_chat_agent_id, default_runtime_kind=default_runtime_kind
-            )
     else:
         session_service = None
     sandbox_allocator = (
@@ -721,7 +675,6 @@ def create_app(
         await mcp_operator_oauth_store.forget_unconfigured_servers(console_config.mcp.servers)
         if session_service is not None:
             await session_service.reconcile_terminal_claims()
-        matrix_running = matrix_sync_service.run() if matrix_sync_service is not None else contextlib.nullcontext()
         # Conversation demand owns session creation and replacement. It is a sibling of every
         # channel and of sandbox allocation, so browser-only and unattached conversations receive
         # the same maintenance as Matrix-bound ones.
@@ -729,7 +682,7 @@ def create_app(
         # Prompt demand is channel-neutral and durable. Start its elected reconciler only after
         # the notification listener is live; the first sweep is also the restart backstop.
         allocating = sandbox_allocator.run() if sandbox_allocator is not None else contextlib.nullcontext()
-        async with agent_authority.expiry_maintenance(), oauth_maintenance.run(), catalogs.run(), matrix_running:
+        async with agent_authority.expiry_maintenance(), oauth_maintenance.run(), catalogs.run():
             await console_event_hub.start()
             await session_wakes.start()
             await conversation_wakes.start()

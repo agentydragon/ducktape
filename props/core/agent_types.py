@@ -126,7 +126,9 @@ class CriticDevImproveTypeConfig(BaseModel):
     critic_model: str = Field(description="Model used for critic evaluations")
 
 
-# Discriminated union for type-specific config
+# Discriminated union for type-specific config. The `agent_type` literal values and the
+# variants' field structure are persisted in `agent_runs.type_config` (JSONB) — renaming
+# or removing a variant needs a data migration for existing rows.
 TypeConfig = Annotated[
     CriticTypeConfig | GraderTypeConfig | FreeformTypeConfig | CriticDevOptimizeTypeConfig | CriticDevImproveTypeConfig,
     Field(discriminator="agent_type"),

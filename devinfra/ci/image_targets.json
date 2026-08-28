@@ -98,6 +98,11 @@
       "target": "//haku/console:indexer_image",
       "test": "//haku/console/..."
     },
+    "haku-matrix-adapter": {
+      "target": "//haku/console/channels/matrix:adapter_image",
+      "test": "//haku/console/...",
+      "registry": "forgejo"
+    },
     "plaid-mcp-server": {
       "target": "//finance/plaid/link:server_image",
       "test": "//finance/plaid/..."
