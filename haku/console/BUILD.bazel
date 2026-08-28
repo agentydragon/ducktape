@@ -395,6 +395,7 @@ py_library(
         ":database_schema",
         "//haku/recall_index:schema",
         "@pypi//alembic",
+        "@pypi//psycopg",
         "@pypi//sqlalchemy",
     ],
 )
