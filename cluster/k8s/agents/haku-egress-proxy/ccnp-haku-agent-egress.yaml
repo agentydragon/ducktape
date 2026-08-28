@@ -45,6 +45,20 @@ spec:
         - ports:
             - port: "8180"
               protocol: TCP
+    # Colocated Console egress fence (#4670): the runner's HTTPS_PROXY now points here
+    # (haku-egress-proxy.haku-console.svc:8888), carrying its inference to the in-cluster LiteLLM
+    # gateway and its GitHub traffic. The sidecar shares the Console pod's network namespace, so it
+    # is selected by the Console pod label on the proxy's container port. The haku-claude-oauth-proxy
+    # rule above stays until that iron proxy retires, so reverting the runner's proxy needs no policy
+    # change.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-console
+            k8s:app.kubernetes.io/name: haku-console
+      toPorts:
+        - ports:
+            - port: "8888"
+              protocol: TCP
     # Kubernetes access is mediated by the Haku Console authorization proxy. The runner writes
     # an ephemeral tokenFile kubeconfig only when Console selects this route; no ServiceAccount
     # token is mounted in the runner pod and there is no direct apiserver path. The proxy's TLS

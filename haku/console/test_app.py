@@ -107,7 +107,13 @@ def test_config_advertises_codex_and_explicit_launch_preserves_public_coder_isol
                 "ca_bundle": "/claude-ca.pem",
                 "no_proxy": "localhost",
                 "mcp_url": "https://console.test/mcp",
-                "implementation": {"kind": "claude_code", "oauth_placeholder": "placeholder"},
+                "implementation": {
+                    "kind": "claude_code",
+                    "api_base_url": "http://litellm.test:4000",
+                    "model": "chatgpt/ant-messages/gpt-5.6-sol",
+                    "haiku_model": "chatgpt/ant-messages/gpt-5.6-luna",
+                    "auth_token_placeholder": "placeholder",
+                },
             },
             "codex_app_server": codex_runtime,
         },
@@ -181,7 +187,10 @@ def test_config_advertises_codex_and_explicit_launch_preserves_public_coder_isol
     wrong_codex_slot = copy.deepcopy(shared_config)
     wrong_codex_slot["harnesses"]["codex_app_server"]["implementation"] = {
         "kind": "claude_code",
-        "oauth_placeholder": "placeholder",
+        "api_base_url": "http://litellm.test:4000",
+        "model": "chatgpt/ant-messages/gpt-5.6-sol",
+        "haiku_model": "chatgpt/ant-messages/gpt-5.6-luna",
+        "auth_token_placeholder": "placeholder",
     }
     wrong_codex_file = write_config(tmp_path / "console-wrong-codex-slot.yaml", wrong_codex_slot)
     with (

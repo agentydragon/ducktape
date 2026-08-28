@@ -31,7 +31,16 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     assert runtime["agent_id"] == "8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2"
     assert runtime["claim_prefix"] == "claude"
     assert runtime["runtime_label"] == "claude-chat"
-    assert runtime["implementation"] == {"kind": "claude_code", "oauth_placeholder": "sk-ant-oat01-placeholder"}
+    # Claude Code's inference runs against the in-cluster LiteLLM gateway (-> CLIProxyAPI), never
+    # api.anthropic.com: an Anthropic-shaped base URL, a fence-substituted auth-token placeholder, and
+    # a chatgpt/ant-messages/* model, mirroring the codex-claude wrapper.
+    assert runtime["implementation"] == {
+        "kind": "claude_code",
+        "api_base_url": "http://litellm.litellm.svc.cluster.local:4000",
+        "model": "chatgpt/ant-messages/gpt-5.6-sol",
+        "haiku_model": "chatgpt/ant-messages/gpt-5.6-luna",
+        "auth_token_placeholder": "proxy-litellm-haku-console-claude-placeholder",
+    }
     assert "mcp_static_agent_id" not in runtime
     assert "oauth_placeholder" not in runtime
     pod_template = template["spec"]["podTemplate"]
@@ -74,12 +83,16 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
         port["containerPort"] for port in server["ports"] if port["name"] == bridge_service_port["targetPort"]
     )
     agent_egress = yaml.safe_load(agent_egress_text)
-    console_rule = next(
+    console_rules = [
         rule
         for rule in agent_egress["spec"]["egress"]
         if rule.get("toEndpoints", [{}])[0].get("matchLabels", {}).get("k8s:app.kubernetes.io/name") == "haku-console"
-    )
-    assert console_rule["toPorts"][0]["ports"] == [{"port": str(bridge_target_port), "protocol": "TCP"}]
+    ]
+    console_ports = {port["port"] for rule in console_rules for port in rule["toPorts"][0]["ports"]}
+    # Two rules select the shared Console pod label: the runner bridge (9090 Service -> the server's
+    # own port) and the colocated egress fence sidecar's listener (8888, #4670), which the runner's
+    # HTTPS_PROXY now points at for both inference and GitHub.
+    assert console_ports == {str(bridge_target_port), "8888"}
 
     kube_proxy_rule = next(
         rule

@@ -315,7 +315,7 @@ def test_chat_runtime_config_fails_closed_when_malformed() -> None:
         ConsoleConfigFile.model_validate(_console_config(harnesses={"claude_code": credentialed}))
 
     flat = runtime_config().model_dump(mode="json")
-    flat["oauth_placeholder"] = flat.pop("implementation")["oauth_placeholder"]
+    flat["auth_token_placeholder"] = flat.pop("implementation")["auth_token_placeholder"]
     flat["mcp_static_agent_id"] = flat.pop("agent_id")
     flat.pop("claim_prefix")
     flat.pop("runtime_label")
@@ -327,7 +327,11 @@ def test_claude_environment_contains_placeholder_proxy_and_ca_only() -> None:
     config = runtime_config(ca_bundle="/ca/bundle.pem")
 
     assert config.environment() == {
-        "CLAUDE_CODE_OAUTH_TOKEN": "not-a-secret",
+        "ANTHROPIC_BASE_URL": "http://litellm.test:4000",
+        "ANTHROPIC_AUTH_TOKEN": "not-a-secret",
+        "ANTHROPIC_MODEL": "chatgpt/ant-messages/gpt-5.6-sol",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "chatgpt/ant-messages/gpt-5.6-luna",
+        "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1",
         "HTTP_PROXY": "http://proxy.test:8180",
         "HTTPS_PROXY": "http://proxy.test:8180",
         "NO_PROXY": "127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8",
@@ -408,7 +412,14 @@ def test_claude_registration_uses_the_shared_discriminated_model() -> None:
         "mcp_url",
         "implementation",
     }
-    assert wire["implementation"] == {"kind": "claude_code", "oauth_placeholder": "not-a-secret"}
+    assert wire["implementation"] == {
+        "kind": "claude_code",
+        "api_base_url": "http://litellm.test:4000",
+        "model": "chatgpt/ant-messages/gpt-5.6-sol",
+        "haiku_model": "chatgpt/ant-messages/gpt-5.6-luna",
+        "auth_token_placeholder": "not-a-secret",
+        "gateway_discovery": True,
+    }
     assert RuntimeRegistrationConfig.model_validate(wire) == config
     assert isinstance(config.implementation, ClaudeCodeImplementationConfig)
     assert config.kind is HarnessKind.CLAUDE_CODE
@@ -962,7 +973,9 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
         }
     }
     assert "--strict-mcp-config" in launch.arguments
-    assert launch.environment["CLAUDE_CODE_OAUTH_TOKEN"] == "not-a-secret"
+    assert launch.environment["ANTHROPIC_AUTH_TOKEN"] == "not-a-secret"
+    assert launch.environment["ANTHROPIC_BASE_URL"] == "http://litellm.test:4000"
+    assert launch.environment["ANTHROPIC_MODEL"] == "chatgpt/ant-messages/gpt-5.6-sol"
     # The bearer is injected into the pod rather than copied into Console-selected environment
     # overrides. `test_runner` pins that it is inherited by the Agent process.
     assert recording_claims.tokens[session_id] not in launch.environment.values()

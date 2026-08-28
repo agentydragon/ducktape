@@ -190,6 +190,43 @@ resource "kubernetes_secret" "public_coder_agent" {
 }
 
 # ============================================================================
+# haku-console-claude — Console-launched Claude runner, via the colocated egress fence
+# ============================================================================
+# Claude Code's inference runs on the ChatGPT/Codex subscription models on the Anthropic Messages
+# surface (chatgpt/ant-messages/*), fronted by CLIProxyAPI -- exactly like the codex-claude wrapper
+# (nix/home/claude_code/codex-claude.nix). The Console colocated egress fence (#4670) substitutes
+# this key for the runner's inert placeholder on the internal LiteLLM origin; the runner never holds
+# it. Scoped to only the ant-messages lane -- Claude Code does not use the Responses, Gemini, or
+# embedding models. Deleting this key is the runner's provider kill switch. Reflected into
+# haku-console, where the Console pod resolves it for substitution.
+
+resource "litellm_key" "haku_console_claude" {
+  key_alias = "haku-console-claude"
+  models    = local.codex_client_models
+  metadata = {
+    consumer = "haku-console-claude"
+  }
+}
+
+resource "kubernetes_secret" "haku_console_claude" {
+  metadata {
+    name      = "litellm-key-haku-console-claude"
+    namespace = "litellm"
+    annotations = {
+      description                                                     = "LiteLLM virtual key for the Console-launched Claude runner (chatgpt/ant-messages/* subscription models via CLIProxyAPI); reflected into haku-console, substituted by the colocated egress fence for the runner's inert placeholder"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-console"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "haku-console"
+    }
+  }
+
+  data = {
+    api-key = litellm_key.haku_console_claude.key
+  }
+}
+
+# ============================================================================
 # tana-clients — scoped key for laptop tana-claude (Tana-UI models via tana-litellm)
 # ============================================================================
 # Pattern-B pinned key: value in a git SOPS file in this module dir, decrypted with the

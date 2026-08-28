@@ -38,7 +38,7 @@ metadata:
     # do NOT use reloader's blanket auto mode: the projected static-image metadata
     # changes on every frontend release and must not restart API/MCP/background work.
     configmap.reloader.stakater.com/reload: haku-console-config
-    secret.reloader.stakater.com/reload: haku-routine-launch-token,haku-console-oidc,haku-console-web-push-vapid,tana-agentydragon-gmail-com-account-pat,ha-mcp-bearer,haku-console-db-app,haku-console-agent-api,haku-console-public-coder-agent,haku-console-node-daemon-wyrm2,haku-console-node-daemon-rugged,haku-console-google-client-credentials,haku-console-google-calendar-client-credentials,haku-console-github-mcp-client-credentials,haku-egress-proxy-identity,haku-egress-github-token
+    secret.reloader.stakater.com/reload: haku-routine-launch-token,haku-console-oidc,haku-console-web-push-vapid,tana-agentydragon-gmail-com-account-pat,ha-mcp-bearer,haku-console-db-app,haku-console-agent-api,haku-console-public-coder-agent,haku-console-node-daemon-wyrm2,haku-console-node-daemon-rugged,haku-console-google-client-credentials,haku-console-google-calendar-client-credentials,haku-console-github-mcp-client-credentials,haku-egress-proxy-identity,haku-egress-github-token,litellm-key-haku-console-claude
 spec:
   replicas: 2
   strategy:
@@ -413,6 +413,18 @@ spec:
                 secretKeyRef:
                   name: haku-egress-github-token
                   key: token
+                  optional: true
+            #   - the Console Claude runner's LiteLLM virtual key (#4670): the Console substitutes it
+            #     for the runner's inert `proxy-litellm-haku-console-claude-placeholder` on the
+            #     internal LiteLLM origin, so Claude Code's inference reaches LiteLLM -> CLIProxyAPI
+            #     without ever holding the key. Reflected from the litellm-keys-tf Terraform mint
+            #     (kubernetes_secret litellm-key-haku-console-claude). Optional (#4970): an unsynced
+            #     key degrades this one handle (placeholder 401s) rather than crash-looping the console.
+            - name: HAKU_EGRESS_CREDENTIAL_CLAUDE_LITELLM
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-key-haku-console-claude
+                  key: api-key
                   optional: true
             #   - the substitution-smoke registry credential: a committed EXAMPLE- literal rather
             #     than a Secret, deliberately — both sides of that swap are inert so the fence's

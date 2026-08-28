@@ -54,7 +54,13 @@ def runtime_config(**overrides: object) -> RuntimeRegistrationConfig:
         "ca_bundle": "/egress-proxy-ca/ca-certificates.crt",
         "no_proxy": "127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8",
         "mcp_url": "http://haku-console.test:9090/mcp",
-        "implementation": {"kind": "claude_code", "oauth_placeholder": "not-a-secret"},
+        "implementation": {
+            "kind": "claude_code",
+            "api_base_url": "http://litellm.test:4000",
+            "model": "chatgpt/ant-messages/gpt-5.6-sol",
+            "haiku_model": "chatgpt/ant-messages/gpt-5.6-luna",
+            "auth_token_placeholder": "not-a-secret",
+        },
     }
     values.update(overrides)
     return RuntimeRegistrationConfig(**values)
