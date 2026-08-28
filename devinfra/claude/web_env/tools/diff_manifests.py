@@ -14,9 +14,9 @@ file and apply *very narrow* rules:
       (proprietary binaries not reproducible from public sources).
 
 Usage:
-    bazel run //devinfra/claude/web_env/tools:diff_manifests -- live.ndjson built.ndjson
-    bazel run //devinfra/claude/web_env/tools:diff_manifests -- live.ndjson built.ndjson -o report.md
-    bazel run //devinfra/claude/web_env/tools:diff_manifests -- live.ndjson built.ndjson --no-exclusions
+    bazel run //devinfra/claude/web_env/tools:diff_manifests_bin -- live.ndjson built.ndjson
+    bazel run //devinfra/claude/web_env/tools:diff_manifests_bin -- live.ndjson built.ndjson -o report.md
+    bazel run //devinfra/claude/web_env/tools:diff_manifests_bin -- live.ndjson built.ndjson --no-exclusions
 """
 
 import argparse

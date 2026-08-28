@@ -11,7 +11,7 @@ py_library(
 )
 
 py_library(
-    name = "bench_lib",
+    name = "bench",
     srcs = ["bench.py"],
     deps = [
         ":enforce_bazel_tests",
@@ -21,7 +21,7 @@ py_library(
 )
 
 py_binary(
-    name = "bench",
+    name = "bench_bin",
     main_module = "devinfra.precommit.enforce_bazel_tests.bench",
-    deps = [":bench_lib"],
+    deps = [":bench"],
 )

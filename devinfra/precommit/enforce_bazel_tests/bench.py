@@ -10,8 +10,8 @@ Saves stdout/stderr to a timestamped output directory under
 /tmp/enforce_bazel_tests_bench/.
 
 Usage:
-    bazel run //devinfra/precommit/enforce_bazel_tests:bench
-    bazel run //devinfra/precommit/enforce_bazel_tests:bench -- --profile  # enable Bazel JSON profiles
+    bazel run //devinfra/precommit/enforce_bazel_tests:bench_bin
+    bazel run //devinfra/precommit/enforce_bazel_tests:bench_bin -- --profile  # enable Bazel JSON profiles
 """
 
 from __future__ import annotations

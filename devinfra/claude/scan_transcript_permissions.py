@@ -4,7 +4,7 @@ Reads user-configured permissions from settings files (project + global) so
 coverage detection stays in sync automatically.
 
 Usage:
-    bb run //devinfra/claude:scan_transcript_permissions -- [--max-sessions N] [--min-count N]
+    bb run //devinfra/claude:scan_transcript_permissions_bin -- [--max-sessions N] [--min-count N]
 """
 
 import argparse

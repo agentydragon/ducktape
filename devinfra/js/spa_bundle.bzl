@@ -92,7 +92,7 @@ _fingerprinted_spa_bundle = rule(
         "out_dir": attr.string(default = "dist"),
         "url_prefix": attr.string(default = "/"),
         "_tool": attr.label(
-            default = "//devinfra/js:spa_fingerprint",
+            default = "//devinfra/js:spa_fingerprint_bin",
             executable = True,
             cfg = "exec",
         ),

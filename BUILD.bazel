@@ -282,7 +282,7 @@ py_package(
         "devinfra.claude.statusline",
     ],
     deps = [
-        "//devinfra/claude/statusline:statusline_lib",
+        "//devinfra/claude/statusline",
     ],
 )
 
@@ -344,7 +344,7 @@ py_package(
         "//gmail_archiver:main",
         "//cluster/skills/hetzner_vnc_screenshot:vnc_screenshot",
         "//cluster/skills/proxmox_vm:vm_interact",
-        "//devinfra/gc:workspace_gc_lib",
+        "//devinfra/gc:workspace_gc",
         "//devinfra/ws:cli",
     ],
 )

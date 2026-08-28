@@ -1,4 +1,6 @@
 # gazelle:exclude ci
+# ci/ is excluded, so pin the one module indexed code imports from it.
+# gazelle:resolve py devinfra.ci.invocation_ids //devinfra/ci:invocation_ids
 # gazelle:exclude nixos_bazel_test/testdata
 # gazelle:exclude x
 

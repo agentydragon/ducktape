@@ -14,7 +14,7 @@ Fully Bazel-managed repository: `bazel build //...`, `bazel test //...`, `bazel 
 
 6 of 8 success criteria met. Python at 95.6% Bazel coverage (990/1036 files), Rust at 100%, Terraform at 100% (76/76 modules). All linters integrated into `bazel lint //...` (ruff, mypy, clippy/rustfmt, eslint, buildifier, yamllint). 12 Docker images migrated to rules_oci. Flat package layout with colocated tests is the norm. Single root `pyproject.toml` remains (tool config only). Pre-commit framework handles git hooks; Claude Code session hooks handle proxy setup for web sessions.
 
-Run `bazel run //devinfra/orphans:find_orphans` to list orphaned files.
+Run `bazel run //devinfra/orphans:find_orphans_bin` to list orphaned files.
 
 ## Remaining Work
 
@@ -53,7 +53,7 @@ Shell script categories: CI/Ansible (`.github/scripts/`, `ansible/scripts/`), Do
 ```bash
 bazel build //...                       # Build + lint (runs by default)
 bazel run //:requirements.update        # Update Python requirements lock
-bazel run //devinfra/orphans:find_orphans  # Find un-Bazelized files
+bazel run //devinfra/orphans:find_orphans_bin  # Find un-Bazelized files
 bazel run //tools:gazelle               # Update BUILD files
 bazel run //devinfra/lint:buildifier       # Format BUILD files
 ```

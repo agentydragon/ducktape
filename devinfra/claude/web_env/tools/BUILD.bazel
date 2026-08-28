@@ -12,31 +12,31 @@ py_library(
 )
 
 py_library(
-    name = "capture_manifest_lib",
+    name = "capture_manifest",
     srcs = ["capture_manifest.py"],
     deps = [":manifest"],
 )
 
 py_binary(
-    name = "capture_manifest",
+    name = "capture_manifest_bin",
     main_module = "devinfra.claude.web_env.tools.capture_manifest",
-    deps = [":capture_manifest_lib"],
+    deps = [":capture_manifest"],
 )
 
 py_library(
-    name = "capture_versions_lib",
+    name = "capture_versions",
     srcs = ["capture_versions.py"],
     deps = ["@pypi//pydantic"],
 )
 
 py_binary(
-    name = "capture_versions",
+    name = "capture_versions_bin",
     main_module = "devinfra.claude.web_env.tools.capture_versions",
-    deps = [":capture_versions_lib"],
+    deps = [":capture_versions"],
 )
 
 py_library(
-    name = "diff_manifests_lib",
+    name = "diff_manifests",
     srcs = ["diff_manifests.py"],
     deps = [
         ":manifest",
@@ -45,13 +45,13 @@ py_library(
 )
 
 py_binary(
-    name = "diff_manifests",
+    name = "diff_manifests_bin",
     main_module = "devinfra.claude.web_env.tools.diff_manifests",
-    deps = [":diff_manifests_lib"],
+    deps = [":diff_manifests"],
 )
 
 py_library(
-    name = "fetch_debs_lib",
+    name = "fetch_debs",
     srcs = ["fetch_debs.py"],
     deps = [
         "//util/bazel:workspace",
@@ -60,26 +60,26 @@ py_library(
 )
 
 py_binary(
-    name = "fetch_debs",
+    name = "fetch_debs_bin",
     main_module = "devinfra.claude.web_env.tools.fetch_debs",
-    deps = [":fetch_debs_lib"],
+    deps = [":fetch_debs"],
 )
 
 py_library(
-    name = "build_and_diff_lib",
+    name = "build_and_diff",
     srcs = ["build_and_diff.py"],
     deps = [
-        ":capture_manifest_lib",
-        ":capture_versions_lib",
-        ":diff_manifests_lib",
-        ":fetch_debs_lib",
+        ":capture_manifest",
+        ":capture_versions",
+        ":diff_manifests",
+        ":fetch_debs",
         ":manifest",
         "//util/bazel:workspace",
     ],
 )
 
 py_binary(
-    name = "build_and_diff",
+    name = "build_and_diff_bin",
     main_module = "devinfra.claude.web_env.tools.build_and_diff",
-    deps = [":build_and_diff_lib"],
+    deps = [":build_and_diff"],
 )

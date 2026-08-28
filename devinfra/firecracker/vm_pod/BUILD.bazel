@@ -39,7 +39,7 @@ py_library(
 )
 
 py_library(
-    name = "entrypoint_lib",
+    name = "entrypoint",
     srcs = ["entrypoint.py"],
     visibility = ["//visibility:public"],
     deps = [
@@ -51,29 +51,29 @@ py_library(
 )
 
 py_binary(
-    name = "entrypoint",
+    name = "entrypoint_bin",
     main_module = "devinfra.firecracker.vm_pod.entrypoint",
-    deps = [":entrypoint_lib"],
+    deps = [":entrypoint"],
 )
 
 # ── OCI Image ────────────────────────────────────────────────────────────────
 
 aspect_py_binary(
-    name = "entrypoint_bin",
+    name = "entrypoint_image_bin",
     main = "entrypoint.py",
-    deps = [":entrypoint_lib"],
+    deps = [":entrypoint"],
 )
 
 py_image_layer(
     name = "layers",
-    binary = ":entrypoint_bin",
+    binary = ":entrypoint_image_bin",
 )
 
 oci_image(
     name = "image",
     base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("entrypoint_bin"),
-    env = py_image_env(binary_name = "entrypoint_bin"),
+    entrypoint = py_image_entrypoint("entrypoint_image_bin"),
+    env = py_image_env(binary_name = "entrypoint_image_bin"),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [
         "@trixie_fc_vm_pod//:flat",

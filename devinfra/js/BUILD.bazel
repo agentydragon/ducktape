@@ -1,6 +1,7 @@
 # Shared JavaScript/TypeScript Bazel macros.
 
 load("@aspect_rules_js//js:defs.bzl", "js_binary")
+load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/python:defs.bzl", "py_binary")
 
 js_binary(
@@ -10,8 +11,14 @@ js_binary(
     visibility = ["//visibility:public"],
 )
 
-py_binary(
+py_library(
     name = "spa_fingerprint",
     srcs = ["spa_fingerprint.py"],
+)
+
+py_binary(
+    name = "spa_fingerprint_bin",
+    main_module = "devinfra.js.spa_fingerprint",
     visibility = ["//visibility:public"],
+    deps = [":spa_fingerprint"],
 )

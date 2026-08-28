@@ -4,9 +4,9 @@ Uses Docker (docker build --network=host). Docker data-root must be on tmpfs
 (configured at /mnt/bazel-tmpfs/docker via session hooks).
 
 Usage:
-    bazel run //devinfra/claude/web_env/tools:build_and_diff
-    bazel run //devinfra/claude/web_env/tools:build_and_diff -- --diff-only
-    bazel run //devinfra/claude/web_env/tools:build_and_diff -- --capture-binaries
+    bazel run //devinfra/claude/web_env/tools:build_and_diff_bin
+    bazel run //devinfra/claude/web_env/tools:build_and_diff_bin -- --diff-only
+    bazel run //devinfra/claude/web_env/tools:build_and_diff_bin -- --capture-binaries
 """
 
 import argparse
