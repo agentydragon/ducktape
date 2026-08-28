@@ -9,7 +9,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from haku.console.chat_models import RuntimeKind
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.mcp_config import ConsoleConfigFile
 
 _AGENT = UUID("00000000-0000-4000-8000-000000000001")
@@ -65,7 +65,7 @@ def test_launchable_agents_and_runtime_edges_are_deploy_config() -> None:
     config = ConsoleConfigFile.model_validate(_config())
     assert config.launchable_agents[0].agent_id == _AGENT
     assert config.launchable_agents[0].system_prompt_template == Path("/prompt")
-    assert config.access_profiles[0].allowed_chat_runtimes == {RuntimeKind.CLAUDE_CODE}
+    assert config.access_profiles[0].allowed_chat_runtimes == {HarnessKind.CLAUDE_CODE}
 
 
 def test_profile_read_graph_rejects_cycles() -> None:

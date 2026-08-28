@@ -12,7 +12,7 @@ from fastmcp import Client
 from fastmcp.client.client import CallToolResult
 from more_itertools import one
 
-from haku.console.chat_models import ItemStatus, RuntimeKind
+from haku.console.chat_models import ItemStatus
 from haku.console.conversation.conversation_event import TurnAnswered
 from haku.console.conversation.reads import (
     ChannelAttachment,
@@ -33,6 +33,7 @@ from haku.console.conversation_read_access import (
     ProfileScopedReads,
 )
 from haku.console.grants.principal import RequestPrincipal
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.in_process_server_access import InProcessServerAccessPolicy
 from haku.console.mcp_config import AccessProfile
 from haku.console.mcp_execution import (
@@ -102,7 +103,7 @@ def _session(session_id: UUID, created_at: datetime.datetime) -> SessionRecord:
     return SessionRecord(
         session_id=session_id,
         conversation_id=CONVERSATION,
-        harness_kind=RuntimeKind.CLAUDE_CODE,
+        harness_kind=HarnessKind.CLAUDE_CODE,
         attachments=[ChannelAttachment(surface="matrix", address="!room:example.org", attached_at=created_at)],
         status="closed",
         created_at=created_at,
@@ -227,10 +228,9 @@ async def test_tool_surface() -> None:
 
 
 async def test_harness_kind_is_a_required_closed_identity_field_on_a_session() -> None:
-    # runtime_kind→harness_kind wire rename (naming_and_layout.md §3.1, #4772): the contract step
-    # dropped `runtime_kind` from the wire, so a session publishes only `harness_kind` — a required
-    # carrier of the closed harness enum. (The enum's OpenAPI component stays named `RuntimeKind`
-    # until the C4d phase-2 stored+published rename.)
+    # harness_kind identity field (naming_and_layout.md §3.1, #4772 C4d): a session publishes
+    # `harness_kind` — a required carrier of the closed harness enum, whose component is now
+    # `HarnessKind` (the C4d phase-2 stored+published rename; wire values are unchanged).
     async with Client(_mcp(_Reader())) as client:
         list_sessions = one(tool for tool in await client.list_tools() if tool.name == "list_sessions")
 

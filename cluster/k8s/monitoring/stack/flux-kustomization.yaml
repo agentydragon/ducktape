@@ -21,13 +21,5 @@ spec:
   dependsOn:
     - name: monitoring-namespace
       namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: cert-manager-environment
-      namespace: ducktape-flux
     - name: monitoring-stack-secrets
-      namespace: ducktape-flux
-    - name: sso-providers-tf
-      namespace: ducktape-flux
-    - name: grafana-db
       namespace: ducktape-flux

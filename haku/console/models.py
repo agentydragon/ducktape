@@ -11,7 +11,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from haku.console.chat_models import RuntimeKind
+from haku.console.harnesses.kind import HarnessKind
 
 
 class ChatLaunchOption(BaseModel):
@@ -19,7 +19,7 @@ class ChatLaunchOption(BaseModel):
 
     agent_id: UUID
     agent_display_name: str
-    runtime: RuntimeKind
+    runtime: HarnessKind
     runtime_display_name: str
     is_default: bool = False
 

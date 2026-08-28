@@ -14,12 +14,18 @@ Personal infrastructure monorepo. Manages configuration for: **agentydragon** (T
 
 ### Gazelle
 
-One `py_library` per `.py` file (no aggregators). Reference `//pkg:module` not `//pkg`. Bazel auto-generates `__init__.py` stubs via `imports = [".."]`.
+Python BUILD files are gazelle-managed. After adding, moving, or renaming a `.py`
+file or changing imports, run gazelle rather than hand-editing managed `srcs`/`deps`:
 
 ```bash
 bb run //devinfra:gazelle              # Update BUILD files
-bb run //devinfra:gazelle -- --mode=diff  # Preview changes
+bb run //devinfra:gazelle -- --mode=diff  # Verify convergence (no diff, no errors)
 ```
+
+One `py_library` per `.py` file (no aggregators). Reference `//pkg:module` not `//pkg`.
+Bazel auto-generates `__init__.py` stubs via `imports = [".."]`. Conventions:
+[STYLE.md § Gazelle](STYLE.md); mechanism and escape hatches:
+<devinfra/docs/gazelle.md>.
 
 ### Rust
 

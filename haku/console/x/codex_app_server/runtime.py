@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from haku.console.chat_models import RuntimeKind
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.x.codex_app_server.config import ReasoningEffort
 from haku.console.x.runtime import RuntimeLaunch
 from haku.runtime.x.bridge.codex_options import (
@@ -33,8 +33,8 @@ class CodexRuntimeAdapter:
     model_provider: CodexModelProvider | None = None
 
     @property
-    def kind(self) -> RuntimeKind:
-        return RuntimeKind.CODEX_APP_SERVER
+    def kind(self) -> HarnessKind:
+        return HarnessKind.CODEX_APP_SERVER
 
     @property
     def display_name(self) -> str:

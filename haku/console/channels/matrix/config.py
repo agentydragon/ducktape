@@ -16,7 +16,7 @@ from uuid import UUID
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
-from haku.console.chat_models import RuntimeKind
+from haku.console.harnesses.kind import HarnessKind
 
 
 class Config(BaseModel):
@@ -60,7 +60,7 @@ class ConfiguredProfile(BaseModel):
     """The access-profile slice: which chat runtimes a profile admits."""
 
     id: str
-    allowed_chat_runtimes: set[RuntimeKind] = Field(default_factory=set)
+    allowed_chat_runtimes: set[HarnessKind] = Field(default_factory=set)
 
 
 class LaunchableEntry(BaseModel):

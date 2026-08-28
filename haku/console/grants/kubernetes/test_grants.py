@@ -9,7 +9,6 @@ import pytest
 import pytest_bazel
 from pydantic import TypeAdapter, ValidationError
 
-from haku.console.grants.envelope import GrantStatus
 from haku.console.grants.kubernetes.models import (
     KubernetesAllNamespacesGrantScope,
     KubernetesClusterGrantScope,
@@ -106,7 +105,6 @@ def test_agent_grant_principal_must_belong_to_lifecycle_owner() -> None:
             source_tool_call_id="tc_source",
             scope=KubernetesNamespacesGrantScope(namespaces=("demo",)),
             rules=(resource_rule(),),
-            status=GrantStatus.ACTIVE,
             created_at=datetime.datetime(2026, 8, 21, tzinfo=datetime.UTC),
             expires_at=datetime.datetime(2026, 8, 21, 1, tzinfo=datetime.UTC),
         )

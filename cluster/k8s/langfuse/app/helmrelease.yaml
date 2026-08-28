@@ -71,6 +71,11 @@ spec:
           limits:
             cpu: "1"
             memory: 2Gi
+        # The image runs initialization before its health endpoints are
+        # available; give it time to finish instead of restarting it during
+        # startup.
+        livenessProbe:
+          initialDelaySeconds: 300
 
       worker:
         resources:
@@ -80,6 +85,8 @@ spec:
           limits:
             cpu: "1"
             memory: 2Gi
+        livenessProbe:
+          initialDelaySeconds: 300
 
       # Headless initialization — bootstrap org/project/user on first startup.
       # API keys live in langfuse-secrets so LiteLLM can consume the same keys
@@ -163,11 +170,9 @@ spec:
         secretKeys:
           userPasswordKey: password
 
-    # ClickHouse is managed centrally in the clickhouse namespace. Keep the
-    # bundled deployment alive temporarily as the rollback/source copy while
-    # the new instance is populated; disable it in the post-migration change.
+    # ClickHouse is managed centrally in the clickhouse namespace.
     clickhouse:
-      deploy: true
+      deploy: false
       host: clickhouse.clickhouse.svc.cluster.local
       httpPort: 8123
       nativePort: 9000

@@ -81,6 +81,11 @@ let
     # This setting controls locally launched Codex sessions that read
     # ~/.codex/config.toml.
     approval_policy = cfg.approvalPolicy;
+    # Let Codex's separate reviewer agent handle approval requests that cross
+    # the sandbox boundary; this preserves the interactive approval policy and
+    # does not expand the sandbox or writable roots.
+    approvals_reviewer = cfg.approvalsReviewer;
+    # TODO: Consider a personal [auto_review].policy for command, data-access, and destructive-action limits.
     shell_environment_policy = {
       "inherit" = "all";
       "set" = {
@@ -266,6 +271,11 @@ in
       type = lib.types.str;
       default = "on-request";
       description = "Codex `approval_policy` (e.g. \"on-request\", \"never\").";
+    };
+    approvalsReviewer = lib.mkOption {
+      type = lib.types.str;
+      default = "auto_review";
+      description = "Codex `approvals_reviewer` (e.g. \"user\", \"auto_review\").";
     };
     sandboxMode = lib.mkOption {
       type = lib.types.str;

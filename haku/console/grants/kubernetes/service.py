@@ -9,7 +9,6 @@ from uuid import UUID
 
 from haku.console.grants.envelope import (
     GrantNotFoundError,
-    GrantStatus,
     aware_now,
     validate_grant_window,
     validated_end_batch,
@@ -52,26 +51,26 @@ class KubernetesGrantRepository(Protocol):
         expires_at: datetime.datetime,
     ) -> tuple[KubernetesGrant, ...]: ...
 
-    async def list(self, *, owner_agent_id: UUID, include_terminal: bool = True) -> tuple[KubernetesGrant, ...]: ...
+    async def list(
+        self, *, owner_agent_id: UUID, now: datetime.datetime, include_terminal: bool = True
+    ) -> tuple[KubernetesGrant, ...]: ...
 
     async def get(self, *, owner_agent_id: UUID, grant_id: UUID) -> KubernetesGrant: ...
 
     async def release(
-        self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, ended_at: datetime.datetime
+        self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime
     ) -> KubernetesGrant: ...
 
     async def revoke(
-        self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, ended_at: datetime.datetime
+        self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime
     ) -> KubernetesGrant: ...
 
     async def revoke_source(
-        self, *, owner_agent_id: UUID, source_tool_call_id: str, reason: str, ended_at: datetime.datetime
+        self, *, owner_agent_id: UUID, source_tool_call_id: str, reason: str, now: datetime.datetime
     ) -> tuple[KubernetesGrant, ...]: ...
 
-    async def expire(self, *, now: datetime.datetime, owner_agent_id: UUID | None = None) -> int: ...
-
     async def list_for_request_principal(
-        self, *, request_principal: RequestPrincipal, include_terminal: bool = True
+        self, *, request_principal: RequestPrincipal, now: datetime.datetime, include_terminal: bool = True
     ) -> tuple[KubernetesGrant, ...]: ...
 
     async def active_for_request_principal(
@@ -174,6 +173,9 @@ class KubernetesGrantService:
         if max_lifetime <= datetime.timedelta():
             raise ValueError("max_lifetime must be positive")
 
+    def _now(self) -> datetime.datetime:
+        return aware_now(self._clock)
+
     async def create_grant(
         self,
         *,
@@ -209,7 +211,7 @@ class KubernetesGrantService:
     ) -> tuple[KubernetesGrant, ...]:
         """Atomically create exact grants with one source call and shared timestamps."""
 
-        now = aware_now(self._clock)
+        now = self._now()
         grants = validated_grant_set(source_tool_call_id, grants)
         for grant in grants:
             validate_grant_scope_rules(grant.scope, grant.rules)
@@ -224,26 +226,21 @@ class KubernetesGrantService:
         )
 
     async def list_grants(self, *, owner_agent_id: UUID, include_terminal: bool = True) -> tuple[KubernetesGrant, ...]:
-        await self.expire_grants(owner_agent_id=owner_agent_id)
-        return await self._repository.list(owner_agent_id=owner_agent_id, include_terminal=include_terminal)
+        return await self._repository.list(
+            owner_agent_id=owner_agent_id, now=self._now(), include_terminal=include_terminal
+        )
 
     async def list_applicable_grants(
         self, *, request_principal: RequestPrincipal, include_terminal: bool = True
     ) -> tuple[KubernetesGrant, ...]:
         """List only grants this authenticated request principal may exercise."""
 
-        await self.expire_grants(owner_agent_id=request_principal.agent_id)
         return await self._repository.list_for_request_principal(
-            request_principal=request_principal, include_terminal=include_terminal
+            request_principal=request_principal, now=self._now(), include_terminal=include_terminal
         )
 
     async def get_grant(self, *, owner_agent_id: UUID, grant_id: UUID) -> KubernetesGrant:
-        grant = await self._repository.get(owner_agent_id=owner_agent_id, grant_id=grant_id)
-        now = self._clock()
-        if grant.status is GrantStatus.ACTIVE and grant.expires_at <= now:
-            await self._repository.expire(owner_agent_id=owner_agent_id, now=now)
-            grant = await self._repository.get(owner_agent_id=owner_agent_id, grant_id=grant_id)
-        return grant
+        return await self._repository.get(owner_agent_id=owner_agent_id, grant_id=grant_id)
 
     async def get_applicable_grant(self, *, request_principal: RequestPrincipal, grant_id: UUID) -> KubernetesGrant:
         grant = await self.get_grant(owner_agent_id=request_principal.agent_id, grant_id=grant_id)
@@ -261,11 +258,9 @@ class KubernetesGrantService:
         """
 
         grant_ids, reason = validated_end_batch(grant_ids, reason)
-        ended_at = self._clock()
+        now = self._now()
         released = [
-            await self._repository.release(
-                owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason, ended_at=ended_at
-            )
+            await self._repository.release(owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason, now=now)
             for grant_id in grant_ids
         ]
         return tuple(released)
@@ -279,7 +274,7 @@ class KubernetesGrantService:
 
     async def revoke_grant(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str) -> KubernetesGrant:
         return await self._repository.revoke(
-            owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason, ended_at=self._clock()
+            owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason, now=self._now()
         )
 
     async def revoke_grant_set(
@@ -290,14 +285,8 @@ class KubernetesGrantService:
         if not source_tool_call_id:
             raise ValueError("source_tool_call_id must not be empty")
         return await self._repository.revoke_source(
-            owner_agent_id=owner_agent_id,
-            source_tool_call_id=source_tool_call_id,
-            reason=reason,
-            ended_at=self._clock(),
+            owner_agent_id=owner_agent_id, source_tool_call_id=source_tool_call_id, reason=reason, now=self._now()
         )
-
-    async def expire_grants(self, *, owner_agent_id: UUID | None = None) -> int:
-        return await self._repository.expire(owner_agent_id=owner_agent_id, now=self._clock())
 
     async def match_request(
         self,
@@ -308,7 +297,7 @@ class KubernetesGrantService:
     ) -> KubernetesGrantDecision:
         """Match one request against active grants and return the earliest expiry bound."""
 
-        now = self._clock()
+        now = self._now()
         required = tuple(required_rules)
         if not required:
             raise ValueError("required_rules must not be empty")

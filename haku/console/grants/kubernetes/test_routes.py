@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from haku.console import operator_auth
 from haku.console.agents.enrollment import OperatorAgent
 from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
-from haku.console.grants.envelope import GrantNotFoundError, GrantStatus
+from haku.console.grants.envelope import GrantNotFoundError
 from haku.console.grants.kubernetes.models import KubernetesGrant, KubernetesNamespacesGrantScope, KubernetesRule
 from haku.console.grants.kubernetes.routes import router
 from haku.console.grants.principal import AgentGrantPrincipal
@@ -28,7 +28,9 @@ OPERATOR_ID = UUID("10000000-0000-4000-8000-000000000001")
 AGENT_ID = UUID("30000000-0000-4000-8000-000000000003")
 OTHER_AGENT_ID = UUID("40000000-0000-4000-8000-000000000004")
 GRANT_ID = UUID("50000000-0000-4000-8000-000000000005")
-NOW = datetime.datetime(2026, 8, 22, 0, 0, tzinfo=datetime.UTC)
+# Relative: the serialized status is computed against the live clock. Whole seconds, so the
+# expected wire timestamps below serialize without microseconds.
+NOW = datetime.datetime.now(datetime.UTC).replace(microsecond=0)
 
 
 def _agent() -> OperatorAgent:
@@ -45,8 +47,11 @@ def _agent() -> OperatorAgent:
     )
 
 
-def _grant(*, status: GrantStatus = GrantStatus.ACTIVE) -> KubernetesGrant:
-    terminal = status is not GrantStatus.ACTIVE
+def _wire(instant: datetime.datetime) -> str:
+    return instant.isoformat().replace("+00:00", "Z")
+
+
+def _grant(*, revoked: bool = False) -> KubernetesGrant:
     return KubernetesGrant(
         grant_id=GRANT_ID,
         owner_agent_id=AGENT_ID,
@@ -54,11 +59,10 @@ def _grant(*, status: GrantStatus = GrantStatus.ACTIVE) -> KubernetesGrant:
         source_tool_call_id="tc_0123456789abcdef01234567",
         scope=KubernetesNamespacesGrantScope(namespaces={"public-coder-agent"}),
         rules=(KubernetesRule(api_groups={""}, resources={"pods/log"}, verbs={"get"}),),
-        status=status,
         created_at=NOW - datetime.timedelta(minutes=5),
         expires_at=NOW + datetime.timedelta(minutes=25),
-        ended_at=NOW if terminal else None,
-        end_reason="operator reason" if terminal else None,
+        revoked_at=NOW if revoked else None,
+        end_reason="operator reason" if revoked else None,
     )
 
 
@@ -86,7 +90,7 @@ class _FakeGrantService:
         self.revoked.append((owner_agent_id, grant_id, reason))
         if owner_agent_id != AGENT_ID or grant_id != GRANT_ID:
             raise GrantNotFoundError(str(grant_id))
-        self.current = _grant(status=GrantStatus.REVOKED)
+        self.current = _grant(revoked=True)
         return self.current
 
     async def revoke_grant_set(
@@ -95,7 +99,7 @@ class _FakeGrantService:
         if owner_agent_id != AGENT_ID or source_tool_call_id != self.current.source_tool_call_id:
             raise GrantNotFoundError(source_tool_call_id)
         self.revoked_sets.append((owner_agent_id, source_tool_call_id, reason))
-        self.current = _grant(status=GrantStatus.REVOKED)
+        self.current = _grant(revoked=True)
         return (self.current,)
 
 
@@ -139,11 +143,10 @@ def test_lists_only_the_authenticated_operators_agents_with_provenance() -> None
                         }
                     ],
                     "status": "active",
-                    "created_at": "2026-08-21T23:55:00Z",
-                    "expires_at": "2026-08-22T00:25:00Z",
+                    "created_at": _wire(NOW - datetime.timedelta(minutes=5)),
+                    "expires_at": _wire(NOW + datetime.timedelta(minutes=25)),
                     "released_at": None,
                     "revoked_at": None,
-                    "ended_at": None,
                     "end_reason": None,
                 },
             }

@@ -30,7 +30,7 @@ import os
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -135,6 +135,16 @@ def _environment(name: str) -> str:
     return value
 
 
+def _seconds(name: str) -> timedelta:
+    """A timing window this replica shortens, in seconds.
+
+    Required rather than defaulted: the deployment always sets both, and a replica that silently
+    fell back to the production window would turn a wiring mistake into a test that waits 45
+    seconds and still passes.
+    """
+    return timedelta(seconds=float(_environment(name)))
+
+
 async def _serve() -> None:
     database_url = _environment("HAKU_E2E_DATABASE_URL")
     password = SecretStr(_environment("HAKU_E2E_BOT_PASSWORD"))
@@ -174,7 +184,7 @@ async def _serve() -> None:
             system_prompt=SystemPromptTemplate.from_path(Path(_environment("HAKU_E2E_SYSTEM_PROMPT_TEMPLATE"))),
         )
     )
-    store = Store(sessions, runtimes)
+    store = Store(sessions, runtimes, adoption_grace=_seconds("HAKU_E2E_ADOPTION_GRACE_SECONDS"))
     conversations = ConversationStore(sessions)
     ledger = IngressLedger(sessions)
     identities = PostgresOperatorIdentityStore(
@@ -198,7 +208,9 @@ async def _serve() -> None:
         armed=Path(_environment("HAKU_E2E_REFUSE_NEXT_REPLY")),
     )
     service = SessionService(runtimes, store, session_wakes, conversation_history=ConversationHistory(sessions))
-    supervisor = Runtime(service, store, conversation_wakes, engine)
+    supervisor = Runtime(
+        service, store, conversation_wakes, engine, sweep_interval=_seconds("HAKU_E2E_SWEEP_INTERVAL_SECONDS")
+    )
     allocator = SandboxAllocator(service, store, session_wakes, engine)
 
     @asynccontextmanager

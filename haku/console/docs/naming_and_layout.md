@@ -210,8 +210,8 @@ names graduate into <agent_authority.md>'s boundary section, not a separate doc.
 | Grant (domain / row) | `KubernetesGrant` / `KubernetesGrantRow` (`kubernetes_grants`); `HttpGrant` / `HttpGrantRow` | the `…Row`-at-definition pattern holds in both domains; rows stay at their central `database_schema.py` definitions. The in-package drop to `Grant`/`GrantSpec` waits on §4.1 seam 3 and rides C12 |
 | Principal axis       | `GrantPrincipalKind` {`AGENT`, `SESSION`, future `PROFILE`}                                  | the Agent-facing `applies_to` stays `{agent, session}` **permanently**; profile principals are operator-initiated only, never Agent-requestable (#4838's load-bearing asymmetry)                   |
 | Lifetime axis        | temporary \| permanent                                                                       | reject `permanent × session` and click-approved `permanent × profile` by construction                                                                                                              |
-| Lifecycle vocabulary | `GrantStatus` {`ACTIVE`, `RELEASED`, `REVOKED`, `EXPIRED`} + `derive_status`                 | one envelope enum (was per-domain `KubernetesGrantStatus`/`HttpGrantStatus`); stored values unchanged. K8s still stores it + `ended_at` until #4883 dissolves that onto the derived form           |
-| Shared envelope      | `grants/envelope.py` + `grants/provenance.py` (#4889, landed)                                | principal columns, validity window, lifecycle owner, and manual-approval source-ToolCall provenance/audit linkage consolidated; per-domain end facts are #4883's remaining seam                    |
+| Lifecycle vocabulary | `GrantStatus` {`ACTIVE`, `RELEASED`, `REVOKED`, `EXPIRED`} + `derive_status`                 | one envelope enum (was per-domain `KubernetesGrantStatus`/`HttpGrantStatus`); status is derived from the end facts in both domains via `derive_status`, never stored                               |
+| Shared envelope      | `grants/envelope.py` + `grants/provenance.py` (#4889, landed)                                | principal columns, validity window, lifecycle owner, manual-approval source-ToolCall provenance, and the end facts (with their shared fact-shape CHECK, #4883) consolidated across both domains    |
 
 ### 3.4 De-Haku (#4865) — `Haku` → `<platform>`
 
@@ -407,18 +407,20 @@ quiet gap.
   - `ItemType`, `ItemStatus`, `ToolOutcome` → `conversation/item_reads.py` (C6) — blocked until then:
     `database_schema.py` reads them for its columns while `item_reads.py` imports the ORM rows, so
     moving them today would import-cycle; C6 owes them a leaf home
-  - `RuntimeKind` → `harnesses/kind.py` as `HarnessKind` (C4d)
   - `ChannelSurface` → `channels/` with the channel packaging
 - **C4d · `runtime_kind` → `harness_kind`** _(semantic — coordinated stored + wire + OpenAPI)_ — the
-  harness-kind discriminator (§3.1), mid-roll: every wire surface publishes both names and every
-  reader is on `harness_kind`. Remaining: drop `runtime_kind` from the writers (wire models, their
-  schema pins, the SPA mirror) once the reader-switch image is rolled out — earlier breaks a
-  still-deployed reader mid-roll; then the stored `conversation.runtime_kind` column and the
-  `RuntimeKind` enum / OpenAPI component → `HarnessKind`, a stored + published rename that needs its
-  own expand/contract roll story, same care as C4b. The console harness adapters (`x/claude_code`,
-  `x/codex_app_server`) are deleted by the #4667 cutover (native projection moves runner-ward), so
-  there is no console `runtimes/`→`harnesses/` move to schedule — only this discriminator rename and
-  the small `harnesses/` selection residue.
+  harness-kind discriminator (§3.1). Landed: the wire-field drop (#5050); the `RuntimeKind` enum →
+  `harnesses/kind.py` as `HarnessKind` and its OpenAPI component (SPA consumers read the
+  `harness_kind` field and its unchanged `claude_code`/`codex_app_server` values, not the component
+  name, so the key flip stays compatible across the independent static/API rolls); and the **expand**
+  step of the stored `conversation.runtime_kind` → `harness_kind` column — `harness_kind` added,
+  backfilled and dual-written while reads stay on `runtime_kind`, so a post-#5050 replica never reads
+  a vanished column mid-roll. Remaining is the stored **contract**, each release only after the prior
+  has converged: switch reads to `harness_kind` (backfill the roll-window stragglers, add NOT NULL);
+  stop writing and mapping `runtime_kind` (make it nullable); drop `runtime_kind` and its CHECK. The
+  console harness adapters (`x/claude_code`, `x/codex_app_server`) are deleted by the #4667 cutover
+  (native projection moves runner-ward), so there is no console `runtimes/`→`harnesses/` move to
+  schedule — only this discriminator rename and the small `harnesses/` selection residue.
 - **C4e · `allowed_chat_runtimes` → `allowed_harnesses`** _(semantic — per-profile config field,
   deploy-coordinated expand/contract, same recipe as the `chat_runtimes` → `harnesses` key flip)_.
 - **C6 · "entry" → item read model** _(semantic)_ — `*Entry` → `Item…`, into `conversation/item_reads.py`

@@ -49,7 +49,6 @@ from haku.console.agents import enrollment_routes
 from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
-from haku.console.chat_models import RuntimeKind
 from haku.console.config import MCP_PATH, Settings
 
 # Aliased: bare `runtime` exists in three sibling packages, and `create_app` has a local `follow`.
@@ -72,6 +71,7 @@ from haku.console.grants.kubernetes.authorization import (
 )
 from haku.console.grants.kubernetes.repository import PostgresKubernetesGrantRepository
 from haku.console.grants.kubernetes.service import KubernetesGrantService
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.hostexecd import service
 from haku.console.in_process_servers import (
     HostexecServerConfig,
@@ -413,7 +413,7 @@ def create_app(
 
     # Execution exists only when a launch-capable adapter was configured. Read-only replicas keep
     # the same registry in their store above but expose no session-creation runtime service.
-    default_runtime_kind: RuntimeKind | None = None
+    default_runtime_kind: HarnessKind | None = None
     if runtime_registry.configured_kinds:
         authorize_chat_launch = ChatLaunchAuthorizer(
             agent_authority,
@@ -431,8 +431,8 @@ def create_app(
             if identity.agent_id == default_chat_agent_id
             and identity.runtime_kind in profile_runtime_kinds[default_profile_id]
         }
-        if RuntimeKind.CLAUDE_CODE in default_candidates:
-            default_runtime_kind = RuntimeKind.CLAUDE_CODE
+        if HarnessKind.CLAUDE_CODE in default_candidates:
+            default_runtime_kind = HarnessKind.CLAUDE_CODE
         else:
             try:
                 default_runtime_kind = one(default_candidates)

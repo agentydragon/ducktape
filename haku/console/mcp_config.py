@@ -24,7 +24,6 @@ from fastmcp.client.transports import StreamableHttpTransport
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from haku.console.agents.naming import normalize_agent_name
-from haku.console.chat_models import RuntimeKind
 from haku.console.config import (
     ChatRuntimesConfig,
     HostexecConfig,
@@ -33,6 +32,7 @@ from haku.console.config import (
     Settings,
 )
 from haku.console.grants.http.decide_config import EgressDecideConfig
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_actor import RuntimeActor
 from haku.recall_index.config import ConfiguredRecallIndex, GitRecallIndexDefinition
@@ -315,7 +315,7 @@ class AccessProfile(BaseModel):
     in_process_server_ids: set[InProcessServerId] = Field(default_factory=set)
     # Chat runtime launch authority is configuration-owned.  The durable Agent row supplies the
     # selected profile; callers never get to supply this field.
-    allowed_chat_runtimes: set[RuntimeKind] = Field(default_factory=set)
+    allowed_chat_runtimes: set[HarnessKind] = Field(default_factory=set)
     # Conversation-history visibility: which other profiles' conversations this one may read,
     # acyclic and transitive with self-read implicit. `conversation_read_access` derives the one
     # read scope both `haku_conversations` drilldowns and `haku_index` chat search enforce. The

@@ -205,18 +205,40 @@ reason, stated where it happens.
 
 ## Build System (Bazel)
 
-**Use `main_module` for `py_binary` targets** that share a `py_library`'s source — the
-library declares all deps once (keeping the mypy aspect single-sourced); the binary has
-no `srcs`:
+### Gazelle-managed Python BUILD files
+
+`bb run //devinfra:gazelle` owns Python `py_library`/`py_test` rules; run it instead
+of hand-editing managed `srcs`/`deps`, and verify with `--mode=diff` (a converged tree
+is a no-op). Mechanism, escape hatches, and limitations: <devinfra/docs/gazelle.md>.
+
+- **One `py_library` per `.py` file, named exactly the module stem.** Rules list only
+  own-package files; a subdirectory's `.py` files get per-file rules in the
+  subdirectory's own BUILD.
+- **`py_binary`: hand-written, `main_module`, no `srcs`, `deps = [":<stem>"]`**, named
+  `<stem>_bin` — no module stem, so gazelle never touches it. The library declares all
+  deps once (keeping the mypy aspect single-sourced). Where an aspect image twin
+  already holds `_bin`, the twin moves to `<stem>_image_bin`.
 
 ```python
 py_binary(
-    name = "session_start",
+    name = "session_start_bin",
     main_module = "devinfra.claude.session_start",
     imports = ["../.."],
-    deps = [":session_start_lib"],
+    deps = [":session_start"],
 )
 ```
+
+- **`test_*.py` / `*_test.py` filenames are reserved for `py_test` targets.** Shared
+  test helpers live in `<pkg>/testing/` packages (`default_testonly`), never in
+  test-glob-named files; a non-test file whose glob-matching name is part of an
+  external contract gets `# gazelle:exclude`.
+- **`conftest.py` never appears in `py_test.srcs`**: the plugin generates a
+  per-package `:conftest` library and deps each test on the whole ancestor conftest
+  chain (including `//:conftest`).
+- **Runtime-only deps the import scan cannot see get a local escape** —
+  `# gazelle:include_dep` in the owning `.py`, or a dep-level `# keep: <reason>` where
+  the source cannot carry the annotation. The category inventory is in
+  <devinfra/docs/gazelle.md> § Escape hatches.
 
 ### TypeScript: one `ts_library` per module
 

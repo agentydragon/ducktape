@@ -1,0 +1,8 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "kind",
+    srcs = ["kind.py"],
+)

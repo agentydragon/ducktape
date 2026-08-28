@@ -150,6 +150,14 @@ def test_grantable_methods_exclude_transport_and_diagnostic_verbs() -> None:
     assert {method.value for method in HttpMethod} & {"CONNECT", "TRACE"} == set()
 
 
+def test_grant_spec_allow_prohibited_address_defaults_off_and_round_trips() -> None:
+    assert spec().allow_prohibited_address is False
+    flagged = spec(allow_prohibited_address=True)
+    assert flagged.allow_prohibited_address is True
+    assert flagged.model_dump(mode="json")["allow_prohibited_address"] is True
+    assert HttpGrantSpec.model_validate(flagged.model_dump(mode="json")) == flagged
+
+
 def test_status_is_derived_from_end_facts_and_the_clock() -> None:
     early = datetime.datetime(2026, 8, 21, 0, 30, tzinfo=datetime.UTC)
     assert derive_status(released_at=None, revoked_at=None, expires_at=_EXPIRES, now=_CREATED) is GrantStatus.ACTIVE

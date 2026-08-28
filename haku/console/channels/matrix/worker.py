@@ -39,7 +39,6 @@ from haku.console.channels.matrix.outbox_wake import OutboxWakes
 from haku.console.channels.matrix.revisions import RevisionLog
 from haku.console.channels.matrix.room_copy import RoomCopy
 from haku.console.channels.matrix.sync import SyncService, SyncStore
-from haku.console.chat_models import RuntimeKind
 from haku.console.database_schema import (
     Agent,
     ChannelAttachmentRow,
@@ -62,6 +61,7 @@ from haku.console.database_schema import (
     StaticCredential,
     SubmittedPrompt,
 )
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.notifications.conversation_wakes import ConversationWakes
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
@@ -155,7 +155,7 @@ class LaunchWiring:
 
     authorizer: ChatLaunchAuthorizer
     default_agent_id: UUID
-    default_runtime_kind: RuntimeKind
+    default_runtime_kind: HarnessKind
 
 
 def _launch_wiring(config: AdapterConfigFile) -> LaunchWiring | None:
@@ -172,8 +172,8 @@ def _launch_wiring(config: AdapterConfigFile) -> LaunchWiring | None:
     registered = {
         RuntimeKey(entry.agent_id, kind)
         for entry, kind in (
-            (config.harnesses.claude_code, RuntimeKind.CLAUDE_CODE),
-            (config.harnesses.codex_app_server, RuntimeKind.CODEX_APP_SERVER),
+            (config.harnesses.claude_code, HarnessKind.CLAUDE_CODE),
+            (config.harnesses.codex_app_server, HarnessKind.CODEX_APP_SERVER),
         )
         if entry is not None
     }
@@ -196,8 +196,8 @@ def _launch_wiring(config: AdapterConfigFile) -> LaunchWiring | None:
         if identity.agent_id == config.default_chat_agent_id
         and identity.runtime_kind in profile_runtime_kinds[default_profile_id]
     }
-    if RuntimeKind.CLAUDE_CODE in default_candidates:
-        default_runtime_kind = RuntimeKind.CLAUDE_CODE
+    if HarnessKind.CLAUDE_CODE in default_candidates:
+        default_runtime_kind = HarnessKind.CLAUDE_CODE
     else:
         try:
             default_runtime_kind = one(default_candidates)

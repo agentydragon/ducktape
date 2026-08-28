@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest_bazel
 
-from haku.console.chat_models import RuntimeKind
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.x.codex_app_server.config import ReasoningEffort
 from haku.console.x.codex_app_server.runtime import CodexRuntimeAdapter
 from haku.console.x.runtime import RuntimeLaunch, RuntimeMcpServer
@@ -70,7 +70,7 @@ def test_codex_launch_carries_the_provider_argv_and_the_runner_thread_params() -
 
 def test_adapter_identity_is_codex_without_making_it_a_configured_runtime() -> None:
     adapter = CodexRuntimeAdapter()
-    assert adapter.kind is RuntimeKind.CODEX_APP_SERVER
+    assert adapter.kind is HarnessKind.CODEX_APP_SERVER
     assert adapter.display_name == "Codex"
 
 

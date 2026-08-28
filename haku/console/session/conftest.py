@@ -20,9 +20,10 @@ import pytest
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import ChannelSurface, ItemStatus, ItemType, RuntimeKind
+from haku.console.chat_models import ChannelSurface, ItemStatus, ItemType
 from haku.console.config import RuntimeRegistrationConfig
 from haku.console.database_schema import ChannelAttachmentRow, ConversationItem, Session
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.notifications.conversation_wakes import ConversationWakes
 from haku.console.notifications.session_wakes import SessionWakes
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
@@ -91,7 +92,7 @@ class _ProvisioningTestStore(Store):
         conversation_id: UUID | None = None,
         agent_id: UUID | None = None,
         access_profile_id: str | None = None,
-        runtime_kind: RuntimeKind | None = None,
+        runtime_kind: HarnessKind | None = None,
         launch_authorizer: LaunchAuthorizer | None = None,
     ) -> tuple[SessionView, str]:
         if launch_authorizer is not None:

@@ -195,9 +195,22 @@ class HttpGrantService:
         )
 
     async def match_request(
-        self, *, request_principal: RequestPrincipal, method: HttpMethod, origin: HttpOrigin, path: str
+        self,
+        *,
+        request_principal: RequestPrincipal,
+        method: HttpMethod,
+        origin: HttpOrigin,
+        path: str,
+        require_prohibited_address_allowance: bool = False,
     ) -> HttpGrantDecision:
-        """Match one request against active grants and return the earliest expiry bound."""
+        """Match one request against active grants and return the earliest expiry bound.
+
+        ``require_prohibited_address_allowance`` is a grant-selection constraint, not an address
+        check: this domain resolves nothing. The decide oracle owns the resolved answer and sets it
+        when that answer is entirely prohibited (`decide_service`), so only grants whose spec carries
+        ``allow_prohibited_address`` are eligible — an unflagged grant cannot admit an internal
+        destination.
+        """
 
         if not path.startswith("/"):
             raise ValueError("path must be the request URL's absolute path, starting with '/'")
@@ -206,16 +219,28 @@ class HttpGrantService:
             for grant in await self._repository.active_for_request_principal(
                 request_principal=request_principal, now=self._now()
             )
-            if grant.spec.origin == origin and grant.spec.coverage.covers(method=method, path=path)
+            if grant.spec.origin == origin
+            and grant.spec.coverage.covers(method=method, path=path)
+            and (not require_prohibited_address_allowance or grant.spec.allow_prohibited_address)
         ]
         if not matching:
             return HttpRequestDenied(reason="no active HTTP grant covers the request")
         return self._allowed(matching)
 
-    async def match_tunnel(self, *, request_principal: RequestPrincipal, origin: HttpOrigin) -> HttpGrantDecision:
+    async def match_tunnel(
+        self,
+        *,
+        request_principal: RequestPrincipal,
+        origin: HttpOrigin,
+        require_prohibited_address_allowance: bool = False,
+    ) -> HttpGrantDecision:
         """Match a CONNECT tunnel, which has no inner request yet: any active grant at the exact
         origin admits it, and method/path coverage binds each later decrypted request through
-        :meth:`match_request` instead (#4884's CONNECT scoping ruling)."""
+        :meth:`match_request` instead (#4884's CONNECT scoping ruling).
+
+        ``require_prohibited_address_allowance`` filters to ``allow_prohibited_address`` grants, as
+        :meth:`match_request` documents — the decide oracle sets it for a fully-internal resolution.
+        """
 
         matching = [
             grant
@@ -223,6 +248,7 @@ class HttpGrantService:
                 request_principal=request_principal, now=self._now()
             )
             if grant.spec.origin == origin
+            and (not require_prohibited_address_allowance or grant.spec.allow_prohibited_address)
         ]
         if not matching:
             return HttpRequestDenied(reason="no active HTTP grant covers the origin")

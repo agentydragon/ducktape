@@ -38,7 +38,6 @@ from haku.console.agents.enrollment import (
 )
 from haku.console.agents.launch_authority import StaticAgentAuthorization
 from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind, EnrollmentPhase
-from haku.console.chat_models import RuntimeKind
 from haku.console.conftest import console_sessions
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import (
@@ -52,6 +51,7 @@ from haku.console.database_schema import (
     Operator,
     StaticCredential,
 )
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.mcp_auth.fastmcp_adapter import (
     AgentGrantAuthorityUnavailableError,
     AuthorizationCorrelation,
@@ -815,8 +815,8 @@ def _launch_authorizer(
     agent_id: UUID,
     *,
     launchable: bool = True,
-    registered: tuple[RuntimeKind, ...] = (RuntimeKind.CLAUDE_CODE,),
-    profile_runtime_kinds: dict[str, tuple[RuntimeKind, ...]] | None = None,
+    registered: tuple[HarnessKind, ...] = (HarnessKind.CLAUDE_CODE,),
+    profile_runtime_kinds: dict[str, tuple[HarnessKind, ...]] | None = None,
 ) -> ChatLaunchAuthorizer:
     return ChatLaunchAuthorizer(
         harness.authority,
@@ -824,9 +824,9 @@ def _launch_authorizer(
         registered_runtime_identities={RuntimeKey(agent_id, kind) for kind in registered},
         profile_runtime_kinds=profile_runtime_kinds
         or {
-            "no_auto_approval": (RuntimeKind.CLAUDE_CODE,),
-            "chat": (RuntimeKind.CLAUDE_CODE,),
-            "review": (RuntimeKind.CLAUDE_CODE,),
+            "no_auto_approval": (HarnessKind.CLAUDE_CODE,),
+            "chat": (HarnessKind.CLAUDE_CODE,),
+            "review": (HarnessKind.CLAUDE_CODE,),
             "disallowed": (),
         },
     )
@@ -834,7 +834,7 @@ def _launch_authorizer(
 
 async def _authorize_launch(harness: Harness, authorizer: ChatLaunchAuthorizer, agent_id: UUID) -> LaunchIdentity:
     async with harness.sessions.begin() as db:
-        return await authorizer(db, harness.browser.operator_id, agent_id, RuntimeKind.CLAUDE_CODE)
+        return await authorizer(db, harness.browser.operator_id, agent_id, HarnessKind.CLAUDE_CODE)
 
 
 async def test_chat_launch_authorizer_derives_current_profile_for_new_launch(
@@ -857,7 +857,7 @@ async def test_chat_launch_authorizer_derives_current_profile_for_new_launch(
     assert first.access_profile_id == "chat"
     assert second.agent_id == definition.agent_id
     assert second.access_profile_id == "review"
-    assert second.runtime_kind is RuntimeKind.CLAUDE_CODE
+    assert second.runtime_kind is HarnessKind.CLAUDE_CODE
 
 
 async def test_launch_authorization_requires_caller_owned_transaction(harness: Harness) -> None:
@@ -922,7 +922,8 @@ async def test_launch_authorization_commits_against_a_concurrent_operator_refere
                 Conversation(
                     conversation_id=uuid4(),
                     operator_id=operator_id,
-                    runtime_kind=RuntimeKind.CLAUDE_CODE,
+                    harness_kind=HarnessKind.CLAUDE_CODE,
+                    runtime_kind=HarnessKind.CLAUDE_CODE,
                     created_at=harness.clock.now,
                 )
             )
@@ -1015,8 +1016,8 @@ async def test_chat_launch_authorizer_rejects_an_unregistered_agent_runtime_pair
     authorizer = ChatLaunchAuthorizer(
         harness.authority,
         launchable_agent_ids={first.agent_id, second.agent_id},
-        registered_runtime_identities={RuntimeKey(first.agent_id, RuntimeKind.CLAUDE_CODE)},
-        profile_runtime_kinds={"no_auto_approval": {RuntimeKind.CLAUDE_CODE}},
+        registered_runtime_identities={RuntimeKey(first.agent_id, HarnessKind.CLAUDE_CODE)},
+        profile_runtime_kinds={"no_auto_approval": {HarnessKind.CLAUDE_CODE}},
     )
 
     assert (await _authorize_launch(harness, authorizer, first.agent_id)).agent_id == first.agent_id

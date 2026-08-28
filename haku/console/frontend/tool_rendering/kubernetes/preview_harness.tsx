@@ -46,7 +46,7 @@ const PREVIEW_FIXTURES = [
       {
         ...RESULT_GRANT,
         status: "released" as const,
-        ended_at: "2026-08-23T10:15:00Z",
+        released_at: "2026-08-23T10:15:00Z",
         end_reason: "probe complete",
       },
     ],

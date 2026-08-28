@@ -169,6 +169,18 @@ class HttpGrantSpec(BaseModel):
             "and never reaches the Agent. Absent, the grant is pure reachability."
         ),
     )
+    allow_prohibited_address: bool = Field(
+        default=False,
+        description=(
+            "Capability: when set, requests this grant admits may reach its origin even when the "
+            "host resolves entirely into otherwise-prohibited address space — the decide oracle's "
+            "always-prohibited classes or a deploy `prohibited_cidrs` entry (`decide_service`). "
+            "Scoped to this grant's own origin, never a global private-address allow; a mixed "
+            "public+internal answer stays denied as a rebinding signature. Default False keeps the "
+            "private-address boundary. This is the reusable primitive for reaching one exact "
+            "cluster-internal destination; set it only on operator-approved grants."
+        ),
+    )
 
 
 class HttpGrant(GrantEnvelope):

@@ -13,6 +13,17 @@ Agent/Operator credential:
 
 Every error path denies: an unknown fence credential, ungrantable metadata, or a grant-authority
 failure never admits, and the proxy fails closed on any non-2xx response.
+
+Reaching a cluster-internal destination (#4948 override). By default a resolved answer touching
+prohibited address space denies outright — the always-prohibited classes and the deploy's
+``prohibited_cidrs`` are the app-layer boundary that keeps a fenced Agent off the cluster's own
+network. A standing policy or temporary grant may carry ``allow_prohibited_address`` to lift that
+denial, but only for its own exact origin and only when the host resolves *entirely* into
+prohibited space: this is the reusable, destination-scoped primitive for granting one Agent access
+to one specific internal service (an in-cluster model gateway, say), never a global private-address
+bypass. A mixed public+prohibited answer stays denied as a rebinding signature regardless of the
+flag. A broader, principled model for Agent access to internal services is deliberately future
+work; this primitive is the minimum that unblocks the concrete case without foreclosing it.
 """
 
 from __future__ import annotations
@@ -115,10 +126,13 @@ def _canonicalize(meta: RequestMeta) -> _Tunnel | _InnerRequest | DecideDenied:
 class HttpDecideService:
     """Authenticate the proxy, bind the fence credential to its Agent, evaluate, fail closed.
 
-    The resolved answer is validated before any authority is consulted: an answer touching
-    prohibited address space — the always-on classes of ``_prohibited_address_class`` or a
-    deploy-configured prohibited CIDR — denies outright, whatever allowances exist (#4948).
-    Evaluation order past that is #4670's: standing HTTP policy first, then the principal's
+    The resolved answer is validated alongside the authorities: an answer touching prohibited
+    address space — the always-on classes of ``_prohibited_address_class`` or a deploy-configured
+    prohibited CIDR — denies (#4948) unless a matching standing entry or grant carries
+    ``allow_prohibited_address`` and the host resolves *entirely* into prohibited space, the
+    destination-scoped internal-service override (module docstring). A mixed public+prohibited
+    answer is the rebinding signature and denies regardless of the flag.
+    Evaluation order is #4670's: standing HTTP policy first, then the principal's
     active temporary grants after a clean standing denial. Standing policy is the deploy-managed
     ``egress_decide.standing_policies`` config (#4941): reviewed durable allowances whose
     admissions carry ``standing:<entry id>`` provenance and no deadline, since only a redeploy —
@@ -152,21 +166,33 @@ class HttpDecideService:
                 return RequestPrincipal(agent_id=credential.agent_id, session_id=None, access_profile_id=None)
         return None
 
+    def _prohibited_label(self, address: IPv4Address | IPv6Address) -> str | None:
+        """The always-on class or deploy-CIDR label prohibiting ``address``, or None if it is public."""
+        if class_label := _prohibited_address_class(address):
+            return class_label
+        for network in self._prohibited_cidrs:
+            if address in network:
+                return f"in prohibited range {network}"
+        return None
+
     def _prohibited_answer_reason(self, request: DecideRequest) -> str | None:
         """Denial reason when the resolved answer touches prohibited address space; None when clean.
 
-        The complete answer is validated, not only the pinned address, and one prohibited member
-        denies the whole request: a mixed public+prohibited answer is the signature of a DNS
-        rebinding attempt, so it is refused outright rather than filtered to its public members
-        (#4948).
+        The complete answer is validated, not only the pinned address, and one prohibited member is
+        enough to produce a reason. What that reason then means splits on whether the answer is
+        *fully* prohibited (an internal destination a flagged allowance may override —
+        :meth:`_all_addresses_prohibited`) or *mixed* public+prohibited (the DNS-rebinding
+        signature, refused outright rather than filtered to its public members, #4948).
         """
         for address in sorted(request.resolved_ips, key=lambda address: (address.version, int(address))):
-            if class_label := _prohibited_address_class(address):
-                return f"resolved address {address} is {class_label}"
-            for network in self._prohibited_cidrs:
-                if address in network:
-                    return f"resolved address {address} is in prohibited range {network}"
+            if label := self._prohibited_label(address):
+                return f"resolved address {address} is {label}"
         return None
+
+    def _all_addresses_prohibited(self, request: DecideRequest) -> bool:
+        """Whether *every* resolved address is prohibited — the only shape a flagged allowance may
+        override. A mixed answer is not, so its rebinding refusal stands whatever the flag says."""
+        return all(self._prohibited_label(address) is not None for address in request.resolved_ips)
 
     async def decide(self, request: DecideRequest) -> DecideAllowed | DecideDenied:
         meta = request.request
@@ -174,18 +200,22 @@ class HttpDecideService:
         if principal is None:
             logger.info("egress decision deny %s %s:%d: unknown fence credential", meta.method, meta.host, meta.port)
             return DecideDenied(reason="unknown fence credential")
-        if reason := self._prohibited_answer_reason(request):
+        prohibited_reason = self._prohibited_answer_reason(request)
+        # A fully-internal answer is overridable by an allowance carrying allow_prohibited_address;
+        # a mixed public+prohibited answer is the rebinding signature and is never overridable.
+        overridable = prohibited_reason is not None and self._all_addresses_prohibited(request)
+        if prohibited_reason is not None and not overridable:
             logger.info(
                 "egress decision deny agent=%s %s %s:%d: %s",
                 principal.agent_id,
                 meta.method,
                 meta.host,
                 meta.port,
-                reason,
+                prohibited_reason,
             )
-            # No grant_scope: no grant may ever cover a prohibited resolution, so there is
-            # nothing to request.
-            return DecideDenied(reason=reason)
+            # No grant_scope: a mixed public+prohibited answer is a rebinding signature, never a
+            # grantable origin.
+            return DecideDenied(reason=prohibited_reason)
         canonical = _canonicalize(meta)
         if isinstance(canonical, DecideDenied):
             logger.info(
@@ -198,15 +228,23 @@ class HttpDecideService:
             )
             return canonical
         origin = canonical.origin
-        standing = self._standing_decision(principal=principal, canonical=canonical)
+        standing = self._standing_decision(
+            principal=principal, canonical=canonical, require_prohibited_address_allowance=overridable
+        )
         if standing is not None:
             return standing
         try:
             if isinstance(canonical, _Tunnel):
-                decision = await self._grants.match_tunnel(request_principal=principal, origin=origin)
+                decision = await self._grants.match_tunnel(
+                    request_principal=principal, origin=origin, require_prohibited_address_allowance=overridable
+                )
             else:
                 decision = await self._grants.match_request(
-                    request_principal=principal, method=canonical.method, origin=origin, path=canonical.path
+                    request_principal=principal,
+                    method=canonical.method,
+                    origin=origin,
+                    path=canonical.path,
+                    require_prohibited_address_allowance=overridable,
                 )
         except Exception as error:
             # The route converts this to a plain 503, so the underlying failure surfaces only here.
@@ -238,6 +276,20 @@ class HttpDecideService:
                 valid_until=decision.expires_at,
                 substitutions=substitutions,
             )
+        if prohibited_reason is not None:
+            # Fully-internal answer that no allow_prohibited_address allowance covered: deny with the
+            # address reason and no grantable scope, exactly as an unflagged prohibited answer does —
+            # the overriding flag is operator-reviewed config, never something to request.
+            logger.info(
+                "egress decision deny agent=%s %s %s://%s:%d: %s",
+                principal.agent_id,
+                meta.method,
+                origin.scheme,
+                origin.host,
+                origin.port,
+                prohibited_reason,
+            )
+            return DecideDenied(reason=prohibited_reason)
         logger.info(
             "egress decision deny agent=%s %s %s://%s:%d: %s",
             principal.agent_id,
@@ -252,7 +304,11 @@ class HttpDecideService:
         )
 
     def _standing_decision(
-        self, *, principal: RequestPrincipal, canonical: _Tunnel | _InnerRequest
+        self,
+        *,
+        principal: RequestPrincipal,
+        canonical: _Tunnel | _InnerRequest,
+        require_prohibited_address_allowance: bool,
     ) -> DecideAllowed | None:
         """Evaluate deploy-managed standing policy; ``None`` is the clean denial grants follow.
 
@@ -262,6 +318,10 @@ class HttpDecideService:
         admitted by an origin match alone (its ``https`` scheme is structural, so cleartext-origin
         entries can never admit one) with method/path pins binding each decrypted inner request;
         it carries no substitutions because no inner request exists yet.
+
+        ``require_prohibited_address_allowance`` filters to entries carrying
+        ``allow_prohibited_address``: the caller sets it for a fully-internal resolution, so an
+        unflagged entry cannot admit an internal destination even at a matching origin.
         """
         origin = canonical.origin
         matching = [
@@ -270,6 +330,7 @@ class HttpDecideService:
             if principal.agent_id in entry.agent_ids
             and origin in entry.origins
             and (isinstance(canonical, _Tunnel) or entry.coverage.covers(method=canonical.method, path=canonical.path))
+            and (not require_prohibited_address_allowance or entry.allow_prohibited_address)
         ]
         if not matching:
             return None

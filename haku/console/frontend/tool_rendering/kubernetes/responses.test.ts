@@ -13,7 +13,7 @@ const GRANT = {
   status: "released" as const,
   created_at: "2026-08-23T10:00:00Z",
   expires_at: "2026-08-23T11:00:00Z",
-  ended_at: "2026-08-23T10:15:00Z",
+  released_at: "2026-08-23T10:15:00Z",
   end_reason: "probe complete",
 };
 

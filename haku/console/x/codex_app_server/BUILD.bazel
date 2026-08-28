@@ -13,8 +13,8 @@ py_library(
         "//haku/console/x:__pkg__",
     ],
     deps = [
-        "//haku/console:chat_models",
         "//haku/console:http_url",
+        "//haku/console/harnesses:kind",
         "//haku/runtime/x/bridge:backend",
         "@pypi//pydantic",
     ],
@@ -25,7 +25,7 @@ py_library(
     srcs = ["runtime.py"],
     deps = [
         ":config",
-        "//haku/console:chat_models",
+        "//haku/console/harnesses:kind",
         "//haku/console/x:runtime",
         "//haku/runtime/x/bridge:codex_options",
         "//haku/runtime/x/bridge:protocol",
@@ -39,8 +39,8 @@ py_test(
         ":config",
         ":runtime",
         "//:conftest",
-        "//haku/console:chat_models",
         "//haku/console:conftest",
+        "//haku/console/harnesses:kind",
         "//haku/console/x:conftest",
         "//haku/console/x:runtime",
         "//haku/runtime/x/bridge:codex_options",

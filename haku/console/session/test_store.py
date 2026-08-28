@@ -22,7 +22,7 @@ from sqlalchemy import select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from haku.console.chat_models import ItemStatus, ItemType, RuntimeKind, ToolOutcome
+from haku.console.chat_models import ItemStatus, ItemType, ToolOutcome
 from haku.console.conversation.conversation_event import (
     AuthoredEventKind,
     ConversationEventKind,
@@ -60,10 +60,10 @@ from haku.console.database_schema import (
     McpToolCallPrincipal,
     Session,
 )
-from haku.console.grants.envelope import GrantStatus
 from haku.console.grants.http.models import HttpMethod, HttpScheme
 from haku.console.grants.kubernetes.models import KubernetesNamespacesGrantScope, KubernetesRule
 from haku.console.grants.principal import GrantPrincipalKind
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.notifications.session_wakes import SessionEvent, SessionEventKind
 from haku.console.session.conftest import age_lease, answers, attach_channel, lease_of, make_idle
 from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
@@ -102,7 +102,7 @@ def _harness(frames: Sequence[FrameRecord]) -> list[HarnessFrameRecord]:
 
 
 async def test_store_delegates_prompt_semantics_and_keeps_native_json_opaque(migrated_sessions, operator_id) -> None:
-    store = Store(migrated_sessions, RuntimeRegistry({RuntimeKind.CLAUDE_CODE: ClaudeRuntimeAdapter()}))
+    store = Store(migrated_sessions, RuntimeRegistry({HarnessKind.CLAUDE_CODE: ClaudeRuntimeAdapter()}))
     view, token = await store._create_provisioning_for_test(operator_id)
     assert await store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await store.enqueue_prompt(operator_id, view.session_id, "question", SPA_ORIGIN)
@@ -343,10 +343,10 @@ async def test_session_end_terminalizes_exact_session_grants(session_store, migr
                 source_tool_call_id=source_tool_call_id,
                 scope=KubernetesNamespacesGrantScope(namespaces=("public-coder-agent",)),
                 rules=[KubernetesRule(api_groups=("",), resources=("pods/log",), verbs=("get",))],
-                status=GrantStatus.ACTIVE,
                 created_at=datetime.now(UTC),
                 expires_at=datetime.now(UTC) + timedelta(hours=1),
-                ended_at=None,
+                released_at=None,
+                revoked_at=None,
                 end_reason=None,
             )
         )
@@ -409,9 +409,9 @@ async def test_session_end_terminalizes_exact_session_grants(session_store, migr
     async with migrated_sessions() as db:
         grant = await db.get(KubernetesGrantRow, grant_id)
         assert grant is not None
-        assert grant.status is GrantStatus.REVOKED
+        assert grant.revoked_at is not None
+        assert grant.released_at is None
         assert grant.end_reason == "principal_ended"
-        assert grant.ended_at is not None
         http_grant = await db.get(HttpGrantRow, http_grant_id)
         assert http_grant is not None
         assert http_grant.revoked_at is not None
@@ -1535,7 +1535,7 @@ async def test_abort_reaches_the_replica_running_the_turn(
     try:
         requesting = Store(
             async_sessionmaker(other_engine, expire_on_commit=False),
-            RuntimeRegistry({RuntimeKind.CLAUDE_CODE: ClaudeRuntimeAdapter()}),
+            RuntimeRegistry({HarnessKind.CLAUDE_CODE: ClaudeRuntimeAdapter()}),
         )
         received: asyncio.Queue[SessionEvent] = asyncio.Queue()
         with session_wakes.watch_session(view.session_id, received.put_nowait):

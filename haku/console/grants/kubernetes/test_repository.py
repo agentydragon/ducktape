@@ -34,7 +34,8 @@ from haku.console.grants.principal import (
     SessionGrantPrincipal,
 )
 
-_NOW = datetime(2026, 8, 20, 0, 0, tzinfo=UTC)
+# Relative: KubernetesGrant.status is computed against the live clock, so windows anchor to it.
+_NOW = datetime.now(UTC)
 _RULE = KubernetesRule(api_groups=("",), resources=("pods",), verbs=("get",))
 _SCOPE = KubernetesNamespacesGrantScope(namespaces=("diagnostics", "public-coder-agent"))
 _CLUSTER_RULE = KubernetesRule(api_groups=("",), resources=("nodes",), verbs=("get",))
@@ -43,11 +44,11 @@ _RAW_GRANT_INSERT = text(
     """
     INSERT INTO kubernetes_grants (
         grant_id, owner_agent_id, principal_kind, principal_agent_id, principal_session_id,
-        source_tool_call_id, scope, rules, status, created_at, expires_at, ended_at, end_reason
+        source_tool_call_id, scope, rules, created_at, expires_at
     ) VALUES (
         :grant_id, :owner_agent_id, :principal_kind, :principal_agent_id, :principal_session_id,
-        :source_tool_call_id, CAST(:scope AS jsonb), CAST(:rules AS jsonb), 'active',
-        :created_at, :expires_at, NULL, NULL
+        :source_tool_call_id, CAST(:scope AS jsonb), CAST(:rules AS jsonb),
+        :created_at, :expires_at
     )
     """
 )
@@ -117,7 +118,7 @@ def test_repository_enforces_source_provenance_and_lifecycle(make_client: Any) -
                 owner_agent_id=agent_id,
                 grant_id=grant.grant_id,
                 reason="no longer needed",
-                ended_at=_NOW + timedelta(minutes=1),
+                now=_NOW + timedelta(minutes=1),
             )
             assert released.status is GrantStatus.RELEASED
             assert (
@@ -180,7 +181,7 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
                     owner_agent_id=uuid4(),
                     source_tool_call_id=source_tool_call_id,
                     reason="must not cross Agent ownership",
-                    ended_at=_NOW + timedelta(seconds=20),
+                    now=_NOW + timedelta(seconds=20),
                 )
             assert (
                 len(
@@ -196,7 +197,7 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
                 owner_agent_id=agent_id,
                 grant_id=grants[0].grant_id,
                 reason="first scope no longer needed",
-                ended_at=_NOW + timedelta(seconds=30),
+                now=_NOW + timedelta(seconds=30),
             )
             assert released_first.status is GrantStatus.RELEASED
 
@@ -204,21 +205,21 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
                 owner_agent_id=agent_id,
                 source_tool_call_id=source_tool_call_id,
                 reason="operator ended probe",
-                ended_at=_NOW + timedelta(minutes=1),
+                now=_NOW + timedelta(minutes=1),
             )
             assert {grant.grant_id for grant in revoked} == {grant.grant_id for grant in grants}
             by_id = {grant.grant_id: grant for grant in revoked}
             assert by_id[grants[0].grant_id].status is GrantStatus.RELEASED
             assert by_id[grants[0].grant_id].end_reason == "first scope no longer needed"
             assert by_id[grants[1].grant_id].status is GrantStatus.REVOKED
-            assert by_id[grants[1].grant_id].ended_at == _NOW + timedelta(minutes=1)
+            assert by_id[grants[1].grant_id].revoked_at == _NOW + timedelta(minutes=1)
             assert by_id[grants[1].grant_id].end_reason == "operator ended probe"
 
             repeated = await repository.revoke_source(
                 owner_agent_id=agent_id,
                 source_tool_call_id=source_tool_call_id,
                 reason="different retry reason",
-                ended_at=_NOW + timedelta(minutes=2),
+                now=_NOW + timedelta(minutes=2),
             )
             assert repeated == revoked
 
@@ -289,7 +290,10 @@ def test_repository_matches_agent_and_exact_session_principals(make_client: Any)
             ) == {agent_grant, session_grant}
             assert set(
                 await repository.list_for_request_principal(
-                    request_principal=RequestPrincipal(agent_id=agent_id, session_id=session_id, access_profile_id=None)
+                    request_principal=RequestPrincipal(
+                        agent_id=agent_id, session_id=session_id, access_profile_id=None
+                    ),
+                    now=_NOW,
                 )
             ) == {agent_grant, session_grant}
             assert await repository.active_for_request_principal(
@@ -425,10 +429,8 @@ def test_database_rejects_grants_with_invalid_source_provenance(make_client: Any
                             source_tool_call_id=wrong_tool,
                             scope=_SCOPE,
                             rules=[_RULE],
-                            status=GrantStatus.ACTIVE,
                             created_at=_NOW,
                             expires_at=_NOW + timedelta(minutes=5),
-                            ended_at=None,
                             end_reason=None,
                         )
                     )
