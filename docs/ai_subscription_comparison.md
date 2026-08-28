@@ -69,11 +69,13 @@ OpenAI's current generation is a size ladder — **Luna (small), Terra (medium),
 
 ### Intelligence Index vs. cost per task (2026-08)
 
-The underlying per-model data is committed at
-<artificial_analysis/intelligence_index_2026_08_23.csv> (169 models, fetched
-2026-08-23), so every figure below is re-derivable and the doc is not quoting a
-summary of a summary. Provenance and column meanings:
-<artificial_analysis/README.md>.
+The rows this document quotes are committed at
+<artificial_analysis/cited_models_2026_08_23.csv> — 53 rows across the 24 models named
+below, from a 169-model snapshot fetched 2026-08-23 — so every per-model figure here is
+checkable rather than a summary of a summary. Only the cited rows are committed:
+Artificial Analysis licenses redistribution of the full set, so the population-level
+findings state their result and the recipe to reproduce it instead of shipping the
+corpus. Provenance, columns and that recipe: <artificial_analysis/README.md>.
 
 #### The frontier
 
@@ -637,7 +639,7 @@ inverting AA's own cost model: each of `cost.nonCacheInput`, `cost.cacheRead`,
 The derivation validates exactly — the output leg reproduces AA's separately published
 `intelligenceIndexOutputTokensPerTask` to the token for every model checked. All four
 cost legs, the derived totals, the cache-read share and the effective rate are columns
-in <artificial_analysis/intelligence_index_2026_08_23.csv>
+in <artificial_analysis/cited_models_2026_08_23.csv>
 (`cost_noncache_input_usd` … `effective_usd_per_m_tokens`), so nothing below rests on a
 scratch calculation.
 
@@ -1290,7 +1292,7 @@ Routing traffic to cheaper models is the other half and is free. Since Max is me
 
 ### Cost-per-intelligence analysis
 
-- <artificial_analysis/intelligence_index_2026_08_23.csv> — **the committed snapshot every index and cost-per-task figure in this document comes from** (169 models, fetched 2026-08-23); provenance in <artificial_analysis/README.md>
+- <artificial_analysis/cited_models_2026_08_23.csv> — **the rows behind every per-model index and cost-per-task figure quoted here** (53 rows, 24 models, from a 169-model snapshot fetched 2026-08-23); provenance, the full-population recipe and why only the cited rows are committed: <artificial_analysis/README.md>
 - [Artificial Analysis](https://artificialanalysis.ai/) — Intelligence Index vs. Cost per Task chart with Pareto frontier
 - [AA Intelligence Index v4.1.1](https://artificialanalysis.ai/evaluations/artificial-analysis-intelligence-index) — index composition
 - [AA model leaderboard](https://artificialanalysis.ai/leaderboards/models) — per-effort scores and cost per task

@@ -1,8 +1,14 @@
-# Artificial Analysis Intelligence Index — committed snapshot
+# Artificial Analysis Intelligence Index — cited rows
 
-`intelligence_index_2026_08_23.csv` is the per-model data behind
-<../ai_subscription_comparison.md>, so its numbers can be re-derived rather than
-taken on trust.
+`cited_models_2026_08_23.csv` holds the rows <../ai_subscription_comparison.md> quotes,
+so its per-model numbers can be checked rather than taken on trust.
+
+**Only the cited rows are here, not the corpus.** Artificial Analysis sells
+redistribution rights and states that free access is "for exploration and internal
+workflows only"; a public mirror of all 169 rows is close to the product. Quoting the
+rows actually used keeps that document checkable without republishing the dataset. The
+population-level findings below therefore state their result and the recipe that
+reproduces it, rather than shipping the data behind them.
 
 ## Provenance
 
@@ -38,15 +44,19 @@ blob = "".join(chunks).encode().decode("unicode_escape", errors="replace")
 
 ## Population
 
-**169 rows — every model with a measured index**, which is exactly the leaderboard's
-own stated count ("out of 169 models ranked"). AA also carries ~434 models with an
-_estimated_ index; those are excluded, and none of them has a cost figure anyway.
+**53 rows, 24 models** — every model <../ai_subscription_comparison.md> names, at every
+reasoning-effort setting AA scored it at. One row per model **per effort setting**:
+`Claude Opus 5 (max)` and `Claude Opus 5 (medium)` are separate rows of the same model,
+and the spread between them is large enough that collapsing them loses the point.
 
-One row per model **per reasoning-effort setting** — `Claude Opus 5 (max)` and
-`Claude Opus 5 (medium)` are separate rows of the same model, and the spread between
-them is large.
+The snapshot they came from held **169 rows — every model with a measured index**,
+matching the leaderboard's own count ("out of 169 models ranked"). AA also carries ~434
+models with an _estimated_ index; those were excluded, and none has a cost figure
+anyway. Any claim in the document quantified over "169 models" refers to that snapshot,
+not to this file; re-run the recipe above to check one.
 
-`cost_per_task_usd` is empty for 17 rows AA has scored but not priced.
+Within this file, `cost_per_task_usd` is empty for 1 row AA scored but did not price,
+and 5 rows carry `cache_accounting_coherent=no`.
 
 ## Columns
 
@@ -86,8 +96,8 @@ is meaningless without the cache behaviour beside it.
 
 ## Where the cache accounting is incoherent
 
-**39 of the 169 models book a nonzero `cost.cacheWrite` against exactly zero
-`cost.cacheRead`.** A loop that writes a cache and never reads it does not describe
+**39 of the 169 models in the source snapshot book a nonzero `cost.cacheWrite` against
+exactly zero `cost.cacheRead`** — 5 of them are in this file. A loop that writes a cache and never reads it does not describe
 anything real, so for those models AA has evidently attributed the replayed context to
 writes. In six of them the contradiction is explicit in AA's own fields: a
 `cacheHitDiscountPercent` of 80% sits beside a `cacheHitPrice` equal to the
@@ -95,7 +105,7 @@ undiscounted input price. Cache writes are 88.5-99.6% of input cost across the a
 set (median 98.7%), so the token split is dominated by whichever fallback price is
 assumed.
 
-Those rows carry `cache_accounting_coherent=no` and leave `tokens_per_task`,
+Affected rows carry `cache_accounting_coherent=no` and leave `tokens_per_task`,
 `cache_read_share_of_input` and `effective_usd_per_m_tokens` **blank**. Their
 `cost_per_task_usd` and index scores are unaffected and remain usable.
 
