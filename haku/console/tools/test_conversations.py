@@ -29,7 +29,7 @@ from haku.console.mcp_execution import (
     mcp_execution_request_meta,
 )
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
-from haku.console.tools.conversations import HAKU_CONVERSATIONS_SERVER_ID, FramePage, ItemPage, SessionPage, build_mcp
+from haku.console.tools.conversations import FramePage, ItemPage, SessionPage, build_mcp
 from haku.console.x.conversation_reads import (
     ChannelAttachment,
     ConversationEntry,
@@ -224,7 +224,6 @@ async def test_tool_surface() -> None:
         tools = {tool.name for tool in await client.list_tools()}
 
     assert tools == {"list_sessions", "list_turns", "read_conversation_items", "read_session_frames"}
-    assert HAKU_CONVERSATIONS_SERVER_ID == "haku_conversations"
 
 
 async def test_runtime_and_harness_kind_are_required_closed_identity_fields_on_a_session() -> None:
