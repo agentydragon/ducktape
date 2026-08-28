@@ -130,9 +130,26 @@ def test_build_tea_secret_preserves_configured_metadata_annotations(tmp_path: Pa
     }
 
 
-def test_default_scopes_are_full_non_admin_write_set():
+def test_minted_token_requests_full_non_admin_write_scope_set():
+    """Boundary pin: the scope grant a default rotation actually requests from Forgejo.
+
+    Written as literals so any change to the granted access level fails here and gets
+    reviewed as a permissions change, not absorbed by a constant edit.
+    """
     r = Rotation(name="haku", credentials_dir=Path("/creds"), sops_file=Path("secrets/haku.yaml"))
-    assert r.scopes == FULL_ACCOUNT_SCOPES
+    creds = ForgejoCredentials("haku", "secret", "http://forgejo-http.forgejo:3000", "https://git.allegedly.works")
+    client = _RecordingClient()
+    mint_token(client, r, creds, now=datetime(2026, 7, 1, tzinfo=UTC))
+    assert client.posts[0][1]["json"]["scopes"] == [
+        "write:activitypub",
+        "write:issue",
+        "write:misc",
+        "write:notification",
+        "write:organization",
+        "write:package",
+        "write:repository",
+        "write:user",
+    ]
 
 
 def test_should_rotate_missing_stamps():

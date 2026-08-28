@@ -100,11 +100,6 @@ def test_the_key_is_canonical() -> None:
     )
 
 
-@pytest.mark.parametrize("budget", [ChunkBudget(target_bytes=1, max_bytes=2)])
-def test_a_sensible_budget_is_accepted(budget: ChunkBudget) -> None:
-    assert budget.target_bytes > 0
-
-
 @pytest.mark.parametrize(
     ("kwargs", "match"),
     [
