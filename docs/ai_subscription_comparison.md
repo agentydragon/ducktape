@@ -644,7 +644,7 @@ converts these into tasks, which are:
 
 Cerebras's multiple buys index-34 tokens while Z.ai's buys index-60 ones, so these rows are not comparable at face value. Z.ai rows convert its published 15-30x multiple at GLM-5.3 blended $2.00/M. The Claude row back-solves from a four-figure API bill displaced at Opus 5 blended ~$9/M, so it is an estimate with wide error bars. The spread is still roughly **30x between the cheapest and most expensive token pools** — and they are not interchangeable tokens.
 
-**The frontier vendors subsidize least — unverified, because the comparison needs a quota nobody publishes.** The intuition is that serving Opus 5 and GPT-5.6 costs more so the plans must price accordingly, and a marginal capacity dollar therefore buys more tokens at Cerebras or Z.ai. The subsidy it appeals to is well-posed — API list value of a quota's worth of work, over the fee — but computing it needs the quota, and Anthropic and OpenAI publish none. Measurement gets partway: ChatGPT Pro absorbs 3.25B input tokens in 15 days at a flat $200 (below), which is the right shape for a deep subsidy without fixing the multiple, since usage is bounded by what was sent rather than by what the plan allows. Treat the ranking as unresolved rather than settled either way.
+**The frontier vendors subsidize least — unverified, because the comparison needs a quota nobody publishes.** The intuition is that serving Opus 5 and GPT-5.6 costs more so the plans must price accordingly, and a marginal capacity dollar therefore buys more tokens at Cerebras or Z.ai. The subsidy it appeals to is well-posed — API list value of a quota's worth of work, over the fee — but computing it needs the quota, and Anthropic and OpenAI publish none. Measurement gets partway: ChatGPT Pro absorbs 13.7B tokens in 30 days at a flat $200 (below), which is the right shape for a deep subsidy without fixing the multiple, since usage is bounded by what was sent rather than by what the plan allows. Treat the ranking as unresolved rather than settled either way.
 
 **Extra-usage credits are not a discount.** Anthropic's overflow bills at list API rates, which is a 1x subsidy — precisely the pricing a subscription exists to avoid. It buys availability, never economy. For a workload large enough to justify Max 20x, leaving it enabled without a hard cap reproduces the four-figure API bill that the subscriptions replaced. Treat it as an emergency valve with a cap set low enough to hurt, not as a capacity plan.
 
@@ -832,34 +832,65 @@ Haku's Codex runtime. It does not see the workstation `codex` CLI, which sets no
 `model_provider` and talks straight to `chatgpt.com/backend-api/codex` on its own OAuth
 token. So this is a measurement of the _proxied fleet_, not of the subscription.
 
-**The token counts are also undifferentiated, permanently.** Langfuse's
-`usage_details` carries only `input`, `output` and `total` for these traces, so the
-cache-read share is not recorded and cannot be recovered after the fact. Cached input
-bills at a fraction of fresh input — Kimi K3's cache hit is $0.30 against $3.00, an
-order of magnitude — so every list-price conversion below is an upper bound on what the
-same work would cost through an API, and the gap widens with however much of the fleet's
-context is re-sent turn after turn. For agent loops that is most of it.
+**The cache split is recorded, and it dominates everything else.** Langfuse's
+`usage_details` carries `input_cached_tokens` alongside `input`, `output` and `total`,
+and the four reconcile: fresh input plus cached input plus output equals total. **93% of
+the fleet's token flow is cache reads.** That single fact governs how to read every
+figure below, because cached input bills at a fraction of fresh — an order of magnitude
+on most vendors — so a conversion driven off the `total` column overstates an API-rate
+equivalent roughly tenfold, while one driven off fresh input alone understates the work
+actually done.
 
-Fifteen calendar days sampled (2026-07-28 to 2026-08-24, with gaps where queries timed
-out):
+Thirty days, complete — 2026-07-29 to 2026-08-28, of which 26 carried traffic:
 
-|                    |           Sampled window |
-| ------------------ | -----------------------: |
-| Calls              |                   15,411 |
-| Input tokens       |                **3.25B** |
-| Output tokens      |                     5.4M |
-| **Input : output** |              **599 : 1** |
-| Busiest single day | 6,657 calls, 1.58B input |
+|                           |                    30-day window |
+| ------------------------- | -------------------------------: |
+| Calls with recorded usage |                           65,838 |
+| **Total tokens**          |                       **13.72B** |
+| — cache reads             |                   12.74B (92.8%) |
+| — fresh input             |                             955M |
+| Output tokens             |                            21.7M |
+| **Fresh input : output**  |                       **44 : 1** |
+| Total : output            |                          632 : 1 |
+| Mean across active days   |                  528M tokens/day |
+| Busiest single day        | 21,528 calls, 2.47B (2026-08-20) |
+
+Which models, by volume:
+
+| Model            | Total tokens | Share | Cache share | Tokens/call |
+| ---------------- | -----------: | ----: | ----------: | ----------: |
+| `gpt-5.6-sol`    |        6.45B | 47.0% |       95.0% |        235k |
+| `gpt-5.6-luna`   |        4.03B | 29.4% |       88.0% |        205k |
+| `gpt-5.6-terra`  |        2.33B | 17.0% |       94.7% |        219k |
+| `glm-5.2`        |         853M |  6.2% |       98.1% |        199k |
+| everything else¹ |         <51M |  0.4% |           — |           — |
+
+¹ Gemini 3.5/3.7 Flash, Claude Sonnet 5 and 4.6, Haiku 4.5, embeddings, local
+`gpt-oss:20b` — each under 0.3% of the total.
+
+**The window is not flat, and the trend matters more than the mean.** The last seven
+active days average **1.44B tokens/day** against the 30-day mean of 528M — load nearly
+tripled over the window, peaking at 2.47B on 2026-08-20. Then proxied traffic stops
+almost entirely after 2026-08-24 (170 tokens on the 27th, 324 on the 28th) while other
+models keep logging, so the fleet went quiet rather than the instrument breaking. Size a
+plan against the busy-period rate, not the average: a month of 1.44B/day is 43B tokens.
+
+**The ChatGPT-routed models are the fleet**, at 93.4% of all tokens across three effort
+tiers of one model family. `glm-5.2` is the only other line that registers, and it
+stopped on 2026-08-12. Nothing else reaches half a percent — so "which model dominates"
+has a one-word answer, and the diversity visible in the model list is noise against the
+volume.
 
 Two things follow, and both correct figures elsewhere in this document.
 
-**Consumption was underestimated by more than an order of magnitude.** The back-solved
+**Consumption was underestimated by roughly an order of magnitude.** The back-solved
 figure above puts the whole Claude-plus-ChatGPT loadout at 1.3-2.6B tokens/month. The
-proxied traffic alone measures ~0.22B input tokens per sampled day, or **roughly 6B per
-month**, with two whole surfaces excluded: Claude Code does not route through this
-proxy, and neither does the workstation `codex` CLI, whose usage bills to the same
-ChatGPT subscription. 6B is therefore a floor on the pair and a floor on the ChatGPT
-side by itself — the direction is unambiguous even though the size of the gap is not.
+proxied traffic alone measures **13.7B tokens/month**, with two whole surfaces excluded:
+Claude Code does not route through this proxy, and neither does the workstation `codex`
+CLI, whose usage bills to the same ChatGPT subscription. 13.7B is therefore a floor on
+the pair and a floor on the ChatGPT side by itself. Read as fresh input only it is
+955M/month, which is the figure to compare against a per-token API bill; read as total
+throughput it is what the subscription's quota actually meters. Both are floors.
 
 **The gap is now measurable, and it was not when this was written.** `aiquota` reads
 Codex's own `wham/profiles/me`, which reports account-wide daily token totals from the
@@ -880,11 +911,14 @@ running, which was the awkward part. Daily buckets are coarse against a 5-hour w
 but the current day's bucket grows as work lands, so polling it hourly resolves the
 burn finely enough to pair with window movement.
 
-**Agent traffic is essentially all input.** At 599:1 the output is a rounding error.
-That is the same effect the token-per-task work found, at a far greater extreme than
-either AA's benchmark tasks (39:1 for Luna at max effort) or a single long Claude Code
-session (326:1). A fleet replaying large contexts across many short turns sits at the
-far end of that distribution.
+**Agent traffic is essentially all input — but the extreme is cache reuse, not ratio.**
+Counting cache reads as input gives 632:1, which looks like a far outlier against AA's
+benchmark tasks (39:1 for Luna at max effort) or a single long Claude Code session
+(326:1). On fresh input the fleet sits at **44:1**, close to AA's 39:1 and unremarkable.
+The apparent outlier was an artifact of the cache column. What is genuinely extreme is
+that 93% of what the fleet sends is context it has sent before — 235k tokens per call
+for Sol, of which 95% is a re-read. That is the number to design against: the lever is
+cache-hit rate and context churn, not output length.
 
 **What this does not establish is a cost, or a subsidy — though a subsidy does exist,
 constructed differently.** These models sit behind a flat subscription with a quota.
@@ -918,15 +952,17 @@ is withdrawn, for two reasons beyond the width of the range:
 
 - **The counterfactual is not the same work at API prices.** A flat plan with a quota
   makes each token free at the margin, and free-at-the-margin traffic is not the
-  traffic you would buy when metered. Much of that 3.25B exists _because_ nothing was
+  traffic you would buy when metered. Much of that 13.7B exists _because_ nothing was
   counting it. Pricing induced volume at list and calling the product "value delivered"
   inflates it by however much of the volume the meter would have suppressed — an
-  unknown fraction, plausibly a large one at 599:1.
-- **The cache rate is still missing**, and it alone spans 9x. Langfuse cannot supply
-  it: the aggregate metrics API has no cache measure (valid measures are `count`,
-  `latency`, `inputTokens`, `outputTokens`, `totalTokens`, cost and latency variants,
-  `toolCalls`), and the split exists only in per-observation `usageDetails`, behind
-  trace bodies.
+  unknown fraction, plausibly a large one at 93% cache reuse.
+- **The cache rate is measured, and it is 93%.** Langfuse's aggregate metrics API
+  cannot supply it — valid measures are `count`, `latency`, `inputTokens`,
+  `outputTokens`, `totalTokens`, cost and latency variants, `toolCalls` — but the split
+  is recorded per observation in `usageDetails` as `input_cached_tokens`, and querying
+  the backing ClickHouse directly returns it. This removes the largest of the spans
+  that made an API-rate equivalent unquotable: the remaining unknowns are induced
+  volume and the unproxied surfaces, not the cache rate.
 
 **Configuring model prices in Langfuse would not fix this**, which an earlier revision
 also proposed. It would populate `totalCost` with a counterfactual list price for
@@ -935,7 +971,7 @@ claims it is real. The right treatment for a flat plan is to leave cost empty an
 volume, which is what the deployment already does.
 
 **What the measurement does establish** is volume, and volume is the thing this
-document was previously guessing at: 3.25B input tokens over 15 days through one
+document was previously guessing at: 13.7B tokens over 30 days through one
 proxy, against a back-solved estimate of 1.3-2.6B/month for the _whole_ loadout.
 The estimate was low by more than an order of magnitude, and that correction stands on
 counted tokens alone.
@@ -1158,8 +1194,8 @@ request does, so Copilot Pro+ at 1,500 requests a month runs out on call count l
 before token volume becomes the constraint.
 
 **ChatGPT Pro's volume is now measured; its cost per task is not, and cannot be.**
-Langfuse traces from this cluster record **3.25B input tokens over 15 sampled days** at
-599:1 input-to-output on a flat $200 plan. That is a real number and it corrects this
+Langfuse traces from this cluster record **13.7B tokens over 30 days** — 93% of them
+cache reads, at 44:1 fresh-input-to-output — on a flat $200 plan. That is a real number and it corrects this
 document's consumption estimate by more than an order of magnitude. It is not a cost:
 a flat plan with a quota prices the marginal token at zero until the quota binds, so
 there is no per-task figure to put in the table above, and an earlier revision's
