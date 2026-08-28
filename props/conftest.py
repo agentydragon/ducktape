@@ -63,7 +63,6 @@ from props.testing.fixtures.ground_truth import (
     tp_single_occurrence_id,
 )
 from props.testing.fixtures.runs import (
-    rationale_model,
     test_snapshot,
     test_train_example_with_runs,
     test_trivial_snapshot,

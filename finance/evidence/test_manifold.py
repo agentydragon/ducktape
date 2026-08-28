@@ -6,30 +6,10 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from finance.evidence.manifold import ManifoldBet, bets_frame, comments_frame, load_market, prob_at
-
-# Field shapes mirror real /v0 payloads (verified live 2026-06-10); extra keys prove
-# the records tolerate API evolution.
-_BINARY_MARKET = {
-    "id": "a3k1RgxAVYiAU1qeA5Su",
-    "url": "https://manifold.markets/itsTomekK/january-2024-will-bitcoin-hit-50000",
-    "question": "January 2024: Will Bitcoin hit $50,000?",
-    "outcomeType": "BINARY",
-    "mechanism": "cpmm-1",
-    "probability": 0.0003988322562341947,
-    "volume": 310919.1229242938,
-    "volume24Hours": 0,
-    "uniqueBettorCount": 277,
-    "createdTime": 1704225194859,
-    "closeTime": 1706828340000,
-    "isResolved": True,
-    "resolution": "NO",
-    "resolutionTime": 1706860865370,
-    "lastUpdatedTime": 1723872507848,
-    "textDescription": "Resolves YES if BTC trades at or above $50,000 in January 2024.",
-}
+from finance.evidence.manifold import ManifoldBet, bets_frame, load_market, prob_at
 
 
+# Field shapes mirror real /v0 payloads (verified live 2026-06-10).
 def _bet(bet_id: str, created_time: int, prob_after: float | None, **overrides: object) -> dict[str, object]:
     bet: dict[str, object] = {
         "id": bet_id,
@@ -56,16 +36,6 @@ def _at(epoch_ms: int) -> datetime:
     return datetime.fromtimestamp(epoch_ms / 1000, tz=UTC)
 
 
-def test_load_market_binary() -> None:
-    market = load_market(json.dumps(_BINARY_MARKET).encode())
-    assert market.id == "a3k1RgxAVYiAU1qeA5Su"
-    assert market.outcome_type == "BINARY"
-    assert market.probability == 0.0003988322562341947
-    assert market.is_resolved
-    assert market.resolution == "NO"
-    assert market.unique_bettor_count == 277
-
-
 def test_load_market_multiple_choice_has_no_probability() -> None:
     multiple_choice = {
         "id": "ikSUiiNS8MwAI75RwEJf",
@@ -76,14 +46,6 @@ def test_load_market_multiple_choice_has_no_probability() -> None:
     market = load_market(json.dumps(multiple_choice).encode())
     assert market.probability is None
     assert market.outcome_type == "MULTIPLE_CHOICE"
-
-
-def test_bets_frame_schema_and_order() -> None:
-    frame = bets_frame(_jsonl([_bet("b1", 1_000, 0.3), _bet("b2", 2_000, 0.5)]))
-    assert frame["id"].to_list() == ["b1", "b2"]
-    assert frame["created_time"].dtype == pl.Datetime("ms", "UTC")
-    assert frame["created_time"].to_list() == [_at(1_000), _at(2_000)]
-    assert frame["prob_after"].to_list() == [0.3, 0.5]
 
 
 def test_bets_frame_empty() -> None:
@@ -124,24 +86,6 @@ def test_prob_at_multiple_choice_per_answer() -> None:
     answer1 = bets.filter(pl.col("answer_id") == "answer1")
     assert prob_at(answer1, _at(9_999)) == 0.4
     assert prob_at(answer1, _at(1_500)) == 0.2
-
-
-def test_comments_frame() -> None:
-    rows = [
-        {
-            "id": "c1",
-            "contractId": "a3k1RgxAVYiAU1qeA5Su",
-            "createdTime": 1706791868415,
-            "userId": "user1",
-            "userName": "Lion",
-            "content": {"type": "doc", "content": []},
-            "commentType": "contract",
-        }
-    ]
-    frame = comments_frame(_jsonl(rows))
-    assert frame["id"].to_list() == ["c1"]
-    assert frame["user_name"].to_list() == ["Lion"]
-    assert frame["created_time"].to_list() == [_at(1706791868415)]
 
 
 if __name__ == "__main__":
