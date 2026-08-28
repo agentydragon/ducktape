@@ -22,15 +22,29 @@ reproduces it, rather than shipping the data behind them.
   `artificial-analysis-long-context-reasoning`. Methodology:
   <https://artificialanalysis.ai/evaluations/artificial-analysis-intelligence-index>
 
-**Why this is scraped rather than pulled from the data API.** AA does publish one
-(<https://artificialanalysis.ai/data-api/docs>), but it cannot produce this table. It
-aggregates by model, so the per-reasoning-effort rows that carry most of the variance
-here do not exist in it. It decomposes cost as `input_cost` / `reasoning_cost` /
-`answer_cost` rather than into the four cache legs the derived columns invert. Its
-per-task token counts are a paid tier. And the free tier is explicitly
-"for exploration and internal workflows only", with redistribution reserved to a
-commercial licence — which is a live consideration for this file, since a public
-snapshot of 169 rows is close to the thing AA sells.
+**Why this is scraped rather than pulled from the data API.** AA publishes one
+(<https://artificialanalysis.ai/data-api/docs>). Checked against the live free tier on
+2026-08-28 — `GET /api/v2/language/models/free`, four pages of 200, 624 rows — it
+supplies more than expected and still cannot produce this table:
+
+| Needed here                              | Free tier                                              |
+| ---------------------------------------- | ------------------------------------------------------ |
+| One row per model per reasoning effort   | **yes** — `claude-opus-5-xhigh`, `gpt-5-6-luna-low`, … |
+| Intelligence, coding and agentic indices | **yes**, but rounded to one decimal                    |
+| All four list prices                     | **yes**, rounded — a $0.0028 cache price reports `0.0` |
+| Cost per task split into four cache legs | **no** — only `cost_per_task.total_cost`, a scalar     |
+| Per-task token counts                    | **no**                                                 |
+| The nine raw eval scores                 | **no** — `evaluations` carries only the three indices  |
+
+The scalar cost is the disqualifying one: `tokens_per_task`,
+`cache_read_share_of_input`, `effective_usd_per_m_tokens` and
+`cache_accounting_coherent` all come from inverting the four legs separately, and a
+total cannot be inverted. The 1-decimal rounding would also coarsen every index in this
+file, and the raw eval columns would be lost outright.
+
+The free tier is additionally "for exploration and internal workflows only", with
+redistribution reserved to a commercial licence — a live consideration for this file,
+which is why only the cited rows are committed.
 
 The records ship inside the leaderboard page's Next.js flight payload. To refresh,
 fetch the HTML and pull the model objects out of it:

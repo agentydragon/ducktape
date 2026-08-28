@@ -513,6 +513,14 @@ Blended 80/20 input/output, **no cache hits** — so these are worst-case rates,
 | Claude Opus 5                   |  $5.00 |  $25.00 |        $900 |       63 |
 | GPT-5.6 Sol                     |  $5.00 |  $30.00 |      $1,000 |       61 |
 
+**Sol has since been cut.** A spot-check of AA's data API on 2026-08-28 reports GPT-5.6
+Sol at **$4.00 / $20.00** (cache read $0.40, write $5.00), against the $5.00 / $30.00 in
+this document's 2026-08-23 snapshot — so the row above is ~$680/mo, and every Sol
+`$/task` figure here reads about a third high. Nothing else among the models quoted
+moved: the rest of the differences between snapshot and API are the API's one-decimal
+rounding. The snapshot is deliberately not refreshed from that API, which cannot
+reproduce the derived columns (<artificial_analysis/README.md>).
+
 **This is the finding that reframes the API question.** "API is ruinously expensive" is true at frontier rates and false a few index points down. The same volume that costs $900/mo on Opus 5 costs $40 on GPT-5.6 Luna — OpenAI cut Luna 80% on 2026-07-30 — and $135 on Gemini 3.7 Flash. A fear calibrated on Opus and GPT-5.6 Sol does not transfer to the models a bulk tier would actually use.
 
 Two things move these numbers materially. **Prompt caching** bills reads at roughly a tenth, and agent work re-sends large stable prefixes, so a well-cached loop can land far under the table. **Reasoning effort** moves spend several-fold on the models that expose it, in the same direction.
@@ -987,22 +995,22 @@ window shape says how much survives contact with a fleet.
 
 ## API pricing (per 1M tokens, 2026-08)
 
-| Model                | Input                | Output                 | Notes                                        |
-| -------------------- | -------------------- | ---------------------- | -------------------------------------------- |
-| Claude Fable 5       | $10.00               | $50.00                 | 1M context                                   |
-| Claude Opus 5        | $5.00                | $25.00                 | 1M context                                   |
-| Claude Sonnet 5      | $3.00 ($2.00 intro¹) | $15.00 ($10.00 intro¹) | 1M context                                   |
-| Claude Haiku 4.5     | $1.00                | $5.00                  | 200K context                                 |
-| GPT-5.6 Sol          | $5.00                | $30.00                 | after 2026-07-30 repricing                   |
-| Kimi K3              | $3.00                | $15.00                 | cache hit $0.30; flat across 1M context      |
-| Grok 4.6             | $2.00                | $6.00                  | $4.00/$12.00 once prompt ≥200K; cached $0.50 |
-| Qwen3.8-Max          | $2.00                | $6.00                  | flat, since 2026-08-03                       |
-| GLM-5.3              | $1.40                | $4.40                  | same rate as GLM-5.2                         |
-| Gemma 4 31B          | $0.99                | $1.49                  | via Cerebras on OpenRouter; 262K context     |
-| Gemini 3.7 Flash     | $0.75                | $3.75                  | promo; doubles 2027-01-01                    |
-| DeepSeek V4-Pro 0813 | $0.66                | $1.98                  | off-peak; $1.32/$3.96 peak²                  |
-| gpt-oss-120b         | $0.35                | $0.75                  | via Cerebras on OpenRouter; 131K context     |
-| MiniMax M2.7         | $0.30                | $1.20                  | 205K context                                 |
+| Model                | Input                | Output                 | Notes                                         |
+| -------------------- | -------------------- | ---------------------- | --------------------------------------------- |
+| Claude Fable 5       | $10.00               | $50.00                 | 1M context                                    |
+| Claude Opus 5        | $5.00                | $25.00                 | 1M context                                    |
+| Claude Sonnet 5      | $3.00 ($2.00 intro¹) | $15.00 ($10.00 intro¹) | 1M context                                    |
+| Claude Haiku 4.5     | $1.00                | $5.00                  | 200K context                                  |
+| GPT-5.6 Sol          | $5.00                | $30.00                 | snapshot value; $4.00/$20.00 as of 2026-08-28 |
+| Kimi K3              | $3.00                | $15.00                 | cache hit $0.30; flat across 1M context       |
+| Grok 4.6             | $2.00                | $6.00                  | $4.00/$12.00 once prompt ≥200K; cached $0.50  |
+| Qwen3.8-Max          | $2.00                | $6.00                  | flat, since 2026-08-03                        |
+| GLM-5.3              | $1.40                | $4.40                  | same rate as GLM-5.2                          |
+| Gemma 4 31B          | $0.99                | $1.49                  | via Cerebras on OpenRouter; 262K context      |
+| Gemini 3.7 Flash     | $0.75                | $3.75                  | promo; doubles 2027-01-01                     |
+| DeepSeek V4-Pro 0813 | $0.66                | $1.98                  | off-peak; $1.32/$3.96 peak²                   |
+| gpt-oss-120b         | $0.35                | $0.75                  | via Cerebras on OpenRouter; 131K context      |
+| MiniMax M2.7         | $0.30                | $1.20                  | 205K context                                  |
 
 ¹ Sonnet 5 introductory rate runs through 2026-08-31.
 ² DeepSeek peak hours are 01:00–04:00 and 06:00–10:00 UTC.
