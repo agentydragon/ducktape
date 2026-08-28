@@ -1,0 +1,148 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//haku/console:__subpackages__"])
+
+py_library(
+    name = "connection_metrics",
+    srcs = ["connection_metrics.py"],
+    deps = [
+        "//haku/console:database_schema",
+        "@pypi//prometheus_client",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "console_events",
+    srcs = ["console_events.py"],
+    deps = [
+        "//haku/console:config",
+        "//haku/console:operator_auth",
+        "//haku/console:operator_identity_store",
+        "//haku/console/oauth:provider_connection_registry",
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//asyncpg",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "push",
+    srcs = ["push.py"],
+    deps = [
+        "//haku/console:config",
+        "//haku/console:database_schema",
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//cryptography",
+        "@pypi//httpx",
+        "@pypi//py_vapid",
+        "@pypi//pydantic",
+        "@pypi//pywebpush",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "push_routes",
+    srcs = ["push_routes.py"],
+    deps = [
+        ":push",
+        "//haku/console:operator_auth",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_connection_metrics",
+    size = "medium",
+    srcs = ["test_connection_metrics.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":connection_metrics",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "//haku/console:operator_identity_store",
+        "//haku/console/oauth:provider_connection_registry",
+        "@pypi//prometheus_client",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+        # pytest-asyncio auto mode (root conftest) needs the plugin importable at runtime.
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_console_events",
+    size = "medium",
+    srcs = ["test_console_events.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":console_events",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console:operator_identity_store",
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_push",
+    size = "medium",
+    srcs = ["test_push.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":push",
+        "//:conftest",
+        "//haku/console:conftest",
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//cryptography",
+        "@pypi//http_ece",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_push_routes",
+    size = "medium",
+    srcs = ["test_push_routes.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        "//:conftest",
+        "//haku/console:conftest",
+        "@pypi//fastapi",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)

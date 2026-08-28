@@ -29,7 +29,7 @@ from starlette.routing import Mount, Route
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from starlette.websockets import WebSocketDisconnect
 
-from haku.console import console_events, operator_auth
+from haku.console import operator_auth
 from haku.console.agents.authorization import fingerprint_static_token
 from haku.console.agents.models import (
     AgentStatus,
@@ -75,6 +75,7 @@ from haku.console.mcp_execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutio
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp_reflection_cache import ReflectedCatalog
 from haku.console.node_daemon_models import NodeDaemonExecutionStatus
+from haku.console.notifications import console_events
 from haku.console.oauth.token_state import new_token_state
 from haku.console.operator_identity import OperatorStatus
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor

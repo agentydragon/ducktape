@@ -184,8 +184,8 @@ payloads; `get_tool_call(fields=[])` is the cheap status poll.
 
 ## Notifications — Web Push for pending approvals
 
-Web Push reaches an Operator when no console tab is open. The server (`web_push.py`,
-`push_routes.py`) shows one versioned notification per queued call; the service worker
+Web Push reaches an Operator when no console tab is open. The server (`notifications/push.py`,
+`notifications/push_routes.py`) shows one versioned notification per queued call; the service worker
 (`frontend/sw.ts`) offers Approve/Deny and deep-links to the audit view. A push grants no authority:
 buttons call the ordinary exact-Origin decision endpoint under the Operator session.
 

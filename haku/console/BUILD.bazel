@@ -639,7 +639,6 @@ py_library(
     srcs = ["mcp_operator_oauth.py"],
     deps = [
         ":config",
-        ":console_events",
         ":database_migrate",
         ":database_schema",
         ":deps",
@@ -647,6 +646,7 @@ py_library(
         ":operator_auth",
         ":operator_identity",
         ":operator_identity_store",
+        "//haku/console/notifications:console_events",
         "//haku/console/oauth:connection_result",
         "//haku/console/oauth:token_state",
         "//haku/console/oauth:token_support",
@@ -656,33 +656,6 @@ py_library(
         "@pypi//prometheus_client",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "web_push",
-    srcs = ["web_push.py"],
-    deps = [
-        ":config",
-        ":database_schema",
-        "@ducktape_haku//haku/console:tool_calls",
-        "@pypi//cryptography",
-        "@pypi//httpx",
-        "@pypi//py_vapid",
-        "@pypi//pydantic",
-        "@pypi//pywebpush",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "push_routes",
-    srcs = ["push_routes.py"],
-    deps = [
-        ":operator_auth",
-        ":web_push",
-        "@pypi//fastapi",
-        "@pypi//pydantic",
     ],
 )
 
@@ -699,41 +672,6 @@ py_library(
         "@pypi//mcp",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "connection_metrics",
-    srcs = ["connection_metrics.py"],
-    deps = [
-        ":database_schema",
-        "@pypi//prometheus_client",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_connection_metrics",
-    size = "medium",
-    srcs = ["test_connection_metrics.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":connection_metrics",
-        ":database_schema",
-        ":operator_identity_store",
-        "//haku/console/oauth:provider_connection_registry",
-        "//:conftest",
-        "@pypi//prometheus_client",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-        # pytest-asyncio auto mode (root conftest) needs the plugin importable at runtime.
-        "@pypi//pytest_asyncio",
     ],
 )
 
@@ -815,12 +753,12 @@ py_library(
     name = "mcp_catalog_reconciler",
     srcs = ["mcp_catalog_reconciler.py"],
     deps = [
-        ":console_events",
         ":mcp_approval",
         ":mcp_config",
         ":mcp_operator_oauth",
         ":mcp_reflection_cache",
         ":tool_call_service",
+        "//haku/console/notifications:console_events",
     ],
 )
 
@@ -828,12 +766,12 @@ py_test(
     name = "test_mcp_catalog_reconciler",
     srcs = ["test_mcp_catalog_reconciler.py"],
     deps = [
-        ":console_events",
         ":mcp_approval",
         ":mcp_catalog_reconciler",
         ":mcp_config",
         ":mcp_reflection_cache",
         "//:conftest",
+        "//haku/console/notifications:console_events",
         "@pypi//mcp",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
@@ -1002,46 +940,6 @@ py_test(
     ],
 )
 
-py_library(
-    name = "console_events",
-    srcs = ["console_events.py"],
-    deps = [
-        ":config",
-        ":operator_auth",
-        ":operator_identity_store",
-        "//haku/console/oauth:provider_connection_registry",
-        "@ducktape_haku//haku/console:tool_calls",
-        "@pypi//asyncpg",
-        "@pypi//fastapi",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_console_events",
-    size = "medium",
-    srcs = ["test_console_events.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":console_events",
-        ":operator_identity_store",
-        "//:conftest",
-        "@ducktape_haku//haku/console:tool_calls",
-        "@pypi//fastapi",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
 py_test(
     name = "test_operator_auth",
     size = "medium",
@@ -1171,8 +1069,8 @@ py_library(
         ":authentik_operator_token",
         ":capabilities",
         ":config",
-        ":connection_metrics",
-        ":console_events",
+        "//haku/console/notifications:connection_metrics",
+        "//haku/console/notifications:console_events",
         ":database_migrate",
         ":deployment",
         ":http_decide_config",
@@ -1203,10 +1101,10 @@ py_library(
         ":operator_identity_store",
         "//haku/console/oauth:provider_connection",
         "//haku/console/oauth:provider_connection_registry",
-        ":push_routes",
+        "//haku/console/notifications:push_routes",
         ":recall_index_reader",
         ":tool_call_service",
-        ":web_push",
+        "//haku/console/notifications:push",
         "//haku/console/agents:authorization",
         "//haku/console/agents:enrollment_routes",
         "//haku/console/auto_approval:github",
@@ -1463,49 +1361,6 @@ py_test(
 )
 
 py_test(
-    name = "test_push_routes",
-    size = "medium",
-    srcs = ["test_push_routes.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "@pypi//fastapi",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_web_push",
-    size = "medium",
-    srcs = ["test_web_push.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":web_push",
-        "//:conftest",
-        "@ducktape_haku//haku/console:tool_calls",
-        "@pypi//cryptography",
-        "@pypi//http_ece",
-        "@pypi//httpx",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_tool_call_service",
     size = "medium",
     srcs = ["test_tool_call_service.py"],
@@ -1550,7 +1405,7 @@ py_test(
         ":app",
         ":config",
         ":conftest",
-        ":console_events",
+        "//haku/console/notifications:console_events",
         ":database_migrate",
         ":database_schema",
         ":grant_principal",

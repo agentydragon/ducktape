@@ -302,8 +302,8 @@ py_library(
         ":sandbox_claims",
         ":session_store",
         "//haku/console:chat_models",
-        "//haku/console:console_events",
         "//haku/console:operator_auth",
+        "//haku/console/notifications:console_events",
         "@pypi//fastapi",
     ],
 )
@@ -313,8 +313,8 @@ py_library(
     srcs = ["conversation_live_updates.py"],
     deps = [
         ":conversation_wakes",
-        "//haku/console:console_events",
         "//haku/console:database_schema",
+        "//haku/console/notifications:console_events",
         "@pypi//sqlalchemy",
     ],
 )
@@ -460,8 +460,8 @@ py_test(
         ":session_store",
         "//:conftest",
         "//haku/console:conftest",
-        "//haku/console:console_events",
         "//haku/console:operator_identity_store",
+        "//haku/console/notifications:console_events",
         "@pypi//fastapi",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import

@@ -87,7 +87,8 @@ tree shows the packages, §3 and §4 settle what the files and classes inside th
     connection_result.py  association_maintenance.py  callback_page.py
 
   notifications/       # Web Push pending-approval domain (README Notifications section as a package)
-    web_push.py  push_routes.py  console_events.py  connection_metrics.py  pg_wake.py  session_wakes.py  conversation_wakes.py
+    push.py  push_routes.py  console_events.py  connection_metrics.py
+    pg_wake.py  session_wakes.py  conversation_wakes.py    # still x/-side; graduate with the x/ dissolution
 
   hostexecd/           # console-side registry / machine-API for the hostexecd fleet — NOT node_daemons (§3)
     node_daemons.py  node_daemon_models.py
@@ -253,8 +254,7 @@ every package the split creates, not just `grants/`:
   `haku/runtime/x/bridge/` (#4667), where the backend-prefix drop applies (`claude_code_projection.py`
   → `projection.py`). Console keeps no `runtimes/`; the residual harness _selection_ is `harnesses/`
   (`RuntimeAdapter` → `Adapter`, `RuntimeRegistry` → `Registry`).
-- **`notifications/`, `hostexecd/`**: same — e.g. `web_push.py` → `push.py`,
-  `PendingApprovalNotifier` → `Notifier`.
+- **`hostexecd/`**: same.
 
 Two seams are handled deliberately — **do not reintroduce the prefix to dodge either**:
 
@@ -436,8 +436,8 @@ Needs operator go **and** the `<auth-context>` name pick.
   namespaces + connector + docs in a coordinated cutover; "Haku" kept as agent config; redirect/compat
   for external refs. The tool-id de-Haku rides C12.
 - **C15 · Remainder packaging (#4924)** _(mechanical)_ — once #4772 has settled what everything is
-  called (rename-before-move), the leftover flat modules package into `notifications/`,
-  `hostexecd/`, and the app shell in a final quiet-window sweep.
+  called (rename-before-move), the leftover flat modules package into
+  `hostexecd/` and the app shell in a final quiet-window sweep.
 
 ### Dependency-ordered picture
 

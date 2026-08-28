@@ -156,7 +156,7 @@ spec:
             # public half is derived at startup and handed to each browser at subscribe
             # time, so rotating this key makes every enrolled device re-subscribe from
             # Settings -> Notifications. Unset would simply disable notifications.
-            # See haku/console/web_push.py.
+            # See haku/console/notifications/push.py.
             - name: HAKU_CONSOLE_WEB_PUSH__PRIVATE_KEY_PEM
               valueFrom:
                 secretKeyRef:

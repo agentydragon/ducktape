@@ -4,7 +4,7 @@ The trust story is short: these routes only let an authenticated Operator tell t
 to *reach* their own browsers. Nothing here grants authority over a tool call — a delivered push
 is a prompt, and the decision it leads to goes through the ordinary
 `POST /api/tool-calls/{id}/decision` under the same Authentik session as a click in the console.
-Delivery itself lives in `web_push.py`.
+Delivery itself lives in `push.py`.
 """
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ from typing import Annotated, cast
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from haku.console.notifications.push import PostgresPushSubscriptionStore, PushIdentity
 from haku.console.operator_auth import OperatorActorDep
-from haku.console.web_push import PostgresPushSubscriptionStore, WebPushIdentity
 
 router = APIRouter(tags=["push"])
 
@@ -42,26 +42,26 @@ class PushSubscriptionResponse(BaseModel):
     created_at: str
 
 
-def _identity(request: Request) -> WebPushIdentity | None:
-    return cast(WebPushIdentity | None, request.app.state.web_push_identity)
+def _identity(request: Request) -> PushIdentity | None:
+    return cast(PushIdentity | None, request.app.state.push_identity)
 
 
 def _store(request: Request) -> PostgresPushSubscriptionStore:
     return cast(PostgresPushSubscriptionStore, request.app.state.push_subscription_store)
 
 
-WebPushIdentityDep = Annotated[WebPushIdentity | None, Depends(_identity)]
+PushIdentityDep = Annotated[PushIdentity | None, Depends(_identity)]
 PushSubscriptionStoreDep = Annotated[PostgresPushSubscriptionStore, Depends(_store)]
 
 
-def _require_identity(identity: WebPushIdentity | None) -> WebPushIdentity:
+def _require_identity(identity: PushIdentity | None) -> PushIdentity:
     if identity is None:
         raise HTTPException(status_code=503, detail="web push is not configured on this console")
     return identity
 
 
 @router.get("/api/push/config")
-async def push_config(identity: WebPushIdentityDep) -> PushConfigResponse:
+async def push_config(identity: PushIdentityDep) -> PushConfigResponse:
     """The key the SPA needs to subscribe — null rather than 503, so the UI can say push is off."""
     return PushConfigResponse(application_server_key=identity.application_server_key if identity else None)
 
@@ -71,7 +71,7 @@ async def subscribe(
     body: PushSubscriptionRequest,
     actor: OperatorActorDep,
     store: PushSubscriptionStoreDep,
-    identity: WebPushIdentityDep,
+    identity: PushIdentityDep,
     user_agent: Annotated[str | None, Header()] = None,
 ) -> None:
     _require_identity(identity)

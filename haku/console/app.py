@@ -35,8 +35,6 @@ from starlette.middleware.sessions import SessionMiddleware
 from haku.console import (
     agent_bearer_authority,
     capabilities,
-    connection_metrics,
-    console_events,
     http_decide_routes,
     http_grant_routes,
     kube_proxy_authorization,
@@ -50,9 +48,7 @@ from haku.console import (
     node_daemons,
     operator_auth,
     operator_login_flow,
-    push_routes,
     tool_call_service,
-    web_push,
 )
 from haku.console.agents import enrollment_routes
 from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
@@ -87,6 +83,7 @@ from haku.console.mcp_config import (
     validate_in_process_server_bindings,
 )
 from haku.console.models import ChatLaunchOption, ConfigResponse
+from haku.console.notifications import connection_metrics, console_events, push, push_routes
 from haku.console.oauth import association_maintenance, connection_result, provider_connection, token_state
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
@@ -269,14 +266,14 @@ def create_app(
     )
     # Web Push reaches the operator's browsers when none of them has the console open. Without a
     # VAPID identity there is nothing to sign with, so the console simply never notifies.
-    push_subscription_store = web_push.PostgresPushSubscriptionStore(db_sessions)
-    web_push_identity = web_push.WebPushIdentity(settings.web_push) if settings.web_push else None
-    approval_notifier: web_push.WebPushApprovalNotifier | web_push.NullApprovalNotifier = (
-        web_push.WebPushApprovalNotifier(
-            identity=web_push_identity, subscriptions=push_subscription_store, console_base_url=settings.public_base_url
+    push_subscription_store = push.PostgresPushSubscriptionStore(db_sessions)
+    push_identity = push.PushIdentity(settings.web_push) if settings.web_push else None
+    approval_notifier: push.Notifier | push.NullNotifier = (
+        push.Notifier(
+            identity=push_identity, subscriptions=push_subscription_store, console_base_url=settings.public_base_url
         )
-        if web_push_identity is not None
-        else web_push.NullApprovalNotifier()
+        if push_identity is not None
+        else push.NullNotifier()
     )
     # The operator's own Authentik token (captured at login via offline_access), self-refreshed with
     # the operator-OIDC client — hostexec exchanges it for a per-host token. The store derives the
@@ -795,7 +792,7 @@ def create_app(
     app.state.mcp_catalogs = catalogs
     app.state.node_daemon_service = node_daemon_service
     app.state.push_subscription_store = push_subscription_store
-    app.state.web_push_identity = web_push_identity
+    app.state.push_identity = push_identity
     app.state.kubernetes_authorization = kubernetes_authorization
     app.state.kubernetes_grants = kubernetes_grants
     app.state.http_grants = http_grants
