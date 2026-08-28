@@ -12,7 +12,7 @@ cProfile and prints the hottest call sites by cumulative and/or total (self)
 time (see `--sort`).
 
 Invoke locally:
-  bazelisk run //finance/augur/sim:profile_rollout -- --rollouts 4000 --horizon-months 1200
+  bazelisk run //finance/augur/sim:profile_rollout_bin -- --rollouts 4000 --horizon-months 1200
 """
 
 from __future__ import annotations

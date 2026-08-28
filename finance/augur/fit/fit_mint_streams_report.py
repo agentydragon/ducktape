@@ -2,7 +2,7 @@
 
 Usage (via Bazel):
 
-    bb run //finance/augur/fit:fit_mint_streams_report -- \\
+    bb run //finance/augur/fit:fit_mint_streams_report_bin -- \\
         path/to/observations.jsonl --issuer openai \\
         [--num-warmup 1500] [--num-samples 3000] [--num-chains 2] [--seed 0]
 

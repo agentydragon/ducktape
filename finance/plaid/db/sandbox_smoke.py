@@ -6,7 +6,7 @@ SDK call path run cleanly.
 
 Run:
     set -a; source finance/plaid/db/.creds.env; set +a
-    bb run //finance/plaid/db:sandbox_smoke
+    bb run //finance/plaid/db:sandbox_smoke_bin
 """
 
 import logging

@@ -263,7 +263,6 @@ py_test(
     name = "test_cash_conservation_e2e",
     srcs = ["test_cash_conservation_e2e.py"],
     deps = [
-        ":codec",
         ":external_series",
         ":fixed_point",
         ":locations",
@@ -275,6 +274,7 @@ py_test(
         "//finance/augur/model:series",
         "//finance/augur/model:series_model",
         "//finance/augur/product:asset_key",
+        "//finance/augur/sim/codec:plan",
         "//finance/augur/sim/testing:state_helpers",
         "@pypi//numpy",
         "@pypi//pytest",
@@ -286,14 +286,14 @@ py_test(
     name = "test_tips_e2e",
     srcs = ["test_tips_e2e.py"],
     deps = [
-        ":compiler",
-        ":engine",
         ":scenario",
         ":simulate",
         "//finance/augur/model:deterministic",
         "//finance/augur/model:level_series_groups",
         "//finance/augur/model:series",
         "//finance/augur/model:series_model",
+        "//finance/augur/sim/compiler:series",
+        "//finance/augur/sim/engine:jax_engine",
         "//finance/augur/sim/testing:state_helpers",
         "@pypi//numpy",
         "@pypi//polars",
@@ -346,45 +346,6 @@ py_test(
         "//finance/augur/sim/testing:state_helpers",
         "@pypi//polars",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "income_buckets_test",
-    srcs = ["compiler/income_buckets_test.py"],
-    deps = [
-        ":compiler",
-        ":scenario",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "compiler_target_allocation_test",
-    size = "small",
-    srcs = ["compiler/target_allocation_test.py"],
-    main = "compiler/target_allocation_test.py",
-    deps = [
-        ":compiler",
-        ":scenario",
-        ":simulate",
-        "//finance/augur/model:series",
-        "//finance/augur/product:asset_key",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "plan_test",
-    srcs = ["compiler/plan_test.py"],
-    deps = [
-        ":compiler",
-        "@pypi//numpy",
         "@pypi//pytest_bazel",
     ],
 )
@@ -446,12 +407,15 @@ py_library(
     name = "simulate",
     srcs = ["simulate.py"],
     deps = [
-        ":codec",
-        ":compiler",
-        ":engine",
         ":external_series",
         ":output",
         ":scenario",
+        "//finance/augur/sim/codec:plan",
+        "//finance/augur/sim/compiler:plan",
+        "//finance/augur/sim/engine:__init__",
+        "//finance/augur/sim/engine:jax_engine",
+        "//finance/augur/sim/engine:jax_types",
+        "//finance/augur/sim/engine:jax_validation",
         "@pypi//polars",
     ],
 )
@@ -463,152 +427,12 @@ py_library(
 )
 
 py_library(
-    name = "compiler",
-    srcs = [
-        "compiler/assets.py",
-        "compiler/bonds.py",
-        "compiler/cashflows.py",
-        "compiler/deductions.py",
-        "compiler/distributions.py",
-        "compiler/helpers.py",
-        "compiler/income_buckets.py",
-        "compiler/lifecycle.py",
-        "compiler/obligations.py",
-        "compiler/plan.py",
-        "compiler/primary_residence.py",
-        "compiler/private_equity.py",
-        "compiler/properties.py",
-        "compiler/series.py",
-        "compiler/target_allocation.py",
-        "compiler/tax.py",
-        "compiler/tlh_harvest.py",
-    ],
-    deps = [
-        ":bonds",
-        ":enums",
-        ":external_series",
-        ":fixed_point",
-        ":jurisdictions",
-        ":locations",
-        ":runtime",
-        ":scenario",
-        ":tlh_harvest",
-        "//finance/augur/model:private_equity_bundle",
-        "//finance/augur/model:series",
-        "//finance/augur/product:asset_key",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-        "@pypi//polars",
-    ],
-)
-
-py_library(
     name = "output",
     srcs = ["output.py"],
     deps = [
         "@pypi//jax",
         "@pypi//jaxtyping",
         "@pypi//numpy",
-    ],
-)
-
-py_library(
-    name = "codec",
-    srcs = [
-        "codec/__init__.py",
-        "codec/assets.py",
-        "codec/helpers.py",
-        "codec/liabilities.py",
-        "codec/lifecycle.py",
-        "codec/obligations.py",
-        "codec/plan.py",
-        "codec/primary_residence.py",
-        "codec/properties.py",
-        "codec/tax.py",
-        "codec/transfers.py",
-    ],
-    deps = [
-        ":compiler",
-        ":enums",
-        ":events",
-        ":external_series",
-        ":fixed_point",
-        ":output",
-        "//finance/augur:frames",
-        "//finance/augur/model:exogenous",
-        "//finance/augur/model:series",
-        "//finance/augur/product:asset_key",
-        "@pypi//numpy",
-        "@pypi//polars",
-    ],
-)
-
-py_library(
-    name = "engine",
-    srcs = [
-        "engine/__init__.py",
-        "engine/jax_engine.py",
-        "engine/jax_types.py",
-        "engine/jax_validation.py",
-    ],
-    deps = [
-        ":actor_view",
-        ":codec",
-        ":compiler",
-        ":enums",
-        ":external_series",
-        ":fixed_point",
-        ":output",
-        ":payment_policy",
-        ":runtime",
-        ":scenario",
-        ":target_allocation",
-        ":tlh_harvest",
-        "//finance/augur/model:series",
-        "//finance/augur/product:metric_composition",
-        "//finance/augur/product:quantiles",
-        "@pypi//jax",
-        "@pypi//jaxtyping",
-        "@pypi//numpy",
-    ],
-)
-
-py_test(
-    name = "jax_cash_test",
-    srcs = ["engine/jax_cash_test.py"],
-    main = "engine/jax_cash_test.py",
-    deps = [
-        ":engine",
-        "@pypi//jax",
-        "@pypi//numpy",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "jax_fifo_test",
-    srcs = ["engine/jax_fifo_test.py"],
-    main = "engine/jax_fifo_test.py",
-    deps = [
-        ":engine",
-        "@pypi//jax",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "jax_tax_test",
-    srcs = ["engine/jax_tax_test.py"],
-    main = "engine/jax_tax_test.py",
-    deps = [
-        ":compiler",
-        ":engine",
-        ":fixed_point",
-        ":jurisdictions",
-        "@pypi//jax",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -773,10 +597,9 @@ py_library(
     ],
 )
 
-py_binary(
+py_library(
     name = "bench",
     srcs = ["bench.py"],
-    main_module = "finance.augur.sim.bench",
     deps = [
         ":bench_scenario",
         ":simulate",
@@ -784,9 +607,14 @@ py_binary(
 )
 
 py_binary(
+    name = "bench_bin",
+    main_module = "finance.augur.sim.bench",
+    deps = [":bench"],
+)
+
+py_library(
     name = "profile_rollout",
     srcs = ["profile_rollout.py"],
-    main_module = "finance.augur.sim.profile_rollout",
     deps = [
         ":bench_scenario",
         ":external_series",
@@ -795,6 +623,12 @@ py_binary(
         ":simulate",
         "@pypi//jax",
     ],
+)
+
+py_binary(
+    name = "profile_rollout_bin",
+    main_module = "finance.augur.sim.profile_rollout",
+    deps = [":profile_rollout"],
 )
 
 py_test(
@@ -820,13 +654,13 @@ py_test(
     srcs = ["jax_engine_reuse_test.py"],
     data = [":jurisdiction_data"],
     deps = [
-        ":compiler",
-        ":engine",
         ":external_series",
         ":output",
         ":runtime",
         ":scenario",
         "//finance/augur/product:asset_key",
+        "//finance/augur/sim/compiler:plan",
+        "//finance/augur/sim/engine:jax_engine",
         "@pypi//jax",
         "@pypi//numpy",
         "@pypi//pytest",

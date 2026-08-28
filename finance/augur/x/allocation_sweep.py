@@ -16,7 +16,7 @@ withdrawal rate and with the portfolio, so it is an output of a run and never a 
 
 Runs remotely — `bazelisk run` locally cannot fetch `rules_mypy` through the egress policy:
 
-    bbr run //finance/augur/x:allocation_sweep
+    bbr run //finance/augur/x:allocation_sweep_bin
 """
 
 from __future__ import annotations

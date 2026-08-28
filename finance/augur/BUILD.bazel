@@ -35,11 +35,11 @@ py_test(
 )
 
 py_library(
-    name = "dev_server_lib",
+    name = "dev_server",
     srcs = ["dev_server.py"],
     deps = [
         "//finance/augur/api:config",
-        "//finance/augur/api:server_lib",
+        "//finance/augur/api:server",
         "//finance/augur/calibration:default_clients",
         "//finance/augur/calibration:platform",
         "//util/bazel:runfiles",
@@ -60,7 +60,7 @@ py_binary(
         "AUGUR_CONFIG_PATH": "$(location //finance/augur/api:public_fixture_config)",
     },
     main_module = "finance.augur.dev_server",
-    deps = [":dev_server_lib"],
+    deps = [":dev_server"],
 )
 
 py_test(
@@ -117,7 +117,7 @@ py_test(
         "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
     },
     deps = [
-        ":dev_server_lib",
+        ":dev_server",
         "//finance/augur:conftest",
         "//finance/augur/api:config",
         "//finance/augur/calibration:catalog",

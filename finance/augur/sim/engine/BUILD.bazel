@@ -1,0 +1,146 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "__init__",
+    srcs = ["__init__.py"],
+    deps = [
+        ":jax_engine",
+        "//finance/augur/model:series",
+        "//finance/augur/product:metric_composition",
+        "//finance/augur/product:quantiles",
+        "//finance/augur/sim:actor_view",
+        "//finance/augur/sim:enums",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:locations",
+        "//finance/augur/sim:output",
+        "//finance/augur/sim:payment_policy",
+        "//finance/augur/sim:runtime",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:target_allocation",
+        "//finance/augur/sim:tlh_harvest",
+        "//finance/augur/sim/codec:plan",
+        "//finance/augur/sim/compiler:plan",
+        "@pypi//jax",
+        "@pypi//jaxtyping",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "jax_engine",
+    srcs = ["jax_engine.py"],
+    deps = [
+        ":jax_types",
+        ":jax_validation",
+        "//finance/augur/model:series",
+        "//finance/augur/product:metric_composition",
+        "//finance/augur/product:quantiles",
+        "//finance/augur/sim:actor_view",
+        "//finance/augur/sim:enums",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:output",
+        "//finance/augur/sim:payment_policy",
+        "//finance/augur/sim:runtime",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:target_allocation",
+        "//finance/augur/sim:tlh_harvest",
+        "//finance/augur/sim/compiler:bonds",
+        "//finance/augur/sim/compiler:cashflows",
+        "//finance/augur/sim/compiler:distributions",
+        "//finance/augur/sim/compiler:helpers",
+        "//finance/augur/sim/compiler:obligations",
+        "//finance/augur/sim/compiler:plan",
+        "//finance/augur/sim/compiler:private_equity",
+        "@pypi//jax",
+        "@pypi//jaxtyping",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "jax_types",
+    srcs = ["jax_types.py"],
+    deps = [
+        "//finance/augur/model:series",
+        "//finance/augur/product:metric_composition",
+        "//finance/augur/product:quantiles",
+        "//finance/augur/sim:actor_view",
+        "//finance/augur/sim:enums",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:output",
+        "//finance/augur/sim:payment_policy",
+        "//finance/augur/sim:runtime",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:target_allocation",
+        "//finance/augur/sim:tlh_harvest",
+        "//finance/augur/sim/compiler:plan",
+        "@pypi//jax",
+        "@pypi//jaxtyping",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "jax_validation",
+    srcs = ["jax_validation.py"],
+    deps = [
+        "//finance/augur/model:series",
+        "//finance/augur/product:metric_composition",
+        "//finance/augur/product:quantiles",
+        "//finance/augur/sim:actor_view",
+        "//finance/augur/sim:enums",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:output",
+        "//finance/augur/sim:payment_policy",
+        "//finance/augur/sim:runtime",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:target_allocation",
+        "//finance/augur/sim:tlh_harvest",
+        "//finance/augur/sim/compiler:plan",
+        "@pypi//jax",
+        "@pypi//jaxtyping",
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "jax_cash_test",
+    srcs = ["jax_cash_test.py"],
+    deps = [
+        "//finance/augur/sim/engine:jax_engine",
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "jax_fifo_test",
+    srcs = ["jax_fifo_test.py"],
+    deps = [
+        "//finance/augur/sim/engine:jax_engine",
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "jax_tax_test",
+    srcs = ["jax_tax_test.py"],
+    deps = [
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:jurisdictions",
+        "//finance/augur/sim/compiler:tax",
+        "//finance/augur/sim/engine:jax_engine",
+        "@pypi//jax",
+        "@pypi//pytest_bazel",
+    ],
+)
