@@ -8,6 +8,7 @@
 """
 
 import json
+import uuid
 from pathlib import Path
 
 import pygit2
@@ -54,10 +55,6 @@ def _setup_repo_config(repo: pygit2.Repository, config: dict | None = None) -> N
             "bazel_args": ["--config=rbe"],
         }
     (devinfra / "bbr.json").write_text(json.dumps(config))
-
-
-def _inv_id_file() -> str:
-    return f"--invocation_id_file={Path.home() / '.cache/bbr/last_invocation_id'}"
 
 
 class TestReadRepoConfig:
@@ -170,6 +167,7 @@ class TestBuildCommand:
 
     Each test checks the full assembled command line against the expected
     output, ensuring argument ordering is correct across all config layers.
+    The minted invocation ID is opaque, so goldens splice in the returned one.
     """
 
     def _build(
@@ -179,7 +177,7 @@ class TestBuildCommand:
         monkeypatch: pytest.MonkeyPatch,
         *,
         env: dict[str, str] | None = None,
-    ) -> list[str]:
+    ) -> tuple[list[str], str | None]:
         repo = _make_repo(tmp_path)
         _setup_repo_config(repo)
         monkeypatch.setattr("devinfra.bbr._find_bb", lambda: BB)
@@ -191,27 +189,54 @@ class TestBuildCommand:
         return build_command(repo, user_args)
 
     def test_basic_test(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        cmd = self._build(tmp_path, ["test", "//foo:bar"], monkeypatch)
+        cmd, inv_id = self._build(tmp_path, ["test", "//foo:bar"], monkeypatch)
         assert cmd == [
             BB,
             "remote",
-            _inv_id_file(),
             "--runner_exec_properties=workload-isolation-type=firecracker",
             f"--container_image=docker://{IMAGE}",
             "test",
+            f"--invocation_id={inv_id}",
             "--config=rbe",
             "//foo:bar",
         ]
 
+    def test_minted_invocation_id_is_uuid(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Bazel rejects non-UUID --invocation_id values, so the minted ID must be one."""
+        _cmd, inv_id = self._build(tmp_path, ["test", "//foo:bar"], monkeypatch)
+        assert inv_id is not None
+        uuid.UUID(inv_id)
+
+    def test_each_run_mints_fresh_id(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        repo = _make_repo(tmp_path)
+        _setup_repo_config(repo)
+        monkeypatch.setattr("devinfra.bbr._find_bb", lambda: BB)
+        _, first = build_command(repo, ["test", "//foo"])
+        _, second = build_command(repo, ["test", "//foo"])
+        assert first != second
+
+    def test_user_supplied_invocation_id_adopted(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An explicit --invocation_id is reported as-is, not overridden by a minted one."""
+        user_id = "12345678-1234-1234-1234-123456789abc"
+        cmd, inv_id = self._build(tmp_path, ["test", f"--invocation_id={user_id}", "//foo"], monkeypatch)
+        assert inv_id == user_id
+        assert [arg for arg in cmd if "--invocation_id" in arg] == [f"--invocation_id={user_id}"]
+
+    def test_user_supplied_invocation_id_space_form(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        user_id = "12345678-1234-1234-1234-123456789abc"
+        cmd, inv_id = self._build(tmp_path, ["test", "--invocation_id", user_id, "//foo"], monkeypatch)
+        assert inv_id == user_id
+        assert [arg for arg in cmd if "--invocation_id" in arg] == ["--invocation_id"]
+
     def test_basic_build_with_user_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        cmd = self._build(tmp_path, ["build", "--config=nolint", "//foo"], monkeypatch)
+        cmd, inv_id = self._build(tmp_path, ["build", "--config=nolint", "//foo"], monkeypatch)
         assert cmd == [
             BB,
             "remote",
-            _inv_id_file(),
             "--runner_exec_properties=workload-isolation-type=firecracker",
             f"--container_image=docker://{IMAGE}",
             "build",
+            f"--invocation_id={inv_id}",
             "--config=rbe",
             "--config=nolint",
             "//foo",
@@ -220,14 +245,14 @@ class TestBuildCommand:
     def test_session_bazelrc(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         rc = tmp_path / "bbr.bazelrc"
         rc.write_text("build --build_metadata=TAGS=session:xyz\nbuild --build_metadata=ROLE=agent\n")
-        cmd = self._build(tmp_path, ["build", "//foo"], monkeypatch, env={"BBR_BAZELRC": str(rc)})
+        cmd, inv_id = self._build(tmp_path, ["build", "//foo"], monkeypatch, env={"BBR_BAZELRC": str(rc)})
         assert cmd == [
             BB,
             "remote",
-            _inv_id_file(),
             "--runner_exec_properties=workload-isolation-type=firecracker",
             f"--container_image=docker://{IMAGE}",
             "build",
+            f"--invocation_id={inv_id}",
             "--config=rbe",
             "--build_metadata=TAGS=session:xyz",
             "--build_metadata=ROLE=agent",
@@ -235,15 +260,15 @@ class TestBuildCommand:
         ]
 
     def test_bbr_remote_args_in_slot2(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        cmd = self._build(tmp_path, ["test", "//foo"], monkeypatch, env={"BBR_REMOTE_ARGS": "--timeout=600"})
+        cmd, inv_id = self._build(tmp_path, ["test", "//foo"], monkeypatch, env={"BBR_REMOTE_ARGS": "--timeout=600"})
         assert cmd == [
             BB,
             "remote",
-            _inv_id_file(),
             "--runner_exec_properties=workload-isolation-type=firecracker",
             f"--container_image=docker://{IMAGE}",
             "--timeout=600",
             "test",
+            f"--invocation_id={inv_id}",
             "--config=rbe",
             "//foo",
         ]
@@ -252,7 +277,7 @@ class TestBuildCommand:
         """All config layers: repo + session bazelrc + BBR_REMOTE_ARGS + user flags."""
         rc = tmp_path / "bbr.bazelrc"
         rc.write_text("build --build_metadata=TAGS=session:s1\n")
-        cmd = self._build(
+        cmd, inv_id = self._build(
             tmp_path,
             ["test", "//foo:bar", "--nocache_test_results"],
             monkeypatch,
@@ -261,11 +286,11 @@ class TestBuildCommand:
         assert cmd == [
             BB,
             "remote",
-            _inv_id_file(),
             "--runner_exec_properties=workload-isolation-type=firecracker",
             f"--container_image=docker://{IMAGE}",
             "--timeout=600",
             "test",
+            f"--invocation_id={inv_id}",
             "--config=rbe",
             "--build_metadata=TAGS=session:s1",
             "//foo:bar",
@@ -273,26 +298,26 @@ class TestBuildCommand:
         ]
 
     def test_startup_options_before_verb(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        cmd = self._build(tmp_path, ["--output_base=/tmp/bazel", "build", "//foo"], monkeypatch)
+        cmd, inv_id = self._build(tmp_path, ["--output_base=/tmp/bazel", "build", "//foo"], monkeypatch)
         assert cmd == [
             BB,
             "remote",
-            _inv_id_file(),
             "--runner_exec_properties=workload-isolation-type=firecracker",
             f"--container_image=docker://{IMAGE}",
             "--output_base=/tmp/bazel",
             "build",
+            f"--invocation_id={inv_id}",
             "--config=rbe",
             "//foo",
         ]
 
     def test_no_verb(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """When no verb is found, everything is treated as startup options."""
-        cmd = self._build(tmp_path, ["--flag", "//foo"], monkeypatch)
+        """When no verb is found, everything is startup options and no ID is minted."""
+        cmd, inv_id = self._build(tmp_path, ["--flag", "//foo"], monkeypatch)
+        assert inv_id is None
         assert cmd == [
             BB,
             "remote",
-            _inv_id_file(),
             "--runner_exec_properties=workload-isolation-type=firecracker",
             f"--container_image=docker://{IMAGE}",
             "--flag",
@@ -307,8 +332,8 @@ class TestBuildCommand:
         monkeypatch.setattr("devinfra.bbr._find_bb", lambda: BB)
         monkeypatch.delenv("BBR_REMOTE_ARGS", raising=False)
         monkeypatch.delenv("BBR_BAZELRC", raising=False)
-        cmd = build_command(repo, ["test", "//foo"])
-        assert cmd == [BB, "remote", _inv_id_file(), "test", "//foo"]
+        cmd, inv_id = build_command(repo, ["test", "//foo"])
+        assert cmd == [BB, "remote", "test", f"--invocation_id={inv_id}", "//foo"]
 
 
 def _commit(repo: pygit2.Repository, ref: str, message: str, parents: list) -> pygit2.Oid:

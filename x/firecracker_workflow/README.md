@@ -253,19 +253,21 @@ export BUILDBUDDY_API_KEY=$(sops -d --extract '["stringData"]["api-key"]' \
 
 ## Invocation IDs
 
-`bbr` produces two invocation IDs:
+`bbr` produces two invocation IDs
+([details](../../devinfra/docs/bb_remote_internals.md)):
 
 ```bash
-# Outer (bb remote / runner invocation) — auto-saved by bbr
-OUTER=$(cat ~/.cache/bbr/last_invocation_id)
-bbapi invocation $OUTER
-# Invocation:  7fcd9e0c-...
-# Duration:    8s   Host: 192.168.241.2   Role: HOSTED_BAZEL
-# Child:       aa59a4e0-...   ← inner Bazel RBE invocation
-
-# Inner (Bazel RBE build) — use for action cache stats, test results
-bbapi invocation aa59a4e0-...
+# Inner (Bazel RBE build) — minted, reported, and auto-saved by bbr;
+# use for targets, test results, artifacts, action cache stats
+INNER=$(cat ~/.cache/bbr/last_invocation_id)
+bbapi invocation $INNER
 # Actions: 271   Duration: 6s   AC Hits: 865
+
+# Outer (bb remote / runner invocation) — printed by bb remote itself as
+# "Streaming remote runner logs to: .../invocation/<outer>"
+bbapi invocation <outer>
+# Duration:    8s   Host: 192.168.241.2   Role: HOSTED_BAZEL
+# Child:       <inner>   ← the Bazel invocation above
 
 # Browse: https://app.buildbuddy.io/invocation/<id>
 ```
