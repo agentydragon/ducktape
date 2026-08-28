@@ -107,6 +107,8 @@ py_library(
     name = "demo",
     srcs = ["demo.py"],
     deps = [
+        ":__init__",
+        ":custom_handler",
         ":provider",
         LITELLM_PROXY_PIP + "litellm",
     ],
@@ -123,6 +125,8 @@ py_library(
     name = "probe_models",
     srcs = ["probe_models.py"],
     deps = [
+        ":__init__",
+        ":custom_handler",
         ":model_registry",
         ":provider",
     ],
@@ -139,6 +143,8 @@ py_test(
     name = "test_provider",
     srcs = ["test_provider.py"],
     deps = [
+        ":__init__",
+        ":custom_handler",
         ":provider",
         LITELLM_PROXY_PIP + "httpx",
         LITELLM_PROXY_PIP + "litellm",
@@ -151,6 +157,8 @@ py_test(
     srcs = ["test_proxy_runtime.py"],
     data = [":server_bin"],
     deps = [
+        ":__init__",
+        ":custom_handler",
         ":provider",
         "//util/bazel:runfiles",
         LITELLM_PROXY_PIP + "litellm",
@@ -163,6 +171,8 @@ aspect_py_binary(
     srcs = ["@@rules_python++pip+pypi_tana_litellm_proxy_313_litellm//:rules_python_wheel_entry_point_litellm.py"],
     main = "@@rules_python++pip+pypi_tana_litellm_proxy_313_litellm//:rules_python_wheel_entry_point_litellm.py",
     deps = [
+        ":__init__",
+        ":custom_handler",
         ":provider",
         LITELLM_PROXY_PIP + "litellm",
     ] + LITELLM_PROXY_RUNTIME_DEPS,
