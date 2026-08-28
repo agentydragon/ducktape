@@ -50,7 +50,11 @@ map_kind to existing rules too, rewriting hand-written binaries' kind to `py_lib
   - `# gazelle:ignore <mod>` in the `.py` file for environment-provided imports
     (`FreeCAD`, `gi`, `PySide6`, `pivy`, `_bazel_site_init`);
   - `# gazelle:include_dep <label>` in the `.py` file for runtime-only deps the import
-    scan cannot see (SQLAlchemy driver dists);
+    scan cannot see, placed in the module that triggers the hidden import: SQLAlchemy
+    dialect drivers, wheel extras imported at module load (py-key-value backends,
+    pydantic-settings yaml, SessionMiddleware's `itsdangerous`, TestClient's `httpx`),
+    stub-chain dists (`types-jsonschema` → `referencing`), pytest plugins loaded by
+    name, modules run via `-m`, and scripts driven by runfiles path;
   - `# gazelle:resolve py` BUILD directives for import-name/dist mismatches;
   - `# gazelle:ignore` / `# gazelle:exclude` BUILD directives for trees deliberately
     not built.
@@ -58,11 +62,23 @@ map_kind to existing rules too, rewriting hand-written binaries' kind to `py_lib
   carries a rule-level `# keep`: gazelle deletes managed-kind rules over files it
   cannot see (`laser/material_test`, `skills/forgejo:forgejo_lib`,
   `skills/testing:frontmatter_test`).
+- A dep-level `# keep: <reason>` suffix protects deps the source file cannot carry an
+  annotation for: sibling stub dists a package's `__init__` chains into
+  (`agent_framework_{anthropic,claude,openai}` beside `_core`), and any dep of a rule
+  whose source gazelle cannot parse (`agent_core/script_handler.py`). Macro-kind rules
+  (`live_openai_py_test`) are unmanaged and hand-carry `//:conftest`.
+- `python_generate_pyi_deps` stays `false`: rules_python keeps `pyi_deps` out of
+  runtime runfiles and the mypy aspect does not traverse them, so `TYPE_CHECKING` and
+  lazy imports belong in `deps`.
 
 ## Burn-down
 
-1. **Enforcement**: bazel-ci step running `--mode=diff` (fails nonzero on drift);
-   graduate these conventions into README §Gazelle / STYLE.md and delete this plan.
+1. **Gazelle becomes the enforced routine.** A bazel-ci step runs
+   `bbr run //devinfra:gazelle -- --mode=diff` and fails on drift, so a BUILD delta
+   only ever means real dependency drift. Agent instructions (AGENTS.md § Gazelle)
+   say to run `bb run //devinfra:gazelle` after adding, moving, or renaming Python
+   files or changing imports — never hand-editing managed `deps`. The conventions
+   above graduate into README §Gazelle / STYLE.md; then this plan is deleted.
 
 ## Known limitations
 
