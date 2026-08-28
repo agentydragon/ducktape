@@ -244,7 +244,7 @@ class ProviderOAuthClientConfig(BaseModel):
 
 
 class MatrixConfig(BaseModel):
-    """Wiring for the Matrix chat surface (<x/channels/matrix/SPEC.md>).
+    """Wiring for the Matrix chat surface (<channels/matrix/SPEC.md>).
 
     Optional on Settings: the console must start and serve without it, because the bot
     password is reflected in from another namespace and is legitimately absent on a first

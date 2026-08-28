@@ -45,7 +45,7 @@ Worth taking up, in rough order of value:
   the CLI speaks JSON-RPC to it. No second process, no port, no credential on the wire, and the
   tool implementation stays where the data already is. The Matrix read tools passed on this when
   it bought structural session scoping that was then decided against — reads are unscoped on
-  purpose (<../console/x/channels/matrix/SPEC.md> § The agent's own view) — but as a way to give
+  purpose (<../console/channels/matrix/SPEC.md> § The agent's own view) — but as a way to give
   Haku console-side tools it stands on its own. This is the strongest candidate on the list
   for the transcript-reading API.
 - **`jsonSchema`** — a bare JSON Schema the answer must satisfy, returned parsed on the `result`

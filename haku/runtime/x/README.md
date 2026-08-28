@@ -2,7 +2,7 @@
 
 In-flux runtime code with no stable API, in the sense <../../../README.md> § `x/` gives the
 convention. The originating design note is <../../plans/agent_sdk_sandbox_runtime.md>; the shape
-the runtime actually took is <../../console/x/channels/matrix/SPEC.md>, and where it is going is
+the runtime actually took is <../../console/channels/matrix/SPEC.md>, and where it is going is
 <../../console/plans/conversation_layers.md>.
 
 `bridge` is the sandbox side of the native-harness chat experiment: the wire protocol between

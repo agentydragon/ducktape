@@ -1,0 +1,58 @@
+# Test-only settings, merged by top-level key over the `homeserver.yaml` the container generated.
+# Loaded by `synapse_container.py` and passed as a second `--config-path`.
+
+# Registration is open because the alternative — the shared-secret admin flow — means reading a
+# secret back out of a config file the container generated, for no extra coverage.
+enable_registration: true
+enable_registration_without_verification: true
+
+# Replaces the generated listener, which binds `::` as well as `0.0.0.0`. The test Docker network
+# has no IPv6, and Synapse treats a listener it cannot bind as fatal — so without this it exits
+# during startup with `Address family not supported by protocol`.
+# `port` is the container-side port; it must match `_CLIENT_PORT` in `synapse_container.py`.
+listeners:
+  - port: 8008
+    type: http
+    tls: false
+    bind_addresses: ["0.0.0.0"]
+    x_forwarded: true
+    resources:
+      - names: [client]
+        compress: false
+
+# Rate limits, lifted only where a test measurably reaches one. Measured against Synapse v1.158.0
+# by removing each group and rerunning `//haku/console/channels/matrix:test_homeserver_e2e`, so
+# this list is only as good as that test set: a new test reaching a further limit has to add its
+# group back with its own reason.
+#
+# `rc_joins`, `rc_joins_per_room` and `rc_invites` are absent because the target stays green without
+# them — Synapse keys those per user and per room, and `operator`, `bot` and `joined_room` are
+# function-scoped. What survives is keyed by something every test shares: the sender or the client
+# IP.
+
+rc_message:
+  # Keyed per sender. Without it `…_gap_larger_than_the_timeline_limit…` fails on `PUT /send`
+  # with `M_LIMIT_EXCEEDED`: it posts TIMELINE_LIMIT + 50 messages as one operator, stock is 0.2/s.
+  per_second: 1000
+  burst_count: 1000
+rc_registration:
+  # Keyed per client IP, which all 8 tests share. Without it 6 of them error in `operator`/`bot`
+  # setup on `POST /register` with `M_LIMIT_EXCEEDED` — stock burst is 3, the session registers 16.
+  per_second: 1000
+  burst_count: 1000
+rc_login:
+  # Also per client IP (`address`), and the one whose absence does not fail but *hangs*: stock is
+  # burst 5 at 0.003/s, so `retry_after_ms` is ~5 minutes and `Client.login` sleeps inside
+  # nio's bounded 429 retry until Bazel kills the target at its test timeout.
+  address:
+    per_second: 1000
+    burst_count: 1000
+  account:
+    per_second: 1000
+    burst_count: 1000
+  failed_attempts:
+    per_second: 1000
+    burst_count: 1000
+
+presence:
+  enabled: false

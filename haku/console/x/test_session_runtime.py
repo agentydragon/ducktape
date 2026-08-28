@@ -3,7 +3,7 @@
 **No channel is imported here, deliberately.** An attachment only selects whether the conversation
 gets the shared direct-chat system prompt; setup, answers, silence and live state are durable facts
 that channel subscribers project. What a homeserver's messages become is
-<channels/matrix/test_conversation.py>, beside the `MatrixTurns` that makes them turns.
+<channels/matrix/test_conversation.py>, beside the `Turns` that makes them turns.
 """
 
 from __future__ import annotations

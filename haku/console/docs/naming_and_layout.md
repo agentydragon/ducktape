@@ -35,8 +35,9 @@ exist on `devel` yet, it is the forthcoming destination of an in-flight issue, c
 
 The end state for the console app is domain packages, not the current ~90-module flat top level plus
 a ~30-module `x/` chat subtree. The indexer **worker** exits console entirely to `haku/indexer/`
-(#4887); `x/` **dissolves** as its modules graduate into `conversation/`, `session/`, and `channels/`,
-while the harness adapters' native projection heads **runner-ward** (#4667), leaving only a small
+(#4887); `x/` **dissolves** as its modules graduate into `conversation/` and `session/`
+(`channels/` has already graduated), while the harness adapters' native projection heads
+**runner-ward** (#4667), leaving only a small
 `harnesses/` selection residue console-side (§2). The whole tree later re-roots under
 `<platform>/console/` (#4865, the
 last chunk).
@@ -106,7 +107,7 @@ tree shows the packages, §3 and §4 settle what the files and classes inside th
     conversation_views.py  sandbox_allocation.py  sandbox_claims.py
     subscription.py  system_prompt.py  launch_identity.py  setup_output.py
 
-  channels/            # how a messaging service holds a copy (from x/channels/)
+  channels/            # how a messaging service holds a copy
     matrix/
 
   harnesses/           # harness *selection*, NOT projection — the only harness-specific code that stays
@@ -247,7 +248,6 @@ every package the split creates, not just `grants/`:
   `SessionStore` → `Store`, `SessionRecord` → `Record`.
 - **`mcp/`**: `mcp_server.py` → `server.py`, `mcp_approval.py` → `approval.py`, `mcp_execution.py` →
   `execution.py`; `McpExecutionContext` → `ExecutionContext`, `McpExecutionCaller` → `ExecutionCaller`.
-- **`channels/matrix/`**: `matrix_outbox_wake.py` → `outbox_wake.py`; drop `matrix_` on entities inside.
 - **harness adapters**: the native client + `*_projection.py` move **runner-ward** into
   `haku/runtime/x/bridge/` (#4667), where the backend-prefix drop applies (`claude_code_projection.py`
   → `projection.py`). Console keeps no `runtimes/`; the residual harness _selection_ is `harnesses/`
