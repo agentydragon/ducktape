@@ -18,8 +18,9 @@ import pytest_bazel
 from more_itertools import one
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, FrameDirection, ItemStatus, ItemType, SessionStatus
+from haku.console.chat_models import ItemStatus, ItemType
 from haku.console.conversation.follow import ConversationFollow
+from haku.console.conversation.prompt_origin import SPA_ORIGIN
 from haku.console.conversation.reads import ConversationEntry, MessageEntry, PromptEntry
 from haku.console.notifications.conversation_wakes import ConversationWakes
 from haku.console.session.conftest import attach_channel
@@ -30,6 +31,8 @@ from haku.console.session.conversation_views import (
     ConversationView,
 )
 from haku.console.session.runtime import SessionService
+from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
+from haku.console.session.status import SessionStatus
 from haku.console.session.store import Store
 from haku.console.x.conversation_events import FrameRange, ItemSegment, MessageCompleted, MessageStarted, OpenRef
 from haku.console.x.session_events import TurnAnsweredBody

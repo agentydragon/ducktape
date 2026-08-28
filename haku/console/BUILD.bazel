@@ -210,6 +210,7 @@ py_library(
     name = "recall_index_reader",
     srcs = ["recall_index_reader.py"],
     deps = [
+        ":chat_models",
         ":conversation_read_access",
         ":database_schema",
         ":mcp_config",
@@ -332,8 +333,11 @@ py_library(
         ":operator_identity",
         ":pydantic_column",
         "//haku/console/agents:models",
+        "//haku/console/conversation:prompt_origin",
         "//haku/console/hostexecd:models",
         "//haku/console/oauth:provider_connection_registry",
+        "//haku/console/session:session_frames",
+        "//haku/console/session:status",
         "//util:enum_vocab",
         "//util:sqlalchemy_types",
         "@ducktape_haku//haku/console:tool_calls",
@@ -479,11 +483,11 @@ py_library(
     name = "kubernetes_grant_repository",
     srcs = ["kubernetes_grant_repository.py"],
     deps = [
-        ":chat_models",
         ":database_schema",
         ":grant_principal",
         ":kubernetes_grant_models",
         "//haku/console/agents:models",
+        "//haku/console/session:status",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//sqlalchemy",
     ],
@@ -575,12 +579,12 @@ py_library(
     name = "agent_bearer_authority",
     srcs = ["agent_bearer_authority.py"],
     deps = [
-        ":chat_models",
         ":database_schema",
         ":tool_call_actor",
         "//haku/console/agents:authorization",
         "//haku/console/mcp_auth:fastmcp_adapter",
         "//haku/console/session:launch_identity",
+        "//haku/console/session:status",
         "@pypi//sqlalchemy",
     ],
 )
@@ -780,6 +784,7 @@ py_library(
         ":tool_call_actor",
         ":tool_call_service",
         "//haku/console/oauth:provider_connection",
+        "//haku/console/session:status",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
@@ -1094,7 +1099,6 @@ py_library(
         "//haku/console/agents:authorization",
         "//haku/console/agents:enrollment_routes",
         "//haku/console/auto_approval:github",
-        "//haku/console:chat_models",
         "//haku/console/mcp_auth:fastmcp_adapter",
         "//haku/console/tools:gmail",
         "//haku/console/tools:http_grants",
@@ -1130,6 +1134,7 @@ py_library(
         # uvicorn needs a WebSocket protocol impl at runtime or every /api/events/ws
         # upgrade fails ("Unsupported upgrade request") — the console's live channel (#2977).
         "@pypi//websockets",
+        ":chat_models",
     ],
 )
 
@@ -1402,6 +1407,7 @@ py_test(
         # needs the plugin importable at runtime for its entry-point autoload; Gazelle
         # can't see that and will try to drop this dep on regen.
         "@pypi//pytest_asyncio",
+        ":chat_models",
     ],
 )
 
@@ -1628,6 +1634,7 @@ py_test(
         ":operator_identity_store",
         "//:conftest",
         "//haku/console/session:conversation_views",
+        "//haku/console/session:status",
         "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

@@ -10,18 +10,17 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from haku.console.chat_models import (
-    SPA_ORIGIN,
     AuthoredEventKind,
     ConversationEventKind,
     EventProvenance,
     ItemType,
-    LeaseExpiryReason,
-    MatrixOrigin,
     ReasoningDisclosure,
     StoredEventKind,
     ToolOutcome,
 )
+from haku.console.conversation.prompt_origin import SPA_ORIGIN, MatrixOrigin
 from haku.console.database_schema import ConversationEventRow
+from haku.console.session.status import LeaseExpiryReason
 from haku.console.x import session_events
 from haku.console.x.conversation_events import (
     CallRef,

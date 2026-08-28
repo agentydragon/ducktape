@@ -38,14 +38,8 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.chat_models import (
-    ConversationEventKind,
-    ItemStatus,
-    ItemType,
-    PromptOrigin,
-    ReasoningDisclosure,
-    ToolOutcome,
-)
+from haku.console.chat_models import ConversationEventKind, ItemStatus, ItemType, ReasoningDisclosure, ToolOutcome
+from haku.console.conversation.prompt_origin import PromptOrigin
 from haku.console.database_schema import Conversation, ConversationItem, ConversationTurn
 from haku.console.x import session_events
 from haku.console.x.conversation_events import (

@@ -45,7 +45,9 @@ from haku.console.channels.matrix.revisions import RevisionLog
 from haku.console.channels.matrix.room_copy import RoomCopy
 from haku.console.channels.matrix.spans import Span, SpanKind
 from haku.console.channels.matrix.sync import SyncService, SyncStore
-from haku.console.chat_models import AuthoredEventKind, MatrixOrigin, PromptRejection, StoredEventKind
+from haku.console.chat_models import AuthoredEventKind, StoredEventKind
+from haku.console.conversation.prompt_inbox import PromptRejection
+from haku.console.conversation.prompt_origin import MatrixOrigin
 from haku.console.database_schema import ConversationEventRow
 from haku.console.session.store import BridgeAuthentication, Store
 from haku.console.session.subscription import ConversationStream

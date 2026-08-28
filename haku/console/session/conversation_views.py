@@ -19,11 +19,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.chat_models import BridgeFrameKind, FrameDirection, RuntimeKind, SessionStatus
+from haku.console.chat_models import RuntimeKind
 from haku.console.conversation.reads import ChannelAttachment, ConversationEntry, SetupOutputRecord
 from haku.console.database_schema import Session, SessionFrame
 from haku.console.session.sandbox_claims import SandboxProvisioningView
+from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
 from haku.console.session.setup_output import SETUP_OUTPUT_KIND
+from haku.console.session.status import SessionStatus
 
 
 class SessionView(BaseModel):

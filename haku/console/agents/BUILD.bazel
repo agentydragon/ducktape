@@ -74,6 +74,7 @@ py_test(
         ":enrollment",
         ":launch_authority",
         "//:conftest",
+        "//haku/console:chat_models",
         "//haku/console:conftest",
         "//haku/console:database_migrate",
         "//haku/console:database_schema",

@@ -14,7 +14,8 @@ import pytest
 import pytest_bazel
 from more_itertools import one
 
-from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, FrameDirection
+from haku.console.conversation.prompt_origin import SPA_ORIGIN
+from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
 from haku.console.session.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
 from haku.console.session.store import BridgeAuthentication
 from haku.console.x.claude_code import frame_export, frames

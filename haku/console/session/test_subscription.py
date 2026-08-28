@@ -18,7 +18,7 @@ import pytest_bazel
 from more_itertools import one
 from sqlalchemy import text
 
-from haku.console.chat_models import SPA_ORIGIN
+from haku.console.conversation.prompt_origin import SPA_ORIGIN
 from haku.console.session.store import Store
 from haku.console.session.subscription import (
     START,

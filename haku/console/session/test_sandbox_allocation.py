@@ -7,8 +7,9 @@ from unittest.mock import patch
 
 import pytest_bazel
 
-from haku.console.chat_models import SPA_ORIGIN, SessionStatus
+from haku.console.conversation.prompt_origin import SPA_ORIGIN
 from haku.console.session.sandbox_allocation import SandboxAllocator
+from haku.console.session.status import SessionStatus
 
 
 async def test_an_untouched_session_stays_idle(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from haku.console.chat_models import BridgeFrameKind
+from haku.console.session.session_frames import BridgeFrameKind
 
 SETUP_OUTPUT_KIND = BridgeFrameKind.SETUP_OUTPUT
 

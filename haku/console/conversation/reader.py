@@ -11,7 +11,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from uuid import UUID
 
-from haku.console.chat_models import BridgeFrameKind
 from haku.console.conversation.item_reads import entry_of
 from haku.console.conversation.reads import (
     ConversationEntry,
@@ -22,6 +21,7 @@ from haku.console.conversation.reads import (
     TurnRecord,
 )
 from haku.console.conversation_read_access import ConversationReadScope
+from haku.console.session.session_frames import BridgeFrameKind
 from haku.console.session.store import Store
 
 

@@ -35,15 +35,14 @@ from haku.console.chat_models import (
     ConversationEventKind,
     EventProvenance,
     ItemType,
-    LeaseExpiryReason,
-    PromptOrigin,
-    PromptRejection,
     ReasoningDisclosure,
-    SessionStatus,
     ToolOutcome,
     TurnOutcome,
 )
+from haku.console.conversation.prompt_inbox import PromptRejection
+from haku.console.conversation.prompt_origin import PromptOrigin
 from haku.console.database_schema import ConversationEventRow
+from haku.console.session.status import LeaseExpiryReason, SessionStatus
 from haku.console.x.conversation_events import (
     ConversationEvent,
     FrameRange,

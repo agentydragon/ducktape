@@ -42,13 +42,7 @@ from sqlalchemy import Select, func, literal_column, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.chat_models import (
-    BridgeFrameKind,
-    ConversationEventKind,
-    EventProvenance,
-    RuntimeKind,
-    StoredEventKind,
-)
+from haku.console.chat_models import ConversationEventKind, EventProvenance, RuntimeKind, StoredEventKind
 from haku.console.database_schema import (
     Conversation,
     ConversationEventRow,
@@ -57,6 +51,7 @@ from haku.console.database_schema import (
     Session,
     SessionFrame,
 )
+from haku.console.session.session_frames import BridgeFrameKind
 from haku.console.x import session_events
 from haku.console.x.conversation_events import FrameRange
 from haku.console.x.runtime import RuntimeRegistry

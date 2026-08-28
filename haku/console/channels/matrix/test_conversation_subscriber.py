@@ -30,9 +30,11 @@ from haku.console.channels.matrix.conversation_subscriber import (
 from haku.console.channels.matrix.outbox import RoomOutbox
 from haku.console.channels.matrix.room_copy import RoomCopy
 from haku.console.channels.matrix.spans import PROVISIONING_STATUS, STATUS_EDIT_INTERVAL, Span
-from haku.console.chat_models import LeaseExpiryReason, MatrixOrigin, PromptRejection, SpaOrigin
 from haku.console.conversation import log
+from haku.console.conversation.prompt_inbox import PromptRejection
+from haku.console.conversation.prompt_origin import MatrixOrigin, SpaOrigin
 from haku.console.database_schema import ChannelCursor
+from haku.console.session.status import LeaseExpiryReason
 from haku.console.session.store import Store
 from haku.console.session.subscription import START, ConversationStream, StreamedEvent, StreamPosition
 from haku.console.x import session_events

@@ -41,21 +41,18 @@ from haku.console.agents.models import (
 )
 from haku.console.chat_models import (
     AuthoredEventKind,
-    BridgeFrameKind,
     ChannelSurface,
     ConversationEventKind,
     EventProvenance,
-    FrameDirection,
     ItemStatus,
     ItemType,
-    PromptOrigin,
     ReasoningDisclosure,
     RuntimeKind,
-    SessionStatus,
     StoredEventKind,
     ToolOutcome,
     TurnOutcome,
 )
+from haku.console.conversation.prompt_origin import PromptOrigin
 from haku.console.grant_principal import GrantPrincipalKind
 from haku.console.hostexecd.models import ExecutionStatus
 from haku.console.http_grant_models import HttpMethod, HttpMethods, HttpScheme
@@ -63,6 +60,8 @@ from haku.console.kubernetes_grant_models import KubernetesGrantScope, Kubernete
 from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
 from haku.console.operator_identity import OperatorStatus
 from haku.console.pydantic_column import PydanticColumn
+from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
+from haku.console.session.status import SessionStatus
 from haku.console.tool_calls import ToolCallStatus
 from util.enum_vocab import UnknownValue
 from util.sqlalchemy_types import (

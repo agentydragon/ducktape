@@ -27,7 +27,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from haku.console.chat_models import FrameDirection, ItemStatus, PromptOriginKind, ReasoningDisclosure, RuntimeKind
+from haku.console.chat_models import ItemStatus, ReasoningDisclosure, RuntimeKind
+from haku.console.conversation.prompt_origin import PromptOriginKind
+from haku.console.session.session_frames import FrameDirection
 
 
 class ChannelAttachment(BaseModel):

@@ -12,7 +12,6 @@ from sqlalchemy import CursorResult, and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.agents.models import AgentStatus
-from haku.console.chat_models import SessionStatus
 from haku.console.database_schema import (
     Agent,
     CredentialBinding,
@@ -38,6 +37,7 @@ from haku.console.kubernetes_grant_models import (
     KubernetesGrantStatus,
     KubernetesRule,
 )
+from haku.console.session.status import SessionStatus
 from haku.console.tool_calls import ToolCallStatus
 
 

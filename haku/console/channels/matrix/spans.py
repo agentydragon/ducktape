@@ -38,7 +38,7 @@ from enum import StrEnum
 from typing import Protocol
 from uuid import UUID
 
-from haku.console.chat_models import LeaseExpiryReason
+from haku.console.session.status import LeaseExpiryReason
 from haku.console.session.subscription import START, StreamedEvent, StreamPosition
 from haku.console.x.session_events import (
     LeaseExpiredBody,

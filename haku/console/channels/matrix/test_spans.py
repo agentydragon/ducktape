@@ -22,7 +22,8 @@ from haku.console.channels.matrix.spans import (
     Span,
     SpanKind,
 )
-from haku.console.chat_models import LeaseExpiryReason, SessionStatus, ToolOutcome
+from haku.console.chat_models import ToolOutcome
+from haku.console.session.status import LeaseExpiryReason, SessionStatus
 from haku.console.session.subscription import StreamedEvent, StreamPosition
 from haku.console.x.session_events import (
     LeaseExpiredBody,

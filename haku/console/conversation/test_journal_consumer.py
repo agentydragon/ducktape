@@ -17,17 +17,10 @@ import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import (
-    SPA_ORIGIN,
-    ItemStatus,
-    ItemType,
-    MatrixOrigin,
-    ReasoningDisclosure,
-    ToolOutcome,
-    TurnOutcome,
-)
+from haku.console.chat_models import ItemStatus, ItemType, ReasoningDisclosure, ToolOutcome, TurnOutcome
 from haku.console.conversation import prompt_inbox
 from haku.console.conversation.journal_consumer import JournalConsumer, JournalViolationError
+from haku.console.conversation.prompt_origin import SPA_ORIGIN, MatrixOrigin
 from haku.console.database_schema import ConversationEventRow, ConversationTurn, Session, SessionFrame, SubmittedPrompt
 from haku.console.session.conftest import session_items
 from haku.console.session.store import Store

@@ -15,13 +15,32 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.chat_models import PromptOrigin
+from haku.console.conversation.prompt_origin import PromptOrigin
 from haku.console.database_schema import SubmittedPrompt
+
+
+class PromptRejection(StrEnum):
+    """Which state refused a prompt, in the vocabulary a surface answers its sender in.
+
+    Admission is `enqueue_prompt`'s decision under `SELECT … FOR UPDATE`, and a refusal is
+    terminal: nothing queues behind it and the sender is told to send again. The member is what
+    the answer says, so it is coarse on purpose — an operator acts on "Haku is busy" and on "there
+    is nothing behind this room yet" differently, and on nothing finer.
+    """
+
+    # No session behind the surface at all: none has ever been provisioned, or the row has gone
+    # while the supervisor mints its replacement. Recorded like every other refusal — what a
+    # rejection is about is the conversation, which exists whether or not a session does.
+    NO_SESSION = "no_session"
+    SESSION_NOT_READY = "session_not_ready"
+    TURN_IN_FLIGHT = "turn_in_flight"
+    PROMPT_QUEUED = "prompt_queued"
 
 
 class PromptNotPendingError(LookupError):

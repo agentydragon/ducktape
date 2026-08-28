@@ -16,12 +16,12 @@ py_library(
     name = "follow",
     srcs = ["follow.py"],
     deps = [
-        "//haku/console:chat_models",
         "//haku/console:operator_auth",
         "//haku/console/notifications:console_events",
         "//haku/console/notifications:conversation_wakes",
         "//haku/console/session:conversation_views",
         "//haku/console/session:sandbox_claims",
+        "//haku/console/session:status",
         "//haku/console/session:store",
         "@pypi//fastapi",
     ],
@@ -41,6 +41,7 @@ py_library(
     name = "item_reads",
     srcs = ["item_reads.py"],
     deps = [
+        ":prompt_origin",
         ":reads",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
@@ -76,6 +77,7 @@ py_library(
     name = "log",
     srcs = ["log.py"],
     deps = [
+        ":prompt_origin",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
         "//haku/console/x:conversation_events",
@@ -89,10 +91,16 @@ py_library(
     name = "prompt_inbox",
     srcs = ["prompt_inbox.py"],
     deps = [
-        "//haku/console:chat_models",
+        ":prompt_origin",
         "//haku/console:database_schema",
         "@pypi//sqlalchemy",
     ],
+)
+
+py_library(
+    name = "prompt_origin",
+    srcs = ["prompt_origin.py"],
+    deps = ["@pypi//pydantic"],
 )
 
 py_library(
@@ -101,8 +109,8 @@ py_library(
     deps = [
         ":item_reads",
         ":reads",
-        "//haku/console:chat_models",
         "//haku/console:conversation_read_access",
+        "//haku/console/session:session_frames",
         "//haku/console/session:store",
     ],
 )
@@ -111,7 +119,9 @@ py_library(
     name = "reads",
     srcs = ["reads.py"],
     deps = [
+        ":prompt_origin",
         "//haku/console:chat_models",
+        "//haku/console/session:session_frames",
         "@pypi//pydantic",
     ],
 )
@@ -122,6 +132,7 @@ py_library(
     deps = [
         "//haku/console:chat_models",
         "//haku/console:database_schema",
+        "//haku/console/session:session_frames",
         "//haku/console/session:setup_output",
         "//haku/console/x:runtime",
         "//haku/console/x:runtime_catalog",
@@ -150,6 +161,7 @@ py_test(
     deps = [
         ":conftest",
         ":follow",
+        ":prompt_origin",
         ":reads",
         "//:conftest",
         "//haku/console:chat_models",
@@ -158,6 +170,8 @@ py_test(
         "//haku/console/session:conftest",
         "//haku/console/session:conversation_views",
         "//haku/console/session:runtime",
+        "//haku/console/session:session_frames",
+        "//haku/console/session:status",
         "//haku/console/session:store",
         "//haku/console/x:conversation_events",
         "//haku/console/x/claude_code:frames",
@@ -192,7 +206,7 @@ py_test(
     deps = [
         ":conftest",
         ":journal_consumer",
-        ":prompt_inbox",
+        ":prompt_origin",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
@@ -235,11 +249,13 @@ py_test(
     srcs = ["test_reprojection.py"],
     deps = [
         ":conftest",
+        ":prompt_origin",
         ":reprojection",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
         "//haku/console:database_schema",
+        "//haku/console/session:session_frames",
         "//haku/console/session:store",
         "//haku/console/x:runtime",
         "//haku/console/x/claude_code:runtime",
@@ -258,6 +274,7 @@ py_test(
     srcs = ["test_runtime.py"],
     deps = [
         ":conftest",
+        ":prompt_origin",
         ":runtime",
         "//:conftest",
         "//haku/console:chat_models",
@@ -267,6 +284,7 @@ py_test(
         "//haku/console/session:conftest",
         "//haku/console/session:launch_identity",
         "//haku/console/session:runtime",
+        "//haku/console/session:status",
         "//haku/console/session:store",
         "//haku/console/x:runtime",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
