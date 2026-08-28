@@ -6,13 +6,10 @@ py_library(
     name = "runtime",
     srcs = ["runtime.py"],
     deps = [
-        ":conversation_events",
         "//haku/console/harnesses:kind",
         "//haku/console/session:sandbox_claims",
         "//haku/console/session:system_prompt",
-        "//haku/runner:client",
         "//haku/runner:protocol",
-        "//haku/runner:transport",
     ],
 )
 

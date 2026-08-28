@@ -290,7 +290,6 @@ py_library(
         "//haku/console/tools:hostexec",
         "//haku/console/tools:hostexec_client",
         "//haku/console/tools:hostexec_token",
-        "//haku/console/tools:kubernetes",
         "//haku/console/tools:recall_index",
         "//haku/console/tools:routine",
         "//haku/console/tools:sandbox",

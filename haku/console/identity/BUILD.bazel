@@ -204,7 +204,6 @@ py_test(
         "//:conftest",
         "//haku/console:conftest",
         "@pypi//fastapi",
-        "@pypi//httpx",
         "@pypi//pytest_bazel",
     ],
 )
