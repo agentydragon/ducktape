@@ -13,13 +13,13 @@ py_library(
 )
 
 py_library(
-    name = "backtest_statespace",
+    name = "backtest_statespace_lib",
     srcs = ["backtest_statespace.py"],
     deps = [":evidence_series"],
 )
 
 py_binary(
-    name = "backtest_statespace_bin",
+    name = "backtest_statespace",
     main_module = "finance.augur.x.pm_reifier.backtest_statespace",
-    deps = [":backtest_statespace"],
+    deps = [":backtest_statespace_lib"],
 )

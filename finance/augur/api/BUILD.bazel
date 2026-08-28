@@ -251,7 +251,7 @@ py_library(
         ":finance",
         ":local_regulation",
         ":portfolio_source_config",
-        ":server",
+        ":server_lib",
         ":wire",
         "//finance/augur/model:independent",
         "//finance/augur/model:provider_config",
@@ -270,7 +270,7 @@ py_test(
         ":public_fixture_calibration_catalog",
         ":public_fixture_config",
         ":public_fixture_properties",
-        ":server_bin",
+        ":server",
     ],
     deps = [
         ":conftest",
@@ -297,7 +297,7 @@ py_test(
     deps = [
         ":config",
         ":conftest",
-        ":server",
+        ":server_lib",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/calibration:catalog",
@@ -327,7 +327,7 @@ py_library(
 )
 
 py_library(
-    name = "server",
+    name = "server_lib",
     srcs = ["server.py"],
     deps = [
         ":calibration_wire",
@@ -358,14 +358,19 @@ py_library(
 )
 
 py_binary(
-    name = "server_bin",
+    name = "server",
     main_module = "finance.augur.api.server",
-    deps = [":server"],
+    deps = [":server_lib"],
 )
 
-py_library(
+py_binary(
     name = "profile_metric_fan",
     srcs = ["profile_metric_fan.py"],
+    data = [
+        ":public_fixture_config",
+        ":public_fixture_properties",
+    ],
+    main_module = "finance.augur.api.profile_metric_fan",
     deps = [
         ":catalog",
         ":config",
@@ -378,22 +383,12 @@ py_library(
     ],
 )
 
-py_binary(
-    name = "profile_metric_fan_bin",
-    data = [
-        ":public_fixture_config",
-        ":public_fixture_properties",
-    ],
-    main_module = "finance.augur.api.profile_metric_fan",
-    deps = [":profile_metric_fan"],
-)
-
 aspect_py_binary(
     name = "server_image_binary",
     srcs = ["server.py"],
     main = "server.py",
     deps = [
-        ":server",
+        ":server_lib",
         "@pypi//fastapi",
         "@pypi//more_itertools",
         "@pypi//pyyaml",
@@ -462,7 +457,7 @@ py_library(
         ":finance",
         ":local_regulation",
         ":portfolio_source_config",
-        ":server",
+        ":server_lib",
         ":wire",
         "//finance/augur/model:independent",
     ],
