@@ -317,12 +317,21 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
     presence of a library.
   - **Change-detector guarding a real constraint → comment at the
     declaration**: when a test's only enforcement is "the editor must update a
-    mirrored literal in a second file", move the constraint onto the
-    declaration itself (append-only, values persisted, edits need a migration)
-    and delete the test. A relation against a second live artifact (the running
+    mirrored literal in a second file" _and_ the guarded thing can only break
+    by editing that one declaration, move the constraint onto the declaration
+    itself (append-only, values persisted, edits need a migration) and delete
+    the test. A relation against a second live artifact (the running
     database's enum, a generated config) stays a test.
-  - **Pin defaults where they act**: assert the boundary artifact carries the
-    value, as literals (the token request asks for the full scope list) — not
+  - **Multi-site constraints**: when several places must agree (the same rule
+    in JS and Python, a value mirrored across configs), prefer in order: an
+    integration/e2e test of the shared behavior; a test tying the sites
+    together (parse both files, assert the values agree); and only where both
+    are impractical or degenerate into pure change detectors, a concise sync
+    comment at _every_ site naming what must stay in sync and why — a long
+    why lives in one central place the other comments point to.
+  - **Pin defaults where they act**: best is asserting the behavior the value
+    produces; else assert the boundary artifact carries the value, as literals
+    (the token request asks for the full scope list) — not
     `field default == the same imported constant`, which passes even when the
     constant changes.
   - **Anchors and guards inherit their unit's value**: a positive anchor keeps
