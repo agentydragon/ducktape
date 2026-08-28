@@ -16,6 +16,7 @@ TSCONFIG = "//haku/console/frontend:tsconfig"
 ts_library(
     name = "variant",
     srcs = ["vocabulary.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@mantine/core",
@@ -32,6 +33,7 @@ ts_library(
 ts_library(
     name = "server_ids",
     srcs = ["server_ids.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
 )
 
@@ -40,6 +42,7 @@ ts_library(
 ts_library(
     name = "action_entry",
     srcs = ["action_entry.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = ["//:node_modules/zod"],
 )
@@ -49,6 +52,7 @@ ts_library(
 ts_library(
     name = "actions",
     srcs = ["actions.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":action_entry",
@@ -68,6 +72,7 @@ ts_library(
     name = "actions_test",
     testonly = True,
     srcs = ["actions.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":actions",
@@ -79,6 +84,7 @@ ts_library(
 ts_library(
     name = "entry",
     srcs = ["entry.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":variant",
@@ -94,6 +100,7 @@ ts_library(
 ts_library(
     name = "result_entry",
     srcs = ["result_entry.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":variant",
@@ -112,6 +119,7 @@ ts_library(
 ts_library(
     name = "call_entry",
     srcs = ["call_entry.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":entry",
@@ -126,6 +134,7 @@ ts_library(
 ts_library(
     name = "tool_rendering",
     srcs = ["index.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":call_entry",
@@ -178,6 +187,7 @@ filegroup(
 ts_library(
     name = "index_test",
     srcs = ["index.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":tool_rendering",
@@ -188,6 +198,7 @@ ts_library(
 ts_library(
     name = "result_entry_test",
     srcs = ["result_entry.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":result_entry",
@@ -198,6 +209,7 @@ ts_library(
 ts_library(
     name = "call_entry_test",
     srcs = ["call_entry.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":call_entry",
@@ -211,6 +223,7 @@ ts_library(
 ts_library(
     name = "variant_test",
     srcs = ["vocabulary.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":variant",

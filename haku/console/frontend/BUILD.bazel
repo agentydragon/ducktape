@@ -60,6 +60,7 @@ js_json_schema(
 ts_library(
     name = "mcp_tool_schema",
     srcs = ["mcp_tool_schema.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":mcp_tool_arguments",
@@ -70,6 +71,7 @@ ts_library(
 ts_library(
     name = "mcp_tool_result_schema",
     srcs = ["mcp_tool_result_schema.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":mcp_tool_results",
@@ -81,6 +83,7 @@ ts_library(
 ts_library(
     name = "client",
     srcs = ["client.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":operator_login",
@@ -92,6 +95,7 @@ ts_library(
 ts_library(
     name = "conversation_launch",
     srcs = ["conversation_launch.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [":client"],
 )
@@ -99,12 +103,14 @@ ts_library(
 ts_library(
     name = "operator_login",
     srcs = ["operator_login.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
 )
 
 ts_library(
     name = "mcp_result",
     srcs = ["mcp_result.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = ["//:node_modules/zod"],
 )
@@ -112,6 +118,7 @@ ts_library(
 ts_library(
     name = "mcp_client",
     srcs = ["mcp_client.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":client",
@@ -124,6 +131,7 @@ ts_library(
 ts_library(
     name = "mcp_status_client",
     srcs = ["mcp_status_client.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":mcp_client",
@@ -134,6 +142,7 @@ ts_library(
 ts_library(
     name = "calendar_client",
     srcs = ["calendar_client.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":mcp_client",
@@ -144,6 +153,7 @@ ts_library(
 ts_library(
     name = "gmail_client",
     srcs = ["gmail_client.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":mcp_client",
@@ -154,6 +164,7 @@ ts_library(
 ts_library(
     name = "grocy_client",
     srcs = ["grocy_client.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":mcp_client",
@@ -164,6 +175,7 @@ ts_library(
 ts_library(
     name = "tana_client",
     srcs = ["tana_client.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [":mcp_client"],
 )
@@ -171,6 +183,7 @@ ts_library(
 ts_library(
     name = "approval_state",
     srcs = ["approval_state.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":client",
@@ -181,6 +194,7 @@ ts_library(
 ts_library(
     name = "async_resource",
     srcs = ["async_resource.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@types/react",
@@ -191,6 +205,7 @@ ts_library(
 ts_library(
     name = "theme",
     srcs = ["theme.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = ["//:node_modules/@mantine/core"],
 )
@@ -198,6 +213,7 @@ ts_library(
 ts_library(
     name = "toast",
     srcs = ["toast.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":theme",
@@ -210,6 +226,7 @@ ts_library(
 ts_library(
     name = "bridge",
     srcs = ["bridge.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = ["//:node_modules/@haku/console-bridge"],
 )
@@ -217,6 +234,7 @@ ts_library(
 ts_library(
     name = "coalesced_refresh",
     srcs = ["coalesced_refresh.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@types/react",
@@ -227,6 +245,7 @@ ts_library(
 ts_library(
     name = "console_events",
     srcs = ["console_events.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":operator_login",
@@ -238,6 +257,7 @@ ts_library(
 ts_library(
     name = "push_subscription",
     srcs = ["push_subscription.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":client",
@@ -249,6 +269,7 @@ ts_library(
 ts_library(
     name = "sw_lib",
     srcs = ["sw.ts"],
+    isolated_typecheck = True,
     tsconfig = ":tsconfig_sw",
     deps = ["//haku/console/frontend/tool_rendering:actions"],
 )
@@ -256,6 +277,7 @@ ts_library(
 ts_library(
     name = "sw_test",
     srcs = ["sw.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":sw_lib",
@@ -284,6 +306,7 @@ esbuild(
 ts_library(
     name = "operator_session",
     srcs = ["operator_session.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":client",
@@ -295,6 +318,7 @@ ts_library(
 ts_library(
     name = "tool_call_decision",
     srcs = ["tool_call_decision.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":approval_state",
@@ -308,12 +332,14 @@ ts_library(
 ts_library(
     name = "open_external",
     srcs = ["open_external.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
 )
 
 ts_library(
     name = "routing",
     srcs = ["routing.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@types/react",
@@ -330,6 +356,7 @@ data_uri_module(
         "GMAIL_ICON_DATA_URI": "@gmail_icon_svg//file",
         "GOOGLE_CALENDAR_ICON_DATA_URI": "@google_calendar_icon_svg//file",
     },
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
 )
 
@@ -342,6 +369,7 @@ ts_library(
         # being emitted.
         "tabler_icons.d.ts",
     ],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":brand_icon_data",
@@ -354,12 +382,14 @@ ts_library(
 ts_library(
     name = "geolocation_grant",
     srcs = ["geolocation_grant.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
 )
 
 ts_library(
     name = "geolocation",
     srcs = ["geolocation.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = ["//:node_modules/@haku/console-bridge"],
 )
@@ -367,18 +397,21 @@ ts_library(
 ts_library(
     name = "screenshot_grant",
     srcs = ["screenshot_grant.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
 )
 
 ts_library(
     name = "screenshot_capture",
     srcs = ["screenshot_capture.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
 )
 
 ts_library(
     name = "confirm_dialog",
     srcs = ["confirm_dialog.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":bridge",
@@ -392,6 +425,7 @@ ts_library(
 ts_library(
     name = "field",
     srcs = ["field.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@types/react",
@@ -402,6 +436,7 @@ ts_library(
 ts_library(
     name = "link",
     srcs = ["link.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@mantine/core",
@@ -413,6 +448,7 @@ ts_library(
 ts_library(
     name = "shell_lang",
     srcs = ["shell_lang.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@codemirror/language",
@@ -423,6 +459,7 @@ ts_library(
 ts_library(
     name = "code_block",
     srcs = ["code_block.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":shell_lang",
@@ -441,6 +478,7 @@ ts_library(
 ts_library(
     name = "tool_arguments_field",
     srcs = ["tool_arguments_field.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":code_block",
@@ -456,6 +494,7 @@ ts_library(
 ts_library(
     name = "json_preview",
     srcs = ["json_preview.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":code_block",
@@ -468,6 +507,7 @@ ts_library(
 ts_library(
     name = "tool_result_field",
     srcs = ["tool_result_field.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":code_block",
@@ -483,6 +523,7 @@ ts_library(
 ts_library(
     name = "tool_call_meta",
     srcs = ["tool_call_meta.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":approval_state",
@@ -495,6 +536,7 @@ ts_library(
 ts_library(
     name = "tool_action_line",
     srcs = ["tool_action_line.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@mantine/core",
@@ -507,6 +549,7 @@ ts_library(
 ts_library(
     name = "tool_call_card",
     srcs = ["tool_call_card.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":approval_state",
@@ -526,6 +569,7 @@ ts_library(
 ts_library(
     name = "pending_tool_call_actions",
     srcs = ["pending_tool_call_actions.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":theme",
@@ -538,6 +582,7 @@ ts_library(
 ts_library(
     name = "variant_control",
     srcs = ["variant_control.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":icons",
@@ -551,6 +596,7 @@ ts_library(
 ts_library(
     name = "shell_chrome",
     srcs = ["shell_chrome.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":approval_state",
@@ -573,6 +619,7 @@ ts_library(
 ts_library(
     name = "tool_calls_page",
     srcs = ["tool_calls_page.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":approval_state",
@@ -593,6 +640,7 @@ ts_library(
 ts_library(
     name = "tool_calls_page_test",
     srcs = ["tool_calls_page.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":client",
@@ -604,6 +652,7 @@ ts_library(
 ts_library(
     name = "kubernetes_grants_panel",
     srcs = ["kubernetes_grants_panel.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":approval_state",
@@ -621,6 +670,7 @@ ts_library(
 ts_library(
     name = "settings_panel",
     srcs = ["settings_panel.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":approval_state",
@@ -642,6 +692,7 @@ ts_library(
 ts_library(
     name = "agent_enrollment_panel",
     srcs = ["agent_enrollment_panel.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":client",
@@ -655,6 +706,7 @@ ts_library(
 ts_library(
     name = "haku_ui_embed",
     srcs = ["haku_ui_embed.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":agent_enrollment_panel",
@@ -688,6 +740,7 @@ ts_library(
 ts_library(
     name = "app",
     srcs = ["app.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":client",
@@ -704,6 +757,7 @@ ts_library(
 ts_library(
     name = "oauth_result_announcement",
     srcs = ["oauth_result_announcement.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":client",
@@ -717,6 +771,7 @@ ts_library(
 ts_library(
     name = "oauth_result_page",
     srcs = ["oauth_result_page.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":client",
@@ -731,6 +786,7 @@ ts_library(
 ts_library(
     name = "main_lib",
     srcs = ["main.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":app",
@@ -853,6 +909,7 @@ ts_library(
         "screenshots/mock_api.ts",
         "screenshots/sample_data.ts",
     ],
+    isolated_typecheck = True,
     tags = ["no-lint"],
     tsconfig = TSCONFIG,
     deps = [
@@ -946,6 +1003,7 @@ js_test(
 ts_library(
     name = "approval_state_test",
     srcs = ["approval_state.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":approval_state",
@@ -957,6 +1015,7 @@ ts_library(
 ts_library(
     name = "bridge_test_lib",
     srcs = ["bridge.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":bridge",
@@ -967,6 +1026,7 @@ ts_library(
 ts_library(
     name = "bridge_client_test",
     srcs = ["bridge_client.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@haku/console-bridge",
@@ -977,6 +1037,7 @@ ts_library(
 ts_library(
     name = "calendar_client_test",
     srcs = ["calendar_client.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":calendar_client",
@@ -987,6 +1048,7 @@ ts_library(
 ts_library(
     name = "client_test",
     srcs = ["client.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":client",
@@ -997,6 +1059,7 @@ ts_library(
 ts_library(
     name = "route_resource_state_test",
     srcs = ["route_resource_state.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":agent_enrollment_panel",
@@ -1013,6 +1076,7 @@ ts_library(
 ts_library(
     name = "conversation_launch_test",
     srcs = ["conversation_launch.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":client",
@@ -1024,6 +1088,7 @@ ts_library(
 ts_library(
     name = "code_block_test",
     srcs = ["code_block.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":code_block",
@@ -1038,6 +1103,7 @@ ts_library(
 ts_library(
     name = "geolocation_test",
     srcs = ["geolocation.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":geolocation",
@@ -1048,6 +1114,7 @@ ts_library(
 ts_library(
     name = "gmail_client_test",
     srcs = ["gmail_client.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":gmail_client",
@@ -1059,6 +1126,7 @@ ts_library(
 ts_library(
     name = "haku_ui_embed_test",
     srcs = ["haku_ui_embed.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":geolocation_grant",
@@ -1072,6 +1140,7 @@ ts_library(
 ts_library(
     name = "mcp_tool_result_schema_test",
     srcs = ["mcp_tool_result_schema.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":mcp_tool_result_schema",
@@ -1082,6 +1151,7 @@ ts_library(
 ts_library(
     name = "mcp_tool_schema_test",
     srcs = ["mcp_tool_schema.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":mcp_tool_schema",
@@ -1092,6 +1162,7 @@ ts_library(
 ts_library(
     name = "open_external_test",
     srcs = ["open_external.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":open_external",
@@ -1102,6 +1173,7 @@ ts_library(
 ts_library(
     name = "console_events_test",
     srcs = ["console_events.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":console_events",
@@ -1112,6 +1184,7 @@ ts_library(
 ts_library(
     name = "operator_login_test",
     srcs = ["operator_login.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":operator_login",
@@ -1122,6 +1195,7 @@ ts_library(
 ts_library(
     name = "routing_test",
     srcs = ["routing.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":routing",
@@ -1132,6 +1206,7 @@ ts_library(
 ts_library(
     name = "screenshot_capture_test",
     srcs = ["screenshot_capture.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":screenshot_capture",
@@ -1142,6 +1217,7 @@ ts_library(
 ts_library(
     name = "sample_data_test",
     srcs = ["screenshots/sample_data.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":approval_state",
@@ -1154,6 +1230,7 @@ ts_library(
 ts_library(
     name = "settings_panel_test",
     srcs = ["settings_panel.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":async_resource",
@@ -1171,6 +1248,7 @@ ts_library(
 ts_library(
     name = "shell_chrome_test",
     srcs = ["shell_chrome.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":shell_chrome",
@@ -1181,6 +1259,7 @@ ts_library(
 ts_library(
     name = "tana_client_test",
     srcs = ["tana_client.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":tana_client",
@@ -1191,6 +1270,7 @@ ts_library(
 ts_library(
     name = "tool_call_decision_test",
     srcs = ["tool_call_decision.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":client",

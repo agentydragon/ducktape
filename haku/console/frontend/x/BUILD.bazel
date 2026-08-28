@@ -9,12 +9,14 @@ TSCONFIG = "//haku/console/frontend:tsconfig"
 ts_library(
     name = "chat_scroll",
     srcs = ["chat_scroll.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
 )
 
 ts_library(
     name = "markdown",
     srcs = ["markdown.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@types/dompurify",
@@ -28,6 +30,7 @@ ts_library(
 ts_library(
     name = "tool_call",
     srcs = ["tool_call.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@mantine/core",
@@ -41,6 +44,7 @@ ts_library(
 ts_library(
     name = "sandbox_provisioning",
     srcs = ["sandbox_provisioning.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@mantine/core",
@@ -53,6 +57,7 @@ ts_library(
 ts_library(
     name = "bootstrap_narration",
     srcs = ["bootstrap_narration.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = ["//haku/console/frontend:client"],
 )
@@ -60,6 +65,7 @@ ts_library(
 ts_library(
     name = "frame_log",
     srcs = ["frame_log.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = ["//haku/console/frontend:client"],
 )
@@ -67,6 +73,7 @@ ts_library(
 ts_library(
     name = "session_frames_page",
     srcs = ["session_frames_page.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":frame_log",
@@ -83,6 +90,7 @@ ts_library(
 ts_library(
     name = "conversation_composer",
     srcs = ["conversation_composer.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@mantine/core",
@@ -95,6 +103,7 @@ ts_library(
 ts_library(
     name = "conversation_follow",
     srcs = ["conversation_follow.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@types/react",
@@ -107,6 +116,7 @@ ts_library(
 ts_library(
     name = "conversation_follow_test",
     srcs = ["conversation_follow.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":conversation_follow",
@@ -118,6 +128,7 @@ ts_library(
 ts_library(
     name = "conversations_page",
     srcs = ["conversations_page.tsx"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":bootstrap_narration",
@@ -141,6 +152,7 @@ ts_library(
 ts_library(
     name = "chat_scroll_test",
     srcs = ["chat_scroll.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":chat_scroll",
@@ -151,6 +163,7 @@ ts_library(
 ts_library(
     name = "bootstrap_narration_test",
     srcs = ["bootstrap_narration.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":bootstrap_narration",
@@ -162,6 +175,7 @@ ts_library(
 ts_library(
     name = "frame_log_test",
     srcs = ["frame_log.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":frame_log",
@@ -173,6 +187,7 @@ ts_library(
 ts_library(
     name = "markdown_test",
     srcs = ["markdown.test.ts"],
+    isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":markdown",
