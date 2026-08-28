@@ -172,7 +172,7 @@ class SetupOutput(_Frame):
     Every line goes, uncurated — on a failure the error text is the thing worth having in the room.
     Curation would buy a tidiness the room deliberately does not want yet: while this is new, a room
     that over-explains itself is the debugging surface
-    (<../../../console/x/channels/matrix/SPEC.md> § What the room shows while a turn runs).
+    (<../../../console/channels/matrix/SPEC.md> § What the room shows while a turn runs).
     """
 
     kind: Literal["setup_output"] = "setup_output"

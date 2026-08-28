@@ -80,10 +80,10 @@ that re-derived everything would silently delete every fact no frame carries.
 
 ## Placing something new
 
-- **A module** goes to the directory of the one axis it varies on. Under `../x/` those are the
-  channel-neutral, harness-neutral runtime (`x/*.py`), one channel (`x/channels/<name>/`), and one
-  CLI harness each in a directory named for the product whose binary it launches (`x/claude_code/`,
-  `x/codex_app_server/` — the harness and the model behind it are different axes). The test is what
+- **A module** goes to the directory of the one axis it varies on: the channel-neutral,
+  harness-neutral runtime (`../x/*.py`), one channel (`../channels/<name>/`), and one
+  CLI harness each in a directory named for the product whose binary it launches (`../x/claude_code/`,
+  `../x/codex_app_server/` — the harness and the model behind it are different axes). The test is what
   the module would take with it if the other axis were replaced: a second channel must reuse
   everything at the runtime level unchanged, and a module that cannot compile without `matrix-nio`
   is the channel's. Imports do not decide the harder cases — what the module's output is _for_

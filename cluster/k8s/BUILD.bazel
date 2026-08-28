@@ -265,9 +265,12 @@ filegroup(
         "haku/console/haku_system_prompt.md.j2",
         "haku/console/public_coder_system_prompt.md.j2",
     ],
-    # `__subpackages__`: the templates are rendered by the session runtime and read back by
-    # the Matrix channel's full-stack test, which is a package below it.
-    visibility = ["//haku/console/x:__subpackages__"],
+    # The templates are rendered by the session runtime (`x/`) and read back by the Matrix
+    # channel's full-stack test (`channels/`).
+    visibility = [
+        "//haku/console/channels:__subpackages__",
+        "//haku/console/x:__subpackages__",
+    ],
 )
 
 # The per-claim sandbox bootstrap, shared with the Console-owned Claude runner image so the

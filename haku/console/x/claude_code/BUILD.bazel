@@ -12,8 +12,8 @@ py_library(
     # A channel *test* driving a fake backend is the one thing on the far side of that rule that
     # has to know the wire: it asserts against the frames the stub produced.
     visibility = [
+        "//haku/console/channels/matrix/testing:__pkg__",
         "//haku/console/x:__pkg__",
-        "//haku/console/x/channels/matrix/testing:__pkg__",
         "//haku/console/x/claude_code/testing:__pkg__",
     ],
     deps = ["@pypi//pydantic"],

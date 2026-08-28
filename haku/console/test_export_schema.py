@@ -39,10 +39,10 @@ def test_a_message_carries_the_components_a_read_returns() -> None:
 
 
 def test_runtime_and_harness_kind_are_read_only_closed_identity_fields() -> None:
-    # Expand step of the runtime_kind→harness_kind wire rename (naming_and_layout.md §3.1, #4772):
-    # every identity-bearing model publishes both names, each a required reference to the same
-    # closed enum, so a consumer can move to `harness_kind` before `runtime_kind` is dropped in the
-    # contract step.
+    # runtime_kind→harness_kind wire rename (naming_and_layout.md §3.1, #4772): readers are on
+    # `harness_kind`; every identity-bearing model keeps publishing both names, each a required
+    # reference to the same closed enum, until the contract step drops `runtime_kind` after the
+    # reader-switch image rolls out.
     published = schemas()
     runtime_ref = {"$ref": "#/components/schemas/RuntimeKind"}
     assert published["RuntimeKind"]["enum"] == ["claude_code", "codex_app_server"]

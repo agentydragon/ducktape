@@ -1,0 +1,101 @@
+"""The Matrix channel's outside-the-process collaborators: a real homeserver, and a console replica speaking to it."""
+
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "synapse_container",
+    srcs = ["synapse_container.py"],
+    # Reaches every target that runs a Synapse through `deps`, so a new one needs no `data` of its own.
+    data = ["synapse_overrides.yaml"],
+    deps = [
+        "//third_party/containers:rlocations",
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//docker",
+        "@pypi//httpx",
+        "@pypi//tenacity",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_library(
+    name = "operator_room",
+    srcs = ["operator_room.py"],
+    deps = [
+        ":synapse_container",
+        "//haku/console/x/testing:waiting",
+        "@pypi//matrix_nio",
+    ],
+)
+
+py_library(
+    name = "console_deployment",
+    srcs = ["console_deployment.py"],
+    # Reaches every target that runs a console replica through `deps`, so a new one needs no
+    # `data` of its own.
+    data = [
+        ":console_replica_bin",
+        "//cluster/k8s:haku_console_system_prompt",
+        "//haku/console/x/claude_code/testing:stub_claude_bin",
+        "//haku/runtime/x/bridge:runner_bin",
+    ],
+    deps = [
+        "//haku/console:chat_models",
+        "//haku/console:conversation_read_access",
+        "//haku/console:database_schema",
+        "//haku/console/x:session_store",
+        "//haku/console/x/testing:waiting",
+        "//util:net",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "console_replica",
+    srcs = ["console_replica.py"],
+    deps = [
+        "//haku/console:config",
+        "//haku/console:operator_identity",
+        "//haku/console:operator_identity_store",
+        "//haku/console/channels/matrix:client",
+        "//haku/console/channels/matrix:conversation",
+        "//haku/console/channels/matrix:ingress_ledger",
+        "//haku/console/channels/matrix:outbox",
+        "//haku/console/channels/matrix:outbox_wake",
+        "//haku/console/channels/matrix:revisions",
+        "//haku/console/channels/matrix:room_copy",
+        "//haku/console/channels/matrix:sync",
+        "//haku/console/x:conversation_history",
+        "//haku/console/x:conversation_runtime",
+        "//haku/console/x:conversation_wakes",
+        "//haku/console/x:sandbox_allocation",
+        "//haku/console/x:sandbox_claims",
+        "//haku/console/x:session_runtime",
+        "//haku/console/x:session_store",
+        "//haku/console/x:session_wakes",
+        "//haku/console/x:subscription",
+        "//haku/console/x:system_prompt",
+        "//haku/console/x/testing:recording_claims",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "console_replica_bin",
+    main_module = "haku.console.channels.matrix.testing.console_replica",
+    deps = [
+        ":console_replica",
+        "@pypi//websockets",  # keep: uvicorn's websocket protocol implementation, not a direct import
+    ],
+)

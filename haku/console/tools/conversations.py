@@ -2,7 +2,7 @@
 
 Lets Haku consult what it actually did in an earlier session, rather than starting each one
 from the last twenty room messages and nothing else: the room is not the only corpus and it is the
-smaller one (<../x/channels/matrix/SPEC.md> § The agent's own view). What it reads are the console's
+smaller one (<../channels/matrix/SPEC.md> § The agent's own view). What it reads are the console's
 two durable records: the conversation — neutral events folded into items as each frame arrived —
 and `session_frames`, the verbatim wire they were read off. A tool call and the result it got
 are in both — which the room is not.
@@ -83,6 +83,8 @@ from haku.console.x.conversation_reads import (
     TurnRecord,
 )
 
+# Wire-frozen id: named by cluster/k8s/haku/console/config.yaml and persisted in
+# ledger `server_id` rows — renaming is a config + data migration.
 HAKU_CONVERSATIONS_SERVER_ID = "haku_conversations"
 
 # Rows per page. Small on purpose: a frame carries a whole tool result, and the console's

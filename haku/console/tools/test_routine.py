@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest_bazel
 from fastmcp import Client
 
-from haku.console.tools.routine import HAKU_ROUTINE_SERVER_ID, LaunchRoutineResult, build_mcp
+from haku.console.tools.routine import LaunchRoutineResult, build_mcp
 
 
 def _mcp(launcher=None):
@@ -16,7 +16,6 @@ async def test_tool_surface():
     async with Client(_mcp()) as client:
         tools = {tool.name for tool in await client.list_tools()}
     assert tools == {"launch_routine"}
-    assert HAKU_ROUTINE_SERVER_ID == "haku_routine"
 
 
 async def test_launch_routine_dispatches_to_launcher():

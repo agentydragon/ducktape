@@ -95,14 +95,12 @@ def test_the_key_carries_every_field_of_the_budget() -> None:
 
 
 def test_the_key_is_canonical() -> None:
+    """The exact string is a live consumer contract: `chunker_key` is persisted per chunk row
+    (schema.py) and compared against freshly computed keys to decide index currency (sync.py) —
+    a formatting drift (key order, whitespace) would orphan every persisted chunk."""
     assert git_chunker_key(ChunkBudget(target_bytes=1, max_bytes=2)) == (
         '{"max_bytes":2,"overlap_codepoints":0,"target_bytes":1,"version":2}'
     )
-
-
-@pytest.mark.parametrize("budget", [ChunkBudget(target_bytes=1, max_bytes=2)])
-def test_a_sensible_budget_is_accepted(budget: ChunkBudget) -> None:
-    assert budget.target_bytes > 0
 
 
 @pytest.mark.parametrize(

@@ -30,6 +30,8 @@ from haku.console.tools.google_calendar_client import (
 )
 from haku.console.tools.google_service import build_google_api_service
 
+# Wire-frozen id: named by cluster/k8s/haku/console/config.yaml and persisted in
+# ledger `server_id` rows — renaming is a config + data migration.
 GOOGLE_CALENDAR_SERVER_ID = "google_calendar"
 # Reads only fetch; advertise read-only so clients (claude.ai) skip per-call approval prompts.
 _READ_ONLY = ToolAnnotations(readOnlyHint=True)

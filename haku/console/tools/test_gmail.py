@@ -15,7 +15,7 @@ from fastmcp import Client
 from gmail_api.filters import FilterAction, FilterCriteria, GmailFilter
 from gmail_api.labels import GmailLabel, LabelType
 from gmail_api.messages import Draft, Message
-from haku.console.tools.gmail import GMAIL_SERVER_ID, build_mcp
+from haku.console.tools.gmail import build_mcp
 from haku.console.tools.gmail_client import ModifyGmailThreadLabelsResult
 
 
@@ -52,7 +52,6 @@ async def test_tool_surface(client):
         "drafts_update",
         "drafts_delete",
     }
-    assert GMAIL_SERVER_ID == "gmail"
 
 
 # --- generated reads: one representative round-trip proves the wiring (spec -> FastMCP -> executor

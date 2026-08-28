@@ -59,14 +59,14 @@ class SessionRecord(BaseModel):
     )
     agent_id: UUID | None = None
     access_profile_id: str | None = None
+    # CLEANUP(added 2026-08-28): contract step of runtime_kind→harness_kind (naming_and_layout.md
+    #   §3.1, #4772). Readers are on `harness_kind`; drop this field once the image carrying the
+    #   switched readers is rolled out.
     runtime_kind: RuntimeKind = Field(description="The immutable runner implementation pinned by that conversation.")
     attachments: list[ChannelAttachment] = Field(description="The channels currently holding a copy of that thread.")
     status: str
     created_at: datetime.datetime
     error: str | None = None
-    # CLEANUP(added 2026-08-28): expand step of runtime_kind→harness_kind (naming_and_layout.md
-    #   §3.1, #4772). A read-only mirror of `runtime_kind`, so a consumer can move to `harness_kind`
-    #   before the contract step renames the field and drops `runtime_kind`.
     harness_kind: RuntimeKind = Field(description="The immutable runner implementation pinned by that conversation.")
 
 

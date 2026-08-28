@@ -40,17 +40,6 @@ from devinfra.wt.testing.repo_factory import GitRepoFactory
 from devinfra.wt.testing.utils import run_cli_command, wait_until
 
 
-def get_wt_package_dir() -> Path:
-    """Return the installed wt package directory."""
-    wt_mod = importlib.import_module("devinfra.wt")
-    # With --incompatible_default_to_explicit_init_py, wt may be a namespace
-    # package (__file__ is None). Use __path__ which works for both regular
-    # and namespace packages.
-    if wt_mod.__file__ is not None:
-        return Path(wt_mod.__file__).parent
-    return Path(wt_mod.__path__[0])
-
-
 @pytest.fixture(scope="session", autouse=True)
 def _project_root_on_pythonpath():
     """Set a global test-mode env var for the WT suite without monkeypatch.
