@@ -329,8 +329,8 @@ def test_claude_environment_contains_placeholder_proxy_and_ca_only() -> None:
     assert config.environment() == {
         "ANTHROPIC_BASE_URL": "http://litellm.test:4000",
         "ANTHROPIC_AUTH_TOKEN": "not-a-secret",
-        "ANTHROPIC_MODEL": "chatgpt/ant-messages/gpt-5.6-sol",
-        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "chatgpt/ant-messages/gpt-5.6-luna",
+        "ANTHROPIC_MODEL": "claude/ant-messages/claude-sonnet-5",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude/ant-messages/claude-haiku-4-5-20251001",
         "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1",
         "HTTP_PROXY": "http://proxy.test:8180",
         "HTTPS_PROXY": "http://proxy.test:8180",
@@ -415,8 +415,8 @@ def test_claude_registration_uses_the_shared_discriminated_model() -> None:
     assert wire["implementation"] == {
         "kind": "claude_code",
         "api_base_url": "http://litellm.test:4000",
-        "model": "chatgpt/ant-messages/gpt-5.6-sol",
-        "haiku_model": "chatgpt/ant-messages/gpt-5.6-luna",
+        "model": "claude/ant-messages/claude-sonnet-5",
+        "haiku_model": "claude/ant-messages/claude-haiku-4-5-20251001",
         "auth_token_placeholder": "not-a-secret",
         "gateway_discovery": True,
     }
@@ -975,7 +975,7 @@ async def test_session_lifecycle_creates_claim_accepts_bridge_and_disposes_claim
     assert "--strict-mcp-config" in launch.arguments
     assert launch.environment["ANTHROPIC_AUTH_TOKEN"] == "not-a-secret"
     assert launch.environment["ANTHROPIC_BASE_URL"] == "http://litellm.test:4000"
-    assert launch.environment["ANTHROPIC_MODEL"] == "chatgpt/ant-messages/gpt-5.6-sol"
+    assert launch.environment["ANTHROPIC_MODEL"] == "claude/ant-messages/claude-sonnet-5"
     # The bearer is injected into the pod rather than copied into Console-selected environment
     # overrides. `test_runner` pins that it is inherited by the Agent process.
     assert recording_claims.tokens[session_id] not in launch.environment.values()

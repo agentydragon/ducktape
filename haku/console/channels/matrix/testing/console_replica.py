@@ -170,8 +170,8 @@ async def _serve() -> None:
         implementation={
             "kind": "claude_code",
             "api_base_url": "http://litellm.test:4000",
-            "model": "chatgpt/ant-messages/gpt-5.6-sol",
-            "haiku_model": "chatgpt/ant-messages/gpt-5.6-luna",
+            "model": "claude/ant-messages/claude-sonnet-5",
+            "haiku_model": "claude/ant-messages/claude-haiku-4-5-20251001",
             "auth_token_placeholder": "not-a-secret",
         },
     )

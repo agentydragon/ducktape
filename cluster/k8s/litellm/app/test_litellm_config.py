@@ -158,8 +158,9 @@ def _cliproxy_responses_entries() -> Iterator[dict]:
 # `anthropic/` /v1/messages passthrough as the chatgpt/ant-messages entries above, a
 # different upstream OAuth session on the same pod. Messages wire only: Claude Code has no
 # Responses-wire twin. Exposes ANTHROPIC_MODELS: the subscription and the direct API serve
-# the same current generation, so they share one roster. The consuming key allowlist
-# (claude/ant-messages/*) is added by #5068.
+# the same current generation, so they share one roster. The consuming key allowlist is
+# `claude_client_models` in tf/gitops/litellm-keys/main.tf, pinned to this roster by
+# test_terraform_claude_allowlist_matches_the_anthropic_model_list below.
 def _cliproxy_claude_entries() -> Iterator[dict]:
     for model in ANTHROPIC_MODELS:
         yield {
@@ -254,6 +255,17 @@ def test_terraform_codex_allowlists_match_the_cliproxy_model_list() -> None:
     ]
 
 
+# The Claude-subscription names live in ANTHROPIC_MODELS (model_rosters.py) and `claude_client_models`
+# in tf/gitops/litellm-keys/main.tf, which scopes the haku-console-claude runner key. This pins the
+# two in sync, so a new Claude model cannot half-land and leave the key allowlisting one the proxy
+# does not serve (or omitting one it does).
+def test_terraform_claude_allowlist_matches_the_anthropic_model_list() -> None:
+    tf_locals = _litellm_keys_locals()
+    assert tf_locals["claude_client_models"] == [
+        exposed_name(Provider.CLAUDE, ApiShape.ANT_MESSAGES, model) for model in ANTHROPIC_MODELS
+    ]
+
+
 # main.tf's own comment: "Model names must match generated model_name entries in
 # cluster/k8s/litellm/app/proxy-config.yaml". These are the remaining live-key
 # locals that spell names out literally, so every element must resolve.
@@ -261,6 +273,7 @@ _TF_LITERAL_MODEL_LOCALS = [
     "oai_lane_models",
     "tana_client_models",
     "codex_client_models",
+    "claude_client_models",
     "embedding_client_models",
     "gemini_client_models",
 ]
@@ -286,6 +299,22 @@ def test_console_codex_harnesses_use_oai_responses_wire_models() -> None:
         implementation = runtime["implementation"]
         if implementation["kind"] == "codex_app_server":
             assert implementation["model"] in responses_wire_names, name
+
+
+# haku-console's Claude runtime (#4670) picks model + haiku_model from Git YAML, the same
+# outside-the-Terraform-pins spot as the Codex runtime above. Claude Code speaks the Anthropic
+# Messages wire against CLIProxyAPI's Claude subscription, so both must be claude/ant-messages/*
+# entries the proxy serves -- never the codex chatgpt/ant-messages/* lane a stale GPT guess would
+# name, which the haku-console-claude key does not admit and which is a broken model turn every
+# request. Admits any served claude-lane model, so it pins the wire without hardcoding the choice.
+def test_console_claude_harness_uses_claude_ant_messages_wire_models() -> None:
+    config = yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/config.yaml").read_text())
+    claude_wire_names = {exposed_name(Provider.CLAUDE, ApiShape.ANT_MESSAGES, model) for model in ANTHROPIC_MODELS}
+    for name, runtime in config["harnesses"].items():
+        implementation = runtime["implementation"]
+        if implementation["kind"] == "claude_code":
+            assert implementation["model"] in claude_wire_names, name
+            assert implementation["haiku_model"] in claude_wire_names, name
 
 
 def test_config_maps_mount_their_matching_committed_configs() -> None:
