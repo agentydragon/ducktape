@@ -15,7 +15,7 @@ no `server_id` provenance pin (their trigger never constrained it), so only the 
 changes here.
 
 Revision ID: 0113
-Revises: 0112
+Revises: 0117
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from __future__ import annotations
 from alembic import op
 
 revision: str = "0113"
-down_revision: str | None = "0112"
+down_revision: str | None = "0117"
 branch_labels: str | None = None
 depends_on: str | None = None
 

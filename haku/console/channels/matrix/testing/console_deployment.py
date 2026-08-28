@@ -14,6 +14,7 @@ import asyncio
 import json
 import os
 from collections.abc import Awaitable, Callable
+from datetime import timedelta
 from pathlib import Path
 from typing import IO
 from uuid import UUID
@@ -33,6 +34,18 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 CONSOLE_BIN = "_main/haku/console/channels/matrix/testing/console_replica_bin"
 RUNNER_BIN = "_main/haku/runtime/x/bridge/runner_bin"
+
+# The two production windows a killed sandbox has to pass through before a replacement may adopt
+# it, shortened for the full-stack tests. Nothing here changes which path runs — the sweep still
+# has to observe a lapsed lease and mint the replacement — only how long the wall clock takes to
+# get there, and at 45 s + 10 s that was two thirds of this suite's runtime.
+#
+# The grace has a floor as well as a ceiling: `kill_sandbox` then a message must still land
+# *inside* the window, because "accepted by a session that will never claim it" is the state two
+# of these tests are about. Five seconds is generous for one Matrix round trip and a queued
+# prompt, while a lapse the sweep can see within a second of it.
+ADOPTION_GRACE = timedelta(seconds=5)
+SWEEP_INTERVAL = timedelta(seconds=1)
 STUB_CLAUDE = "_main/haku/console/x/claude_code/testing/stub_claude_bin"
 SYSTEM_PROMPT_TEMPLATE = "_main/cluster/k8s/haku/console/haku_system_prompt.md.j2"
 
@@ -93,6 +106,8 @@ class Deployment:
             "HAKU_E2E_CLAIMS_DIR": str(self._claims),
             "HAKU_E2E_REFUSE_NEXT_REPLY": str(self._refusal),
             "HAKU_E2E_SYSTEM_PROMPT_TEMPLATE": str(get_required_path(SYSTEM_PROMPT_TEMPLATE)),
+            "HAKU_E2E_ADOPTION_GRACE_SECONDS": str(ADOPTION_GRACE.total_seconds()),
+            "HAKU_E2E_SWEEP_INTERVAL_SECONDS": str(SWEEP_INTERVAL.total_seconds()),
             # The nested binaries need the test's RUNFILES_* to find their own, and the stub
             # inherits this environment in turn (`backend.child_environment`), which is how
             # it learns where to leave its handshake files.

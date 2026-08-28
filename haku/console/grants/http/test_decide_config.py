@@ -190,6 +190,20 @@ def test_overlapping_standing_entries_are_deliberately_legal() -> None:
     assert [entry.id for entry in config.standing_policies] == ["broad", "credentialed"]
 
 
+def test_standing_entry_allow_prohibited_address_defaults_off_and_parses() -> None:
+    assert _standing_entry().allow_prohibited_address is False
+    parsed = EgressStandingPolicyEntry.model_validate(
+        {
+            "id": "internal-gateway",
+            "agent_ids": [str(_AGENT)],
+            "origins": [{"scheme": "http", "host": "gateway.internal.example", "port": 4000}],
+            "coverage": {"methods": ["POST"]},
+            "allow_prohibited_address": True,
+        }
+    )
+    assert parsed.allow_prohibited_address is True
+
+
 def test_load_egress_decide_passes_standing_policies_through(monkeypatch: pytest.MonkeyPatch) -> None:
     """Standing entries carry no secrets, so the loaded view is the literal reviewed entry."""
     config = EgressDecideConfig(

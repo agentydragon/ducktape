@@ -433,9 +433,18 @@ class PositionUnusableError(Exception):
 class Store:
     """Async Postgres store for agent sessions."""
 
-    def __init__(self, sessions: async_sessionmaker[AsyncSession], runtime_registry: RuntimeRegistry):
+    def __init__(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        runtime_registry: RuntimeRegistry,
+        *,
+        adoption_grace: timedelta = ADOPTION_GRACE,
+    ):
         self._sessions = sessions
         self._runtime_registry = runtime_registry
+        # Injectable so a full-stack test can exercise the real adoption path without spending the
+        # production window in wall clock; `console_replica` is the only caller that shortens it.
+        self._adoption_grace = adoption_grace
 
     @property
     def sessionmaker(self) -> async_sessionmaker[AsyncSession]:
@@ -2278,7 +2287,7 @@ class Store:
                 await db.scalars(
                     select(Session.session_id).where(
                         Session.status.in_(LEASED_SESSION_STATUSES),
-                        Session.lease_expires_at <= datetime.now(UTC) - ADOPTION_GRACE,
+                        Session.lease_expires_at <= datetime.now(UTC) - self._adoption_grace,
                     )
                 )
             ).all()
