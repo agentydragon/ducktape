@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import SPA_ORIGIN, ItemStatus, ItemType
 from haku.console.database_schema import ConversationItem, MatrixOutbox
+from haku.console.session.store import BridgeAuthentication, Store
 from haku.console.x.channels.matrix.client import MatrixError
 from haku.console.x.channels.matrix.conftest import MATRIX_ROOM
 from haku.console.x.channels.matrix.conversation import MatrixConversationStore, RoomAttachment
@@ -28,7 +29,6 @@ from haku.console.x.channels.matrix.outbox import MAX_SEND_ATTEMPTS, PendingRepl
 from haku.console.x.channels.matrix.outbox_wake import OutboxWakes
 from haku.console.x.channels.matrix.pacer import RoomPacer
 from haku.console.x.conversation_events import FrameRange, ItemSegment, MessageCompleted, MessageStarted, OpenRef
-from haku.console.x.session_store import BridgeAuthentication, SessionStore
 
 
 @pytest.fixture
@@ -48,7 +48,7 @@ def attachment_id(binding: RoomAttachment) -> UUID:
 
 
 @pytest.fixture
-async def session_id(session_store: SessionStore, binding: RoomAttachment, operator_id: UUID) -> UUID:
+async def session_id(session_store: Store, binding: RoomAttachment, operator_id: UUID) -> UUID:
     """A live Matrix session for `MATRIX_ROOM`, since an outbox row is one of its children.
 
     Started on the conversation the room is attached to, the way the supervisor starts one.
@@ -59,7 +59,7 @@ async def session_id(session_store: SessionStore, binding: RoomAttachment, opera
 
 
 @pytest.fixture
-async def turn_id(session_store: SessionStore, operator_id: UUID, session_id: UUID) -> UUID:
+async def turn_id(session_store: Store, operator_id: UUID, session_id: UUID) -> UUID:
     """The exchange these replies are produced in."""
     await session_store.enqueue_prompt(operator_id, session_id, "why did it fail?", SPA_ORIGIN)
     turn = await session_store.next_prompt(session_id)
@@ -133,7 +133,7 @@ async def _said(sessions: async_sessionmaker[AsyncSession], session_id: UUID) ->
 
 
 async def _enqueue(
-    session_store: SessionStore,
+    session_store: Store,
     sessions: async_sessionmaker[AsyncSession],
     outbox: RoomOutbox,
     attachment_id: UUID,

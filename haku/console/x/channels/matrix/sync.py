@@ -46,8 +46,11 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.config import MatrixConfig
+from haku.console.conversation.log import writer_for
 from haku.console.database_schema import MatrixAccessToken, MatrixSyncWatermark
+from haku.console.notifications.conversation_wakes import ConversationWakes
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.session.subscription import ConversationStream
 from haku.console.x.channels.matrix.attachment_reconciler import AttachmentReconciler, AttachmentReconcilers
 from haku.console.x.channels.matrix.client import (
     ConversationEventSource,
@@ -77,9 +80,6 @@ from haku.console.x.channels.matrix.pacer import RoomPacers
 from haku.console.x.channels.matrix.revisions import Revision, RevisionLog
 from haku.console.x.channels.matrix.room_copy import RoomCopy
 from haku.console.x.channels.matrix.spans import Span, SpanKind
-from haku.console.x.conversation_log import writer_for
-from haku.console.x.conversation_wakes import ConversationWakes
-from haku.console.x.subscription import ConversationStream
 
 logger = logging.getLogger(__name__)
 

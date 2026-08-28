@@ -294,7 +294,7 @@ class AuthoredEventKind(StrEnum):
     SESSION_ENDED = "session_ended"
     # One line the sandbox printed while coming up. A `SetupOutput` envelope does cross the wire, but
     # what is stored is one decoded line of it rather than the frame, so the console is the witness
-    # to the row (`x/setup_output.py`).
+    # to the row (`session/setup_output.py`).
     SETUP_NARRATION = "setup_narration"
     # The two ends of one exchange, as the stream states them: without these a reader outside the
     # session has to open `session_turns` to know a turn is running.

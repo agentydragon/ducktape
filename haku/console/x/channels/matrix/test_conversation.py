@@ -26,7 +26,10 @@ from haku.console.chat_models import (
     RuntimeKind,
 )
 from haku.console.conftest import console_sessions
+from haku.console.conversation.history import ConversationHistory
 from haku.console.database_schema import Conversation, ConversationEventRow, ConversationItem, Session, SubmittedPrompt
+from haku.console.session.launch_identity import ChatLaunchAuthorizer, LaunchIdentity
+from haku.console.session.store import BridgeAuthentication, Store
 from haku.console.x import session_events
 from haku.console.x.channels.matrix.client import InboundMessage, UnmappableEvent
 from haku.console.x.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM
@@ -47,11 +50,8 @@ from haku.console.x.conversation_events import (
     MessageStarted,
     OpenRef,
 )
-from haku.console.x.conversation_history import ConversationHistory
-from haku.console.x.launch_identity import ChatLaunchAuthorizer, LaunchIdentity
 from haku.console.x.runtime import RuntimeKey
 from haku.console.x.session_events import PromptStartedBody, TurnAnsweredBody
-from haku.console.x.session_store import BridgeAuthentication, SessionStore
 
 
 async def test_first_matrix_bind_pins_complete_identity_with_production_authorizer(
@@ -134,7 +134,7 @@ async def another_thread(conversations: MatrixConversationStore, operator_id: UU
     return (await conversations.bind_room("!second:allegedly.works", operator_id)).conversation_id
 
 
-async def serving_session(session_store: SessionStore, operator_id: UUID, conversation_id: UUID) -> UUID:
+async def serving_session(session_store: Store, operator_id: UUID, conversation_id: UUID) -> UUID:
     """A Matrix session ready to take prompts, made the way the supervisor and a runner make one."""
     view, token = await session_store.create(operator_id, conversation_id=conversation_id)
     assert token is not None
@@ -142,7 +142,7 @@ async def serving_session(session_store: SessionStore, operator_id: UUID, conver
     return view.session_id
 
 
-async def exchange(session_store: SessionStore, operator_id: UUID, session_id: UUID, asked: str, answered: str) -> None:
+async def exchange(session_store: Store, operator_id: UUID, session_id: UUID, asked: str, answered: str) -> None:
     """One question and its answer, written by the paths that write them in production.
 
     Not hand-inserted rows: this read depends on what the real writers leave behind — a prompt item
@@ -158,9 +158,7 @@ async def exchange(session_store: SessionStore, operator_id: UUID, session_id: U
     await session_store.end_turn(start.turn_id, TurnAnsweredBody())
 
 
-async def say(
-    session_store: SessionStore, session_id: UUID, turn_id: UUID, answered: str, *, complete: bool = True
-) -> None:
+async def say(session_store: Store, session_id: UUID, turn_id: UUID, answered: str, *, complete: bool = True) -> None:
     """One agent message, through the fold's own vocabulary."""
     where = FrameRange(1, 1)
     events: list[FoldedEvent] = [MessageStarted(provenance=where)]
@@ -180,7 +178,7 @@ async def read(transcript: ConversationHistory, conversation_id: UUID) -> list[t
 
 
 async def test_the_transcript_is_both_sides_of_the_conversation_in_order(
-    transcript: ConversationHistory, session_store: SessionStore, operator_id: UUID, thread: UUID
+    transcript: ConversationHistory, session_store: Store, operator_id: UUID, thread: UUID
 ) -> None:
     session_id = await serving_session(session_store, operator_id, thread)
 
@@ -196,7 +194,7 @@ async def test_the_transcript_is_both_sides_of_the_conversation_in_order(
 
 
 async def test_the_transcript_spans_every_session_of_the_thread(
-    transcript: ConversationHistory, session_store: SessionStore, operator_id: UUID, thread: UUID
+    transcript: ConversationHistory, session_store: Store, operator_id: UUID, thread: UUID
 ) -> None:
     """The point of reading by conversation: the session that holds the context is the one gone.
 
@@ -218,7 +216,7 @@ async def test_the_transcript_spans_every_session_of_the_thread(
 
 
 async def test_a_batch_the_dying_session_never_answered_is_still_the_history(
-    transcript: ConversationHistory, session_store: SessionStore, operator_id: UUID, thread: UUID
+    transcript: ConversationHistory, session_store: Store, operator_id: UUID, thread: UUID
 ) -> None:
     """What answers a message its session never got to: the replacement is handed it as context.
 
@@ -235,7 +233,7 @@ async def test_a_batch_the_dying_session_never_answered_is_still_the_history(
 
 
 async def test_a_session_s_own_rows_are_not_its_history(
-    transcript: ConversationHistory, session_store: SessionStore, operator_id: UUID, thread: UUID
+    transcript: ConversationHistory, session_store: Store, operator_id: UUID, thread: UUID
 ) -> None:
     """A prompt this session has already been handed is not also its history; twice is not context.
 
@@ -256,7 +254,7 @@ async def test_a_session_s_own_rows_are_not_its_history(
 
 
 async def test_what_the_room_was_never_told_is_not_in_the_history(
-    transcript: ConversationHistory, session_store: SessionStore, operator_id: UUID, thread: UUID
+    transcript: ConversationHistory, session_store: Store, operator_id: UUID, thread: UUID
 ) -> None:
     """Haku's side is here on exactly the condition the room heard it on.
 
@@ -276,7 +274,7 @@ async def test_what_the_room_was_never_told_is_not_in_the_history(
 async def test_another_thread_is_not_this_thread(
     transcript: ConversationHistory,
     conversations: MatrixConversationStore,
-    session_store: SessionStore,
+    session_store: Store,
     operator_id: UUID,
     thread: UUID,
 ) -> None:
@@ -289,7 +287,7 @@ async def test_another_thread_is_not_this_thread(
 
 
 async def test_the_limit_takes_the_tail(
-    transcript: ConversationHistory, session_store: SessionStore, operator_id: UUID, thread: UUID
+    transcript: ConversationHistory, session_store: Store, operator_id: UUID, thread: UUID
 ) -> None:
     session_id = await serving_session(session_store, operator_id, thread)
     await exchange(session_store, operator_id, session_id, "one", "re: one")
@@ -301,7 +299,7 @@ async def test_the_limit_takes_the_tail(
 
 
 @pytest.fixture
-def turns(session_store: SessionStore, migrated_identity_store, ledger: IngressLedger) -> MatrixTurns:
+def turns(session_store: Store, migrated_identity_store, ledger: IngressLedger) -> MatrixTurns:
     """Ingress over the real stores — only the homeserver's events are handed in by the test."""
     return MatrixTurns(MATRIX_CONFIG, session_store, migrated_identity_store, ledger)
 
@@ -330,7 +328,7 @@ def _unmappable(msgtype: str) -> UnmappableEvent:
 
 
 async def test_a_batch_a_ready_session_takes_becomes_its_prompt(
-    turns: MatrixTurns, binding: RoomAttachment, session_store: SessionStore, operator_id: UUID, thread: UUID
+    turns: MatrixTurns, binding: RoomAttachment, session_store: Store, operator_id: UUID, thread: UUID
 ) -> None:
     """The accepted case, and what "one batch, one prompt" means: two events, one transcript row."""
     session_id = await serving_session(session_store, operator_id, thread)
@@ -346,7 +344,7 @@ async def test_a_batch_a_ready_session_takes_becomes_its_prompt(
 
 
 async def test_a_batch_offered_mid_turn_is_rejected_with_the_reason_and_the_text(
-    turns: MatrixTurns, binding: RoomAttachment, session_store: SessionStore, operator_id: UUID, thread: UUID
+    turns: MatrixTurns, binding: RoomAttachment, session_store: Store, operator_id: UUID, thread: UUID
 ) -> None:
     """A message sent while Haku is working is answered rather than queued behind the turn, and the
     row it hands back is the only copy of what was said — the homeserver will not offer it again
@@ -382,7 +380,7 @@ async def test_a_batch_offered_before_a_session_exists_becomes_conversation_dema
 async def test_a_batch_offered_after_a_session_is_gone_becomes_replacement_demand(
     turns: MatrixTurns,
     binding: RoomAttachment,
-    session_store: SessionStore,
+    session_store: Store,
     migrated_sessions,
     operator_id: UUID,
     thread: UUID,
@@ -400,7 +398,7 @@ async def test_a_batch_offered_after_a_session_is_gone_becomes_replacement_deman
 async def test_an_accepted_batch_records_its_events_against_the_prompt_it_became(
     turns: MatrixTurns,
     binding: RoomAttachment,
-    session_store: SessionStore,
+    session_store: Store,
     ledger: IngressLedger,
     operator_id: UUID,
     thread: UUID,
@@ -422,7 +420,7 @@ async def test_an_accepted_batch_records_its_events_against_the_prompt_it_became
 async def test_a_rejected_batch_records_nothing_for_the_homeserver_to_be_deduped_against(
     turns: MatrixTurns,
     binding: RoomAttachment,
-    session_store: SessionStore,
+    session_store: Store,
     ledger: IngressLedger,
     operator_id: UUID,
     thread: UUID,
@@ -439,7 +437,7 @@ async def test_a_rejected_batch_records_nothing_for_the_homeserver_to_be_deduped
 async def test_a_prompt_its_session_never_answered_is_taken_by_the_replacement(
     turns: MatrixTurns,
     binding: RoomAttachment,
-    session_store: SessionStore,
+    session_store: Store,
     ledger: IngressLedger,
     operator_id: UUID,
     thread: UUID,
@@ -464,7 +462,7 @@ async def test_a_prompt_its_session_never_answered_is_taken_by_the_replacement(
 
 
 async def test_an_unreadable_event_is_a_fact_per_event_on_the_live_conversation(
-    turns: MatrixTurns, binding: RoomAttachment, session_store: SessionStore, operator_id: UUID, thread: UUID
+    turns: MatrixTurns, binding: RoomAttachment, session_store: Store, operator_id: UUID, thread: UUID
 ) -> None:
     """One fact per event, for the caller to append in the transaction that acknowledges the batch
     (the channel must derive it from the durable conversation record)."""
@@ -499,7 +497,7 @@ async def test_an_unreadable_event_with_no_session_behind_the_room_is_still_reco
 async def test_a_batch_records_the_room_events_it_was_folded_from(
     turns: MatrixTurns,
     binding: RoomAttachment,
-    session_store: SessionStore,
+    session_store: Store,
     migrated_sessions,
     operator_id: UUID,
     thread: UUID,

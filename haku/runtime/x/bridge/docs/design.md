@@ -13,7 +13,7 @@ the Service picks.
 
 **Built: design B.** The runner keeps the CLI alive across the dropped socket, buffers, and
 redials; an adopting console picks the conversation up mid-flight, preserving the in-flight turn.
-The lease (`expire_stale_leases`, <../../../console/x/session_store.py>) is what makes a dropped
+The lease (`expire_stale_leases`, <../../../console/session/store.py>) is what makes a dropped
 session **observable** — another replica notices the holder stopped renewing — and, because an
 expired lease means unowned rather than dead, **adoptable**: the returning runner takes it over,
 and the sweep fails the session only when nobody does.

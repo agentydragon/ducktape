@@ -22,12 +22,12 @@ from haku.console.chat_models import ChannelSurface, MatrixOrigin, PromptRejecti
 from haku.console.config import MatrixConfig
 from haku.console.database_schema import ChannelAttachmentRow, Conversation, Operator
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.session.launch_identity import LaunchAuthorizer, LaunchIdentity
+from haku.console.session.store import PromptRefusedError, Store
 from haku.console.x import session_events
 from haku.console.x.channels.matrix.client import InboundMessage, UnmappableEvent
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
-from haku.console.x.launch_identity import LaunchAuthorizer, LaunchIdentity
 from haku.console.x.session_events import PromptRejectedBody, UnreadableInputBody
-from haku.console.x.session_store import PromptRefusedError, SessionStore
 
 logger = logging.getLogger(__name__)
 
@@ -274,7 +274,7 @@ class MatrixTurns:
     def __init__(
         self,
         config: MatrixConfig,
-        session_store: SessionStore,
+        session_store: Store,
         identities: PostgresOperatorIdentityStore,
         ledger: IngressLedger,
     ):

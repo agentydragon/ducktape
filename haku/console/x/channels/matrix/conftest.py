@@ -17,9 +17,9 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.config import MatrixConfig
+from haku.console.session.conftest import OPERATOR_SUBJECT
 from haku.console.x.channels.matrix.conversation import MatrixConversationStore
 from haku.console.x.channels.matrix.ingress_ledger import IngressLedger
-from haku.console.x.conftest import OPERATOR_SUBJECT
 
 MATRIX_USER = "@haku:allegedly.works"
 MATRIX_OPERATOR = "@rai:allegedly.works"

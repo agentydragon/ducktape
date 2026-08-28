@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from haku.console.chat_models import ItemType, SessionStatus
 from haku.console.conversation_read_access import UnrestrictedReads
 from haku.console.database_schema import ConversationItem, MatrixSyncWatermark, Session, SubmittedPrompt
-from haku.console.x.session_store import SessionStore
+from haku.console.session.store import Store
 from haku.console.x.testing.waiting import BUDGET_SECONDS, WedgedError, wait_until
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
@@ -57,7 +57,7 @@ class Deployment:
         operator_user_id: str,
         database_url: str,
         sessions: async_sessionmaker[AsyncSession],
-        store: SessionStore,
+        store: Store,
         state: Path,
     ):
         self.bot_user_id = bot_user_id

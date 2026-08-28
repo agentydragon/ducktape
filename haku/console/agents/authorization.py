@@ -81,8 +81,8 @@ from haku.console.operator_identity import (
     VerifiedExternalIdentity,
 )
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.session.launch_identity import LaunchAgentRejectedError
 from haku.console.tool_call_actor import AgentActor
-from haku.console.x.launch_identity import LaunchAgentRejectedError
 from mcp_infra.authentik_auth.oidc_principal import VerifiedOidcPrincipal
 
 _INTERACTION_LIFETIME = datetime.timedelta(minutes=10)

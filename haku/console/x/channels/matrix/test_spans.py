@@ -13,6 +13,7 @@ from uuid import UUID
 import pytest_bazel
 
 from haku.console.chat_models import LeaseExpiryReason, SessionStatus, ToolOutcome
+from haku.console.session.subscription import StreamedEvent, StreamPosition
 from haku.console.x.channels.matrix.spans import (
     PROVISIONING_STATUS,
     STATUS_AFTER,
@@ -36,7 +37,6 @@ from haku.console.x.session_events import (
     TurnAnsweredBody,
     TurnStartedBody,
 )
-from haku.console.x.subscription import StreamedEvent, StreamPosition
 
 CONVERSATION = UUID("00000000-0000-4000-8000-00000000c0c0")
 SESSION = UUID("11111111-1111-4111-8111-111111111111")

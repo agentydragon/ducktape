@@ -10,7 +10,7 @@ package(
 py_library(
     name = "recording_claims",
     srcs = ["recording_claims.py"],
-    deps = ["//haku/console/x:sandbox_claims"],
+    deps = ["//haku/console/session:sandbox_claims"],
 )
 
 py_library(
@@ -22,7 +22,7 @@ py_library(
     name = "wake_probes",
     srcs = ["wake_probes.py"],
     deps = [
-        "//haku/console/x:pg_wake",
+        "//haku/console/notifications:pg_wake",
         "@pypi//asyncpg",
         "@pypi//pytest",
         "@pypi//sqlalchemy",

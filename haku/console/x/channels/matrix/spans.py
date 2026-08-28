@@ -39,6 +39,7 @@ from typing import Protocol
 from uuid import UUID
 
 from haku.console.chat_models import LeaseExpiryReason
+from haku.console.session.subscription import START, StreamedEvent, StreamPosition
 from haku.console.x.session_events import (
     LeaseExpiredBody,
     MessageCompletedBody,
@@ -62,7 +63,6 @@ from haku.console.x.session_events import (
     UnknownEventBody,
     UnreadableInputBody,
 )
-from haku.console.x.subscription import START, StreamedEvent, StreamPosition
 
 # Below this the answer itself is the status, and a status/answer pair is clutter.
 STATUS_AFTER = timedelta(seconds=8)

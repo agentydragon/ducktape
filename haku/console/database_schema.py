@@ -1195,7 +1195,7 @@ class Session(Base):
     bridge_token_fingerprint: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     bridge_connected_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # When this session's Agent Sandbox claim was deleted, and NULL until it has been — which is
-    # what puts an ended session in `SessionStore.claim_cleanup_candidates` and what takes it back
+    # what puts an ended session in `session.store.Store.claim_cleanup_candidates` and what takes it back
     # out. Only ever stamped on a session whose status is already ended.
     claim_cleaned_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # How far the fold has got: the `frame_seq` of the last frame whose projected effects are
@@ -1442,7 +1442,7 @@ class ConversationItem(Base):
     opened_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
     closed_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     # The concatenation of this item's segments in `event_seq` order. A materialisation of the log
-    # and never a second authority for it: `x/reprojection.py` asserts the two agree.
+    # and never a second authority for it: `conversation/reprojection.py` asserts the two agree.
     item_text: Mapped[str] = mapped_column("text", Text, nullable=False)
     # What the backend called this item. Provenance, never identity — Claude Code omits it on many
     # rows and on every delta, which is why the console mints its own.

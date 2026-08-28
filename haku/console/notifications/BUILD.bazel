@@ -146,3 +146,80 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "pg_wake",
+    srcs = ["pg_wake.py"],
+    deps = [
+        "@pypi//asyncpg",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "session_wakes",
+    srcs = ["session_wakes.py"],
+    deps = [
+        ":pg_wake",
+        "//util:enum_vocab",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "conversation_wakes",
+    srcs = ["conversation_wakes.py"],
+    deps = [
+        ":pg_wake",
+        ":session_wakes",
+        "//util:enum_vocab",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "//haku/console/session:conftest",
+        "//haku/console/x/testing:wake_probes",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_session_wakes",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_session_wakes.py"],
+    deps = [
+        ":conftest",
+        ":session_wakes",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console/x/testing:wake_probes",
+        "//util:enum_vocab",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_conversation_wakes",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_conversation_wakes.py"],
+    deps = [
+        ":conftest",
+        ":conversation_wakes",
+        ":session_wakes",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console/x/testing:wake_probes",
+        "//util:enum_vocab",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)
