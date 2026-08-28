@@ -17,8 +17,8 @@ from haku.console.chat_models import ItemStatus, ItemType
 from haku.console.conversation_read_access import UnrestrictedReads
 from haku.console.database_schema import Conversation, ConversationItem, Operator, Session
 from haku.console.harnesses.kind import HarnessKind
+from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.mcp_config import ConsoleConfigFile
-from haku.console.operator_identity import OperatorStatus
 from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.recall_index_sync import RecallEmbeddingMaintenance, RecallIndexMaintenance, advisory_lock_for
 from haku.console.tools.recall_index import ChatIndexStatus, ChatSource, GitIndexStatus

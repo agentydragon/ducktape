@@ -243,7 +243,7 @@ payload models do not reject unknown fields.
 The deciding question is: could this value have been produced by a newer commit than the reader?
 If no—a request body, config file, MCP argument, or pinned third-party vocabulary—an unknown value
 is a bug or attack and root <../../STYLE.md> strict mapping applies. If yes, unknown data is expected
-and raising is the defect. A version-negotiated seam, such as <../runtime/x/bridge/protocol.py>, may
+and raising is the defect. A version-negotiated seam, such as <../runner/protocol.py>, may
 reject unknown kinds after its handshake; storage has no handshake.
 
 ## Test

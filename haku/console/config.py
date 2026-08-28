@@ -271,7 +271,17 @@ class ClaudeCodeImplementationConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     kind: Literal[HarnessKind.CLAUDE_CODE] = HarnessKind.CLAUDE_CODE
-    oauth_placeholder: str
+    # Claude Code runs against an Anthropic-shaped gateway (in-cluster LiteLLM -> CLIProxyAPI),
+    # never api.anthropic.com directly: ANTHROPIC_BASE_URL + a fence-substituted ANTHROPIC_AUTH_TOKEN
+    # (a LiteLLM virtual key) + ANTHROPIC_MODEL, the same gateway pattern as the codex-claude/
+    # tana-claude wrappers (nix/home/claude_code/gateway.nix). The Console runner spends the flat-rate
+    # Claude subscription via CLIProxyAPI's Claude OAuth session, so `model`/`haiku_model` are
+    # `claude/ant-messages/*` slugs (#5086); the value is deploy config, not fixed here.
+    api_base_url: UncredentialedHttpUrl
+    model: str = Field(min_length=1)
+    haiku_model: str = Field(min_length=1)
+    auth_token_placeholder: str = Field(min_length=1)
+    gateway_discovery: bool = True
 
 
 type RuntimeImplementationConfig = Annotated[
@@ -294,7 +304,14 @@ class RuntimeRegistrationConfig(RuntimeExecutionConfig):
     def environment(self) -> dict[str, str]:
         implementation = self.implementation
         if isinstance(implementation, ClaudeCodeImplementationConfig):
-            provider_environment = {"CLAUDE_CODE_OAUTH_TOKEN": implementation.oauth_placeholder}
+            provider_environment = {
+                "ANTHROPIC_BASE_URL": implementation.api_base_url,
+                "ANTHROPIC_AUTH_TOKEN": implementation.auth_token_placeholder,
+                "ANTHROPIC_MODEL": implementation.model,
+                "ANTHROPIC_DEFAULT_HAIKU_MODEL": implementation.haiku_model,
+            }
+            if implementation.gateway_discovery:
+                provider_environment["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] = "1"
         else:
             provider_environment = {
                 "GH_PAT": implementation.github_token_placeholder,

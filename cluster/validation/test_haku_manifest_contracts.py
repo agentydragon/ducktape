@@ -31,7 +31,26 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     assert runtime["agent_id"] == "8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2"
     assert runtime["claim_prefix"] == "claude"
     assert runtime["runtime_label"] == "claude-chat"
-    assert runtime["implementation"] == {"kind": "claude_code", "oauth_placeholder": "sk-ant-oat01-placeholder"}
+    # Claude Code's inference runs against the in-cluster LiteLLM gateway (-> CLIProxyAPI), never
+    # api.anthropic.com. Tie the runner's gateway origin and auth placeholder to the fence entries
+    # that admit and substitute them — the whole of #4670 — rather than restating the model roster
+    # (the model + haiku_model slugs are pinned against the served claude/ant-messages/* lane in
+    # cluster/k8s/litellm/app/test_litellm_config.py).
+    implementation = runtime["implementation"]
+    assert implementation["kind"] == "claude_code"
+    assert implementation["api_base_url"].startswith("http://")
+    assert "anthropic.com" not in implementation["api_base_url"]
+    egress = console_config["egress_decide"]
+    litellm_standing = one(policy for policy in egress["standing_policies"] if policy["id"] == "haku-claude-litellm")
+    origin = one(litellm_standing["origins"])
+    assert implementation["api_base_url"] == f"{origin['scheme']}://{origin['host']}:{origin['port']}"
+    # LiteLLM resolves to a ClusterIP inside prohibited_cidrs, so the gateway is reachable only
+    # because this entry lifts the private-address denial (#5073).
+    assert litellm_standing["allow_prohibited_address"] is True
+    credential = one(c for c in egress["credentials"] if c["handle"] == litellm_standing["credential_handle"])
+    assert implementation["auth_token_placeholder"] == credential["placeholder"]
+    assert implementation["model"]
+    assert implementation["haiku_model"]
     assert "mcp_static_agent_id" not in runtime
     assert "oauth_placeholder" not in runtime
     pod_template = template["spec"]["podTemplate"]
@@ -74,12 +93,16 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
         port["containerPort"] for port in server["ports"] if port["name"] == bridge_service_port["targetPort"]
     )
     agent_egress = yaml.safe_load(agent_egress_text)
-    console_rule = next(
+    console_rules = [
         rule
         for rule in agent_egress["spec"]["egress"]
         if rule.get("toEndpoints", [{}])[0].get("matchLabels", {}).get("k8s:app.kubernetes.io/name") == "haku-console"
-    )
-    assert console_rule["toPorts"][0]["ports"] == [{"port": str(bridge_target_port), "protocol": "TCP"}]
+    ]
+    console_ports = {port["port"] for rule in console_rules for port in rule["toPorts"][0]["ports"]}
+    # Two rules select the shared Console pod label: the runner bridge (9090 Service -> the server's
+    # own port) and the colocated egress fence sidecar's listener (8888, #4670), which the runner's
+    # HTTPS_PROXY now points at for both inference and GitHub.
+    assert console_ports == {str(bridge_target_port), "8888"}
 
     kube_proxy_rule = next(
         rule

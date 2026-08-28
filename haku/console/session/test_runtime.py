@@ -24,13 +24,13 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.config import ChatRuntimesConfig, ClaudeCodeImplementationConfig, RuntimeRegistrationConfig
 from haku.console.conftest import console_sessions
 from haku.console.conversation.history import ConversationHistory
 from haku.console.conversation.prompt_origin import SPA_ORIGIN
 from haku.console.database_schema import Agent, Conversation, Session
 from haku.console.harnesses.kind import HarnessKind
+from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.notifications.session_wakes import SessionWakes
 from haku.console.session.conftest import age_lease, attach_channel, configured_runtimes, runtime_config
@@ -177,9 +177,7 @@ def _console_config(**overrides: object) -> dict[str, object]:
     config: dict[str, object] = {
         "harnesses": {"claude_code": runtime_config().model_dump(mode="json")},
         "auto_approval_policies": [{"id": "manual", "type": "never"}],
-        "access_profiles": [
-            {"id": "manual", "auto_approval_policy": "manual", "allowed_chat_runtimes": ["claude_code"]}
-        ],
+        "access_profiles": [{"id": "manual", "auto_approval_policy": "manual", "allowed_harnesses": ["claude_code"]}],
         "default_access_profile_id": "manual",
         "static_agents": [
             {
@@ -243,7 +241,7 @@ def test_chat_runtime_config_fails_closed_when_malformed() -> None:
         ConsoleConfigFile.model_validate(_console_config(harnesses={"claude_code": credentialed}))
 
     flat = runtime_config().model_dump(mode="json")
-    flat["oauth_placeholder"] = flat.pop("implementation")["oauth_placeholder"]
+    flat["auth_token_placeholder"] = flat.pop("implementation")["auth_token_placeholder"]
     flat["mcp_static_agent_id"] = flat.pop("agent_id")
     flat.pop("claim_prefix")
     flat.pop("runtime_label")
@@ -255,7 +253,11 @@ def test_claude_environment_contains_placeholder_proxy_and_ca_only() -> None:
     config = runtime_config(ca_bundle="/ca/bundle.pem")
 
     assert config.environment() == {
-        "CLAUDE_CODE_OAUTH_TOKEN": "not-a-secret",
+        "ANTHROPIC_BASE_URL": "http://litellm.test:4000",
+        "ANTHROPIC_AUTH_TOKEN": "not-a-secret",
+        "ANTHROPIC_MODEL": "claude/ant-messages/claude-sonnet-5",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude/ant-messages/claude-haiku-4-5-20251001",
+        "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1",
         "HTTP_PROXY": "http://proxy.test:8180",
         "HTTPS_PROXY": "http://proxy.test:8180",
         "NO_PROXY": "127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8",
@@ -336,7 +338,14 @@ def test_claude_registration_uses_the_shared_discriminated_model() -> None:
         "mcp_url",
         "implementation",
     }
-    assert wire["implementation"] == {"kind": "claude_code", "oauth_placeholder": "not-a-secret"}
+    assert wire["implementation"] == {
+        "kind": "claude_code",
+        "api_base_url": "http://litellm.test:4000",
+        "model": "claude/ant-messages/claude-sonnet-5",
+        "haiku_model": "claude/ant-messages/claude-haiku-4-5-20251001",
+        "auth_token_placeholder": "not-a-secret",
+        "gateway_discovery": True,
+    }
     assert RuntimeRegistrationConfig.model_validate(wire) == config
     assert isinstance(config.implementation, ClaudeCodeImplementationConfig)
     assert config.kind is HarnessKind.CLAUDE_CODE

@@ -13,8 +13,8 @@ from pathlib import Path
 
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.x.runtime import RuntimeLaunch
-from haku.runtime.x.bridge.claude_options import ClaudeSession, HttpMcpServer, build_claude_launch
-from haku.runtime.x.bridge.protocol import HarnessLaunch
+from haku.runner.claude.options import ClaudeSession, HttpMcpServer, build_claude_launch
+from haku.runner.protocol import HarnessLaunch
 
 
 @dataclass(frozen=True, slots=True)

@@ -21,10 +21,12 @@ const zCreateGrantResult: z.ZodType<McpToolResultFor<typeof GRANTS_SERVER_ID, "c
   GRANTS_SERVER_ID,
   "create_grant"
 );
-const zReleaseGrantsResult: z.ZodType<McpToolResultFor<typeof GRANTS_SERVER_ID, "release_grants">> =
-  mcpToolResultSchema(GRANTS_SERVER_ID, "release_grants");
+const zRevokeGrantsResult: z.ZodType<McpToolResultFor<typeof GRANTS_SERVER_ID, "revoke_grants">> = mcpToolResultSchema(
+  GRANTS_SERVER_ID,
+  "revoke_grants"
+);
 
-type GrantView = McpToolResultFor<typeof GRANTS_SERVER_ID, "release_grants">[number];
+type GrantView = McpToolResultFor<typeof GRANTS_SERVER_ID, "revoke_grants">[number];
 type GrantPrincipal = GrantView["grant"]["principal"];
 
 function statusColor(status: string): string {
@@ -110,14 +112,14 @@ function CreateGrantResult({ result, variant }: ResultPreviewProps<z.infer<typeo
   return <GrantsResult grants={result} variant={variant} />;
 }
 
-function ReleaseGrantsResult({ result, variant }: ResultPreviewProps<z.infer<typeof zReleaseGrantsResult>>) {
+function RevokeGrantsResult({ result, variant }: ResultPreviewProps<z.infer<typeof zRevokeGrantsResult>>) {
   return <GrantsResult grants={result} variant={variant} />;
 }
 
 export const grantsResultPreviews: {
   create_grant: ToolResultPreview<typeof zCreateGrantResult>;
-  release_grants: ToolResultPreview<typeof zReleaseGrantsResult>;
+  revoke_grants: ToolResultPreview<typeof zRevokeGrantsResult>;
 } = {
   create_grant: defineResultPreview(zCreateGrantResult, CreateGrantResult),
-  release_grants: defineResultPreview(zReleaseGrantsResult, ReleaseGrantsResult),
+  revoke_grants: defineResultPreview(zRevokeGrantsResult, RevokeGrantsResult),
 } satisfies Record<string, ToolResultPreview>;

@@ -1,0 +1,80 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "protocol",
+    srcs = ["protocol.py"],
+    visibility = ["//haku:__subpackages__"],
+)
+
+py_library(
+    name = "options",
+    srcs = ["options.py"],
+    visibility = ["//haku:__subpackages__"],
+    deps = [
+        "//haku/runner:protocol",
+        "@pypi//tomlkit",
+    ],
+)
+
+py_library(
+    name = "projection",
+    srcs = ["projection.py"],
+    visibility = ["//haku:__subpackages__"],
+    deps = [
+        ":protocol",
+        "//haku/runner:neutral_operations",
+        "//haku/runner:projection",
+    ],
+)
+
+py_library(
+    name = "harness",
+    srcs = ["harness.py"],
+    visibility = ["//haku:__subpackages__"],
+    deps = [
+        ":options",
+        ":projection",
+        ":protocol",
+        "//haku/runner:backend",
+        "//haku/runner:protocol",
+        "//haku/runner:session_api",
+        "@pypi//anyio",
+    ],
+)
+
+py_test(
+    name = "test_options",
+    srcs = ["test_options.py"],
+    deps = [
+        ":harness",
+        ":options",
+        "//:conftest",
+        "//haku/runner:backend_registry",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_projection",
+    srcs = ["test_projection.py"],
+    deps = [
+        ":projection",
+        "//:conftest",
+        "//haku/runner:neutral_operations",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_native_provider",
+    srcs = ["test_native_provider.py"],
+    data = ["@codex_cli_linux_x64//:files"],
+    deps = [
+        ":harness",
+        ":options",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+    ],
+)

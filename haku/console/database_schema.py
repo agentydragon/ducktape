@@ -31,14 +31,6 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from haku.console.agents.models import (
-    MAX_AGENT_DISPLAY_NAME_LENGTH,
-    AgentStatus,
-    ClientRegistrationKind,
-    CredentialBindingStatus,
-    CredentialKind,
-    EnrollmentPhase,
-)
 from haku.console.chat_models import ChannelSurface, ItemStatus, ItemType, ToolOutcome
 from haku.console.conversation.conversation_event import (
     AuthoredEventKind,
@@ -54,8 +46,16 @@ from haku.console.grants.http.models import HttpMethod, HttpMethods, HttpScheme
 from haku.console.grants.kubernetes.models import GrantScope, Rule
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.hostexecd.models import ExecutionStatus
+from haku.console.identity.agent import (
+    MAX_AGENT_DISPLAY_NAME_LENGTH,
+    AgentStatus,
+    ClientRegistrationKind,
+    CredentialBindingStatus,
+    CredentialKind,
+    EnrollmentPhase,
+)
+from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
-from haku.console.operator_identity import OperatorStatus
 from haku.console.pydantic_column import PydanticColumn
 from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
 from haku.console.session.status import SessionStatus
@@ -1460,7 +1460,7 @@ class ConversationItem(Base):
         ),
         Index("idx_conversation_item_conversation", "conversation_id", "opened_seq"),
         Index("idx_conversation_item_turn", "turn_id", "opened_seq"),
-        # The `read_items` keyset branches: a page of entries is served from the rows' defining
+        # The `read_items` keyset branches: a page of items is served from the rows' defining
         # stream positions, so each branch needs an index that already stands in that order —
         # partial, because the branch's filter would otherwise make it a scan of the other rows.
         Index(

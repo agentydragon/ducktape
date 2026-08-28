@@ -23,8 +23,8 @@ from haku.console.conversation.history import ConversationHistory
 from haku.console.conversation.journal_consumer import JournalConsumer, JournalViolationError
 from haku.console.conversation.prompt_origin import SPA_ORIGIN, PromptOrigin
 from haku.console.harnesses.kind import HarnessKind
+from haku.console.identity.operator_auth import OperatorActorDep
 from haku.console.notifications.session_wakes import SessionEvent, SessionEventKind, SessionWakes
-from haku.console.operator_auth import OperatorActorDep
 from haku.console.session.conversation_views import (
     DEFAULT_FRAME_PAGE,
     MAX_FRAME_PAGE,
@@ -56,10 +56,10 @@ from haku.console.x.runtime import (
     RuntimeRegistry,
     UnsupportedRuntimeError,
 )
-from haku.runtime.x.bridge.backend import BRIDGE_CREDENTIAL_VARIABLE
-from haku.runtime.x.bridge.client import RecordedFrame
-from haku.runtime.x.bridge.neutral_operations import OperationBatch, RunnerHello
-from haku.runtime.x.bridge.protocol import (
+from haku.runner.backend import BRIDGE_CREDENTIAL_VARIABLE
+from haku.runner.client import RecordedFrame
+from haku.runner.neutral_operations import OperationBatch, RunnerHello
+from haku.runner.protocol import (
     GOING_AWAY_CODE,
     NOT_ADMITTED_CODE,
     RUNNER_TO_CONSOLE,

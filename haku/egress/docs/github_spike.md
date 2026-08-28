@@ -237,8 +237,9 @@ credential, which has no session identity, so a session-scoped grant would never
   Record the returned `grant_id`.
 - **Retry** step 4's tarball fetch in the pod → expect success (`file /tmp/dt.tgz` → gzip).
   Sidecar: `allow CONNECT codeload.github.com:443 ... decision_id=grant:<grant_id>`.
-- **Release**: `call_mcp_tool("grants", "release_grants", {"domain": "http", "grant_ids": ["<grant_id>"], "reason": "spike complete"})`
-  (operator-approve it), or let it expire.
+- **Release**: `call_mcp_tool("grants", "revoke_grants", {"domain": "http", "grant_ids": ["<grant_id>"], "reason": "spike complete"})`
+  (operator-approve it), or let it expire. An Agent caller relinquishes its own grants, so the
+  recorded fact is a release.
 - **Retry again** → back to the CONNECT 403 deny. Release/expiry denies the next admission —
   there is no proxy-local decision cache.
 
@@ -268,7 +269,7 @@ Console sessions and is not required for #4943.)
   → `0`: header values (even inert ones) never enter proxy logs.
 - The single-iron-`HTTP_PROXY` pod-env check from the workload section (the production route
   never moved).
-- The `create_grant`/`release_grants` tool-call IDs and the grant UUID with terminal status
+- The `create_grant`/`revoke_grants` tool-call IDs and the grant UUID with terminal status
   `released` (console audit ledger `/_console/tool-calls`, or `grants.get_grant` (domain `http`)).
 
 ## Rollback / cleanup

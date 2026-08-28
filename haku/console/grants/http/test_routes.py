@@ -11,9 +11,6 @@ import pytest_bazel
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from haku.console import operator_auth
-from haku.console.agents.enrollment import OperatorAgent
-from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
 from haku.console.grants.http.models import (
     # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
     # gazelle:include_dep @pypi//httpx
@@ -26,7 +23,10 @@ from haku.console.grants.http.models import (
 )
 from haku.console.grants.http.routes import router
 from haku.console.grants.principal import AgentGrantPrincipal
-from haku.console.operator_auth import require_operator_mutation_origin
+from haku.console.identity import operator_auth
+from haku.console.identity.agent import AgentStatus, CredentialBindingStatus, CredentialKind
+from haku.console.identity.enrollment import OperatorAgent
+from haku.console.identity.operator_auth import require_operator_mutation_origin
 from haku.console.tool_call_actor import OperatorActor
 
 OPERATOR_ID = UUID("10000000-0000-4000-8000-000000000001")

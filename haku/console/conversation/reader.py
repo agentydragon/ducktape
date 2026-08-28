@@ -1,7 +1,7 @@
 """The `haku_conversations` reader: the store's reads, folded to the wire at the MCP seam.
 
-The store speaks items, turns and frames; the entry vocabulary is shared with the SPA's projection
-(<conversation_reads.py>, folded in <item_entries.py>), and this adapter is the MCP half: the
+The store speaks items, turns and frames; the item read model is shared with the SPA's projection
+(<item_reads.py>, beside the store that produces it), and this adapter is the MCP half: the
 settled stream, paged. The other three reads pass through untouched. Its own module because it
 stands on both the store and the fold, which the fold itself must not.
 """
@@ -11,15 +11,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from uuid import UUID
 
-from haku.console.conversation.item_reads import entry_of
-from haku.console.conversation.reads import (
-    ConversationEntry,
-    FrameRecord,
-    SessionCursor,
-    SessionRecord,
-    TurnCursor,
-    TurnRecord,
-)
+from haku.console.conversation.item_reads import Item, item_of
+from haku.console.conversation.reads import FrameRecord, SessionCursor, SessionRecord, TurnCursor, TurnRecord
 from haku.console.conversation_read_access import ConversationReadScope
 from haku.console.session.session_frames import BridgeFrameKind
 from haku.console.session.store import Store
@@ -52,6 +45,6 @@ class ConversationReads:
 
     async def read_conversation_items(
         self, conversation_id: UUID, *, cursor: int | None, limit: int, scope: ConversationReadScope
-    ) -> list[ConversationEntry]:
+    ) -> list[Item]:
         rows = await self._store.read_item_rows(conversation_id, after_seq=cursor, limit=limit, scope=scope)
-        return [entry_of(row) for row in rows]
+        return [item_of(row) for row in rows]

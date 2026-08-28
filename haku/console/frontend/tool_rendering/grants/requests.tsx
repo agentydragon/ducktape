@@ -19,13 +19,13 @@ export const zCreateGrantArgs: z.ZodType<McpToolArgumentsFor<typeof GRANTS_SERVE
   GRANTS_SERVER_ID,
   "create_grant"
 );
-const zReleaseGrantsArgs: z.ZodType<McpToolArgumentsFor<typeof GRANTS_SERVER_ID, "release_grants">> = mcpToolSchema(
+const zRevokeGrantsArgs: z.ZodType<McpToolArgumentsFor<typeof GRANTS_SERVER_ID, "revoke_grants">> = mcpToolSchema(
   GRANTS_SERVER_ID,
-  "release_grants"
+  "revoke_grants"
 );
 
 type CreateGrantArgs = z.infer<typeof zCreateGrantArgs>;
-type ReleaseGrantsArgs = z.infer<typeof zReleaseGrantsArgs>;
+type RevokeGrantsArgs = z.infer<typeof zRevokeGrantsArgs>;
 type CreateGrantItem = CreateGrantArgs["grants"][number];
 
 // Loose structural shapes the widgets render, so both the argument catalog (min-length arrays
@@ -182,14 +182,20 @@ function GrantIdList({ ids, variant }: { ids: readonly string[]; variant: "compa
   );
 }
 
-function ReleaseGrantsPreview({ args, variant }: PreviewProps<ReleaseGrantsArgs>) {
+function RevokeGrantsPreview({ args, variant }: PreviewProps<RevokeGrantsArgs>) {
   return (
     <Stack gap="xs">
       <Group gap={6}>
         <PreviewTitle>{plural(args.grant_ids.length, "grant")}</PreviewTitle>
         <PreviewBadge variant="light">{args.domain}</PreviewBadge>
+        <PreviewBadge variant="outline">{args.owner_agent_id ? "revoke" : "release"}</PreviewBadge>
       </Group>
       <GrantIdList ids={args.grant_ids} variant={variant} />
+      {args.owner_agent_id && (
+        <Field label="Owner agent" mono>
+          {args.owner_agent_id}
+        </Field>
+      )}
       <Field label="Reason">{args.reason ?? "released"}</Field>
     </Stack>
   );
@@ -197,8 +203,8 @@ function ReleaseGrantsPreview({ args, variant }: PreviewProps<ReleaseGrantsArgs>
 
 export const grantsPreviews: {
   create_grant: ToolPreview<typeof zCreateGrantArgs>;
-  release_grants: ToolPreview<typeof zReleaseGrantsArgs>;
+  revoke_grants: ToolPreview<typeof zRevokeGrantsArgs>;
 } = {
   create_grant: definePreview(zCreateGrantArgs, CreateGrantPreview),
-  release_grants: definePreview(zReleaseGrantsArgs, ReleaseGrantsPreview),
+  revoke_grants: definePreview(zRevokeGrantsArgs, RevokeGrantsPreview),
 } satisfies Record<string, ToolPreview>;

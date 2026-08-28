@@ -15,7 +15,7 @@ from uuid import UUID
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.sandbox_claims import SandboxClaims
 from haku.console.session.system_prompt import SystemPromptTemplate
-from haku.runtime.x.bridge.protocol import HarnessLaunch
+from haku.runner.protocol import HarnessLaunch
 
 
 @dataclass(frozen=True, slots=True)

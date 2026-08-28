@@ -24,7 +24,6 @@ from fastapi.testclient import TestClient
 from fastmcp.exceptions import ToolError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.agent_bearer_authority import AgentBearerAuthority
 from haku.console.config import KubernetesAuthorizationConfig, KubernetesAuthorizationSubject
 from haku.console.conftest import (
     # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
@@ -48,6 +47,7 @@ from haku.console.grants.kubernetes.models import (
 )
 from haku.console.grants.kubernetes.service import GrantService
 from haku.console.grants.principal import AgentGrantPrincipal, RequestPrincipal
+from haku.console.identity.agent_bearer_authority import AgentBearerAuthority
 from haku.console.mcp_execution import AgentMcpExecutionCaller, McpExecutionContext
 from haku.console.tools.kubernetes import KubernetesAccessCheck, KubernetesToolsService
 

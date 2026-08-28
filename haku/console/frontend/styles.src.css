@@ -369,6 +369,13 @@
   white-space: nowrap;
 }
 
+/* The Conversations list header launcher: the runtime picker beside the "New conversation" button.
+   Fixed width on desktop; the max-width:768px block below stacks the launcher under the title and
+   lets the picker flex to fill the row, so the button stays on-screen on a narrow phone. */
+.haku-conversation-launcher-select {
+  width: 260px;
+}
+
 .haku-conversation-detail-header {
   align-items: flex-start;
 }
@@ -564,6 +571,30 @@
 
   .haku-chat-prompt {
     max-width: 92%;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Below tablet width the fixed-width picker and button no longer fit beside the title, so stack
+     the launcher under the title and let the picker flex to fill the row. The "New conversation"
+     button must stay reachable without horizontal scroll. */
+  .haku-conversation-list-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .haku-conversation-launcher {
+    width: 100%;
+  }
+
+  .haku-conversation-launcher-select {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .haku-conversation-launcher > button {
+    flex: 0 0 auto;
   }
 }
 

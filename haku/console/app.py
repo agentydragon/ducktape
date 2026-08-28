@@ -33,21 +33,14 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.middleware.sessions import SessionMiddleware
 
 from haku.console import (
-    agent_bearer_authority,
     capabilities,
-    mcp_agent_auth,
     mcp_approval,
     mcp_catalog_reconciler,
     mcp_mount,
     mcp_operator_oauth,
     mcp_server,
-    operator_auth,
-    operator_login_flow,
     tool_call_service,
 )
-from haku.console.agents import enrollment_routes
-from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
-from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
 from haku.console.config import MCP_PATH, Settings
 
@@ -76,13 +69,24 @@ from haku.console.grants.kubernetes.repository import PostgresGrantRepository as
 from haku.console.grants.kubernetes.service import GrantService as KubernetesGrantService
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.hostexecd import service
+from haku.console.identity import (
+    agent_bearer_authority,
+    enrollment_routes,
+    mcp_agent_auth,
+    operator_auth,
+    operator_login_flow,
+)
+from haku.console.identity.authentik_operator_token import PostgresAuthentikOperatorTokenStore
+from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
+from haku.console.identity.fastmcp_adapter import HakuMcpActorResolver, install_operator_session_route_guard
+from haku.console.identity.operator_identity import OperatorIdentityTrust
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.in_process_servers import (
     HostexecServerConfig,
     InProcessServerDependencies,
     SandboxServerConfig,
     build_in_process_servers,
 )
-from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver, install_operator_session_route_guard
 from haku.console.mcp_config import (
     InProcessBackend,
     InProcessServers,
@@ -98,8 +102,6 @@ from haku.console.notifications import connection_metrics, console_events, push,
 from haku.console.notifications.conversation_wakes import ConversationWakes
 from haku.console.notifications.session_wakes import SessionWakes
 from haku.console.oauth import association_maintenance, connection_result, provider_connection, token_state
-from haku.console.operator_identity import OperatorIdentityTrust
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.session import runtime as session_runtime, sandbox_allocation, sandbox_claims
 from haku.console.session.launch_identity import ChatLaunchAuthorizer
@@ -116,7 +118,7 @@ from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
 from haku.console.x import runtime as console_runtime, runtime_catalog
 from haku.recall_index.config import EmbedderConfig
 from haku.recall_index.openai_embedder import OpenAIEmbedder
-from haku.runtime.x.bridge.protocol import KUBERNETES_PROXY_URL_ENV, RUNNER_SETUP_ENV
+from haku.runner.protocol import KUBERNETES_PROXY_URL_ENV, RUNNER_SETUP_ENV
 from haku.sandbox.kubernetes_client import InClusterSandboxClient
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
@@ -221,9 +223,7 @@ def create_app(
     claude_runtime = console_config.harnesses.claude_code if console_config.harnesses is not None else None
     codex_runtime = console_config.harnesses.codex_app_server if console_config.harnesses is not None else None
     static_by_id = {agent.agent_id: agent for agent in console_config.static_agents}
-    profile_runtime_kinds = {
-        profile.id: set(profile.allowed_chat_runtimes) for profile in console_config.access_profiles
-    }
+    profile_runtime_kinds = {profile.id: set(profile.allowed_harnesses) for profile in console_config.access_profiles}
     launchable_agent_ids = {entry.agent_id for entry in console_config.launchable_agents}
     # Each layer owns its own LISTEN connection on its own channel: a session and a conversation
     # are different layers, so their wakes share no wire, no connection, and no module. Two

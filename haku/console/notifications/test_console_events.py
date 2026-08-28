@@ -11,6 +11,7 @@ import pytest_bazel
 from fastapi import WebSocket
 from pydantic import ValidationError
 
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.notifications import console_events
 from haku.console.notifications.console_events import (
     ConnectionStatus,
@@ -19,7 +20,6 @@ from haku.console.notifications.console_events import (
     McpOperatorAuthChangedEvent,
     ToolCallsChangedEvent,
 )
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 
 OPERATOR_A = UUID("00000000-0000-0000-0000-00000000000a")
 OPERATOR_B = UUID("00000000-0000-0000-0000-00000000000b")

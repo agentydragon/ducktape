@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from haku.console.chat_models import ItemStatus, ItemType
 from haku.console.database_schema import Base as ConsoleBase, Conversation, ConversationItem, Operator, Session
 from haku.console.harnesses.kind import HarnessKind
-from haku.console.operator_identity import OperatorStatus
+from haku.console.identity.operator_identity import OperatorStatus
 from haku.recall_index.chat_sync import ChatSyncReport, sync_chat
 from haku.recall_index.embedding_sync import embed_pending
 from haku.recall_index.fake_embedder import FakeEmbedder

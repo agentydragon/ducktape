@@ -10,12 +10,12 @@ import pytest_bazel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.conftest import console_sessions
 from haku.console.conversation.prompt_origin import SPA_ORIGIN
 from haku.console.conversation.runtime import Runtime
 from haku.console.database_schema import ConversationItem, Session
 from haku.console.harnesses.kind import HarnessKind
+from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.session.conftest import configured_runtimes
 from haku.console.session.launch_identity import ChatLaunchAuthorizer, LaunchIdentity
 from haku.console.session.runtime import SessionService

@@ -27,7 +27,7 @@ from haku.console.conversation.conversation_event import PromptRejection
 from haku.console.conversation.prompt_origin import MatrixOrigin
 from haku.console.database_schema import ChannelAttachmentRow, Conversation, Operator
 from haku.console.harnesses.kind import HarnessKind
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.session.launch_identity import LaunchAuthorizer, LaunchIdentity
 from haku.console.session.store import PromptRefusedError, Store
 

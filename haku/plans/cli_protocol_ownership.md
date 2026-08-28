@@ -3,7 +3,7 @@
 **Status: built** (decided 2026-08-12). The console drives Claude Code's newline-delimited JSON
 protocol itself: <../cli_protocol/frames.py> types the control channel, `ClaudeCli`
 (<../console/x/claude_code/client.py>) reads both channels and owns `initialize` and `interrupt`,
-and `runtime/x/bridge/claude_options.py` builds the launch argv. No Python imports the Agent SDK. Why each of
+and `runner/claude/options.py` builds the launch argv. No Python imports the Agent SDK. Why each of
 those is ours rather than the SDK's is written where it is now maintained — those modules'
 docstrings — and the wire itself is <../cli_protocol/protocol.md>.
 
@@ -12,7 +12,7 @@ wire, and a frame gets a model when the code that acts on it exists.
 
 Session re-adoption across a console roll — the design this decision was a prerequisite for — is
 also built; its decision record, including the replay hazard and the rejected alternatives, is
-<../runtime/x/bridge/docs/design.md>.
+<../runner/docs/design.md>.
 
 What is left here is what that decision did not finish — where the CLI binary comes from, the
 capabilities owning the handshake put within reach, and the protocol-horizon policy the session
@@ -58,7 +58,7 @@ Worth taking up, in rough order of value:
   long-running session, and Haku's skill set is not small.
 - **`hooks`** — they work, and a `PreToolUse` deny is honoured before the permission check ever
   runs, so this is a real policy seam. It is also inbound control traffic, which the re-adoption
-  decision record (<../runtime/x/bridge/docs/design.md>) warns about: the hazard is an unanswered
+  decision record (<../runner/docs/design.md>) warns about: the hazard is an unanswered
   request whose **replay has side effects**, which a permission hook has and a read-only one does
   not. Read that first.
 
@@ -97,5 +97,5 @@ sandbox refuses a handshake.
 - Should an adopting console re-announce anything to the room, or is a silent recovery the
   better behaviour? A room that says nothing when nothing was lost is arguably correct, but it
   makes the mechanism invisible when it is new and still being trusted.
-- Does `--resume` (design A in <../runtime/x/bridge/docs/design.md>) belong as the fallback when
+- Does `--resume` (design A in <../runner/docs/design.md>) belong as the fallback when
   adoption fails, giving two tiers of recovery before a session is declared lost?

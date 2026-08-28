@@ -52,7 +52,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: indexer
-          image: ghcr.io/agentydragon/haku-indexer:devel-20260828123851-9c41108 # {"$imagepolicy": "flux-system:haku-indexer"}
+          image: ghcr.io/agentydragon/haku-indexer:devel-20260828140953-647c0d8 # {"$imagepolicy": "flux-system:haku-indexer"}
           imagePullPolicy: Always
           args: ["--role=embed"]
           env:

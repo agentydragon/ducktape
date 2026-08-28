@@ -1,6 +1,6 @@
 """Commit the runner's neutral-operation journal into the durable conversation model (#4667).
 
-The Console half of <../../runtime/x/bridge/neutral_operations.py>, behind whatever transport the
+The Console half of <../../runner/neutral_operations.py>, behind whatever transport the
 generation cut wires up: given a session's parsed `RunnerHello` or `OperationBatch`, this consumer
 owns validation, atomic idempotent commit, and the ACK/resume answers. The runner owns everything
 before that — native frames never reach here, and an unknown operation kind never reaches here
@@ -39,8 +39,8 @@ from haku.console.conversation import conversation_event, log
 from haku.console.conversation.log import LogWriter, UnknownItemError
 from haku.console.database_schema import ConversationItem, ConversationTurn, Session, SubmittedPrompt
 from haku.console.notifications.conversation_wakes import notify_update
-from haku.runtime.x.bridge import neutral_operations
-from haku.runtime.x.bridge.neutral_operations import (
+from haku.runner import neutral_operations
+from haku.runner.neutral_operations import (
     GENERATION,
     SUPPORTED_NEUTRAL_VERSIONS,
     BatchAck,

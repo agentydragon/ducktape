@@ -31,8 +31,8 @@ py_library(
     deps = [
         "//haku/console/harnesses:kind",
         "//haku/console/x:runtime",
-        "//haku/runtime/x/bridge:claude_options",
-        "//haku/runtime/x/bridge:protocol",
+        "//haku/runner:protocol",
+        "//haku/runner/claude:options",
     ],
 )
 

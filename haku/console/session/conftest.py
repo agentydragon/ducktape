@@ -24,9 +24,9 @@ from haku.console.chat_models import ChannelSurface, ItemStatus, ItemType
 from haku.console.config import RuntimeRegistrationConfig
 from haku.console.database_schema import ChannelAttachmentRow, ConversationItem, Session
 from haku.console.harnesses.kind import HarnessKind
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.notifications.conversation_wakes import ConversationWakes
 from haku.console.notifications.session_wakes import SessionWakes
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.session.conversation_views import SessionView
 from haku.console.session.launch_identity import LaunchAuthorizer
 from haku.console.session.runtime import SessionService
@@ -53,7 +53,13 @@ def runtime_config(**overrides: object) -> RuntimeRegistrationConfig:
         "ca_bundle": "/egress-proxy-ca/ca-certificates.crt",
         "no_proxy": "127.0.0.1,localhost,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8",
         "mcp_url": "http://haku-console.test:9090/mcp",
-        "implementation": {"kind": "claude_code", "oauth_placeholder": "not-a-secret"},
+        "implementation": {
+            "kind": "claude_code",
+            "api_base_url": "http://litellm.test:4000",
+            "model": "claude/ant-messages/claude-sonnet-5",
+            "haiku_model": "claude/ant-messages/claude-haiku-4-5-20251001",
+            "auth_token_placeholder": "not-a-secret",
+        },
     }
     values.update(overrides)
     return RuntimeRegistrationConfig(**values)

@@ -28,8 +28,8 @@
       "test": "//finance/scraper/..."
     },
     "haku-harness-runner": {
-      "target": "//haku/runtime/x/bridge:runner_image",
-      "test": "//haku/runtime/x/bridge/..."
+      "target": "//haku/runner:runner_image",
+      "test": "//haku/runner/..."
     },
     "haku-egress-proxy": {
       "target": "//haku/egress:proxy_image",

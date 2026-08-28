@@ -30,7 +30,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import create_engine, make_url, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from haku.console.agents.launch_authority import StaticLaunchAuthority
 from haku.console.channels.matrix.config import AdapterConfigFile, Config, load_adapter_config
 from haku.console.channels.matrix.conversation import ConversationStore, Turns
 from haku.console.channels.matrix.ingress_ledger import IngressLedger
@@ -62,9 +61,10 @@ from haku.console.database_schema import (
     SubmittedPrompt,
 )
 from haku.console.harnesses.kind import HarnessKind
+from haku.console.identity.launch_authority import StaticLaunchAuthority
+from haku.console.identity.operator_identity import OperatorIdentityTrust
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.notifications.conversation_wakes import ConversationWakes
-from haku.console.operator_identity import OperatorIdentityTrust
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.session.launch_identity import ChatLaunchAuthorizer
 from haku.console.session.store import Store
 from haku.console.session.subscription import ConversationStream
@@ -182,7 +182,7 @@ def _launch_wiring(config: AdapterConfigFile) -> LaunchWiring | None:
     if config.default_chat_agent_id is None:
         raise ValueError("harnesses are configured but default_chat_agent_id is not")
     static_by_id = {agent.agent_id: agent for agent in config.static_agents}
-    profile_runtime_kinds = {profile.id: profile.allowed_chat_runtimes for profile in config.access_profiles}
+    profile_runtime_kinds = {profile.id: profile.allowed_harnesses for profile in config.access_profiles}
     authorizer = ChatLaunchAuthorizer(
         StaticLaunchAuthority(),
         launchable_agent_ids={entry.agent_id for entry in config.launchable_agents},

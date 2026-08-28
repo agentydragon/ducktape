@@ -33,7 +33,7 @@ from util.net import pick_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 CONSOLE_BIN = "_main/haku/console/channels/matrix/testing/console_replica_bin"
-RUNNER_BIN = "_main/haku/runtime/x/bridge/runner_bin"
+RUNNER_BIN = "_main/haku/runner/runner_bin"
 
 # The two production windows a killed sandbox has to pass through before a replacement may adopt
 # it, shortened for the full-stack tests. Nothing here changes which path runs — the sweep still

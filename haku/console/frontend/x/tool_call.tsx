@@ -1,6 +1,6 @@
 import { Badge, Code, Stack, Text } from "@mantine/core";
 import type { ReactNode } from "react";
-import type { ToolCallEntry } from "../client";
+import type { ToolCallItem } from "../client";
 
 import { CodeBlock } from "../code_block";
 
@@ -181,7 +181,7 @@ function registeredSummary(toolName: string, args: Record<string, unknown>): Rea
   }
 }
 
-function toolCallSummary(call: ToolCallEntry): ReactNode {
+function toolCallSummary(call: ToolCallItem): ReactNode {
   const args = call.arguments;
   if (args !== null && typeof args === "object" && !Array.isArray(args)) {
     const rendered = registeredSummary(call.tool_name, args as Record<string, unknown>);
@@ -201,7 +201,7 @@ function toolCallSummary(call: ToolCallEntry): ReactNode {
  * name, the argument that identifies the call, and its state; everything else — full arguments,
  * output, structured result — is behind the fold.
  */
-export function ToolCallView({ call }: { call: ToolCallEntry }): JSX.Element {
+export function ToolCallView({ call }: { call: ToolCallItem }): JSX.Element {
   return (
     <details className="haku-chat-tool-call">
       <summary className="haku-chat-tool-call-summary">

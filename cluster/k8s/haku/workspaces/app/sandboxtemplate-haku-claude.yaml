@@ -64,30 +64,19 @@ spec:
             # fails loudly there.
             - name: HAKU_SETUP_BAZEL_TRUST
               value: "0"
-            # The placeholder the egress proxy swaps for the real agentydragon-agent PAT on
-            # exact GitHub hosts (claude-iron.yaml). Not a secret: on its own it authenticates
-            # nothing, which is why it can sit in a manifest and in the agent's ~/.netrc.
-            # `GITHUB_TOKEN` too, so API callers and `gh` find it where they look; the netrc
-            # entry the bootstrap writes is what git uses.
+            # The placeholder the colocated Console egress fence swaps for the real agentydragon-agent
+            # PAT on exact GitHub hosts (the `github-bot` credential in haku-console config.yaml's
+            # egress_decide). Not a secret: on its own it authenticates nothing, which is why it can
+            # sit in a manifest and in the agent's ~/.netrc. `GITHUB_TOKEN` too, so API callers and
+            # `gh` find it where they look; the netrc entry the bootstrap writes is what git uses.
             - name: HAKU_GITHUB_TOKEN
               value: github-token-placeholder
             - name: GITHUB_TOKEN
               value: github-token-placeholder
-            # Inert placeholder the egress proxy swaps for aiquota's real shared
-            # bearer, and only on aiquota.allegedly.works' two read paths
-            # (claude-iron.yaml). Lets the agent read its own AI-usage quotas via
-            # `curl -H "Authorization: Bearer $AIQUOTA_API_BEARER_TOKEN"
-            # https://aiquota.allegedly.works/v1/quotas` without ever holding the key.
-            - name: AIQUOTA_API_BEARER_TOKEN
-              value: aiquota-token-placeholder
-            # Inert placeholder the egress proxy swaps for the central ActivityWatch
-            # read-only bearer, and only on activitywatch-read.allegedly.works' read
-            # methods (claude-iron.yaml). Lets the agent read the operator's own
-            # activity history via `curl -H "Authorization: Bearer $AW_READ_TOKEN"
-            # https://activitywatch-read.allegedly.works/api/0/buckets/` without ever
-            # holding the key.
-            - name: AW_READ_TOKEN
-              value: activitywatch-read-token-placeholder
+            # The runner's model access (ANTHROPIC_BASE_URL/ANTHROPIC_AUTH_TOKEN/ANTHROPIC_MODEL) and
+            # its GitHub identity are injected declaratively by Console from config.yaml's claude_code
+            # implementation (haku/console/config.py). The AIQuota and ActivityWatch read tokens the
+            # iron fence used are deferred from this reroute — see PR — pending an ESO source.
             # ducktape is a read-only source Haku consults. github.com is reachable from the
             # agent's shell, which has the proxy in its environment, but not from the bootstrap,
             # which runs with pod env and deliberately has no proxy vars — so a clone here would

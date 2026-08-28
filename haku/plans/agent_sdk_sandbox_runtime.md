@@ -6,7 +6,7 @@ works headlessly through the Agent SDK, and the bundled Claude CLI works through
 TLS-intercepting forced proxy — and the runtime that answer unblocked is running: the
 `haku-claude` `SandboxTemplate` and its warm pool
 (<../../cluster/k8s/haku/workspaces/app/sandboxtemplate-haku-claude.yaml>), the in-sandbox bridge
-(<../runtime/x/bridge/>), the console's session runtime and its chat surface
+(<../runner/>), the console's session runtime and its chat surface
 (<../console/session/runtime.py>, `frontend/x/`), and a Matrix room in front of all of it
 (<../console/channels/matrix/SPEC.md>). One decision below was reversed by the build: no Python imports the
 Agent SDK any more — the console drives Claude Code's wire itself
@@ -127,9 +127,9 @@ around Claude Code's stdin/stdout, deriving a versioned launch frame from `Claud
 pinning it against the SDK's `SubprocessCLITransport` with a compatibility test.
 
 **Built, and the SDK is out of the loop entirely** — <cli_protocol_ownership.md> is the decision and
-its reasoning. The bridge is `//haku/runtime/x/bridge:runner_bin`, which starts the pinned Claude
+its reasoning. The bridge is `//haku/runner:runner_bin`, which starts the pinned Claude
 Code executable the sandbox image supplies; the console drives the wire itself
-(`console/x/claude_code/client.py` replaces `ClaudeSDKClient`, `runtime/x/bridge/claude_options.py` replaces `ClaudeAgentOptions` plus that private argv
+(`console/x/claude_code/client.py` replaces `ClaudeSDKClient`, `runner/claude/options.py` replaces `ClaudeAgentOptions` plus that private argv
 builder, and `test_claude_options.py` pins the argv where the compatibility test used to). The WebSocket
 still adds only launch and lifecycle framing — it defines no second prompt, turn, or tool protocol —
 and the SDK wheel survives as a build dependency for one reason: `extract_claude.py` pulls the CLI

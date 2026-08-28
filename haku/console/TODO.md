@@ -243,7 +243,7 @@ genuinely operational knobs should move onto the config model:
   `RE_AWAKENING_MESSAGES` (the N of R3.3a).
 - `channels/matrix/conversation_subscriber.py` — `POLL_INTERVAL`, `ERROR_BACKOFF`; and
   `MAX_BACKFILL_PAGES` / `TIMELINE_LIMIT` from `channels/matrix/client.py`.
-- `runtime/x/bridge/runner.py` — `MAX_DISCONNECTED_SECONDS`, `REPLAY_WINDOW`,
+- `runner/runner.py` — `MAX_DISCONNECTED_SECONDS`, `REPLAY_WINDOW`,
   `RECONNECT_{BASE,MAX}_DELAY`. **These live in the runner**, whose image is pinned at claim
   creation, so they are not console config at all: they reach a running sandbox only through the
   launch, or not until it is replaced.
@@ -345,10 +345,10 @@ bridge; the frame log and its adapter are what keep a runner's shape below the c
 **This is the first real test of the neutrality the conversation layer claims.**
 `ConversationEventKind` and the frame adapter exist so that a second backend is possible, and
 nothing has ever exercised that — every claim in this repo about one is read from the sketch in
-<../runtime/x/bridge/docs/second_backend.md> rather than measured.
+<../runner/docs/second_backend.md> rather than measured.
 
 **The seam is the frame protocol, not `CliBackend`.** A runner is anything that dials the console
-with the bridge credential and speaks frames, which is why <../runtime/x/bridge/backend.py> can say
+with the bridge credential and speaks frames, which is why <../runner/backend.py> can say
 almost nothing below the envelope is Claude-specific. `CliBackend` answers one question — how to get
 frames out of a **child process** — so it is what a runner uses when it happens to wrap a CLI, and
 `second_backend.md`'s subprocess assumptions (a binary to resolve, argv, `replayable` over a child's

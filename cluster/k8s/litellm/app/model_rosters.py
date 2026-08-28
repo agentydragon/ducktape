@@ -7,6 +7,9 @@ upstream model:
 - `chatgpt/ant-messages/*` / `chatgpt/oai-responses/*` — ChatGPT/Codex subscription via
   CLIProxyAPI, on the Anthropic Messages wire (Claude Code clients) and the OpenAI
   Responses wire (Codex clients)
+- `claude/ant-messages/*` — Claude Code subscription via CLIProxyAPI's Claude OAuth
+  session, on the Anthropic Messages wire (a different upstream session on the same pod
+  as `chatgpt/*`, distinct from the direct-API `claude-*` entries)
 - `tana/ant-messages/*` — Tana account via tana-litellm, an Anthropic Messages
   passthrough
 - `google/oai-chat/*` / `google/oai-embeddings/*` — Google AI key (Gemini)
@@ -46,6 +49,7 @@ class Provider(StrEnum):
     """First scheme segment: the upstream account/provider an entry spends from."""
 
     CHATGPT = "chatgpt"
+    CLAUDE = "claude"
     TANA = "tana"
     GOOGLE = "google"
 
@@ -86,8 +90,12 @@ TANA_MODELS: list[tuple[str, str]] = [
     ("claude-haiku-4-5", "claude-haiku-4-5-20251001"),
 ]
 
-# Real Anthropic API roster verified against the authenticated /v1/models
-# endpoint. These names are mirrored into Haku OpenClaw and Terraform.
+# Current-generation Anthropic roster, verified against the authenticated /v1/models
+# endpoint. Mirrored into Haku OpenClaw and Terraform, and reused as the exposed set for
+# the cliproxyapi Claude-subscription `claude/ant-messages/*` route: cliproxyapi's Claude
+# OAuth session serves older generations too, but we expose only this current group — the
+# subscription and the direct API serve the same current models, and sharing one list
+# keeps them in sync ("newest group only", as with the Gemini roster).
 ANTHROPIC_MODELS: list[str] = ["claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5-20251001"]
 
 # The subset exposed in OpenClaw's model picker. OpenClaw's bundled LiteLLM

@@ -57,10 +57,26 @@ class ConfiguredAgent(BaseModel):
 
 
 class ConfiguredProfile(BaseModel):
-    """The access-profile slice: which chat runtimes a profile admits."""
+    """The access-profile slice: which harnesses a profile admits."""
 
     id: str
-    allowed_chat_runtimes: set[HarnessKind] = Field(default_factory=set)
+    allowed_harnesses: set[HarnessKind] = Field(default_factory=set)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_allowed_chat_runtimes_alias(cls, value: object) -> object:
+        # CLEANUP(added 2026-08-28): remove with ConsoleConfigFile's AccessProfile twin alias once
+        #   the deployed haku-console-config ConfigMap carries `allowed_harnesses` (contract step of
+        #   #4772 C4e).
+        if isinstance(value, dict) and "allowed_chat_runtimes" in value:
+            if "allowed_harnesses" in value:
+                raise ValueError(
+                    "allowed_harnesses and its deprecated alias allowed_chat_runtimes are both set; "
+                    "keep only allowed_harnesses"
+                )
+            value = dict(value)
+            value["allowed_harnesses"] = value.pop("allowed_chat_runtimes")
+        return value
 
 
 class LaunchableEntry(BaseModel):

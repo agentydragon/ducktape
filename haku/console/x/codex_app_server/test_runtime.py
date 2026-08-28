@@ -10,7 +10,7 @@ from haku.console.harnesses.kind import HarnessKind
 from haku.console.x.codex_app_server.config import ReasoningEffort
 from haku.console.x.codex_app_server.runtime import CodexRuntimeAdapter
 from haku.console.x.runtime import RuntimeLaunch, RuntimeMcpServer
-from haku.runtime.x.bridge.codex_options import CodexModelProvider
+from haku.runner.codex.options import CodexModelProvider
 
 
 def _launch(**overrides: Any) -> RuntimeLaunch:

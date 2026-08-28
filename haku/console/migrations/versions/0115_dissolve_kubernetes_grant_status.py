@@ -2,13 +2,15 @@
 
 Contract half of the expand/contract begun in #5018/#4889: the end-fact columns
 (`released_at`/`revoked_at`) and the envelope's `derive_status` already landed (0112), and this
-image no longer reads or writes `status`/`ended_at`. A pre-facts replica during the roll could end
-a grant by writing `status`/`ended_at` only, so first backfill those stragglers — `released`/
-`revoked` carried `ended_at < expires_at`, so the fact derives the same terminal status — and null
-the sweeper-written `end_reason` on expired rows, which record no fact. Then drop the stored
-`status`/`ended_at`, the three status-bearing indexes, and the status-vocabulary CHECK, replacing
-them with the envelope's fact-shape CHECK (`ck_kubernetes_grants_end_shape`, now shared by
-`grant_envelope_table_args`) and expiry-shaped indexes matching `http_grants`. No rows are deleted
+image no longer reads or writes `status`/`ended_at`. Drop the status-vocabulary CHECK first: the
+backfill below re-shapes terminal rows and nulls `end_reason` on expired rows, both of which the old
+CHECK forbids (a terminal status must carry `end_reason`), and it is being replaced anyway. A
+pre-facts replica during the roll could end a grant by writing `status`/`ended_at` only, so then
+backfill those stragglers — `released`/`revoked` carried `ended_at < expires_at`, so the fact
+derives the same terminal status — and null the sweeper-written `end_reason` on expired rows, which
+record no fact. Then install the envelope's fact-shape CHECK (`ck_kubernetes_grants_end_shape`, now
+shared by `grant_envelope_table_args`), drop the stored `status`/`ended_at` and the three
+status-bearing indexes, and add expiry-shaped indexes matching `http_grants`. No rows are deleted
 — grants are audit state outside the conversation-drop allowance.
 
 Revision ID: 0115
@@ -45,16 +47,21 @@ _DERIVED_STATUS = (
 
 
 def upgrade() -> None:
+    # Drop the status-vocabulary CHECK first: the backfill below re-shapes terminal rows and nulls
+    # `end_reason` on expired rows, both of which the old status-shape CHECK forbids (a terminal
+    # status must carry `end_reason`). It is being replaced by the fact-shape CHECK below anyway.
+    op.drop_constraint("ck_kubernetes_grants_status_shape", "kubernetes_grants", type_="check")
+    op.drop_constraint("ck_kubernetes_grants_single_end_action", "kubernetes_grants", type_="check")
+
     op.execute("UPDATE kubernetes_grants SET released_at = ended_at WHERE status = 'released' AND released_at IS NULL")
     op.execute("UPDATE kubernetes_grants SET revoked_at = ended_at WHERE status = 'revoked' AND revoked_at IS NULL")
     op.execute("UPDATE kubernetes_grants SET end_reason = NULL WHERE status = 'expired'")
 
+    op.create_check_constraint("ck_kubernetes_grants_end_shape", "kubernetes_grants", _END_SHAPE)
+
     op.drop_index("idx_kubernetes_grants_owner_status_expiry", table_name="kubernetes_grants")
     op.drop_index("idx_kubernetes_grants_agent_principal_status_expiry", table_name="kubernetes_grants")
     op.drop_index("idx_kubernetes_grants_session_principal_status_expiry", table_name="kubernetes_grants")
-    op.drop_constraint("ck_kubernetes_grants_status_shape", "kubernetes_grants", type_="check")
-    op.drop_constraint("ck_kubernetes_grants_single_end_action", "kubernetes_grants", type_="check")
-    op.create_check_constraint("ck_kubernetes_grants_end_shape", "kubernetes_grants", _END_SHAPE)
     op.drop_column("kubernetes_grants", "status")
     op.drop_column("kubernetes_grants", "ended_at")
     op.create_index("idx_kubernetes_grants_owner_expiry", "kubernetes_grants", ["owner_agent_id", "expires_at"])

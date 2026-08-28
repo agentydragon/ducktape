@@ -15,13 +15,8 @@ from pathlib import Path
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.x.codex_app_server.config import ReasoningEffort
 from haku.console.x.runtime import RuntimeLaunch
-from haku.runtime.x.bridge.codex_options import (
-    CodexAppServerSession,
-    CodexModelProvider,
-    HttpMcpServer,
-    build_codex_launch,
-)
-from haku.runtime.x.bridge.protocol import HarnessLaunch
+from haku.runner.codex.options import CodexAppServerSession, CodexModelProvider, HttpMcpServer, build_codex_launch
+from haku.runner.protocol import HarnessLaunch
 
 
 @dataclass(frozen=True, slots=True)

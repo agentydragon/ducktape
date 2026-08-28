@@ -3,7 +3,7 @@ read as, and the enums the row's own columns discriminate on.
 
 One vocabulary, in the neutral-operation verbs (#4667): items are **opened / segment / completed**,
 a turn is **opened** and **ended**, and a failed turn states its **`failure`**. The runner's wire
-spelling of the same verbs is `haku/runtime/x/bridge/neutral_operations.py` — its own module
+spelling of the same verbs is `haku/runner/neutral_operations.py` — its own module
 because the Console depends on the runtime and never the reverse, so the wire cannot import this
 record layer.
 

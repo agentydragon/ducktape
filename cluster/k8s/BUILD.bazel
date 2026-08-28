@@ -309,5 +309,5 @@ filegroup(
 filegroup(
     name = "haku_sandbox_setup",
     srcs = ["haku/workspaces/image/haku-sandbox-setup.sh"],
-    visibility = ["//haku/runtime/x/bridge:__pkg__"],
+    visibility = ["//haku/runner:__pkg__"],
 )

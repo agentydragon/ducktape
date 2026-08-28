@@ -13,7 +13,7 @@ from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
 from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
 from haku.console.x.codex_app_server.runtime import CodexRuntimeAdapter
 from haku.console.x.runtime import AgentRuntimeResources, RuntimeAdapter, RuntimeKey, RuntimeRegistry
-from haku.runtime.x.bridge.codex_options import CodexModelProvider
+from haku.runner.codex.options import CodexModelProvider
 
 
 def projection_registry() -> RuntimeRegistry:
