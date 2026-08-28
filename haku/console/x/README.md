@@ -188,8 +188,8 @@ so a stand-in cannot outlive the thing it fakes and a `py_binary` can reach it
 (<testing/recording_claims.py> for the rationale). The e2e tiers, each with a module docstring
 saying what only it can answer:
 
-- <test_bridge_e2e.py> — the Claude bridge end to end: a real runner process on a real
-  websocket.
+- <test_generation_cutover_e2e.py> — the post-cut stack end to end: a real runner process on a
+  real websocket journaling to a real Console handler — the generation window's health gate.
 - <channels/matrix/test_homeserver_e2e.py> — `MatrixClient` against a real Synapse, for the
   properties of Synapse a canned response could only agree with.
 - <channels/matrix/test_fullstack_e2e.py> — that Synapse, console replicas as processes, a
