@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
-from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
+from haku.console.identity.agent import AgentStatus, CredentialBindingStatus, CredentialKind
 
 
 @dataclass(frozen=True, slots=True)

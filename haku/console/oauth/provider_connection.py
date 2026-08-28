@@ -36,6 +36,8 @@ from sqlalchemy.orm import selectinload
 from haku.console.config import ProviderOAuthClientConfig
 from haku.console.database_schema import ProviderConnection, ProviderConnectionFlow
 from haku.console.deps import SettingsDep
+from haku.console.identity.operator_auth import OperatorActorDep
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.mcp_config import (
     ConsoleConfigFile,
     OperatorConnectionDefinition,
@@ -71,8 +73,6 @@ from haku.console.oauth.token_support import (
     token_expires_at,
     token_request_headers,
 )
-from haku.console.operator_auth import OperatorActorDep
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 
 PROVIDER_CONNECTION_CALLBACK_PATH = "/api/provider-connections/callback"
 _FLOW_TTL = datetime.timedelta(minutes=10)

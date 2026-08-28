@@ -101,9 +101,9 @@ py_library(
     deps = [
         ":config",
         ":tool_call_actor",
-        "//haku/console/agents:naming",
         "//haku/console/grants/http:decide_config",
         "//haku/console/harnesses:kind",
+        "//haku/console/identity:naming",
         "//haku/console/oauth:provider_connection_registry",
         "//haku/recall_index:config",
         "//haku/sandbox:config",
@@ -313,11 +313,6 @@ py_library(
 )
 
 py_library(
-    name = "operator_identity",
-    srcs = ["operator_identity.py"],
-)
-
-py_library(
     name = "pydantic_column",
     srcs = ["pydantic_column.py"],
     deps = [
@@ -343,9 +338,7 @@ py_library(
     srcs = ["database_schema.py"],
     deps = [
         ":chat_models",
-        ":operator_identity",
         ":pydantic_column",
-        "//haku/console/agents:models",
         "//haku/console/conversation:conversation_event",
         "//haku/console/conversation:prompt_origin",
         "//haku/console/grants:envelope",
@@ -353,6 +346,8 @@ py_library(
         "//haku/console/grants/kubernetes:models",
         "//haku/console/harnesses:kind",
         "//haku/console/hostexecd:models",
+        "//haku/console/identity:agent",
+        "//haku/console/identity:operator_identity",
         "//haku/console/oauth:provider_connection_registry",
         "//haku/console/session:session_frames",
         "//haku/console/session:status",
@@ -364,28 +359,8 @@ py_library(
 )
 
 py_library(
-    name = "operator_agents",
-    srcs = ["operator_agents.py"],
-    deps = [
-        ":tool_call_actor",
-        "//haku/console/agents:enrollment",
-        "@pypi//fastapi",
-    ],
-)
-
-py_library(
     name = "chat_models",
     srcs = ["chat_models.py"],
-)
-
-py_library(
-    name = "operator_identity_store",
-    srcs = ["operator_identity_store.py"],
-    deps = [
-        ":database_schema",
-        ":operator_identity",
-        "@pypi//sqlalchemy",
-    ],
 )
 
 py_library(
@@ -414,28 +389,14 @@ py_library(
 )
 
 py_library(
-    name = "agent_bearer_authority",
-    srcs = ["agent_bearer_authority.py"],
-    deps = [
-        ":database_schema",
-        ":tool_call_actor",
-        "//haku/console/agents:authorization",
-        "//haku/console/mcp_auth:fastmcp_adapter",
-        "//haku/console/session:launch_identity",
-        "//haku/console/session:status",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
     name = "mcp_operator_oauth",
     srcs = ["mcp_operator_oauth.py"],
     deps = [
         ":database_schema",
         ":deps",
         ":mcp_config",
-        ":operator_auth",
-        ":operator_identity_store",
+        "//haku/console/identity:operator_auth",
+        "//haku/console/identity:operator_identity_store",
         "//haku/console/notifications:console_events",
         "//haku/console/oauth:connection_result",
         "//haku/console/oauth:token_state",
@@ -446,61 +407,6 @@ py_library(
         "@pypi//prometheus_client",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "authentik_operator_token",
-    srcs = ["authentik_operator_token.py"],
-    deps = [
-        ":database_schema",
-        ":operator_identity_store",
-        "//haku/console/oauth:token_state",
-        "//haku/console/oauth:token_support",
-        "//mcp_infra/authentik_auth:config",
-        "@pypi//httpx",
-        "@pypi//mcp",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_authentik_operator_token",
-    size = "medium",
-    srcs = ["test_authentik_operator_token.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
-    requires_docker = True,
-    deps = [
-        ":authentik_operator_token",
-        ":conftest",
-        "//:conftest",
-        "//haku/console/oauth:token_state",
-        "@pypi//httpx",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//respx",
-    ],
-)
-
-py_library(
-    name = "mcp_agent_auth",
-    srcs = ["mcp_agent_auth.py"],
-    deps = [
-        ":agent_bearer_authority",
-        ":config",
-        ":operator_auth",
-        ":operator_identity_store",
-        ":tool_call_actor",
-        "//haku/console/agents:authorization",
-        "//haku/console/mcp_auth:fastmcp_adapter",
-        "//mcp_infra:persistence",
-        "//mcp_infra/authentik_auth:provider",
-        "@pypi//fastmcp_slim",
-        "@pypi//sqlalchemy",
-        "@pypi//starlette",
     ],
 )
 
@@ -571,11 +477,11 @@ py_library(
         ":mcp_execution",
         ":mcp_operator_oauth",
         ":mcp_reflection_cache",
-        ":operator_auth",
-        ":operator_identity",
         ":tool_call_actor",
         ":tool_call_service",
-        "//haku/console/agents:models",
+        "//haku/console/identity:agent",
+        "//haku/console/identity:operator_auth",
+        "//haku/console/identity:operator_identity",
         "//haku/console/session:status",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
@@ -631,58 +537,12 @@ py_library(
         ":tool_call_service",
         "//haku/console/auto_approval:registry",
         "//haku/console/hostexecd:service",
-        "//haku/console/mcp_auth:fastmcp_adapter",
+        "//haku/console/identity:fastmcp_adapter",
         "//haku/console/oauth:provider_connection",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
         "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "operator_login_flow",
-    srcs = ["operator_login_flow.py"],
-    deps = [
-        ":database_schema",
-        "@pypi//authlib",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "operator_auth",
-    srcs = ["operator_auth.py"],
-    deps = [
-        ":authentik_operator_token",
-        ":config",
-        ":operator_identity",
-        ":operator_identity_store",
-        ":operator_login_flow",
-        ":tool_call_actor",
-        "//haku/console/oauth:callback_page",
-        "@pypi//authlib",
-        "@pypi//fastapi",
-        "@pypi//pydantic",
-        "@pypi//starlette",
-    ],
-)
-
-py_test(
-    name = "test_operator_identity",
-    size = "medium",
-    srcs = ["test_operator_identity.py"],
-    requires_docker = True,
-    deps = [
-        ":config",
-        ":conftest",
-        ":database_schema",
-        ":operator_identity",
-        ":operator_identity_store",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -709,34 +569,6 @@ py_test(
 )
 
 py_test(
-    name = "test_operator_auth",
-    size = "medium",
-    srcs = ["test_operator_auth.py"],
-    # Real create_app runs against a Postgres testcontainer (conftest); the OAuth login walks a served
-    # mock IdP over HTTP.
-    requires_docker = True,
-    deps = [
-        ":app",
-        ":config",
-        ":conftest",
-        ":database_schema",
-        ":operator_auth",
-        ":operator_login_flow",
-        "//:conftest",
-        "//util:net",
-        "//util/testing:asgi",
-        "//util/testing:mock_oidc",
-        "@pypi//fastapi",
-        "@pypi//httpx",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
     name = "test_mcp_operator_oauth",
     size = "medium",
     srcs = ["test_mcp_operator_oauth.py"],
@@ -750,39 +582,11 @@ py_test(
         ":database_schema",
         ":mcp_config",
         ":mcp_operator_oauth",
-        ":operator_identity",
         "//:conftest",
+        "//haku/console/identity:operator_identity",
         "//haku/console/oauth:token_state",
         "@pypi//httpx",
         "@pypi//mcp",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_mcp_agent_auth",
-    size = "medium",
-    srcs = ["test_mcp_agent_auth.py"],
-    deps = [
-        ":agent_bearer_authority",
-        ":config",
-        ":conftest",
-        ":database_schema",
-        ":mcp_agent_auth",
-        ":operator_identity",
-        ":operator_identity_store",
-        ":tool_call_actor",
-        "//:conftest",
-        "//haku/console/agents:authorization",
-        "//haku/console/agents:launch_authority",
-        "//haku/console/harnesses:kind",
-        "//haku/console/mcp_auth:fastmcp_adapter",
-        "//mcp_infra:persistence",
-        "//mcp_infra/authentik_auth:provider",
-        "@pypi//fastmcp_slim",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -825,14 +629,11 @@ py_library(
     name = "app",
     srcs = ["app.py"],
     deps = [
-        ":agent_bearer_authority",
-        ":authentik_operator_token",
         ":capabilities",
         ":config",
         ":database_migrate",
         ":deployment",
         ":in_process_servers",
-        ":mcp_agent_auth",
         ":mcp_approval",
         ":mcp_catalog_reconciler",
         ":mcp_config",
@@ -840,14 +641,8 @@ py_library(
         ":mcp_operator_oauth",
         ":mcp_server",
         ":models",
-        ":operator_auth",
-        ":operator_identity",
-        ":operator_identity_store",
-        ":operator_login_flow",
         ":recall_index_reader",
         ":tool_call_service",
-        "//haku/console/agents:authorization",
-        "//haku/console/agents:enrollment_routes",
         "//haku/console/auto_approval:github",
         "//haku/console/conversation:follow",
         "//haku/console/conversation:history",
@@ -867,7 +662,16 @@ py_library(
         "//haku/console/grants/kubernetes:service",
         "//haku/console/harnesses:kind",
         "//haku/console/hostexecd:service",
-        "//haku/console/mcp_auth:fastmcp_adapter",
+        "//haku/console/identity:agent_bearer_authority",
+        "//haku/console/identity:authentik_operator_token",
+        "//haku/console/identity:authorization",
+        "//haku/console/identity:enrollment_routes",
+        "//haku/console/identity:fastmcp_adapter",
+        "//haku/console/identity:mcp_agent_auth",
+        "//haku/console/identity:operator_auth",
+        "//haku/console/identity:operator_identity",
+        "//haku/console/identity:operator_identity_store",
+        "//haku/console/identity:operator_login_flow",
         "//haku/console/notifications:connection_metrics",
         "//haku/console/notifications:console_events",
         "//haku/console/notifications:conversation_wakes",
@@ -920,7 +724,7 @@ py_library(
     deps = [
         ":app",
         ":config",
-        "//haku/console/agents:authorization",
+        "//haku/console/identity:authorization",
         "//haku/console/session:conversation_views",
         "@pypi//pydantic",
     ],
@@ -999,11 +803,11 @@ py_library(
         ":config",
         ":database_migrate",
         ":database_schema",
-        ":operator_auth",
-        ":operator_identity",
-        ":operator_identity_store",
+        "//haku/console/identity:operator_auth",
+        "//haku/console/identity:operator_identity",
+        "//haku/console/identity:operator_identity_store",
         ":tool_call_actor",
-        "//haku/console/agents:authorization",
+        "//haku/console/identity:authorization",
         "//third_party/containers:rlocations",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
@@ -1076,10 +880,10 @@ py_test(
         ":mcp_operator_oauth",
         ":mcp_reflection_cache",
         ":mcp_server",
-        ":operator_identity",
         ":tool_call_actor",
         ":tool_call_service",
         "//:conftest",
+        "//haku/console/identity:operator_identity",
         "//haku/console/oauth:provider_connection",
         "//haku/console/tools:gmail",
         "//haku/console/tools:google_calendar",
@@ -1111,19 +915,19 @@ py_test(
     ],
     requires_docker = True,
     deps = [
-        ":authentik_operator_token",
         ":conftest",
         ":database_schema",
         ":mcp_approval",
         ":mcp_config",
         ":mcp_execution",
-        ":operator_identity_store",
         ":recall_index_access",
         ":tool_call_actor",
         ":tool_call_service",
         "//:conftest",
-        "//haku/console/agents:models",
         "//haku/console/grants:principal",
+        "//haku/console/identity:agent",
+        "//haku/console/identity:authentik_operator_token",
+        "//haku/console/identity:operator_identity_store",
         "//haku/console/oauth:provider_connection",
         "//haku/console/oauth:token_state",
         "@ducktape_haku//haku/console:tool_calls",
@@ -1151,15 +955,15 @@ py_test(
         ":mcp_execution",
         ":mcp_operator_oauth",
         ":mcp_reflection_cache",
-        ":operator_auth",
-        ":operator_identity",
         ":tool_call_actor",
         ":tool_call_service",
         "//:conftest",
-        "//haku/console/agents:authorization",
-        "//haku/console/agents:models",
         "//haku/console/harnesses:kind",
         "//haku/console/hostexecd:models",
+        "//haku/console/identity:agent",
+        "//haku/console/identity:authorization",
+        "//haku/console/identity:operator_auth",
+        "//haku/console/identity:operator_identity",
         "//haku/console/notifications:console_events",
         "//haku/console/oauth:token_state",
         "//haku/console/tools:gmail",
@@ -1327,11 +1131,11 @@ py_test(
         ":conversation_read_access",
         ":database_schema",
         ":mcp_config",
-        ":operator_identity",
         ":recall_index_reader",
         ":recall_index_sync",
         "//:conftest",
         "//haku/console/harnesses:kind",
+        "//haku/console/identity:operator_identity",
         "//haku/console/tools:recall_index",
         "//haku/recall_index:config",
         "//haku/recall_index:fake_embedder",
@@ -1395,9 +1199,9 @@ py_test(
     deps = [
         ":conftest",
         ":database_schema",
-        ":operator_identity_store",
         "//:conftest",
         "//haku/console/harnesses:kind",
+        "//haku/console/identity:operator_identity_store",
         "//haku/console/session:conversation_views",
         "//haku/console/session:status",
         "@pypi//pytest",

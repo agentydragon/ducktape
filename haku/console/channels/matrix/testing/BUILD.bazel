@@ -64,8 +64,6 @@ py_library(
     srcs = ["console_replica.py"],
     deps = [
         "//haku/console:config",
-        "//haku/console:operator_identity",
-        "//haku/console:operator_identity_store",
         "//haku/console/channels/matrix:client",
         "//haku/console/channels/matrix:config",
         "//haku/console/channels/matrix:conversation",
@@ -77,6 +75,8 @@ py_library(
         "//haku/console/channels/matrix:sync",
         "//haku/console/conversation:history",
         "//haku/console/conversation:runtime",
+        "//haku/console/identity:operator_identity",
+        "//haku/console/identity:operator_identity_store",
         "//haku/console/notifications:conversation_wakes",
         "//haku/console/notifications:session_wakes",
         "//haku/console/session:runtime",

@@ -13,8 +13,8 @@ import pytest
 import pytest_bazel
 import respx
 
-from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.conftest import console_sessions, operator_identity_store
+from haku.console.identity.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.oauth.token_state import PostgresTokenStateStore
 
 ISSUER = "https://auth.test/application/o/haku-console/"

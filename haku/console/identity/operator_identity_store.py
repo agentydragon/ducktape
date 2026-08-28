@@ -10,7 +10,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.database_schema import IdentityAnchor, OidcIdentity, Operator
-from haku.console.operator_identity import (
+from haku.console.identity.operator_identity import (
     IdentityAnchorKey,
     InactiveOperatorError,
     OperatorIdentityInvariantError,

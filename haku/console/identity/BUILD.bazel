@@ -1,0 +1,356 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "operator_identity",
+    srcs = ["operator_identity.py"],
+)
+
+py_library(
+    name = "operator_identity_store",
+    srcs = ["operator_identity_store.py"],
+    deps = [
+        ":operator_identity",
+        "//haku/console:database_schema",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "operator_login_flow",
+    srcs = ["operator_login_flow.py"],
+    deps = [
+        "//haku/console:database_schema",
+        "@pypi//authlib",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "authentik_operator_token",
+    srcs = ["authentik_operator_token.py"],
+    deps = [
+        ":operator_identity_store",
+        "//haku/console:database_schema",
+        "//haku/console/oauth:token_state",
+        "//haku/console/oauth:token_support",
+        "//mcp_infra/authentik_auth:config",
+        "@pypi//httpx",
+        "@pypi//mcp",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "operator_auth",
+    srcs = ["operator_auth.py"],
+    deps = [
+        ":authentik_operator_token",
+        ":operator_identity",
+        ":operator_identity_store",
+        ":operator_login_flow",
+        "//haku/console:config",
+        "//haku/console:tool_call_actor",
+        "//haku/console/oauth:callback_page",
+        "@pypi//authlib",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "agent",
+    srcs = ["agent.py"],
+)
+
+py_library(
+    name = "naming",
+    srcs = ["naming.py"],
+)
+
+py_library(
+    name = "enrollment",
+    srcs = ["enrollment.py"],
+    deps = [":agent"],
+)
+
+py_library(
+    name = "launch_authority",
+    srcs = ["launch_authority.py"],
+    deps = [
+        ":agent",
+        ":operator_identity",
+        "//haku/console:database_schema",
+        "//haku/console/session:launch_identity",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "operator_agents",
+    srcs = ["operator_agents.py"],
+    deps = [
+        ":enrollment",
+        "//haku/console:tool_call_actor",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
+    name = "fastmcp_adapter",
+    srcs = ["fastmcp_adapter.py"],
+    deps = [
+        "//haku/console:tool_call_actor",
+        "//mcp_infra:persistence",
+        "//mcp_infra/authentik_auth:fastmcp_proxy",
+        "//mcp_infra/authentik_auth:oidc_principal",
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx",
+        "@pypi//mcp",
+        "@pypi//py_key_value_aio",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "authorization",
+    srcs = ["authorization.py"],
+    deps = [
+        ":agent",
+        ":enrollment",
+        ":fastmcp_adapter",
+        ":launch_authority",
+        ":naming",
+        ":operator_identity",
+        ":operator_identity_store",
+        "//haku/console:database_schema",
+        "//haku/console:tool_call_actor",
+        "//mcp_infra/authentik_auth:oidc_principal",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "agent_bearer_authority",
+    srcs = ["agent_bearer_authority.py"],
+    deps = [
+        ":authorization",
+        ":fastmcp_adapter",
+        "//haku/console:database_schema",
+        "//haku/console:tool_call_actor",
+        "//haku/console/session:launch_identity",
+        "//haku/console/session:status",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "mcp_agent_auth",
+    srcs = ["mcp_agent_auth.py"],
+    deps = [
+        ":agent_bearer_authority",
+        ":authorization",
+        ":fastmcp_adapter",
+        ":operator_auth",
+        ":operator_identity_store",
+        "//haku/console:config",
+        "//haku/console:tool_call_actor",
+        "//mcp_infra:persistence",
+        "//mcp_infra/authentik_auth:provider",
+        "@pypi//fastmcp_slim",
+        "@pypi//sqlalchemy",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "enrollment_routes",
+    srcs = ["enrollment_routes.py"],
+    deps = [
+        ":agent",
+        ":enrollment",
+        ":naming",
+        ":operator_agents",
+        ":operator_auth",
+        "//haku/console:config",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+        "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "test_naming",
+    srcs = ["test_naming.py"],
+    deps = [
+        ":naming",
+        "//:conftest",
+        "//haku/console:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_enrollment_routes",
+    srcs = ["test_enrollment_routes.py"],
+    deps = [
+        ":agent",
+        ":enrollment",
+        ":enrollment_routes",
+        ":operator_auth",
+        "//:conftest",
+        "//haku/console:conftest",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_authorization",
+    size = "medium",
+    srcs = ["test_authorization.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":agent",
+        ":authorization",
+        ":enrollment",
+        ":fastmcp_adapter",
+        ":launch_authority",
+        ":operator_identity",
+        ":operator_identity_store",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console:database_migrate",
+        "//haku/console:database_schema",
+        "//haku/console/harnesses:kind",
+        "//haku/console/session:launch_identity",
+        "//haku/console/x:runtime",
+        "//mcp_infra/authentik_auth:oidc_principal",
+        "//third_party/containers:rlocations",
+        "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_fastmcp_adapter",
+    srcs = ["test_fastmcp_adapter.py"],
+    deps = [
+        ":fastmcp_adapter",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console:tool_call_actor",
+        "//mcp_infra/authentik_auth:fastmcp_proxy",
+        "//mcp_infra/authentik_auth:oidc_principal",
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx",
+        "@pypi//mcp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "test_operator_identity",
+    size = "medium",
+    srcs = ["test_operator_identity.py"],
+    requires_docker = True,
+    deps = [
+        ":operator_identity",
+        ":operator_identity_store",
+        "//:conftest",
+        "//haku/console:config",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_operator_auth",
+    size = "medium",
+    srcs = ["test_operator_auth.py"],
+    requires_docker = True,
+    deps = [
+        ":operator_auth",
+        ":operator_login_flow",
+        "//:conftest",
+        "//haku/console:app",
+        "//haku/console:config",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "//util:net",
+        "//util/testing:asgi",
+        "//util/testing:mock_oidc",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_authentik_operator_token",
+    size = "medium",
+    srcs = ["test_authentik_operator_token.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":authentik_operator_token",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console/oauth:token_state",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//respx",
+    ],
+)
+
+py_test(
+    name = "test_mcp_agent_auth",
+    size = "medium",
+    srcs = ["test_mcp_agent_auth.py"],
+    deps = [
+        ":agent_bearer_authority",
+        ":authorization",
+        ":fastmcp_adapter",
+        ":launch_authority",
+        ":mcp_agent_auth",
+        ":operator_identity",
+        ":operator_identity_store",
+        "//:conftest",
+        "//haku/console:config",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "//haku/console:tool_call_actor",
+        "//haku/console/harnesses:kind",
+        "//mcp_infra:persistence",
+        "//mcp_infra/authentik_auth:provider",
+        "@pypi//fastmcp_slim",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

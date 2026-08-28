@@ -24,11 +24,11 @@ from fastapi.routing import APIRoute, RouteContext, iter_route_contexts
 from pydantic import SecretStr, ValidationError
 from sqlalchemy import func, select
 
-from haku.console import operator_auth, operator_login_flow
 from haku.console.app import create_app
 from haku.console.config import OperatorOidcConfig
 from haku.console.conftest import TEST_OPERATOR_OIDC, console_settings
 from haku.console.database_schema import OidcIdentity
+from haku.console.identity import operator_auth, operator_login_flow
 from util.net import pick_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
@@ -282,7 +282,7 @@ def test_session_rejections_are_logged_with_distinguishing_reasons(
     """A blown absolute deadline and a cookie the browser never sent are both a bare 401 to the
     caller. The server log is the only place they can be told apart, which is what an operator
     reporting a failed account reconnect needs."""
-    with caplog.at_level(logging.INFO, logger="haku.console.operator_auth"):
+    with caplog.at_level(logging.INFO, logger="haku.console.identity.operator_auth"):
         with make_client() as client:
             assert client.get("/api/config").status_code == 401
         anonymous = [record.getMessage() for record in caplog.records]

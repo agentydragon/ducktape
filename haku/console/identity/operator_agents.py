@@ -7,7 +7,7 @@ from uuid import UUID
 
 from fastapi import Depends, Request
 
-from haku.console.agents.enrollment import AgentEnrollmentService
+from haku.console.identity.enrollment import AgentEnrollmentService
 from haku.console.tool_call_actor import OperatorActor
 
 

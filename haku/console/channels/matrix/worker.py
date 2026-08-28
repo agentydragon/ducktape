@@ -30,7 +30,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import create_engine, make_url, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from haku.console.agents.launch_authority import StaticLaunchAuthority
 from haku.console.channels.matrix.config import AdapterConfigFile, Config, load_adapter_config
 from haku.console.channels.matrix.conversation import ConversationStore, Turns
 from haku.console.channels.matrix.ingress_ledger import IngressLedger
@@ -62,9 +61,10 @@ from haku.console.database_schema import (
     SubmittedPrompt,
 )
 from haku.console.harnesses.kind import HarnessKind
+from haku.console.identity.launch_authority import StaticLaunchAuthority
+from haku.console.identity.operator_identity import OperatorIdentityTrust
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.notifications.conversation_wakes import ConversationWakes
-from haku.console.operator_identity import OperatorIdentityTrust
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.session.launch_identity import ChatLaunchAuthorizer
 from haku.console.session.store import Store
 from haku.console.session.subscription import ConversationStream

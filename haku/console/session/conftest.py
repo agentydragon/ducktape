@@ -24,9 +24,9 @@ from haku.console.chat_models import ChannelSurface, ItemStatus, ItemType
 from haku.console.config import RuntimeRegistrationConfig
 from haku.console.database_schema import ChannelAttachmentRow, ConversationItem, Session
 from haku.console.harnesses.kind import HarnessKind
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.notifications.conversation_wakes import ConversationWakes
 from haku.console.notifications.session_wakes import SessionWakes
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.session.conversation_views import SessionView
 from haku.console.session.launch_identity import LaunchAuthorizer
 from haku.console.session.runtime import SessionService

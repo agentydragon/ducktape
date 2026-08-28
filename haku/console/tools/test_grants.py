@@ -27,8 +27,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import haku.console.grants.http.models as http_models
 import haku.console.grants.kubernetes.models as kubernetes_models
-from haku.console.agent_bearer_authority import AgentBearerAuthority
-from haku.console.agents.enrollment import AgentEnrollmentService
 from haku.console.config import KubernetesAuthorizationConfig, KubernetesAuthorizationSubject
 from haku.console.conftest import (
     # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
@@ -54,6 +52,8 @@ from haku.console.grants.principal import (
     RequestPrincipal,
     SessionGrantPrincipal,
 )
+from haku.console.identity.agent_bearer_authority import AgentBearerAuthority
+from haku.console.identity.enrollment import AgentEnrollmentService
 from haku.console.mcp_execution import (
     AgentMcpExecutionCaller,
     McpExecutionContext,

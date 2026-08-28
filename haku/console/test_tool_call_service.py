@@ -17,11 +17,12 @@ import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
-from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.conftest import console_settings, write_config
 from haku.console.database_schema import Agent, AgentNameReservation, CredentialBinding, StaticCredential
 from haku.console.grants.principal import RequestPrincipal
+from haku.console.identity.agent import AgentStatus, CredentialBindingStatus, CredentialKind
+from haku.console.identity.authentik_operator_token import PostgresAuthentikOperatorTokenStore
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.mcp_approval import PostgresToolCallLedger
 from haku.console.mcp_config import (
     AccessProfile,
@@ -36,7 +37,6 @@ from haku.console.mcp_config import (
 from haku.console.mcp_execution import AgentMcpExecutionCaller, McpExecutionContext
 from haku.console.oauth.provider_connection import PostgresProviderConnectionStore
 from haku.console.oauth.token_state import PostgresTokenStateStore
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.recall_index_access import RecallIndexAccessPolicy
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_call_service import (

@@ -14,7 +14,6 @@ from uuid import UUID
 from sqlalchemy import Text, cast as sql_cast, literal, or_, select, text, union_all
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.database_schema import (
     McpOperatorOAuthAssociation,
     OAuthTokenState,
@@ -22,11 +21,12 @@ from haku.console.database_schema import (
     OperatorAuthentikToken,
     ProviderConnection,
 )
+from haku.console.identity.authentik_operator_token import PostgresAuthentikOperatorTokenStore
+from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.mcp_config import McpServerEntry
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.oauth.provider_connection import PostgresProviderConnectionStore
 from haku.console.oauth.token_support import REFRESH_SKEW
-from haku.console.operator_identity import OperatorStatus
 
 logger = logging.getLogger(__name__)
 

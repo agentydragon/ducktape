@@ -14,8 +14,8 @@ from pydantic import BaseModel, ConfigDict
 
 from haku.console.grants.http.models import Grant
 from haku.console.grants.http.service import GrantService
-from haku.console.operator_agents import AgentEnrollmentServiceDep, owned_agent_names
-from haku.console.operator_auth import OperatorActorDep
+from haku.console.identity.operator_agents import AgentEnrollmentServiceDep, owned_agent_names
+from haku.console.identity.operator_auth import OperatorActorDep
 
 router = APIRouter(prefix="/api/http-grants", tags=["http-grants"])
 

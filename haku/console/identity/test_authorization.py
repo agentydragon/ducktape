@@ -21,23 +21,6 @@ from sqlalchemy.exc import IntegrityError, TimeoutError as SQLAlchemyTimeoutErro
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Session
 
-from haku.console.agents.authorization import (
-    PostgresAgentAuthority,
-    StaticAgentDefinition,
-    StaticAgentRejectedError,
-    fingerprint_static_token,
-)
-from haku.console.agents.enrollment import (
-    AgentAccessProfileManagedByDeploymentError,
-    CreateAgentDecision,
-    EnrollmentAllowed,
-    EnrollmentBrowserBindingError,
-    EnrollmentBrowserSession,
-    EnrollmentDecisionConflictError,
-    ReconnectAgentDecision,
-)
-from haku.console.agents.launch_authority import StaticAgentAuthorization
-from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind, EnrollmentPhase
 from haku.console.conftest import console_sessions
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import (
@@ -52,7 +35,23 @@ from haku.console.database_schema import (
     StaticCredential,
 )
 from haku.console.harnesses.kind import HarnessKind
-from haku.console.mcp_auth.fastmcp_adapter import (
+from haku.console.identity.agent import AgentStatus, CredentialBindingStatus, CredentialKind, EnrollmentPhase
+from haku.console.identity.authorization import (
+    PostgresAgentAuthority,
+    StaticAgentDefinition,
+    StaticAgentRejectedError,
+    fingerprint_static_token,
+)
+from haku.console.identity.enrollment import (
+    AgentAccessProfileManagedByDeploymentError,
+    CreateAgentDecision,
+    EnrollmentAllowed,
+    EnrollmentBrowserBindingError,
+    EnrollmentBrowserSession,
+    EnrollmentDecisionConflictError,
+    ReconnectAgentDecision,
+)
+from haku.console.identity.fastmcp_adapter import (
     AgentGrantAuthorityUnavailableError,
     AuthorizationCorrelation,
     AuthorizationRequest,
@@ -62,13 +61,14 @@ from haku.console.mcp_auth.fastmcp_adapter import (
     GrantRejectedError,
     TokenFamilyEvidence,
 )
-from haku.console.operator_identity import (
+from haku.console.identity.launch_authority import StaticAgentAuthorization
+from haku.console.identity.operator_identity import (
     OperatorIdentityTrust,
     OperatorStatus,
     ResolvedOperatorIdentity,
     VerifiedExternalIdentity,
 )
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.session.launch_identity import ChatLaunchAuthorizer, LaunchAgentRejectedError, LaunchIdentity
 from haku.console.x.runtime import RuntimeKey
 from mcp_infra.authentik_auth.oidc_principal import VerifiedOidcPrincipal

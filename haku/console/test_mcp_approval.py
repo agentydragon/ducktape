@@ -29,17 +29,6 @@ from starlette.routing import Mount, Route
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from starlette.websockets import WebSocketDisconnect
 
-from haku.console import operator_auth
-from haku.console.agents.authorization import fingerprint_static_token
-from haku.console.agents.models import (
-    # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
-    # gazelle:include_dep @pypi//httpx
-    AgentStatus,
-    ClientRegistrationKind,
-    CredentialBindingStatus,
-    CredentialKind,
-    EnrollmentPhase,
-)
 from haku.console.conftest import operator_id, write_config
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import (
@@ -54,6 +43,18 @@ from haku.console.database_schema import (
 )
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.hostexecd.models import ExecutionStatus
+from haku.console.identity import operator_auth
+from haku.console.identity.agent import (
+    # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
+    # gazelle:include_dep @pypi//httpx
+    AgentStatus,
+    ClientRegistrationKind,
+    CredentialBindingStatus,
+    CredentialKind,
+    EnrollmentPhase,
+)
+from haku.console.identity.authorization import fingerprint_static_token
+from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.mcp_approval import (
     DegradedReflection,
     McpServerDispatcher,
@@ -79,7 +80,6 @@ from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp_reflection_cache import ReflectedCatalog
 from haku.console.notifications import console_events
 from haku.console.oauth.token_state import new_token_state
-from haku.console.operator_identity import OperatorStatus
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_call_service import ToolCallApplicationService, backend_auth_for_operator
 from haku.console.tool_calls import (

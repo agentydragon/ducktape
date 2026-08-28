@@ -12,14 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from haku.console.config import OperatorIdentityConfig
 from haku.console.conftest import console_sessions
 from haku.console.database_schema import IdentityAnchor, OidcIdentity, Operator
-from haku.console.operator_identity import (
+from haku.console.identity.operator_identity import (
     InactiveOperatorError,
     OperatorIdentityTrust,
     OperatorStatus,
     UntrustedOidcIssuerError,
     VerifiedExternalIdentity,
 )
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 
 _TRUST_DOMAIN = "auth.test/authentik-user-id/v1"
 _BROWSER_ISSUER = "https://auth.test/application/o/haku-console/"

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import pytest_bazel
 
-from haku.console.agents.naming import (
+from haku.console.identity.naming import (
     MAX_AGENT_NAME_CODE_POINTS,
     AgentNameTooLongError,
     EmptyAgentNameError,

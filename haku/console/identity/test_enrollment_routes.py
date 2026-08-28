@@ -11,7 +11,8 @@ import pytest_bazel
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from haku.console.agents.enrollment import (
+from haku.console.identity.agent import AgentStatus, CredentialBindingStatus, CredentialKind
+from haku.console.identity.enrollment import (
     # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
     # gazelle:include_dep @pypi//httpx
     AgentNameUnavailableError,
@@ -27,9 +28,8 @@ from haku.console.agents.enrollment import (
     ReconnectableAgent,
     ReconnectAgentDecision,
 )
-from haku.console.agents.enrollment_routes import entry_router, operator_router
-from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
-from haku.console.operator_auth import OperatorSession, operator_session, require_operator_mutation_origin
+from haku.console.identity.enrollment_routes import entry_router, operator_router
+from haku.console.identity.operator_auth import OperatorSession, operator_session, require_operator_mutation_origin
 
 INTERACTION_ID = UUID("10000000-0000-4000-8000-000000000001")
 OPERATOR_ID = UUID("20000000-0000-4000-8000-000000000002")

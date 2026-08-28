@@ -18,9 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from haku.console.database_schema import OperatorAuthentikToken
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.oauth.token_state import PostgresTokenStateStore, new_token_state, replace_token_state
 from haku.console.oauth.token_support import parse_token_response, token_request_headers
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
 _TOKEN_ENDPOINT_TIMEOUT_SECONDS = 10.0

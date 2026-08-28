@@ -30,12 +30,11 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from starlette.requests import HTTPConnection
 
-from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.config import OperatorOidcConfig, Settings
-from haku.console.oauth.callback_page import render_callback_page
-from haku.console.operator_identity import OperatorIdentityError, VerifiedExternalIdentity
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.operator_login_flow import (
+from haku.console.identity.authentik_operator_token import PostgresAuthentikOperatorTokenStore
+from haku.console.identity.operator_identity import OperatorIdentityError, VerifiedExternalIdentity
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.identity.operator_login_flow import (
     FLOW_LIFETIME_SECONDS,
     LOGIN_COOKIE_PATH,
     LoginFlowOAuth,
@@ -43,6 +42,7 @@ from haku.console.operator_login_flow import (
     binding_cookie_name,
     new_browser_binding,
 )
+from haku.console.oauth.callback_page import render_callback_page
 from haku.console.tool_call_actor import OperatorActor
 
 logger = logging.getLogger(__name__)

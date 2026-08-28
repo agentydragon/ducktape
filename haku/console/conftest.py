@@ -36,14 +36,18 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
-from haku.console.agents.authorization import fingerprint_static_token
 from haku.console.app import create_app
 from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig, Settings, WebPushConfig
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import Agent, CredentialBinding, McpToolCall, McpToolCallPrincipal, StaticCredential
-from haku.console.operator_auth import OPERATOR_SESSION_MAX_AGE_SECONDS, SESSION_USER_KEY
-from haku.console.operator_identity import OperatorIdentityTrust, ResolvedOperatorIdentity, VerifiedExternalIdentity
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.identity.authorization import fingerprint_static_token
+from haku.console.identity.operator_auth import OPERATOR_SESSION_MAX_AGE_SECONDS, SESSION_USER_KEY
+from haku.console.identity.operator_identity import (
+    OperatorIdentityTrust,
+    ResolvedOperatorIdentity,
+    VerifiedExternalIdentity,
+)
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import OperatorActor
 from haku.console.tool_calls import ToolCallStatus
 from third_party.containers.rlocations import PGVECTOR_PG18

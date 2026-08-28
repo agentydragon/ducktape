@@ -26,7 +26,6 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.chat_models import ItemStatus, ItemType, ToolOutcome
 from haku.console.config import ChatRuntimesConfig, ClaudeCodeImplementationConfig, RuntimeRegistrationConfig
 from haku.console.conftest import console_sessions
@@ -47,6 +46,7 @@ from haku.console.database_schema import (
     SessionFrame,
 )
 from haku.console.harnesses.kind import HarnessKind
+from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.notifications.session_wakes import SessionWakes
 from haku.console.session.conftest import (

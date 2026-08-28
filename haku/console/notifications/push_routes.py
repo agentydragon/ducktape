@@ -14,8 +14,8 @@ from typing import Annotated, cast
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from haku.console.identity.operator_auth import OperatorActorDep
 from haku.console.notifications.push import PostgresPushSubscriptionStore, PushIdentity
-from haku.console.operator_auth import OperatorActorDep
 
 router = APIRouter(tags=["push"])
 

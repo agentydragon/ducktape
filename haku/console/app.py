@@ -45,9 +45,6 @@ from haku.console import (
     operator_login_flow,
     tool_call_service,
 )
-from haku.console.agents import enrollment_routes
-from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
-from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
 from haku.console.config import MCP_PATH, Settings
 
@@ -76,13 +73,18 @@ from haku.console.grants.kubernetes.repository import PostgresGrantRepository as
 from haku.console.grants.kubernetes.service import GrantService as KubernetesGrantService
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.hostexecd import service
+from haku.console.identity import enrollment_routes
+from haku.console.identity.authentik_operator_token import PostgresAuthentikOperatorTokenStore
+from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
+from haku.console.identity.fastmcp_adapter import HakuMcpActorResolver, install_operator_session_route_guard
+from haku.console.identity.operator_identity import OperatorIdentityTrust
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.in_process_servers import (
     HostexecServerConfig,
     InProcessServerDependencies,
     SandboxServerConfig,
     build_in_process_servers,
 )
-from haku.console.mcp_auth.fastmcp_adapter import HakuMcpActorResolver, install_operator_session_route_guard
 from haku.console.mcp_config import (
     InProcessBackend,
     InProcessServers,
@@ -98,8 +100,6 @@ from haku.console.notifications import connection_metrics, console_events, push,
 from haku.console.notifications.conversation_wakes import ConversationWakes
 from haku.console.notifications.session_wakes import SessionWakes
 from haku.console.oauth import association_maintenance, connection_result, provider_connection, token_state
-from haku.console.operator_identity import OperatorIdentityTrust
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.session import runtime as session_runtime, sandbox_allocation, sandbox_claims
 from haku.console.session.launch_identity import ChatLaunchAuthorizer

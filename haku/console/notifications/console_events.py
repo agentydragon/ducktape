@@ -27,8 +27,8 @@ from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.engine import make_url
 
-from haku.console import operator_auth
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.identity import operator_auth
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["console-events"])

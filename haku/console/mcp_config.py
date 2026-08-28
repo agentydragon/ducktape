@@ -23,7 +23,6 @@ from fastmcp import FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
-from haku.console.agents.naming import normalize_agent_name
 from haku.console.config import (
     ChatRuntimesConfig,
     HostexecConfig,
@@ -33,6 +32,7 @@ from haku.console.config import (
 )
 from haku.console.grants.http.decide_config import EgressDecideConfig
 from haku.console.harnesses.kind import HarnessKind
+from haku.console.identity.naming import normalize_agent_name
 from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_actor import RuntimeActor
 from haku.recall_index.config import ConfiguredRecallIndex, GitRecallIndexDefinition

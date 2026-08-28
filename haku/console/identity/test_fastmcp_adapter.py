@@ -19,7 +19,7 @@ from mcp.shared.auth import OAuthToken
 from starlette.exceptions import HTTPException
 from starlette.requests import HTTPConnection
 
-from haku.console.mcp_auth.fastmcp_adapter import (
+from haku.console.identity.fastmcp_adapter import (
     AgentActorResolutionUnavailableError,
     AgentGrantAuthorityUnavailableError,
     AuthorizationCorrelation,
@@ -186,7 +186,7 @@ def test_proxy_builds_principal_resolver_from_fastmcp_discovery() -> None:
     with (
         patch.object(RetryableRefreshOIDCProxy, "__init__", new=initialize),
         patch(
-            "haku.console.mcp_auth.fastmcp_adapter.AuthentikOidcPrincipalResolver", return_value=resolver
+            "haku.console.identity.fastmcp_adapter.AuthentikOidcPrincipalResolver", return_value=resolver
         ) as resolver_type,
     ):
         proxy = HakuAgentOAuthProxy(
@@ -769,7 +769,7 @@ async def test_each_oauth_actor_resolution_activates_and_returns_the_canonical_a
     resolver = HakuMcpActorResolver(cast(Any, authority))
     actor = _authorization().actor
 
-    with patch("haku.console.mcp_auth.fastmcp_adapter.get_access_token", return_value=_verified_access_token()):
+    with patch("haku.console.identity.fastmcp_adapter.get_access_token", return_value=_verified_access_token()):
         assert await resolver.resolve() == actor
         assert await resolver.resolve() == actor
 
@@ -792,7 +792,7 @@ async def test_json_shaped_operator_claim_remains_on_the_agent_path() -> None:
         }
     )
 
-    with patch("haku.console.mcp_auth.fastmcp_adapter.get_access_token", return_value=token):
+    with patch("haku.console.identity.fastmcp_adapter.get_access_token", return_value=token):
         assert await resolver.resolve() == agent
 
     authority.activate_for_tool_call.assert_awaited_once()
@@ -804,7 +804,7 @@ async def test_operator_actor_is_returned_directly_without_agent_authority() -> 
     operator = OperatorActor(operator_id=OPERATOR_ID)
     token = _verified_access_token(claims={"haku.operator_actor": operator})
 
-    with patch("haku.console.mcp_auth.fastmcp_adapter.get_access_token", return_value=token):
+    with patch("haku.console.identity.fastmcp_adapter.get_access_token", return_value=token):
         assert await resolver.resolve() == operator
 
     authority.activate_for_tool_call.assert_not_awaited()
@@ -816,7 +816,7 @@ async def test_rejected_tool_call_grant_is_not_resolved() -> None:
     resolver = HakuMcpActorResolver(cast(Any, authority))
 
     with (
-        patch("haku.console.mcp_auth.fastmcp_adapter.get_access_token", return_value=_verified_access_token()),
+        patch("haku.console.identity.fastmcp_adapter.get_access_token", return_value=_verified_access_token()),
         pytest.raises(ToolError, match="not active"),
     ):
         await resolver.resolve()
@@ -828,7 +828,7 @@ async def test_tool_call_authority_outage_is_typed_and_retryable() -> None:
     resolver = HakuMcpActorResolver(cast(Any, authority))
 
     with (
-        patch("haku.console.mcp_auth.fastmcp_adapter.get_access_token", return_value=_verified_access_token()),
+        patch("haku.console.identity.fastmcp_adapter.get_access_token", return_value=_verified_access_token()),
         pytest.raises(AgentActorResolutionUnavailableError, match="retry"),
     ):
         await resolver.resolve()
@@ -850,7 +850,7 @@ async def test_tool_call_rejects_inconsistent_authority_resolution(authorization
     resolver = HakuMcpActorResolver(cast(Any, authority))
 
     with (
-        patch("haku.console.mcp_auth.fastmcp_adapter.get_access_token", return_value=_verified_access_token()),
+        patch("haku.console.identity.fastmcp_adapter.get_access_token", return_value=_verified_access_token()),
         pytest.raises(ToolError, match="not active"),
     ):
         await resolver.resolve()
@@ -865,7 +865,7 @@ async def test_static_credential_resolves_canonical_actor_for_dependency() -> No
     )
     token = _verified_access_token(claims={"credential_kind": "static"})
 
-    with patch("haku.console.mcp_auth.fastmcp_adapter.get_access_token", return_value=token):
+    with patch("haku.console.identity.fastmcp_adapter.get_access_token", return_value=token):
         assert await resolver.resolve() == actor
 
     static_actor_resolver.resolve_static_actor.assert_awaited_once_with(token)
@@ -881,7 +881,7 @@ async def test_unrecognized_static_tool_credential_fails_resolution() -> None:
     token = _verified_access_token(claims={"credential_kind": "unknown"})
 
     with (
-        patch("haku.console.mcp_auth.fastmcp_adapter.get_access_token", return_value=token),
+        patch("haku.console.identity.fastmcp_adapter.get_access_token", return_value=token),
         pytest.raises(ToolError, match="missing"),
     ):
         await resolver.resolve()
@@ -901,7 +901,7 @@ async def test_static_actor_authority_outage_is_typed_and_retryable() -> None:
     token = _verified_access_token(claims={"credential_kind": "static"})
 
     with (
-        patch("haku.console.mcp_auth.fastmcp_adapter.get_access_token", return_value=token),
+        patch("haku.console.identity.fastmcp_adapter.get_access_token", return_value=token),
         pytest.raises(AgentActorResolutionUnavailableError, match="retry"),
     ):
         await resolver.resolve()
@@ -916,7 +916,7 @@ async def test_static_resolver_cannot_bypass_malformed_oauth_grant() -> None:
     malformed = _verified_access_token(claims={"upstream_claims": {"grant_id": "not-a-uuid"}})
 
     with (
-        patch("haku.console.mcp_auth.fastmcp_adapter.get_access_token", return_value=malformed),
+        patch("haku.console.identity.fastmcp_adapter.get_access_token", return_value=malformed),
         pytest.raises(ToolError, match="invalid"),
     ):
         await resolver.resolve()
@@ -939,7 +939,7 @@ async def test_missing_or_malformed_tool_call_claims_fail_before_authority(token
     resolver = HakuMcpActorResolver(cast(Any, authority))
 
     with (
-        patch("haku.console.mcp_auth.fastmcp_adapter.get_access_token", return_value=token),
+        patch("haku.console.identity.fastmcp_adapter.get_access_token", return_value=token),
         pytest.raises(ToolError, match=r"missing|invalid"),
     ):
         await resolver.resolve()

@@ -11,8 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from haku.console.grants.envelope import GrantNotFoundError, GrantOwnershipError
 from haku.console.grants.kubernetes.models import Grant
 from haku.console.grants.kubernetes.service import GrantService
-from haku.console.operator_agents import AgentEnrollmentServiceDep, owned_agent_names
-from haku.console.operator_auth import OperatorActorDep
+from haku.console.identity.operator_agents import AgentEnrollmentServiceDep, owned_agent_names
+from haku.console.identity.operator_auth import OperatorActorDep
 
 router = APIRouter(prefix="/api/kubernetes-grants", tags=["kubernetes-grants"])
 

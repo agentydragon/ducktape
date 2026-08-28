@@ -14,8 +14,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.database_schema import OAuthConnectionResultRow
-from haku.console.operator_auth import OperatorActorDep
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.identity.operator_auth import OperatorActorDep
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 
 OAUTH_RESULT_PATH_PREFIX = "/_console/oauth-result"
 OAUTH_RESULT_SETTINGS_PATH = "/_console/settings"

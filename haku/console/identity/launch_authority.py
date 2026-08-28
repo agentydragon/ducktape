@@ -14,9 +14,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
 from haku.console.database_schema import Agent, CredentialBinding, Operator, StaticCredential
-from haku.console.operator_identity import OperatorStatus
+from haku.console.identity.agent import AgentStatus, CredentialBindingStatus, CredentialKind
+from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.session.launch_identity import LaunchAgentRejectedError
 
 

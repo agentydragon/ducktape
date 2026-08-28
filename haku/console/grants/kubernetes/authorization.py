@@ -26,7 +26,6 @@ from kubernetes_asyncio.client import ApiClient, AuthorizationV1Api
 from kubernetes_asyncio.config.config_exception import ConfigException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from haku.console.agent_bearer_authority import AgentBearerAuthority
 from haku.console.config import KubernetesAuthorizationConfig, KubernetesAuthorizationSubject
 from haku.console.grants.kubernetes.models import (
     AllNamespacesGrantScope,
@@ -40,6 +39,7 @@ from haku.console.grants.kubernetes.models import (
 )
 from haku.console.grants.kubernetes.service import GrantService
 from haku.console.grants.principal import RequestPrincipal
+from haku.console.identity.agent_bearer_authority import AgentBearerAuthority
 
 logger = logging.getLogger(__name__)
 

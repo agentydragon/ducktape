@@ -20,7 +20,27 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError, TimeoutError as SQLAlchemyTimeoutError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.agents.enrollment import (
+from haku.console.database_schema import (
+    Agent,
+    AgentNameReservation,
+    AuthorizationGrant,
+    ClientSoftware,
+    CredentialBinding,
+    EnrollmentCorrelationReservation,
+    EnrollmentInteraction,
+    IdentityAnchor,
+    OidcIdentity,
+    Operator,
+    StaticCredential,
+)
+from haku.console.identity.agent import (
+    AgentStatus,
+    ClientRegistrationKind,
+    CredentialBindingStatus,
+    CredentialKind,
+    EnrollmentPhase,
+)
+from haku.console.identity.enrollment import (
     AccessProfileUnavailableError,
     AgentAccessProfileManagedByDeploymentError,
     AgentNameUnavailableError,
@@ -41,29 +61,7 @@ from haku.console.agents.enrollment import (
     ReconnectableAgent,
     ReconnectAgentDecision,
 )
-from haku.console.agents.launch_authority import StaticAgentAuthorization, StaticLaunchAuthority
-from haku.console.agents.models import (
-    AgentStatus,
-    ClientRegistrationKind,
-    CredentialBindingStatus,
-    CredentialKind,
-    EnrollmentPhase,
-)
-from haku.console.agents.naming import InvalidAgentNameError, NormalizedAgentName, normalize_agent_name
-from haku.console.database_schema import (
-    Agent,
-    AgentNameReservation,
-    AuthorizationGrant,
-    ClientSoftware,
-    CredentialBinding,
-    EnrollmentCorrelationReservation,
-    EnrollmentInteraction,
-    IdentityAnchor,
-    OidcIdentity,
-    Operator,
-    StaticCredential,
-)
-from haku.console.mcp_auth.fastmcp_adapter import (
+from haku.console.identity.fastmcp_adapter import (
     AgentGrantAuthorityUnavailableError,
     AuthorizationCorrelation,
     AuthorizationRequest,
@@ -75,13 +73,15 @@ from haku.console.mcp_auth.fastmcp_adapter import (
     GrantRejectedError,
     TokenFamilyEvidence,
 )
-from haku.console.operator_identity import (
+from haku.console.identity.launch_authority import StaticAgentAuthorization, StaticLaunchAuthority
+from haku.console.identity.naming import InvalidAgentNameError, NormalizedAgentName, normalize_agent_name
+from haku.console.identity.operator_identity import (
     InactiveOperatorError,
     OperatorIdentityError,
     OperatorStatus,
     VerifiedExternalIdentity,
 )
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import AgentActor
 from mcp_infra.authentik_auth.oidc_principal import VerifiedOidcPrincipal
 

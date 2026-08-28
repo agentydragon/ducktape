@@ -15,31 +15,31 @@ from fastmcp.server.auth.auth import AccessToken
 from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.agent_bearer_authority import (
+from haku.console.config import McpOAuthConfig, OperatorIdentityConfig, OperatorOidcConfig, Settings
+from haku.console.conftest import console_sessions, operator_id
+from haku.console.database_schema import Agent, Conversation, Operator, Session
+from haku.console.harnesses.kind import HarnessKind
+from haku.console.identity.agent_bearer_authority import (
     AgentBearerAuthority,
     StaticAgentCredentialRegistry,
     build_agent_bearer_authority,
 )
-from haku.console.agents.authorization import (
+from haku.console.identity.authorization import (
     PostgresAgentAuthority,
     StaticAgentDefinition,
     StaticAgentRejectedError,
     fingerprint_static_token,
 )
-from haku.console.agents.launch_authority import StaticAgentAuthorization
-from haku.console.config import McpOAuthConfig, OperatorIdentityConfig, OperatorOidcConfig, Settings
-from haku.console.conftest import console_sessions, operator_id
-from haku.console.database_schema import Agent, Conversation, Operator, Session
-from haku.console.harnesses.kind import HarnessKind
-from haku.console.mcp_agent_auth import OAuthMcpAuth, StaticMcpAuth, build_auth
-from haku.console.mcp_auth.fastmcp_adapter import (
+from haku.console.identity.fastmcp_adapter import (
     AgentGrantAuthorityUnavailableError,
     BearerVerificationUnavailableError,
     HakuAgentOAuthProxy,
     HakuFailurePreservingMultiAuth,
 )
-from haku.console.operator_identity import OperatorStatus
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.identity.launch_authority import StaticAgentAuthorization
+from haku.console.identity.mcp_agent_auth import OAuthMcpAuth, StaticMcpAuth, build_auth
+from haku.console.identity.operator_identity import OperatorStatus
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import AgentActor
 from mcp_infra.authentik_auth.provider import DEFAULT_VALID_SCOPES
 from mcp_infra.persistence import PostgresPersistence
@@ -137,8 +137,8 @@ def _oauth_auth(*static_tokens: str) -> _OAuthAuthHarness:
     storage = Mock()
     proxy = _oauth_proxy()
     with (
-        patch("haku.console.mcp_agent_auth.build_shared_client_storage", return_value=storage),
-        patch("haku.console.mcp_agent_auth.HakuAgentOAuthProxy", return_value=proxy) as proxy_class,
+        patch("haku.console.identity.mcp_agent_auth.build_shared_client_storage", return_value=storage),
+        patch("haku.console.identity.mcp_agent_auth.HakuAgentOAuthProxy", return_value=proxy) as proxy_class,
     ):
         auth = build_auth(
             _settings(mcp_oauth=_mcp_oauth_config()),

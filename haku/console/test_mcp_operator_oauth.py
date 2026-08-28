@@ -14,6 +14,7 @@ from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from haku.console.database_schema import McpOperatorOAuthAssociation, McpOperatorOAuthFlow, OAuthTokenState, Operator
+from haku.console.identity.operator_identity import InactiveOperatorError, OperatorStatus
 from haku.console.mcp_config import (
     DynamicOAuthClientRegistration,
     McpServerEntry,
@@ -38,7 +39,6 @@ from haku.console.oauth.token_state import (
     _refresh_retry_delay,
     new_token_state,
 )
-from haku.console.operator_identity import InactiveOperatorError, OperatorStatus
 
 
 @pytest.fixture

@@ -52,10 +52,10 @@ from haku.console.channels.matrix.sync import SyncService, SyncStore
 from haku.console.config import RuntimeRegistrationConfig
 from haku.console.conversation.history import ConversationHistory
 from haku.console.conversation.runtime import Runtime
+from haku.console.identity.operator_identity import OperatorIdentityTrust
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.notifications.conversation_wakes import ConversationWakes
 from haku.console.notifications.session_wakes import SessionWakes
-from haku.console.operator_identity import OperatorIdentityTrust
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.session.runtime import SessionService, internal_router
 from haku.console.session.sandbox_allocation import SandboxAllocator
 from haku.console.session.sandbox_claims import SandboxProvisioningView

@@ -8,14 +8,14 @@ from fastmcp.server.auth.auth import AccessToken, AuthProvider, TokenVerifier
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.requests import HTTPConnection
 
-from haku.console.agent_bearer_authority import (
+from haku.console.config import MCP_PATH, Settings
+from haku.console.identity.agent_bearer_authority import (
     AgentBearerAuthority,
     StaticAgentCredentialRegistry,
     build_agent_bearer_authority,
 )
-from haku.console.agents.authorization import PostgresAgentAuthority
-from haku.console.config import MCP_PATH, Settings
-from haku.console.mcp_auth.fastmcp_adapter import (
+from haku.console.identity.authorization import PostgresAgentAuthority
+from haku.console.identity.fastmcp_adapter import (
     AgentGrantAuthorityUnavailableError,
     BearerVerificationUnavailableError,
     HakuAgentOAuthProxy,
@@ -24,8 +24,8 @@ from haku.console.mcp_auth.fastmcp_adapter import (
     StaticAgentActorResolver,
     ensure_supported_fastmcp_version,
 )
-from haku.console.operator_auth import operator_session_for_identity_store
-from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.identity.operator_auth import operator_session_for_identity_store
+from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import AgentActor, OperatorActor
 from mcp_infra.authentik_auth.provider import DEFAULT_VALID_SCOPES
 from mcp_infra.persistence import OAuthClientStorage, build_shared_client_storage
