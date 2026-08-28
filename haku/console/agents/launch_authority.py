@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
 from haku.console.database_schema import Agent, CredentialBinding, Operator, StaticCredential
 from haku.console.operator_identity import OperatorStatus
-from haku.console.x.launch_identity import LaunchAgentRejectedError
+from haku.console.session.launch_identity import LaunchAgentRejectedError
 
 
 @dataclass(frozen=True, slots=True)

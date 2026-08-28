@@ -55,6 +55,11 @@ from haku.console.authentik_operator_token import PostgresAuthentikOperatorToken
 from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
 from haku.console.chat_models import RuntimeKind
 from haku.console.config import MCP_PATH, Settings
+
+# Aliased: bare `runtime` exists in three sibling packages, and `create_app` has a local `follow`.
+from haku.console.conversation import follow as conversation_follow, reader, runtime as conversation_runtime
+from haku.console.conversation.history import ConversationHistory
+from haku.console.conversation.live_updates import ConversationLiveUpdates
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.hostexecd import service
@@ -84,10 +89,16 @@ from haku.console.mcp_config import (
 )
 from haku.console.models import ChatLaunchOption, ConfigResponse
 from haku.console.notifications import connection_metrics, console_events, push, push_routes
+from haku.console.notifications.conversation_wakes import ConversationWakes
+from haku.console.notifications.session_wakes import SessionWakes
 from haku.console.oauth import association_maintenance, connection_result, provider_connection, token_state
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.recall_index_reader import PostgresIndexSearcher
+from haku.console.session import runtime as session_runtime, sandbox_allocation, sandbox_claims
+from haku.console.session.launch_identity import ChatLaunchAuthorizer
+from haku.console.session.store import Store
+from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.tools import (
     gmail as gmail_tools,
     http_grants as http_grants_tools,
@@ -96,23 +107,7 @@ from haku.console.tools import (
     sandbox as sandbox_tools,
 )
 from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
-from haku.console.x import (
-    conversation_follow,
-    conversation_reader,
-    conversation_runtime,
-    runtime as console_runtime,
-    runtime_catalog,
-    sandbox_allocation,
-    sandbox_claims,
-    session_runtime,
-)
-from haku.console.x.conversation_history import ConversationHistory
-from haku.console.x.conversation_live_updates import ConversationLiveUpdates
-from haku.console.x.conversation_wakes import ConversationWakes
-from haku.console.x.launch_identity import ChatLaunchAuthorizer
-from haku.console.x.session_store import SessionStore
-from haku.console.x.session_wakes import SessionWakes
-from haku.console.x.system_prompt import SystemPromptTemplate
+from haku.console.x import runtime as console_runtime, runtime_catalog
 from haku.recall_index.config import EmbedderConfig
 from haku.recall_index.openai_embedder import OpenAIEmbedder
 from haku.runtime.x.bridge.protocol import KUBERNETES_PROXY_URL_ENV, RUNNER_SETUP_ENV
@@ -390,7 +385,7 @@ def create_app(
     # All read and write paths share one registry. Projection-only composition may link dormant
     # adapters, while launch-capable production composition includes only deliberately supported
     # adapters and resources; no hidden Claude fallback can reinterpret another runtime's rows.
-    session_store = SessionStore(db_sessions, runtime_registry)
+    session_store = Store(db_sessions, runtime_registry)
 
     async def _resolve_static_agent_definitions() -> tuple[StaticAgentDefinition, ...]:
         assert loaded_static_agents is not None
@@ -454,7 +449,7 @@ def create_app(
         else None
     )
     runtime_supervisor = (
-        conversation_runtime.ConversationRuntime(session_service, session_store, conversation_wakes, db_engine)
+        conversation_runtime.Runtime(session_service, session_store, conversation_wakes, db_engine)
         if session_service is not None
         else None
     )
@@ -591,9 +586,7 @@ def create_app(
                 configured_recall_index_ids=tuple(index.index_id for index in console_config.recall_indexes),
                 # Only with an executable runtime: otherwise nothing writes sessions, so the read
                 # tools would reflect an always-empty corpus.
-                conversations=(
-                    conversation_reader.ConversationReads(session_store) if runtime_registry.configured_kinds else None
-                ),
+                conversations=(reader.ConversationReads(session_store) if runtime_registry.configured_kinds else None),
                 sandbox=sandbox_server,
                 kubernetes=(
                     kubernetes_tools.KubernetesToolsService(

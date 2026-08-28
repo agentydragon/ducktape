@@ -47,9 +47,9 @@ from haku.console.channels.matrix.spans import Span, SpanKind
 from haku.console.channels.matrix.sync import SyncService, SyncStore
 from haku.console.chat_models import AuthoredEventKind, MatrixOrigin, PromptRejection, StoredEventKind
 from haku.console.database_schema import ConversationEventRow
+from haku.console.session.store import BridgeAuthentication, Store
+from haku.console.session.subscription import ConversationStream
 from haku.console.x.session_events import PromptRejectedBody, UnreadableInputBody
-from haku.console.x.session_store import BridgeAuthentication, SessionStore
-from haku.console.x.subscription import ConversationStream
 
 
 @dataclass
@@ -263,7 +263,7 @@ async def test_a_batch_is_offered_as_one_prompt(service, matrix, turns, bound_ro
 
 
 async def carried_prompt(
-    session_store: SessionStore, operator_id: UUID, ledger: IngressLedger, event_id: str, body: str
+    session_store: Store, operator_id: UUID, ledger: IngressLedger, event_id: str, body: str
 ) -> UUID:
     """A prompt in the record carrying *event_id*, as an accepted batch leaves one behind."""
     view, token = await session_store.create(operator_id)

@@ -3,23 +3,13 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
-    name = "launch_identity",
-    srcs = ["launch_identity.py"],
-    deps = [
-        ":runtime",
-        "//haku/console:chat_models",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
     name = "runtime",
     srcs = ["runtime.py"],
     deps = [
         ":conversation_events",
-        ":sandbox_claims",
-        ":system_prompt",
         "//haku/console:chat_models",
+        "//haku/console/session:sandbox_claims",
+        "//haku/console/session:system_prompt",
         "//haku/runtime/x/bridge:client",
         "//haku/runtime/x/bridge:protocol",
         "//haku/runtime/x/bridge:transport",
@@ -32,10 +22,10 @@ py_library(
     srcs = ["runtime_catalog.py"],
     deps = [
         ":runtime",
-        ":sandbox_claims",
-        ":system_prompt",
         "//haku/console:chat_models",
         "//haku/console:config",
+        "//haku/console/session:sandbox_claims",
+        "//haku/console/session:system_prompt",
         "//haku/console/x/claude_code:client",
         "//haku/console/x/claude_code:runtime",
         "//haku/console/x/codex_app_server:config",
@@ -62,97 +52,6 @@ py_test(
 )
 
 py_library(
-    name = "session_runtime",
-    srcs = ["session_runtime.py"],
-    deps = [
-        ":conversation_events",
-        ":conversation_history",
-        ":conversation_views",
-        ":journal_consumer",
-        ":launch_identity",
-        ":runtime",
-        ":sandbox_claims",
-        ":session_store",
-        ":session_wakes",
-        ":setup_output",
-        ":system_prompt",
-        "//haku/console:chat_models",
-        "//haku/console:config",
-        "//haku/console:operator_auth",
-        "//haku/console/agents:authorization",
-        "//haku/console/x/claude_code:frames",
-        "//haku/runtime/x/bridge:backend",
-        "//haku/runtime/x/bridge:neutral_operations",
-        "//haku/runtime/x/bridge:protocol",
-        "@pypi//fastapi",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "conversation_history",
-    srcs = ["conversation_history.py"],
-    deps = [
-        "//haku/console:chat_models",
-        "//haku/console:database_schema",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "reprojection",
-    srcs = ["reprojection.py"],
-    deps = [
-        ":runtime",
-        ":runtime_catalog",
-        ":session_events",
-        ":setup_output",
-        "//haku/console:chat_models",
-        "//haku/console:database_schema",
-        "//haku/runtime/x/bridge:protocol",
-        "//util:enum_vocab",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "conversation_log",
-    srcs = ["conversation_log.py"],
-    deps = [
-        ":conversation_events",
-        ":session_events",
-        "//haku/console:chat_models",
-        "//haku/console:database_schema",
-        "//haku/runtime/x/bridge:neutral_operations",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "journal_consumer",
-    srcs = ["journal_consumer.py"],
-    deps = [
-        ":conversation_log",
-        ":conversation_wakes",
-        ":session_events",
-        "//haku/console:database_schema",
-        "//haku/runtime/x/bridge:neutral_operations",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "prompt_inbox",
-    srcs = ["prompt_inbox.py"],
-    deps = [
-        "//haku/console:chat_models",
-        "//haku/console:database_schema",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
     name = "session_events",
     srcs = ["session_events.py"],
     deps = [
@@ -165,243 +64,9 @@ py_library(
 )
 
 py_library(
-    name = "subscription",
-    srcs = ["subscription.py"],
-    deps = [
-        ":session_events",
-        "//haku/console:database_schema",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "session_store",
-    srcs = ["session_store.py"],
-    deps = [
-        ":conversation_events",
-        ":conversation_log",
-        ":conversation_reads",
-        ":conversation_views",
-        ":conversation_wakes",
-        ":item_entries",
-        ":launch_identity",
-        ":prompt_inbox",
-        ":runtime",
-        ":runtime_catalog",
-        ":session_events",
-        ":session_wakes",
-        ":setup_output",
-        ":subscription",
-        "//haku/cli_protocol:frame_identity",
-        "//haku/console:chat_models",
-        "//haku/console:conversation_read_access",
-        "//haku/console:database_schema",
-        "//haku/console:grant_principal",
-        "//haku/console:kubernetes_grant_models",
-        "//haku/console/x/claude_code:frames",
-        "//haku/runtime/x/bridge:client",
-        "//haku/runtime/x/bridge:protocol",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "setup_output",
-    srcs = ["setup_output.py"],
-    deps = ["//haku/console:chat_models"],
-)
-
-py_library(
     name = "conversation_events",
     srcs = ["conversation_events.py"],
     deps = ["//haku/console:chat_models"],
-)
-
-py_library(
-    name = "conversation_reads",
-    srcs = ["conversation_reads.py"],
-    deps = [
-        "//haku/console:chat_models",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "item_entries",
-    srcs = ["item_entries.py"],
-    deps = [
-        ":conversation_reads",
-        "//haku/console:chat_models",
-        "//haku/console:database_schema",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "conversation_reader",
-    srcs = ["conversation_reader.py"],
-    deps = [
-        ":conversation_reads",
-        ":item_entries",
-        ":session_store",
-        "//haku/console:chat_models",
-        "//haku/console:conversation_read_access",
-    ],
-)
-
-py_library(
-    name = "conversation_views",
-    srcs = ["conversation_views.py"],
-    deps = [
-        ":conversation_reads",
-        ":sandbox_claims",
-        ":setup_output",
-        "//haku/console:chat_models",
-        "//haku/console:database_schema",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "sandbox_claims",
-    srcs = ["sandbox_claims.py"],
-    deps = [
-        "//haku/runtime/x/bridge:backend",
-        "//util:kubernetes",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "sandbox_allocation",
-    srcs = ["sandbox_allocation.py"],
-    deps = [
-        ":session_runtime",
-        ":session_store",
-        ":session_wakes",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "conversation_runtime",
-    srcs = ["conversation_runtime.py"],
-    deps = [
-        ":conversation_wakes",
-        ":session_runtime",
-        ":session_store",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "conversation_follow",
-    srcs = ["conversation_follow.py"],
-    deps = [
-        ":conversation_views",
-        ":conversation_wakes",
-        ":sandbox_claims",
-        ":session_store",
-        "//haku/console:chat_models",
-        "//haku/console:operator_auth",
-        "//haku/console/notifications:console_events",
-        "@pypi//fastapi",
-    ],
-)
-
-py_library(
-    name = "conversation_live_updates",
-    srcs = ["conversation_live_updates.py"],
-    deps = [
-        ":conversation_wakes",
-        "//haku/console:database_schema",
-        "//haku/console/notifications:console_events",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_conversation_runtime",
-    size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_conversation_runtime.py"],
-    deps = [
-        ":conftest",
-        ":conversation_runtime",
-        ":launch_identity",
-        ":runtime",
-        ":session_runtime",
-        ":session_store",
-        "//:conftest",
-        "//haku/console:chat_models",
-        "//haku/console:conftest",
-        "//haku/console:database_schema",
-        "//haku/console/agents:authorization",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_sandbox_allocation",
-    size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_sandbox_allocation.py"],
-    deps = [
-        ":conftest",
-        ":sandbox_allocation",
-        ":session_runtime",
-        ":session_store",
-        "//:conftest",
-        "//haku/console:chat_models",
-        "//haku/console:conftest",
-        "//haku/console:database_schema",
-        "//haku/console/x/testing:recording_claims",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "pg_wake",
-    srcs = ["pg_wake.py"],
-    deps = [
-        "@pypi//asyncpg",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "session_wakes",
-    srcs = ["session_wakes.py"],
-    deps = [
-        ":pg_wake",
-        "//util:enum_vocab",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "conversation_wakes",
-    srcs = ["conversation_wakes.py"],
-    deps = [
-        ":pg_wake",
-        ":session_wakes",
-        "//util:enum_vocab",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "system_prompt",
-    srcs = ["system_prompt.py"],
-    deps = ["@pypi//jinja2"],
 )
 
 py_library(
@@ -409,143 +74,8 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
-        ":conversation_wakes",
-        ":launch_identity",
-        ":sandbox_allocation",
-        ":session_runtime",
-        ":session_store",
-        ":session_wakes",
-        "//haku/console:config",
-        "//haku/console:database_schema",
-        "//haku/console:operator_identity_store",
-        "//haku/console/x/testing:recording_claims",
-        "//haku/console/x/testing:wake_probes",
-        "@pypi//pydantic",
+        "//haku/console/session:conftest",
         "@pypi//pytest",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_conversation_follow",
-    size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_conversation_follow.py"],
-    deps = [
-        ":conftest",
-        ":conversation_events",
-        ":conversation_follow",
-        ":conversation_reads",
-        ":conversation_views",
-        ":conversation_wakes",
-        ":session_runtime",
-        ":session_store",
-        "//:conftest",
-        "//haku/console:chat_models",
-        "//haku/console:conftest",
-        "//haku/console/x/claude_code:frames",
-        "//haku/console/x/testing:recording_claims",
-        "@pypi//more_itertools",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_conversation_live_updates",
-    size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_conversation_live_updates.py"],
-    deps = [
-        ":conftest",
-        ":conversation_live_updates",
-        ":conversation_wakes",
-        ":session_store",
-        "//:conftest",
-        "//haku/console:conftest",
-        "//haku/console:operator_identity_store",
-        "//haku/console/notifications:console_events",
-        "@pypi//fastapi",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_session_wakes",
-    size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_session_wakes.py"],
-    deps = [
-        ":conftest",
-        ":session_wakes",
-        "//:conftest",
-        "//haku/console:conftest",
-        "//haku/console/x/testing:wake_probes",
-        "//util:enum_vocab",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_conversation_wakes",
-    size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_conversation_wakes.py"],
-    deps = [
-        ":conftest",
-        ":conversation_wakes",
-        ":session_wakes",
-        "//:conftest",
-        "//haku/console:conftest",
-        "//haku/console/x/testing:wake_probes",
-        "//util:enum_vocab",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_session_runtime",
-    size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_session_runtime.py"],
-    deps = [
-        ":conftest",
-        ":conversation_events",
-        ":conversation_history",
-        ":conversation_reads",
-        ":item_entries",
-        ":launch_identity",
-        ":reprojection",
-        ":runtime",
-        ":sandbox_claims",
-        ":session_runtime",
-        ":session_store",
-        ":session_wakes",
-        ":system_prompt",
-        "//:conftest",
-        "//haku/console:chat_models",
-        "//haku/console:config",
-        "//haku/console:conftest",
-        "//haku/console:conversation_read_access",
-        "//haku/console:database_schema",
-        "//haku/console:mcp_config",
-        "//haku/console/agents:authorization",
-        "//haku/console/x/claude_code:client",
-        "//haku/console/x/claude_code:frames",
-        "//haku/console/x/claude_code:runtime",
-        "//haku/console/x/claude_code/testing:wire",
-        "//haku/console/x/codex_app_server:config",
-        "//haku/console/x/testing:recording_claims",
-        "//haku/runtime/x/bridge:client",
-        "//haku/runtime/x/bridge:protocol",
-        "@pypi//fastapi",
-        "@pypi//more_itertools",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -569,119 +99,6 @@ py_test(
 )
 
 py_test(
-    name = "test_reprojection",
-    size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_reprojection.py"],
-    deps = [
-        ":conftest",
-        ":reprojection",
-        ":runtime",
-        ":session_store",
-        "//:conftest",
-        "//haku/console:chat_models",
-        "//haku/console:conftest",
-        "//haku/console:database_schema",
-        "//haku/console/x/claude_code:runtime",
-        "//haku/console/x/claude_code/testing:wire",
-        "//haku/runtime/x/bridge:protocol",
-        "@pypi//more_itertools",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_subscription",
-    size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_subscription.py"],
-    deps = [
-        ":conftest",
-        ":session_events",
-        ":session_store",
-        ":subscription",
-        "//:conftest",
-        "//haku/console:chat_models",
-        "//haku/console:conftest",
-        "//haku/console:database_schema",
-        "@pypi//more_itertools",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_session_store",
-    size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_session_store.py"],
-    deps = [
-        ":conftest",
-        ":conversation_events",
-        ":conversation_reads",
-        ":item_entries",
-        ":runtime",
-        ":session_events",
-        ":session_store",
-        ":session_wakes",
-        "//:conftest",
-        "//haku/console:chat_models",
-        "//haku/console:conftest",
-        "//haku/console:conversation_read_access",
-        "//haku/console:database_schema",
-        "//haku/console:grant_principal",
-        "//haku/console:http_grant_models",
-        "//haku/console:kubernetes_grant_models",
-        "//haku/console/x/claude_code:frames",
-        "//haku/console/x/claude_code/testing:wire",
-        "@ducktape_haku//haku/console:tool_calls",
-        "@pypi//more_itertools",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_journal_consumer",
-    size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_journal_consumer.py"],
-    data = ["//haku/runtime/x/bridge:neutral_operations_testdata"],
-    deps = [
-        ":conftest",
-        ":journal_consumer",
-        ":prompt_inbox",
-        ":session_store",
-        "//:conftest",
-        "//haku/console:chat_models",
-        "//haku/console:conftest",
-        "//haku/console:database_schema",
-        "//haku/runtime/x/bridge:neutral_operations",
-        "//util/bazel:runfiles",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_sandbox_claims",
-    size = "medium",
-    srcs = ["test_sandbox_claims.py"],
-    deps = [
-        ":conftest",
-        ":sandbox_claims",
-        "//:conftest",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_session_events",
     srcs = ["test_session_events.py"],
     deps = [
@@ -693,42 +110,6 @@ py_test(
         "//util:enum_vocab",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_item_entries",
-    srcs = ["test_item_entries.py"],
-    deps = [
-        ":conversation_reads",
-        ":item_entries",
-        "//:conftest",
-        "//haku/console:chat_models",
-        "//haku/console:database_schema",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_conversation_views",
-    size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_conversation_views.py"],
-    deps = [
-        ":conftest",
-        ":conversation_reads",
-        ":conversation_views",
-        ":session_store",
-        ":setup_output",
-        "//:conftest",
-        "//haku/console:chat_models",
-        "//haku/console:conftest",
-        "//haku/console:database_schema",
-        "//haku/console/x/claude_code:projection",
-        "//haku/console/x/claude_code/testing:fold",
-        "//haku/console/x/claude_code/testing:wire",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
     ],
 )
@@ -746,15 +127,16 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
-        ":conversation_reads",
-        ":item_entries",
-        ":session_runtime",
-        ":session_store",
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
         "//haku/console:conversation_read_access",
         "//haku/console:database_schema",
+        "//haku/console/conversation:item_reads",
+        "//haku/console/conversation:reads",
+        "//haku/console/session:conftest",
+        "//haku/console/session:runtime",
+        "//haku/console/session:store",
         "//haku/console/x/testing:recording_claims",
         "//util:net",
         "//util/bazel:runfiles",
@@ -764,17 +146,5 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//websockets",  # keep: uvicorn's websocket protocol implementation, not a direct import
-    ],
-)
-
-py_test(
-    name = "test_system_prompt",
-    srcs = ["test_system_prompt.py"],
-    data = ["//cluster/k8s:haku_console_system_prompt"],
-    deps = [
-        ":system_prompt",
-        "@pypi//jinja2",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

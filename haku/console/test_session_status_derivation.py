@@ -28,7 +28,7 @@ from haku.console.chat_models import (
 )
 from haku.console.database_schema import Conversation, Session
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.x.conversation_views import live_status
+from haku.console.session.conversation_views import live_status
 
 _NOW = datetime.datetime(2026, 8, 27, tzinfo=datetime.UTC)
 

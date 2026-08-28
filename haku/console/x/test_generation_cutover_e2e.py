@@ -28,14 +28,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.console.chat_models import SPA_ORIGIN, SessionStatus
+from haku.console.conversation.item_reads import entry_of
+from haku.console.conversation.reads import MessageEntry, PromptEntry, ToolCallEntry, TurnAnsweredEnd
 from haku.console.conversation_read_access import UnrestrictedReads
 from haku.console.database_schema import Session, SubmittedPrompt
-from haku.console.x.conftest import configured_runtimes, runtime_config
-from haku.console.x.conversation_reads import MessageEntry, PromptEntry, ToolCallEntry, TurnAnsweredEnd
-from haku.console.x.item_entries import entry_of
-from haku.console.x.session_runtime import SessionService, internal_router
-from haku.console.x.session_store import SessionStore
-from haku.console.x.session_wakes import SessionWakes
+from haku.console.notifications.session_wakes import SessionWakes
+from haku.console.session.conftest import configured_runtimes, runtime_config
+from haku.console.session.runtime import SessionService, internal_router
+from haku.console.session.store import Store
 from haku.console.x.testing.recording_claims import RecordingClaims
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
@@ -54,7 +54,7 @@ def _console_app(database_url: str, workspace: Path) -> FastAPI:
         session_wakes = SessionWakes(database_url)
         await session_wakes.start()
         runtimes = configured_runtimes(RecordingClaims(), config=runtime_config(cwd=str(workspace)))
-        store = SessionStore(async_sessionmaker(engine, expire_on_commit=False), runtimes)
+        store = Store(async_sessionmaker(engine, expire_on_commit=False), runtimes)
         app.state.session_service = SessionService(runtimes, store, session_wakes)
         try:
             yield
@@ -83,7 +83,7 @@ async def _wait_until(
         await asyncio.sleep(0.1)
 
 
-async def _transcript(store: SessionStore, conversation_id: UUID) -> list[tuple[str, str]]:
+async def _transcript(store: Store, conversation_id: UUID) -> list[tuple[str, str]]:
     """The prompt/message transcript pairs and the tool call, read through the store's reader."""
     rows = await store.read_item_rows(conversation_id, after_seq=None, limit=100, scope=UnrestrictedReads())
     out: list[tuple[str, str]] = []
@@ -109,7 +109,7 @@ async def _acked_and_admission(database_url: str, session_id: UUID, conversation
 
 
 async def test_the_cut_stack_answers_a_prompt_with_a_tool_call_over_the_journal(
-    session_store: SessionStore, migrated_db_url: str, operator_id: UUID, tmp_path: Path
+    session_store: Store, migrated_db_url: str, operator_id: UUID, tmp_path: Path
 ) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -188,7 +188,7 @@ async def test_the_cut_stack_answers_a_prompt_with_a_tool_call_over_the_journal(
     assert transcript.count(("message", "re: again")) == 1, "the second answer was recorded exactly once"
 
 
-async def _has_n_finished(store: SessionStore, session_id: UUID, n: int) -> bool:
+async def _has_n_finished(store: Store, session_id: UUID, n: int) -> bool:
     turns = await store.list_turns(session_id, cursor=None, limit=10, scope=UnrestrictedReads())
     return len([turn for turn in turns if turn.ended_at]) == n
 

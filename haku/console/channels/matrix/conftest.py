@@ -2,7 +2,7 @@
 which room they are in, and the room/session binding.
 
 Everything neutral — the stores, the service, the claim stand-in, the operator's identity — comes
-from the runtime's own <../../x/conftest.py>, which is deliberately free of anything a homeserver
+from the runtime's own <../../session/conftest.py>, which is deliberately free of anything a homeserver
 knows about.
 
 `OPERATOR_SUBJECT` is imported rather than restated because both levels have to agree on it:
@@ -23,7 +23,7 @@ from haku.console.channels.matrix.ingress_ledger import IngressLedger
 
 # The runtime-level fixtures the channel tests compose with. `channels/` is not under `x/`, so
 # pytest's conftest walk does not reach `x/conftest.py`; the fixtures are imported here instead.
-from haku.console.x.conftest import OPERATOR_SUBJECT, conversation_wakes, operator_id, session_store
+from haku.console.session.conftest import OPERATOR_SUBJECT, conversation_wakes, operator_id, session_store
 
 MATRIX_USER = "@haku:allegedly.works"
 MATRIX_OPERATOR = "@rai:allegedly.works"

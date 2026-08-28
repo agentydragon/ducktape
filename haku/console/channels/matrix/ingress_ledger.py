@@ -22,7 +22,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.database_schema import MatrixIngressEvent
-from haku.console.x.session_store import PromptRecords
+from haku.console.session.store import PromptRecords
 
 
 class IngressLedger:

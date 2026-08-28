@@ -64,7 +64,7 @@ def _send(frame: dict[str, Any]) -> None:
 def _speak(frame: dict[str, Any]) -> None:
     """Send one conversation frame, refusing one the console could not recognise on a replay.
 
-    The same pair the console records with (`SessionStore.record_frame`), so a frame this stub
+    The same pair the console records with (`session.store.Store.record_frame`), so a frame this stub
     stamped in a way the dedupe cannot read fails here rather than in a test that would then be
     asserting the replay window away.
     """

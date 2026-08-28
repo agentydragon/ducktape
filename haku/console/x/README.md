@@ -3,119 +3,22 @@
 In-flux work that the console runs but does not yet promise. Nothing here has a stable API,
 and the console must keep serving with any of it switched off.
 
-The chat surfaces are separate experiments over one piece of session machinery, not a
-migration in progress: Matrix is not replacing the SPA view. Both are headed for one
-subscription off one record (<../plans/conversation_layers.md>).
+The runtime and the channels have graduated: the durable record to <../conversation/>, the
+runner-incarnation machinery to <../session/>, the wake wires to <../notifications/>, and the
+channels to <../channels/> (#4772/#4924; target layout: <../docs/naming_and_layout.md> § 2).
+What remains is what is still being restructured:
 
-This README is the map. The contracts live on the code: each module's docstring states what it
-owns and the invariants it keeps, and the map does not restate them.
-
-## The directory says which axis a module varies on
-
-Three things vary independently here:
-
-| Where                                   | What it is                                                                                   |
-| --------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `x/*.py`                                | **The runtime.** Sessions, turns, frames, notifications, sandboxes — no channel, no harness. |
-| `../channels/<name>/`                   | **One channel.** Matrix today; the SPA is served by the runtime's own routes.                |
-| `x/claude_code/`, `x/codex_app_server/` | **One CLI harness each.** Named for the product whose binary they launch, not for the model. |
+| Where                                   | What it is                                                                                                                                                                |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `conversation_events.py`                | The provider-neutral vocabulary a conversation is read as; deletion-scheduled with the #4667 native-projector fold.                                                       |
+| `session_events.py`                     | The stream's two categories as stored rows — the one place the vocabularies meet the table. Merges into `conversation/conversation_event.py` (#4772 C5).                  |
+| `runtime.py`, `runtime_catalog.py`      | Backend-neutral runtime catalog and its application composition; the harness _selection_ residue headed for `harnesses/` (<../docs/naming_and_layout.md> § 2).            |
+| `x/claude_code/`, `x/codex_app_server/` | **One CLI harness each.** Named for the product whose binary they launch, not for the model. The native client + projection move runner-ward (#4667, deletion-scheduled). |
+| `testing/`                              | Stand-ins a test stands something up _with_, importable by non-pytest processes too (<testing/recording_claims.py> for the rationale).                                    |
+| `conftest.py`                           | Fixture re-registrations for the tests below this directory; the definitions live in <../session/conftest.py>.                                                            |
 
 How to place a module — the replace-the-other-axis test and the boundary cases — is
 <../docs/chat_layers.md> § Placing something new.
-
-## The runtime level
-
-The shared substrate is two files, and the line between them is the transaction:
-`session_store.py` holds the rows and every method whose job is "these writes commit together
-or not at all" (`apply_frame` is the one to read first), and `session_runtime.py` drives one
-turn against a CLI — the turn loop, the runner's websocket bridge, the sandbox lifecycle, and
-the SPA chat surface's own HTTP routes. Around them:
-
-| Module                         | Role                                                                                                                                                                                                                                                                             |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `conversation_events.py`       | The provider-neutral vocabulary a conversation is read as; every surface renders it, every backend adapter produces it.                                                                                                                                                          |
-| `conversation_log.py`          | The only writer of `conversation_event`/`conversation_item`/`conversation_turn`: the log first, the entities from it, one transaction.                                                                                                                                           |
-| `session_events.py`            | The stream's two categories as stored rows — the one place the vocabularies meet the table.                                                                                                                                                                                      |
-| `subscription.py`              | Reading a conversation from a position; where the position lives is the subscriber's own (`Cursor`).                                                                                                                                                                             |
-| `conversation_follow.py`       | `WS /api/conversations/{id}/follow`: a conversation's state and the changes to it, as one operation.                                                                                                                                                                             |
-| `conversation_live_updates.py` | Conversation changes as console-socket invalidations for open tabs.                                                                                                                                                                                                              |
-| `conversation_history.py`      | The finished conversation tail handed to a replacement session.                                                                                                                                                                                                                  |
-| `conversation_reads.py`        | What a conversation read hands back, and the cursors that page them (see below).                                                                                                                                                                                                 |
-| `item_entries.py`              | The one place a materialised item row folds onto `conversation_reads.py`'s entry union — one entry per row, identical for the MCP reader and the SPA views.                                                                                                                      |
-| `reprojection.py`              | Re-project a recorded session's frames and report where the stored log disagrees.                                                                                                                                                                                                |
-| `pg_wake.py`                   | The layer-neutral `LISTEN`/`NOTIFY` transport: `notify_raw`/`libpq_dsn` and the `WakeListener` connection, reconnect loop, parse and reconnect-gap dispatch, instantiated once per layer. The console's other LISTEN consumer is <../notifications/console_events.py>.           |
-| `session_wakes.py`             | The session layer's wake channel (`session_events`) and its surface: `SessionWakes` (`wait`/`watch_session`/`watch`) over its own `WakeListener`; consumed by `SessionService` and the allocator, and nothing conversation-shaped reaches it.                                    |
-| `conversation_wakes.py`        | The conversation layer's wake channel (`conversation_wakes`) and its surface: `ConversationWakes.watch` over its own `WakeListener`, plus the cross-layer `notify_update`; a channel imports this and so names a conversation surface, never a session type (roll gotcha below). |
-| `conversation_runtime.py`      | Elected reconciler (`CRUN`): conversation-owned prompt demand into sessions, plus global lease/claim maintenance.                                                                                                                                                                |
-| `sandbox_allocation.py`        | Elected reconciler (`SBOX`): durable prompt demand into sandbox allocation, independent of every channel.                                                                                                                                                                        |
-| `sandbox_claims.py`            | The declarative `SandboxClaim` one session runs in, and the claim/Sandbox/Pod/runner progress view.                                                                                                                                                                              |
-| `conversation_views.py`        | The SPA's wire shapes — inventory, conversation detail, follow messages — as projections over `conversation_reads.py`.                                                                                                                                                           |
-| `setup_output.py`              | The bridge envelope's `kind`; the setup-narration compatibility frame.                                                                                                                                                                                                           |
-| `system_prompt.py`             | The system prompt a chat session is started with (the template is deploy config).                                                                                                                                                                                                |
-| `launch_identity.py`           | Neutral launch-identity types shared by channel and runtime stores.                                                                                                                                                                                                              |
-| `runtime.py`                   | Backend-neutral runtime catalog: provider adapters plus per-Agent execution resources.                                                                                                                                                                                           |
-| `runtime_catalog.py`           | Application composition of the runtime implementations linked into the console.                                                                                                                                                                                                  |
-
-The elected loops here — runtime supervision (`CRUN`) and allocation (`SBOX`) — hold independent
-advisory locks and can land on different replicas, so a stalled claim cannot wedge ingress or
-make one channel the only surface able to recover durable demand. The Matrix sync loop (`MXSY`)
-is a third such election, held by the separately deployed `haku-matrix-adapter` worker
-(<../channels/matrix/worker.py>); its leader also sweeps one reconciler per live attachment
-(<../channels/matrix/attachment_reconciler.py>).
-
-**Gotcha:** both chat surfaces run at once as ordinary separate sessions — separate rows,
-separate sandboxes — so a browser conversation and the Matrix conversation coexist rather than
-contend. That also means two live sandboxes, and only the Matrix one announces itself, so the
-browser one is the easy one to forget you are paying for.
-
-**Cross-replica state, and the trap it sets:** `replicas: 2` means any given HTTP request
-reaches an arbitrary pod, while a session's live objects — the runner's bridge websocket, its
-abort event — belong to exactly one. Anything that has to reach a running turn therefore goes
-through Postgres `NOTIFY`, never an in-process registry: a dict keyed by session id looks
-correct in tests and single-replica dev, and silently answers "no such session" in production
-about half the time. `SessionStore.request_abort` is the shape to copy.
-
-### Operator surfaces
-
-- **Frame inspector** — `GET /api/sessions/{session_id}/frames`, rendered by
-  <../frontend/x/session_frames_page.tsx> at `/_console/sessions/<id>/frames`: one page of the
-  rollout in wire order, payloads whole. `conversation_item` is a lossy projection of
-  `session_frames`, and a projection nobody can appeal is a projection nobody can debug. It is
-  the one surface that shows a backend's own wire, and it stays safe by being addressed
-  separately, never load-bearing, and labelled as one backend's wire everywhere a reader sees
-  it (`conversation_views.SessionFrameView`, `SessionStore.read_operator_frames`).
-- **Provisioning** — `GET /api/sessions/{session_id}/provisioning`: the claim/Sandbox/Pod/runner
-  graph for one session in whatever state it is now (`SessionService.sandbox_provisioning`).
-- **Composer** — the conversation detail view carries <../frontend/x/conversation_composer.tsx>
-  for any session it can read, a room's included; the reply goes wherever that session's
-  channel sends replies, so a prompt typed in the browser also lands in the room.
-
-### `conversation_reads.py` runs stable → experimental
-
-It is the one edge in that direction, worth knowing before it surprises: everything else
-outside `x/` that names a module inside it is the composition root (<../app.py>), while
-<../tools/conversations.py> imports these models because the store is what produces them. The
-module is a leaf of Pydantic models with no dependency of its own, so naming it drags in no
-runtime — but if the tools catalog ever has to build without `x/`, moving this module to the
-console level is the fix, not reinstating the models on the tool.
-
-### Renaming a wake channel or payload
-
-The Deployment rolls with `maxUnavailable: 0`, so old and new replicas run together for the
-length of a roll. A renamed channel means the new replica notifies where the old one is not
-listening, and the wakes are lost for that window — the same expand/contract discipline a
-destructive migration needs. Notify on both names for one release, then drop the old, and gate
-that second release on the roll having **converged** (every pod on an image at or after the
-first) rather than on a release having elapsed, since `maxUnavailable: 0` means a bad image
-stalls the roll with the old replica still serving. An explicit operator cutover under the
-standing conversation-disruption allowance (<../AGENTS.md>) may skip the overlap, costing wake
-latency for one roll and no data.
-
-The trap in the overlap phase: while both names are being notified, every wake is delivered
-twice, so a woken waiter proves nothing about which name woke it. Tests and production alike
-will look healthy with the new path entirely broken, right up until the old one is deleted.
-Cover the new path end to end on its own before contracting — a test driving `pg_notify` on
-exactly one channel.
 
 ## Harness adapters
 
@@ -131,53 +34,15 @@ fixture, how-to in <claude_code/frame_export_main.py>.
 client/frames/projection/runtime split, plus `capture.py` for recording sanitized fixtures off
 a real Codex.
 
-## Matrix chat surface
+## Tests
 
-Graduated out of `x/`: the module map is <../channels/matrix/README.md>, and what the channel
-guarantees the operator is <../channels/matrix/SPEC.md>.
+The runtime-level fixture definitions live in <../session/conftest.py> (see
+<../session/README.md> § Tests run against a real database for the no-fake-stores rule);
+<conftest.py> re-registers them for the harness and e2e tests below this directory.
 
-## Tests run against a real database
-
-Every store here is exercised through Postgres (the `migrated_*` testcontainer fixtures),
-never a stand-in. What stays faked is what is genuinely outside: Kubernetes and the CLI. The
-rule is not tidiness — a fake store answers from the shape the test author imagined, so it
-agrees with whatever the code does: a fake `_listen` written against psycopg3's API passed
-every test while the real one raised on **every** call in production against the asyncpg
-engine, and a fake conversation store let a test bind a room to a session id that had never
-existed, a scenario the schema's foreign key refuses.
-
-### The runtime's conftest names no channel
-
-A runtime-level fixture that reached into `../channels/matrix/` would make every runtime test
-depend on a homeserver's vocabulary and a second channel unaddable without dragging Matrix
-along. <conftest.py> holds the stores, the service, the claim stand-in and the operator's
-identity — nothing a room knows; the homeserver identities, the config they compose into and
-the room binding live in <../channels/matrix/conftest.py>. Each file's docstring carries its
-own half.
-
-### The stand-ins live in `testing/`
-
-Everything a test stands something up _with_ is a module in a `testing/` directory under the
-axis it stands in for — never a `conftest.py` fixture or a source file in a target's `data` —
-so a stand-in cannot outlive the thing it fakes and a `py_binary` can reach it
-(<testing/recording_claims.py> for the rationale). The e2e tiers, each with a module docstring
-saying what only it can answer:
-
-- <test_generation_cutover_e2e.py> — the post-cut stack end to end: a real runner process on a
-  real websocket journaling to a real Console handler — the generation window's health gate.
-- <../channels/matrix/test_homeserver_e2e.py> — the Matrix client against a real Synapse, for
-  the properties of Synapse a canned response could only agree with.
-- <../channels/matrix/test_fullstack_e2e.py> — that Synapse, console replicas as processes, a
-  runner per sandbox behind the stub `claude` (<claude_code/testing/stub_claude.py>), and a
-  real Postgres: every message the operator sent has exactly one reply in the final room.
-
-## What necessarily lives outside this directory
-
-The stable modules own these, so moving them here is not possible without inverting the
-dependency:
-
-- `Session`, `Conversation` and `ChannelAttachmentRow` in <../database_schema.py>, plus their
-  Alembic revisions — migrations are one lineage for the whole database.
+<test_generation_cutover_e2e.py> is the post-cut stack end to end: a real runner process on a
+real websocket journaling to a real Console handler — the generation window's health gate. The
+channel e2e tiers live with the channel (<../channels/matrix/README.md>).
 
 ## Where the reasoning lives
 
@@ -189,5 +54,4 @@ The code keeps the invariant; the evidence behind it is linked rather than resta
 - <../docs/chat_runtime_facts.md> — behaviours of Synapse, nio, uvicorn and the CLI that this
   surface depends on, with where each was checked. Read it before changing anything that looks
   like belt and braces.
-- <../plans/conversation_layers.md> — what is still wrong and the order to fix it, and
-  <../channels/matrix/SPEC.md> — what the Matrix channel already guarantees.
+- <../plans/conversation_layers.md> — what is still wrong and the order to fix it.

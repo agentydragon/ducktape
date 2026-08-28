@@ -237,7 +237,7 @@ genuinely operational knobs should move onto the config model:
 
 - `channels/matrix/spans.py` — `STATUS_AFTER` (8s before a turn says anything, R6.2),
   `STATUS_EDIT_INTERVAL` (5s edit floor, R6.5), `TYPING_REFRESH`.
-- `x/session_store.py` — `LEASE_TTL` / `LEASE_RENEW_INTERVAL`, `PROVISION_LEASE`, `ADOPTION_GRACE`.
+- `session/store.py` — `LEASE_TTL` / `LEASE_RENEW_INTERVAL`, `PROVISION_LEASE`, `ADOPTION_GRACE`.
 - `channels/matrix/pacer.py` — `SENDS_PER_SECOND`, `SEND_BURST`, `MAX_QUEUED_SENDS`, `FLUSH_SECONDS`.
 - `channels/matrix/conversation.py` — `SUPERVISE_INTERVAL`, `PROVISION_BACKOFF`,
   `RE_AWAKENING_MESSAGES` (the N of R3.3a).
@@ -398,7 +398,7 @@ changing session Agent identity.
 - The comment above `_operator_auth_requires_canonical_public_origin` (`config.py`) describes an
   optional standing Kubernetes authorization policy field that is not on `Settings` —
   `kubernetes_authorization` is on `ConsoleConfigFile` in `mcp_config.py`. Delete the comment.
-- `HistorySender.ASSISTANT` (`x/system_prompt.py`) reads like the provider-LLM-API `assistant`
+- `HistorySender.ASSISTANT` (`session/system_prompt.py`) reads like the provider-LLM-API `assistant`
   role; it records harness-side provenance of a recorded message. Rename to say so (e.g.
   `HARNESS`) once the in-flight StrEnum PRs land.
 - `approval_mode` (`ApprovalMode` in `haku/shared/haku/console/tool_calls.py`, mirrored on

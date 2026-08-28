@@ -65,7 +65,8 @@ from haku.console.chat_models import (
     SpaOrigin,
 )
 from haku.console.database_schema import ChannelCursor, ConversationItem
-from haku.console.x.conversation_wakes import ConversationWakeEvent, ConversationWakes, RecheckHeld
+from haku.console.notifications.conversation_wakes import ConversationWakeEvent, ConversationWakes, RecheckHeld
+from haku.console.session.subscription import ConversationStream, StreamedEvent, StreamPosition, Subscription, Unstarted
 from haku.console.x.session_events import (
     LeaseExpiredBody,
     MessageCompletedBody,
@@ -89,7 +90,6 @@ from haku.console.x.session_events import (
     UnknownEventBody,
     UnreadableInputBody,
 )
-from haku.console.x.subscription import ConversationStream, StreamedEvent, StreamPosition, Subscription, Unstarted
 
 logger = logging.getLogger(__name__)
 

@@ -31,11 +31,12 @@ from haku.console.channels.matrix.outbox import RoomOutbox
 from haku.console.channels.matrix.room_copy import RoomCopy
 from haku.console.channels.matrix.spans import PROVISIONING_STATUS, STATUS_EDIT_INTERVAL, Span
 from haku.console.chat_models import LeaseExpiryReason, MatrixOrigin, PromptRejection, SpaOrigin
+from haku.console.conversation import log
 from haku.console.database_schema import ChannelCursor
-from haku.console.x import conversation_log, session_events
+from haku.console.session.store import Store
+from haku.console.session.subscription import START, ConversationStream, StreamedEvent, StreamPosition
+from haku.console.x import session_events
 from haku.console.x.session_events import TurnAbortedBody, TurnAnsweredBody, TurnFailedBody
-from haku.console.x.session_store import SessionStore
-from haku.console.x.subscription import START, ConversationStream, StreamedEvent, StreamPosition
 
 
 class Room:
@@ -157,14 +158,14 @@ def notices(
 
 
 @pytest.fixture
-async def served(session_store: SessionStore, operator_id: UUID, binding: RoomAttachment) -> UUID:
+async def served(session_store: Store, operator_id: UUID, binding: RoomAttachment) -> UUID:
     """A ready session serving the bound room, on the conversation the room is attached to."""
     view, token = await session_store.create(operator_id, conversation_id=binding.conversation_id)
     await session_store.authenticate_bridge(view.session_id, token)
     return view.session_id
 
 
-async def abort_a_turn(session_store: SessionStore, operator_id: UUID, session_id: UUID) -> None:
+async def abort_a_turn(session_store: Store, operator_id: UUID, session_id: UUID) -> None:
     await session_store.enqueue_prompt(
         operator_id, session_id, "do the thing", MatrixOrigin(address=MATRIX_ROOM, refs=("$asked",))
     )
@@ -339,14 +340,14 @@ async def test_a_restarted_reader_resumes_from_the_position_it_kept(
 
 async def author(
     sessions: async_sessionmaker[AsyncSession],
-    session_store: SessionStore,
+    session_store: Store,
     session_id: UUID,
     body: session_events.AuthoredBody,
 ) -> None:
     """Write one of the console's own facts about *session_id*, as its own writer would."""
     conversation_id = await session_store.conversation_of(session_id)
     async with sessions() as db, db.begin():
-        writer = await conversation_log.writer_for(
+        writer = await log.writer_for(
             db, conversation_id, session_id=session_id, turn_id=None, now=datetime.datetime.now(datetime.UTC)
         )
         writer.authored(body)

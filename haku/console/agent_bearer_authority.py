@@ -15,8 +15,8 @@ from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgen
 from haku.console.chat_models import SessionStatus
 from haku.console.database_schema import Conversation, Session
 from haku.console.mcp_auth.fastmcp_adapter import AgentGrantAuthorityUnavailableError
+from haku.console.session.launch_identity import LaunchAgentRejectedError
 from haku.console.tool_call_actor import AgentActor
-from haku.console.x.launch_identity import LaunchAgentRejectedError
 
 _STATIC_BINDING_CREDENTIAL_PREFIX = "haku-static-binding:"
 _CHAT_SESSION_CREDENTIAL_PREFIX = "haku-chat-session:"

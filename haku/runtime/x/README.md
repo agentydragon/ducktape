@@ -8,7 +8,7 @@ the runtime actually took is <../../console/channels/matrix/SPEC.md>, and where 
 `bridge` is the sandbox side of the native-harness chat experiment: the wire protocol between
 console and sandbox, the CLI protocol clients, the launch construction, the WebSocket transport,
 and the `runner_bin` that runs inside the sandbox image. Its only production consumer is
-`haku/console/x/session_runtime.py` — the two halves of one experiment, on both sides of the
+`haku/console/session/runtime.py` — the two halves of one experiment, on both sides of the
 WebSocket.
 
 **Gotcha:** the provider-neutral image name is `haku-harness-runner`, set explicitly in

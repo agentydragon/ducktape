@@ -277,11 +277,11 @@ filegroup(
         "haku/console/haku_system_prompt.md.j2",
         "haku/console/public_coder_system_prompt.md.j2",
     ],
-    # The templates are rendered by the session runtime (`x/`) and read back by the Matrix
+    # Rendered by the session runtime (`//haku/console/session`) and read back by the Matrix
     # channel's full-stack test (`channels/`).
     visibility = [
         "//haku/console/channels:__subpackages__",
-        "//haku/console/x:__subpackages__",
+        "//haku/console/session:__pkg__",
     ],
 )
 

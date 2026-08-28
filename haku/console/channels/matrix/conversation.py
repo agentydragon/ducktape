@@ -24,10 +24,10 @@ from haku.console.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.chat_models import ChannelSurface, MatrixOrigin, PromptRejection, RuntimeKind
 from haku.console.database_schema import ChannelAttachmentRow, Conversation, Operator
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.session.launch_identity import LaunchAuthorizer, LaunchIdentity
+from haku.console.session.store import PromptRefusedError, Store
 from haku.console.x import session_events
-from haku.console.x.launch_identity import LaunchAuthorizer, LaunchIdentity
 from haku.console.x.session_events import PromptRejectedBody, UnreadableInputBody
-from haku.console.x.session_store import PromptRefusedError, SessionStore
 
 logger = logging.getLogger(__name__)
 
@@ -272,11 +272,7 @@ class Turns:
     """
 
     def __init__(
-        self,
-        config: Config,
-        session_store: SessionStore,
-        identities: PostgresOperatorIdentityStore,
-        ledger: IngressLedger,
+        self, config: Config, session_store: Store, identities: PostgresOperatorIdentityStore, ledger: IngressLedger
     ):
         self._config = config
         self._session_store = session_store

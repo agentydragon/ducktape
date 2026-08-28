@@ -15,7 +15,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.x.pg_wake import libpq_dsn, notify_raw
+from haku.console.notifications.pg_wake import libpq_dsn, notify_raw
 
 
 @pytest.fixture

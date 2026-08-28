@@ -50,19 +50,19 @@ from haku.console.channels.matrix.revisions import RevisionLog
 from haku.console.channels.matrix.room_copy import RoomCopy
 from haku.console.channels.matrix.sync import SyncService, SyncStore
 from haku.console.config import RuntimeRegistrationConfig
+from haku.console.conversation.history import ConversationHistory
+from haku.console.conversation.runtime import Runtime
+from haku.console.notifications.conversation_wakes import ConversationWakes
+from haku.console.notifications.session_wakes import SessionWakes
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.x.conversation_history import ConversationHistory
-from haku.console.x.conversation_runtime import ConversationRuntime
-from haku.console.x.conversation_wakes import ConversationWakes
+from haku.console.session.runtime import SessionService, internal_router
+from haku.console.session.sandbox_allocation import SandboxAllocator
+from haku.console.session.sandbox_claims import SandboxProvisioningView
+from haku.console.session.store import Store
+from haku.console.session.subscription import ConversationStream
+from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.x.runtime_catalog import execution_registry, runtime_registration
-from haku.console.x.sandbox_allocation import SandboxAllocator
-from haku.console.x.sandbox_claims import SandboxProvisioningView
-from haku.console.x.session_runtime import SessionService, internal_router
-from haku.console.x.session_store import SessionStore
-from haku.console.x.session_wakes import SessionWakes
-from haku.console.x.subscription import ConversationStream
-from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.console.x.testing.recording_claims import fixed_provisioning_view
 
 logger = logging.getLogger("haku.console.channels.matrix.testing.console_replica")
@@ -174,7 +174,7 @@ async def _serve() -> None:
             system_prompt=SystemPromptTemplate.from_path(Path(_environment("HAKU_E2E_SYSTEM_PROMPT_TEMPLATE"))),
         )
     )
-    store = SessionStore(sessions, runtimes)
+    store = Store(sessions, runtimes)
     conversations = ConversationStore(sessions)
     ledger = IngressLedger(sessions)
     identities = PostgresOperatorIdentityStore(
@@ -198,7 +198,7 @@ async def _serve() -> None:
         armed=Path(_environment("HAKU_E2E_REFUSE_NEXT_REPLY")),
     )
     service = SessionService(runtimes, store, session_wakes, conversation_history=ConversationHistory(sessions))
-    supervisor = ConversationRuntime(service, store, conversation_wakes, engine)
+    supervisor = Runtime(service, store, conversation_wakes, engine)
     allocator = SandboxAllocator(service, store, session_wakes, engine)
 
     @asynccontextmanager

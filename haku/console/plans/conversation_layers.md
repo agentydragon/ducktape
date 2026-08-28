@@ -101,7 +101,7 @@ single path from the record outward, and a channel differs only in two ways:
 - **Whether its position is durable.** A room holds its own copy, so its position is a cursor the
   console owes work against; a tab holds none, so its position is an argument to the next read.
 
-The primitive is code: `Subscription.read()` over a `ConversationStream` in `x/subscription.py`,
+The primitive is code: `Subscription.read()` over a `ConversationStream` in `session/subscription.py`,
 where "no position given" is the `Unstarted` arm rather than a zero, and
 `WS /api/conversations/{id}/follow` is the same contract over one socket — a snapshot, then the
 changes, with the conversation wake as what says to read again. Matrix's
@@ -141,7 +141,7 @@ without it costs a follow-up, not a redesign.
   `pg_notify` names `conversation_id` and a conversation subscriber keys on it. Level-triggered,
   edge-scheduled — `LISTEN`/`NOTIFY` is broadcast, each replica wakes the followers it holds, and
   changes coalesce per window. The browser-facing invalidation
-  (<../x/conversation_live_updates.py>) names the conversation too — one more subscriber, with the
+  (<../conversation/live_updates.py>) names the conversation too — one more subscriber, with the
   console socket as its transport.
 - **The position belongs to whoever needs it, and its shape follows from what they hold.** A tab
   holds no copy that outlives it, so its position is a query parameter and the server keeps
@@ -500,7 +500,7 @@ mixed into these PRs.
    it beside the sealed notices, off one cursor, with a takeover sweep for lines nothing open
    accounts for. The pure fold and the Matrix effect are tested separately.
 
-3. **Completed — session supervision is behind the conversation.** `ConversationRuntime` owns
+3. **Completed — session supervision is behind the conversation.** `conversation.runtime.Runtime` owns
    global lease expiry, terminal-claim cleanup and exactly-once idle-session creation under the
    conversation row lock. Web and Matrix admit prompts by conversation; Matrix has no session
    supervisor, lifecycle latch or `MXSE` lock. The runtime identity seam from #4431 may later inform
@@ -735,7 +735,7 @@ other** rather than only against `devel`. Prune finished worktrees as you go.
 
 The console reads its session corpus through two surfaces that answer nearly the same questions off
 the same tables — REST for the browser, `haku_conversations` over MCP for agents. The two share one
-read model (`x/conversation_reads.py`, folded once in `x/item_entries.py`); what stays two is the
+read model (`conversation/reads.py`, folded once in `conversation/item_reads.py`); what stays two is the
 transport and its envelope.
 
 The boundary, stated as a rule:

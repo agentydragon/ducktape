@@ -62,13 +62,13 @@ from haku.console.database_schema import (
     StaticCredential,
     SubmittedPrompt,
 )
+from haku.console.notifications.conversation_wakes import ConversationWakes
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.x.conversation_wakes import ConversationWakes
-from haku.console.x.launch_identity import ChatLaunchAuthorizer
+from haku.console.session.launch_identity import ChatLaunchAuthorizer
+from haku.console.session.store import Store
+from haku.console.session.subscription import ConversationStream
 from haku.console.x.runtime import RuntimeKey, RuntimeRegistry
-from haku.console.x.session_store import SessionStore
-from haku.console.x.subscription import ConversationStream
 
 logger = logging.getLogger(__name__)
 
@@ -230,7 +230,7 @@ async def async_main(settings: AdapterSettings) -> None:
         # The registry parameterizes frame projection, which only a session's single writer runs;
         # the offer-input path this worker calls never dispatches a harness, so it stays empty and
         # the binary links no harness adapter.
-        session_store = SessionStore(sessions, RuntimeRegistry({}))
+        session_store = Store(sessions, RuntimeRegistry({}))
         sync_service = SyncService(
             settings.matrix,
             engine,

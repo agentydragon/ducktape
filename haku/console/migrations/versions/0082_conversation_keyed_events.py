@@ -22,7 +22,7 @@ construction, so only the authored arm may omit it.
 
 **The widened `kind` CHECK forbids nothing and is deliberately ahead of its writers.** A row of an
 unknown kind fails on *read*: `TextBackedStrEnumUnionColumn.process_result_value` raises `KeyError`,
-and `x/subscription.ConversationStream.read` — driven by the Matrix conversation subscriber under the `MXNT` election —
+and `session/subscription.ConversationStream.read` — driven by the Matrix conversation subscriber under the `MXNT` election —
 selects whole rows with no kind filter. `0065` could argue this was safe because the two readers
 then filtered in SQL; that reader did not exist yet and the argument has since expired. So this
 release teaches every replica to parse the new kinds and writes none of them, and the writers land

@@ -34,7 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from haku.console.channels.matrix.testing.console_deployment import Deployment
 from haku.console.channels.matrix.testing.operator_room import OperatorRoom, sign_in
 from haku.console.channels.matrix.testing.synapse_container import Synapse, run_synapse
-from haku.console.x.session_store import SessionStore
+from haku.console.session.store import Store
 
 PASSWORD = "not-a-secret"
 
@@ -63,7 +63,7 @@ async def deployment(
     operator_user_id: str,
     migrated_db_url: str,
     migrated_sessions: async_sessionmaker[AsyncSession],
-    session_store: SessionStore,
+    session_store: Store,
     tmp_path: Path,
     request: pytest.FixtureRequest,
 ) -> AsyncIterator[Deployment]:

@@ -74,11 +74,11 @@ from haku.console.channels.matrix.pacer import RoomPacers
 from haku.console.channels.matrix.revisions import Revision, RevisionLog
 from haku.console.channels.matrix.room_copy import RoomCopy
 from haku.console.channels.matrix.spans import Span, SpanKind
+from haku.console.conversation.log import writer_for
 from haku.console.database_schema import MatrixAccessToken, MatrixSyncWatermark
+from haku.console.notifications.conversation_wakes import ConversationWakes
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.x.conversation_log import writer_for
-from haku.console.x.conversation_wakes import ConversationWakes
-from haku.console.x.subscription import ConversationStream
+from haku.console.session.subscription import ConversationStream
 
 logger = logging.getLogger(__name__)
 
