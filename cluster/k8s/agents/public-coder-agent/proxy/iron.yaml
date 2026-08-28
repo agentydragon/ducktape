@@ -101,7 +101,7 @@ transforms:
             proxy_value: "proxy-clickhouse-public-coder-password"
             match_headers: ["Authorization"]
           rules:
-            - host: "clickhouse-analytics.analytics.svc.cluster.local"
+            - host: "clickhouse.clickhouse.svc.cluster.local"
         - source:
             type: env
             var: AIQUOTA_API_BEARER_TOKEN

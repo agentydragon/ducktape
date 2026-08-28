@@ -68,9 +68,9 @@ spec:
     # grant this egress to the app Pod itself.
     - toEndpoints:
         - matchLabels:
-            k8s:io.kubernetes.pod.namespace: analytics
+            k8s:io.kubernetes.pod.namespace: clickhouse
             k8s:app.kubernetes.io/name: clickhouse
-            k8s:app.kubernetes.io/instance: analytics
+            k8s:app.kubernetes.io/instance: clickhouse
       toPorts:
         - ports:
             - port: "8123"

@@ -88,7 +88,7 @@ container. Requests to other hosts, methods, or paths retain the useless placeho
 normalized and raw AIQuota history. The password value in the OpenClaw runner is a
 non-secret placeholder; Iron replaces it inside the HTTP Basic-auth header only
 for the private ClusterIP host
-`clickhouse-analytics.analytics.svc.cluster.local`. Do not print either value.
+`clickhouse.clickhouse.svc.cluster.local`. Do not print either value.
 
 Use the existing HTTP proxy and ClickHouse's HTTP endpoint normally, for
 example:
@@ -96,7 +96,7 @@ example:
 ```sh
 curl --fail-with-body --user "$CLICKHOUSE_PUBLIC_CODER_USER:$CLICKHOUSE_PUBLIC_CODER_PASSWORD" \
   --data-binary 'SELECT provider, max(observed_at), count() FROM aiquota.aiquota_windows GROUP BY provider FORMAT JSON' \
-  http://clickhouse-analytics.analytics.svc.cluster.local:8123/
+  http://clickhouse.clickhouse.svc.cluster.local:8123/
 ```
 
 The native account has `SELECT` only on `aiquota.aiquota_windows` and

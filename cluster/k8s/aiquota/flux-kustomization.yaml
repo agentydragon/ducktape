@@ -30,5 +30,5 @@ spec:
     # public-coder proxy. The source Secret remains SOPS-managed here.
     - name: external-secrets-operator
       namespace: ducktape-flux
-    - name: analytics-clickhouse-schema
+    - name: clickhouse-schema
       namespace: ducktape-flux

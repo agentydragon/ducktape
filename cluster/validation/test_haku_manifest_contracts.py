@@ -467,7 +467,7 @@ def test_public_coder_and_haku_standing_diagnostics_are_secret_free(k8s_dir: Pat
     public_coder_subject = ("Group", "haku:access-profile:public-coder", None)
 
     expected_roles = {
-        "analytics/cluster/agent-diagnostics-rbac.yaml": {
+        "clickhouse/cluster/agent-diagnostics-rbac.yaml": {
             "clickhouse.altinity.com": {"clickhouseinstallations"},
             "clickhouse-keeper.altinity.com": {"clickhousekeeperinstallations"},
             "helm.toolkit.fluxcd.io": {"helmreleases"},
@@ -482,7 +482,7 @@ def test_public_coder_and_haku_standing_diagnostics_are_secret_free(k8s_dir: Pat
         },
     }
     expected_kustomization_resources = {
-        "analytics/cluster/kustomization.yaml": "agent-diagnostics-rbac.yaml",
+        "clickhouse/cluster/kustomization.yaml": "agent-diagnostics-rbac.yaml",
         "haku/console/kustomization.yaml": "agent-diagnostics-rbac.yaml",
         "agents/public-coder-agent/k8s-reader/kustomization.yaml": "extended-diagnostics-reader.yaml",
     }
@@ -690,7 +690,7 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
         agent_dir / "k8s-reader" / "node-reader.yaml",
         agent_dir / "k8s-reader" / "cluster-metadata-reader.yaml",
         agent_dir / "k8s-reader" / "extended-diagnostics-reader.yaml",
-        k8s_dir / "analytics" / "cluster" / "agent-diagnostics-rbac.yaml",
+        k8s_dir / "clickhouse" / "cluster" / "agent-diagnostics-rbac.yaml",
         k8s_dir / "ducktape-flux" / "ducktape-flux-reader.yaml",
         console_dir / "agent-diagnostics-rbac.yaml",
     )
@@ -705,7 +705,7 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
         ("public-coder-agent", "Role", "agent-public-coder-extended-diagnostics-reader"),
         (None, "ClusterRole", "public-coder-agent-node-reader"),
         (None, "ClusterRole", "public-coder-agent-cluster-metadata-reader"),
-        ("analytics", "Role", "agent-analytics-diagnostics-reader"),
+        ("clickhouse", "Role", "agent-clickhouse-diagnostics-reader"),
         ("ducktape-flux", "Role", "ducktape-flux-reader"),
         ("haku-console", "Role", "agent-haku-console-metadata-reader"),
     }

@@ -28,6 +28,8 @@ spec:
       namespace: ducktape-flux
     - name: langfuse-db
       namespace: ducktape-flux
+    - name: clickhouse
+      namespace: ducktape-flux
     - name: seaweedfs-langfuse-bucket
       namespace: ducktape-flux
     - name: gateway

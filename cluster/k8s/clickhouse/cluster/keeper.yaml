@@ -1,8 +1,8 @@
 apiVersion: clickhouse-keeper.altinity.com/v1
 kind: ClickHouseKeeperInstallation
 metadata:
-  name: analytics-keeper
-  namespace: analytics
+  name: clickhouse-keeper
+  namespace: clickhouse
 spec:
   configuration:
     clusters:
@@ -34,7 +34,7 @@ spec:
         metadata:
           labels:
             app.kubernetes.io/name: clickhouse-keeper
-            app.kubernetes.io/instance: analytics
+            app.kubernetes.io/instance: clickhouse-keeper
         spec:
           nodeSelector:
             topology.kubernetes.io/zone: hil-ovh
@@ -52,7 +52,7 @@ spec:
                 - labelSelector:
                     matchLabels:
                       app.kubernetes.io/name: clickhouse-keeper
-                      app.kubernetes.io/instance: analytics
+                      app.kubernetes.io/instance: clickhouse-keeper
                   topologyKey: kubernetes.io/hostname
           securityContext:
             fsGroup: 101
@@ -84,7 +84,7 @@ spec:
         spec:
           accessModes:
             - ReadWriteOnce
-          storageClassName: local-path-ovh-hdd
+          storageClassName: local-path-ovh-hdd-retain
           resources:
             requests:
               storage: 2Gi
@@ -93,7 +93,7 @@ spec:
         spec:
           accessModes:
             - ReadWriteOnce
-          storageClassName: local-path-ovh-hdd
+          storageClassName: local-path-ovh-hdd-retain
           resources:
             requests:
               storage: 2Gi

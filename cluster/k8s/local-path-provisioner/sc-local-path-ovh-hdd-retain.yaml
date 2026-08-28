@@ -1,0 +1,18 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path-ovh-hdd-retain
+provisioner: cluster.local/local-path-provisioner
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+# Dedicated node-local storage for self-replicating data stores. The same
+# topology as local-path-ovh-hdd keeps claims on OVH HDD nodes, while Retain
+# protects the data directory from accidental PVC deletion.
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: topology.kubernetes.io/zone
+        values:
+          - hil-ovh
+      - key: storage.allegedly.works/tier
+        values:
+          - hdd

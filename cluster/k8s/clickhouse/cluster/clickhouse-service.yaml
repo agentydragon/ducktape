@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse
+  namespace: clickhouse
+  annotations:
+    description: Stable client endpoint for the shared ClickHouse installation.
+spec:
+  selector:
+    clickhouse.altinity.com/app: chop
+    clickhouse.altinity.com/chi: clickhouse
+    clickhouse.altinity.com/namespace: clickhouse
+    clickhouse.altinity.com/ready: "yes"
+  ports:
+    - name: http
+      port: 8123
+      targetPort: 8123
+      protocol: TCP
+    - name: native
+      port: 9000
+      targetPort: 9000
+      protocol: TCP

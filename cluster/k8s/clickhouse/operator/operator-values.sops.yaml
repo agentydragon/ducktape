@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Secret
 metadata:
     name: clickhouse-operator-values
-    namespace: analytics
+    namespace: clickhouse
 type: Opaque
 stringData:
     values.yaml: ENC[AES256_GCM,data:SCmf0amZC7tRGcJwFLvgYHnSc8EgZvGZr4W7t/akxtboJjVJRo4JrrSvcYfxvc+lIdNms3mrmJ3hVcdaSLqdQejJ7Y5wtL7cr3eaLWJkK0dgEJvUHgERAr96FbvRvC+9sWU7pKhpL0FNAkM54YVYJcuII2bxsGs8bmI0nLxrqU7VLkfG,iv:hk0dPdHY7BF117ra33poJ79kXbOgSMkTqn1Y1aGWmKQ=,tag:JjlW3YgpnNOtagI3Nde3og==,type:str]

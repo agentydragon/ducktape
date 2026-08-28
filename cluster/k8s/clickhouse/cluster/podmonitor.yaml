@@ -1,13 +1,13 @@
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: clickhouse-analytics
-  namespace: analytics
+  name: clickhouse
+  namespace: clickhouse
 spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: clickhouse
-      app.kubernetes.io/instance: analytics
+      app.kubernetes.io/instance: clickhouse
   podMetricsEndpoints:
     - port: metrics
       path: /metrics

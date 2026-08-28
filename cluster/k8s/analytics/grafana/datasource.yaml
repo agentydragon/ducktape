@@ -1,7 +1,7 @@
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDatasource
 metadata:
-  name: clickhouse-analytics
+  name: clickhouse
   namespace: monitoring
 spec:
   instanceSelector:
@@ -15,13 +15,13 @@ spec:
           key: password
   datasource:
     name: AIQuota Analytics
-    uid: clickhouse-analytics
+    uid: clickhouse
     type: grafana-clickhouse-datasource
     access: proxy
     isDefault: false
     editable: false
     jsonData:
-      host: clickhouse-analytics.analytics.svc.cluster.local
+      host: clickhouse.clickhouse.svc.cluster.local
       port: 8123
       protocol: http
       username: grafana

@@ -165,8 +165,8 @@ def test_loki_proxy_static_allowlist_covers_agent_readable_log_namespaces(
     assert not missing, f"agent-readable log namespaces missing from Loki proxy allowlist: {missing}"
 
 
-def test_analytics_clickhouse_distributed_ddl_contract(k8s_dir: Path) -> None:
-    """Analytics uses one plaintext native port consistently for ON CLUSTER DDL.
+def test_clickhouse_distributed_ddl_contract(k8s_dir: Path) -> None:
+    """Central ClickHouse uses one plaintext native port consistently for ON CLUSTER DDL.
 
     The Altinity operator generates 9440 secure remote-server entries when
     ``secure: true`` is set, but ClickHouse has no TLS listener unless one is
@@ -174,10 +174,10 @@ def test_analytics_clickhouse_distributed_ddl_contract(k8s_dir: Path) -> None:
     as local by DDLWorker. Keep the manifest, schema Job, and Flux health check
     pinned to the working port-9000 configuration.
     """
-    analytics_dir = k8s_dir / "analytics"
-    installation = yaml.safe_load((analytics_dir / "cluster/clickhouse.yaml").read_text())
+    clickhouse_dir = k8s_dir / "clickhouse"
+    installation = yaml.safe_load((clickhouse_dir / "cluster/clickhouse.yaml").read_text())
     configuration = installation["spec"]["configuration"]
-    cluster_spec = next(item for item in configuration["clusters"] if item["name"] == "analytics")
+    cluster_spec = next(item for item in configuration["clusters"] if item["name"] == "default")
     assert "secure" not in cluster_spec
     assert installation["spec"]["defaults"]["replicasUseFQDN"] == "yes"
 
@@ -188,33 +188,33 @@ def test_analytics_clickhouse_distributed_ddl_contract(k8s_dir: Path) -> None:
         "ON aiquota.raw_http_observations",
     ]
 
-    cluster_kustomization = yaml.safe_load((analytics_dir / "cluster/kustomization.yaml").read_text())
+    cluster_kustomization = yaml.safe_load((clickhouse_dir / "cluster/kustomization.yaml").read_text())
     generated_files = cluster_kustomization["configMapGenerator"][0]["files"]
     assert generated_files == ["system_logs.xml"]
 
-    schema_sql = (analytics_dir / "schema/schema.sql").read_text()
+    schema_sql = (clickhouse_dir / "schema/schema.sql").read_text()
     for statement in (
-        "CREATE DATABASE IF NOT EXISTS aiquota ON CLUSTER analytics;",
-        "CREATE TABLE IF NOT EXISTS aiquota.raw_http_observations ON CLUSTER analytics",
-        "CREATE TABLE IF NOT EXISTS aiquota.aiquota_windows ON CLUSTER analytics",
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS aiquota.aiquota_windows_mv ON CLUSTER analytics",
-        "CREATE TABLE IF NOT EXISTS aiquota.token_activity_daily ON CLUSTER analytics",
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS aiquota.token_activity_daily_mv ON CLUSTER analytics",
-        "CREATE TABLE IF NOT EXISTS aiquota.reset_credits ON CLUSTER analytics",
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS aiquota.reset_credits_mv ON CLUSTER analytics",
+        "CREATE DATABASE IF NOT EXISTS aiquota ON CLUSTER default;",
+        "CREATE TABLE IF NOT EXISTS aiquota.raw_http_observations ON CLUSTER default",
+        "CREATE TABLE IF NOT EXISTS aiquota.aiquota_windows ON CLUSTER default",
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS aiquota.aiquota_windows_mv ON CLUSTER default",
+        "CREATE TABLE IF NOT EXISTS aiquota.token_activity_daily ON CLUSTER default",
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS aiquota.token_activity_daily_mv ON CLUSTER default",
+        "CREATE TABLE IF NOT EXISTS aiquota.reset_credits ON CLUSTER default",
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS aiquota.reset_credits_mv ON CLUSTER default",
     ):
         assert statement in schema_sql
 
-    schema_job = yaml.safe_load((analytics_dir / "schema/schema-job.yaml").read_text())
-    assert schema_job["metadata"]["name"] == "clickhouse-aiquota-schema-v6"
+    schema_job = yaml.safe_load((clickhouse_dir / "schema/schema-job.yaml").read_text())
+    assert schema_job["metadata"]["name"] == "clickhouse-aiquota-schema-v7"
     schema_args = schema_job["spec"]["template"]["spec"]["containers"][0]["args"]
-    assert "--host=clickhouse-analytics.analytics.svc.cluster.local" in schema_args
+    assert "--host=clickhouse.clickhouse.svc.cluster.local" in schema_args
     assert "--port=9000" in schema_args
-    assert not any(item.startswith("chi-analytics-analytics-") for item in schema_args)
+    assert not any(item.startswith("chi-clickhouse-clickhouse-") for item in schema_args)
 
-    schema_flux = yaml.safe_load((analytics_dir / "schema/flux-kustomization.yaml").read_text())
+    schema_flux = yaml.safe_load((clickhouse_dir / "schema/flux-kustomization.yaml").read_text())
     assert schema_flux["spec"]["healthChecks"] == [
-        {"apiVersion": "batch/v1", "kind": "Job", "name": "clickhouse-aiquota-schema-v6", "namespace": "analytics"}
+        {"apiVersion": "batch/v1", "kind": "Job", "name": "clickhouse-aiquota-schema-v7", "namespace": "clickhouse"}
     ]
 
 
@@ -225,10 +225,10 @@ def test_public_coder_clickhouse_reader_contract(k8s_dir: Path) -> None:
     its Iron proxy. Both ClickHouse and Cilium constrain the resulting query
     surface; 8123 remains an internal ClusterIP port, not a Gateway route.
     """
-    analytics_dir = k8s_dir / "analytics" / "cluster"
+    clickhouse_dir = k8s_dir / "clickhouse" / "cluster"
     agent_dir = k8s_dir / "agents" / "public-coder-agent"
 
-    installation = yaml.safe_load((analytics_dir / "clickhouse.yaml").read_text())
+    installation = yaml.safe_load((clickhouse_dir / "clickhouse.yaml").read_text())
     users = installation["spec"]["configuration"]["users"]
     assert users["public_coder_analytics/password"]["valueFrom"]["secretKeyRef"] == {
         "name": "clickhouse-public-coder-credentials",
@@ -241,9 +241,9 @@ def test_public_coder_clickhouse_reader_contract(k8s_dir: Path) -> None:
         "GRANT SELECT ON aiquota.raw_http_observations",
     ]
 
-    source_secret = yaml.safe_load((analytics_dir / "public-coder-credentials.sops.yaml").read_text())
+    source_secret = yaml.safe_load((clickhouse_dir / "public-coder-credentials.sops.yaml").read_text())
     annotations = source_secret["metadata"]["annotations"]
-    assert source_secret["metadata"]["namespace"] == "analytics"
+    assert source_secret["metadata"]["namespace"] == "clickhouse"
     assert annotations["reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"] == "public-coder-agent"
     assert annotations["reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"] == "public-coder-agent"
 
@@ -273,9 +273,9 @@ def test_public_coder_clickhouse_reader_contract(k8s_dir: Path) -> None:
         "proxy_value": "proxy-clickhouse-public-coder-password",
         "match_headers": ["Authorization"],
     }
-    assert clickhouse_secret["rules"] == [{"host": "clickhouse-analytics.analytics.svc.cluster.local"}]
+    assert clickhouse_secret["rules"] == [{"host": "clickhouse.clickhouse.svc.cluster.local"}]
 
-    policies = list(yaml.safe_load_all((analytics_dir / "networkpolicy.yaml").read_text()))
+    policies = list(yaml.safe_load_all((clickhouse_dir / "networkpolicy.yaml").read_text()))
     clickhouse_ingress = next(policy for policy in policies if policy["metadata"]["name"] == "clickhouse-ingress")
     clickhouse_rule = next(
         rule
@@ -295,9 +295,9 @@ def test_public_coder_clickhouse_reader_contract(k8s_dir: Path) -> None:
         "toEndpoints": [
             {
                 "matchLabels": {
-                    "k8s:io.kubernetes.pod.namespace": "analytics",
+                    "k8s:io.kubernetes.pod.namespace": "clickhouse",
                     "k8s:app.kubernetes.io/name": "clickhouse",
-                    "k8s:app.kubernetes.io/instance": "analytics",
+                    "k8s:app.kubernetes.io/instance": "clickhouse",
                 }
             }
         ],

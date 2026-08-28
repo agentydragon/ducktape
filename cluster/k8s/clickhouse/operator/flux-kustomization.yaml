@@ -6,7 +6,7 @@ metadata:
 spec:
   retryInterval: 1m
   interval: 10m
-  path: ./cluster/k8s/analytics/operator
+  path: ./cluster/k8s/clickhouse/operator
   prune: true
   decryption:
     provider: sops
@@ -22,9 +22,9 @@ spec:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
       name: clickhouse-operator
-      namespace: analytics
+      namespace: clickhouse
   dependsOn:
-    - name: analytics-namespace
+    - name: clickhouse-namespace
       namespace: ducktape-flux
     - name: monitoring-stack
       namespace: ducktape-flux

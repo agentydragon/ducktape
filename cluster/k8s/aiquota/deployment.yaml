@@ -48,7 +48,7 @@ spec:
                   name: cli-proxy-api-management
                   key: management-password
             - name: AIQUOTA_CLICKHOUSE_URL
-              value: http://clickhouse-analytics.analytics.svc.cluster.local:8123
+              value: http://clickhouse.clickhouse.svc.cluster.local:8123
             - name: AIQUOTA_CLICKHOUSE_DATABASE
               value: aiquota
             - name: AIQUOTA_CLICKHOUSE_USERNAME
