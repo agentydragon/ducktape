@@ -1,8 +1,7 @@
 """Appending to one conversation's log, materialising the items it touches, and the row codec.
 
-The only writer of `conversation_event`, `conversation_item` and `conversation_turn`. Everything
-else that used to write a transcript row — the turn loop's own message bookkeeping, the paths that
-minted prose no log row stood behind — goes through here or does not happen.
+The only writer of `conversation_event`, `conversation_item` and `conversation_turn`: prose that
+does not go through here stands behind no log row, so it is not said.
 
 **The one place the vocabulary meets the table.** `item_row` and `authored` turn a
 <../conversation/conversation_event.py> body into a `ConversationEventRow`; `body_of` is the read
@@ -274,9 +273,8 @@ class LogWriter:
     async def _item(self, item_id: UUID) -> ConversationItem:
         """The row an event names.
 
-        Segments append to `item_text` here rather than being re-joined on read, and
-        `reprojection` asserts the two agree — the check the old shape could not make, because its
-        transcript row and its log were written from different places.
+        Segments append to `item_text` here rather than being re-joined on read; because the text
+        and the segments it is built from are written in this one place, they cannot disagree.
         """
         item = await self.db.get(ConversationItem, item_id)
         if item is None:

@@ -268,8 +268,8 @@ class BridgeAuthentication(StrEnum):
 
     **"Not yours" and "not yet" are different.** The runner redials about a second after its socket
     drops, so it routinely arrives at a new replica while the dying one's lease is still valid, and
-    a refusal it cannot retry costs the sandbox — hence `session_runtime.handle_runner` answering
-    `HELD` with a 5xx handshake response.
+    a refusal it cannot retry costs the sandbox — hence `session_runtime.handle_journal_runner`
+    answering `HELD` with a 5xx handshake response.
     """
 
     ACCEPTED = "accepted"
@@ -1098,8 +1098,8 @@ class Store:
         The graceful-shutdown counterpart to `release_lease`: called once from the lifespan on the
         way down, so a rolling replica's sessions become adoptable at once rather than each waiting
         out `ADOPTION_GRACE`. One statement keyed on this replica, so it runs safely beside the
-        per-connection releases and does not depend on every cancelled `handle_runner` completing
-        its own commit.
+        per-connection releases and does not depend on every cancelled `handle_journal_runner`
+        completing its own commit.
         """
         async with self._sessions.begin() as db:
             result = cast(
@@ -1456,8 +1456,8 @@ class Store:
     async def turn_state(self, turn_id: UUID) -> TurnState:
         """How far *turn_id* has got, read off its row.
 
-        The one place `_run_turn` learns what has already happened, so a turn this process opened a
-        moment ago and one a departed replica left half answered are the same question.
+        Where a turn's progress is read off its row, so a turn this process opened a moment ago and
+        one a departed replica left half answered are the same question.
         """
         async with self._sessions() as db:
             if await db.get(ConversationTurn, turn_id) is None:
@@ -1770,8 +1770,7 @@ class Store:
         `opened_seq`, plus one grouped lookup of each row's `conversation_event` frame span for its
         provenance. A conversation's length buys its reader nothing to refold, so page N of a long
         thread costs what page one does. The price is the fold's price still: a projection fix
-        does not reach a conversation that already happened, and <reprojection.py> is what says
-        where re-reading the frames would now differ.
+        does not reach a conversation that already happened.
 
         Faithfully every row, whatever its lifecycle: an item still open is served with its text
         as of the read, and a later read serves the same position settled — `opened_seq` never

@@ -184,7 +184,7 @@ async def _serve() -> None:
             system_prompt=SystemPromptTemplate.from_path(Path(_environment("HAKU_E2E_SYSTEM_PROMPT_TEMPLATE"))),
         )
     )
-    store = Store(sessions, runtimes, adoption_grace=_seconds("HAKU_E2E_ADOPTION_GRACE_SECONDS"))
+    store = Store(sessions, adoption_grace=_seconds("HAKU_E2E_ADOPTION_GRACE_SECONDS"))
     conversations = ConversationStore(sessions)
     ledger = IngressLedger(sessions)
     identities = PostgresOperatorIdentityStore(

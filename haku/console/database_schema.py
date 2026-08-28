@@ -1380,7 +1380,8 @@ class ConversationItem(Base):
     opened_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
     closed_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     # The concatenation of this item's segments in `event_seq` order. A materialisation of the log
-    # and never a second authority for it: `conversation/reprojection.py` asserts the two agree.
+    # and never a second authority for it: it is appended only where the log is written
+    # (`conversation/log.py`), so the two cannot disagree.
     item_text: Mapped[str] = mapped_column("text", Text, nullable=False)
     # What the backend called this item. Provenance, never identity — Claude Code omits it on many
     # rows and on every delta, which is why the console mints its own.

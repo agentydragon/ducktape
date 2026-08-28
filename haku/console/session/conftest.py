@@ -33,9 +33,8 @@ from haku.console.session.runtime import SessionService
 from haku.console.session.sandbox_allocation import SandboxAllocator
 from haku.console.session.store import Store
 from haku.console.session.system_prompt import SystemPromptTemplate
-from haku.console.x.claude_code.client import cli_over_websocket
-from haku.console.x.runtime import RuntimeClientFactory, RuntimeRegistry
-from haku.console.x.runtime_catalog import execution_registry, projection_registry, runtime_registration
+from haku.console.x.runtime import RuntimeRegistry
+from haku.console.x.runtime_catalog import execution_registry, runtime_registration
 from haku.console.x.testing.recording_claims import RecordingClaims
 
 OPERATOR_SUBJECT = "authentik-user-id"
@@ -65,14 +64,10 @@ def configured_runtimes(
     *,
     config: RuntimeRegistrationConfig | None = None,
     system_prompt: SystemPromptTemplate | None = None,
-    client_factory: RuntimeClientFactory = cli_over_websocket,
 ) -> RuntimeRegistry:
     return execution_registry(
         runtime_registration(
-            config or runtime_config(),
-            claims,
-            system_prompt=system_prompt or SystemPromptTemplate(""),
-            client_factory=client_factory,
+            config or runtime_config(), claims, system_prompt=system_prompt or SystemPromptTemplate("")
         )
     )
 
@@ -115,7 +110,7 @@ class _ProvisioningTestStore(Store):
 
 @pytest.fixture
 def session_store(migrated_sessions: async_sessionmaker[AsyncSession]) -> _ProvisioningTestStore:
-    return _ProvisioningTestStore(migrated_sessions, projection_registry())
+    return _ProvisioningTestStore(migrated_sessions)
 
 
 @pytest.fixture

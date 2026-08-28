@@ -129,22 +129,6 @@ py_library(
 )
 
 py_library(
-    name = "reprojection",
-    srcs = ["reprojection.py"],
-    deps = [
-        ":conversation_event",
-        "//haku/console:database_schema",
-        "//haku/console/harnesses:kind",
-        "//haku/console/session:session_frames",
-        "//haku/console/x:conversation_events",
-        "//haku/console/x:runtime",
-        "//haku/runtime/x/bridge:protocol",
-        "//util:enum_vocab",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
     name = "runtime",
     srcs = ["runtime.py"],
     deps = [
@@ -243,33 +227,6 @@ py_test(
         "//haku/console/session:store",
         "@pypi//fastapi",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_reprojection",
-    size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_reprojection.py"],
-    deps = [
-        ":conftest",
-        ":conversation_event",
-        ":prompt_origin",
-        ":reprojection",
-        "//:conftest",
-        "//haku/console:chat_models",
-        "//haku/console:conftest",
-        "//haku/console:database_schema",
-        "//haku/console/session:session_frames",
-        "//haku/console/session:store",
-        "//haku/console/x:runtime",
-        "//haku/console/x:runtime_catalog",
-        "//haku/console/x/claude_code:runtime",
-        "//haku/console/x/claude_code/testing:wire",
-        "//haku/runtime/x/bridge:protocol",
-        "@pypi//more_itertools",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

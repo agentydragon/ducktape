@@ -14,9 +14,10 @@ box with Bazel.
 Logging is verbatim because a curated subset leaves a frame missing from the output
 indistinguishable from a frame missing from the wire.
 
-This driver deliberately does **not** reuse `ClaudeCli`, which refuses every inbound control
-request — half of what these probes measure is what the CLI asks a client to do. It does implement
-the same `FrameChannel` shape, so the channel a probe drives is the one production drives.
+This driver deliberately implements its own channel rather than a production client that refuses
+every inbound control request — half of what these probes measure is what the CLI asks a client to
+do. It does implement the same `FrameChannel` shape, so the channel a probe drives is the one
+production drives.
 """
 
 from __future__ import annotations
@@ -45,8 +46,7 @@ InboundHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any] | None]]
 class SubprocessChannel:
     """The CLI's own frames off a local process, for the probes in this directory.
 
-    Shaped like the Console Claude client's `FrameChannel` (`haku.console.x.claude_code.client`)
-    but not one: that
+    Shaped like the runner bridge's `FrameChannel` (`haku.runtime.x.bridge`) but not one: that
     port yields the bridge envelope, and there is no runner here to number these frames. Importing
     the envelope to say so would point this package at one built on top of it.
     """

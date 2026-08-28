@@ -1,13 +1,8 @@
-"""What a conversation is, once a provider's frames have been read — the console-side fold.
+"""The neutral in-memory event vocabulary a conversation is read into, before the durable log.
 
-The in-memory vocabulary the v3 native projectors produce. Nothing in it is Claude-shaped: no
-`assistant`, no content block, no `msg_…`, no `tool_use_result`. The Claude adapter is
-<claude_code/projection.py>; `stored` below is the bridge into the durable vocabulary
+Nothing in it is Claude-shaped: no `assistant`, no content block, no `msg_…`, no
+`tool_use_result`. `stored` below is the bridge into the durable vocabulary
 (`conversation/conversation_event.py`), which is what every reader consumes.
-
-CLEANUP(added 2026-08-28): the v3 native-projection path — this fold, the console-side
-`claude_code`/`codex_app_server` projections, and `session_runtime.handle_runner` — deletes at
-#4667 stage 5, once the journal generation is the only runner path left in the tree.
 
 **Everything is an item, and an item is a type and three events**: started, then any number of
 segments, then completed. Both stream-native harness protocols reached that decomposition
@@ -18,8 +13,8 @@ not our invention (<../docs/conversation_schema.md> § 1).
 **Prose exists only as segments, and a completion carries none.** A backend that streams has its
 adapter cut the stream into `ItemSegment`s; one that produces a final string emits exactly one
 segment and then completes. So an item's text is the concatenation of its segments by construction,
-a consumer replaying from a position never reprints prose it already printed, and the fold carries
-no half-built string from one batch to the next.
+a consumer replaying from a position never reprints prose it already printed, and no half-built
+string is carried from one batch to the next.
 
 **Tool calls are conversation, not debug**, and a lifecycle rather than records stapled to a
 finished message — the room renders a call while it is still running.
@@ -31,8 +26,7 @@ them while reporting green.
 
 **Approvals are not modelled here.** They travel over MCP to the approval queue.
 
-The event shapes below are the projection's current neutral vocabulary; backend-specific wire
-measurements belong in protocol fixtures, not in this record model.
+Backend-specific wire measurements belong in protocol fixtures, not in this record model.
 """
 
 from __future__ import annotations
@@ -58,7 +52,7 @@ class Authored:
     """The console said this itself, so there is no frame to appeal to.
 
     Distinct from a frame-derived event whose range is merely unknown: an ownership change crossed
-    no wire and never will, so re-projecting frames can only preserve it.
+    no wire and never will.
     """
 
 

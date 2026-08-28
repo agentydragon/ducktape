@@ -1,12 +1,12 @@
 """The CLI's frames, as a test writes them.
 
-One builder per shape the parsers in <../frames.py> and <../projection.py> read, so a test says
-what it is building — an assistant frame that made one tool call, a tool result that failed — and
-the JSON stays here beside the code that reads it.
+One builder per shape the readers in <../frames.py> pick a value out of, so a test says what it is
+building — an assistant frame that made one tool call, a tool result that failed — and the JSON
+stays here beside the code that reads it.
 
 Fidelity is to <../testdata/diverse_session.jsonl> and to `protocol.md`: envelope keys
 every real frame carries are emitted
-whether or not anything reads them, because what the projection ignores is as much a fact about it
+whether or not anything reads them, because what a reader ignores is as much a fact about it
 as what it reads. What varies between real frames is a parameter; what is constant on the wire is
 not.
 
@@ -24,8 +24,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from haku.console.x.claude_code.projection import RecordedFrame
-
 # One session's identity across a whole fixture, since no builder here spans two.
 SESSION_ID = "a2d5"
 
@@ -40,15 +38,6 @@ _ASSISTANT_USAGE: dict[str, Any] = {
     "output_tokens": 91,
     "service_tier": "standard",
 }
-
-
-def recorded(frame_seq: int, payload: dict[str, Any]) -> RecordedFrame:
-    """A frame as the log numbered it, stamped with the uuid the wire would have carried.
-
-    The number is the fixture's own, so a sequence quoted by a failure names a line of the test.
-    A builder that set a uuid itself keeps it — `result` is identified by one.
-    """
-    return RecordedFrame(frame_seq=frame_seq, payload={"uuid": f"uuid-{frame_seq}", **payload})
 
 
 def text_block(text: str) -> dict[str, Any]:

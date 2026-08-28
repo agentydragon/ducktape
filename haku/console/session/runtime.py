@@ -503,11 +503,9 @@ class SessionService:
         abort is relayed as an `Interrupt`; native frames are recorded to `session_frames` as the
         durable record beside the journal, both directions, keyed by the runner's frame seq.
 
-        The scaffolding — runtime resolution, the retryable-denial handshake, the lease, claim
-        cleanup — is shared with the v3 `handle_runner` (deletion-scheduled at stage 5). What differs
-        is that the serve loop is a journal pump, not a turn loop. Generation peering needs no gate
-        here: a v3 peer fails the protocol-version intersection, and a v4 peer of another generation
-        fails `JournalConsumer.resume`'s check of its journal hello.
+        The serve loop is a journal pump, not a turn loop. Generation peering needs no gate here: a
+        v3 peer fails the protocol-version intersection, and a v4 peer of another generation fails
+        `JournalConsumer.resume`'s check of its journal hello.
         """
         try:
             configured = await self._configured(session_id)
@@ -726,8 +724,8 @@ class SessionService:
 
     async def aclose(self) -> None:
         # Called from the lifespan on the way down. Handing every held lease back in one statement
-        # is the guarantee the per-connection releases cannot be: a cancelled `handle_runner` may
-        # not finish its own commit. Reachable only because `uvicorn.run` bounds
+        # is the guarantee the per-connection releases cannot be: a cancelled `handle_journal_runner`
+        # may not finish its own commit. Reachable only because `uvicorn.run` bounds
         # `timeout_graceful_shutdown` (see app.main).
         released = await self._store.release_held_leases()
         if released:

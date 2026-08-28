@@ -10,9 +10,6 @@ import pytest_bazel
 
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.system_prompt import SystemPromptTemplate
-from haku.console.x.claude_code import projection
-from haku.console.x.claude_code.testing.fold import whole_capture
-from haku.console.x.claude_code.testing.wire import assistant, recorded, text_block
 from haku.console.x.runtime import (
     AgentRuntimeResources,
     RuntimeKey,
@@ -21,7 +18,6 @@ from haku.console.x.runtime import (
     UnsupportedRuntimeError,
 )
 from haku.console.x.runtime_catalog import projection_registry
-from haku.runtime.x.bridge.protocol import HarnessFrame
 
 
 def test_projection_registry_exposes_each_linked_provider_adapter() -> None:
@@ -73,35 +69,6 @@ def test_execution_resources_are_selected_by_agent_runtime_and_pinned_profile() 
     )
     with pytest.raises(RuntimeNotConfiguredError, match="access profile"):
         registry.configured(first_agent, HarnessKind.CLAUDE_CODE, access_profile_id="coder")
-
-
-def test_runtime_adapter_keeps_claude_projection_behavior_unchanged() -> None:
-    payload = assistant(text_block("hello"), message_id="msg_1")
-    adapter = projection_registry()[HarnessKind.CLAUDE_CODE]
-
-    through_adapter = adapter.turn_handler().apply(frame_seq=7, frame=HarnessFrame(frame=payload)).events
-    through_native = (
-        projection.ProjectionState()
-        .advance([recorded(7, payload)], delta_source=projection.DeltaSource.STREAM_EVENTS)[1]
-        .events
-    )
-
-    assert through_adapter == through_native
-
-
-def test_claude_adapter_keeps_opaque_native_frames_inspectable() -> None:
-    adapter = projection_registry()[HarnessKind.CLAUDE_CODE]
-    payload = {"jsonrpc": "2.0", "method": "future/event", "params": {"opaque": True}}
-    undiscriminated = {"jsonrpc": "2.0", "id": 1, "result": {}}
-
-    effects = adapter.turn_handler().apply(frame_seq=8, frame=HarnessFrame(frame=payload))
-    # The count is the reducer's rather than the handler's: `FrameEffects` carries a frame's
-    # neutral effects, and a frame the adapter has no case for has none.
-    counted = whole_capture([recorded(8, payload), recorded(9, undiscriminated)])
-
-    assert effects.events == ()
-    assert counted.events == ()
-    assert counted.unprojected == {"future/event": 1, "<undiscriminated>": 1}
 
 
 if __name__ == "__main__":

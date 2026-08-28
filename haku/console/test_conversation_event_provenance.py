@@ -1,9 +1,9 @@
 """`ck_conversation_event_provenance_frames`: what a row on each arm of the union must carry.
 
-Stated in Postgres rather than in the writer because the reader that matters is not the writer:
-`reprojection` selects the `frame_range` arm and re-folds the frames it names, so a row on that arm
-missing a range, a turn, a session or an item is one nothing can check — and a range with one end is
-neither a range nor the absence of one.
+Stated in Postgres rather than in the writer because the reader that matters is not the writer: a
+row on the `frame_range` arm names the frames its content was read off, and tracing them back needs
+the range, the turn, the session and the item — so a row on that arm missing any of those is one
+nothing can check, and a range with one end is neither a range nor the absence of one.
 """
 
 from __future__ import annotations

@@ -8,6 +8,8 @@ from uuid import uuid4
 
 import pytest_bazel
 
+from haku.console.chat_models import ToolOutcome
+from haku.console.conversation.conversation_event import FrameRange
 from haku.console.conversation.prompt_origin import SPA_ORIGIN
 from haku.console.conversation.reads import ToolCallEntry
 from haku.console.database_schema import SessionFrame
@@ -16,9 +18,7 @@ from haku.console.session import conversation_views
 from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
 from haku.console.session.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
 from haku.console.session.store import BridgeAuthentication
-from haku.console.x.claude_code import projection
-from haku.console.x.claude_code.testing.fold import whole_capture
-from haku.console.x.claude_code.testing.wire import assistant, tool_result, tool_use_block
+from haku.console.x.conversation_events import CallRef, ItemSegment, ToolCallCompleted, ToolCallStarted
 
 
 async def _detail(session_store, operator_id, session_id):
@@ -87,18 +87,19 @@ async def test_a_calls_output_reads_back_as_the_items_text(session_store, operat
     assert started is not None
 
     for frame_seq, (call_id, output) in enumerate([("toolu_text", "a.py\nb.py"), ("toolu_empty", "")], start=7):
+        where = FrameRange(frame_seq, frame_seq)
+        segments = [ItemSegment(item=CallRef(call_id=call_id), text=output, provenance=where)] if output else []
         await session_store.apply_frame(
             view.session_id,
             started.turn_id,
             frame_seq,
-            whole_capture(
-                [
-                    projection.RecordedFrame(
-                        frame_seq=frame_seq, payload=assistant(tool_use_block(call_id, "Bash", {}))
-                    ),
-                    projection.RecordedFrame(frame_seq=frame_seq, payload=tool_result(call_id, output)),
-                ]
-            ).events,
+            [
+                ToolCallStarted(call_id=call_id, tool_name="Bash", arguments={}, provenance=where),
+                *segments,
+                ToolCallCompleted(
+                    item=CallRef(call_id=call_id), structured=None, outcome=ToolOutcome.SUCCEEDED, provenance=where
+                ),
+            ],
         )
 
     detail = await _detail(session_store, operator_id, view.session_id)

@@ -68,7 +68,7 @@ from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.session.launch_identity import ChatLaunchAuthorizer
 from haku.console.session.store import Store
 from haku.console.session.subscription import ConversationStream
-from haku.console.x.runtime import RuntimeKey, RuntimeRegistry
+from haku.console.x.runtime import RuntimeKey
 
 logger = logging.getLogger(__name__)
 
@@ -227,10 +227,7 @@ async def async_main(settings: AdapterSettings) -> None:
             OperatorIdentityTrust(trust_domain=settings.operator_identity_trust_domain, trusted_issuers=frozenset()),
         )
         ledger = IngressLedger(sessions)
-        # The registry parameterizes frame projection, which only a session's single writer runs;
-        # the offer-input path this worker calls never dispatches a harness, so it stays empty and
-        # the binary links no harness adapter.
-        session_store = Store(sessions, RuntimeRegistry({}))
+        session_store = Store(sessions)
         sync_service = SyncService(
             settings.matrix,
             engine,

@@ -113,7 +113,7 @@ async def test_demanded_replacement_reauthorizes_pinned_identity_in_creation_tra
         return await production(db, operator_id, agent_id, runtime_kind, expected_profile_id=expected_profile_id)
 
     runtimes = configured_runtimes(recording_claims)
-    store = Store(migrated_sessions, runtimes)
+    store = Store(migrated_sessions)
     service = SessionService(
         runtimes, store, session_wakes, launch_authorizer=authorize, default_agent_id=expected_agent_id
     )

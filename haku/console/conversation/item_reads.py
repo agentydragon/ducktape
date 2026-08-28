@@ -4,9 +4,8 @@
 `conversation_item` row becomes one of those entries — the single fold every reader consumes. An
 entry is the row with its wire face on: the row's `item_type` as the entry's kind, the row's
 lifecycle as its `status`, the prose as it stands, and the frame span its content was read off as
-`provenance`. The rows are folds of the log the writer keeps — asserted so by <reprojection.py> —
-which is what lets a page be served by a keyset read instead of refolding the conversation from
-its first row.
+`provenance`. The rows are folds of the log the writer keeps, which is what lets a page be served
+by a keyset read instead of refolding the conversation from its first row.
 
 **An entry sits at the row's opening position for its whole life.** `opened_seq` is allocated when
 the item opens and never moves, so paging is stable while an item is still being written: a later

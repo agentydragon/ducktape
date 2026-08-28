@@ -1,6 +1,6 @@
 """Claude Code as one CLI harness: everything that knows its wire format."""
 
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # Only the runtime folds a harness's wire, so a channel that came to know Claude's frames fails to
 # build rather than being caught in review.
@@ -26,139 +26,13 @@ py_library(
 )
 
 py_library(
-    name = "client",
-    srcs = ["client.py"],
-    deps = [
-        "//haku/cli_protocol:frames",
-        "//haku/runtime/x/bridge:client",
-        "//haku/runtime/x/bridge:protocol",
-        "//haku/runtime/x/bridge:transport",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "projection",
-    srcs = ["projection.py"],
-    visibility = [
-        "//haku/console/session:__pkg__",
-        "//haku/console/x:__pkg__",
-        "//haku/console/x/claude_code/testing:__pkg__",
-    ],
-    deps = [
-        ":frames",
-        "//haku/console:chat_models",
-        "//haku/console/conversation:conversation_event",
-        "//haku/console/x:conversation_events",
-    ],
-)
-
-py_library(
     name = "runtime",
     srcs = ["runtime.py"],
     deps = [
-        ":client",
-        ":frames",
-        ":projection",
-        ":wake",
         "//haku/console/harnesses:kind",
-        "//haku/console/x:conversation_events",
         "//haku/console/x:runtime",
         "//haku/runtime/x/bridge:claude_options",
-        "//haku/runtime/x/bridge:client",
         "//haku/runtime/x/bridge:protocol",
-        "//haku/runtime/x/bridge:transport",
-    ],
-)
-
-py_library(
-    name = "wake",
-    srcs = ["wake.py"],
-    deps = [
-        "//haku/console/x:runtime",
-        "//haku/runtime/x/bridge:protocol",
-    ],
-)
-
-py_test(
-    name = "test_client",
-    srcs = ["test_client.py"],
-    deps = [
-        ":client",
-        "//:conftest",
-        "//haku/console:conftest",
-        "//haku/console/x:conftest",
-        "//haku/runtime/x/bridge:client",
-        "//haku/runtime/x/bridge:protocol",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "frame_export",
-    srcs = ["frame_export.py"],
-    deps = [
-        ":redaction",
-        "//haku/console:database_schema",
-        "//haku/console/conversation:conversation_event",
-        "//haku/console/conversation:reprojection",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "frame_export_main",
-    srcs = ["frame_export_main.py"],
-    deps = [
-        ":frame_export",
-        "@pypi//sqlalchemy",
-        "@pypi//typer",
-    ],
-)
-
-py_binary(
-    name = "frame_export_bin",
-    main_module = "haku.console.x.claude_code.frame_export_main",
-    deps = [":frame_export_main"],
-)
-
-py_test(
-    name = "test_frame_export",
-    size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_frame_export.py"],
-    deps = [
-        ":frame_export",
-        ":frames",
-        ":projection",
-        ":runtime",
-        "//:conftest",
-        "//haku/console:conftest",
-        "//haku/console/conversation:prompt_origin",
-        "//haku/console/session:session_frames",
-        "//haku/console/session:setup_output",
-        "//haku/console/session:store",
-        "//haku/console/x:conftest",
-        "//haku/console/x:conversation_events",
-        "//haku/console/x/claude_code/testing:fold",
-        "//haku/runtime/x/bridge:protocol",
-        "@pypi//more_itertools",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_redaction",
-    srcs = ["test_redaction.py"],
-    deps = [
-        ":redaction",
-        "//:conftest",
-        "//haku/console:conftest",
-        "//haku/console/x:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -172,92 +46,4 @@ py_test(
         "//haku/console/x:conftest",
         "@pypi//pytest_bazel",
     ],
-)
-
-py_test(
-    name = "test_diverse_session",
-    size = "medium",
-    srcs = ["test_diverse_session.py"],
-    data = ["testdata/diverse_session.jsonl"],
-    deps = [
-        ":projection",
-        "//:conftest",
-        "//haku/console:chat_models",
-        "//haku/console:conftest",
-        "//haku/console/conversation:conversation_event",
-        "//haku/console/x:conftest",
-        "//haku/console/x:conversation_events",
-        "//haku/console/x/claude_code/testing:fold",
-        "//util/bazel:runfiles",
-        "@pypi//more_itertools",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_agents_and_background",
-    srcs = ["test_agents_and_background.py"],
-    data = ["testdata/agents_and_background.jsonl"],
-    deps = [
-        ":projection",
-        "//:conftest",
-        "//haku/console:chat_models",
-        "//haku/console:conftest",
-        "//haku/console/conversation:conversation_event",
-        "//haku/console/x:conftest",
-        "//haku/console/x:conversation_events",
-        "//haku/console/x/claude_code/testing:fold",
-        "//util/bazel:runfiles",
-        "@pypi//more_itertools",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_wake",
-    size = "medium",
-    srcs = ["test_wake.py"],
-    data = [
-        "testdata/background_wake.jsonl",
-        "testdata/scheduled_wakeup_fire.jsonl",
-    ],
-    deps = [
-        ":projection",
-        ":wake",
-        "//:conftest",
-        "//haku/console:conftest",
-        "//haku/console/x:conftest",
-        "//haku/console/x:conversation_events",
-        "//haku/console/x/claude_code/testing:fold",
-        "//haku/console/x/claude_code/testing:wire",
-        "//haku/runtime/x/bridge:protocol",
-        "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_projection",
-    size = "medium",
-    srcs = ["test_projection.py"],
-    deps = [
-        ":projection",
-        "//:conftest",
-        "//haku/console:chat_models",
-        "//haku/console:conftest",
-        "//haku/console/conversation:conversation_event",
-        "//haku/console/x:conftest",
-        "//haku/console/x:conversation_events",
-        "//haku/console/x/claude_code/testing:fold",
-        "//haku/console/x/claude_code/testing:wire",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "redaction",
-    srcs = ["redaction.py"],
 )

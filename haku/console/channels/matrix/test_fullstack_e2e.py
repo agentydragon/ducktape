@@ -151,7 +151,7 @@ async def test_a_reply_whose_send_is_refused_is_said_on_a_later_attempt(
     The refusal is the row's: unsent, one attempt spent, retried after its backoff. Two refusals
     are armed rather than one, so both kinds of reply are covered — `two` is an ordinary assistant
     message, and `three`, which the agent answers with a `result` frame and no assistant message at
-    all, is the row `_run_turn` mints off that frame.
+    all, is the row minted off that frame.
 
     **Order is part of the assertion.** A refused reply holds the queue rather than being
     overtaken, so `four` — produced while the earlier two were still waiting out their backoff —

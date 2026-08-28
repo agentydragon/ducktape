@@ -56,7 +56,7 @@ def _console_app(database_url: str, workspace: Path) -> FastAPI:
         session_wakes = SessionWakes(database_url)
         await session_wakes.start()
         runtimes = configured_runtimes(RecordingClaims(), config=runtime_config(cwd=str(workspace)))
-        store = Store(async_sessionmaker(engine, expire_on_commit=False), runtimes)
+        store = Store(async_sessionmaker(engine, expire_on_commit=False))
         app.state.session_service = SessionService(runtimes, store, session_wakes)
         try:
             yield

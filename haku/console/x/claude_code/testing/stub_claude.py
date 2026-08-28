@@ -17,14 +17,13 @@ answering:
   `channels/matrix/pacer.py`'s `SEND_BURST` the queue drains at `SENDS_PER_SECOND`, and whatever is queued behind
   that has minutes rather than milliseconds to still be waiting when the console goes away.
 - `[silent]` — answer with the `result` frame alone and no `assistant` message, which is the turn
-  whose text exists only at the end. `_run_turn` mints a transcript row for it off that frame
-  (`begin_assistant`), so the room is owed it as an ordinary message rather than as a turn's last
-  word.
+  whose text exists only at the end. A transcript row is minted for it off that frame, so the room
+  is owed it as an ordinary message rather than as a turn's last word.
 
 Two more behaviours are load-bearing rather than decorative, and each exists because leaving it
 out makes a test pass for the wrong reason:
 
-- **It answers the `initialize` control request.** `ClaudeCli.connect()` sends one and waits for a
+- **It answers the `initialize` control request.** The connecting client sends one and waits for a
   correlated reply, so an echo loop hangs the console at connect rather than running a turn.
 - **Every conversation frame carries the id the console dedupes replays by.** Without one, the
   console adopting a session would act on the runner's replay a second time and post the same

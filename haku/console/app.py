@@ -392,10 +392,9 @@ def create_app(
         }
         if profile_agents != {codex_runtime.agent_id}:
             raise ValueError("configured Codex Agent must have a dedicated access profile")
-    # All read and write paths share one registry. Projection-only composition may link dormant
-    # adapters, while launch-capable production composition includes only deliberately supported
-    # adapters and resources; no hidden Claude fallback can reinterpret another runtime's rows.
-    session_store = Store(db_sessions, runtime_registry)
+    # Projection-only composition may link dormant adapters, while launch-capable production
+    # composition includes only deliberately supported adapters and resources.
+    session_store = Store(db_sessions)
 
     async def _resolve_static_agent_definitions() -> tuple[StaticAgentDefinition, ...]:
         assert loaded_static_agents is not None

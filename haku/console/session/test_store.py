@@ -63,7 +63,6 @@ from haku.console.database_schema import (
 from haku.console.grants.http.models import HttpMethod, HttpScheme
 from haku.console.grants.kubernetes.models import NamespacesGrantScope, Rule
 from haku.console.grants.principal import GrantPrincipalKind
-from haku.console.harnesses.kind import HarnessKind
 from haku.console.notifications.session_wakes import SessionEvent, SessionEventKind
 from haku.console.session.conftest import age_lease, answers, attach_channel, lease_of, make_idle
 from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
@@ -89,7 +88,6 @@ from haku.console.x.conversation_events import (
     ToolCallCompleted,
     ToolCallStarted,
 )
-from haku.console.x.runtime import RuntimeAdapter, RuntimeRegistry
 
 ROOM = "!room:example.org"
 
@@ -98,41 +96,6 @@ def _harness(frames: Sequence[FrameRecord]) -> list[HarnessFrameRecord]:
     """Narrow a frame page to the harness variant, which these reads are asserting about."""
     assert all(isinstance(frame, HarnessFrameRecord) for frame in frames)
     return cast(list[HarnessFrameRecord], list(frames))
-
-
-class _AlternateFrameVocabulary:
-    """A harness whose native JSON has no conventional discriminator keys."""
-
-    kind = HarnessKind.CLAUDE_CODE
-
-    def prompt_submitted(self, outbound) -> bool:
-        return any(frame.frame.get("动作") == "提问" for frame in outbound)
-
-
-async def test_store_delegates_prompt_semantics_and_keeps_native_json_opaque(migrated_sessions, operator_id) -> None:
-    runtime = cast(RuntimeAdapter, _AlternateFrameVocabulary())
-    store = Store(migrated_sessions, RuntimeRegistry({HarnessKind.CLAUDE_CODE: runtime}))
-    view, token = await store._create_provisioning_for_test(operator_id)
-    assert await store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await store.enqueue_prompt(operator_id, view.session_id, "question", SPA_ORIGIN)
-    assert await store.next_prompt(view.session_id) is not None
-    await store.record_frame(
-        view.session_id, FrameDirection.TO_AGENT, BridgeFrameKind.HARNESS_FRAME, {"动作": "提问", "正文": "hello"}
-    )
-    await store.record_frame(
-        view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"阶段": "碎片", "正文": "你"}
-    )
-    await store.record_frame(
-        view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"阶段": "最终", "正文": "你好"}
-    )
-
-    assert await store.adopt_open_turn(view.session_id) is not None
-    frames = await store.read_session_frames(view.session_id, cursor=None, limit=25, scope=UnrestrictedReads())
-    assert [frame.payload for frame in _harness(frames)] == [
-        {"动作": "提问", "正文": "hello"},
-        {"阶段": "碎片", "正文": "你"},
-        {"阶段": "最终", "正文": "你好"},
-    ]
 
 
 async def test_bridge_authentication_distinguishes_accept_terminal_and_rejected(
@@ -1536,10 +1499,7 @@ async def test_abort_reaches_the_replica_running_the_turn(
 
     other_engine = create_async_engine(migrated_db_url, pool_pre_ping=True)
     try:
-        requesting = Store(
-            async_sessionmaker(other_engine, expire_on_commit=False),
-            RuntimeRegistry({HarnessKind.CLAUDE_CODE: cast(RuntimeAdapter, _AlternateFrameVocabulary())}),
-        )
+        requesting = Store(async_sessionmaker(other_engine, expire_on_commit=False))
         received: asyncio.Queue[SessionEvent] = asyncio.Queue()
         with session_wakes.watch_session(view.session_id, received.put_nowait):
             assert await requesting.request_abort(view.session_id) is True
