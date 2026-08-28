@@ -33,7 +33,7 @@ def server_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     port = pick_free_port("127.0.0.1")
     server = subprocess.Popen(
         [
-            str(get_required_path("_main/finance/augur/api/server")),
+            str(get_required_path("_main/finance/augur/api/server_bin")),
             "--host",
             "127.0.0.1",
             "--port",

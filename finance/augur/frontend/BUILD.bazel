@@ -72,8 +72,8 @@ py_binary(
 genrule(
     name = "rollout_event_vocabulary_generated",
     outs = ["rollout_event_vocabulary.generated.ts"],
-    cmd = "$(location :export_rollout_event_vocabulary) > $@",
-    tools = [":export_rollout_event_vocabulary"],
+    cmd = "$(location :export_rollout_event_vocabulary_bin) > $@",
+    tools = [":export_rollout_event_vocabulary_bin"],
 )
 
 ts_library(
