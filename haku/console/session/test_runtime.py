@@ -46,8 +46,10 @@ from haku.console.session.status import OPEN_SESSION_STATUSES, SessionStatus
 from haku.console.session.store import ADOPTION_GRACE, BridgeAuthentication, Store
 from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
-from haku.console.x.runtime import RuntimeKey
+from haku.console.x.runtime import RuntimeKey, RuntimeLaunch
+from haku.console.x.runtime_catalog import runtime_registration
 from haku.console.x.testing.recording_claims import RecordingClaims
+from haku.runner.codex.options import CODEX_MODEL_ENV, CODEX_REASONING_EFFORT_ENV
 
 
 def test_runtime_deployment_wiring_has_no_application_defaults() -> None:
@@ -318,6 +320,24 @@ def test_codex_environment_keeps_provider_auth_in_the_sandbox_template() -> None
         "GITHUB_TOKEN": "proxy-github-placeholder",
     }
     assert "OPENAI_API_KEY" not in config.environment()
+
+
+def test_runtime_registration_threads_the_codex_model_and_effort_into_the_launch(
+    recording_claims: RecordingClaims,
+) -> None:
+    # The console reads implementation.model/reasoning_effort into the launch environment the runner
+    # reads for thread/start (haku/runner/codex/test_harness.py) -- the missing frame that let a codex
+    # session fall back to its bare sandbox default and 403 at LiteLLM.
+    config = _codex_runtime_config()
+    assert isinstance(config.implementation, CodexAppServerImplementationConfig)
+    registration = runtime_registration(config, recording_claims, system_prompt=SystemPromptTemplate(""))
+
+    launch = registration.adapter.build_launch(
+        RuntimeLaunch(cwd="/workspace", environment={}, mcp_servers={}, appended_system_prompt=None, resume_from=None)
+    )
+
+    assert launch.environment[CODEX_MODEL_ENV] == config.implementation.model
+    assert launch.environment[CODEX_REASONING_EFFORT_ENV] == config.implementation.reasoning_effort
 
 
 def test_claude_registration_uses_the_shared_discriminated_model() -> None:

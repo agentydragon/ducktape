@@ -145,8 +145,9 @@ def build_codex_launch(session: CodexAppServerSession, *, resume_from: int | Non
 
 def _launch_environment(session: CodexAppServerSession) -> dict[str, str]:
     """The child environment: the console's, plus the thread params the runner reads for
-    `thread/start` (<harness.py>). A thread param that is None is simply absent — Codex then
-    falls back to its configured default."""
+    `thread/start` (<harness.py>). A None thread param is simply absent here; the runner then
+    requires an explicit provider-qualified model but lets an absent reasoning effort or developer
+    instructions fall back to Codex's configured default."""
     thread_params = {
         CODEX_MODEL_ENV: session.model,
         CODEX_REASONING_EFFORT_ENV: session.reasoning_effort,
