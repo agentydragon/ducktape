@@ -51,7 +51,7 @@ source-faithful to that evidence.
     response surfaces to the caller as a retryable rate-limit error, not a 500.
   - Tana 5xx and malformed stream events
 - Make the remaining RE-listed models work or intentionally suppress them with
-  a documented reason. `bazel run //tana/litellm_proxy:probe_models --` on
+  a documented reason. `bazel run //tana/litellm_proxy:probe_models_bin --` on
   2026-06-10 found these current failures:
   - HTTP 500: `gpt-3.5-turbo-0125`, `gpt-3.5-turbo-instruct`,
     `gpt-4-turbo`, `gpt-4-turbo-2024-04-09`, `gpt-4-turbo-preview`,

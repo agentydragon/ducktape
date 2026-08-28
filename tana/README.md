@@ -8,7 +8,7 @@ parsers/renderers under the `tana.export` namespace.
 
 See the repository root AGENTS.md for the standard Bazel workflow.
 
-`bazel run //tana/export:convert -- --help`
+`bazel run //tana/export:convert_bin -- --help`
 
 Key layout (`tana/`):
 

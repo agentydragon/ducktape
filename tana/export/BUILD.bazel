@@ -7,10 +7,9 @@ py_library(
     deps = [":convert"],
 )
 
-py_binary(
+py_library(
     name = "convert",
     srcs = ["convert.py"],
-    visibility = ["//:__subpackages__"],
     deps = [
         "//tana/domain:constants",
         "//tana/domain:nodes",
@@ -25,9 +24,15 @@ py_binary(
 )
 
 py_binary(
+    name = "convert_bin",
+    main_module = "tana.export.convert",
+    visibility = ["//:__subpackages__"],
+    deps = [":convert"],
+)
+
+py_library(
     name = "export_node_subset",
     srcs = ["export_node_subset.py"],
-    visibility = ["//:__subpackages__"],
     deps = [
         ":convert",
         "//tana/domain:constants",
@@ -39,9 +44,15 @@ py_binary(
 )
 
 py_binary(
+    name = "export_node_subset_bin",
+    main_module = "tana.export.export_node_subset",
+    visibility = ["//:__subpackages__"],
+    deps = [":export_node_subset"],
+)
+
+py_library(
     name = "materialize_searches",
     srcs = ["materialize_searches.py"],
-    visibility = ["//:__subpackages__"],
     deps = [
         "//tana:workspace",
         "//tana/domain:types",
@@ -52,9 +63,15 @@ py_binary(
 )
 
 py_binary(
+    name = "materialize_searches_bin",
+    main_module = "tana.export.materialize_searches",
+    visibility = ["//:__subpackages__"],
+    deps = [":materialize_searches"],
+)
+
+py_library(
     name = "download_images",
     srcs = ["download_images.py"],
-    visibility = ["//:__subpackages__"],
     deps = [
         "//tana/domain:nodes",
         "//tana/graph",
@@ -63,19 +80,32 @@ py_binary(
     ],
 )
 
+py_binary(
+    name = "download_images_bin",
+    main_module = "tana.export.download_images",
+    visibility = ["//:__subpackages__"],
+    deps = [":download_images"],
+)
+
 py_library(
     name = "sample",
     srcs = ["sample.py"],
     visibility = ["//:__subpackages__"],
 )
 
-py_binary(
+py_library(
     name = "tana_issues_to_tanapaste",
     srcs = ["tana_issues_to_tanapaste.py"],
-    visibility = ["//:__subpackages__"],
     deps = [
         ":convert",
         "//tana:workspace",
         "//tana/query:filters",
     ],
+)
+
+py_binary(
+    name = "tana_issues_to_tanapaste_bin",
+    main_module = "tana.export.tana_issues_to_tanapaste",
+    visibility = ["//:__subpackages__"],
+    deps = [":tana_issues_to_tanapaste"],
 )
