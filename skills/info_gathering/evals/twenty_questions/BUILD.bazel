@@ -61,22 +61,21 @@ py_binary(
 
 py_library(
     name = "conftest",
+    testonly = True,
     srcs = ["conftest.py"],
+    visibility = ["//skills/info_gathering/evals/twenty_questions:__subpackages__"],
     deps = ["@pypi//pytest"],
 )
 
 py_test(
     name = "test_twenty_questions",
-    srcs = [
-        "conftest.py",
-        "test_twenty_questions.py",
-    ],
+    srcs = ["test_twenty_questions.py"],
     deps = [
+        ":conftest",
         ":twenty_questions",
+        "//:conftest",
         "//agent_core:direct_provider",
         "//openai_utils:model",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

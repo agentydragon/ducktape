@@ -24,7 +24,6 @@ py_library(
     deps = [
         ":functions",
         "//skills/eval_infra:eval_prompt",
-        "//skills/info_gathering/evals/twenty_questions:prompts",
         "//util/bazel:runfiles",
     ],
 )
@@ -47,6 +46,7 @@ py_library(
         ":prompts",
         ":result_types",
         ":scoring",
+        "//skills:skill_spec",
         "//skills/eval_infra:af_chat_client",
         "//skills/eval_infra:eval_sandbox",
         "//skills/eval_infra:skill_staging",
@@ -55,13 +55,11 @@ py_library(
         "//skills/eval_infra/empty_skill:empty_skill_skill_spec",
         "//skills/info_gathering:info_gathering_skill_spec",
         "//skills/info_gathering/evals/twenty_questions/x/shared:output",
-        # agent_framework's __init__.py references openai/anthropic stubs.
-        "@pypi//agent_framework_anthropic",
-        "@pypi//agent_framework_claude",
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//aiodocker",
-        "@pypi//pydantic",
     ],
 )
 
@@ -76,13 +74,15 @@ py_library(
     srcs = ["run_all_evals.py"],
     deps = [
         ":function_learning",
+        ":functions",
+        ":result_types",
         "//skills/eval_infra:af_chat_client",
         "//skills/eval_infra:eval_sandbox",
         "//skills/eval_infra:skill_staging",
-        "@pypi//agent_framework_anthropic",
-        "@pypi//agent_framework_claude",
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//aiodocker",
         "@pypi//anyio",
         "@pypi//pydantic",
@@ -101,7 +101,6 @@ py_library(
     deps = [
         ":run_all_evals",
         "@pypi//pandas",
-        "@pypi//pandas_stubs",
     ],
 )
 
@@ -115,38 +114,41 @@ py_test(
     name = "test_functions",
     srcs = ["test_functions.py"],
     deps = [
+        ":conftest",
         ":functions",
-        "@pypi//pytest",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )
 
 py_test(
     name = "test_function_learning",
-    srcs = [
-        "conftest.py",
-        "test_function_learning.py",
-    ],
+    srcs = ["test_function_learning.py"],
     data = ["//third_party/containers:python_3_13_slim"],
     requires_docker = True,
     deps = [
+        ":conftest",
         ":function_learning",
         ":functions",
         ":result_types",
+        "//:conftest",
         "//skills/eval_infra:eval_sandbox",
         "//skills/eval_infra:skill_staging",
         "//skills/eval_infra/empty_skill:empty_skill_skill_spec",
         "//skills/info_gathering/evals:replay_client",
         "//third_party/containers:rlocations",
         "//util:oci",
-        # agent_framework's __init__.py references openai/anthropic stubs.
-        "@pypi//agent_framework_anthropic",
-        "@pypi//agent_framework_claude",
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//aiodocker",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
 )

@@ -6,6 +6,7 @@ load("//skills:defs.bzl", "skill_package")
 # gazelle:exclude scripts
 # gazelle:resolve py skills.forgejo.scripts.forgejo //skills/forgejo:forgejo_lib
 
+# keep: srcs lives in the excluded scripts/; the resolve above points here
 py_library(
     name = "forgejo_lib",
     srcs = ["scripts/forgejo.py"],
@@ -36,7 +37,8 @@ py_test(
     name = "test_forgejo",
     srcs = ["test_forgejo.py"],
     deps = [
-        ":forgejo_lib",
+        "//:conftest",
+        "//skills/forgejo:forgejo_lib",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

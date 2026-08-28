@@ -30,10 +30,7 @@ py_library(
     name = "otel",
     srcs = ["otel.py"],
     visibility = ["//visibility:public"],
-    deps = [
-        "@pypi//opentelemetry_api",
-        "@pypi//opentelemetry_sdk",
-    ],
+    deps = ["@pypi//opentelemetry_sdk"],
 )
 
 py_library(
@@ -106,6 +103,7 @@ py_test(
     srcs = ["test_enum_vocab.py"],
     deps = [
         ":enum_vocab",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -126,6 +124,7 @@ py_test(
     deps = [
         ":enum_vocab",
         ":sqlalchemy_types",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -163,6 +162,7 @@ py_test(
     srcs = ["test_crane.py"],
     deps = [
         ":crane",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -185,6 +185,7 @@ py_test(
     srcs = ["test_image_tag.py"],
     deps = [
         ":image_tag",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )

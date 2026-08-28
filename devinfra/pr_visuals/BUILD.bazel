@@ -30,8 +30,8 @@ py_library(
         "//util:visual_diff",
         "//util:visual_review",
         "@pypi//boto3",
+        "@pypi//botocore",
         "@pypi//jinja2",
-        "@pypi//pillow",
         "@pypi//pydantic",
         "@pypi//pygithub",
         "@pypi//tenacity",
@@ -43,6 +43,7 @@ py_test(
     srcs = ["test_check_run.py"],
     deps = [
         ":check_run",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -59,6 +60,7 @@ py_test(
     srcs = ["test_publisher.py"],
     deps = [
         ":publisher",
+        "//:conftest",
         "//devinfra/ci:invocation_ids",
         "//util:visual_diff",
         "//util:visual_review",

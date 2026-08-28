@@ -21,6 +21,7 @@ py_library(
 
 py_library(
     name = "conftest",
+    testonly = True,
     srcs = ["conftest.py"],
     visibility = ["//skills/info_gathering/evals/twenty_questions/x:__subpackages__"],
 )

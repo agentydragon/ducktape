@@ -19,6 +19,7 @@ py_library(
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//sqlalchemy",
+        "@pypi//starlette",
     ],
 )
 
@@ -52,6 +53,8 @@ py_test(
     deps = [
         ":app",
         ":cli",
+        "//:conftest",
+        "//props:conftest",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest_bazel",
@@ -65,13 +68,13 @@ py_test(
     requires_docker = True,
     deps = [
         ":routes",
+        "//:conftest",
         "//props:conftest",
         "//props/core:agent_types",
         "//props/core:oci_utils",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//starlette",
         "@pypi//uvicorn",

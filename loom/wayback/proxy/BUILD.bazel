@@ -9,7 +9,6 @@ py_library(
     srcs = ["proxy.py"],
     deps = [
         "@pypi//aiohttp",
-        "@pypi//multidict",
         "@pypi//pydantic",
         "@pypi//yarl",
     ],
@@ -61,7 +60,6 @@ py_test(
         "@pypi//aiohttp",
         "@pypi//mitmproxy",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # runtime dep: conftest sets asyncio_mode="auto"
         "@pypi//pytest_bazel",
         "@pypi//yarl",
     ],
@@ -81,7 +79,6 @@ py_test(
         "//:conftest",
         "@pypi//aiohttp",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # runtime dep: conftest sets asyncio_mode="auto"
         "@pypi//pytest_bazel",
         "@pypi//yarl",
     ],
@@ -147,9 +144,7 @@ py_test(
         "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
-        "@pypi//aiohttp",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # runtime dep: conftest sets asyncio_mode="auto"
         "@pypi//pytest_bazel",
     ],
 )

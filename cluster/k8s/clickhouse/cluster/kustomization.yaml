@@ -4,16 +4,18 @@ resources:
   - agent-diagnostics-rbac.yaml
   - admin-credentials.sops.yaml
   - aiquota-credentials.sops.yaml
+  - langfuse-credentials.sops.yaml
   - grafana-credentials.sops.yaml
   - public-coder-credentials.sops.yaml
   - keeper.yaml
   - clickhouse.yaml
+  - clickhouse-service.yaml
   - networkpolicy.yaml
   - podmonitor.yaml
 
 configMapGenerator:
-  - name: clickhouse-analytics-config
-    namespace: analytics
+  - name: clickhouse-clickhouse-config
+    namespace: clickhouse
     files:
       - system_logs.xml
 configurations:

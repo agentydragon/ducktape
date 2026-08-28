@@ -22,7 +22,6 @@ py_library(
         "//finance/plaid/db:secret_store",
         "//finance/plaid/db:sync",
         "@pypi//fastapi",
-        "@pypi//plaid_python",
         "@pypi//pydantic",
         "@pypi//uvicorn",
     ],
@@ -69,10 +68,10 @@ py_test(
     srcs = ["test_app.py"],
     deps = [
         ":app",
+        "//:conftest",
         "//finance/plaid/db:client",
         "//finance/plaid/db:config",
         "//finance/plaid/db:link_store",
-        "//finance/plaid/db:products",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//plaid_python",
@@ -85,6 +84,7 @@ py_test(
     srcs = ["test_server_bin.py"],
     data = [":server_bin"],
     deps = [
+        "//:conftest",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],

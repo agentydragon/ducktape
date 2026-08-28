@@ -1,12 +1,12 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: analytics-clickhouse-schema
+  name: clickhouse-schema
   namespace: ducktape-flux
 spec:
   retryInterval: 1m
   interval: 10m
-  path: ./cluster/k8s/analytics/schema
+  path: ./cluster/k8s/clickhouse/schema
   prune: true
   sourceRef:
     kind: GitRepository
@@ -17,8 +17,8 @@ spec:
   healthChecks:
     - apiVersion: batch/v1
       kind: Job
-      name: clickhouse-aiquota-schema-v6
-      namespace: analytics
+      name: clickhouse-aiquota-schema-v7
+      namespace: clickhouse
   dependsOn:
-    - name: analytics-clickhouse
+    - name: clickhouse
       namespace: ducktape-flux

@@ -89,7 +89,6 @@ py_library(
     deps = [
         "@pypi//ezdxf",
         "@pypi//matplotlib",
-        "@pypi//pillow",
     ],
 )
 

@@ -85,6 +85,8 @@ py_test(
     srcs = ["test_grants.py"],
     deps = [
         ":models",
+        "//:conftest",
+        "//haku/console:conftest",
         "//haku/console/grants:envelope",
         "//haku/console/grants:principal",
         "@pypi//pydantic",
@@ -100,6 +102,7 @@ py_test(
         ":models",
         ":service",
         "//:conftest",
+        "//haku/console:conftest",
         "//haku/console/grants:envelope",
         "//haku/console/grants:principal",
         "@pypi//pytest",
@@ -138,15 +141,15 @@ py_test(
     deps = [
         ":models",
         ":routes",
+        "//:conftest",
+        "//haku/console:conftest",
         "//haku/console:operator_auth",
         "//haku/console:tool_call_actor",
         "//haku/console/agents:enrollment",
         "//haku/console/agents:models",
-        "//haku/console/grants:envelope",
         "//haku/console/grants:principal",
         "@pypi//fastapi",
         "@pypi//pytest_bazel",
-        "@pypi//starlette",
     ],
 )
 
@@ -155,6 +158,10 @@ py_test(
     srcs = ["test_decide_config.py"],
     deps = [
         ":decide_config",
+        ":models",
+        "//:conftest",
+        "//haku/console:conftest",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
@@ -195,6 +202,8 @@ py_test(
     deps = [
         ":decide_routes",
         ":decide_service",
+        "//:conftest",
+        "//haku/console:conftest",
         "//haku/egress:decision",
         "@pypi//fastapi",
         "@pypi//httpx",  # keep: starlette.testclient runtime requirement, not a direct import

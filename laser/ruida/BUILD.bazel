@@ -11,7 +11,7 @@ py_test(
     srcs = ["test_rd_writer.py"],
     deps = [
         ":rd_writer",
-        "@pypi//pytest",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )

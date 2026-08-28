@@ -66,6 +66,8 @@ py_test(
     deps = [
         ":agent_types",
         ":oci_utils",
+        "//:conftest",
+        "//props:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -78,6 +80,8 @@ py_test(
         ":agent_types",
         ":ids",
         ":oci_utils",
+        "//:conftest",
+        "//props:conftest",
         "//props/core/models:examples",
         "@pypi//pytest_bazel",
     ],

@@ -6,7 +6,7 @@
   "links": [],
   "panels": [
     {
-      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse-analytics" },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
       "fieldConfig": {
         "defaults": {
           "max": 100,
@@ -36,7 +36,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse-analytics" },
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
           "format": 1,
           "queryType": "sql",
           "rawSql": "SELECT observed_at AS time, remaining_percent AS value, concat(provider, ' ', if(empty(window_name), concat(toString(window_seconds / 3600), 'h'), window_name)) AS metric FROM aiquota.aiquota_windows WHERE $__timeFilter(observed_at) ORDER BY observed_at",
@@ -47,7 +47,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse-analytics" },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
       "fieldConfig": {
         "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2 }, "unit": "percent" },
         "overrides": []
@@ -60,7 +60,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse-analytics" },
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
           "format": 1,
           "queryType": "sql",
           "rawSql": "SELECT observed_at AS time, remaining_percent AS value, concat(provider, ' ', if(empty(window_name), concat(toString(window_seconds / 3600), 'h'), window_name)) AS metric FROM aiquota.aiquota_windows WHERE $__timeFilter(observed_at) ORDER BY observed_at",
@@ -71,14 +71,14 @@
       "type": "timeseries"
     },
     {
-      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse-analytics" },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
       "fieldConfig": { "defaults": {}, "overrides": [] },
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 16 },
       "id": 3,
       "options": { "cellHeight": "sm", "showHeader": true },
       "targets": [
         {
-          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse-analytics" },
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
           "format": 0,
           "queryType": "sql",
           "rawSql": "SELECT observed_at, source, status_code, content_type, raw_body_size_bytes, raw_body_truncated, error, raw_body_sha256 FROM aiquota.raw_http_observations WHERE $__timeFilter(observed_at) ORDER BY observed_at DESC LIMIT 200",

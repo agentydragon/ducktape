@@ -43,6 +43,7 @@ py_test(
     ],
     requires_docker = True,
     deps = [
+        "//:conftest",
         "//aiquota/testing:quota_fixtures",
         "//util:oci",
         "//util/bazel:runfiles",

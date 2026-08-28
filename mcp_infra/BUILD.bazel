@@ -5,7 +5,6 @@ py_library(
     srcs = ["persistence.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        # asyncpg backs py-key-value's PostgreSQLStore (PostgresPersistence).
         "@pypi//asyncpg",
         "@pypi//py_key_value_aio",
         "@pypi//pydantic",
@@ -38,6 +37,7 @@ py_test(
     deps = [
         ":conftest",
         ":prefix",
+        "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -57,16 +57,12 @@ py_test(
         ":persistence",
         # Root conftest enables pytest-asyncio auto mode (STRICT otherwise -> async tests skipped).
         "//:conftest",
-        "//third_party/containers:rlocations",
-        "//util:oci",
         "//util/testing:postgres_fixtures",
-        "@pypi//asyncpg",
         "@pypi//py_key_value_aio",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        # pytest-asyncio auto mode (root conftest) needs the plugin importable at runtime.
-        "@pypi//pytest_asyncio",
         "@pypi//testcontainers",
+        ":conftest",
     ],
 )
 
@@ -145,12 +141,12 @@ py_test(
     name = "test_request_scoped_openapi",
     srcs = ["test_request_scoped_openapi.py"],
     deps = [
+        ":conftest",
         ":request_scoped_openapi",
         "//:conftest",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -211,6 +207,7 @@ py_test(
     deps = [
         ":conftest",
         ":tool_filter",
+        "//:conftest",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -246,6 +243,5 @@ py_library(
         "//agent_core/testing/mcp:fixtures",
         "//mcp_infra/testing:fixtures",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
     ],
 )

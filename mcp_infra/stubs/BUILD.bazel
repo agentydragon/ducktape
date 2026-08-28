@@ -28,7 +28,7 @@ py_library(
     srcs = ["typed_stubs.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//mcp_infra/enhanced:flat_mixin",
+        "//mcp_infra:flat_tool",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],

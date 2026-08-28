@@ -1,12 +1,12 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: analytics-clickhouse
+  name: clickhouse
   namespace: ducktape-flux
 spec:
   retryInterval: 1m
   interval: 10m
-  path: ./cluster/k8s/analytics/cluster
+  path: ./cluster/k8s/clickhouse/cluster
   prune: true
   decryption:
     provider: sops
@@ -21,12 +21,12 @@ spec:
   healthChecks:
     - apiVersion: clickhouse-keeper.altinity.com/v1
       kind: ClickHouseKeeperInstallation
-      name: analytics-keeper
-      namespace: analytics
+      name: clickhouse-keeper
+      namespace: clickhouse
     - apiVersion: clickhouse.altinity.com/v1
       kind: ClickHouseInstallation
-      name: analytics
-      namespace: analytics
+      name: clickhouse
+      namespace: clickhouse
   healthCheckExprs:
     - apiVersion: clickhouse-keeper.altinity.com/v1
       kind: ClickHouseKeeperInstallation

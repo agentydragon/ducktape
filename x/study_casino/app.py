@@ -127,6 +127,10 @@ from x.study_casino.state import AdminUsersResponse, DeploymentInfo, HealthRespo
 from x.study_casino.stats import CasinoStats
 from x.study_casino.store import ActionMutation, ActionRejectedError, ServerActionMutator, SqlStore, locked_balance
 
+# SQLAlchemy loads the psycopg dialect at runtime via the `postgresql+psycopg://`
+# URL scheme; nothing imports it directly, so Gazelle cannot see the dependency.
+# gazelle:include_dep @pypi//psycopg
+
 logger = logging.getLogger(__name__)
 _BLACKJACK_HAND_NAMESPACE = uuid.UUID("4d19699a-09bd-42e4-ae00-c5bc10d39683")
 

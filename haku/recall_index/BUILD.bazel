@@ -42,7 +42,6 @@ py_library(
     deps = [
         ":chunking",
         ":content",
-        "//haku/console:chat_models",
     ],
 )
 
@@ -54,9 +53,6 @@ py_library(
         ":chat_corpus",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
-        # `database_schema` reaches `@ducktape_haku//haku/console:tool_calls`, which imports
-        # pydantic without declaring it.
-        "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
 )
@@ -72,10 +68,7 @@ py_library(
     name = "openai_embedder",
     srcs = ["openai_embedder.py"],
     visibility = ["//visibility:public"],
-    deps = [
-        ":embedder",
-        "@pypi//openai",
-    ],
+    deps = ["@pypi//openai"],
 )
 
 py_library(
@@ -91,7 +84,6 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":vector_type",
-        "//util:sqlalchemy_types",
         "@pypi//sqlalchemy",
     ],
 )
@@ -129,6 +121,7 @@ py_library(
         ":chunking",
         ":content",
         ":git_tree",
+        ":schema",
         ":store",
         "@pypi//pygit2",
         "@pypi//sqlalchemy",
@@ -142,6 +135,7 @@ py_library(
     deps = [
         ":chat_corpus",
         ":chat_source",
+        ":chunking",
         ":schema",
         ":store",
         "@pypi//sqlalchemy",
@@ -180,6 +174,7 @@ py_test(
     srcs = ["test_chunking.py"],
     deps = [
         ":chunking",
+        ":conftest",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -190,6 +185,7 @@ py_test(
     name = "test_git_tree",
     srcs = ["test_git_tree.py"],
     deps = [
+        ":conftest",
         ":git_tree",
         "//:conftest",
         "@pypi//pygit2",
@@ -203,8 +199,9 @@ py_test(
     srcs = ["test_chat_corpus.py"],
     deps = [
         ":chat_corpus",
+        ":chunking",
+        ":conftest",
         "//:conftest",
-        "//haku/console:chat_models",
         "@pypi//pytest_bazel",
     ],
 )
@@ -230,9 +227,7 @@ py_test(
         "//haku/console:chat_models",
         "//haku/console:database_schema",
         "//haku/console:operator_identity",
-        "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -253,8 +248,6 @@ py_test(
         ":schema",
         ":store",
         "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -275,7 +268,6 @@ py_test(
         ":embedder",
         ":embedding_sync",
         ":fake_embedder",
-        ":git_tree",
         ":query",
         ":schema",
         ":store",
@@ -283,7 +275,6 @@ py_test(
         "//:conftest",
         "@pypi//pygit2",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -306,7 +297,6 @@ py_test(
         ":schema",
         ":store",
         "//:conftest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],

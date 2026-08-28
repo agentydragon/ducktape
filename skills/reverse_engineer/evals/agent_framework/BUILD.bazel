@@ -6,6 +6,7 @@ py_library(
     srcs = ["re_rollout.py"],
     deps = [
         "//openai_utils:pydantic_strict_mode",
+        "//skills:skill_spec",
         "//skills/eval_infra:af_chat_client",
         "//skills/eval_infra:eval_prompt",
         "//skills/eval_infra:eval_sandbox",
@@ -15,11 +16,10 @@ py_library(
         "//skills/eval_infra/empty_skill:empty_skill_skill_spec",
         "//skills/reverse_engineer:reverse_engineer_skill_spec",
         "//util/bazel:runfiles",
-        # agent_framework's __init__.py references openai/anthropic stubs.
-        "@pypi//agent_framework_anthropic",
-        "@pypi//agent_framework_claude",
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//pydantic",
     ],
 )

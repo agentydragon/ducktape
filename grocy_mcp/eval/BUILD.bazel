@@ -39,10 +39,10 @@ py_library(
         "//mcp_infra:request_scoped_openapi",
         "//util:net",
         "//util/bazel:runfiles",
-        "@pypi//agent_framework_anthropic",
-        "@pypi//agent_framework_claude",
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//httpx",
         "@pypi//uvicorn",
     ],

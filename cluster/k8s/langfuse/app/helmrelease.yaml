@@ -87,6 +87,10 @@ spec:
       additionalEnv:
         - name: NODE_OPTIONS
           value: "--max-old-space-size=1536"
+        # The shared ClickHouse uses the canonical default logical cluster
+        # name, so Langfuse can keep automatic migrations enabled.
+        - name: CLICKHOUSE_CLUSTER_NAME
+          value: "default"
         # --- Authentik SSO (generic OIDC relying party) ---
         # Client credentials come from the langfuse-oidc-config secret, minted
         # by tf/gitops/sso-providers/provider_langfuse.tf in the authentik
@@ -159,101 +163,24 @@ spec:
         secretKeys:
           userPasswordKey: password
 
-    # TODO(reliability): ClickHouse replication (3-node cluster) for
-    # durability. Currently single-node on OVH local-path.
+    # ClickHouse is managed centrally in the clickhouse namespace. Keep the
+    # bundled deployment alive temporarily as the rollback/source copy while
+    # the new instance is populated; disable it in the post-migration change.
     clickhouse:
       deploy: true
+      host: clickhouse.clickhouse.svc.cluster.local
+      httpPort: 8123
+      nativePort: 9000
+      database: langfuse
       auth:
-        existingSecret: langfuse-secrets
-        existingSecretKey: clickhouse-password
-      replicaCount: 1
-      resources:
-        requests:
-          # A starting value only: the namespace is on RequestsOnly via the
-          # default-vpa-requests-only Kyverno policy, so VPA owns the request
-          # from here and the limits below are what actually apply.
-          cpu: 200m
-          memory: 1Gi
-          ephemeral-storage: 50Mi
-        limits:
-          # Cold start loads every part's metadata and immediately schedules
-          # the merges that accumulated while the server was down, so the
-          # budget that matters is the startup one, not steady state. The
-          # server must bind HTTP within the liveness probe's 10s + 3x10s or
-          # the kubelet kills it and the next start begins cold again.
-          cpu: "2"
-          # Resident set sits ~1.6Gi and VPA's own upper bound reached ~2.5Gi.
-          memory: 3Gi
-          ephemeral-storage: 2Gi
-      # Disable ClickHouse's built-in self-profiling system logs. These grew
-      # to 3.8 GiB in ~2 weeks, causing OOMKills at the 1.5 GiB limit.
-      # Uses `remove="1"` to fully strip log table definitions from merged
-      # config. See: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-system-tables-eat-my-disk/
-      extraOverrides: |
-        <clickhouse>
-          <logger>
-            <level>information</level>
-          </logger>
-          <trace_log remove="1" />
-          <text_log remove="1" />
-          <metric_log remove="1" />
-          <asynchronous_metric_log remove="1" />
-          <part_log remove="1" />
-          <latency_log remove="1" />
-          <query_metric_log remove="1" />
-          <error_log remove="1" />
-          <query_log>
-            <!-- `ttl` is the retention control here. `max_size_rows` is the
-                 in-memory flush threshold, not a cap on stored rows: lowering
-                 it makes the table flush more often and accumulate parts,
-                 which is the opposite of the intent. -->
-            <ttl>event_date + INTERVAL 3 DAY DELETE</ttl>
-          </query_log>
-        </clickhouse>
-      clusterEnabled: false
-      zookeeper:
-        replicaCount: 1
-        resourcesPreset: small
-        nodeSelector:
-          topology.kubernetes.io/zone: hil-ovh
-        tolerations:
-          - key: node-role.kubernetes.io/control-plane
-            operator: Exists
-            effect: NoSchedule
-        # Soft anti-affinity off control-plane nodes (their etcd is on a rotational
-        # HDD; co-located I/O starves etcd fsync — 2026-06-28 outage).
-        # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.
-        affinity:
-          nodeAffinity:
-            preferredDuringSchedulingIgnoredDuringExecution:
-              - weight: 100
-                preference:
-                  matchExpressions:
-                    - key: node-role.kubernetes.io/control-plane
-                      operator: DoesNotExist
-        persistence:
-          storageClass: local-path-ovh
-          size: 8Gi
-      nodeSelector:
-        topology.kubernetes.io/zone: hil-ovh
-      tolerations:
-        - key: node-role.kubernetes.io/control-plane
-          operator: Exists
-          effect: NoSchedule
-      # Soft anti-affinity off control-plane nodes (their etcd is on a rotational
-      # HDD; co-located I/O starves etcd fsync — 2026-06-28 outage).
-      # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.
-      affinity:
-        nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              preference:
-                matchExpressions:
-                  - key: node-role.kubernetes.io/control-plane
-                    operator: DoesNotExist
-      persistence:
-        storageClass: local-path-ovh
-        size: 20Gi
+        username: langfuse
+        existingSecret: clickhouse-langfuse-credentials
+        existingSecretKey: password
+      migration:
+        url: clickhouse://clickhouse.clickhouse.svc.cluster.local:9000
+        ssl: false
+        autoMigrate: true
+      clusterEnabled: true
 
     redis:
       deploy: false

@@ -154,11 +154,11 @@ resources:
   - monitoring/grafana-db/flux-kustomization.yaml
   - monitoring/grafana-instance/flux-kustomization.yaml
 
-  # --- shared analytics ClickHouse ---
-  - analytics/namespace/flux-kustomization.yaml
-  - analytics/operator/flux-kustomization.yaml
-  - analytics/cluster/flux-kustomization.yaml
-  - analytics/schema/flux-kustomization.yaml
+  # --- central ClickHouse ---
+  - clickhouse/namespace/flux-kustomization.yaml
+  - clickhouse/operator/flux-kustomization.yaml
+  - clickhouse/cluster/flux-kustomization.yaml
+  - clickhouse/schema/flux-kustomization.yaml
   - analytics/grafana/flux-kustomization.yaml
 
   # --- authelia ---

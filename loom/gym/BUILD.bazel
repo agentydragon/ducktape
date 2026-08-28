@@ -27,7 +27,6 @@ py_library(
         ":panel",
         ":series_tasks",
         "//finance/evidence:checkout",
-        "@pypi//anthropic",  # inspect_ai's anthropic provider imports it lazily
         "@pypi//inspect_ai",
     ],
 )
@@ -126,11 +125,11 @@ py_library(
     deps = [
         ":baseline_llm",
         ":dossier",
+        ":monthly_series",
         ":scoring",
         ":task",
         "@pypi//inspect_ai",
         "@pypi//pyyaml",
-        "@pypi//types_pyyaml",
     ],
 )
 
@@ -288,7 +287,6 @@ py_test(
         ":monthly_series",
         ":task",
         "//:conftest",
-        "@pypi//more_itertools",
         "@pypi//pytest_bazel",
     ],
 )
@@ -364,7 +362,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
-        "@pypi//types_pyyaml",
     ],
 )
 
@@ -441,4 +438,15 @@ oci_load(
     name = "eval_load",
     image = ":eval_image",
     repo_tags = ["loom-gym-eval:latest"],
+)
+
+py_library(
+    name = "analyze_baselines",
+    srcs = ["analyze_baselines.py"],
+    deps = [
+        ":market_seed_tasks",
+        ":scoring",
+        "@pypi//inspect_ai",
+        "@pypi//matplotlib",
+    ],
 )

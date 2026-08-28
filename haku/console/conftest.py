@@ -50,6 +50,9 @@ from third_party.containers.rlocations import PGVECTOR_PG18
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import start_postgres_container
 
+# TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
+# gazelle:include_dep @pypi//httpx
+
 # Fixtures hand out postgresql+psycopg:// and postgresql+asyncpg:// URLs; SQLAlchemy
 # loads both dialects at runtime, so gazelle cannot see either dependency.
 # gazelle:include_dep @pypi//asyncpg

@@ -33,6 +33,10 @@ from haku.console.mcp_config import (
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tools.gmail_client import GmailToolsClient
 
+# The types-jsonschema stubs import referencing, so mypy needs the dist wherever
+# jsonschema is imported; gazelle cannot see the dependency.
+# gazelle:include_dep @pypi//referencing
+
 logger = logging.getLogger(__name__)
 
 AGENT_AUTO_APPROVAL_ID = "agent_policy_v1"

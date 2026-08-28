@@ -72,8 +72,12 @@ py_library(
         "//props/core/models:examples",
         "//props/db:config",
         "//props/db:database",
+        "//props/db:models",
         "//util:oci",
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
@@ -155,7 +159,7 @@ py_test(
     ],
     requires_docker = True,
     deps = [
-        ":loop",
+        "//:conftest",
         "//agent_core/testing:responses",
         "//mcp_infra/exec:matchers",
         "//props:conftest",

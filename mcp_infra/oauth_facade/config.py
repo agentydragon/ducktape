@@ -31,6 +31,10 @@ from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.persistence import FilePersistence, PersistenceConfig
 from mcp_infra.tool_filter import ToolFilter
 
+# YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle
+# cannot see the dependency.
+# gazelle:include_dep @pypi//pyyaml
+
 
 class HttpUpstream(BaseModel):
     """Upstream MCP server reachable over Streamable HTTP."""

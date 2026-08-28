@@ -1,0 +1,48 @@
+# Groq credential distribution. The source Role and target SecretStore limit
+# the consumer to the one source Secret it needs.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: llm-groq-reader
+  namespace: litellm
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: llm-groq-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["llm-groq"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: llm-groq-litellm-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: llm-groq-reader
+subjects:
+  - kind: ServiceAccount
+    name: llm-groq-reader
+    namespace: litellm
+---
+# This target-local store is a capability: its authenticated ServiceAccount can
+# read only the matching source Secret in ducktape-flux.
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: llm-groq
+  namespace: litellm
+spec:
+  provider:
+    kubernetes:
+      server:
+        caProvider: { type: ConfigMap, name: kube-root-ca.crt, key: ca.crt }
+      auth:
+        serviceAccount: { name: llm-groq-reader, namespace: litellm }
+      remoteNamespace: ducktape-flux

@@ -50,13 +50,11 @@ py_test(
     deps = [
         ":config",
         ":kubernetes_client",
-        ":models",
         "//:conftest",
         "//mcp_infra/exec:models",
         "@pypi//fastmcp_slim",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

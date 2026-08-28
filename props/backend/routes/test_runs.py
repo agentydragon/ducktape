@@ -24,6 +24,9 @@ from props.orchestration.agent_registry import BudgetExceededError, ImageResolut
 from props.testing.constants import BUDGET_TEST_MODEL, TRAIN_EXAMPLE
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
 
+# TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
+# gazelle:include_dep @pypi//httpx
+
 FAKE_RESOLVED = ResolvedImage(digest=FAKE_CRITIC_DIGEST, oci_ref=f"localhost:5000/critic@{FAKE_CRITIC_DIGEST}")
 
 

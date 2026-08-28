@@ -21,10 +21,7 @@ py_library(
     name = "pre_tool_use",
     srcs = ["pre_tool_use.py"],
     visibility = ["//visibility:public"],
-    deps = [
-        ":common",
-        "@pypi//pydantic",
-    ],
+    deps = [":common"],
 )
 
 py_library(
@@ -41,10 +38,7 @@ py_library(
     name = "user_prompt_submit",
     srcs = ["user_prompt_submit.py"],
     visibility = ["//visibility:public"],
-    deps = [
-        ":common",
-        "@pypi//pydantic",
-    ],
+    deps = [":common"],
 )
 
 py_library(
@@ -58,10 +52,7 @@ py_library(
     name = "stop",
     srcs = ["stop.py"],
     visibility = ["//visibility:public"],
-    deps = [
-        ":common",
-        "@pypi//pydantic",
-    ],
+    deps = [":common"],
 )
 
 py_library(
@@ -273,6 +264,7 @@ py_test(
         ":pre_tool_use",
         ":session_start",
         ":worktree_create",
+        "//:conftest",
         "//devinfra/claude:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -285,8 +277,8 @@ py_test(
     deps = [
         ":output",
         ":session_start",
+        "//:conftest",
         "//devinfra/claude:conftest",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

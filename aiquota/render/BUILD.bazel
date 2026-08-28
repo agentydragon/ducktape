@@ -55,8 +55,8 @@ py_test(
     imports = ["../.."],
     deps = [
         ":tmux_lib",
+        "//:conftest",
         "//aiquota:models",
-        "//aiquota:pace",
         "@pypi//pytest_bazel",
     ],
 )
@@ -71,6 +71,7 @@ py_test(
     uses_syrupy = True,
     deps = [
         ":human_lib",
+        "//:conftest",
         "//aiquota:models",
         "//aiquota/testing:quota_fixtures",
         "//util/bazel:runfiles",
@@ -85,6 +86,7 @@ py_test(
     srcs = ["test_view_model.py"],
     deps = [
         ":view_model_lib",
+        "//:conftest",
         "//aiquota:models",
         "@pypi//pytest_bazel",
     ],

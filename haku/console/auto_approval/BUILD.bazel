@@ -27,11 +27,10 @@ py_test(
     deps = [
         ":github",
         "//:conftest",
+        "//haku/console:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        # Pytest async auto mode is configured by the root conftest hooks.
-        "@pypi//pytest_asyncio",
     ],
 )
 
@@ -70,6 +69,7 @@ py_library(
         "//haku/console/tools:gmail_client",
         "@pypi//fastmcp_slim",
         "@pypi//jsonschema",
+        "@pypi//referencing",
     ],
 )
 
@@ -81,6 +81,7 @@ py_test(
         ":registry",
         "//:conftest",
         "//gmail_api:labels",
+        "//haku/console:conftest",
         "//haku/console:mcp_config",
         "//haku/console:tool_call_actor",
         "//haku/console/tools:gmail",
@@ -89,7 +90,5 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        # Pytest async auto mode is configured by the root conftest hooks.
-        "@pypi//pytest_asyncio",
     ],
 )

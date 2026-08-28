@@ -23,6 +23,7 @@ py_test(
     srcs = ["test_kubeconfig.py"],
     deps = [
         ":kubeconfig",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

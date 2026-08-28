@@ -29,7 +29,9 @@ py_test(
     name = "dates_test",
     srcs = ["dates_test.py"],
     deps = [
+        ":conftest",
         ":dates",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -41,7 +43,6 @@ py_library(
         "//finance/augur/api:config",
         "//finance/augur/api:server",
         "//finance/augur/calibration:default_clients",
-        "//finance/augur/calibration:platform",
         "//util/bazel:runfiles",
         "@pypi//fastapi",
     ],
@@ -79,6 +80,8 @@ py_test(
         "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
     },
     deps = [
+        ":conftest",
+        "//:conftest",
         "//util:net",
         "//util:playwright",
         "//util/bazel:runfiles",
@@ -117,9 +120,11 @@ py_test(
         "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
     },
     deps = [
+        ":conftest",
         ":dev_server",
-        "//finance/augur:conftest",
+        "//:conftest",
         "//finance/augur/api:config",
+        "//finance/augur/api:server",
         "//finance/augur/calibration:catalog",
         "//finance/augur/calibration:testing",
         "//finance/evidence:markets",

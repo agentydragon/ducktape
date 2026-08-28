@@ -24,6 +24,7 @@ py_test(
     deps = [
         ":conftest",
         ":filename_conventions",
+        "//:conftest",
         "@pypi//pygit2",
         "@pypi//pytest_bazel",
     ],
@@ -41,7 +42,9 @@ py_test(
     srcs = ["test_git_hook.py"],
     legacy_create_init = 0,
     deps = [
+        ":conftest",
         ":git_hook",
+        "//:conftest",
         "@pypi//pygit2",
         "@pypi//pytest_bazel",
     ],
@@ -57,6 +60,7 @@ py_library(
         "//devinfra:pytest_main",
         "//devinfra/precommit/enforce_bazel_tests",
         "//util:otel",
+        "//util/bazel:workspace",
         "@pypi//opentelemetry_api",
         "@pypi//opentelemetry_sdk",
         "@pypi//pygit2",

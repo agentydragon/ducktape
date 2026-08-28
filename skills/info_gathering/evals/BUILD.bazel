@@ -4,10 +4,7 @@ py_library(
     name = "litellm_tool_provider",
     srcs = ["litellm_tool_provider.py"],
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
-    deps = [
-        "//agent_core:tool_provider",
-        "@pypi//litellm",
-    ],
+    deps = ["//agent_core:tool_provider"],
 )
 
 py_library(
@@ -29,10 +26,10 @@ py_library(
     srcs = ["replay_client.py"],
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
     deps = [
-        "@pypi//agent_framework_anthropic",
-        "@pypi//agent_framework_claude",
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
     ],
 )
 

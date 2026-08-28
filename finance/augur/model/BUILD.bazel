@@ -155,9 +155,6 @@ py_library(
         ":gbm",
         ":level_series_groups",
         ":series",
-        "//finance/augur:frames",
-        "@pypi//numpy",
-        "@pypi//polars",
         "@pypi//pydantic",
     ],
 )
@@ -286,8 +283,8 @@ py_library(
         ":series",
         ":structural_macro",
         "//finance/evidence:loading",
+        "//finance/evidence:sources",
         "@pypi//numpy",
-        "@pypi//pydantic",
     ],
 )
 
@@ -306,6 +303,7 @@ py_test(
         "//finance/evidence:loading",
         "//finance/evidence:sources",
         "@pypi//numpy",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -366,8 +364,6 @@ py_test(
         ":testing",
         "//:conftest",
         "//finance/augur:conftest",
-        "//util/bazel:runfiles",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -399,7 +395,6 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "@pypi//numpy",
-        "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -482,11 +477,13 @@ py_test(
     name = "mirroring_test",
     srcs = ["mirroring_test.py"],
     deps = [
+        ":conftest",
         ":exogenous",
         ":mirroring",
         ":series",
         ":testing",
         "//:conftest",
+        "//finance/augur:conftest",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

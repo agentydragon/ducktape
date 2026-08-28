@@ -60,6 +60,8 @@ py_test(
     srcs = ["test_config.py"],
     deps = [
         ":config",
+        "//:conftest",
+        "//mcp_infra:conftest",
         "//mcp_infra:tool_filter",
         "//mcp_infra/authentik_auth:config",
         "@pypi//pydantic",
@@ -75,12 +77,12 @@ py_test(
         ":config",
         ":proxy",
         "//:conftest",
+        "//mcp_infra:conftest",
         "//mcp_infra:tool_filter",
         "//mcp_infra/authentik_auth:config",
         "//mcp_infra/testing:remote_server",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -91,6 +93,8 @@ py_test(
     deps = [
         ":config",
         ":server",
+        "//:conftest",
+        "//mcp_infra:conftest",
         "//mcp_infra:static_bearer",
         "@pypi//httpx",
         "@pypi//pytest_bazel",
@@ -105,10 +109,10 @@ py_test(
         ":config",
         ":upstream_probe",
         "//:conftest",
+        "//mcp_infra:conftest",
         "//mcp_infra/authentik_auth:config",
         "//mcp_infra/testing:remote_server",
         "@pypi//fastmcp_slim",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

@@ -68,7 +68,6 @@ py_library(
     deps = [
         ":authorization",
         ":models",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -78,7 +77,6 @@ py_library(
     deps = [
         ":authorization",
         "@pypi//fastapi",
-        "@pypi//pydantic",
     ],
 )
 
@@ -88,6 +86,8 @@ py_test(
     deps = [
         ":models",
         ":service",
+        "//:conftest",
+        "//haku/console:conftest",
         "//haku/console/grants:envelope",
         "//haku/console/grants:principal",
         "@pypi//pydantic",
@@ -102,10 +102,11 @@ py_test(
     deps = [
         ":models",
         ":service",
+        "//:conftest",
+        "//haku/console:conftest",
         "//haku/console/grants:envelope",
         "//haku/console/grants:principal",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -140,6 +141,8 @@ py_test(
     deps = [
         ":models",
         ":routes",
+        "//:conftest",
+        "//haku/console:conftest",
         "//haku/console:operator_auth",
         "//haku/console:tool_call_actor",
         "//haku/console/agents:enrollment",
@@ -147,8 +150,8 @@ py_test(
         "//haku/console/grants:envelope",
         "//haku/console/grants:principal",
         "@pypi//fastapi",
+        "@pypi//httpx",
         "@pypi//pytest_bazel",
-        "@pypi//starlette",
     ],
 )
 
@@ -159,12 +162,12 @@ py_test(
     deps = [
         ":authorization",
         ":kubectl_passthrough_policy",
+        "//:conftest",
         "//haku/console:conftest",
         "//haku/console:tool_call_actor",
         "//haku/console:tool_call_service",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -174,14 +177,16 @@ py_test(
     srcs = ["test_proxy_authorization.py"],
     deps = [
         ":authorization",
+        ":models",
         ":proxy_authorization",
+        ":service",
+        "//:conftest",
+        "//haku/console:config",
+        "//haku/console:conftest",
         "//haku/console:tool_call_actor",
         "//haku/console/grants:principal",
         "@pypi//fastapi",
-        "@pypi//httpx2",
-        "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

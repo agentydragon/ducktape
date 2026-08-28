@@ -24,7 +24,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//kubernetes",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

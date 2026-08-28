@@ -84,6 +84,7 @@ py_library(
     deps = [
         ":catalog",
         "//finance/augur/fit:evidence_data",
+        "//finance/augur/model:series",
         "//finance/evidence:loading",
     ],
 )
@@ -195,7 +196,6 @@ py_test(
         "//finance/evidence:markets",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -218,6 +218,7 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/fit:evidence_data",
+        "//finance/augur/model:series",
         "@pypi//pytest_bazel",
     ],
 )
@@ -236,7 +237,6 @@ py_test(
         "//finance/augur/model:private_equity_risk",
         "//finance/evidence:markets",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -271,7 +271,6 @@ py_test(
         "//finance/augur:conftest",
         "//finance/evidence:markets",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

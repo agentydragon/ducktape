@@ -4,6 +4,7 @@ py_library(
     name = "twenty_questions",
     srcs = ["twenty_questions.py"],
     deps = [
+        "//skills:skill_spec",
         "//skills/eval_infra:af_chat_client",
         "//skills/eval_infra:eval_sandbox",
         "//skills/eval_infra:skill_staging",
@@ -15,12 +16,10 @@ py_library(
         "//skills/info_gathering/evals/twenty_questions/x/shared:cli",
         "//skills/info_gathering/evals/twenty_questions/x/shared:output",
         "//skills/info_gathering/evals/twenty_questions/x/shared:variants",
-        # The agent_framework core package's openai/anthropic stub modules
-        # reference these sibling packages; mypy needs them on the dep graph.
-        "@pypi//agent_framework_anthropic",
-        "@pypi//agent_framework_claude",
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
     ],
 )
 
@@ -32,28 +31,33 @@ py_binary(
 
 py_test(
     name = "test_twenty_questions",
-    srcs = [
-        "conftest.py",
-        "test_twenty_questions.py",
-    ],
+    srcs = ["test_twenty_questions.py"],
     data = ["//third_party/containers:python_3_13_slim"],
     requires_docker = True,
     deps = [
+        ":conftest",
         ":twenty_questions",
+        "//:conftest",
         "//skills/eval_infra:eval_sandbox",
         "//skills/eval_infra:skill_staging",
         "//skills/eval_infra/empty_skill:empty_skill_skill_spec",
         "//skills/info_gathering/evals:replay_client",
+        "//skills/info_gathering/evals/twenty_questions:conftest",
         "//skills/info_gathering/evals/twenty_questions:result_types",
-        "//skills/info_gathering/evals/twenty_questions/x/shared:conftest",
         "//third_party/containers:rlocations",
         "//util:oci",
-        "@pypi//agent_framework_anthropic",
-        "@pypi//agent_framework_claude",
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
-        "@pypi//agent_framework_openai",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = ["//skills/info_gathering/evals/twenty_questions/x/shared:conftest"],
 )

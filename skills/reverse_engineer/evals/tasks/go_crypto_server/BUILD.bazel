@@ -36,6 +36,7 @@ py_test(
         "PLAIN_BIN": "$(rlocationpath :go_crypto_server_plain)",
     },
     deps = [
+        "//:conftest",
         "//util:net",
         "//util/bazel:runfiles",
         "@pypi//httpx",

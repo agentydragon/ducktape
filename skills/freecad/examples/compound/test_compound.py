@@ -10,6 +10,10 @@ from skills.freecad.testing.compare import assert_dxf_equal, assert_pdf_equal, a
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
+# The scripts below are driven by runfiles path; gazelle cannot see the dependency.
+# gazelle:include_dep //skills/freecad/examples/compound:build
+# gazelle:include_dep //skills/freecad/examples:export_page
+
 _BUILD_SCRIPT = "_main/skills/freecad/examples/compound/build.py"
 _EXPORT_SCRIPT = "_main/skills/freecad/examples/export_page.py"
 _GOLDEN_DXF = "_main/skills/freecad/examples/compound/drawing.dxf"

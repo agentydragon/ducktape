@@ -85,12 +85,12 @@ py_test(
     requires_docker = True,
     deps = [
         ":runtime",
+        "//:conftest",
         "//props:conftest",
         "//props/core:agent_types",
+        "//props/core/models:examples",
         "//props/db:database",
         "//util/testing:undeclared_outputs",
-        "@pypi//mako",
-        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],

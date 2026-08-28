@@ -58,9 +58,9 @@ py_test(
     srcs = ["test_backend.py"],
     deps = [
         ":backend",
+        "//:conftest",
         "@pypi//fastapi",
         "@pypi//httpx",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -70,6 +70,7 @@ py_test(
     srcs = ["test_config.py"],
     deps = [
         ":config",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

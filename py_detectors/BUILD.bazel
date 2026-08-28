@@ -1,4 +1,18 @@
 # gazelle:exclude rules
+# rules/ is excluded (macro-generated packages), so imports into it need pins:
+# gazelle:resolve py py_detectors.rules.broad_except_order.rule //py_detectors/rules:broad_except_order
+# gazelle:resolve py py_detectors.rules.dynamic_attr_probe.rule //py_detectors/rules:dynamic_attr_probe
+# gazelle:resolve py py_detectors.rules.flatten_nested_guards.rule //py_detectors/rules:flatten_nested_guards
+# gazelle:resolve py py_detectors.rules.import_aliasing.rule //py_detectors/rules:import_aliasing
+# gazelle:resolve py py_detectors.rules.imports_inside_def.rule //py_detectors/rules:imports_inside_def
+# gazelle:resolve py py_detectors.rules.magic_tuple_indices.rule //py_detectors/rules:magic_tuple_indices
+# gazelle:resolve py py_detectors.rules.optional_string_simplify.rule //py_detectors/rules:optional_string_simplify
+# gazelle:resolve py py_detectors.rules.pathlike_str_casts.rule //py_detectors/rules:pathlike_str_casts
+# gazelle:resolve py py_detectors.rules.pydantic_v1_shims.rule //py_detectors/rules:pydantic_v1_shims
+# gazelle:resolve py py_detectors.rules.swallow_errors.rule //py_detectors/rules:swallow_errors
+# gazelle:resolve py py_detectors.rules.trivial_alias.rule //py_detectors/rules:trivial_alias
+# gazelle:resolve py py_detectors.rules.trivial_passthrough.rule //py_detectors/rules:trivial_passthrough
+# gazelle:resolve py py_detectors.rules.walrus_suggest.rule //py_detectors/rules:walrus_suggest
 
 """Python detectors package — entry points and shared infrastructure."""
 

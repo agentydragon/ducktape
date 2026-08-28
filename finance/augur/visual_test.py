@@ -41,6 +41,9 @@ from util.testing.frontend_visual import (
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_review import retain_review_asset
 
+# pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
+# gazelle:include_dep //util:playwright
+
 pytest_plugins = ("util.playwright",)
 
 if TYPE_CHECKING:

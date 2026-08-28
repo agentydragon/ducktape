@@ -1,14 +1,14 @@
-# Public, secret-free analytics control-plane diagnostics for Haku and public-coder.
+# Public, secret-free ClickHouse control-plane diagnostics for Haku and public-coder.
 #
 # The main resources include their observed status. This intentionally grants no
 # Secrets, pod exec, writes, or status-subresource mutation.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: agent-analytics-diagnostics-reader
-  namespace: analytics
+  name: agent-clickhouse-diagnostics-reader
+  namespace: clickhouse
   annotations:
-    description: Read-only analytics operator and observability resource status.
+    description: Read-only ClickHouse operator and observability resource status.
 rules:
   - apiGroups: ["clickhouse.altinity.com"]
     resources: ["clickhouseinstallations"]
@@ -39,14 +39,14 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: agent-analytics-diagnostics-reader
-  namespace: analytics
+  name: agent-clickhouse-diagnostics-reader
+  namespace: clickhouse
   annotations:
-    description: Binds Haku and public-coder to secret-free analytics status.
+    description: Binds Haku and public-coder to secret-free ClickHouse status.
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: agent-analytics-diagnostics-reader
+  name: agent-clickhouse-diagnostics-reader
 subjects:
   - kind: Group
     name: oidc-ksbx-groups:haku

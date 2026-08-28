@@ -29,7 +29,7 @@ spec:
         topology.kubernetes.io/zone: hil-ovh
       containers:
         - name: server
-          image: git.allegedly.works/ducktape-ci/grocy-mcp:devel-20260828071802-20a40e4 # {"$imagepolicy": "flux-system:grocy-mcp-oidc-server"}
+          image: git.allegedly.works/ducktape-ci/grocy-mcp:devel-20260828085317-cda562b # {"$imagepolicy": "flux-system:grocy-mcp-oidc-server"}
           imagePullPolicy: Always
           ports:
             - name: http

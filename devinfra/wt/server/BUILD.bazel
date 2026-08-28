@@ -17,7 +17,6 @@ py_library(
     deps = [
         "//devinfra/wt/testing:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
     ],
 )
 
@@ -194,7 +193,6 @@ py_library(
         "//devinfra/wt/shared:protocol",
         "@pypi//psutil",
         "@pypi//pygit2",
-        "@pypi//types_psutil",
     ],
 )
 
@@ -239,6 +237,7 @@ py_test(
     deps = [
         ":conftest",
         ":worktree_service",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -18,6 +18,7 @@ py_test(
     srcs = ["test_cli.py"],
     deps = [
         ":cli",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//typer",

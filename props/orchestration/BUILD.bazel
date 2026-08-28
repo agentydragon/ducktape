@@ -30,7 +30,6 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/db:config",
-        "@pypi//asyncpg",
         "@pypi//sqlalchemy",
     ],
 )
@@ -110,8 +109,10 @@ py_test(
         ":conftest",
         ":executor",
         ":k8s_executor",
+        "//:conftest",
+        "//props:conftest",
         "@pypi//kubernetes_asyncio",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -124,9 +125,10 @@ py_test(
         ":conftest",
         ":executor",
         ":grader_supervisor",
+        "//:conftest",
+        "//props:conftest",
         "//props/core:ids",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -140,6 +142,7 @@ py_test(
         ":agent_registry",
         ":conftest",
         ":executor",
+        "//:conftest",
         "//props:conftest",
         "//props/core:ids",
         "//props/core:oci_utils",
@@ -148,7 +151,7 @@ py_test(
         "//props/db:database",
         "//props/db:models",
         "//props/testing/fixtures:runs",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

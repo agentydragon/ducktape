@@ -22,8 +22,10 @@ py_test(
     name = "test_parse_str_edf",
     srcs = ["test_parse_str_edf.py"],
     deps = [
+        "//:conftest",
         "//cpap/skill/examples:generate_test_edf",
         "//cpap/skill/examples:parse_str_edf",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

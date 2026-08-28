@@ -40,6 +40,7 @@ py_library(
         ":remote",
         "//aiquota/providers:base",
         "//aiquota/providers:claude_lib",
+        "//aiquota/providers:cli_proxy_lib",
         "//aiquota/providers:client",
         "//aiquota/providers:codex_lib",
         "//aiquota/providers:zai_lib",
@@ -78,7 +79,7 @@ py_library(
     imports = [".."],
     deps = [
         ":cache",
-        ":models",
+        ":config",
         "//aiquota/render:human_lib",
         "//aiquota/render:tmux_lib",
         "//aiquota/render:view_model_lib",
@@ -170,6 +171,8 @@ py_test(
     imports = [".."],
     deps = [
         ":models",
+        "//:conftest",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -181,6 +184,7 @@ py_test(
     imports = [".."],
     deps = [
         ":peak_windows",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -193,6 +197,7 @@ py_test(
     deps = [
         ":models",
         ":pace",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -206,7 +211,6 @@ py_test(
         ":models",
         "//:conftest",
         "//aiquota/providers:base",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -216,10 +220,10 @@ py_test(
     srcs = ["test_remote.py"],
     imports = [".."],
     deps = [
+        ":models",
         ":remote",
         "//:conftest",
         "@pypi//httpx",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//respx",
     ],
@@ -231,6 +235,7 @@ py_test(
     imports = [".."],
     deps = [
         ":config",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -243,6 +248,7 @@ py_test(
     deps = [
         ":api",
         ":models",
+        "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -258,9 +264,9 @@ py_test(
         ":api",
         ":clickhouse",
         ":models",
+        "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

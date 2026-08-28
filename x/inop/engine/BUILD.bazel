@@ -44,6 +44,7 @@ py_library(
     srcs = ["runner_factory.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":models",
         "//openai_utils:model",
         "//x/inop/runners:base",
         "//x/inop/runners:claude_runner",

@@ -66,7 +66,7 @@ py_library(
         "//props/db:models",
         "//props/db:notifications",
         "//props/db:snapshot_io",
-        "@pypi//agent_framework_core",
+        "@pypi//agent_framework_core",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//asyncpg",
         "@pypi//asyncpg_stubs",
         "@pypi//sqlalchemy",
@@ -116,7 +116,6 @@ py_library(
         "//props/db:database",
         "//props/db:models",
         "@pypi//pydantic",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -126,7 +125,10 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/db:notifications",
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
     ],
 )
 
@@ -138,10 +140,16 @@ py_test(
     name = "test_notification_middleware",
     srcs = ["test_notification_middleware.py"],
     deps = [
+        ":conftest",
         ":notification_middleware",
+        "//:conftest",
+        "//props:conftest",
         "//props/core:ids",
         "//props/db:notifications",
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//pytest_bazel",
     ],
 )
@@ -153,8 +161,8 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
+        "//:conftest",
         "//props:conftest",
-        "//props/db:database",
         "//props/db:models",
         "//props/db:snapshots",
         "//props/testing/fixtures:runs",
@@ -175,9 +183,8 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
+        "//:conftest",
         "//props:conftest",
-        "//props/db:database",
-        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -196,6 +203,7 @@ py_test(
         ":conftest",
         ":drift_handler",
         ":tools",
+        "//:conftest",
         "//agent_core/testing:responses",
         "//props:conftest",
         "//props/agents/grader/testing:mocks",
@@ -223,6 +231,7 @@ py_test(
         ":conftest",
         ":drift_handler",
         ":tools",
+        "//:conftest",
         "//agent_core/testing:responses",
         "//props:conftest",
         "//props/agents/grader/testing:mocks",
@@ -250,6 +259,7 @@ py_test(
         ":conftest",
         ":drift_handler",
         ":tools",
+        "//:conftest",
         "//agent_core/testing:responses",
         "//props:conftest",
         "//props/agents/grader/testing:mocks",
@@ -275,6 +285,7 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
+        "//:conftest",
         "//agent_core/testing:responses",
         "//props:conftest",
         "//props/agents/grader/testing:mocks",
@@ -332,5 +343,6 @@ py_library(
         "//props/db:models",
         "//props/testing/fixtures:runs",
         "@pypi//pytest",
+        "@pypi//sqlalchemy",
     ],
 )

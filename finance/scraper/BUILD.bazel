@@ -86,7 +86,7 @@ py_test(
         "//finance/evidence:sources",
         "@pypi//httpx",
         "@pypi//pygit2",
-        "@pypi//pytest_asyncio",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -120,7 +120,6 @@ py_test(
         "//finance/evidence:markets",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

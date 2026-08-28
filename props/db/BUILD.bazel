@@ -166,6 +166,9 @@ assert_no_deps(
 
 py_test(
     name = "test_agent_queries",
+    # Postgres testcontainer work runs 25-55s across recent green runs; the small-size
+    # 60s ceiling flakes on loaded workers (timed out at 60.2s while actively working).
+    size = "medium",
     srcs = [
         "test_agent_queries.py",
     ],
@@ -175,6 +178,7 @@ py_test(
         ":database",
         ":examples",
         ":models",
+        "//:conftest",
         "//props:conftest",
         "//props/agents/critic_dev/recipes:ground_truth",
         "//props/core:splits",
@@ -195,6 +199,7 @@ py_test(
         ":conftest",
         ":examples",
         ":models",
+        "//:conftest",
         "//props:conftest",
         "//props/core:splits",
         "//props/core/models:examples",
@@ -216,6 +221,7 @@ py_test(
         ":conftest",
         ":database",
         ":models",
+        "//:conftest",
         "//props:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -235,11 +241,11 @@ py_test(
     ],
     requires_docker = True,
     deps = [
-        ":config",
         ":conftest",
         ":database",
         ":examples",
         ":models",
+        "//:conftest",
         "//props:conftest",
         "//props/core:agent_types",
         "//props/core:ids",
@@ -247,8 +253,6 @@ py_test(
         "//props/testing:constants",
         "//props/testing/fixtures:credentials",
         "//props/testing/fixtures:runs",
-        "@pypi//asyncpg",
-        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -261,11 +265,11 @@ py_test(
     srcs = ["test_view_extracts_grade_fields.py"],
     requires_docker = True,
     deps = [
-        ":config",
         ":conftest",
         ":database",
         ":examples",
         ":models",
+        "//:conftest",
         "//props:conftest",
         "//props/core:ids",
         "//props/testing/fixtures:runs",

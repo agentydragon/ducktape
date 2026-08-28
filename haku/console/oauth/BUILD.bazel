@@ -111,9 +111,6 @@ py_test(
         "//haku/console:database_schema",
         "//haku/console:mcp_config",
         "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-        # pytest-asyncio auto mode (root conftest) needs the plugin importable at runtime.
-        "@pypi//pytest_asyncio",
     ],
 )
 
@@ -132,7 +129,6 @@ py_test(
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # pytest-asyncio auto mode (async test functions)
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -156,14 +152,12 @@ py_test(
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "//haku/console:mcp_config",
-        "//haku/console:operator_identity",
         "//haku/console:operator_identity_store",
         "//haku/console:tool_call_service",
         "@pypi//fastapi",
         "@pypi//mcp",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -175,9 +169,9 @@ py_test(
     deps = [
         ":token_support",
         "//:conftest",
+        "//haku/console:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

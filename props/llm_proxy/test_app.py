@@ -17,6 +17,9 @@ from props.config import LLMProxyConfig
 from props.llm_proxy.app import create_app
 from props.llm_proxy.cli import cli
 
+# TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
+# gazelle:include_dep @pypi//httpx
+
 
 def _client() -> TestClient:
     # The proxy needs only the minimal LLMProxyConfig (just upstreams); the

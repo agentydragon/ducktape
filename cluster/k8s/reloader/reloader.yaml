@@ -57,11 +57,11 @@ spec:
       # `reloader.stakater.com/auto: "false"`.
       autoReloadAll: true
       # The Altinity operator hot-reloads its generated ClickHouse user config.
-      # Watching analytics caused a feedback loop: each generated users
-      # ConfigMap update restarted ClickHouse, the new Pod IP changed the next
-      # generated config, and Reloader restarted it again. Operator-managed
-      # analytics workloads therefore stay outside cluster-wide auto reloads.
-      ignoreNamespaces: analytics
+      # Watching clickhouse causes a feedback loop: each generated users
+      # ConfigMap update restarts ClickHouse, the new Pod IP changes the next
+      # generated config, and Reloader restarts it again. Operator-managed
+      # ClickHouse workloads therefore stay outside cluster-wide auto reloads.
+      ignoreNamespaces: clickhouse
       # Use pod-template annotations, not Reloader's default env-var patch, to
       # force rollouts. The default mutates the container spec; operator-owned
       # workloads can reconcile that drift away. SeaweedFS proved this with

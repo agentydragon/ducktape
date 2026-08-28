@@ -9,6 +9,9 @@ from starlette.testclient import TestClient
 from llm.html.llm_html.server import _DEV_TOKEN_SECRET, _resolve_token_secret, app
 from llm.html.llm_html.token_scheme import N_TAGS, TokenScheme
 
+# TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
+# gazelle:include_dep @pypi//httpx
+
 
 @pytest.fixture
 def mock_token_bits():

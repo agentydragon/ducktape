@@ -10,9 +10,8 @@ py_library(
     srcs = ["docker_exec.py"],
     visibility = ["//skills:__subpackages__"],
     deps = [
-        "//mcp_infra/exec/docker:container_session",
-        "//mcp_infra/exec/docker:launcher",
         "//mcp_infra/exec/docker:server",
+        "//mcp_infra/exec/docker:types",
         "@pypi//aiodocker",
     ],
 )
@@ -39,14 +38,24 @@ py_library(
     name = "transcript",
     srcs = ["transcript.py"],
     visibility = ["//skills:__subpackages__"],
-    deps = _AGENT_FRAMEWORK_DEPS,
+    deps = [
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
+    ],
 )
 
 py_library(
     name = "termination",
     srcs = ["termination.py"],
     visibility = ["//skills:__subpackages__"],
-    deps = _AGENT_FRAMEWORK_DEPS,
+    deps = [
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
+    ],
 )
 
 py_library(
@@ -65,14 +74,23 @@ py_library(
         ":skill_staging",
         "//mcp_infra/exec/docker:types",
         "//util/bazel:runfiles",
-    ] + _AGENT_FRAMEWORK_DEPS,
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
+    ],
 )
 
 py_library(
     name = "af_chat_client",
     srcs = ["af_chat_client.py"],
     visibility = ["//skills:__subpackages__"],
-    deps = _AGENT_FRAMEWORK_DEPS,
+    deps = [
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
+    ],
 )
 
 py_library(
@@ -80,7 +98,11 @@ py_library(
     srcs = ["resurrect.py"],
     deps = [
         ":af_chat_client",
-    ] + _AGENT_FRAMEWORK_DEPS,
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
+    ],
 )
 
 py_binary(

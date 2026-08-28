@@ -3,6 +3,7 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 # gazelle:exclude material_test.py
 # gazelle:exclude test_material_test.py
 
+# keep: srcs is gazelle-excluded above; without keep, gazelle deletes rules over files it cannot see
 py_library(
     name = "material_test_lib",
     srcs = ["material_test.py"],
@@ -19,6 +20,7 @@ py_binary(
     deps = [":material_test_lib"],
 )
 
+# keep: srcs is gazelle-excluded above
 py_test(
     name = "test_material_test",
     srcs = ["test_material_test.py"],

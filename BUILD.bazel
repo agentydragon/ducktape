@@ -21,6 +21,9 @@
 
 # gazelle:python_root
 # gazelle:python_generation_mode file
+# gazelle:python_generate_pyi_deps false
+# pyi_deps stays off: rules_python keeps pyi_deps out of runtime runfiles and the
+# mypy aspect does not traverse them, so TYPE_CHECKING and lazy imports live in deps.
 # gazelle:python_default_visibility NONE
 # gazelle:python_manifest_file_name devinfra/gazelle_python.yaml
 # The codebase pattern is one py_library per .py file, with py_binary targets hand-written

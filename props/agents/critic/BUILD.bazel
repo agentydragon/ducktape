@@ -53,7 +53,7 @@ py_library(
         "//props/db:database",
         "//props/db:models",
         "//props/db:snapshots",
-        "@pypi//agent_framework_core",
+        "@pypi//agent_framework_core",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//pydantic",
     ],
 )
@@ -103,6 +103,7 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
+        "//:conftest",
         "//props:conftest",
         "//props/core:ids",
         "//props/db:database",
@@ -110,7 +111,6 @@ py_test(
         "//props/db:models",
         "//props/db:snapshots",
         "//props/testing/fixtures:runs",
-        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -124,6 +124,7 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
+        "//:conftest",
         "//props:conftest",
         "//props/core:ids",
         "//props/db:database",
@@ -151,6 +152,7 @@ py_test(
     deps = [
         ":conftest",
         ":main",
+        "//:conftest",
         "//agent_core/testing:responses",
         "//mcp_infra/exec:matchers",
         "//props:conftest",
@@ -159,7 +161,6 @@ py_test(
         "//props/db:models",
         "//props/testing:constants",
         "@pypi//pyhamcrest",
-        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
@@ -205,12 +206,10 @@ py_library(
     deps = [
         "//props/core/models:examples",
         "//props/db:database",
-        "//props/db:examples",
         "//props/db:models",
         "//props/db:snapshots",
         "//props/orchestration:agent_credentials",
         "//props/testing/fixtures:runs",
-        "@pypi//asyncpg",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
     ],

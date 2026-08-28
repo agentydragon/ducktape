@@ -5,7 +5,6 @@ py_library(
     name = "preprocessor",
     srcs = ["preprocessor.py"],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//mako"],
 )
 
 py_test(
@@ -13,6 +12,7 @@ py_test(
     srcs = ["test_preprocessor.py"],
     deps = [
         ":preprocessor",
+        "//:conftest",
         "@pypi//mako",
         "@pypi//pytest_bazel",
     ],

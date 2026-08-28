@@ -13,11 +13,15 @@ py_test(
     deps = [
         ":client",
         ":conftest",
+        "//:conftest",
         "//openai_utils:api_shape",
+        "//props:conftest",
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//respx",
     ],
@@ -33,6 +37,7 @@ py_library(
         "//props/db:database",
         "//props/db:models",
         "@pypi//agent_framework_anthropic",
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
         "@pypi//agent_framework_openai",
         "@pypi//anthropic",
@@ -44,7 +49,10 @@ py_library(
     srcs = ["tools.py"],
     visibility = ["//props:__subpackages__"],
     deps = [
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//pydantic",
     ],
 )
@@ -56,7 +64,10 @@ py_library(
     deps = [
         "//mcp_infra/exec:models",
         "//mcp_infra/exec:subprocess",
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
     ],
 )
 
@@ -64,7 +75,12 @@ py_library(
     name = "middleware",
     srcs = ["middleware.py"],
     visibility = ["//props:__subpackages__"],
-    deps = ["@pypi//agent_framework_core"],
+    deps = [
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
+    ],
 )
 
 py_library(
@@ -74,6 +90,9 @@ py_library(
     deps = [
         ":client",
         "//props/db:database",
+        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
     ],
 )

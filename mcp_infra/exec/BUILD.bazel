@@ -12,10 +12,7 @@ py_library(
     name = "models",
     srcs = ["models.py"],
     visibility = ["//visibility:public"],
-    deps = [
-        "//openai_utils:pydantic_strict_mode",
-        "@pypi//pydantic",
-    ],
+    deps = ["@pypi//pydantic"],
 )
 
 # Subprocess execution utility - no MCP dependencies
@@ -24,10 +21,7 @@ py_library(
     name = "subprocess",
     srcs = ["subprocess.py"],
     visibility = ["//visibility:public"],
-    deps = [
-        ":models",
-        "@pypi//pydantic",
-    ],
+    deps = [":models"],
 )
 
 # Image reading utility (shared by direct, bwrap, and docker)
@@ -50,7 +44,7 @@ py_library(
         ":models",
         ":read_image",
         ":subprocess",
-        "//mcp_infra/enhanced:flat_mixin",
+        "//mcp_infra:flat_tool",
         "//mcp_infra/enhanced:server",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
@@ -106,11 +100,10 @@ py_library(
         ":models",
         ":read_image",
         ":subprocess",
-        "//mcp_infra/enhanced:flat_mixin",
+        "//mcp_infra:flat_tool",
         "//mcp_infra/enhanced:server",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
-        "@pypi//pydantic",
     ],
 )
 
@@ -141,9 +134,10 @@ py_test(
         ":direct",
         ":models",
         ":subprocess",
+        "//:conftest",
+        "//mcp_infra:conftest",
         "//mcp_infra/testing:exec_stubs",
         "@pypi//fastmcp_slim",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -156,10 +150,11 @@ py_test(
         ":bwrap",
         ":conftest",
         ":models",
+        "//:conftest",
+        "//mcp_infra:conftest",
         "//mcp_infra/testing:exec_stubs",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -173,12 +168,13 @@ py_test(
     deps = [
         ":conftest",
         ":models",
-        "//mcp_infra/exec/docker:container_session",
-        "//mcp_infra/exec/docker:launcher",
+        "//:conftest",
+        "//mcp_infra:conftest",
+        "//mcp_infra:constants",
         "//mcp_infra/exec/docker:server",
+        "//mcp_infra/exec/docker:types",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -224,13 +220,13 @@ py_test(
     deps = [
         ":conftest",
         ":models",
-        "//mcp_infra/exec/docker:container_session",
-        "//mcp_infra/exec/docker:launcher",
+        "//:conftest",
+        "//mcp_infra:conftest",
         "//mcp_infra/exec/docker:server",
+        "//mcp_infra/exec/docker:types",
         "//mcp_infra/testing:fixtures",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -239,9 +235,10 @@ py_test(
     name = "test_exec_input_schema",
     srcs = ["test_exec_input_schema.py"],
     deps = [
+        ":conftest",
         ":models",
-        "//mcp_infra/exec/docker:container_session",
-        "//mcp_infra/exec/docker:launcher",
+        "//:conftest",
+        "//mcp_infra:conftest",
         "//mcp_infra/exec/docker:server",
         "//mcp_infra/exec/docker:types",
         "@pypi//pydantic",
@@ -257,6 +254,7 @@ live_openai_py_test(
     requires_docker = True,
     deps = [
         ":conftest",
+        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "//agent_core:agent",
         "//agent_core:handler",
         "//agent_core:logging_handler",
@@ -286,15 +284,14 @@ py_test(
         ":direct",
         ":models",
         ":subprocess",
+        "//:conftest",
+        "//mcp_infra:conftest",
         "//mcp_infra:naming",
         "//mcp_infra:prefix",
-        "//mcp_infra/exec/docker:container_session",
-        "//mcp_infra/exec/docker:launcher",
         "//mcp_infra/exec/docker:server",
         "//mcp_infra/stubs:typed_stubs",
         "//mcp_infra/testing:simple_servers",
         "@pypi//fastmcp_slim",
-        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],

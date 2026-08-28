@@ -49,7 +49,7 @@ py_library(
     deps = [
         ":_runner",
         ":task",
-    ] + _INSPECT_PROVIDER_DEPS,
+    ],
 )
 
 py_binary(
@@ -68,7 +68,7 @@ py_library(
     deps = [
         ":_runner",
         ":task",
-    ] + _INSPECT_PROVIDER_DEPS,
+    ],
 )
 
 py_binary(

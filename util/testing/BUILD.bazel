@@ -152,6 +152,7 @@ py_test(
     deps = [
         ":container_logs",
         ":undeclared_outputs",
+        "//:conftest",
         "//third_party/containers:rlocations",
         "//util:oci",
         "@pypi//pytest",
@@ -189,6 +190,7 @@ py_test(
     srcs = ["test_visual_review.py"],
     deps = [
         ":visual_review",
+        "//:conftest",
         "//util:visual_review",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

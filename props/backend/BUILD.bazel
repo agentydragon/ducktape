@@ -45,9 +45,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//authlib",
-        "@pypi//httpx",
         "@pypi//pydantic_settings",
-        "@pypi//starlette",
     ],
 )
 
@@ -62,9 +60,10 @@ py_test(
     name = "test_loki",
     srcs = ["test_loki.py"],
     deps = [
+        ":conftest",
         ":loki",
+        "//:conftest",
         "//props:conftest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -92,7 +91,6 @@ py_library(
         "//props/orchestration:executor_factory",
         "//props/orchestration:grader_supervisor",
         "//util:logging",
-        "@pypi//asyncpg",
         "@pypi//fastapi",
         "@pypi//itsdangerous",
         "@pypi//starlette",
@@ -146,8 +144,11 @@ py_test(
     deps = [
         ":auth",
         ":conftest",
+        "//:conftest",
+        "//props:conftest",
         "//props/db:config",
         "//props/db:database",
+        "//props/db:models",
         "@pypi//fastapi",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -158,7 +159,10 @@ py_test(
     name = "test_oidc",
     srcs = ["test_oidc.py"],
     deps = [
+        ":conftest",
         ":oidc",
+        "//:conftest",
+        "//props:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -170,6 +174,8 @@ py_test(
     requires_docker = True,
     deps = [
         ":cli",
+        ":conftest",
+        "//:conftest",
         "//props:conftest",
         "@pypi//fastapi",
         "@pypi//pytest",
@@ -187,6 +193,7 @@ py_test(
     deps = [
         ":auth",
         ":conftest",
+        "//:conftest",
         "//props:conftest",
         "//props/core:agent_types",
         "//props/db:database",
@@ -196,8 +203,6 @@ py_test(
         "//props/testing:constants",
         "//props/testing/fixtures:credentials",
         "//props/testing/fixtures:runs",
-        "@pypi//asyncpg",
-        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],

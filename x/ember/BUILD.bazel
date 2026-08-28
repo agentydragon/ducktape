@@ -2,8 +2,6 @@
 # gazelle:exclude resources/examples/matrix_client
 """Ember agent package."""
 
-# gazelle:resolve py x.ember //x/ember:system_prompt
-
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
@@ -49,6 +47,7 @@ py_test(
     data = [":data_files"],
     deps = [
         ":system_prompt",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -60,6 +59,7 @@ py_test(
     srcs = ["test_matrix_client.py"],
     deps = [
         ":matrix_client",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -71,6 +71,7 @@ py_test(
     srcs = ["test_python_session.py"],
     deps = [
         ":python_session",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",

@@ -19,6 +19,7 @@ py_test(
     deps = [
         ":conftest",
         ":server",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",

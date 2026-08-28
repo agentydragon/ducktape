@@ -149,7 +149,9 @@ py_test(
     name = "test_decision",
     srcs = ["test_decision.py"],
     deps = [
+        ":conftest",
         ":decision",
+        "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -174,7 +176,6 @@ py_test(
         "@pypi//mitmproxy",
         "@pypi//more_itertools",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # runtime dep: conftest sets asyncio_mode="auto"
         "@pypi//pytest_bazel",
     ],
 )
@@ -190,7 +191,6 @@ py_test(
         ":static_decide_client",
         "//:conftest",
         "@pypi//more_itertools",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -208,7 +208,6 @@ py_test(
         "@pypi//aiohttp",
         "@pypi//more_itertools",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -223,7 +222,6 @@ py_test(
         ":static_decide_client",
         "//:conftest",
         "@pypi//aiohttp",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -243,7 +241,6 @@ py_test(
         "@pypi//aiohttp",
         "@pypi//more_itertools",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -261,7 +258,6 @@ py_test(
         "@pypi//h2",
         "@pypi//httpx",
         "@pypi//more_itertools",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

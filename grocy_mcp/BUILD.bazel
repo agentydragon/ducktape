@@ -93,7 +93,6 @@ py_library(
         "//util/bazel:runfiles",
         "@pypi//fastmcp_slim",
         "@pypi//prometheus_client",
-        "@pypi//pydantic",
         "@pypi//uvicorn",
     ],
 )
@@ -147,7 +146,6 @@ py_library(
         "//util/testing:otel_tracing",
         "@pypi//opentelemetry_api",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # runtime dep: conftest sets asyncio_mode="auto"
     ],
 )
 
@@ -158,6 +156,7 @@ py_test(
         ":conftest",
         ":mcp_types",
         "//:conftest",
+        "//mcp_infra:persistence",
         "//mcp_infra/authentik_auth:config",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -189,11 +188,13 @@ py_test(
     deps = [
         ":client",
         ":conftest",
+        ":grocy_types",
         ":mcp_types",
         ":server",
         "//:conftest",
         "//mcp_infra:request_scoped_openapi",
         "@pypi//fastmcp_slim",
+        "@pypi//pydantic",
         "@pypi//pytest_bazel",
     ],
 )
@@ -270,7 +271,6 @@ py_test(
         ":client",
         ":conftest",
         ":grocy_container",
-        ":grocy_fixtures",
         ":server",
         ":tool_metadata",
         "//:conftest",

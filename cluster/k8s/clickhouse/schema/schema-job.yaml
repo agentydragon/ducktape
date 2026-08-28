@@ -1,11 +1,11 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: clickhouse-aiquota-schema-v6
-  namespace: analytics
+  name: clickhouse-aiquota-schema-v7
+  namespace: clickhouse
   labels:
     app.kubernetes.io/name: clickhouse-schema
-    app.kubernetes.io/instance: analytics
+    app.kubernetes.io/instance: clickhouse
     app.kubernetes.io/component: schema
   annotations:
     description: Applies the AIQuota schema, including the history projections, with ClickHouse distributed DDL.
@@ -16,7 +16,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: clickhouse-schema
-        app.kubernetes.io/instance: analytics
+        app.kubernetes.io/instance: clickhouse
         app.kubernetes.io/component: schema
     spec:
       automountServiceAccountToken: false
@@ -34,7 +34,7 @@ spec:
           imagePullPolicy: IfNotPresent
           command: [clickhouse-client]
           args:
-            - --host=clickhouse-analytics.analytics.svc.cluster.local
+            - --host=clickhouse.clickhouse.svc.cluster.local
             - --port=9000
             - --connect_timeout=10
             - --receive_timeout=60

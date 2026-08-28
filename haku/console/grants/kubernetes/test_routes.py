@@ -21,6 +21,9 @@ from haku.console.grants.principal import AgentGrantPrincipal
 from haku.console.operator_auth import require_operator_mutation_origin
 from haku.console.tool_call_actor import OperatorActor
 
+# TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
+# gazelle:include_dep @pypi//httpx
+
 OPERATOR_ID = UUID("10000000-0000-4000-8000-000000000001")
 AGENT_ID = UUID("30000000-0000-4000-8000-000000000003")
 OTHER_AGENT_ID = UUID("40000000-0000-4000-8000-000000000004")

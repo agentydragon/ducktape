@@ -1,6 +1,10 @@
-CREATE DATABASE IF NOT EXISTS aiquota ON CLUSTER analytics;
+-- Langfuse owns its table migrations, but the database must exist before its
+-- external ClickHouse migration runner starts.
+CREATE DATABASE IF NOT EXISTS langfuse ON CLUSTER default;
 
-CREATE TABLE IF NOT EXISTS aiquota.raw_http_observations ON CLUSTER analytics
+CREATE DATABASE IF NOT EXISTS aiquota ON CLUSTER default;
+
+CREATE TABLE IF NOT EXISTS aiquota.raw_http_observations ON CLUSTER default
 (
   event_id UUID,
   schema_version UInt16,
@@ -47,13 +51,13 @@ TTL observed_at + INTERVAL 1 YEAR DELETE;
 
 -- Columns added after the table already existed; the CREATE above carries them
 -- for a fresh install, these ALTERs for an existing one.
-ALTER TABLE aiquota.raw_http_observations ON CLUSTER analytics
+ALTER TABLE aiquota.raw_http_observations ON CLUSTER default
   ADD COLUMN IF NOT EXISTS token_activity Array(Tuple(
     start_date Date,
     tokens Int64
   )) AFTER quota_windows;
 
-ALTER TABLE aiquota.raw_http_observations ON CLUSTER analytics
+ALTER TABLE aiquota.raw_http_observations ON CLUSTER default
   ADD COLUMN IF NOT EXISTS reset_credits Array(Tuple(
     credit_id String,
     reset_type String,
@@ -62,7 +66,7 @@ ALTER TABLE aiquota.raw_http_observations ON CLUSTER analytics
     expires_at Nullable(DateTime64(3, 'UTC'))
   )) AFTER token_activity;
 
-CREATE TABLE IF NOT EXISTS aiquota.aiquota_windows ON CLUSTER analytics
+CREATE TABLE IF NOT EXISTS aiquota.aiquota_windows ON CLUSTER default
 (
   event_id UUID,
   observed_at DateTime64(3, 'UTC'),
@@ -83,7 +87,7 @@ PARTITION BY toYYYYMM(observed_at)
 ORDER BY (provider, window_seconds, window_name, observed_at, event_id)
 TTL observed_at + INTERVAL 5 YEAR DELETE;
 
-CREATE MATERIALIZED VIEW IF NOT EXISTS aiquota.aiquota_windows_mv ON CLUSTER analytics
+CREATE MATERIALIZED VIEW IF NOT EXISTS aiquota.aiquota_windows_mv ON CLUSTER default
 TO aiquota.aiquota_windows
 AS SELECT
   event_id,
@@ -106,7 +110,7 @@ ARRAY JOIN quota_windows AS w;
 -- row per (day, observation) rather than collapsing: the repeated readings of
 -- the current day are what shows usage accruing within it. For the settled
 -- total of a past day, take argMax(tokens, observed_at) grouped by start_date.
-CREATE TABLE IF NOT EXISTS aiquota.token_activity_daily ON CLUSTER analytics
+CREATE TABLE IF NOT EXISTS aiquota.token_activity_daily ON CLUSTER default
 (
   event_id UUID,
   observed_at DateTime64(3, 'UTC'),
@@ -119,7 +123,7 @@ PARTITION BY toYYYYMM(observed_at)
 ORDER BY (provider, start_date, observed_at, event_id)
 TTL observed_at + INTERVAL 5 YEAR DELETE;
 
-CREATE MATERIALIZED VIEW IF NOT EXISTS aiquota.token_activity_daily_mv ON CLUSTER analytics
+CREATE MATERIALIZED VIEW IF NOT EXISTS aiquota.token_activity_daily_mv ON CLUSTER default
 TO aiquota.token_activity_daily
 AS SELECT
   event_id,
@@ -132,7 +136,7 @@ ARRAY JOIN token_activity AS t;
 
 -- A credit's status changes as it is granted, redeemed, or expires, so the row
 -- per observation is the point: it dates the transition.
-CREATE TABLE IF NOT EXISTS aiquota.reset_credits ON CLUSTER analytics
+CREATE TABLE IF NOT EXISTS aiquota.reset_credits ON CLUSTER default
 (
   event_id UUID,
   observed_at DateTime64(3, 'UTC'),
@@ -148,7 +152,7 @@ PARTITION BY toYYYYMM(observed_at)
 ORDER BY (provider, credit_id, observed_at, event_id)
 TTL observed_at + INTERVAL 5 YEAR DELETE;
 
-CREATE MATERIALIZED VIEW IF NOT EXISTS aiquota.reset_credits_mv ON CLUSTER analytics
+CREATE MATERIALIZED VIEW IF NOT EXISTS aiquota.reset_credits_mv ON CLUSTER default
 TO aiquota.reset_credits
 AS SELECT
   event_id,

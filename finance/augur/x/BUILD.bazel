@@ -12,7 +12,6 @@ py_library(
         "//finance/augur/sim:simulate",
         "//finance/augur/sim/codec:plan",
         "@pypi//numpy",
-        "@pypi//polars",
     ],
 )
 

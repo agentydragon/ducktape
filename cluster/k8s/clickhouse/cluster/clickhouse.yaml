@@ -1,8 +1,8 @@
 apiVersion: clickhouse.altinity.com/v1
 kind: ClickHouseInstallation
 metadata:
-  name: analytics
-  namespace: analytics
+  name: clickhouse
+  namespace: clickhouse
 spec:
   configuration:
     zookeeper:
@@ -10,7 +10,7 @@ spec:
       # service. Using the service address keeps the CHI compatible with the
       # versioned CRD schema while Kubernetes removes unavailable endpoints.
       nodes:
-        - host: keeper-analytics-keeper.analytics.svc.cluster.local
+        - host: keeper-clickhouse-keeper.clickhouse.svc.cluster.local
           port: 2181
       session_timeout_ms: 30000
       operation_timeout_ms: 10000
@@ -29,6 +29,30 @@ spec:
       admin/profile: default
       admin/quota: default
       admin/access_management: 1
+      langfuse/password:
+        valueFrom:
+          secretKeyRef:
+            name: clickhouse-langfuse-credentials
+            key: password
+      langfuse/networks/ip:
+        - 0.0.0.0/0
+        - ::/0
+      langfuse/grants/query:
+        - GRANT SELECT, INSERT ON langfuse.*
+        - GRANT ALTER UPDATE, ALTER DELETE ON langfuse.*
+        - GRANT CREATE, DROP TABLE, DROP VIEW ON langfuse.*
+        - GRANT ALTER ADD COLUMN, ALTER MODIFY COLUMN, ALTER VIEW MODIFY QUERY ON langfuse.*
+        - GRANT ALTER ADD INDEX, ALTER DROP INDEX, ALTER MATERIALIZE INDEX ON langfuse.*
+        - GRANT SELECT(database, table, name, partition, partition_id, active, rows) ON system.parts
+        - GRANT SELECT(database, table, is_done) ON system.mutations
+        - GRANT SELECT(database, name, engine) ON system.tables
+        - GRANT SELECT ON system.processes
+        - GRANT SELECT ON system.query_log*
+        - GRANT READ ON REMOTE
+        - GRANT CLUSTER ON *.*
+        - GRANT SYSTEM SYNC REPLICA ON langfuse.*
+        - GRANT SYSTEM MERGES ON langfuse.*
+        - GRANT ALTER SETTINGS ON langfuse.*
       aiquota_ingest/password:
         valueFrom:
           secretKeyRef:
@@ -100,7 +124,7 @@ spec:
       prometheus/asynchronous_metrics: "true"
       prometheus/status_info: "true"
     clusters:
-      - name: analytics
+      - name: default
         secret:
           valueFrom:
             secretKeyRef:
@@ -122,7 +146,7 @@ spec:
         metadata:
           labels:
             app.kubernetes.io/name: clickhouse
-            app.kubernetes.io/instance: analytics
+            app.kubernetes.io/instance: clickhouse
         spec:
           nodeSelector:
             topology.kubernetes.io/zone: hil-ovh
@@ -133,7 +157,7 @@ spec:
                 - labelSelector:
                     matchLabels:
                       app.kubernetes.io/name: clickhouse
-                      app.kubernetes.io/instance: analytics
+                      app.kubernetes.io/instance: clickhouse
                   topologyKey: kubernetes.io/hostname
           terminationGracePeriodSeconds: 120
           securityContext:
@@ -176,16 +200,16 @@ spec:
               projected:
                 sources:
                   - configMap:
-                      name: clickhouse-analytics-config
+                      name: clickhouse-clickhouse-config
                   - configMap:
-                      name: chi-analytics-common-configd
+                      name: chi-clickhouse-common-configd
     volumeClaimTemplates:
       - name: data
         reclaimPolicy: Retain
         spec:
           accessModes:
             - ReadWriteOnce
-          storageClassName: local-path-ovh-hdd
+          storageClassName: local-path-ovh-hdd-retain
           resources:
             requests:
               # Raw responses are retained for one year; the generous HDD

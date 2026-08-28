@@ -11,6 +11,12 @@ from skills.freecad.testing.compare import assert_png_equal
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
+# The scripts below are driven by runfiles path; gazelle cannot see the dependency.
+# gazelle:include_dep //skills/freecad/examples/bearing_block:build
+# gazelle:include_dep //skills/freecad/examples/bearing_block:build_techdraw
+# gazelle:include_dep //skills/freecad/examples:render_debug_edges
+# gazelle:include_dep //skills/freecad/examples:render_debug_faces
+
 _BUILD_SCRIPT = "_main/skills/freecad/examples/bearing_block/build.py"
 _TECHDRAW_SCRIPT = "_main/skills/freecad/examples/bearing_block/build_techdraw.py"
 _DEBUG_EDGES_SCRIPT = "_main/skills/freecad/examples/render_debug_edges.py"

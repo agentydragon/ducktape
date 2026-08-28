@@ -31,6 +31,8 @@ from haku.console.agent_bearer_authority import AgentBearerAuthority
 from haku.console.agents.enrollment import AgentEnrollmentService
 from haku.console.config import KubernetesAuthorizationConfig, KubernetesAuthorizationSubject
 from haku.console.conftest import (
+    # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
+    # gazelle:include_dep @pypi//httpx
     DEFAULT_ACCESS_PROFILE_ID,
     default_agent_binding,
     insert_approved_tool_call,

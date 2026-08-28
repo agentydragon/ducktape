@@ -1,9 +1,10 @@
-# Bridge decision record — session re-adoption
+# Bridge decision record
 
-Constraints and rejected alternatives behind the bridge surviving a console roll. Check here
-before redesigning recovery, replay, or bridge versioning. The current frame-log shape is
+Constraints and rejected alternatives behind the bridge's shape: how it survives a console roll,
+and where the harness seam sits. Check here before redesigning recovery, replay, bridge
+versioning, or the harness seam. The current frame-log shape is
 <../../../console/docs/harness_frame_log_v3.md>; the live protocol invariants are docstrings in
-<../protocol.py>.
+<../protocol.py>, <../neutral_operations.py> and <../operation_journal.py>.
 
 ## Re-adoption: keep the CLI alive (design B), not `--resume` (design A)
 
@@ -69,3 +70,43 @@ no-op for older peers), and an unknown _kind_ fails the union parse — so anyth
 understand to stay correct arrives as a new kind, fail-closed. A cost falls due if
 `SUPPORTED_VERSIONS` ever widens past one element: contract tests at both ends of the range, or
 "we support N" quietly becomes a claim nobody checks.
+
+## The runner seam: `main` lifecycle, shared library, per-harness `run()`
+
+The seam over-abstracts on two axes at once. **Transport** — subprocess plus newline-delimited
+JSON stdio — is hardcoded in the runner's stdout pump and process launch, so a harness that speaks
+anything else has nowhere to say so. **Interaction shape** — the six `HarnessDriver` hooks
+(`initialize`, `compose_prompt`, `compose_interrupt`, `answer_control_request`, `observe`,
+`admit`) — pins one call vocabulary every harness must fit, even where its native protocol brackets
+a turn or streams a result differently.
+
+**Target.** The runner `main` owns the harness-invariant lifecycle: dial, the two handshakes, the
+reconnect/roll, selecting the harness implementation, wiring it, starting it, and the shared
+teardown. What does not vary by harness is a library — the <../communicator.py> `Communicator` (the
+console side: WebSocket client, `Hello`/launch and `RunnerHello`/`ConsoleResume` handshakes,
+tenacity reconnect, roll replay), the <../session_api.py> `SessionPump` (one sequence, retention,
+the `OperationJournal` fold, the abort rewrite, admission idempotency), and the neutral-operation
+vocabulary (<../neutral_operations.py>). Each harness owns its run-loop behind a narrow
+`async def run(self, launch, session) -> None`: it starts its binary, speaks its native protocol,
+and emits neutral operations through the `SessionPump` the lifecycle handed it. Both axes move
+inside that seam, where a harness that is neither subprocess-stdio nor six-hooks-shaped is
+expressible instead of excluded. The `Communicator` and `SessionPump` are extracted first, with
+Claude driven through them unchanged; the per-harness `run()` and the second harness follow.
+
+### Rejected: extend the six `HarnessDriver` hooks
+
+Add hooks for whatever a new harness needs and keep the runner driving them. It keeps the
+interaction-shape abstraction — the runner still owns the turn loop and calls fixed hooks — and
+still assumes stdio frames, since the hooks are defined in terms of native frames the runner reads
+from stdout and writes to stdin. Every genuinely different harness grows the hook surface for all
+of them. Wrong level: what varies is the whole run-loop, not a widening set of callbacks inside one
+runner-owned loop.
+
+### Rejected: a synchronous blocking handshake shim
+
+Keep the `HarnessDriver` and let a harness needing a multi-step handshake drive it inside
+`initialize()`, reading the CLI's stdout directly until it settles. It fights `observe()`'s
+ownership of stdout — two readers of one pipe — and hides per-connection handshake state on a hook
+the contract calls one-per-process and otherwise stateless. It entrenches the seam this refactor
+exists to move: the harness-specific run-loop stays smeared across runner-owned hooks instead of
+living behind one boundary the runner does not reach through.

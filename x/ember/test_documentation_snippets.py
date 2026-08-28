@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 import pytest_bazel
 
-from x import ember
+from x import ember  # gazelle:ignore x.ember
 from x.ember.system_prompt import load_system_prompt
 
 

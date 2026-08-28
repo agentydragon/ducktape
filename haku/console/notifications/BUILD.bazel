@@ -16,11 +16,8 @@ py_library(
     name = "console_events",
     srcs = ["console_events.py"],
     deps = [
-        "//haku/console:config",
         "//haku/console:operator_auth",
         "//haku/console:operator_identity_store",
-        "//haku/console/oauth:provider_connection_registry",
-        "@ducktape_haku//haku/console:tool_calls",
         "@pypi//asyncpg",
         "@pypi//fastapi",
         "@pypi//pydantic",
@@ -65,6 +62,7 @@ py_test(
     ],
     requires_docker = True,
     deps = [
+        ":conftest",
         ":connection_metrics",
         "//:conftest",
         "//haku/console:conftest",
@@ -75,8 +73,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
-        # pytest-asyncio auto mode (root conftest) needs the plugin importable at runtime.
-        "@pypi//pytest_asyncio",
     ],
 )
 
@@ -90,17 +86,15 @@ py_test(
     ],
     requires_docker = True,
     deps = [
+        ":conftest",
         ":console_events",
         "//:conftest",
         "//haku/console:conftest",
         "//haku/console:operator_identity_store",
-        "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -114,6 +108,7 @@ py_test(
     ],
     requires_docker = True,
     deps = [
+        ":conftest",
         ":push",
         "//:conftest",
         "//haku/console:conftest",
@@ -121,9 +116,7 @@ py_test(
         "@pypi//cryptography",
         "@pypi//http_ece",
         "@pypi//httpx",
-        "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -138,11 +131,10 @@ py_test(
     ],
     requires_docker = True,
     deps = [
+        ":conftest",
         "//:conftest",
         "//haku/console:conftest",
-        "@pypi//fastapi",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -187,7 +179,6 @@ py_library(
     deps = [
         "//haku/console/session:conftest",
         "//haku/console/x/testing:wake_probes",
-        "@pypi//pytest",
     ],
 )
 

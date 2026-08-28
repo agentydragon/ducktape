@@ -13,6 +13,10 @@ from haku.recall_index.store import ensure_schema
 from third_party.containers.rlocations import PGVECTOR_PG18
 from util.testing.postgres_fixtures import start_postgres_container
 
+# Fixtures build postgresql+asyncpg:// engines; SQLAlchemy loads the dialect's
+# driver at runtime, so gazelle cannot see the dependency.
+# gazelle:include_dep @pypi//asyncpg
+
 
 @pytest.fixture(scope="session")
 def pgvector_container() -> Generator[PostgresContainer]:

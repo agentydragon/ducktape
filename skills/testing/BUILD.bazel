@@ -6,6 +6,7 @@ load("//devinfra/python:defs.bzl", "py_library")
 
 package(default_testonly = True)
 
+# keep: srcs is gazelle-excluded above; consumed by skill_package() tests
 py_library(
     name = "frontmatter_test",
     srcs = ["frontmatter_test.py"],

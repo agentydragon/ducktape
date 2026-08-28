@@ -68,7 +68,6 @@ py_library(
         ":base",
         ":client",
         "//aiquota:models",
-        "@pypi//httpx",
         "@pypi//pydantic",
     ],
 )
@@ -82,7 +81,6 @@ py_test(
         "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -94,11 +92,13 @@ py_test(
     imports = ["../.."],
     deps = [
         ":claude_lib",
+        ":cli_proxy_lib",
+        ":client",
+        "//:conftest",
+        "//aiquota:models",
         "//devinfra/claude/claude_api:usage",
         "@pypi//httpx",
-        "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//respx",
     ],
@@ -114,13 +114,13 @@ py_test(
     ],
     imports = ["../.."],
     deps = [
+        ":cli_proxy_lib",
         ":client",
         ":codex_lib",
         "//:conftest",
         "//aiquota:models",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//respx",
     ],
@@ -133,7 +133,7 @@ py_test(
     imports = ["../.."],
     deps = [
         ":zai_lib",
-        "@pypi//pytest",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )

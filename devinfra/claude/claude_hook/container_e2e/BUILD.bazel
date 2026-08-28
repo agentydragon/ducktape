@@ -120,9 +120,10 @@ py_test(
     ],
     deps = [
         ":conftest",
+        "//:conftest",
         "//devinfra/claude:conftest",
         "//devinfra/claude:env_file",
-        "//devinfra/claude/testing:conftest",
+        "//devinfra/claude/claude_hook:conftest",
         "//devinfra/claude/testing:container_e2e",
         "//util/bazel:runfiles",
         "@pypi//pytest",

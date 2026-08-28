@@ -11,7 +11,7 @@ py_library(
     srcs = ["cmd_db.py"],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//props/db:config",
+        "//props:config",
         "//props/db:database",
         "//props/db:setup",
         "//props/db/sync",

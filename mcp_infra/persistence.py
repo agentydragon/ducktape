@@ -8,6 +8,11 @@ from key_value.aio.stores.postgresql import PostgreSQLStore
 from key_value.aio.stores.valkey import ValkeyStore
 from pydantic import BaseModel, Field
 
+# PostgreSQLStore and ValkeyStore import their backends at module import time via
+# py-key-value-aio extras; the dists are invisible to gazelle's import scan.
+# gazelle:include_dep @pypi//asyncpg
+# gazelle:include_dep @pypi//valkey_glide
+
 
 class FilePersistence(BaseModel):
     kind: Literal["file"] = "file"

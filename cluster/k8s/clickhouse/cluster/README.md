@@ -1,8 +1,9 @@
-# Shared analytics ClickHouse
+# Central ClickHouse
 
-One shard with two replicated ClickHouse servers and a three-member Keeper
-quorum, all on the OVH HDD data tier. The cluster is intentionally independent
-of Langfuse's chart-owned ClickHouse so applications can migrate one at a time.
+The Kubernetes resources and operator live in the `clickhouse` namespace. One
+shard with two replicated ClickHouse servers and a three-member Keeper quorum,
+all on the OVH HDD data tier. The cluster is intentionally independent of
+Langfuse's chart-owned ClickHouse so applications can migrate one at a time.
 
 The first tenant is `aiquota`:
 
@@ -24,8 +25,8 @@ Without that listener, those members cannot be local DDLWorker targets. The
 internal native cluster therefore consistently uses port 9000; TLS must be
 configured end-to-end before enabling the operator's secure-cluster setting.
 
-The versioned `clickhouse-aiquota-schema-v6` Job applies idempotent tenant DDL
-once through the cluster Service with `ON CLUSTER analytics`. Tables remain
+The versioned `clickhouse-aiquota-schema-v7` Job applies idempotent tenant DDL
+once through the cluster Service with `ON CLUSTER default`. Tables remain
 ReplicatedMergeTree tables using the same Keeper paths. Tenant schema belongs
 only to these Jobs: ClickHouse startup scripts do not create application
 tables. Completed Jobs are retained as rollout evidence; a later schema
@@ -33,8 +34,9 @@ revision needs a new immutable Job name because Kubernetes cannot mutate a
 completed Job template.
 
 Each tenant gets its own database, least-privilege users, credentials, quotas,
-and query profile. A later Langfuse migration can therefore add a separate
-`langfuse` database without sharing aiquota's insert or Grafana credentials.
+and query profile. The schema Job creates the empty `langfuse` database; the
+Langfuse HelmRelease then runs Langfuse's own versioned table migrations with
+the dedicated `langfuse` user.
 
 Applications receive separate insert-only credentials; Grafana receives a
 read-only account. NetworkPolicy admits only those named consumers plus

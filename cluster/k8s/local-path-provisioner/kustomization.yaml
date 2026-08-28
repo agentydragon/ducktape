@@ -5,6 +5,7 @@ resources:
   - helmrelease.yaml
   - sc-local-path-ovh.yaml
   - sc-local-path-ovh-hdd.yaml
+  - sc-local-path-ovh-hdd-retain.yaml
   - sc-local-path-ovh-ssd.yaml
   - sc-local-path-proxmox.yaml
   - sc-local-path-home-ssd.yaml

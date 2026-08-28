@@ -26,6 +26,9 @@ from finance.augur.model.sample_sanity import LevelSeriesSanityCheck, PrivateEqu
 from finance.augur.model.series import SP500_SYMBOL, IssuerId, SecurityKey
 from finance.evidence.markets import Platform
 
+# TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
+# gazelle:include_dep @pypi//httpx
+
 
 def _client_for(config: Config) -> TestClient:
     catalog = MarketCatalog.from_yaml(config.calibration_catalog.catalog_path)

@@ -12,6 +12,7 @@ py_test(
     srcs = ["test_tool_input_models.py"],
     deps = [
         ":tool_input_models",
+        "//:conftest",
         "//devinfra/claude:conftest",
         "@pypi//pytest_bazel",
     ],
@@ -42,10 +43,7 @@ py_library(
     name = "usage",
     srcs = ["usage.py"],
     visibility = ["//visibility:public"],
-    deps = [
-        "@pypi//httpx",
-        "@pypi//pydantic",
-    ],
+    deps = ["@pypi//pydantic"],
 )
 
 py_test(
@@ -53,8 +51,8 @@ py_test(
     srcs = ["test_usage.py"],
     deps = [
         ":usage",
-        "@pypi//pydantic",
-        "@pypi//pytest",
+        "//:conftest",
+        "//devinfra/claude:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -66,6 +64,7 @@ py_test(
         "//devinfra/claude/claude_api/hooks/schemas/2.1.105:hook_schemas",
     ],
     deps = [
+        "//:conftest",
         "//devinfra/claude:conftest",
         "//devinfra/claude/claude_api/hooks:output",
         "//util:json_schema",
