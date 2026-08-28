@@ -222,9 +222,9 @@ reason, stated where it happens.
 
 ### Gazelle-managed Python BUILD files
 
-`bb run //devinfra:gazelle` owns Python `py_library`/`py_test` rules; run it instead
-of hand-editing managed `srcs`/`deps`, and verify with `--mode=diff` (a converged tree
-is a no-op). Mechanism, escape hatches, and limitations: <devinfra/docs/gazelle.md>.
+Gazelle owns Python `py_library`/`py_test` rules; CI fails on drift, so run it
+(devshell `gazelle`, or `bb run //devinfra:gazelle`) instead of hand-editing managed
+`srcs`/`deps`. Mechanism, escape hatches, and limitations: <devinfra/docs/gazelle.md>.
 
 - **One `py_library` per `.py` file, named exactly the module stem.** Rules list only
   own-package files; a subdirectory's `.py` files get per-file rules in the

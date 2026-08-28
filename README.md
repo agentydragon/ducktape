@@ -14,12 +14,13 @@ Personal infrastructure monorepo. Manages configuration for: **agentydragon** (T
 
 ### Gazelle
 
-Python BUILD files are gazelle-managed. After adding, moving, or renaming a `.py`
-file or changing imports, run gazelle rather than hand-editing managed `srcs`/`deps`:
+Python BUILD files are gazelle-managed and CI fails on drift. After adding, moving,
+or renaming a `.py` file or changing imports, run gazelle rather than hand-editing
+managed `srcs`/`deps` — the devshell has the released binary on PATH:
 
 ```bash
-bb run //devinfra:gazelle              # Update BUILD files
-bb run //devinfra:gazelle -- --mode=diff  # Verify convergence (no diff, no errors)
+gazelle               # Update BUILD files (or: bb run //devinfra:gazelle)
+gazelle -mode=diff    # Verify convergence (the CI check)
 ```
 
 One `py_library` per `.py` file (no aggregators). Reference `//pkg:module` not `//pkg`.
