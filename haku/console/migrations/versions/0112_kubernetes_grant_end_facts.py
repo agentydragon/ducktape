@@ -7,8 +7,8 @@ clock, matching the HTTP domain. The stored ``status`` and ``ended_at`` stay, du
 the new image and still written by pre-facts replicas during the roll; the contract step that
 flips readers onto the facts and drops them is staged at `KubernetesGrantRow`.
 
-Revision ID: 0111
-Revises: 0109
+Revision ID: 0112
+Revises: 0111
 """
 
 from __future__ import annotations
@@ -16,8 +16,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0111"
-down_revision: str | None = "0109"
+revision: str = "0112"
+down_revision: str | None = "0111"
 branch_labels: str | None = None
 depends_on: str | None = None
 

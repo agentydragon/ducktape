@@ -19,6 +19,13 @@ from more_itertools import one
 from sqlalchemy import text
 
 from haku.console.chat_models import SPA_ORIGIN
+from haku.console.conversation.conversation_event import (
+    ItemSegment,
+    PromptOpened,
+    SessionProvisioning,
+    TurnAnswered,
+    UnknownEventBody,
+)
 from haku.console.session.store import Store
 from haku.console.session.subscription import (
     START,
@@ -28,13 +35,6 @@ from haku.console.session.subscription import (
     Read,
     StreamPosition,
     Subscription,
-)
-from haku.console.x.session_events import (
-    PromptStartedBody,
-    SegmentBody,
-    SessionProvisioningBody,
-    TurnAnsweredBody,
-    UnknownEventBody,
 )
 
 
@@ -70,7 +70,7 @@ async def say(session_store: Store, operator_id: UUID, thread: Thread, prompt: s
     await session_store.enqueue_prompt(operator_id, thread.session_id, prompt, SPA_ORIGIN)
     turn = await session_store.next_prompt(thread.session_id)
     assert turn is not None
-    await session_store.end_turn(turn.turn_id, TurnAnsweredBody())
+    await session_store.end_turn(turn.turn_id, TurnAnswered())
 
 
 def prompts(read: Read) -> list[str]:
@@ -78,7 +78,7 @@ def prompts(read: Read) -> list[str]:
     only items with any are the prompts — no turn here produces an answer."""
     # Never `Unstarted`: a client-held position is always a position, even when it is `START`.
     assert isinstance(read, Backlog)
-    return [event.body.text for event in read.events if isinstance(event.body, SegmentBody)]
+    return [event.body.text for event in read.events if isinstance(event.body, ItemSegment)]
 
 
 async def test_two_subscribers_at_different_positions_read_only_what_each_has_not_seen(
@@ -209,7 +209,7 @@ async def test_a_kind_this_release_has_no_words_for_is_read_past_rather_than_rai
 
     assert prompts(read) == ["before", "after"]
     assert UnknownEventBody(kind="provisioning_started", body={}) in [event.body for event in read.events]
-    assert [type(event.body) for event in read.events].count(PromptStartedBody) == 2
+    assert [type(event.body) for event in read.events].count(PromptOpened) == 2
 
 
 async def test_a_new_conversation_already_records_its_session_provisioning(session_store, operator_id, stream) -> None:
@@ -219,7 +219,7 @@ async def test_a_new_conversation_already_records_its_session_provisioning(sessi
 
     read = await stream.read(conversation_id, after=START)
 
-    assert [type(event.body) for event in read.events] == [SessionProvisioningBody]
+    assert [type(event.body) for event in read.events] == [SessionProvisioning]
     assert await stream.head(conversation_id) == read.position
 
 

@@ -13,6 +13,7 @@ from fastmcp.client.client import CallToolResult
 from more_itertools import one
 
 from haku.console.chat_models import BridgeFrameKind, ItemStatus, RuntimeKind
+from haku.console.conversation.conversation_event import TurnAnswered
 from haku.console.conversation.reads import (
     ChannelAttachment,
     ConversationEntry,
@@ -22,7 +23,6 @@ from haku.console.conversation.reads import (
     MessageEntry,
     SessionCursor,
     SessionRecord,
-    TurnAnsweredEnd,
     TurnCursor,
     TurnRecord,
 )
@@ -183,7 +183,7 @@ class _Reader:
         self.queries.append({"session_id": session_id, "cursor": cursor, "limit": limit})
         return [
             TurnRecord(
-                turn_id=TURN, first_frame_seq=1, last_frame_seq=4, started_at=NOW, ended_at=NOW, end=TurnAnsweredEnd()
+                turn_id=TURN, first_frame_seq=1, last_frame_seq=4, started_at=NOW, ended_at=NOW, end=TurnAnswered()
             )
         ][:limit]
 

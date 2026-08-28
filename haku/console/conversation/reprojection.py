@@ -4,7 +4,7 @@
 per-turn disagreement is worth.
 
 **The fold is the selected integration's live turn handler** and each event is spelled by
-the write path's own mapping (`session_events.stored`), so the only thing added here is the
+the write path's own mapping (`conversation_events.stored`), so the only thing added here is the
 alignment. That alignment is **by the first frame in the event's provenance**. Most events name one
 frame; a message completion and a streamed tool declaration can span several, and the stored row
 keeps that same inclusive range. Cursor coverage is still decided by the frame whose fold emitted
@@ -42,11 +42,11 @@ from sqlalchemy import Select, func, literal_column, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.chat_models import (
-    BridgeFrameKind,
+from haku.console.chat_models import BridgeFrameKind, RuntimeKind
+from haku.console.conversation.conversation_event import (
     ConversationEventKind,
     EventProvenance,
-    RuntimeKind,
+    FrameRange,
     StoredEventKind,
 )
 from haku.console.database_schema import (
@@ -57,8 +57,7 @@ from haku.console.database_schema import (
     Session,
     SessionFrame,
 )
-from haku.console.x import session_events
-from haku.console.x.conversation_events import FrameRange
+from haku.console.x import conversation_events
 from haku.console.x.runtime import RuntimeRegistry
 from haku.runtime.x.bridge.protocol import HarnessFrame
 from util.enum_vocab import UnknownValue
@@ -391,7 +390,7 @@ def _expected(
             frame_seq=frame.frame_seq, frame=HarnessFrame(frame=frame.payload, seq=frame.runner_seq)
         )
         for event in effects.events:
-            if (row := session_events.stored(event)) is None:
+            if (row := conversation_events.stored(event)) is None:
                 continue
             if not isinstance(provenance := event.provenance, FrameRange):
                 raise AssertionError(f"a projected stored event names no frame range: {event=}")

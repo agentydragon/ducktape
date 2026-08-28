@@ -31,7 +31,7 @@ from finance.augur.sim.scenario import (
     TaxProfile,
 )
 from finance.augur.sim.simulate import simulate
-from finance.augur.sim.test_state_helpers import capital_gains_ytd, cash_balances, tax_liabilities
+from finance.augur.sim.testing.state_helpers import capital_gains_ytd, cash_balances, tax_liabilities
 
 
 def _cash(run, agent_id: str, month_index: int) -> int:

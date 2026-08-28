@@ -8,6 +8,12 @@ from collections.abc import Sequence
 from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
+# The dialect is chosen by the admin_url scheme the caller passes (sync callers use
+# the postgresql:// default -> psycopg2, async callers postgresql+asyncpg://);
+# SQLAlchemy loads it at runtime, so gazelle cannot see either dependency.
+# gazelle:include_dep @pypi//asyncpg
+# gazelle:include_dep @pypi//psycopg2_binary
+
 _TERMINATE_SQL = text(
     "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = :db_name AND pid <> pg_backend_pid()"
 )

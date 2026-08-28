@@ -31,12 +31,11 @@ from haku.console.channels.matrix.outbox import RoomOutbox
 from haku.console.channels.matrix.room_copy import RoomCopy
 from haku.console.channels.matrix.spans import PROVISIONING_STATUS, STATUS_EDIT_INTERVAL, Span
 from haku.console.chat_models import LeaseExpiryReason, MatrixOrigin, PromptRejection, SpaOrigin
-from haku.console.conversation import log
+from haku.console.conversation import conversation_event, log
+from haku.console.conversation.conversation_event import TurnAborted, TurnAnswered, TurnFailed
 from haku.console.database_schema import ChannelCursor
 from haku.console.session.store import Store
 from haku.console.session.subscription import START, ConversationStream, StreamedEvent, StreamPosition
-from haku.console.x import session_events
-from haku.console.x.session_events import TurnAbortedBody, TurnAnsweredBody, TurnFailedBody
 
 
 class Room:
@@ -171,7 +170,7 @@ async def abort_a_turn(session_store: Store, operator_id: UUID, session_id: UUID
     )
     turn = await session_store.next_prompt(session_id)
     assert turn is not None
-    await session_store.end_turn(turn.turn_id, TurnAbortedBody())
+    await session_store.end_turn(turn.turn_id, TurnAborted())
 
 
 async def stored_position(sessions: async_sessionmaker[AsyncSession]) -> StreamPosition | None:
@@ -216,7 +215,7 @@ async def test_a_failed_turn_tells_the_room_what_the_runtime_said(
     )
     turn = await session_store.next_prompt(served)
     assert turn is not None
-    await session_store.end_turn(turn.turn_id, TurnFailedBody(failure="upstream is at capacity"))
+    await session_store.end_turn(turn.turn_id, TurnFailed(failure="upstream is at capacity"))
 
     await notices.reconcile_once()
 
@@ -232,7 +231,7 @@ async def test_an_answered_turn_without_a_message_becomes_a_silence_notice(
     )
     turn = await session_store.next_prompt(served)
     assert turn is not None
-    await session_store.end_turn(turn.turn_id, TurnAnsweredBody())
+    await session_store.end_turn(turn.turn_id, TurnAnswered())
 
     await notices.reconcile_once()
 
@@ -250,7 +249,7 @@ async def test_an_answered_turn_with_a_message_needs_no_silence_notice(
     turn = await session_store.next_prompt(served)
     assert turn is not None
     await session_store.close_answer(served, turn.turn_id, final_text="done", frame_seq=1)
-    await session_store.end_turn(turn.turn_id, TurnAnsweredBody(), last_frame_seq=1, projected_frame_seq=1)
+    await session_store.end_turn(turn.turn_id, TurnAnswered(), last_frame_seq=1, projected_frame_seq=1)
 
     await notices.reconcile_once()
 
@@ -268,7 +267,7 @@ async def test_turn_typing_is_derived_by_the_room_subscriber(session_store, oper
     await notices.reconcile_once()
     assert room.typing[-1] is True
 
-    await session_store.end_turn(turn.turn_id, TurnAnsweredBody())
+    await session_store.end_turn(turn.turn_id, TurnAnswered())
     await notices.reconcile_once()
     assert room.typing[-1] is False
 
@@ -342,7 +341,7 @@ async def author(
     sessions: async_sessionmaker[AsyncSession],
     session_store: Store,
     session_id: UUID,
-    body: session_events.AuthoredBody,
+    body: conversation_event.AuthoredEvent,
 ) -> None:
     """Write one of the console's own facts about *session_id*, as its own writer would."""
     conversation_id = await session_store.conversation_of(session_id)
@@ -363,7 +362,7 @@ async def test_a_refused_prompt_is_said_from_its_row_rather_than_by_ingress(
         migrated_sessions,
         session_store,
         served,
-        session_events.PromptRejectedBody(reason=PromptRejection.TURN_IN_FLIGHT, text="and this"),
+        conversation_event.PromptRejected(reason=PromptRejection.TURN_IN_FLIGHT, text="and this"),
     )
 
     await notices.reconcile_once()
@@ -378,7 +377,7 @@ async def test_setup_narration_edits_the_session_line_rather_than_posting_a_noti
     """The bootstrap narration is the loudest sender the room used to have — one notice per line.
     Folded into the session's span it is one line, edited."""
     await notices.reconcile_once()
-    await author(migrated_sessions, session_store, served, session_events.SetupNarrationBody(text="cloning haku-state"))
+    await author(migrated_sessions, session_store, served, conversation_event.SetupNarration(text="cloning haku-state"))
     clock.tick(STATUS_EDIT_INTERVAL)
 
     await notices.reconcile_once()
@@ -392,7 +391,7 @@ async def test_something_haku_cannot_read_is_said_from_its_row(
     session_store, operator_id, served, notices, room, migrated_sessions
 ) -> None:
     await notices.reconcile_once()
-    await author(migrated_sessions, session_store, served, session_events.UnreadableInputBody(media_type="m.image"))
+    await author(migrated_sessions, session_store, served, conversation_event.UnreadableInput(media_type="m.image"))
 
     await notices.reconcile_once()
 
@@ -411,13 +410,13 @@ async def test_a_session_ending_is_sealed_into_the_line_its_life_was_shown_on(
         migrated_sessions,
         session_store,
         served,
-        session_events.SessionAdoptedBody(previous_holder="pod-a", holder="pod-b"),
+        conversation_event.SessionAdopted(previous_holder="pod-a", holder="pod-b"),
     )
     await author(
         migrated_sessions,
         session_store,
         served,
-        session_events.LeaseExpiredBody(reason=LeaseExpiryReason.HOLDER_GONE, last_holder="pod-b"),
+        conversation_event.LeaseExpired(reason=LeaseExpiryReason.HOLDER_GONE, last_holder="pod-b"),
     )
 
     await notices.reconcile_once()
@@ -442,7 +441,7 @@ async def test_a_lease_expiry_with_no_line_up_is_sealed_as_its_own_span(
         migrated_sessions,
         session_store,
         served,
-        session_events.LeaseExpiredBody(reason=LeaseExpiryReason.UNADOPTED, last_holder="pod-a"),
+        conversation_event.LeaseExpired(reason=LeaseExpiryReason.UNADOPTED, last_holder="pod-a"),
     )
 
     await notices.reconcile_once()
@@ -567,7 +566,7 @@ async def test_a_silence_notice_that_failed_to_send_is_replayed_with_the_same_so
     )
     turn = await session_store.next_prompt(served)
     assert turn is not None
-    await session_store.end_turn(turn.turn_id, TurnAnsweredBody())
+    await session_store.end_turn(turn.turn_id, TurnAnswered())
 
     with pytest.raises(RuntimeError, match="homeserver refused"):
         await notices.reconcile_once()
@@ -729,19 +728,19 @@ async def test_a_failed_projection_is_replayed_with_the_same_source_identity(
     ("body", "expected", "kind"),
     [
         (
-            session_events.PromptRejectedBody(reason=PromptRejection.TURN_IN_FLIGHT, text="wait"),
+            conversation_event.PromptRejected(reason=PromptRejection.TURN_IN_FLIGHT, text="wait"),
             "not delivered — Haku is still working on the previous message; send it again",
             RoomEventKind.REJECTED,
         ),
         (
-            session_events.UnreadableInputBody(media_type="m.image"),
+            conversation_event.UnreadableInput(media_type="m.image"),
             "received a message Haku cannot read (m.image) — it reads text only; "
             "describe it in words and it will reach the session",
             RoomEventKind.UNREADABLE,
         ),
-        (session_events.TurnAbortedBody(), ABORTED_BY_OPERATOR, RoomEventKind.LIFECYCLE),
+        (conversation_event.TurnAborted(), ABORTED_BY_OPERATOR, RoomEventKind.LIFECYCLE),
         (
-            session_events.TurnFailedBody(failure="the model provider is at capacity"),
+            conversation_event.TurnFailed(failure="the model provider is at capacity"),
             "the turn failed — the model provider is at capacity",
             RoomEventKind.LIFECYCLE,
         ),

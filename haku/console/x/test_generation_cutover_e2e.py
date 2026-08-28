@@ -28,8 +28,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.console.chat_models import SPA_ORIGIN, SessionStatus
+from haku.console.conversation.conversation_event import TurnAnswered
 from haku.console.conversation.item_reads import entry_of
-from haku.console.conversation.reads import MessageEntry, PromptEntry, ToolCallEntry, TurnAnsweredEnd
+from haku.console.conversation.reads import MessageEntry, PromptEntry, ToolCallEntry
 from haku.console.conversation_read_access import UnrestrictedReads
 from haku.console.database_schema import Session, SubmittedPrompt
 from haku.console.notifications.session_wakes import SessionWakes
@@ -165,7 +166,7 @@ async def test_the_cut_stack_answers_a_prompt_with_a_tool_call_over_the_journal(
             acked, admitted = await _acked_and_admission(migrated_db_url, session_id, conversation_id)
             assert acked > 0, "the console acknowledged at least one batch"
             assert admitted, "the submitted prompt was marked admitted"
-            assert await finished_ends() == [TurnAnsweredEnd()]
+            assert await finished_ends() == [TurnAnswered()]
 
         # A console roll: the sandbox and its runner outlive the socket. A fresh console resumes the
         # journal from the durable cursor and answers a second prompt — the reconnect path the gate
@@ -183,7 +184,7 @@ async def test_the_cut_stack_answers_a_prompt_with_a_tool_call_over_the_journal(
         async with asyncio.timeout(30):
             await runner.wait()
 
-    assert await finished_ends() == [TurnAnsweredEnd(), TurnAnsweredEnd()]
+    assert await finished_ends() == [TurnAnswered(), TurnAnswered()]
     transcript = await _transcript(session_store, conversation_id)
     assert transcript.count(("message", "re: again")) == 1, "the second answer was recorded exactly once"
 

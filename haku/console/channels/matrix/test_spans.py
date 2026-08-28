@@ -23,20 +23,20 @@ from haku.console.channels.matrix.spans import (
     SpanKind,
 )
 from haku.console.chat_models import LeaseExpiryReason, SessionStatus, ToolOutcome
-from haku.console.session.subscription import StreamedEvent, StreamPosition
-from haku.console.x.session_events import (
-    LeaseExpiredBody,
-    MessageCompletedBody,
-    MessageStartedBody,
-    SessionEndedBody,
-    SessionProvisioningBody,
-    SetupNarrationBody,
-    ToolCallCompletedBody,
-    ToolCallStartedBody,
-    TurnAbortedBody,
-    TurnAnsweredBody,
-    TurnStartedBody,
+from haku.console.conversation.conversation_event import (
+    LeaseExpired,
+    MessageCompleted,
+    MessageOpened,
+    SessionEnded,
+    SessionProvisioning,
+    SetupNarration,
+    ToolCallCompleted,
+    ToolCallOpened,
+    TurnAborted,
+    TurnAnswered,
+    TurnOpened,
 )
+from haku.console.session.subscription import StreamedEvent, StreamPosition
 
 CONVERSATION = UUID("00000000-0000-4000-8000-00000000c0c0")
 SESSION = UUID("11111111-1111-4111-8111-111111111111")
@@ -89,13 +89,11 @@ def _event(
 
 
 def _tool(name: str, *, seq: int, item_id: UUID, at: datetime = STARTED) -> StreamedEvent:
-    return _event(
-        ToolCallStartedBody(call_id=f"call-{seq}", tool_name=name, arguments={}), seq=seq, at=at, item_id=item_id
-    )
+    return _event(ToolCallOpened(call_id=f"call-{seq}", tool_name=name, arguments={}), seq=seq, at=at, item_id=item_id)
 
 
 def _tool_done(*, seq: int, item_id: UUID, at: datetime = STARTED) -> StreamedEvent:
-    return _event(ToolCallCompletedBody(structured={}, outcome=ToolOutcome.SUCCEEDED), seq=seq, at=at, item_id=item_id)
+    return _event(ToolCallCompleted(structured={}, outcome=ToolOutcome.SUCCEEDED), seq=seq, at=at, item_id=item_id)
 
 
 def _apply(state: LiveSpans, *events: StreamedEvent) -> list[SealSpan | RetireSpan]:
@@ -119,10 +117,10 @@ async def test_a_running_tool_wins_over_prose_beside_it() -> None:
     state = LiveSpans(CONVERSATION)
     _apply(
         state,
-        _event(TurnStartedBody(), seq=1),
-        _event(MessageStartedBody(), seq=2, item_id=MESSAGE),
+        _event(TurnOpened(), seq=1),
+        _event(MessageOpened(), seq=2, item_id=MESSAGE),
         _tool("Bash", seq=3, item_id=UUID(int=3)),
-        _event(MessageCompletedBody(backend_item_id="m"), seq=4, item_id=MESSAGE),
+        _event(MessageCompleted(backend_item_id="m"), seq=4, item_id=MESSAGE),
     )
 
     assert await _line(state, now=STARTED + STATUS_AFTER) == "running Bash"
@@ -130,7 +128,7 @@ async def test_a_running_tool_wins_over_prose_beside_it() -> None:
 
 async def test_only_open_prose_is_writing() -> None:
     state = LiveSpans(CONVERSATION)
-    _apply(state, _event(TurnStartedBody(), seq=1), _event(MessageStartedBody(), seq=2, item_id=MESSAGE))
+    _apply(state, _event(TurnOpened(), seq=1), _event(MessageOpened(), seq=2, item_id=MESSAGE))
 
     assert await _line(state, now=STARTED + STATUS_AFTER) == "writing"
 
@@ -139,7 +137,7 @@ async def test_forty_tool_calls_collapse_to_the_one_activity_and_a_tally() -> No
     """A room event is permanent and federated, and an edit re-publishes its whole body, so the
     line stays bounded however long the run gets."""
     state = LiveSpans(CONVERSATION)
-    _apply(state, _event(TurnStartedBody(), seq=1))
+    _apply(state, _event(TurnOpened(), seq=1))
     for call in range(40):
         item = UUID(int=1000 + call)
         _apply(state, _tool("Bash", seq=2 + 2 * call, item_id=item), _tool_done(seq=3 + 2 * call, item_id=item))
@@ -150,12 +148,12 @@ async def test_forty_tool_calls_collapse_to_the_one_activity_and_a_tally() -> No
 async def test_a_short_turn_types_but_never_creates_a_line() -> None:
     frontend = _RecordingFrontend()
     state = LiveSpans(CONVERSATION)
-    _apply(state, _event(TurnStartedBody(), seq=1), _tool("Bash", seq=2, item_id=UUID(int=2)))
+    _apply(state, _event(TurnOpened(), seq=1), _tool("Bash", seq=2, item_id=UUID(int=2)))
 
     await state.reconcile(frontend, ROOM, ATTACHMENT, now=STARTED + STATUS_AFTER - timedelta(seconds=1))
     assert (frontend.typed, frontend.shown) == ([True], [])
 
-    closes = _apply(state, _event(TurnAnsweredBody(), seq=3, at=STARTED + STATUS_AFTER))
+    closes = _apply(state, _event(TurnAnswered(), seq=3, at=STARTED + STATUS_AFTER))
     await state.reconcile(frontend, ROOM, ATTACHMENT, now=STARTED + STATUS_AFTER)
 
     assert frontend.typed == [True, False]
@@ -165,7 +163,7 @@ async def test_a_short_turn_types_but_never_creates_a_line() -> None:
 async def test_a_slow_turn_shows_the_latest_coarse_state() -> None:
     frontend = _RecordingFrontend()
     state = LiveSpans(CONVERSATION)
-    _apply(state, _event(TurnStartedBody(), seq=1), _tool("Bash", seq=2, item_id=UUID(int=2)))
+    _apply(state, _event(TurnOpened(), seq=1), _tool("Bash", seq=2, item_id=UUID(int=2)))
 
     await state.reconcile(frontend, ROOM, ATTACHMENT, now=STARTED + STATUS_AFTER)
 
@@ -176,7 +174,7 @@ async def test_a_slow_turn_shows_the_latest_coarse_state() -> None:
 async def test_a_change_inside_the_edit_floor_is_deferred_not_lost() -> None:
     frontend = _RecordingFrontend()
     state = LiveSpans(CONVERSATION)
-    _apply(state, _event(TurnStartedBody(), seq=1), _tool("Read", seq=2, item_id=UUID(int=2)))
+    _apply(state, _event(TurnOpened(), seq=1), _tool("Read", seq=2, item_id=UUID(int=2)))
     await state.reconcile(frontend, ROOM, ATTACHMENT, now=STARTED + STATUS_AFTER)
 
     changed_at = STARTED + STATUS_AFTER + timedelta(seconds=1)
@@ -195,10 +193,10 @@ async def test_a_change_inside_the_edit_floor_is_deferred_not_lost() -> None:
 async def test_provisioning_shows_at_once_and_narration_edits_the_same_line() -> None:
     frontend = _RecordingFrontend()
     state = LiveSpans(CONVERSATION)
-    _apply(state, _event(SessionProvisioningBody(), seq=1, turn_id=None))
+    _apply(state, _event(SessionProvisioning(), seq=1, turn_id=None))
     await state.reconcile(frontend, ROOM, ATTACHMENT, now=STARTED)
 
-    _apply(state, _event(SetupNarrationBody(text="cloning haku-state"), seq=2, turn_id=None))
+    _apply(state, _event(SetupNarration(text="cloning haku-state"), seq=2, turn_id=None))
     await state.reconcile(frontend, ROOM, ATTACHMENT, now=STARTED + STATUS_EDIT_INTERVAL)
 
     assert frontend.shown == [("session:1", PROVISIONING_STATUS), ("session:1", "cloning haku-state")]
@@ -209,9 +207,9 @@ async def test_the_first_turn_retires_the_session_line() -> None:
     """A conversation that is moving is its own evidence of life, so the pre-turn lifecycle line
     is spent the moment the first turn opens."""
     state = LiveSpans(CONVERSATION)
-    _apply(state, _event(SessionProvisioningBody(), seq=1, turn_id=None))
+    _apply(state, _event(SessionProvisioning(), seq=1, turn_id=None))
 
-    closes = _apply(state, _event(TurnStartedBody(), seq=2))
+    closes = _apply(state, _event(TurnOpened(), seq=2))
 
     assert closes == [RetireSpan(span=SESSION_SPAN)]
     assert state.open_subjects() == frozenset({"turn:2"})
@@ -219,10 +217,10 @@ async def test_the_first_turn_retires_the_session_line() -> None:
 
 async def test_a_lease_expiry_seals_the_session_line_with_the_ending() -> None:
     state = LiveSpans(CONVERSATION)
-    _apply(state, _event(SessionProvisioningBody(), seq=1, turn_id=None))
+    _apply(state, _event(SessionProvisioning(), seq=1, turn_id=None))
 
     closes = _apply(
-        state, _event(LeaseExpiredBody(reason=LeaseExpiryReason.NEVER_ATTACHED, last_holder=None), seq=2, turn_id=None)
+        state, _event(LeaseExpired(reason=LeaseExpiryReason.NEVER_ATTACHED, last_holder=None), seq=2, turn_id=None)
     )
 
     assert closes == [SealSpan(span=SESSION_SPAN, body="the session ended — its sandbox never came up")]
@@ -234,7 +232,7 @@ async def test_a_lease_expiry_with_no_line_open_is_a_span_of_one_event() -> None
     state = LiveSpans(CONVERSATION)
 
     closes = _apply(
-        state, _event(LeaseExpiredBody(reason=LeaseExpiryReason.HOLDER_GONE, last_holder="pod-a"), seq=7, turn_id=None)
+        state, _event(LeaseExpired(reason=LeaseExpiryReason.HOLDER_GONE, last_holder="pod-a"), seq=7, turn_id=None)
     )
 
     assert closes == [
@@ -247,10 +245,10 @@ async def test_a_lease_expiry_with_no_line_open_is_a_span_of_one_event() -> None
 
 async def test_a_session_replaced_mid_turn_closes_the_work_span_and_seals_the_ending() -> None:
     state = LiveSpans(CONVERSATION)
-    _apply(state, _event(TurnStartedBody(), seq=1), _tool("Bash", seq=2, item_id=UUID(int=2)))
+    _apply(state, _event(TurnOpened(), seq=1), _tool("Bash", seq=2, item_id=UUID(int=2)))
 
     closes = _apply(
-        state, _event(LeaseExpiredBody(reason=LeaseExpiryReason.UNADOPTED, last_holder="pod-a"), seq=3, turn_id=None)
+        state, _event(LeaseExpired(reason=LeaseExpiryReason.UNADOPTED, last_holder="pod-a"), seq=3, turn_id=None)
     )
 
     assert closes == [
@@ -268,13 +266,13 @@ async def test_an_abort_between_two_tool_results_retires_the_work_span() -> None
     first, second = UUID(int=1), UUID(int=2)
     _apply(
         state,
-        _event(TurnStartedBody(), seq=1),
+        _event(TurnOpened(), seq=1),
         _tool("Bash", seq=2, item_id=first),
         _tool_done(seq=3, item_id=first),
         _tool("Read", seq=4, item_id=second),
     )
 
-    closes = _apply(state, _event(TurnAbortedBody(), seq=5))
+    closes = _apply(state, _event(TurnAborted(), seq=5))
 
     assert closes == [RetireSpan(span=TURN_SPAN)]
 
@@ -285,8 +283,8 @@ async def test_a_replayed_event_answers_the_same_closes_and_counts_nothing_twice
     state = LiveSpans(CONVERSATION)
     item = UUID(int=9)
     done = _tool_done(seq=3, item_id=item)
-    ended = _event(TurnAnsweredBody(), seq=4)
-    _apply(state, _event(TurnStartedBody(), seq=1), _tool("Bash", seq=2, item_id=item), done)
+    ended = _event(TurnAnswered(), seq=4)
+    _apply(state, _event(TurnOpened(), seq=1), _tool("Bash", seq=2, item_id=item), done)
     first = state.advance(ended)
 
     assert state.advance(done) == ()
@@ -301,9 +299,9 @@ async def test_an_orderly_session_end_withdraws_the_line_rather_than_sealing() -
     """Parity with the pre-span rendering: an orderly ending was never announced, and the line is
     live state whose state is over."""
     state = LiveSpans(CONVERSATION)
-    _apply(state, _event(SessionProvisioningBody(), seq=1, turn_id=None))
+    _apply(state, _event(SessionProvisioning(), seq=1, turn_id=None))
 
-    closes = _apply(state, _event(SessionEndedBody(status=SessionStatus.CLOSED, error=None), seq=2, turn_id=None))
+    closes = _apply(state, _event(SessionEnded(status=SessionStatus.CLOSED, error=None), seq=2, turn_id=None))
 
     assert closes == [RetireSpan(span=SESSION_SPAN)]
 

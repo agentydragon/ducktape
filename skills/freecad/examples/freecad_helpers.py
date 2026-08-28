@@ -12,6 +12,9 @@ import time
 import traceback
 
 import FreeCAD
+
+# gazelle:ignore PySide6,PySide6.QtCore
+# (Qt ships inside the FreeCAD container; not a repo dependency)
 from PySide6 import QtWidgets
 from PySide6.QtCore import QTimer
 

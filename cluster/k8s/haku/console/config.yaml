@@ -14,6 +14,9 @@ recall_indexes:
   # `index_id` is the durable search/grant boundary. Source and remote configuration belong in
   # Git rather than being inferred from an environment-variable name; only the Git credential is
   # secret and therefore remains an env reference.
+  # Sync contract: each entry is mirrored verbatim into its chunk pod's own config slice
+  # (indexer-chunk-<index>-config.yaml) — the derivation tests fail this file against the slices
+  # on any drift.
   - index_id: haku-state
     index_type: git
     repo_url: http://forgejo-http.forgejo:3000/haku/haku-state.git
@@ -827,12 +830,13 @@ mcp:
     # public Ducktape source, and Haku's own past conversations. Listing it here is what builds
     # the searcher, and the
     # console refuses to start unless an embedder is configured too (`HAKU_CONSOLE_EMBEDDER__*`,
-    # Ollama) — search embeds its query. Keeping the corpora current is the two role-flagged
-    # haku-indexer Deployments (haku/console/indexer.py). The chunk role reads the same
-    # recall_indexes registry above: the conversations corpus from the console's tables,
-    # haku-state through a read-only mirror fetched with `HAKU_CONSOLE_HAKU_STATE_GIT_*`, and
-    # Ducktape from GitHub without a credential. The embed role fills the shared vector queue
-    # those chunks land in.
+    # Ollama) — search embeds its query. Keeping the corpora current is the role-flagged
+    # haku-indexer Deployments (haku/console/indexer.py): one chunk Deployment per index below,
+    # plus the shared embed drain. Each chunk pod mounts only its own index's slice of the
+    # recall_indexes registry above (indexer-chunk-<index>-config.yaml, derivation-tested against
+    # these entries) — the conversations corpus from the console's tables, haku-state through a
+    # read-only mirror fetched with `HAKU_CONSOLE_HAKU_STATE_GIT_*`, and Ducktape from GitHub
+    # without a credential. The embed role fills the shared vector queue those chunks land in.
     - id: haku_index
       backend:
         kind: in_process

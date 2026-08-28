@@ -38,14 +38,14 @@ from haku.console.chat_models import (
     RuntimeKind,
     SessionStatus,
     ToolOutcome,
-    TurnOutcome,
 )
 from haku.console.config import ChatRuntimesConfig, ClaudeCodeImplementationConfig, RuntimeRegistrationConfig
 from haku.console.conftest import console_sessions
-from haku.console.conversation import reprojection
+from haku.console.conversation import conversation_event, reprojection
+from haku.console.conversation.conversation_event import FrameRange
 from haku.console.conversation.history import ConversationHistory
 from haku.console.conversation.item_reads import entry_of
-from haku.console.conversation.reads import PromptEntry, TurnAnsweredEnd, TurnFailedEnd
+from haku.console.conversation.reads import PromptEntry
 from haku.console.conversation_read_access import UnrestrictedReads
 from haku.console.database_schema import (
     Agent,
@@ -102,7 +102,6 @@ from haku.console.x.codex_app_server.config import CodexAppServerImplementationC
 from haku.console.x.conversation_events import (
     CallRef,
     ConversationEvent as NeutralConversationEvent,
-    FrameRange,
     ItemSegment,
     MessageCompleted,
     MessageStarted,
@@ -656,7 +655,7 @@ async def test_a_failed_turn_alone_leaves_the_session_usable(session_store, sess
     session_id = await _one_failed_turn(session_store, session_wakes, operator_id, unusable=False)
 
     [record] = await session_store.list_turns(str(session_id), cursor=None, limit=5, scope=UnrestrictedReads())
-    assert record.end == TurnFailedEnd(failure="the provider gave up")
+    assert record.end == conversation_event.TurnFailed(failure="the provider gave up")
     assert await session_store.status(session_id) != SessionStatus.FAILED
 
 
@@ -1365,7 +1364,7 @@ async def test_adoption_closes_a_turn_whose_result_nobody_projected(
         )
 
     [turn] = await session_store.list_turns(str(session_id), cursor=None, limit=5, scope=UnrestrictedReads())
-    assert turn.end == TurnAnsweredEnd()
+    assert turn.end == conversation_event.TurnAnswered()
 
 
 async def test_adoption_reads_a_failed_result_as_a_failed_turn(
@@ -1404,7 +1403,7 @@ async def test_adoption_reads_a_failed_result_as_a_failed_turn(
         )
 
     [turn] = await session_store.list_turns(str(session_id), cursor=None, limit=5, scope=UnrestrictedReads())
-    assert isinstance(turn.end, TurnFailedEnd)
+    assert isinstance(turn.end, conversation_event.TurnFailed)
     # Claude states nothing about the session on a failed result, and its CLI answers the next
     # prompt like any other, so the exchange failing leaves the session usable.
     assert await session_store.status(session_id) != SessionStatus.FAILED
@@ -1441,7 +1440,7 @@ async def test_a_turn_whose_cursor_is_behind_it_is_failed_rather_than_resumed(
     assert await session_store.adopt_open_turn(session_id) is None
 
     [turn] = await session_store.list_turns(str(session_id), cursor=None, limit=5, scope=UnrestrictedReads())
-    assert isinstance(turn.end, TurnFailedEnd)
+    assert isinstance(turn.end, conversation_event.TurnFailed)
 
 
 async def test_a_turn_that_never_asked_its_prompt_gives_it_back(
@@ -1731,7 +1730,7 @@ async def test_a_resumed_turn_finishes_the_answer_it_inherited(
     said = [item for item in await session_items(migrated_sessions, session_id) if item.item_type is ItemType.MESSAGE]
     assert [item.item_id for item in said] == [half_answered], "continued, rather than forked into a second"
     [turn] = await session_store.list_turns(str(session_id), cursor=None, limit=5, scope=UnrestrictedReads())
-    assert (turn.turn_id, turn.end) == (started.turn_id, TurnAnsweredEnd())
+    assert (turn.turn_id, turn.end) == (started.turn_id, conversation_event.TurnAnswered())
 
 
 async def test_adoption_redoes_the_frames_past_the_cursor_and_only_those(
@@ -1851,7 +1850,7 @@ async def test_a_turn_the_cli_ended_badly_fails_even_though_is_error_says_it_did
     )
 
     [record] = await session_store.list_turns(view.session_id, cursor=None, limit=5, scope=UnrestrictedReads())
-    assert record.end == TurnFailedEnd(failure="error_max_turns: end_turn")
+    assert record.end == conversation_event.TurnFailed(failure="error_max_turns: end_turn")
     assert await session_store.status(view.session_id) != SessionStatus.FAILED
 
 
@@ -1892,7 +1891,7 @@ async def test_an_aborted_turn_leaves_a_notice_and_no_reply(
     session_store, migrated_sessions, recording_claims, session_wakes, operator_id
 ) -> None:
     """Two things. The operator's stop reaches the room as a notice and nothing else — no
-    `session_outbox` row, because the fact is a `session_events` row and the notice is its
+    `session_outbox` row, because the fact is a `conversation_event` row and the notice is its
     projection. And the turn has to *survive* the abort: draining to the interrupt's `result` must
     not open a second `anext` on the session's generator, which an async generator refuses, since
     an abort lands exactly there — between frames.
@@ -1983,7 +1982,7 @@ async def test_a_turn_brackets_the_frames_it_produced(session_store, chat_servic
     )
 
     [record] = await session_store.list_turns(view.session_id, cursor=None, limit=10, scope=UnrestrictedReads())
-    assert record.end == TurnAnsweredEnd()
+    assert record.end == conversation_event.TurnAnswered()
     assert (record.first_frame_seq, record.last_frame_seq) == (recorded_answer.frame_seq, recorded_ending.frame_seq)
     assert record.ended_at is not None
 
@@ -2107,7 +2106,7 @@ async def test_runner_survives_an_idle_wait_against_a_real_database(
             [turn] = await session_store.list_turns(
                 str(view.session_id), cursor=None, limit=2, scope=UnrestrictedReads()
             )
-            assert turn.end == TurnAnsweredEnd(), "the turn never completed"
+            assert turn.end == conversation_event.TurnAnswered(), "the turn never completed"
         finally:
             runner.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -2657,7 +2656,10 @@ async def test_a_harness_initiated_exchange_becomes_an_ordinary_turn(
                 .order_by(ConversationTurn.started_at)
             )
         ).all()
-    assert [turn.outcome for turn in turns] == [TurnOutcome.ANSWERED, TurnOutcome.ANSWERED]
+    assert [turn.outcome for turn in turns] == [
+        conversation_event.TurnOutcome.ANSWERED,
+        conversation_event.TurnOutcome.ANSWERED,
+    ]
     entries = await session_store.read_item_rows(
         await session_store.conversation_of(session_id), after_seq=None, limit=100, scope=UnrestrictedReads()
     )

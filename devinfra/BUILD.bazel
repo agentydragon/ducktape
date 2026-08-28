@@ -1,4 +1,6 @@
 # gazelle:exclude ci
+# gazelle:exclude nixos_bazel_test/testdata
+# gazelle:exclude x
 
 load("@bazel_gazelle//:def.bzl", "gazelle", "gazelle_binary")
 load("@npm_ducktape//:prettier/package_json.bzl", prettier_bin = "bin")

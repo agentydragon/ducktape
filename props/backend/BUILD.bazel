@@ -1,3 +1,5 @@
+# This tree deliberately uses the slim dist; the manifest maps `typer` to the fat one.
+# gazelle:resolve py typer @pypi//typer_slim
 """Props backend - FastAPI unified server (dashboard, proxies, eval APIs)."""
 
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")

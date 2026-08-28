@@ -57,7 +57,7 @@ from finance.augur.sim.scenario import (
     TaxProfile,
 )
 from finance.augur.sim.simulate import simulate_with_external_series
-from finance.augur.sim.test_state_helpers import capital_gains_ytd, cash_balances, property_state, rollout_status
+from finance.augur.sim.testing.state_helpers import capital_gains_ytd, cash_balances, property_state, rollout_status
 
 # Constants mirroring the product translator. Kept in-test to avoid
 # cross-package import dependencies from the sim layer.

@@ -115,56 +115,11 @@ py_library(
 )
 
 # Docker container types (no MCP dependencies)
-py_library(
-    name = "docker_types",
-    srcs = ["docker/types.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//pydantic"],
-)
-
-assert_no_deps(
-    name = "docker_types_no_fastmcp",
-    forbidden = [
-        "@pypi//fastmcp_slim",
-        "@pypi//aiodocker",
-        "@pypi//mcp",
-    ],
-    targets = ["//mcp_infra/exec:docker_types"],
-)
-
-# Docker container exec MCP server
-py_library(
-    name = "docker",
-    srcs = [
-        "docker/container_session.py",
-        "docker/launcher.py",
-        "docker/server.py",
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":docker_types",
-        ":models",
-        ":read_image",
-        "//mcp_infra:constants",
-        "//mcp_infra:prefix",
-        "//mcp_infra/enhanced:flat_mixin",
-        "//mcp_infra/enhanced:server",
-        "//mcp_infra/enhanced:simple",
-        "//util:logging",
-        "//util:typer",
-        "@pypi//aiodocker",
-        "@pypi//anyio",
-        "@pypi//fastmcp_slim",
-        "@pypi//mcp",
-        "@pypi//typer_di",
-    ],
-)
-
 py_binary(
     name = "docker_launcher",
     main_module = "mcp_infra.exec.docker.launcher",
     visibility = ["//visibility:public"],
-    deps = [":docker"],
+    deps = ["//mcp_infra/exec/docker:launcher"],
 )
 
 py_library(
@@ -217,8 +172,10 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
-        ":docker",
         ":models",
+        "//mcp_infra/exec/docker:container_session",
+        "//mcp_infra/exec/docker:launcher",
+        "//mcp_infra/exec/docker:server",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -266,8 +223,10 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
-        ":docker",
         ":models",
+        "//mcp_infra/exec/docker:container_session",
+        "//mcp_infra/exec/docker:launcher",
+        "//mcp_infra/exec/docker:server",
         "//mcp_infra/testing:fixtures",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
@@ -280,9 +239,11 @@ py_test(
     name = "test_exec_input_schema",
     srcs = ["test_exec_input_schema.py"],
     deps = [
-        ":docker",
-        ":docker_types",
         ":models",
+        "//mcp_infra/exec/docker:container_session",
+        "//mcp_infra/exec/docker:launcher",
+        "//mcp_infra/exec/docker:server",
+        "//mcp_infra/exec/docker:types",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -323,11 +284,13 @@ py_test(
     deps = [
         ":conftest",
         ":direct",
-        ":docker",
         ":models",
         ":subprocess",
         "//mcp_infra:naming",
         "//mcp_infra:prefix",
+        "//mcp_infra/exec/docker:container_session",
+        "//mcp_infra/exec/docker:launcher",
+        "//mcp_infra/exec/docker:server",
         "//mcp_infra/stubs:typed_stubs",
         "//mcp_infra/testing:simple_servers",
         "@pypi//fastmcp_slim",

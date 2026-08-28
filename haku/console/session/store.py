@@ -41,7 +41,8 @@ from haku.console.chat_models import (
     RuntimeKind,
     SessionStatus,
 )
-from haku.console.conversation import log, prompt_inbox
+from haku.console.conversation import conversation_event, log, prompt_inbox
+from haku.console.conversation.conversation_event import FrameRange
 from haku.console.conversation.item_reads import ConversationPageRow, entry_of, turn_end_of
 from haku.console.conversation.reads import (
     ChannelAttachment,
@@ -94,15 +95,7 @@ from haku.console.session.conversation_views import (
 from haku.console.session.launch_identity import LaunchAgentRejectedError, LaunchAuthorizer
 from haku.console.session.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
 from haku.console.session.subscription import stream_head
-from haku.console.x import session_events
-from haku.console.x.conversation_events import (
-    ConversationEvent,
-    FrameRange,
-    ItemSegment,
-    MessageCompleted,
-    MessageStarted,
-    OpenRef,
-)
+from haku.console.x.conversation_events import ConversationEvent, ItemSegment, MessageCompleted, MessageStarted, OpenRef
 from haku.console.x.runtime import RuntimeAdapter, RuntimeRegistry
 from haku.runtime.x.bridge.client import ReceivedFrame, RecordedFrame
 from haku.runtime.x.bridge.protocol import HarnessFrame
@@ -481,7 +474,7 @@ class Store:
         chat.error = error
         chat.updated_at = now
         writer = await log.writer_for(db, chat.conversation_id, session_id=chat.session_id, turn_id=None, now=now)
-        writer.authored(session_events.SessionEndedBody(status=chat.status, error=error))
+        writer.authored(conversation_event.SessionEnded(status=chat.status, error=error))
         # Exact-session authority never transfers to a replacement session. End it in the same
         # transaction as the session's terminal event so authorization and the durable account
         # cannot disagree. Expiration wins when the lease had already reached its time bound.
@@ -826,7 +819,7 @@ class Store:
             )
             await db.flush([session])
             writer = await log.writer_for(db, conversation_id, session_id=session_id, turn_id=None, now=now)
-            writer.authored(session_events.SessionProvisioningBody())
+            writer.authored(conversation_event.SessionProvisioning())
         return await self.get(operator_id, session_id), bridge_token
 
     async def allocate(self, operator_id: UUID, session_id: UUID) -> SessionAllocation | None:
@@ -856,7 +849,7 @@ class Store:
             chat.lease_expires_at = now + PROVISION_LEASE
             chat.updated_at = now
             writer = await log.writer_for(db, chat.conversation_id, session_id=session_id, turn_id=None, now=now)
-            writer.authored(session_events.SessionProvisioningBody())
+            writer.authored(conversation_event.SessionProvisioning())
             await notify_update(
                 db,
                 session_id=session_id,
@@ -1155,7 +1148,7 @@ class Store:
             # redialling the replica that already holds it is neither.
             if not first_attach and previous_holder != REPLICA:
                 writer = await log.writer_for(db, record.conversation_id, session_id=session_id, turn_id=None, now=now)
-                writer.authored(session_events.SessionAdoptedBody(previous_holder=previous_holder, holder=REPLICA))
+                writer.authored(conversation_event.SessionAdopted(previous_holder=previous_holder, holder=REPLICA))
             return BridgeAuthentication.ACCEPTED
 
     async def release_lease(self, session_id: UUID) -> None:
@@ -1255,7 +1248,7 @@ class Store:
         # neither has an outcome but failure.
         await self.end_turn(
             turn_id,
-            session_events.TurnFailedBody(
+            conversation_event.TurnFailed(
                 failure="the console could not resume this exchange: its prompt was never asked, "
                 "or its projection cursor no longer reaches it"
             ),
@@ -1617,7 +1610,7 @@ class Store:
     async def end_turn(
         self,
         turn_id: UUID,
-        ended: session_events.TurnEndedBody,
+        ended: conversation_event.TurnEnd,
         *,
         last_frame_seq: int | None = None,
         projected_frame_seq: int | None = None,
@@ -1669,7 +1662,7 @@ class Store:
             turn.last_frame_seq = bound
             turn.ended_at = now
             turn.outcome = ended.outcome
-            turn.failure = ended.failure if isinstance(ended, session_events.TurnFailedBody) else None
+            turn.failure = ended.failure if isinstance(ended, conversation_event.TurnFailed) else None
             writer.authored(ended, turn_id=turn_id)
             chat = await db.get(Session, turn.session_id)
             if chat is not None:
@@ -1816,7 +1809,7 @@ class Store:
                 now=now,
             )
             writer = await log.writer_for(db, chat.conversation_id, session_id=session_id, turn_id=None, now=now)
-            writer.authored(session_events.SetupNarrationBody(text=text))
+            writer.authored(conversation_event.SetupNarration(text=text))
             await notify_update(
                 db,
                 session_id=session_id,
@@ -2026,7 +2019,7 @@ class Store:
         frame_seq: int,
         events: Sequence[ConversationEvent],
         *,
-        ended: session_events.TurnEndedBody,
+        ended: conversation_event.TurnEnd,
         final_text: str,
     ) -> bool:
         """Commit a terminal frame's neutral effects, answer close and turn close together.
@@ -2076,7 +2069,7 @@ class Store:
             turn.last_frame_seq = frame_seq
             turn.ended_at = now
             turn.outcome = ended.outcome
-            turn.failure = ended.failure if isinstance(ended, session_events.TurnFailedBody) else None
+            turn.failure = ended.failure if isinstance(ended, conversation_event.TurnFailed) else None
             writer.authored(ended, turn_id=turn_id)
             _advance_cursor(chat, frame_seq)
             chat.updated_at = now
@@ -2354,7 +2347,7 @@ class Store:
                 logger.error("session %s lease expired: %s", session_id, detail)
                 now = datetime.now(UTC)
                 writer = await log.writer_for(db, chat.conversation_id, session_id=session_id, turn_id=None, now=now)
-                writer.authored(session_events.LeaseExpiredBody(reason=reason, last_holder=chat.lease_holder))
+                writer.authored(conversation_event.LeaseExpired(reason=reason, last_holder=chat.lease_holder))
                 await self._end_session(db, chat, error=f"console session ended: {detail}", now=now)
                 await notify_update(db, session_id=session_id, conversation_id=chat.conversation_id)
             return len(expired)

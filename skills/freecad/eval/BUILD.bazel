@@ -10,7 +10,7 @@ py_library(
     name = "run_eval_lib",
     srcs = ["run_eval.py"],
     deps = [
-        "//mcp_infra/exec:docker_types",
+        "//mcp_infra/exec/docker:types",
         # Carries the freecad `.skill` archive as a data dep and the
         # SkillSpec read by stage_skill().
         "//skills/eval_infra:skill_staging",

@@ -4,8 +4,10 @@ py_library(
     name = "twenty_questions",
     srcs = ["twenty_questions.py"],
     deps = [
-        "//mcp_infra/exec:docker",
-        "//mcp_infra/exec:docker_types",
+        "//mcp_infra/exec/docker:container_session",
+        "//mcp_infra/exec/docker:launcher",
+        "//mcp_infra/exec/docker:server",
+        "//mcp_infra/exec/docker:types",
         "//skills/eval_infra:docker_exec",
         "//skills/eval_infra:eval_sandbox",
         "//skills/eval_infra:skill_staging",

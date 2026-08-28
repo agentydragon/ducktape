@@ -1,3 +1,4 @@
+# gazelle:exclude read_waveforms.py
 load("//devinfra/python:defs.bzl", "py_library")
 
 exports_files([

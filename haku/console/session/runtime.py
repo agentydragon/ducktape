@@ -29,6 +29,7 @@ from haku.console.chat_models import (
     RuntimeKind,
     SessionStatus,
 )
+from haku.console.conversation import conversation_event
 from haku.console.conversation.history import ConversationHistory
 from haku.console.conversation.journal_consumer import JournalConsumer, JournalViolationError
 from haku.console.notifications.session_wakes import SessionEvent, SessionEventKind, SessionWakes
@@ -74,7 +75,6 @@ from haku.console.x.runtime import (
     TurnProjectionSeed,
     UnsupportedRuntimeError,
 )
-from haku.console.x.session_events import TurnAbortedBody, TurnAnsweredBody, TurnEndedBody, TurnFailedBody
 from haku.runtime.x.bridge.backend import BRIDGE_CREDENTIAL_VARIABLE
 from haku.runtime.x.bridge.client import ReceivedFrame, RecordedFrame
 from haku.runtime.x.bridge.neutral_operations import OperationBatch, RunnerHello
@@ -458,7 +458,7 @@ class SessionService:
         hot path.
 
         **Not a fact about the conversation**, which is why it is read here and not in the store: it
-        is an observation of another system, on that system's clock. Nothing in `session_events`
+        is an observation of another system, on that system's clock. No `conversation_event` row
         moves when a pod goes ready, so whoever shows this has to ask again rather than wait to be
         told (`conversation_follow.SANDBOX_POLL`).
         """
@@ -1160,7 +1160,7 @@ class SessionService:
                     await self._store.apply_frame(session_id, turn_id, frame_seq, effects.events)
             assert completion_frame_seq is not None
             # An abort is the operator's, so it outranks whatever the provider called the turn.
-            ended = TurnAbortedBody() if abort_event.is_set() else _ended(completion.end)
+            ended = conversation_event.TurnAborted() if abort_event.is_set() else _ended(completion.end)
             # The terminal frame can carry ordinary durable effects as well as completion. They,
             # the answer close, the turn outcome and the cursor belong to one transaction: a split
             # would either lose terminal effects or let the cursor outrun the close on replica
@@ -1172,7 +1172,7 @@ class SessionService:
                 completion_frame_seq,
                 terminal_events,
                 ended=ended,
-                final_text="" if isinstance(ended, TurnFailedBody) else completion.final_text,
+                final_text="" if isinstance(ended, conversation_event.TurnFailed) else completion.final_text,
             )
             # **A failed turn is not a failed session.** The exchange is closed and carries its own
             # reason, so the operator can read it and send another prompt. Only the runtime saying
@@ -1180,7 +1180,7 @@ class SessionService:
             if unusable is not None:
                 raise RuntimeError(
                     f"the agent's turn failed: {ended.failure}"
-                    if isinstance(ended, TurnFailedBody)
+                    if isinstance(ended, conversation_event.TurnFailed)
                     else unusable.reason
                 )
         except Exception as error:
@@ -1192,7 +1192,9 @@ class SessionService:
                 raise
             # Bounded only where the failure was diagnosed from a terminal frame; otherwise this
             # turn ended on no frame of its own and `end_turn` bounds it by what it recorded.
-            await self._store.end_turn(turn_id, TurnFailedBody(failure=str(error)), last_frame_seq=completion_frame_seq)
+            await self._store.end_turn(
+                turn_id, conversation_event.TurnFailed(failure=str(error)), last_frame_seq=completion_frame_seq
+            )
             await self._store.fail(session_id, str(error))
             raise
         finally:
@@ -1210,15 +1212,15 @@ class SessionService:
         await self._runtimes.aclose()
 
 
-def _ended(end: TurnEnd) -> TurnEndedBody:
+def _ended(end: TurnEnd) -> conversation_event.TurnEnd:
     """The turn's own end as the row that records it."""
     match end:
         case TurnAnswered():
-            return TurnAnsweredBody()
+            return conversation_event.TurnAnswered()
         case TurnAborted():
-            return TurnAbortedBody()
+            return conversation_event.TurnAborted()
         case TurnFailed():
-            return TurnFailedBody(failure=end.reason)
+            return conversation_event.TurnFailed(failure=end.reason)
 
 
 async def _replaying(

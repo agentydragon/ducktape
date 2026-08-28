@@ -1,3 +1,4 @@
+# gazelle:exclude migrations
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
@@ -123,6 +124,7 @@ py_test(
     data = [
         "//cluster/k8s:haku_console_config",
         "//cluster/k8s:haku_console_deployment",
+        "//cluster/k8s:haku_indexer_chunk_configs",
         "//cluster/k8s:haku_indexer_deployments",
         "//cluster/k8s:haku_matrix_adapter_deployment",
     ],
@@ -194,6 +196,7 @@ py_library(
         "//haku/recall_index:openai_embedder",
         "//haku/recall_index:schema",
         "@pypi//openai",
+        "@pypi//psycopg",  # keep: runtime-only — SQLAlchemy's psycopg dialect imports it dynamically for the sync schema probe
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
         "@pypi//sqlalchemy",
@@ -329,6 +332,7 @@ py_library(
         ":operator_identity",
         ":pydantic_column",
         "//haku/console/agents:models",
+        "//haku/console/conversation:conversation_event",
         "//haku/console/grants:envelope",
         "//haku/console/grants/http:models",
         "//haku/console/grants/kubernetes:models",

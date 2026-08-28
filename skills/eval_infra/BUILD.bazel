@@ -10,7 +10,9 @@ py_library(
     srcs = ["docker_exec.py"],
     visibility = ["//skills:__subpackages__"],
     deps = [
-        "//mcp_infra/exec:docker",
+        "//mcp_infra/exec/docker:container_session",
+        "//mcp_infra/exec/docker:launcher",
+        "//mcp_infra/exec/docker:server",
         "@pypi//aiodocker",
     ],
 )
@@ -61,7 +63,7 @@ py_library(
     visibility = ["//skills:__subpackages__"],
     deps = [
         ":skill_staging",
-        "//mcp_infra/exec:docker_types",
+        "//mcp_infra/exec/docker:types",
         "//util/bazel:runfiles",
     ] + _AGENT_FRAMEWORK_DEPS,
 )

@@ -41,7 +41,7 @@ because this loop reads when it is woken and at no other time. `Store.narrate` i
 example to copy — it records the row, then announces it.
 
 **The sandbox is the exception, and is polled rather than awaited.** What Kubernetes says about a
-claim, a pod and a runner is an observation of another system: no `session_events` row is written
+claim, a pod and a runner is an observation of another system: no `conversation_event` row is written
 when a pod goes ready, so no wake exists to carry it. While the session a follower is watching is
 still coming up, this loop therefore re-reads on `SANDBOX_POLL` as well as on wakes — which is what
 the browser's own polling used to do, at the same rate the observation cache already bounds.

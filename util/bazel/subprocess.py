@@ -34,6 +34,7 @@ def _in_bazel_venv() -> bool:
     local subprocess.py found before the stdlib one).
     """
     try:
+        # gazelle:ignore _bazel_site_init
         import _bazel_site_init  # type: ignore[import-untyped]  # noqa: F401, PLC0415
 
         return True

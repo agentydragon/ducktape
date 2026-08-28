@@ -14,11 +14,6 @@ py_library(
 )
 
 py_library(
-    name = "waiting",
-    srcs = ["waiting.py"],
-)
-
-py_library(
     name = "wake_probes",
     srcs = ["wake_probes.py"],
     deps = [
@@ -27,4 +22,9 @@ py_library(
         "@pypi//pytest",
         "@pypi//sqlalchemy",
     ],
+)
+
+py_library(
+    name = "waiting",
+    srcs = ["waiting.py"],
 )

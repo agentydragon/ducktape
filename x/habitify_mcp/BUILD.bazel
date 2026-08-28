@@ -1,6 +1,7 @@
 # gazelle:ignore
 # gazelle:exclude utils
 # gazelle:exclude examples
+# gazelle:exclude api_reference
 
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 

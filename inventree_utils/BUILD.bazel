@@ -1,4 +1,5 @@
 # gazelle:exclude rai_plugin
+# gazelle:exclude labels
 # rai_plugin uses InvenTree's plugin framework (not in @pypi)
 
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")

@@ -48,14 +48,13 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import Any
 
-from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome
+from haku.console.chat_models import ItemType, ToolOutcome
+from haku.console.conversation.conversation_event import FrameRange, Json, ReasoningDisclosure
 from haku.console.x.claude_code import frames
 from haku.console.x.conversation_events import (
     CallRef,
     ConversationEvent,
-    FrameRange,
     ItemSegment,
-    Json,
     MessageCompleted,
     MessageStarted,
     OpenRef,

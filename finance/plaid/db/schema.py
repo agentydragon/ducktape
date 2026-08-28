@@ -16,6 +16,9 @@ def utcnow() -> datetime:
 
 
 def normalise_async_db_url(db_url: str) -> str:
+    # gazelle:include_dep @pypi//asyncpg
+    # (SQLAlchemy loads the asyncpg dialect at runtime via the URL scheme below;
+    # nothing imports it, so gazelle cannot see the dependency.)
     return db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
 
