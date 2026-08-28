@@ -9,6 +9,20 @@ from cluster.validation.cluster import ParsedCluster
 from cluster.validation.k8s import CiliumPolicyResource, HelmReleaseResource, K8sResource, SecretResource
 from cluster.validation.kustomize import KustomizeBuildResult
 
+_FORGEJO_REGISTRY = "git.allegedly.works"
+_FORGEJO_CREDENTIAL_SECRET = "forgejo-images-creds"
+_REFLECTION_ALLOWED_NAMESPACES = "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"
+_REFLECTION_AUTO_NAMESPACES = "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"
+_FORGEJO_IMAGE_WORKLOAD_KINDS = {
+    "CronJob",
+    "DaemonSet",
+    "Deployment",
+    "Job",
+    "SandboxTemplate",
+    "StatefulSet",
+    "VirtualMachine",
+}
+
 
 def find_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
     """Find YAML files not referenced by any kustomization."""
@@ -83,6 +97,77 @@ def _rendered_or_source_resources(cluster: ParsedCluster) -> list[tuple[Path, K8
     return [
         (file_path, resource) for file_path, resources in cluster.source_resources.items() for resource in resources
     ]
+
+
+def _mapping(value: object) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _forgejo_workload_pod_specs(resource: K8sResource) -> list[dict]:
+    """Extract the pod-like specs used by the Forgejo-image workload kinds in this cluster."""
+    spec = _mapping(resource.spec)
+    if resource.kind == "SandboxTemplate":
+        return [_mapping(_mapping(spec.get("podTemplate")).get("spec"))]
+    if resource.kind == "CronJob":
+        job_spec = _mapping(spec.get("jobTemplate")).get("spec")
+        template = _mapping(_mapping(job_spec).get("template"))
+    else:
+        template = _mapping(spec.get("template"))
+    return [_mapping(template.get("spec"))]
+
+
+def _forgejo_images(resource: K8sResource) -> set[str]:
+    images: set[str] = set()
+    for pod_spec in _forgejo_workload_pod_specs(resource):
+        for container in [*pod_spec.get("containers", []), *pod_spec.get("initContainers", [])]:
+            image = _mapping(container).get("image")
+            if isinstance(image, str) and image.split("/", 1)[0] == _FORGEJO_REGISTRY:
+                images.add(image)
+        # KubeVirt VirtualMachines pull containerDisk images through the VM pod.
+        for volume in pod_spec.get("volumes", []):
+            image = _mapping(_mapping(volume).get("containerDisk")).get("image")
+            if isinstance(image, str) and image.split("/", 1)[0] == _FORGEJO_REGISTRY:
+                images.add(image)
+    return images
+
+
+def check_forgejo_image_namespace_reflection(cluster: ParsedCluster) -> list[str]:
+    """Every rendered Forgejo image workload namespace is covered by the reflected pull secret."""
+    credential_annotations = {
+        (
+            resource.metadata.annotations.get(_REFLECTION_ALLOWED_NAMESPACES, ""),
+            resource.metadata.annotations.get(_REFLECTION_AUTO_NAMESPACES, ""),
+        )
+        for _, resource in _rendered_or_source_resources(cluster)
+        if resource.kind == "Secret"
+        and resource.name == _FORGEJO_CREDENTIAL_SECRET
+        and resource.namespace == "forgejo-images"
+    }
+    if not credential_annotations:
+        return [f"Secret forgejo-images/{_FORGEJO_CREDENTIAL_SECRET} is not present in rendered resources"]
+    if len(credential_annotations) > 1:
+        return [f"Secret forgejo-images/{_FORGEJO_CREDENTIAL_SECRET} has inconsistent reflection allowlists"]
+
+    allowed, auto = next(iter(credential_annotations))
+    allowlists = {
+        _REFLECTION_ALLOWED_NAMESPACES: {item.strip() for item in allowed.split(",") if item.strip()},
+        _REFLECTION_AUTO_NAMESPACES: {item.strip() for item in auto.split(",") if item.strip()},
+    }
+    errors: list[str] = []
+    for origin, resource in _rendered_or_source_resources(cluster):
+        if resource.kind not in _FORGEJO_IMAGE_WORKLOAD_KINDS:
+            continue
+        images = _forgejo_images(resource)
+        if not images:
+            continue
+        for annotation, namespaces in allowlists.items():
+            if resource.namespace not in namespaces:
+                errors.append(
+                    f"{origin}: {resource.kind} '{resource.namespace}/{resource.name}' runs Forgejo image(s) "
+                    f"{', '.join(sorted(images))}, but namespace '{resource.namespace}' is missing from "
+                    f"{annotation} on Secret forgejo-images/{_FORGEJO_CREDENTIAL_SECRET}"
+                )
+    return errors
 
 
 def check_goldilocks_explicit_decision(cluster: ParsedCluster) -> list[str]:

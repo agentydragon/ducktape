@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -53,6 +54,9 @@ class K8sResource(BaseModel):
     kind: str
     api_version: str = Field(default="", alias="apiVersion")
     metadata: K8sMetadata = Field(default_factory=K8sMetadata)
+    # Keep the generic spec for checks that need fields below the metadata level.
+    # Typed resource variants override this with a narrower model where useful.
+    spec: Any = Field(default_factory=dict)
 
     @property
     def name(self) -> str:

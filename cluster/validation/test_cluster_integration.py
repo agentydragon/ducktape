@@ -23,6 +23,7 @@ import yaml
 from cluster.validation.checks import (
     check_cilium_policy_rules_nonempty,
     check_duplicate_external_secrets,
+    check_forgejo_image_namespace_reflection,
     check_goldilocks_explicit_decision,
     check_goldilocks_namespace_labels,
     check_sops_decryption_blocks,
@@ -109,6 +110,12 @@ def test_no_crd_layering_violations(cluster: ParsedCluster, k8s_dir: Path) -> No
 def test_single_external_secrets_installation(cluster: ParsedCluster) -> None:
     """Exactly one external-secrets HelmRelease across the cluster."""
     errors = check_duplicate_external_secrets(cluster.build_results)
+    assert not errors, "\n".join(errors)
+
+
+def test_forgejo_image_namespaces_are_reflected(cluster: ParsedCluster) -> None:
+    """Every rendered workload using a Forgejo image can receive its pull secret."""
+    errors = check_forgejo_image_namespace_reflection(cluster)
     assert not errors, "\n".join(errors)
 
 
