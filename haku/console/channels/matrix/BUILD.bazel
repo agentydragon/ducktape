@@ -485,6 +485,7 @@ py_library(
         "//haku/console/session:subscription",
         "//haku/console/x:runtime",
         "@pypi//more_itertools",
+        "@pypi//psycopg",  # keep: runtime-only — SQLAlchemy's psycopg dialect imports it dynamically for the sync schema probe (verify_worker_schema)
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
         "@pypi//sqlalchemy",
