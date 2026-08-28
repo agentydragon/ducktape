@@ -86,7 +86,8 @@ const PREVIEW_FIXTURES = [
         grant: {
           ...KUBERNETES_VIEW.grant,
           status: "released" as const,
-          ended_at: "2026-08-23T10:15:00Z",
+          released_at: "2026-08-23T10:15:00Z",
+          revoked_at: null,
           end_reason: "probe complete",
         },
       },
