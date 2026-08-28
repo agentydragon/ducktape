@@ -15,4 +15,9 @@ import ./gateway.nix { inherit pkgs lib; } "codex-claude" {
   model = "chatgpt/ant-messages/gpt-5.6-sol";
   haikuModel = "chatgpt/ant-messages/gpt-5.6-luna";
   gatewayDiscovery = true;
+  # Measured serving-path window/output for the gpt-5.6 Codex models (SSOT:
+  # cluster/k8s/litellm/app/model_rosters.py CODEX_CONTEXT_WINDOW / CODEX_MAX_TOKENS). Without
+  # these Claude Code assumes 200k and compacts at ~166k, clipping the real 372k window.
+  maxContextTokens = 372000;
+  maxOutputTokens = 128000;
 }

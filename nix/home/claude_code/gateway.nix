@@ -18,8 +18,16 @@ name:
   isDemo ? true,
   disallowedTools ? [ ],
   runtimeInputs ? [ ],
+  maxContextTokens ? null,
+  maxOutputTokens ? null,
 }:
 let
+  # Gateway model slugs (e.g. `chatgpt/ant-messages/gpt-5.6-luna`) are not names Claude Code
+  # recognizes, so without maxContextTokens it assumes a 200k window and auto-compacts against
+  # it — clipping a larger real window or (for Gemini's ~1M) discarding most of it. Set
+  # maxContextTokens to the model's real window so compaction math is correct; the value's SSOT
+  # is cluster/k8s/litellm/app/model_rosters.py (CODEX_CONTEXT_WINDOW / GEMINI_CONTEXT_WINDOW) —
+  # keep them in sync. maxOutputTokens caps output below the model's real max.
   envLines =
     lib.optional isDemo "IS_DEMO=1"
     ++ [
@@ -28,7 +36,13 @@ let
       ''ANTHROPIC_MODEL="${model}"''
     ]
     ++ lib.optional (haikuModel != null) ''ANTHROPIC_DEFAULT_HAIKU_MODEL="${haikuModel}"''
-    ++ lib.optional gatewayDiscovery "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1";
+    ++ lib.optional gatewayDiscovery "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1"
+    ++ lib.optional (
+      maxContextTokens != null
+    ) "CLAUDE_CODE_MAX_CONTEXT_TOKENS=${toString maxContextTokens}"
+    ++ lib.optional (
+      maxOutputTokens != null
+    ) "CLAUDE_CODE_MAX_OUTPUT_TOKENS=${toString maxOutputTokens}";
   # ` \\\n  ` = space, backslash (line continuation), newline, 2-space indent.
   envBlock = lib.concatStringsSep " \\\n  " envLines;
   claudeLine =
