@@ -166,6 +166,9 @@ assert_no_deps(
 
 py_test(
     name = "test_agent_queries",
+    # Postgres testcontainer work runs 25-55s across recent green runs; the small-size
+    # 60s ceiling flakes on loaded workers (timed out at 60.2s while actively working).
+    size = "medium",
     srcs = [
         "test_agent_queries.py",
     ],
