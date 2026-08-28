@@ -832,6 +832,14 @@ Haku's Codex runtime. It does not see the workstation `codex` CLI, which sets no
 `model_provider` and talks straight to `chatgpt.com/backend-api/codex` on its own OAuth
 token. So this is a measurement of the _proxied fleet_, not of the subscription.
 
+**The token counts are also undifferentiated, permanently.** Langfuse's
+`usage_details` carries only `input`, `output` and `total` for these traces, so the
+cache-read share is not recorded and cannot be recovered after the fact. Cached input
+bills at a fraction of fresh input — Kimi K3's cache hit is $0.30 against $3.00, an
+order of magnitude — so every list-price conversion below is an upper bound on what the
+same work would cost through an API, and the gap widens with however much of the fleet's
+context is re-sent turn after turn. For agent loops that is most of it.
+
 Fifteen calendar days sampled (2026-07-28 to 2026-08-24, with gaps where queries timed
 out):
 
