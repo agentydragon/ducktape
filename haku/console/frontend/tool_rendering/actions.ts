@@ -14,7 +14,6 @@
 import type { ActionEntry, ToolAction } from "./action_entry";
 import { gmailActions } from "./gmail/actions";
 import { googleCalendarActions } from "./google_calendar/actions";
-import { grantsActions } from "./grants/actions";
 import { grocyActions } from "./grocy/actions";
 import { hakuRoutineActions } from "./haku_routine/actions";
 import { hostexecActions } from "./hostexec/actions";
@@ -22,7 +21,6 @@ import { kubectlActions } from "./kubectl/actions";
 import {
   GMAIL_SERVER_ID,
   GOOGLE_CALENDAR_SERVER_ID,
-  GRANTS_SERVER_ID,
   GROCY_SERVER_ID,
   HAKU_ROUTINE_SERVER_ID,
   HOSTEXEC_SERVER_ID,
@@ -38,7 +36,6 @@ const ACTIONS: Record<string, Record<string, ActionEntry>> = {
   [HAKU_ROUTINE_SERVER_ID]: hakuRoutineActions,
   [HOSTEXEC_SERVER_ID]: hostexecActions,
   [KUBECTL_SERVER_ID]: kubectlActions,
-  [GRANTS_SERVER_ID]: grantsActions,
   [TANA_RW_SERVER_ID]: tanaActions,
 };
 
