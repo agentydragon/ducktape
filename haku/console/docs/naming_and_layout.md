@@ -155,7 +155,7 @@ protocol, not to the fold.
 | failure reason        | field **`failure`**                                                   | `TurnFailed.failure`                                                  |                                                     | never `reason`; unify the one-string-three-hops (`reason`/`failure`/`failure`)                                                                                                                                                                                                                                           |
 | tool outcome          | `ToolOutcome`                                                         | `ToolOutcome`                                                         |                                                     | delete the duplicate `conversation_reads.Outcome`                                                                                                                                                                                                                                                                        |
 | item read model       | `Item` (or `…Item`, plain on wire)                                    | `conversation/item_reads.py` — private to the conversation read tools |                                                     | **"entry" leaves the vocabulary**; the `item_entries.py` name goes with it                                                                                                                                                                                                                                               |
-| session (runner life) | `Session`                                                             | `SessionRecord` (MCP) · `SessionView` (REST)                          | `Session` / `sessions`                              | three representations, one concept-name + role suffix; fix the "…agent conversation" table docstring; delete `ConversationTurnView` (plan §13)                                                                                                                                                                           |
+| session (runner life) | `Session`                                                             | `SessionRecord` (MCP) · `SessionView` (REST)                          | `Session` / `sessions`                              | three representations, one concept-name + role suffix — landed: `SessionView` is the one REST session shape                                                                                                                                                                                                              |
 | channel copy          | `ChannelAttachment`                                                   | `ChannelAttachment`                                                   | `ChannelAttachment` / `channel_attachment`          | pick the channel prefix; retire `ChatAttachment`/`chat_attachment`                                                                                                                                                                                                                                                       |
 | harness wire frame    | `SessionFrame`                                                        | `HarnessFrameRecord` / `…View`                                        | `SessionFrame` / `session_frames`                   | `x/session_events.py` → `session/session_frames.py` (the inversion fix — it holds `conversation_event` bodies today, not frames)                                                                                                                                                                                         |
 | front-end kind        | `ChannelSurface` (not `ChatSurface`)                                  |                                                                       | text col + CHECK                                    | drop the forbidden `SPA` member (the `ck_chat_attachment_surface` CHECK already rejects it) while renaming                                                                                                                                                                                                               |
@@ -381,7 +381,7 @@ conversation-domain quiet gap.
   **not** renamed by C4a: a transitional grab-bag whose ~20 enums span every layer, it has no single
   layer word, so it is **deleted** rather than renamed. Its survival _is_ the tracked cleanup item —
   the #4772 reorg is not done until it is gone, each enum scattered to its true home:
-  - `SessionStatus`, `LeaseExpiryReason` (+ the session-status frozensets) → `session/` (C7-adjacent)
+  - `SessionStatus`, `LeaseExpiryReason` (+ the session-status frozensets) → `session/`
   - `ConversationEventKind`, `AuthoredEventKind`, `EventProvenance`, `TurnOutcome`, `ReasoningDisclosure`
     → `conversation/conversation_event.py` (C5, gated on the #4667 cutover)
   - `ItemType`, `ItemStatus`, `ToolOutcome` → `conversation/item_reads.py` (C6)
@@ -403,8 +403,6 @@ conversation-domain quiet gap.
   gone, `UnknownEventBody` arm preserved. Everything above lands independently of it.
 - **C6 · "entry" → item read model** _(semantic)_ — `*Entry` → `Item…`, into `conversation/item_reads.py`
   (private to the conversation read surface, beside the store that produces it — not `mcp/`); rides or follows C5.
-- **C7 · Session-trio dedup + `ConversationTurnView` delete** _(semantic)_ — after the conversation
-  quiet window.
 
 ### Identity lane — rides the #4836 compose PR
 
@@ -444,7 +442,7 @@ Needs operator go **and** the `<auth-context>` name pick.
 now ─┬─ C13               ← staged severing; ConversationItem home is the gate   [indexer lane, independent]
      ├─ C8 → C9 → C10     ← after operator go + <auth-context>  [identity lane]
      ├─ C11 → C12         ← after egress lands + #4889          [grants lane]
-     └─ (#4667 settles) → C1, C2, C4a  then  C4b, C4e, C5 → C6 → C7   [conversation lane]
+     └─ (#4667 settles) → C1, C2, C4a  then  C4b, C4e, C5 → C6   [conversation lane]
                                                     │
                      C14 (de-Haku) ─────────────────┴────→ after lanes settle names
                      C15 (final packaging) ──────────────→ last

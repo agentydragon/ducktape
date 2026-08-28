@@ -1157,7 +1157,10 @@ class ChannelCursor(Base):
 
 
 class Session(Base):
-    """One Operator-owned agent conversation and its Agent Sandbox rendezvous.
+    """One runner incarnation serving an Operator's conversation, and its Agent Sandbox rendezvous.
+
+    A session, not a conversation: it ends, and the conversation it belongs to does not —
+    successive sessions of one thread share `conversation_id`.
 
     **`status` is derived, never stored** (root STYLE.md § SQLAlchemy): the row records the facts —
     allocation, attachment, the close request, the end — and the vocabulary every consumer speaks

@@ -425,7 +425,7 @@ class SessionService:
     async def conversation(self, operator_id: UUID, conversation_id: UUID) -> ConversationView:
         view = await self._store.get_operator_conversation(operator_id, conversation_id)
         sandbox = await self.provisioning_of(view.session.session_id, view.session.status)
-        return view.model_copy(update={"session": view.session.model_copy(update={"provisioning": sandbox})})
+        return view.model_copy(update={"provisioning": sandbox})
 
     async def sandbox_provisioning(self, operator_id: UUID, session_id: UUID) -> SessionProvisioningView:
         """How this one session's sandbox came up — asked of a session in any state.

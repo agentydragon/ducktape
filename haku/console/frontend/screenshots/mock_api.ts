@@ -268,7 +268,7 @@ const setupNarration = [
     text: "Workspace ready at /workspace/haku-state (tip 9f2c1ab8d4e05137c2a9b6f1e83d47a0c5b29e6f).",
     created_at: "2026-08-01T02:59:53Z",
   },
-] satisfies Conversation["session"]["narration"];
+] satisfies Conversation["narration"];
 // One conversation per row, with the channels holding it rather than one surface: the first is a
 // room with a live session, the second a room between runners whose last session closed cleanly,
 // the third a browser thread whose runner failed. A failed session is never live — the backend
@@ -283,7 +283,13 @@ const conversationPage = {
       created_at: "2026-08-01T03:00:00Z",
       last_activity_at: "2026-08-01T03:01:00Z",
       attachments: [{ surface: "matrix", address: "!ops:example.org", attached_at: "2026-08-01T03:00:00Z" }],
-      live_session: { session_id: conversationSessionId, status: "ready" },
+      live_session: {
+        session_id: conversationSessionId,
+        status: "ready",
+        error: null,
+        created_at: "2026-08-01T03:00:00Z",
+        updated_at: "2026-08-01T03:01:00Z",
+      },
       last_session_status: null,
       item_count: 6,
     },
@@ -326,8 +332,6 @@ const conversationSession = {
   error: null,
   created_at: "2026-08-01T03:00:00Z",
   updated_at: "2026-08-01T03:01:00Z",
-  provisioning: null,
-  narration: setupNarration,
 } satisfies Conversation["session"];
 const conversationDetail = {
   conversation_id: conversationId,
@@ -337,10 +341,18 @@ const conversationDetail = {
   attachments: [{ surface: "matrix", address: "!ops:example.org", attached_at: "2026-08-01T03:00:00Z" }],
   entries: conversationEntries,
   session: conversationSession,
+  provisioning: null,
+  narration: setupNarration,
   // The thread ran one session before this one: what a sandbox dying looks like from the
   // conversation's side, and the only place its frame log stays reachable from.
   earlier_sessions: [
-    { session_id: "70000000-0000-4000-8000-000000000010", status: "failed", created_at: "2026-07-31T22:14:00Z" },
+    {
+      session_id: "70000000-0000-4000-8000-000000000010",
+      status: "failed",
+      error: "the sandbox pod was evicted",
+      created_at: "2026-07-31T22:14:00Z",
+      updated_at: "2026-07-31T22:20:00Z",
+    },
   ],
 } satisfies Conversation;
 // The same session a few seconds earlier: still provisioning, mid-clone, with nothing but the
@@ -348,40 +360,32 @@ const conversationDetail = {
 const conversationBootstrap = {
   ...conversationDetail,
   entries: [],
-  session: {
-    ...conversationSession,
-    status: "provisioning",
-    updated_at: "2026-08-01T02:59:51Z",
-    narration: setupNarration.slice(0, 4),
-  },
+  session: { ...conversationSession, status: "provisioning", updated_at: "2026-08-01T02:59:51Z" },
+  narration: setupNarration.slice(0, 4),
 } satisfies Conversation;
 // A sandbox still being handed out, where the live Kubernetes read is the whole account for a
 // session that never comes up.
 const conversationProvisioning = {
   ...conversationDetail,
   entries: [],
-  session: {
-    ...conversationSession,
-    status: "provisioning",
-    updated_at: "2026-08-01T03:00:03Z",
-    provisioning: {
-      step: "waiting_for_pod_ready",
-      inspected_at: "2026-08-01T03:00:03Z",
-      claim_name: "claude-70000000000040008000000000000011",
-      claim_ready: false,
-      claim_reason: "PodNotReady",
-      claim_message: "Waiting for the sandbox Pod to become ready",
-      sandbox_name: "haku-claude-7r9qk",
-      sandbox_ready: false,
-      pod_name: "haku-claude-7r9qk",
-      pod_phase: "Pending",
-      pod_ready: false,
-      runner_ready: false,
-      runner_state: "waiting: ContainerCreating",
-      observation_error: null,
-    },
-    narration: [],
+  session: { ...conversationSession, status: "provisioning", updated_at: "2026-08-01T03:00:03Z" },
+  provisioning: {
+    step: "waiting_for_pod_ready",
+    inspected_at: "2026-08-01T03:00:03Z",
+    claim_name: "claude-70000000000040008000000000000011",
+    claim_ready: false,
+    claim_reason: "PodNotReady",
+    claim_message: "Waiting for the sandbox Pod to become ready",
+    sandbox_name: "haku-claude-7r9qk",
+    sandbox_ready: false,
+    pod_name: "haku-claude-7r9qk",
+    pod_phase: "Pending",
+    pod_ready: false,
+    runner_ready: false,
+    runner_state: "waiting: ContainerCreating",
+    observation_error: null,
   },
+  narration: [],
 } satisfies Conversation;
 // A finished session short enough that the collapsed panel stays on screen: the detail scene's
 // transcript opens scrolled to its newest message, which puts the collapsed panel above the fold.
@@ -394,14 +398,14 @@ const conversationNarrationCollapsed = {
 const conversationOverflow = {
   ...conversationDetail,
   entries: overflowingEntries,
-  session: { ...conversationSession, narration: [] },
+  narration: [],
 } satisfies Conversation;
 // Tool calls with their results, which is what the transcript's card rendering exists for — with
 // a message still being written at the tail.
 const conversationToolUse = {
   ...conversationDetail,
   entries: toolUsingEntries,
-  session: { ...conversationSession, narration: [] },
+  narration: [],
 } satisfies Conversation;
 const conversationDetailForScene = scene?.startsWith("conversation-bootstrap")
   ? conversationBootstrap

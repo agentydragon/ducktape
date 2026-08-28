@@ -27,10 +27,12 @@ from haku.console.x.setup_output import SETUP_OUTPUT_KIND
 
 
 class SessionView(BaseModel):
-    """One session's own row, as the store hands it to whoever asked.
+    """One session's own row: the session concept's one REST shape (`SessionRecord` is the MCP one).
 
-    Not a wire shape: the browser reads a conversation, assembled from this. The entries are the
-    conversation's, so they are not here.
+    Every surface that shows a session hands back this — the conversation's current and earlier
+    sessions, the inventory's live one, the store's own reads. The entries are the conversation's,
+    so they are not here; narration and the sandbox observation are per-read projections carried
+    beside it, not row facts.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -40,19 +42,6 @@ class SessionView(BaseModel):
     error: str | None
     created_at: datetime
     updated_at: datetime
-
-
-class LiveSession(BaseModel):
-    """The session currently holding a conversation, where one holds it.
-
-    At most one, because only one session holds a conversation at a time. Absent means the thread
-    is between runners: a prompt to it needs a new session rather than reaching an existing one.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    session_id: UUID
-    status: SessionStatus
 
 
 class ConversationSummary(BaseModel):
@@ -73,7 +62,11 @@ class ConversationSummary(BaseModel):
         description="When the most recent session under this conversation last moved. What the list is ordered by."
     )
     attachments: list[ChannelAttachment]
-    live_session: LiveSession | None
+    live_session: SessionView | None = Field(
+        description="The session currently holding this conversation — at most one, because only one "
+        "session holds a conversation at a time. Absent means the thread is between runners: a prompt "
+        "to it needs a new session rather than reaching an existing one."
+    )
     last_session_status: SessionStatus | None = Field(
         default=None,
         description="How this conversation's most recent session ended — what separates a thread whose"
@@ -113,38 +106,6 @@ class ConversationPage(BaseModel):
     )
 
 
-class ConversationSessionView(BaseModel):
-    """One session of a conversation: what it cost to start, how it is doing, what setup said.
-
-    The entries are deliberately not here — they are the conversation's
-    (`ConversationView.entries`), because the thread outlives every session that ran it.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    session_id: UUID
-    status: SessionStatus
-    error: str | None
-    created_at: datetime
-    updated_at: datetime
-    provisioning: SandboxProvisioningView | None = None
-    narration: list[SetupOutputRecord]
-
-
-class EarlierSession(BaseModel):
-    """A session this conversation ran before the current one, newest first.
-
-    A conversation outlives its sessions, so a thread whose sandbox died has more than one, each
-    with its own frame log. This is the handle that keeps them reachable.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    session_id: UUID
-    status: SessionStatus
-    created_at: datetime
-
-
 class ConversationView(BaseModel):
     """One conversation as the browser reads it.
 
@@ -164,8 +125,23 @@ class ConversationView(BaseModel):
         description="The conversation's item rows as entries, in opening order — each in its current "
         "state, an item still being written included."
     )
-    session: ConversationSessionView
-    earlier_sessions: list[EarlierSession]
+    session: SessionView = Field(
+        description="The current session: the one holding the conversation, or the last one to have held it."
+    )
+    provisioning: SandboxProvisioningView | None = Field(
+        default=None,
+        description="The cluster's account of the sandbox the current session is waiting on, while it "
+        "is still waiting.",
+    )
+    narration: list[SetupOutputRecord] = Field(
+        description="What the current session said while coming up. For a session that died during "
+        "setup it is the whole account."
+    )
+    earlier_sessions: list[SessionView] = Field(
+        description="The sessions this conversation ran before the current one, newest first. A "
+        "conversation outlives its sessions, so a thread whose sandbox died has more than one, each "
+        "with its own frame log; this is the handle that keeps them reachable."
+    )
     # CLEANUP(added 2026-08-27): expand step of runtime_kind→harness_kind (naming_and_layout.md
     #   §3.1, #4772). A read-only mirror of `runtime_kind`, so a consumer can move to `harness_kind`
     #   before the contract step renames the field and drops `runtime_kind`.
@@ -209,11 +185,10 @@ class ConversationUpdate(BaseModel):
 
     message_type: Literal["update"] = "update"
     position: int = Field(description="Where applying this leaves the follower; what a reconnect asks from.")
-    session_id: UUID = Field(description="The session now holding the conversation, which a replacement changes.")
-    status: SessionStatus
-    error: str | None
-    created_at: datetime
-    updated_at: datetime
+    session: SessionView = Field(
+        description="The session now holding the conversation — which a replacement changes — its own "
+        "row whole, replacing what is held."
+    )
     provisioning: SandboxProvisioningView | None = Field(
         default=None,
         description="The cluster's account of the sandbox this session is waiting on, while it is still waiting.",
@@ -224,8 +199,8 @@ class ConversationUpdate(BaseModel):
     attachments: list[ChannelAttachment] = Field(
         description="The channels holding a copy of this conversation now — replaces what is held."
     )
-    earlier_sessions: list[EarlierSession] = Field(
-        description="The sessions this conversation ran before `session_id`, newest first — replaces what is held."
+    earlier_sessions: list[SessionView] = Field(
+        description="The sessions this conversation ran before the current one, newest first — replaces what is held."
     )
     entries: list[ConversationEntry] = Field(
         description="The rows that moved since the follower's position, whole and in their current state — "

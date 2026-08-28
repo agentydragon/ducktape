@@ -223,7 +223,7 @@ class ConversationFollow:
             return await self._snapshot(
                 operator_id, conversation_id, await self._store.conversation_position(conversation_id)
             )
-        sandbox = await self._reader.provisioning_of(update.session_id, update.status)
+        sandbox = await self._reader.provisioning_of(update.session.session_id, update.session.status)
         return update.model_copy(update={"provisioning": sandbox})
 
     async def _snapshot(self, operator_id: UUID, conversation_id: UUID, position: int) -> ConversationSnapshot:
@@ -239,7 +239,7 @@ class ConversationFollow:
 
 def _still_coming_up(message: ConversationFollowMessage) -> bool:
     """Whether the session this message describes is still waiting on its sandbox."""
-    status = message.conversation.session.status if isinstance(message, ConversationSnapshot) else message.status
+    status = (message.conversation if isinstance(message, ConversationSnapshot) else message).session.status
     return status == SessionStatus.PROVISIONING
 
 

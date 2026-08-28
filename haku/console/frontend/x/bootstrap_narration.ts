@@ -1,6 +1,6 @@
-import type { ConversationSession } from "../client";
+import type { Conversation, Session } from "../client";
 
-export type NarrationLine = ConversationSession["narration"][number];
+export type NarrationLine = Conversation["narration"][number];
 
 export type BootstrapNarration = {
   lines: NarrationLine[];
@@ -24,12 +24,12 @@ export type BootstrapNarration = {
  * the conversation's rather than the session's, so their emptiness is the caller's to say.
  */
 export function bootstrapNarration(
-  session: Pick<ConversationSession, "status" | "narration">,
+  conversation: Pick<Conversation, "narration"> & { session: Pick<Session, "status"> },
   conversationEmpty: boolean
 ): BootstrapNarration | null {
-  if (session.narration.length === 0) return null;
+  if (conversation.narration.length === 0) return null;
   return {
-    lines: [...session.narration].sort((left, right) => left.frame_seq - right.frame_seq),
-    startsExpanded: session.status === "provisioning" || conversationEmpty,
+    lines: [...conversation.narration].sort((left, right) => left.frame_seq - right.frame_seq),
+    startsExpanded: conversation.session.status === "provisioning" || conversationEmpty,
   };
 }

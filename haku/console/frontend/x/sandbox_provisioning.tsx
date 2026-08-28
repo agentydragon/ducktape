@@ -1,8 +1,8 @@
 import { Badge, Box, Code, Group, Loader, Paper, Stack, Text } from "@mantine/core";
 
-import type { ConversationSession } from "../client";
+import type { Conversation } from "../client";
 
-type Provisioning = NonNullable<ConversationSession["provisioning"]>;
+type Provisioning = NonNullable<Conversation["provisioning"]>;
 
 const STEP_LABELS: Record<Provisioning["step"], string> = {
   claim_absent: "No SandboxClaim — never created, or already reclaimed",

@@ -2167,7 +2167,7 @@ async def test_an_update_carries_what_a_replaced_session_wrote_after_the_positio
         "after it was replaced",
         "answered again",
     ]
-    assert changes.session_id == second.session_id
+    assert changes.session.session_id == second.session_id
 
 
 async def test_a_claimed_prompt_reaches_a_reader_as_the_responding_status(session_store, operator_id) -> None:
@@ -2189,7 +2189,7 @@ async def test_a_claimed_prompt_reaches_a_reader_as_the_responding_status(sessio
     )
 
     assert claimed.entries == []
-    assert claimed.status == SessionStatus.RESPONDING
+    assert claimed.session.status == SessionStatus.RESPONDING
 
 
 async def test_a_position_the_log_cannot_answer_from_is_refused_rather_than_read_as_empty(
