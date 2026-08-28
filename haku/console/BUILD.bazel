@@ -196,6 +196,7 @@ py_library(
         "//haku/recall_index:openai_embedder",
         "//haku/recall_index:schema",
         "@pypi//openai",
+        "@pypi//psycopg",  # keep: runtime-only — SQLAlchemy's psycopg dialect imports it dynamically for the sync schema probe
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
         "@pypi//sqlalchemy",
