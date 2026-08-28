@@ -1,0 +1,24 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: airlock
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/airlock
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: airlock
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: airlock
+  filterTags:
+    pattern: '^devel-\d{14}-[0-9a-f]{7}$'
+  policy:
+    alphabetical:
+      order: asc

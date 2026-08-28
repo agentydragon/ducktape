@@ -1,0 +1,22 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: budget-exporter
+  namespace: flux-system
+spec:
+  image: ghcr.io/agentydragon/budget-exporter
+  interval: 5m
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: budget-exporter
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: budget-exporter
+  filterTags:
+    pattern: "^devel-[0-9]{14}-[0-9a-f]{7}$"
+  policy:
+    alphabetical:
+      order: asc

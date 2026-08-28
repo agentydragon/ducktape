@@ -1,0 +1,22 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: cpap-sync
+  namespace: flux-system
+spec:
+  image: ghcr.io/agentydragon/cpap-sync
+  interval: 5m
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: cpap-sync
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: cpap-sync
+  filterTags:
+    pattern: '^devel-\d{14}-[0-9a-f]{7}$'
+  policy:
+    alphabetical:
+      order: asc

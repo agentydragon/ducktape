@@ -1,0 +1,24 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: tana-firebase-resigner
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/tana-firebase-resigner
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: tana-firebase-resigner
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: tana-firebase-resigner
+  filterTags:
+    pattern: '^devel-\d{14}-[0-9a-f]{7}$'
+  policy:
+    alphabetical:
+      order: asc

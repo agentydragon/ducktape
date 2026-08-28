@@ -1,0 +1,22 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: ha-mcp-token-provisioner
+  namespace: flux-system
+spec:
+  image: ghcr.io/agentydragon/ha-mcp-token-provisioner
+  interval: 5m
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: ha-mcp-token-provisioner
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: ha-mcp-token-provisioner
+  filterTags:
+    pattern: '^devel-\d{14}-[0-9a-f]{7}$'
+  policy:
+    alphabetical:
+      order: asc

@@ -1,0 +1,24 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: aiquota-api
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/aiquota-api
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: aiquota-api
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: aiquota-api
+  filterTags:
+    pattern: "^devel-[0-9]{14}-[0-9a-f]{7}$"
+  policy:
+    alphabetical:
+      order: asc

@@ -299,16 +299,16 @@ def test_haku_harness_runner_has_one_neutral_publication(k8s_dir: Path) -> None:
     retired_name = "haku-claude-runner"
     flux_dir = k8s_dir / "flux-image-automation-ghcr"
 
-    repository = yaml.safe_load((flux_dir / f"{canonical_name}-image-repository.yaml").read_text())
-    policy = yaml.safe_load((flux_dir / f"{canonical_name}-image-policy.yaml").read_text())
+    image_documents = list(yaml.safe_load_all((flux_dir / f"{canonical_name}-image.yaml").read_text()))
+    repository = one(document for document in image_documents if document["kind"] == "ImageRepository")
+    policy = one(document for document in image_documents if document["kind"] == "ImagePolicy")
     assert repository["metadata"]["name"] == canonical_name
     assert repository["spec"]["image"] == f"ghcr.io/agentydragon/{canonical_name}"
     assert policy["metadata"]["name"] == canonical_name
     assert policy["spec"]["imageRepositoryRef"]["name"] == canonical_name
 
     flux_kustomization = yaml.safe_load((flux_dir / "kustomization.yaml").read_text())
-    assert f"{canonical_name}-image-repository.yaml" in flux_kustomization["resources"]
-    assert f"{canonical_name}-image-policy.yaml" in flux_kustomization["resources"]
+    assert f"{canonical_name}-image.yaml" in flux_kustomization["resources"]
 
     receiver = yaml.safe_load((k8s_dir / "flux-webhook/github-webhook-receiver.yaml").read_text())
     image_repositories = {
@@ -1232,10 +1232,12 @@ def test_haku_matrix_adapter_worker_contract(k8s_dir: Path) -> None:
             f"reflector.v1.k8s.emberstack.com/reflection-{scope}-namespaces"
         ]
         assert adapter["metadata"]["namespace"] in namespaces.split(",")
-    image_repository = yaml.safe_load(
-        (k8s_dir / "flux-image-automation-forgejo" / "haku-matrix-adapter-image-repository.yaml").read_text(
-            encoding="utf-8"
+    image_repository = one(
+        document
+        for document in yaml.safe_load_all(
+            (k8s_dir / "flux-image-automation-forgejo" / "haku-matrix-adapter-image.yaml").read_text(encoding="utf-8")
         )
+        if document["kind"] == "ImageRepository"
     )
     assert adapter_container["image"].startswith(image_repository["spec"]["image"] + ":")
     assert image_repository["spec"]["secretRef"]["name"] == pull_secret

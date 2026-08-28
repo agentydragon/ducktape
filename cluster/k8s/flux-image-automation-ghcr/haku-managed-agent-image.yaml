@@ -1,0 +1,23 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: haku-managed-agent
+  namespace: flux-system
+spec:
+  image: ghcr.io/agentydragon/haku-managed-agent
+  interval: 5m
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: haku-managed-agent
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: haku-managed-agent
+  filterTags:
+    # Tags pushed by CI: {branch}-YYYYMMDDHHMMSS-{sha7} — alphabetical == chronological
+    pattern: '^devel-\d{14}-[0-9a-f]{7}$'
+  policy:
+    alphabetical:
+      order: asc
