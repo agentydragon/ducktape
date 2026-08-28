@@ -95,7 +95,7 @@ py_library(
         ":clickhouse",
         ":config",
         ":models",
-        "//aiquota/providers:client",
+        "//aiquota/providers:base",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//prometheus_client",

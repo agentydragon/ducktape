@@ -329,12 +329,53 @@ finalize and writes raw bytes, no ANSI escapes.
    RESULT=$(bb remote query 'deps(//foo)' 2>/dev/null)
    ```
 
-2. **`--invocation_id_file`** — write the invocation ID to a file, then fetch
-   logs post-hoc via the BuildBuddy API. `bbr` does this automatically
-   (`~/.cache/bbr/last_invocation_id`) and prints a post-run summary with
-   `bbapi` commands.
+2. **Pass `--invocation_id=<uuid>` after the verb**, then fetch logs post-hoc
+   via the BuildBuddy API. `bbr` does this automatically, prints the ID before
+   and after the run, and records it with `--invocation-id-file=PATH`
+   (§ Invocation IDs).
 3. **`--script` + file redirect** — redirect bazel output to a file on the
    runner, download via `--remote_download_regex`.
+
+## Invocation IDs
+
+A remote run produces two invocations:
+
+- **Outer (runner)**: minted server-side by hostedrunner, passed to ci_runner
+  via `--invocation_id`, returned to the CLI in `RunResponse` — the ID
+  `--invocation_id_file` records. Carries the runner log; its recorded command
+  is `remote <cmd> <first-target>`.
+- **Inner (Bazel)**: the `bazel` invocation ci_runner executes, carrying
+  targets, test results, and artifacts. Bazel mints its ID randomly unless
+  `--invocation_id=<uuid>` appears after the verb — bb forwards bazel args
+  verbatim, and ci_runner's bazel wrapper strips the flag only from the
+  `EXPLICIT_COMMAND_LINE` UI metadata, not from the real command. It links
+  back to the outer run via `PARENT_INVOCATION_ID` build metadata.
+
+`bbr` mints the inner ID itself (uuid4, appended after the verb) and prints it
+before the run and in the post-run summary. For scripting, either pass your
+own `--invocation_id=<uuid>` after the verb (adopted, not overridden) or use
+bbr's own `--invocation-id-file=PATH` flag, which writes the ID to that path
+before the run:
+
+```bash
+bbr --invocation-id-file=/tmp/bbr-inv test //foo:bar
+bbapi invocation "$(cat /tmp/bbr-inv)"
+```
+
+`bbapi` commands take either ID (outer auto-resolves to children), but the
+inner one names the targets/logs/artifacts directly.
+
+**Rejected: reading the ID back from `--invocation_id_file`.** bb writes that
+file once, at the end of a successfully tracked run, and bbr pointed every run
+at one shared per-user path — so a concurrent, failed, or interrupted run
+leaves another run's ID in place for the post-run read to report (observed
+2026-08-27: a `bbr test //cluster/...` run reported a concurrent run's
+`remote test //haku/console/x/...` invocation). A per-run file would fix the
+race but still name only the outer invocation; the outer ID stays discoverable
+from bb's own "Streaming remote runner logs to:" line. A bbr-written shared
+default file (`~/.cache/bbr/last_invocation_id`) has the same cross-run
+trampling for whoever reads it — recording is opt-in and per-run via
+`--invocation-id-file`.
 
 ## Downloaded artifacts land under `bb-out/bazel-out/`, NOT `bb-out/bazel-bin/`
 

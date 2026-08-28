@@ -83,7 +83,7 @@ from haku.console.x.subscription import ConversationStream
 
 logger = logging.getLogger(__name__)
 
-# Distinct from the OAuth refresh lock in oauth_association_maintenance.
+# Distinct from the OAuth refresh lock in oauth/association_maintenance.py.
 _SYNC_ADVISORY_LOCK = 0x4D58_5359  # "MXSY"
 
 # How long a replica that lost the election waits before trying again.

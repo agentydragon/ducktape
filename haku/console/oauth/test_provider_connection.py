@@ -14,7 +14,6 @@ from mcp.shared.auth import OAuthToken
 from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from haku.console import provider_connection as provider_connection_module
 from haku.console.config import ProviderOAuthClientConfig
 from haku.console.database_schema import ProviderConnection
 from haku.console.mcp_config import (
@@ -25,10 +24,11 @@ from haku.console.mcp_config import (
     OperatorConnectionDefinition,
     OperatorConnectionProviderDefinition,
 )
-from haku.console.oauth_token_state import PostgresOAuthTokenStateStore
+from haku.console.oauth import provider_connection as provider_connection_module
+from haku.console.oauth.provider_connection import PostgresProviderConnectionStore, load_provider_clients
+from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
+from haku.console.oauth.token_state import PostgresTokenStateStore
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.provider_connection import PostgresProviderConnectionStore, load_provider_clients
-from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_service import BackendAccountNotConnectedError, backend_auth_for_operator
 
 GOOGLE = ProviderConnectionKind.GOOGLE
@@ -53,7 +53,7 @@ async def store(
     return PostgresProviderConnectionStore(
         migrated_sessions,
         operator_identity_store=migrated_identity_store,
-        token_states=PostgresOAuthTokenStateStore(migrated_sessions, operator_identity_store=migrated_identity_store),
+        token_states=PostgresTokenStateStore(migrated_sessions, operator_identity_store=migrated_identity_store),
         provider_definitions={
             GOOGLE_MAIL: OperatorConnectionProviderDefinition(
                 kind=GOOGLE, client_id_env_var="MAIL_CLIENT_ID", client_secret_env_var="MAIL_CLIENT_SECRET"

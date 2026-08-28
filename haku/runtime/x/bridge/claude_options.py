@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from haku.runtime.x.bridge.backend import ProcessLaunch, child_environment
+from haku.runtime.x.bridge.claude_driver import ClaudeDriver
 from haku.runtime.x.bridge.protocol import FINE_GRAINED_TOOL_STREAMING_ENV, HarnessLaunch
 
 # What the CLI reports itself as. A label: the CLI does not switch behaviour on it.
@@ -106,6 +107,9 @@ class ClaudeBackend:
             cwd=launch.cwd,
             environment=child_environment(launch),
         )
+
+    def driver(self) -> ClaudeDriver:
+        return ClaudeDriver()
 
 
 def claude_backend(executable: Path | None = None) -> ClaudeBackend:

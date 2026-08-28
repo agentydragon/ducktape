@@ -11,13 +11,11 @@ import shlex
 import shutil
 import subprocess
 import sys
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pygit2
-
-_INVOCATION_ID_DIR = Path.home() / ".cache" / "bbr"
-_INVOCATION_ID_FILE = _INVOCATION_ID_DIR / "last_invocation_id"
 
 # Commits HEAD can be ahead of the likely bb-remote diff base before we refuse
 # to run (see check_base_branch_freshness) — at that distance the runner-side
@@ -180,17 +178,31 @@ def find_verb_index(args: list[str]) -> int | None:
     return None
 
 
-def build_command(repo: pygit2.Repository, user_args: list[str]) -> list[str]:
-    """Assemble the full bb remote command line.
+def _explicit_invocation_id(command_options: list[str]) -> str | None:
+    """The caller's own --invocation_id from after the verb, if any (last wins, as in Bazel)."""
+    found = None
+    for i, arg in enumerate(command_options):
+        if arg.startswith("--invocation_id="):
+            found = arg.removeprefix("--invocation_id=")
+        elif arg == "--invocation_id" and i + 1 < len(command_options):
+            found = command_options[i + 1]
+    return found
+
+
+def build_command(repo: pygit2.Repository, user_args: list[str]) -> tuple[list[str], str | None]:
+    """Assemble the full bb remote command line; returns it with this run's invocation ID.
 
     Argument layout:
-      bb remote [bb-remote-flags] [BBR_REMOTE_ARGS] <verb> [repo bazel_args] [session bazelrc] [user flags+targets]
+      bb remote [bb-remote-flags] [BBR_REMOTE_ARGS] <verb> [--invocation_id] [repo bazel_args] [session bazelrc] [user flags+targets]
+
+    bbr mints the invocation ID and passes it into the remote Bazel command, so
+    the ID it reports is this run's by construction. Reading it back from bb's
+    --invocation_id_file is unsound: concurrent bbr runs sharing that path
+    cross-attribute each other's runs (bb_remote_internals.md § Invocation IDs).
     """
     repo_root = Path(repo.workdir)
     config = _read_repo_config(repo_root)
     bb = _find_bb()
-
-    _INVOCATION_ID_DIR.mkdir(parents=True, exist_ok=True)
 
     runner_props = [f"--runner_exec_properties={k}={v}" for k, v in config.runner_exec_properties.items()]
     container_flag = (
@@ -199,47 +211,55 @@ def build_command(repo: pygit2.Repository, user_args: list[str]) -> list[str]:
 
     # Split user_args at the bazel verb into startup options (before verb)
     # and command options (after verb).
-    # Final layout: bb remote [bb-flags] [startup-opts] <verb> [repo-args] [session-args] [command-opts]
     verb_idx = find_verb_index(user_args)
     if verb_idx is not None:
         startup_options = user_args[:verb_idx]
         verb = user_args[verb_idx]
         command_options = user_args[verb_idx + 1 :]
+        explicit_id = _explicit_invocation_id(command_options)
+        invocation_id = explicit_id or str(uuid.uuid4())
+        invocation_id_flag = [] if explicit_id else [f"--invocation_id={invocation_id}"]
     else:
+        # No bazel verb (e.g. --script via BBR_REMOTE_ARGS): no Bazel command
+        # line to attach --invocation_id to, so no ID is minted or reported.
         startup_options = user_args
         verb = None
         command_options = []
+        invocation_id = None
+        invocation_id_flag = []
 
-    return [
+    cmd = [
         bb,
         "remote",
-        f"--invocation_id_file={_INVOCATION_ID_FILE}",
         *runner_props,
         *container_flag,
         *_env_args("BBR_REMOTE_ARGS"),
         *startup_options,
         *([verb] if verb else []),
+        *invocation_id_flag,
         *config.bazel_args,
         *_bazelrc_args(),
         *command_options,
     ]
+    return cmd, invocation_id
 
 
-def _print_post_run_summary() -> None:
-    """Print invocation ID and useful commands after bb remote completes."""
-    try:
-        inv_id = _INVOCATION_ID_FILE.read_text().strip()
-    except OSError:
-        return
-    if not inv_id:
-        return
-    print(f'bbr: invocation {inv_id}  (bbapi {{target,"target log",artifact,invocation}} {inv_id})', file=sys.stderr)
+def _extract_invocation_id_file(args: list[str]) -> tuple[list[str], Path | None]:
+    """Strip bbr's own --invocation-id-file=PATH flag from args (last wins)."""
+    path = None
+    remaining = []
+    for arg in args:
+        if arg.startswith("--invocation-id-file="):
+            path = Path(arg.removeprefix("--invocation-id-file="))
+        else:
+            remaining.append(arg)
+    return remaining, path
 
 
 _HELP = """\
 bbr — wrapper around `bb remote` with layered configuration.
 
-Usage: bbr [--dry-run] [--help] <bazel-verb> [flags...] [targets...]
+Usage: bbr [--dry-run] [--invocation-id-file=PATH] [--help] <bazel-verb> [flags...] [targets...]
 
 Configuration layers (last-wins for Bazel flags):
   Repo      devinfra/bbr.json          runner properties, container image, bazel_args
@@ -248,8 +268,9 @@ Configuration layers (last-wins for Bazel flags):
   CLI       user args                  flags and targets (override everything)
 
 Flags:
-  --dry-run   Print the assembled command without executing
-  --help      Show this help
+  --dry-run                  Print the assembled command without executing
+  --invocation-id-file=PATH  Write the run's invocation ID to PATH before the run
+  --help                     Show this help
 
 Environment variables:
   BBR_BAZELRC       Path to a bazelrc-format file with Bazel flags to forward.
@@ -275,20 +296,35 @@ def main() -> None:
     dry_run = "--dry-run" in args
     if dry_run:
         args.remove("--dry-run")
+    args, invocation_id_file = _extract_invocation_id_file(args)
 
     repo = pygit2.Repository(".")
     if message := check_base_branch_freshness(repo):
         print(message, file=sys.stderr)
         if not os.environ.get("BBR_ALLOW_STALE_BASE"):
             sys.exit(1)
-    cmd = build_command(repo, args)
+    cmd, invocation_id = build_command(repo, args)
+    if invocation_id is None and invocation_id_file is not None:
+        print("bbr: --invocation-id-file: no bazel verb, so no invocation ID to record", file=sys.stderr)
+        sys.exit(1)
 
     if dry_run:
         print(" ".join(cmd))
         return
 
+    if invocation_id is not None:
+        # Printed and recorded before exec so interrupted runs still leave the ID.
+        print(f"bbr: invocation {invocation_id}", file=sys.stderr)
+        if invocation_id_file is not None:
+            invocation_id_file.parent.mkdir(parents=True, exist_ok=True)
+            invocation_id_file.write_text(invocation_id)
+
     result = subprocess.run(cmd, check=False)
-    _print_post_run_summary()
+    if invocation_id is not None:
+        print(
+            f'bbr: invocation {invocation_id}  (bbapi {{target,"target log",artifact,invocation}} {invocation_id})',
+            file=sys.stderr,
+        )
     sys.exit(result.returncode)
 
 

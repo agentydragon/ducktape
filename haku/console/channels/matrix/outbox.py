@@ -118,7 +118,7 @@ def _pending(row: MatrixOutbox, *, room_id: str) -> PendingReply:
 def _backoff(attempts: int) -> datetime.timedelta:
     """Backoff before the retry that follows the ``attempts``-th spent attempt.
 
-    Tenacity is the wait calculator only (the `oauth_token_state._refresh_retry_delay` pattern): the
+    Tenacity is the wait calculator only (the `oauth.token_state._refresh_retry_delay` pattern): the
     retry loop itself is the drain re-claiming the row across processes and restarts, so the row's
     `next_attempt_at` carries the schedule between them and a minimal `RetryCallState` stands in
     for the live loop tenacity would otherwise drive.

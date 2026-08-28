@@ -1,0 +1,25 @@
+# A pod already carrying inject-haku-egress-proxy's complete wiring — the policy's own CA
+# volume/mount plus its own proxy env — which every rule's precondition treats as "already
+# fenced" (test_proxy_injection.py::test_pod_carrying_its_own_wiring_is_left_alone).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: self-wired-probe
+  namespace: haku-sandbox
+spec:
+  containers:
+    - name: app
+      image: curlimages/curl:latest
+      env:
+        - name: HTTP_PROXY
+          value: http://haku-egress-proxy.haku-console.svc.cluster.local:8888
+        - name: HTTPS_PROXY
+          value: http://haku-egress-proxy.haku-console.svc.cluster.local:8888
+      volumeMounts:
+        - name: haku-egress-proxy-ca-cert
+          mountPath: /egress-proxy-ca
+          readOnly: true
+  volumes:
+    - name: haku-egress-proxy-ca-cert
+      configMap:
+        name: haku-egress-proxy-ca-cert

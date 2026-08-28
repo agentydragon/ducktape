@@ -31,6 +31,20 @@ spec:
               app.kubernetes.io/name: public-coder-agent-proxy
       ports:
         - { port: 8080, protocol: TCP }
+    # The colocated Console egress fence's workload listener (#4942/#4943). Reachable, not the
+    # default route: HTTP_PROXY in the Deployment still names the iron proxy above, and the spike
+    # runbook (haku/egress/docs/github_spike.md) drives GitHub requests through this listener
+    # per-request. The sidecar shares the Console pod's network namespace, so the Console pod
+    # label selects it.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: haku-console
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: haku-console
+      ports:
+        - { port: 8888, protocol: TCP }
     - to:
         - namespaceSelector:
             matchLabels:

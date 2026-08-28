@@ -32,11 +32,6 @@ out makes a test pass for the wrong reason:
   it away rather than exercising it. `_speak` puts each frame through the console's own reader
   (`haku/cli_protocol/frame_identity.py`) rather than through a rule copied by hand here.
 
-`HAKU_STUB_GREETING`, when set, is written to stderr before anything else. Whatever the CLI writes
-to stderr is the sandbox's narration, which the runner forwards as its own frame kind; it is the
-console's one account of a session that never reached the model, so a test about that path
-(`../../test_bridge_e2e.py`) needs a line printed before any turn.
-
 The launch argv is **not acted on**: what the console passes is pinned by
 `haku/runtime/x/bridge/test_claude_options.py`, and duplicating it here would be a second copy to
 keep in step. One value is copied out of it rather than obeyed — `--append-system-prompt`, appended
@@ -58,7 +53,7 @@ from typing import Any
 from haku.cli_protocol.frame_identity import frame_uid
 from haku.console.x.claude_code.frames import frame_kind
 
-_DIRECTIVE = re.compile(r"\s*\[(hold|silent|narrate=\d+)\]")
+_DIRECTIVE = re.compile(r"\s*\[(hold|silent|narrate=\d+|tool=\w+)\]")
 
 
 def _send(frame: dict[str, Any]) -> None:
@@ -95,6 +90,42 @@ def _answer(state: Path, prompt: str, answered: int) -> None:
     for narrate in (int(each.split("=")[1]) for each in directives if each.startswith("narrate=")):
         for line in range(narrate):
             print(f"narration {answered}.{line}", file=sys.stderr, flush=True)
+
+    # `[tool=NAME]` runs one tool round trip before the answer: the CLI declares a call in an
+    # assistant block and its result arrives as a `user` frame, which is exactly the pair the
+    # runner-side projector opens and completes a tool-call item from (#4667). It is how the
+    # generation-cut health gate exercises the tool path over the journal.
+    for tool_name in (each.split("=")[1] for each in directives if each.startswith("tool=")):
+        call_id = f"toolu_{answered}"
+        _speak(
+            {
+                "type": "assistant",
+                "message": {
+                    "id": f"msg_{answered}_tool",
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "id": call_id, "name": tool_name, "input": {"answered": answered}}
+                    ],
+                },
+            }
+        )
+        _speak(
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": call_id,
+                            "content": f"{tool_name} ran",
+                            "is_error": False,
+                        }
+                    ],
+                },
+                "tool_use_result": {"ok": True},
+            }
+        )
 
     if "silent" not in directives:
         _speak(
@@ -140,9 +171,6 @@ def _record_system_prompt(state: Path) -> None:
 def main() -> None:
     state = Path(os.environ["HAKU_STUB_STATE"])
     _record_system_prompt(state)
-    if (greeting := os.environ.get("HAKU_STUB_GREETING")) is not None:
-        print(greeting, file=sys.stderr, flush=True)
-
     answered = 0
     while line := sys.stdin.readline():
         frame = json.loads(line)

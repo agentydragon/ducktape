@@ -16,7 +16,7 @@ from typing import ClassVar
 from tomlkit import document, dumps, inline_table
 from tomlkit.items import InlineTable
 
-from haku.runtime.x.bridge.backend import ProcessLaunch, child_environment
+from haku.runtime.x.bridge.backend import HarnessDriver, ProcessLaunch, child_environment
 from haku.runtime.x.bridge.protocol import HarnessLaunch
 
 EXECUTABLE_VARIABLE = "HAKU_CODEX_PATH"
@@ -140,6 +140,13 @@ class CodexAppServerBackend:
             arguments=launch.arguments,
             cwd=launch.cwd,
             environment=child_environment(launch),
+        )
+
+    def driver(self) -> HarnessDriver:
+        # CLEANUP(added 2026-08-27): implement with the Codex runner-side projector (#4667
+        # stage 5) and delete this refusal.
+        raise NotImplementedError(
+            "codex-app-server is not yet ported to the neutral-operation generation (#4667 stage 5)"
         )
 
 

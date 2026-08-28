@@ -42,6 +42,7 @@ from haku.console.x.conversation_views import (
     SessionProvisioningView,
     SessionView,
 )
+from haku.console.x.journal_consumer import JournalConsumer, JournalViolationError
 from haku.console.x.launch_identity import LaunchAgentRejectedError, LaunchAuthorizer
 from haku.console.x.runtime import (
     Checkpoint,
@@ -76,7 +77,22 @@ from haku.console.x.session_wakes import SessionEvent, SessionEventKind, Session
 from haku.console.x.system_prompt import HistoryMessage, HistorySender, SessionIntroduction
 from haku.runtime.x.bridge.backend import BRIDGE_CREDENTIAL_VARIABLE
 from haku.runtime.x.bridge.client import ReceivedFrame, RecordedFrame
-from haku.runtime.x.bridge.protocol import GOING_AWAY_CODE, NOT_ADMITTED_CODE, HarnessFrame, TextWebSocket
+from haku.runtime.x.bridge.neutral_operations import OperationBatch, RunnerHello
+from haku.runtime.x.bridge.protocol import (
+    GOING_AWAY_CODE,
+    NOT_ADMITTED_CODE,
+    RUNNER_TO_CONSOLE,
+    SUPPORTED_VERSIONS,
+    ConsoleJournal,
+    HarnessFrame,
+    HarnessLaunch,
+    Hello,
+    Interrupt,
+    PromptDispatch,
+    RunnerJournal,
+    SetupOutput,
+    TextWebSocket,
+)
 
 router = APIRouter(tags=["sessions"])
 internal_router = APIRouter(tags=["session-runtime-internal"])
@@ -140,22 +156,29 @@ class ConversationCreateRequest(BaseModel):
 
 
 class PromptAccepted(BaseModel):
-    """The prompt is an item on the conversation, and a turn will take it.
+    """The prompt is in the durable inbox, and a runner will admit it into the transcript.
 
-    The id alone: the item's own rows reach the composer over the conversation's follow socket,
-    which is where every other surface's prompts arrive too, so answering with a copy of it here
-    would be the same prose by two routes.
+    The `prompt_id` alone (#4667): under the neutral-operation generation a prompt is a durable
+    command before it is an item — the runner decides where it lands and `prompt.admitted`
+    materialises it — so there is no item id to answer with yet, and the materialised item reaches
+    the composer over the conversation's follow socket like every other surface's. The id is what a
+    surface withdraws or correlates by.
     """
 
-    item_id: UUID
+    prompt_id: UUID
 
 
 class StarletteTextWebSocket(TextWebSocket):
     def __init__(self, websocket: WebSocket):
         self._websocket = websocket
+        # The journal bridge has several concurrent senders on one socket — the ACK pump, the prompt
+        # dispatcher, the interrupt relay — and Starlette's `send_text` is not concurrency-safe, so
+        # a lone lock serialises writes. Reads are a single task and take no lock.
+        self._send_lock = asyncio.Lock()
 
     async def send_text(self, data: str) -> None:
-        await self._websocket.send_text(data)
+        async with self._send_lock:
+            await self._websocket.send_text(data)
 
     async def receive_text(self) -> str:
         return await self._websocket.receive_text()
@@ -179,6 +202,17 @@ class RolloutRecorder:
 
     async def sent(self, frame: HarnessFrame) -> int:
         return (await self._record(FrameDirection.TO_AGENT, frame.frame, kind=BridgeFrameKind.HARNESS_FRAME)).frame_seq
+
+    async def runner_frame(self, frame: HarnessFrame) -> RecordedFrame:
+        """Record one journal-generation native frame the runner numbered (#4667).
+
+        The runner numbers both directions now: a `to_agent` frame is native input the runner
+        injected itself (the dispatched prompt, the interrupt) and echoed back under its own seq —
+        `frame.injected` says which — and a `from_agent` frame is the CLI's own output. Both carry a
+        runner seq, deduplicated by it on replay exactly as the v3 output stream was.
+        """
+        direction = FrameDirection.TO_AGENT if frame.injected else FrameDirection.FROM_AGENT
+        return await self._record(direction, frame.frame, runner_seq=frame.seq, kind=BridgeFrameKind.HARNESS_FRAME)
 
     async def received(self, frame: HarnessFrame) -> RecordedFrame:
         """Record the complete native harness frame and its bridge-owned position.
@@ -260,6 +294,9 @@ class SessionService:
         self._launch_authorizer = launch_authorizer
         self._default_agent_id = default_agent_id
         self._default_runtime_kind = default_runtime_kind
+        # The neutral-operation journal's commit/ACK/resume side (#4667). Its commits are the
+        # store's transactions by another name, so it takes the same session factory.
+        self._journal = JournalConsumer(store.sessionmaker)
         # Per session, the last view read off the cluster; `_observed` drops entries older than
         # `OBSERVATION_TTL` as it goes.
         self._observations: dict[UUID, SandboxProvisioningView] = {}
@@ -334,8 +371,9 @@ class SessionService:
         origin: PromptOrigin,
         records: PromptRecords | None = None,
     ) -> UUID:
-        """Accept a prompt; the channel-neutral allocator reconciles its durable demand."""
-        return await self._store.enqueue_prompt(operator_id, session_id, prompt_text, origin, records)
+        """Accept a prompt into the inbox for a session's conversation (#4667). Returns its id."""
+        conversation_id = await self._store.conversation_of(session_id)
+        return await self._store.submit_prompt(operator_id, conversation_id, prompt_text, origin, records)
 
     async def enqueue_conversation_prompt(
         self,
@@ -345,8 +383,12 @@ class SessionService:
         origin: PromptOrigin,
         records: PromptRecords | None = None,
     ) -> UUID:
-        """Accept conversation-owned work without requiring a session to exist first."""
-        return await self._store.enqueue_conversation_prompt(operator_id, conversation_id, prompt_text, origin, records)
+        """Accept conversation-owned work into the inbox without requiring a session first (#4667)."""
+        return await self._store.submit_prompt(operator_id, conversation_id, prompt_text, origin, records)
+
+    async def withdraw_prompt(self, operator_id: UUID, conversation_id: UUID, prompt_id: UUID) -> None:
+        """Take a pending inbox prompt back (#4667). Raises `KeyError`/`PromptNotPendingError`."""
+        await self._store.withdraw_prompt(operator_id, conversation_id, prompt_id)
 
     async def allocate(self, operator_id: UUID, session_id: UUID) -> bool:
         """Create the SandboxClaim for queued work exactly once across competing replicas."""
@@ -765,6 +807,203 @@ class SessionService:
                     asyncio.wait_for(self._finalize(session_id, websocket, client, keep_sandbox), timeout=10)
                 )
 
+    async def handle_journal_runner(self, websocket: WebSocket, session_id: UUID, bearer: str) -> None:
+        """Serve one runner at the neutral-operation generation (#4667 stage 4).
+
+        The Console parses no native frames here: the runner interprets them and sends the
+        acknowledged operation journal, which `JournalConsumer` commits and ACKs. Prompts are
+        dispatched by durable id from the inbox and materialised on `prompt.admitted`; the operator's
+        abort is relayed as an `Interrupt`; native frames are recorded to `session_frames` as the
+        durable record beside the journal, both directions, keyed by the runner's frame seq.
+
+        The scaffolding — runtime resolution, the retryable-denial handshake, the lease, claim
+        cleanup — is shared with the v3 `handle_runner` (deletion-scheduled at stage 5). What differs
+        is that the serve loop is a journal pump, not a turn loop. Generation peering needs no gate
+        here: a v3 peer fails the protocol-version intersection, and a v4 peer of another generation
+        fails `JournalConsumer.resume`'s check of its journal hello.
+        """
+        try:
+            configured = await self._configured(session_id)
+        except (RuntimeNotConfiguredError, UnsupportedRuntimeError):
+            await websocket.send_denial_response(
+                Response(status_code=503, content=b"session runtime is not configured on this replica")
+            )
+            return
+        except KeyError:
+            await websocket.close(code=NOT_ADMITTED_CODE, reason="invalid or consumed runner credential")
+            return
+
+        authentication = await self._store.authenticate_bridge(session_id, bearer)
+        if authentication == BridgeAuthentication.HELD:
+            await websocket.send_denial_response(
+                Response(status_code=503, content=b"session is held by another replica")
+            )
+            return
+        if authentication == BridgeAuthentication.TERMINAL:
+            await self._cleanup_terminal_claim(session_id)
+            await websocket.close(code=NOT_ADMITTED_CODE, reason="runner session is already terminal")
+            return
+        if authentication == BridgeAuthentication.REJECTED:
+            await websocket.close(code=NOT_ADMITTED_CODE, reason="invalid or consumed runner credential")
+            return
+
+        resources = configured.adapter, configured.resources
+        runtime, agent_resources = resources
+        try:
+            appended = await self._appended_prompt(session_id)
+        except Exception as error:
+            logger.exception("runtime system prompt failed to render for session %s", session_id)
+            await self._store.fail(session_id, f"system prompt failed to render: {error}")
+            await self._cleanup_terminal_claim(session_id)
+            await websocket.close(code=1011, reason="system prompt failed to render")
+            return
+        try:
+            harness_launch = runtime.build_launch(
+                RuntimeLaunch(
+                    cwd=agent_resources.cwd,
+                    environment=agent_resources.environment,
+                    mcp_servers={
+                        name: RuntimeMcpServer(url=url, bearer_environment_variable=BRIDGE_CREDENTIAL_VARIABLE)
+                        for name, url in agent_resources.mcp_server_urls.items()
+                    },
+                    appended_system_prompt=appended,
+                    resume_from=await self._store.highest_runner_seq(session_id),
+                )
+            )
+        except Exception as error:
+            logger.exception("runtime launch preparation failed for session %s", session_id)
+            await self._store.fail(session_id, f"runtime launch preparation failed: {error}")
+            await self._cleanup_terminal_claim(session_id)
+            await websocket.close(code=1011, reason="runtime launch preparation failed")
+            return
+
+        await websocket.accept()
+        text_ws = StarletteTextWebSocket(websocket)
+        recorder = RolloutRecorder(self._store, session_id)
+        keep_sandbox = False
+        try:
+            try:
+                await self._journal_handshake(text_ws, session_id, harness_launch)
+                async with asyncio.TaskGroup() as helpers:
+                    abort_event = asyncio.Event()
+                    # The helpers loop forever; the reader is what ends the group, by raising
+                    # `WebSocketDisconnect` when the socket closes, which cancels the rest.
+                    helpers.create_task(self._watch_aborts(session_id, abort_event))
+                    helpers.create_task(self._renew_lease(session_id))
+                    helpers.create_task(self._relay_interrupts(text_ws, abort_event))
+                    helpers.create_task(self._dispatch_prompts(text_ws, session_id))
+                    helpers.create_task(self._pump_journal(text_ws, session_id, recorder))
+            except* WebSocketDisconnect:
+                logger.info("session %s lost its runner; leaving it for adoption", session_id)
+                keep_sandbox = True
+                await self._store.release_lease(session_id)
+            except* JournalViolationError as errors:
+                # Terminal for the connection, not the session (`JournalConsumer` docstring): the
+                # runner redials and resumes from the durable cursor, which fills a hole the drop
+                # was about. A genuine contract breach loops with this log for an operator to read.
+                logger.warning("session %s journal violation: %s", session_id, _first_message(errors))
+                keep_sandbox = True
+                await self._store.release_lease(session_id)
+            except* Exception as errors:
+                logger.exception("%s journal runtime failed for session %s", runtime.display_name, session_id)
+                await self._store.fail(session_id, f"{runtime.display_name} runtime failed: {_first_message(errors)}")
+        except asyncio.CancelledError:
+            keep_sandbox = True
+            await self._store.release_lease(session_id)
+            raise
+        finally:
+            with contextlib.suppress(asyncio.CancelledError, TimeoutError):
+                await asyncio.shield(
+                    asyncio.wait_for(self._finalize_journal(session_id, websocket, keep_sandbox), timeout=10)
+                )
+
+    async def _journal_handshake(self, websocket: TextWebSocket, session_id: UUID, launch: HarnessLaunch) -> None:
+        """The two handshakes on every connection: the v3 version negotiation, then the journal's.
+
+        The runner speaks first (its image is fixed): its `Hello` settles the protocol version, and
+        the launch it is answered with carries the frame resume cursor. Then its `RunnerHello`
+        carries the generation and journal versions, and `JournalConsumer.resume` answers where the
+        session's durable batch cursor stands — from the row, so any replica agrees.
+        """
+        match RUNNER_TO_CONSOLE.validate_json(await websocket.receive_text()):
+            case Hello(supported=supported):
+                if not (common := set(supported) & set(SUPPORTED_VERSIONS)):
+                    raise RuntimeError(
+                        f"no protocol version in common: runner {supported}, console {SUPPORTED_VERSIONS}"
+                    )
+            case other:
+                raise RuntimeError(f"runner sent {other.kind} before its hello")
+        await websocket.send_text(launch.model_copy(update={"protocol_version": max(common)}).model_dump_json())
+        match RUNNER_TO_CONSOLE.validate_json(await websocket.receive_text()):
+            case RunnerJournal(message=RunnerHello() as hello):
+                resume = await self._journal.resume(session_id, hello)
+            case other:
+                raise RuntimeError(f"runner sent {other.kind} before its journal hello")
+        await websocket.send_text(ConsoleJournal(message=resume).model_dump_json())
+
+    async def _pump_journal(self, websocket: TextWebSocket, session_id: UUID, recorder: RolloutRecorder) -> None:
+        """Read the runner until its socket ends: record frames, commit batches, ACK each.
+
+        The two streams are independent (#4667 amendment): a frame is recorded whether or not any
+        operation names it, and a batch commits whether or not its provenance frames have arrived.
+
+        `receive_text` raises `WebSocketDisconnect` when the runner's socket ends; it propagates to
+        the handler's `except* WebSocketDisconnect`, which hands the session back for adoption.
+        """
+        while True:
+            match RUNNER_TO_CONSOLE.validate_json(await websocket.receive_text()):
+                case HarnessFrame() as frame:
+                    await recorder.runner_frame(frame)
+                case SetupOutput(data=data):
+                    for line in data.decode(errors="replace").splitlines():
+                        if stripped := line.strip():
+                            await self._store.narrate(session_id, stripped)
+                case RunnerJournal(message=OperationBatch() as batch):
+                    ack = await self._journal.commit(session_id, batch)
+                    await websocket.send_text(ConsoleJournal(message=ack).model_dump_json())
+                case RunnerJournal(message=RunnerHello()):
+                    raise RuntimeError("runner re-sent its journal hello mid-conversation")
+                case Hello():
+                    raise RuntimeError("runner re-sent its hello mid-conversation")
+
+    async def _dispatch_prompts(self, websocket: TextWebSocket, session_id: UUID) -> None:
+        """Send the runner every inbox prompt it is owed, now and whenever a new one arrives.
+
+        Idempotent by `prompt_id`: the runner ignores an id it has taken, so re-sending a
+        dispatched-but-unadmitted prompt after a reconnect is safe, and the per-connection set only
+        spares the wire a repeat while the socket lives.
+        """
+        dispatched: set[UUID] = set()
+
+        async def flush() -> None:
+            for prompt in await self._store.pending_dispatch(session_id):
+                if prompt.prompt_id not in dispatched:
+                    dispatched.add(prompt.prompt_id)
+                    await websocket.send_text(
+                        PromptDispatch(prompt_id=prompt.prompt_id, text=prompt.text).model_dump_json()
+                    )
+
+        await flush()
+        while True:
+            await self._notifications.wait(session_id, timeout_seconds=30.0)
+            await flush()
+
+    async def _relay_interrupts(self, websocket: TextWebSocket, abort_event: asyncio.Event) -> None:
+        """Turn each operator abort into one `Interrupt` on the wire, until cancelled."""
+        while True:
+            await abort_event.wait()
+            abort_event.clear()
+            await websocket.send_text(Interrupt().model_dump_json())
+
+    async def _finalize_journal(self, session_id: UUID, websocket: WebSocket, keep_sandbox: bool) -> None:
+        """Let go of one journal runner connection, and of the session unless it outlives us."""
+        if keep_sandbox:
+            with contextlib.suppress(Exception):
+                await websocket.close(code=GOING_AWAY_CODE, reason="console replica going away")
+            return
+        await self._cleanup_terminal_claim(session_id)
+        await self._store.closed(session_id)
+
     async def _finalize(
         self, session_id: UUID, websocket: WebSocket, client: RuntimeClient, keep_sandbox: bool
     ) -> None:
@@ -1141,7 +1380,7 @@ async def send_message(
         # Named rather than left to the default: the console's own surface is a channel like any
         # other, and a prompt typed here is one every attached room is owed a copy of.
         return PromptAccepted(
-            item_id=await service.enqueue_prompt(actor.operator_id, session_id, body.text, SPA_ORIGIN)
+            prompt_id=await service.enqueue_prompt(actor.operator_id, session_id, body.text, SPA_ORIGIN)
         )
     except KeyError as error:
         raise HTTPException(status_code=404, detail="session not found") from error
@@ -1163,7 +1402,9 @@ async def send_conversation_message(
     """
     try:
         return PromptAccepted(
-            item_id=await service.enqueue_conversation_prompt(actor.operator_id, conversation_id, body.text, SPA_ORIGIN)
+            prompt_id=await service.enqueue_conversation_prompt(
+                actor.operator_id, conversation_id, body.text, SPA_ORIGIN
+            )
         )
     except KeyError as error:
         raise HTTPException(status_code=404, detail="conversation not found") from error
@@ -1189,4 +1430,4 @@ async def runner_websocket(websocket: WebSocket, session_id: UUID) -> None:
     if service is None or scheme.lower() != "bearer" or not bearer:
         await websocket.close(code=NOT_ADMITTED_CODE, reason="runner authentication required")
         return
-    await service.handle_runner(websocket, session_id, bearer)
+    await service.handle_journal_runner(websocket, session_id, bearer)

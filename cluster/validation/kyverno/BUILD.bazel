@@ -148,11 +148,13 @@ py_test(
     name = "test_proxy_injection",
     srcs = ["test_proxy_injection.py"],
     data = [
+        "testdata/pod_self_wired_egress_proxy.yaml",
         "//cluster/k8s:proxy_injection_policy_files",
         "@multitool//tools/kyverno",
     ],
     deps = [
         ":apply",
+        ":paths",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

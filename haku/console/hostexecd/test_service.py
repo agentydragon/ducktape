@@ -8,20 +8,14 @@ from fastapi import HTTPException
 
 from haku.console.config import NodeDaemonDefinition, NodeDaemonsConfig
 from haku.console.conftest import console_sessions
-from haku.console.node_daemon_models import NodeDaemonPresenceStatus
-from haku.console.node_daemons import (
-    ClaimRequest,
-    ExecutionResultRequest,
-    HeartbeatRequest,
-    LeaseRequest,
-    NodeDaemonService,
-)
+from haku.console.hostexecd.models import PresenceStatus
+from haku.console.hostexecd.service import ClaimRequest, ExecutionResultRequest, HeartbeatRequest, LeaseRequest, Service
 
 
 @pytest.fixture
-def node_daemon_service(migrated_db_url: str, monkeypatch: pytest.MonkeyPatch) -> NodeDaemonService:
+def hostexecd_service(migrated_db_url: str, monkeypatch: pytest.MonkeyPatch) -> Service:
     monkeypatch.setenv("TEST_WYRM2_DAEMON_TOKEN", "wyrm2-secret")
-    return NodeDaemonService(
+    return Service(
         console_sessions(migrated_db_url),
         NodeDaemonsConfig(
             daemons={
@@ -33,8 +27,8 @@ def node_daemon_service(migrated_db_url: str, monkeypatch: pytest.MonkeyPatch) -
     )
 
 
-async def test_heartbeat_claim_lease_and_result_round_trip(node_daemon_service: NodeDaemonService) -> None:
-    service = node_daemon_service
+async def test_heartbeat_claim_lease_and_result_round_trip(hostexecd_service: Service) -> None:
+    service = hostexecd_service
     instance_id = uuid4()
     await service.heartbeat(
         "wyrm2", HeartbeatRequest(instance_id=instance_id, version="test", backends=["hostexec"], capacity=1)
@@ -43,7 +37,7 @@ async def test_heartbeat_claim_lease_and_result_round_trip(node_daemon_service: 
     claim = await service.claim("wyrm2", ClaimRequest(instance_id=instance_id, wait_seconds=0))
     assert claim is not None
     assert claim.execution_id == execution_id
-    assert (await service.statuses()).daemons[0].status is NodeDaemonPresenceStatus.BUSY
+    assert (await service.statuses()).daemons[0].status is PresenceStatus.BUSY
     await service.renew("wyrm2", execution_id, LeaseRequest(instance_id=instance_id, lease_token=claim.lease_token))
     result = {"exit": {"kind": "exited", "exit_code": 0}, "stdout": "", "stderr": "", "duration_ms": 1}
     await service.finish(
@@ -64,13 +58,13 @@ async def test_heartbeat_claim_lease_and_result_round_trip(node_daemon_service: 
     assert await service.wait(execution_id) == result
 
 
-async def test_presence_uses_enum(node_daemon_service: NodeDaemonService) -> None:
-    service = node_daemon_service
-    assert (await service.statuses()).daemons[0].status is NodeDaemonPresenceStatus.OFFLINE
+async def test_presence_uses_enum(hostexecd_service: Service) -> None:
+    service = hostexecd_service
+    assert (await service.statuses()).daemons[0].status is PresenceStatus.OFFLINE
 
 
-async def test_daemon_bearer_selects_identity(node_daemon_service: NodeDaemonService) -> None:
-    service = node_daemon_service
+async def test_daemon_bearer_selects_identity(hostexecd_service: Service) -> None:
+    service = hostexecd_service
     assert await service.authenticate("Bearer wyrm2-secret") == "wyrm2"
     with pytest.raises(HTTPException, match="invalid node daemon bearer"):
         await service.authenticate("Bearer wrong")

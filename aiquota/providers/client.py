@@ -6,17 +6,24 @@ import httpx
 
 
 class ProviderClientFactory(Protocol):
-    def __call__(self, provider: str, response_urls: set[str], timeout: float) -> httpx.AsyncClient: ...
+    """Builds an HTTP client that captures the bodies of `response_urls`.
+
+    The first argument names the capture slot the bodies land in. It is the
+    provider name for a provider's own quota endpoint, and
+    `models.history_capture_key(...)` for each further endpoint it reads.
+    """
+
+    def __call__(self, capture_key: str, response_urls: set[str], timeout: float) -> httpx.AsyncClient: ...
 
 
 def provider_client(debug: bool = False, transport: httpx.AsyncBaseTransport | None = None) -> ProviderClientFactory:
-    def create(provider: str, response_urls: set[str], timeout: float) -> httpx.AsyncClient:
+    def create(capture_key: str, response_urls: set[str], timeout: float) -> httpx.AsyncClient:
         async def dump_response(response: httpx.Response) -> None:
             if str(response.request.url) not in response_urls:
                 return
             await response.aread()
             print(
-                f"--- {provider} response: {response.request.method} {response.request.url} -> {response.status_code} ---",
+                f"--- {capture_key} response: {response.request.method} {response.request.url} -> {response.status_code} ---",
                 file=sys.stderr,
             )
             try:

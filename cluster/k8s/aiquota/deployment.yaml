@@ -61,6 +61,10 @@ spec:
                   key: password
             - name: AIQUOTA_POLL_INTERVAL_SECONDS
               value: "300"
+            # History endpoints restate the same months on every call; hourly is
+            # frequent enough to watch the current day accrue.
+            - name: AIQUOTA_HISTORY_INTERVAL_SECONDS
+              value: "3600"
           volumeMounts:
             - name: config
               mountPath: /etc/aiquota

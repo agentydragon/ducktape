@@ -1,21 +1,37 @@
 import base64
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
 import httpx
+import pytest
 import pytest_bazel
 import respx
 
-from aiquota.models import FetchError, FetchSuccess
+from aiquota.models import (
+    FetchError,
+    FetchSuccess,
+    HistoryKind,
+    ResetCreditsObservation,
+    TokenActivityDay,
+    TokenActivityObservation,
+)
 from aiquota.providers.cli_proxy_api import (
     MANAGEMENT_API_CALL_PATH,
     MANAGEMENT_AUTH_FILES_PATH,
     CLIProxyAPIManagementClient,
 )
-from aiquota.providers.client import provider_client
-from aiquota.providers.codex import OAUTH_CLIENT_ID, TOKEN_URL, USAGE_URL, CodexProvider, CodexSettings
+from aiquota.providers.client import ProviderClientFactory, provider_client
+from aiquota.providers.codex import (
+    OAUTH_CLIENT_ID,
+    PROFILE_URL,
+    RESET_CREDITS_URL,
+    TOKEN_URL,
+    USAGE_URL,
+    CodexProvider,
+    CodexSettings,
+)
 
 if __name__ == "__main__":
     pytest_bazel.main()
@@ -256,3 +272,94 @@ async def test_management_api_rejects_multiple_codex_auth_files() -> None:
     assert isinstance(output.result, FetchError)
     assert output.result.error == "CLIProxyAPI integration: expected exactly one available Codex auth file"
     assert api_call.call_count == 0
+
+
+async def test_history_reads_daily_token_buckets_and_reset_credits(tmp_path: Path) -> None:
+    path = tmp_path / "auth.json"
+    path.write_text(json.dumps(_auth(_jwt(datetime.now(UTC) + timedelta(days=10)))))
+
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get(PROFILE_URL).mock(return_value=httpx.Response(200, json=_fixture("codex_profile.json")))
+        mock.get(RESET_CREDITS_URL).mock(return_value=httpx.Response(200, json=_fixture("codex_reset_credits.json")))
+        observations = await _provider(path).fetch_history()
+
+    activity, credits = observations
+    assert isinstance(activity.payload, TokenActivityObservation)
+    assert activity.payload.days[0] == TokenActivityDay(start_date=date(2026, 8, 25), tokens=12345678)
+    assert [day.tokens for day in activity.payload.days] == [12345678, 0, 9876543]
+    assert isinstance(credits.payload, ResetCreditsObservation)
+    assert [(credit.credit_id, credit.status) for credit in credits.payload.credits] == [
+        ("credit_a", "consumed"),
+        ("credit_b", "available"),
+    ]
+    assert credits.payload.credits[0].expires_at == datetime(2026, 9, 20, 9, 0, tzinfo=UTC)
+    assert credits.payload.credits[1].expires_at is None
+
+
+async def test_history_skips_an_endpoint_the_account_cannot_see(tmp_path: Path) -> None:
+    path = tmp_path / "auth.json"
+    path.write_text(json.dumps(_auth(_jwt(datetime.now(UTC) + timedelta(days=10)))))
+
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get(PROFILE_URL).mock(return_value=httpx.Response(200, json=_fixture("codex_profile.json")))
+        mock.get(RESET_CREDITS_URL).mock(return_value=httpx.Response(404, text="not found"))
+        observations = await _provider(path).fetch_history()
+
+    assert [observation.payload.kind for observation in observations] == [HistoryKind.TOKEN_ACTIVITY]
+
+
+async def test_history_propagates_an_upstream_failure(tmp_path: Path) -> None:
+    path = tmp_path / "auth.json"
+    path.write_text(json.dumps(_auth(_jwt(datetime.now(UTC) + timedelta(days=10)))))
+
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get(PROFILE_URL).mock(return_value=httpx.Response(500, text="boom"))
+        with pytest.raises(httpx.HTTPStatusError):
+            await _provider(path).fetch_history()
+
+
+async def test_history_captures_each_endpoint_under_its_own_key(tmp_path: Path) -> None:
+    """Two endpoints in one cycle must not overwrite each other's raw body."""
+
+    path = tmp_path / "auth.json"
+    path.write_text(json.dumps(_auth(_jwt(datetime.now(UTC) + timedelta(days=10)))))
+    capture_keys: list[str] = []
+
+    def factory(capture_key: str, response_urls: set[str], timeout: float) -> httpx.AsyncClient:
+        capture_keys.append(capture_key)
+        return httpx.AsyncClient(timeout=timeout)
+
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get(PROFILE_URL).mock(return_value=httpx.Response(200, json=_fixture("codex_profile.json")))
+        mock.get(RESET_CREDITS_URL).mock(return_value=httpx.Response(200, json=_fixture("codex_reset_credits.json")))
+        await CodexProvider(CodexSettings(auth_path=path), cast(ProviderClientFactory, factory)).fetch_history()
+
+    assert capture_keys == ["codex_token_activity", "codex_reset_credits"]
+
+
+async def test_management_history_selects_codex_auth_per_endpoint() -> None:
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get("http://cliproxy.test/v0/management" + MANAGEMENT_AUTH_FILES_PATH).mock(
+            return_value=httpx.Response(
+                200, json={"files": [{"provider": "codex", "auth_index": "codex-auth", "disabled": False}]}
+            )
+        )
+        bodies = {
+            PROFILE_URL: json.dumps(_fixture("codex_profile.json")),
+            RESET_CREDITS_URL: json.dumps(_fixture("codex_reset_credits.json")),
+        }
+
+        def api_call(request: httpx.Request) -> httpx.Response:
+            requested = json.loads(request.read())["url"]
+            return httpx.Response(
+                200,
+                json={"status_code": 200, "header": {"Content-Type": ["application/json"]}, "body": bodies[requested]},
+            )
+
+        mock.post("http://cliproxy.test/v0/management" + MANAGEMENT_API_CALL_PATH).mock(side_effect=api_call)
+        observations = await _management_provider().fetch_history()
+
+    assert [observation.payload.kind for observation in observations] == [
+        HistoryKind.TOKEN_ACTIVITY,
+        HistoryKind.RESET_CREDITS,
+    ]

@@ -112,7 +112,7 @@ class PushRetract(BaseModel):
 type PushMessage = PushShow | PushRetract
 
 
-class NullApprovalNotifier:
+class NullNotifier:
     """The `PendingApprovalNotifier` used when no VAPID identity is configured."""
 
     async def tool_call_pending(self, *, operator_id: UUID, record: ToolCallRecord) -> None:
@@ -125,7 +125,7 @@ class NullApprovalNotifier:
         return None
 
 
-class WebPushIdentity:
+class PushIdentity:
     """This console's VAPID keypair, and the per-request authorization it signs."""
 
     def __init__(self, config: WebPushConfig) -> None:
@@ -231,13 +231,13 @@ def _outcome(record: ToolCallRecord) -> str:
             return "Approved"
 
 
-class WebPushApprovalNotifier:
+class Notifier:
     """Fans one tool-call transition out to every browser the Operator has subscribed."""
 
     def __init__(
         self,
         *,
-        identity: WebPushIdentity,
+        identity: PushIdentity,
         subscriptions: PostgresPushSubscriptionStore,
         console_base_url: str,
         client: httpx.AsyncClient | None = None,

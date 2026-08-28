@@ -102,12 +102,12 @@ Format:
 ```bash
 # 1. Re-render every (fixture, view) with UPDATE_GOLDEN=1; PNGs land in
 #    undeclared outputs as <view>_<fixture>.png.
-bbr test //gnome/claude_quota:test_render \
+bbr --invocation-id-file=/tmp/bbr-inv test //gnome/claude_quota:test_render \
   --test_env=UPDATE_GOLDEN=1 \
   --remote_download_outputs=toplevel --nocache_test_results
 
 # 2. Pull each PNG from BuildBuddy into the source tree.
-INV=$(cat ~/.cache/bbr/last_invocation_id)
+INV=$(cat /tmp/bbr-inv)
 for view in panel menu; do
   for f in both_ok both_cool both_warn both_hot \
            short_hot mixed error no_data; do
