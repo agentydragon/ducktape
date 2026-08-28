@@ -134,6 +134,7 @@ known-first-party = [
     "util",
     "agent_core",
     "cpap",
+    "study_casino",
     "props",
     "difftree",
     "ducktape_llm_common",

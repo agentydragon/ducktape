@@ -131,8 +131,8 @@
       "test": "//finance/beancount_export/..."
     },
     "study-casino": {
-      "target": "//x/study_casino:image",
-      "test": "//x/study_casino/...",
+      "target": "//study_casino:image",
+      "test": "//study_casino/...",
       "registry": "forgejo"
     },
     "loom-gym-eval": {
