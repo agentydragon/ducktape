@@ -11,8 +11,8 @@ from prometheus_client import REGISTRY
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.connection_metrics import refresh_connection_metrics
 from haku.console.database_schema import OAuthTokenState, ProviderConnection
+from haku.console.notifications.connection_metrics import refresh_connection_metrics
 from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 

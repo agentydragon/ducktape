@@ -5,7 +5,7 @@ import { redirectToOperatorLogin } from "../operator_login";
 
 // The one close the shell acts on instead of reconnecting: the operator session reached its
 // absolute deadline, so every reconnect would be refused until the browser re-authenticates.
-// Mirrors `OPERATOR_SESSION_EXPIRED_CLOSE_CODE` in ../../console_events.py.
+// Mirrors `OPERATOR_SESSION_EXPIRED_CLOSE_CODE` in ../../notifications/console_events.py.
 const OPERATOR_SESSION_EXPIRED_CLOSE_CODE = 4001;
 
 /** The health of a followed conversation, for chrome that shows when the view has stopped moving.

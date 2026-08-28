@@ -4,7 +4,7 @@ import { redirectToOperatorLogin } from "./operator_login";
 
 // The one close the shell acts on instead of reconnecting: the operator session reached its
 // absolute deadline, so every reconnect would be refused until the browser re-authenticates.
-// Mirrors `OPERATOR_SESSION_EXPIRED_CLOSE_CODE` in ../console_events.py.
+// Mirrors `OPERATOR_SESSION_EXPIRED_CLOSE_CODE` in ../notifications/console_events.py.
 const OPERATOR_SESSION_EXPIRED_CLOSE_CODE = 4001;
 
 // The live channel's health, surfaced so the shell can show when it's broken: a dead socket means
@@ -17,7 +17,7 @@ export type ConsoleEvent = { event_type: string };
 
 /** The conversation a `conversation_changed` event invalidates, or null for every other event.
  *
- * Mirrors `ConversationChangedEvent` in ../console_events.py, which carries no more than this: the
+ * Mirrors `ConversationChangedEvent` in ../notifications/console_events.py, which carries no more than this: the
  * socket says a conversation changed and REST stays the source of what it changed to.
  *
  * Every consumer sees *every* event, and a streaming turn emits one of these per coalescing

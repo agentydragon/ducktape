@@ -20,7 +20,7 @@ import pytest_bazel
 from fastapi import WebSocket
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.console_events import ConsoleEvent, ConsoleEventHub
+from haku.console.notifications.console_events import ConsoleEvent, ConsoleEventHub
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.x.conversation_live_updates import ConversationLiveUpdates
 from haku.console.x.conversation_wakes import ConversationWakeKind, ConversationWakes, notify_conversation

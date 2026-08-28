@@ -1,6 +1,6 @@
 """Conversation changes, delivered to open tabs as console-socket invalidations.
 
-<../console_events.py>'s contract applied to conversations: the socket the shell already holds says
+<../notifications/console_events.py>'s contract applied to conversations: the socket the shell already holds says
 *which conversation* moved, and the page refetches.
 
 **Where the publish happens.** Nowhere new. Every write that changes what a conversation shows
@@ -43,8 +43,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.console_events import ConsoleEventHub, ConversationChangedEvent
 from haku.console.database_schema import Conversation
+from haku.console.notifications.console_events import ConsoleEventHub, ConversationChangedEvent
 from haku.console.x.conversation_wakes import ConversationWakeEvent, ConversationWakes, RecheckHeld
 
 logger = logging.getLogger(__name__)

@@ -34,13 +34,17 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from haku.console.config import ProviderOAuthClientConfig
-from haku.console.console_events import ConnectionStatus, ConsoleEventHubDep, OperatorConnectionChangedEvent
 from haku.console.database_schema import ProviderConnection, ProviderConnectionFlow
 from haku.console.deps import SettingsDep
 from haku.console.mcp_config import (
     ConsoleConfigFile,
     OperatorConnectionDefinition,
     OperatorConnectionProviderDefinition,
+)
+from haku.console.notifications.console_events import (
+    ConnectionStatus,
+    ConsoleEventHubDep,
+    OperatorConnectionChangedEvent,
 )
 from haku.console.oauth.connection_result import (
     ConnectionFailed,

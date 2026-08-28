@@ -481,6 +481,33 @@ egress_decide:
         - scheme: https
           host: codeload.github.com
           port: 443
+    # End-to-end substitution smoke test (haku/egress/docs/test_substitution.md): both sides of
+    # this swap are committed EXAMPLE- literals — the placeholder here and the deployment's
+    # literal HAKU_EGRESS_CREDENTIAL_SUBSTITUTION_SMOKE value — so watching the swap arrive at
+    # the public echo host exercises the whole decide→substitute path with no secret anywhere.
+    - handle: substitution-smoke
+      placeholder: EXAMPLE-EGRESS-SMOKE-PLACEHOLDER
+      value_env_var: HAKU_EGRESS_CREDENTIAL_SUBSTITUTION_SMOKE
+      match_headers: [authorization]
+      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      origins:
+        - scheme: https
+          host: postman-echo.com
+          port: 443
+  # Deploy-managed standing HTTP allowances (#4941), evaluated before temporary grants; admissions
+  # carry `standing:<id>` provenance. First entry: the reachability half of the substitution smoke
+  # test — exactly GET /headers at the public echo host, redeeming the inert credential above.
+  standing_policies:
+    - id: substitution-smoke
+      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      origins:
+        - scheme: https
+          host: postman-echo.com
+          port: 443
+      coverage:
+        methods: [GET]
+        path_regex: /headers
+      credential_handle: substitution-smoke
   # Cluster pod + service CIDRs, denied in resolved answers on top of the always-prohibited classes
   # (loopback, link-local, multicast, private/RFC1918/ULA — which already cover 10/8). Named per the
   # field's contract so the internal boundary is legible and survives a re-IP off 10/8.

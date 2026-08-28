@@ -55,7 +55,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from haku.console import operator_auth
-from haku.console.console_events import ConnectionStatus, ConsoleEventHubDep, McpOperatorAuthChangedEvent
 from haku.console.database_schema import McpOperatorOAuthAssociation, McpOperatorOAuthFlow
 from haku.console.deps import SettingsDep
 from haku.console.mcp_config import (
@@ -68,6 +67,7 @@ from haku.console.mcp_config import (
     _operator_oauth_enabled,
     _server_entry,
 )
+from haku.console.notifications.console_events import ConnectionStatus, ConsoleEventHubDep, McpOperatorAuthChangedEvent
 from haku.console.oauth.connection_result import (
     ConnectionFailed,
     ConnectionResultStoreDep,
