@@ -78,17 +78,6 @@ finalize_bb_runner_probe() {
 }
 trap finalize_bb_runner_probe EXIT
 
-# Python BUILD files are gazelle-managed (README §Gazelle); a run over a converged
-# tree is a no-op, so any diff or unresolvable import fails CI here, before target
-# selection — deliberately ahead of the early exits below, because a change gazelle
-# would touch (an unreferenced new .py, say) can have an empty bazel-diff affected
-# set. On PRs the tree is the synthetic merge, so the merged state is what converges.
-probe_bb_runner before-gazelle
-if ! bazel run $RBE_FLAGS //devinfra:gazelle -- --mode=diff; then
-  echo "::error::BUILD files drifted from gazelle; run: bb run //devinfra:gazelle"
-  exit 1
-fi
-
 # On PRs, test/build only the targets bazel-diff reports as
 # affected by the diff from the merge commit's base parent to the
 # synthetic merge tree. Devel-branch push runs

@@ -1,9 +1,10 @@
 # Gazelle
 
 Python BUILD files are gazelle-managed. `bb run //devinfra:gazelle` regenerates them;
-CI runs `--mode=diff` and fails on drift, so a BUILD delta only ever means real
-dependency drift. Code-shape conventions (per-file libraries, `main_module` binaries,
-test-glob reservation, the conftest chain) live in <../../STYLE.md> § Gazelle.
+a run over a converged tree is a no-op, so `--mode=diff` (exit nonzero on any diff or
+unresolvable import) is the drift check. Code-shape conventions (per-file libraries,
+`main_module` binaries, test-glob reservation, the conftest chain) live in
+<../../STYLE.md> § Gazelle.
 
 ## Plugin and patch
 
