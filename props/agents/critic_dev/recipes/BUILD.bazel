@@ -5,6 +5,10 @@ Bundled into critic-dev OCI images so agents can import or inspect them.
 
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
+# An exported critic recipe consumed as a file by test_build_critic_e2e and the
+# critic-dev image; the _test.py suffix is part of that contract, not a py_test.
+# gazelle:exclude custom_critic_for_test.py
+
 exports_files([
     "build_critic.sh",
     "custom_critic_for_test.py",

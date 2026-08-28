@@ -30,7 +30,7 @@ py_library(
 )
 
 py_library(
-    name = "push_images_lib",
+    name = "push_images",
     srcs = ["push_images.py"],
     deps = [
         "//util:env",
@@ -40,7 +40,7 @@ py_library(
 )
 
 py_binary(
-    name = "push_images",
+    name = "push_images_bin",
     data = [
         "//props/agents/critic:image",
         "//props/agents/critic/variants:contract_truthfulness",
@@ -55,7 +55,7 @@ py_binary(
     ],
     main_module = "props.agents.push_images",
     visibility = ["//visibility:public"],
-    deps = [":push_images_lib"],
+    deps = [":push_images"],
 )
 
 py_test(

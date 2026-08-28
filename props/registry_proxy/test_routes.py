@@ -148,7 +148,7 @@ async def test_proxy_forwards_streaming_mutation_body(monkeypatch: pytest.Monkey
 def test_only_grader_builtin_tag_move_notifies_supervisor() -> None:
     """The GraderSupervisor restart is triggered ONLY by a move of the grader's
     builtin tag. By-digest pushes and per-commit sha pins (pushed alongside
-    `latest` by //props/agents:push_images) must not trigger it — otherwise
+    `latest` by //props/agents:push_images_bin) must not trigger it — otherwise
     every devel commit restarts every grader, cancelling in-flight grades."""
     grader = str(AgentType.GRADER)
     # The one case that should notify: grader builtin tag moved.

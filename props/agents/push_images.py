@@ -4,7 +4,7 @@ Reads registry URL and credentials from environment variables. Each image is
 pushed with both a :latest tag and a :SHA tag (for pinning).
 
 Usage:
-    bazel run //props/agents:push_images
+    bazel run //props/agents:push_images_bin
 """
 
 import logging

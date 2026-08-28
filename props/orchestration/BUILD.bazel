@@ -105,11 +105,9 @@ py_library(
 
 py_test(
     name = "test_k8s_executor",
-    srcs = [
-        "conftest.py",
-        "test_k8s_executor.py",
-    ],
+    srcs = ["test_k8s_executor.py"],
     deps = [
+        ":conftest",
         ":executor",
         ":k8s_executor",
         "@pypi//kubernetes_asyncio",
@@ -120,12 +118,10 @@ py_test(
 
 py_test(
     name = "test_grader_supervisor",
-    srcs = [
-        "conftest.py",
-        "test_grader_supervisor.py",
-    ],
+    srcs = ["test_grader_supervisor.py"],
     deps = [
         ":agent_registry",
+        ":conftest",
         ":executor",
         ":grader_supervisor",
         "//props/core:ids",
@@ -138,13 +134,11 @@ py_test(
 py_test(
     name = "test_agent_registry",
     size = "medium",
-    srcs = [
-        "conftest.py",
-        "test_agent_registry.py",
-    ],
+    srcs = ["test_agent_registry.py"],
     requires_docker = True,
     deps = [
         ":agent_registry",
+        ":conftest",
         ":executor",
         "//props:conftest",
         "//props/core:ids",
@@ -157,4 +151,11 @@ py_test(
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = ["@pypi//pytest"],
 )

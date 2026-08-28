@@ -43,7 +43,7 @@
 - Decide the fate of the agent image push. The `props-agents` job in
   <.github/workflows/push-images.yml> is disabled: it failed on every devel push against the
   down registry. Either props comes back and the job is re-enabled (delete the `false &&`),
-  or it is not coming back and the job, `//props/agents:push_images`, and the
+  or it is not coming back and the job, `//props/agents:push_images_bin`, and the
   `PROPS_REGISTRY_*` CI secrets go with it. Leaving it disabled indefinitely is the one
   outcome to avoid — a job that never runs stops being maintained but still looks live.
 

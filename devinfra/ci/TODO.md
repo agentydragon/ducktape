@@ -14,7 +14,7 @@ Two ways out, neither urgent:
   reports every file with its `pathPrefix`, so the layout can be rebuilt without
   Bazel. Credentials stay where they are.
 - Push from inside the runner VM, forwarding credentials through the bb-remote
-  action's `env_overrides`, as `//props/agents:push_images` already does. The
+  action's `env_overrides`, as `//props/agents:push_images_bin` already does. The
   runner reaches `*.allegedly.works` (observed: it gets HTTP responses from the
   props registry), and as images move to the cluster Forgejo the credential at
   stake stops being a GHCR token.

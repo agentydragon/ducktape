@@ -222,7 +222,7 @@ def _is_grader_builtin_push(repo: str, ref: str) -> bool:
     The supervisor resolves graders by `grader:BUILTIN_TAG`, so only a move of
     that tag changes which image graders run. By-digest pushes and pinned
     per-commit sha tags (e.g. `grader:<gitsha>`, pushed alongside `latest` by
-    //props/agents:push_images) do not — notifying on them needlessly restarts
+    //props/agents:push_images_bin) do not — notifying on them needlessly restarts
     every grader, cancelling in-flight grades.
     """
     return repo == str(AgentType.GRADER) and ref == BUILTIN_TAG

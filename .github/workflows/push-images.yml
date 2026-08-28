@@ -224,7 +224,7 @@ jobs:
   # Props agent images go to the props registry (not GHCR): the props backend's
   # registry proxy fronts Forgejo, and the orchestrator + critic-dev flow pull
   # and push agent / critic-variant images there at runtime. They're pushed by
-  # the bespoke //props/agents:push_images binary (which handles the critic
+  # the bespoke //props/agents:push_images_bin binary (which handles the critic
   # variants and the digest+tag scheme), not the GHCR matrix above. Gated on
   # props tests; like the matrix it only pushes from devel, and (via the
   # always() && !cancelled() caller in ci.yml) runs regardless of unrelated CI
@@ -269,7 +269,7 @@ jobs:
       - name: Push agent images
         uses: ./.github/actions/bb-remote
         with:
-          args: run //props/agents:push_images
+          args: run //props/agents:push_images_bin
           rbe_image: ${{ inputs.rbe_image }}
           env_overrides: |
             PROPS_REGISTRY_URL=${{ vars.PROPS_REGISTRY_URL }}
