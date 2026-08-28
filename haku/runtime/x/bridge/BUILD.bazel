@@ -107,18 +107,44 @@ py_library(
 )
 
 py_library(
+    name = "session_api",
+    srcs = ["session_api.py"],
+    visibility = ["//haku:__subpackages__"],
+    deps = [
+        ":backend",
+        ":claude_projection",
+        ":neutral_operations",
+        ":operation_journal",
+        ":protocol",
+        "@pypi//anyio",
+    ],
+)
+
+py_library(
+    name = "communicator",
+    srcs = ["communicator.py"],
+    visibility = ["//haku:__subpackages__"],
+    deps = [
+        ":neutral_operations",
+        ":protocol",
+        ":session_api",
+        "@pypi//tenacity",
+        "@pypi//websockets",
+    ],
+)
+
+py_library(
     name = "runner",
     srcs = ["runner.py"],
     visibility = ["//haku:__subpackages__"],
     deps = [
         ":backend",
         ":backend_registry",
-        ":claude_projection",
+        ":communicator",
         ":neutral_operations",
-        ":operation_journal",
         ":protocol",
+        ":session_api",
         "@pypi//anyio",
-        "@pypi//tenacity",
         "@pypi//websockets",
     ],
 )
