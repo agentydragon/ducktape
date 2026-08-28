@@ -826,13 +826,22 @@ side by itself — the direction is unambiguous even though the size of the gap 
 
 **The gap is now measurable, and it was not when this was written.** `aiquota` reads
 Codex's own `wham/profiles/me`, which reports account-wide daily token totals from the
-provider's side, independent of how the traffic was routed. Differencing that against
-the proxied total gives the unproxied remainder directly. One thing to establish first:
-whether `cli-proxy-api`'s Codex OAuth session and the workstation login are the same
-ChatGPT account. If they are, the two figures share a quota and subtract cleanly; if
-not, there are two subscriptions here and the $200 denominator is wrong as well. The
-workstation and in-cluster `aiquota` instances read different credentials, so comparing
-their `profiles/me` totals answers it.
+provider's side, independent of how the traffic was routed. `cli-proxy-api`'s Codex
+session and the workstation login are the same ChatGPT account, so the two figures
+share one quota and one $200 fee, and subtract: account-wide tokens minus the Langfuse
+proxied total is the unproxied remainder. The difference must come out non-negative —
+if it ever does not, the daily buckets are scoped more narrowly than account-wide, and
+that is worth knowing before anything else is built on them.
+
+**The same fact unblocks the ChatGPT capacity figure**, which the tables above can only
+record as `opaque`, because OpenAI publishes no quota. The Claude calibration below works by pairing an exact local
+token count with a gauge that meters the same traffic; the ChatGPT side had the gauge
+(`wham/usage`, already polled) but no complete numerator, because Langfuse saw one
+route of several. `profiles/me` supplies it from the same account the gauge meters, so
+the conversion is the same arithmetic — and needs no window where only one client was
+running, which was the awkward part. Daily buckets are coarse against a 5-hour window,
+but the current day's bucket grows as work lands, so polling it hourly resolves the
+burn finely enough to pair with window movement.
 
 **Agent traffic is essentially all input.** At 599:1 the output is a rounding error.
 That is the same effect the token-per-task work found, at a far greater extreme than
