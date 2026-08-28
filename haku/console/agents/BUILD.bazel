@@ -3,6 +3,11 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//haku/console:__subpackages__"])
 
 py_library(
+    name = "__init__",
+    srcs = ["__init__.py"],
+)
+
+py_library(
     name = "models",
     srcs = ["models.py"],
 )

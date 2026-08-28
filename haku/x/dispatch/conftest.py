@@ -10,6 +10,10 @@ from haku.x.dispatch.k8s_jobs import ZoneJobStamper
 from haku.x.dispatch.litellm_keys import LiteLLMKeyClient
 from haku.x.dispatch.models import ClassifierVerdict
 
+# The fixture DATABASE_URL uses sqlite+aiosqlite://; SQLAlchemy loads the dialect
+# at runtime, so gazelle cannot see the dependency.
+# gazelle:include_dep @pypi//aiosqlite
+
 
 def pytest_configure(config: pytest.Config) -> None:
     # The root conftest.py isn't in Bazel runfiles; mirror its asyncio auto

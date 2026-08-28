@@ -53,9 +53,8 @@
 # haku/shared is a nested Bazel module (bazelignored), so Gazelle cannot index the library
 # that provides this namespace-package import; pin it to the module's label.
 # gazelle:resolve py haku.console.tool_calls @ducktape_haku//haku/console:tool_calls
-# runner.py backs both :runner and the hand-rolled :runner_bin py_binary (same srcs), which
-# makes the import ambiguous to Gazelle; pin it to the library.
-# gazelle:resolve py haku.runtime.x.bridge.runner //haku/runtime/x/bridge:runner
+# cluster/k8s/x is excluded above, so Gazelle cannot index the target providing this import.
+# gazelle:resolve py cluster.k8s.x.haku.dispatch.litellm.generate_workers_litellm //cluster/k8s/x/haku/dispatch/litellm:generate_workers_litellm
 
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_js//npm:defs.bzl", "npm_link_package")
