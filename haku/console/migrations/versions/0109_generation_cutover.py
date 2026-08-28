@@ -73,7 +73,7 @@ def upgrade() -> None:
         detail = "; ".join(f"{name}: {count}" for name, count in remaining)
         raise RuntimeError(
             "the generation cut refuses to apply while the window is not drained — "
-            f"close admission and wait for these to clear, then re-deploy: {detail}"
+            f"stop using the app and wait for these to clear, then re-deploy: {detail}"
         )
 
     # Legacy sessions non-launchable: only idle (unclaimed) sessions can remain past the assert;
