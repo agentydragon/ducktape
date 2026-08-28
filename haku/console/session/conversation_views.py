@@ -1,8 +1,8 @@
 """What the console's conversation API returns, and the session shapes beside it.
 
 The SPA's wire shapes — the inventory, the conversation detail, and the follow socket's messages.
-Projections, not a read model: the conversation entries they carry are the shared vocabulary of
-<conversation_reads.py>, folded once in <item_entries.py>, and what is here is how the browser is
+Projections, not a read model: the conversation items they carry are the shared vocabulary of
+<../conversation/item_reads.py>, folded once there, and what is here is how the browser is
 handed it — which container, which session row beside it, which page envelope. Nothing here
 decides anything about a live session: it is handed rows and produces the shapes the routes hand
 back.
@@ -19,7 +19,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.conversation.reads import ChannelAttachment, ConversationEntry, SetupOutputRecord
+from haku.console.conversation.item_reads import Item
+from haku.console.conversation.reads import ChannelAttachment, SetupOutputRecord
 from haku.console.database_schema import Session, SessionFrame
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.sandbox_claims import SandboxProvisioningView
@@ -32,7 +33,7 @@ class SessionView(BaseModel):
     """One session's own row: the session concept's one REST shape (`SessionRecord` is the MCP one).
 
     Every surface that shows a session hands back this — the conversation's current and earlier
-    sessions, the inventory's live one, the store's own reads. The entries are the conversation's,
+    sessions, the inventory's live one, the store's own reads. The items are the conversation's,
     so they are not here; narration and the sandbox observation are per-read projections carried
     beside it, not row facts.
     """
@@ -108,7 +109,7 @@ class ConversationView(BaseModel):
     """One conversation as the browser reads it.
 
     No terminal state and no `ended_at`: a conversation is an id, and what ends is the session
-    under it. `entries` is the same item-row read the MCP surface pages, whole.
+    under it. `items` is the same item-row read the MCP surface pages, whole.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -118,8 +119,8 @@ class ConversationView(BaseModel):
     access_profile_id: str | None = None
     created_at: datetime
     attachments: list[ChannelAttachment]
-    entries: list[ConversationEntry] = Field(
-        description="The conversation's item rows as entries, in opening order — each in its current "
+    items: list[Item] = Field(
+        description="The conversation's item rows, in opening order — each in its current "
         "state, an item still being written included."
     )
     session: SessionView = Field(
@@ -161,7 +162,7 @@ class ConversationSnapshot(BaseModel):
 class ConversationUpdate(BaseModel):
     """What moved in a conversation since a position, for a follower that already holds the rest.
 
-    **The entries arrive incrementally and everything else arrives whole.** The entries are the
+    **The items arrive incrementally and everything else arrives whole.** The items are the
     rows the log's events since the follower's position are about, each re-sent whole in its
     current state — a message being written arrives once per coalescing window with the prose so
     far — and merging them is a replace by `opened_seq`, idempotent, so a message delivered twice or
@@ -196,7 +197,7 @@ class ConversationUpdate(BaseModel):
     earlier_sessions: list[SessionView] = Field(
         description="The sessions this conversation ran before the current one, newest first — replaces what is held."
     )
-    entries: list[ConversationEntry] = Field(
+    items: list[Item] = Field(
         description="The rows that moved since the follower's position, whole and in their current state — "
         "merge them by `opened_seq` over the ones already held, replacing."
     )
@@ -211,10 +212,10 @@ type ConversationFollowMessage = Annotated[
 ]
 
 
-# Entries of one update. An entry carries its whole prose, and a tool call its arguments and
+# Items of one update. An item carries its whole prose, and a tool call its arguments and
 # structured result, so what bounds an update is payload rather than row count — the lesson
 # `/api/tool-calls` learned at `le=500` (`frontend/tool_calls_page.tsx`). One update is normally
-# one coalescing window's worth of entries; past this the follower is sent the conversation whole
+# one coalescing window's worth of items; past this the follower is sent the conversation whole
 # instead, which is cheaper than an update carrying most of one twice over.
 UPDATE_ROW_LIMIT = 50
 

@@ -110,7 +110,6 @@ py_test(
         "//haku/console/conversation:conversation_event",
         "//haku/console/conversation:item_reads",
         "//haku/console/conversation:prompt_origin",
-        "//haku/console/conversation:reads",
         "//haku/console/notifications:session_wakes",
         "//haku/console/session:conftest",
         "//haku/console/session:runtime",

@@ -1,7 +1,7 @@
 """A recorded capture, folded the way the live turn loop folds one.
 
 Production reads a stored conversation out of the rows the fold materialised and re-folds no
-frames (<../../item_entries.py>), so a capture is no longer evidence about any reader. What it is
+frames (<../../item_reads.py>), so a capture is no longer evidence about any reader. What it is
 still evidence about is the **adapter**: `_run_turn` drives `RuntimeTurnHandler.apply` one frame at
 a time and acts on the neutral effects it returns, and `ClaudeTurnHandler.apply` is `project` over
 that one frame with the reducer state kept between calls. This is that loop and nothing else.

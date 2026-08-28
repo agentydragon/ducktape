@@ -1,4 +1,4 @@
-"""How one `conversation_item` row becomes the entry every reader is served."""
+"""How one `conversation_item` row becomes the item every reader is served."""
 
 from __future__ import annotations
 
@@ -12,14 +12,14 @@ import pytest_bazel
 from haku.console.chat_models import ItemStatus, ItemType, ToolOutcome
 from haku.console.conversation import item_reads
 from haku.console.conversation.conversation_event import ReasoningDisclosure, TurnFailed, TurnOutcome
-from haku.console.conversation.item_reads import ConversationPageRow
-from haku.console.conversation.reads import (
+from haku.console.conversation.item_reads import (
     ConsoleAuthored,
+    ConversationPageRow,
     FromFrames,
-    MessageEntry,
-    PromptEntry,
-    ReasoningEntry,
-    ToolCallEntry,
+    MessageItem,
+    PromptItem,
+    ReasoningItem,
+    ToolCallItem,
 )
 from haku.console.database_schema import ConversationItem, ConversationTurn
 
@@ -65,48 +65,46 @@ def _row(
     return ConversationPageRow(item=item, first_frame_seq=first, last_frame_seq=last)
 
 
-def test_an_entry_is_the_row_at_its_opening_position_with_its_lifecycle() -> None:
-    entry = item_reads.entry_of(_row(ItemType.MESSAGE, text="hi"))
+def test_an_item_is_the_row_at_its_opening_position_with_its_lifecycle() -> None:
+    item = item_reads.item_of(_row(ItemType.MESSAGE, text="hi"))
 
-    assert isinstance(entry, MessageEntry)
-    assert (entry.opened_seq, entry.closed_seq, entry.status, entry.text) == (2, 5, ItemStatus.COMPLETE, "hi")
+    assert isinstance(item, MessageItem)
+    assert (item.opened_seq, item.closed_seq, item.status, item.text) == (2, 5, ItemStatus.COMPLETE, "hi")
 
 
-def test_a_frame_derived_entry_names_the_session_whose_frames_it_was_read_off() -> None:
-    """A conversation's entries span replaced sessions, so a frame range without its session
+def test_a_frame_derived_item_names_the_session_whose_frames_it_was_read_off() -> None:
+    """A conversation's items span replaced sessions, so a frame range without its session
     could not be appealed — `read_session_frames` is session-keyed."""
-    entry = item_reads.entry_of(_row(ItemType.MESSAGE, text="hi"))
+    item = item_reads.item_of(_row(ItemType.MESSAGE, text="hi"))
 
-    assert entry.provenance == FromFrames(session_id=SESSION, first_frame_seq=3, last_frame_seq=4)
+    assert item.provenance == FromFrames(session_id=SESSION, first_frame_seq=3, last_frame_seq=4)
 
 
 def test_a_row_with_no_frame_derived_events_is_console_authored() -> None:
-    entry = item_reads.entry_of(_row(ItemType.PROMPT, text="do it", origin={"kind": "spa"}, span=None))
+    item = item_reads.item_of(_row(ItemType.PROMPT, text="do it", origin={"kind": "spa"}, span=None))
 
-    assert entry.provenance == ConsoleAuthored()
+    assert item.provenance == ConsoleAuthored()
 
 
 def test_a_prompt_speaks_in_the_voice_its_origin_recorded() -> None:
-    entry = item_reads.entry_of(
+    item = item_reads.item_of(
         _row(ItemType.PROMPT, text="do it", origin={"kind": "matrix", "address": "!r:x", "refs": ["$e"]}, span=None)
     )
 
-    assert isinstance(entry, PromptEntry)
-    assert entry.origin == "matrix"
+    assert isinstance(item, PromptItem)
+    assert item.origin == "matrix"
 
 
 def test_reasoning_carries_its_text_and_disclosure_as_stored() -> None:
     """`withheld` is what says the text is not the thought — the row is presented, not edited."""
-    entry = item_reads.entry_of(
-        _row(ItemType.REASONING, text="never disclosed", disclosure=ReasoningDisclosure.WITHHELD)
-    )
+    item = item_reads.item_of(_row(ItemType.REASONING, text="never disclosed", disclosure=ReasoningDisclosure.WITHHELD))
 
-    assert isinstance(entry, ReasoningEntry)
-    assert (entry.text, entry.disclosure) == ("never disclosed", ReasoningDisclosure.WITHHELD)
+    assert isinstance(item, ReasoningItem)
+    assert (item.text, item.disclosure) == ("never disclosed", ReasoningDisclosure.WITHHELD)
 
 
-def test_a_tool_call_is_one_entry_with_the_answer_where_one_arrived() -> None:
-    entry = item_reads.entry_of(
+def test_a_tool_call_is_one_item_with_the_answer_where_one_arrived() -> None:
+    item = item_reads.item_of(
         _row(
             ItemType.TOOL_CALL,
             text="ok",
@@ -117,8 +115,8 @@ def test_a_tool_call_is_one_entry_with_the_answer_where_one_arrived() -> None:
         )
     )
 
-    assert isinstance(entry, ToolCallEntry)
-    assert (entry.call_id, entry.tool_name, entry.content, entry.outcome, entry.structured) == (
+    assert isinstance(item, ToolCallItem)
+    assert (item.call_id, item.tool_name, item.content, item.outcome, item.structured) == (
         "toolu_1",
         "Bash",
         "ok",
@@ -128,33 +126,33 @@ def test_a_tool_call_is_one_entry_with_the_answer_where_one_arrived() -> None:
 
 
 def test_a_call_not_yet_answered_has_a_null_outcome_rather_than_a_guessed_one() -> None:
-    entry = item_reads.entry_of(
+    item = item_reads.item_of(
         _row(ItemType.TOOL_CALL, status=ItemStatus.OPEN, closed_seq=None, call_id="toolu_1", tool_name="Bash")
     )
 
-    assert isinstance(entry, ToolCallEntry)
-    assert (entry.status, entry.outcome, entry.content) == (ItemStatus.OPEN, None, "")
+    assert isinstance(item, ToolCallItem)
+    assert (item.status, item.outcome, item.content) == (ItemStatus.OPEN, None, "")
 
 
 def test_an_open_row_is_served_open_with_its_text_so_far() -> None:
-    entry = item_reads.entry_of(_row(ItemType.MESSAGE, status=ItemStatus.OPEN, closed_seq=None, text="half an ans"))
+    item = item_reads.item_of(_row(ItemType.MESSAGE, status=ItemStatus.OPEN, closed_seq=None, text="half an ans"))
 
-    assert isinstance(entry, MessageEntry)
-    assert (entry.status, entry.closed_seq, entry.text) == (ItemStatus.OPEN, None, "half an ans")
+    assert isinstance(item, MessageItem)
+    assert (item.status, item.closed_seq, item.text) == (ItemStatus.OPEN, None, "half an ans")
 
 
 def test_a_cut_off_row_is_served_failed_with_what_had_been_said() -> None:
     """Failing a session keeps its open items' prose under `status=failed` — the read presents the
     row rather than dropping it or reporting it finished."""
-    entry = item_reads.entry_of(_row(ItemType.MESSAGE, status=ItemStatus.FAILED, text="the answer was going to"))
+    item = item_reads.item_of(_row(ItemType.MESSAGE, status=ItemStatus.FAILED, text="the answer was going to"))
 
-    assert isinstance(entry, MessageEntry)
-    assert (entry.status, entry.text) == (ItemStatus.FAILED, "the answer was going to")
+    assert isinstance(item, MessageItem)
+    assert (item.status, item.text) == (ItemStatus.FAILED, "the answer was going to")
 
 
-def test_a_frame_span_with_no_session_is_a_defect_not_an_entry() -> None:
+def test_a_frame_span_with_no_session_is_a_defect_not_an_item() -> None:
     with pytest.raises(ValueError, match="session"):
-        item_reads.entry_of(_row(ItemType.MESSAGE, text="hi", session_id=None))
+        item_reads.item_of(_row(ItemType.MESSAGE, text="hi", session_id=None))
 
 
 def test_an_ended_turn_reports_the_runtimes_own_words() -> None:

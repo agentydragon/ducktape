@@ -32,9 +32,8 @@ from haku.console.conftest import console_sessions
 from haku.console.conversation import conversation_event, reprojection
 from haku.console.conversation.conversation_event import FrameRange
 from haku.console.conversation.history import ConversationHistory
-from haku.console.conversation.item_reads import entry_of
+from haku.console.conversation.item_reads import PromptItem, item_of
 from haku.console.conversation.prompt_origin import SPA_ORIGIN, PromptOriginKind
-from haku.console.conversation.reads import PromptEntry
 from haku.console.conversation_read_access import UnrestrictedReads
 from haku.console.database_schema import (
     Agent,
@@ -2654,10 +2653,10 @@ async def test_a_harness_initiated_exchange_becomes_an_ordinary_turn(
         conversation_event.TurnOutcome.ANSWERED,
         conversation_event.TurnOutcome.ANSWERED,
     ]
-    entries = await session_store.read_item_rows(
+    rows = await session_store.read_item_rows(
         await session_store.conversation_of(session_id), after_seq=None, limit=100, scope=UnrestrictedReads()
     )
-    prompts = [entry for entry in map(entry_of, entries) if isinstance(entry, PromptEntry)]
+    prompts = [item for item in map(item_of, rows) if isinstance(item, PromptItem)]
     assert [(prompt.text, prompt.origin) for prompt in prompts] == [
         ("start the fetch", PromptOriginKind.SPA),
         ('Background command "fetch" completed (exit code 0)', PromptOriginKind.HARNESS),

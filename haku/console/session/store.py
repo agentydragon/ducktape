@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from haku.console.chat_models import ItemStatus, ItemType
 from haku.console.conversation import conversation_event, log, prompt_inbox
 from haku.console.conversation.conversation_event import FrameRange, PromptRejection
-from haku.console.conversation.item_reads import ConversationPageRow, entry_of, turn_end_of
+from haku.console.conversation.item_reads import ConversationPageRow, item_of, turn_end_of
 from haku.console.conversation.prompt_origin import HARNESS_ORIGIN, PromptOrigin
 from haku.console.conversation.reads import (
     ChannelAttachment,
@@ -964,9 +964,9 @@ class Store:
         )
 
     async def get_operator_conversation(self, operator_id: UUID, conversation_id: UUID) -> ConversationView:
-        """Read one Operator-owned conversation: its channels, its entries, and its sessions.
+        """Read one Operator-owned conversation: its channels, its items, and its sessions.
 
-        The entries are the conversation's, across replaced sessions — the same stream the MCP
+        The items are the conversation's, across replaced sessions — the same stream the MCP
         read pages, plus the lifecycle members only this surface carries. The session block is
         the current session's — the one holding the conversation, or the last one to have held it;
         earlier sessions stay reachable rather than disappearing with the sandbox they ran in.
@@ -1005,7 +1005,7 @@ class Store:
             harness_kind=conversation.runtime_kind,
             created_at=conversation.created_at,
             attachments=attachments,
-            entries=[entry_of(row) for row in rows],
+            items=[item_of(row) for row in rows],
             session=session_view(current, responding=responding),
             narration=narration,
             earlier_sessions=[session_view(row, responding=False) for row in earlier],
@@ -1065,7 +1065,7 @@ class Store:
             narration=narration,
             attachments=attachments,
             earlier_sessions=[session_view(row, responding=False) for row in earlier],
-            entries=[entry_of(row) for row in rows],
+            items=[item_of(row) for row in rows],
         )
 
     async def authenticate_bridge(self, session_id: UUID, token: str) -> BridgeAuthentication:
@@ -1856,7 +1856,7 @@ class Store:
         Keyset paging on `frame_seq` rather than an offset: the log is append-only, so a cursor
         cannot skip or repeat a row the way an offset would once new frames land between pages.
         The cursor names the first frame to return rather than the last one already returned, so
-        an entry's `first_frame_seq` is a cursor as it stands.
+        an item's `first_frame_seq` is a cursor as it stands.
         """
         query = _bridge_frames(select(SessionFrame).where(SessionFrame.session_id == session_id), kinds)
         if cursor is not None:
@@ -1884,7 +1884,7 @@ class Store:
         moves, so the page boundaries hold while the content is still arriving.
         Conversation-keyed on purpose: a session is one runner's life and the thread outlives it,
         so the read that follows one thread must not stop where a sandbox died. What the rows fold
-        to on the wire is the reader's business (`item_entries.entry_of`), not this store's.
+        to on the wire is the reader's business (`item_reads.item_of`), not this store's.
         *limit* may be None because the browser's snapshot is the conversation whole; the paging
         surfaces always bound it.
         """

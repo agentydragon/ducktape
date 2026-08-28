@@ -1459,7 +1459,7 @@ class ConversationItem(Base):
         ),
         Index("idx_conversation_item_conversation", "conversation_id", "opened_seq"),
         Index("idx_conversation_item_turn", "turn_id", "opened_seq"),
-        # The `read_items` keyset branches: a page of entries is served from the rows' defining
+        # The `read_items` keyset branches: a page of items is served from the rows' defining
         # stream positions, so each branch needs an index that already stands in that order —
         # partial, because the branch's filter would otherwise make it a scan of the other rows.
         Index(

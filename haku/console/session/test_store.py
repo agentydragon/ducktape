@@ -35,18 +35,9 @@ from haku.console.conversation.conversation_event import (
     TurnFailed,
     TurnOutcome,
 )
-from haku.console.conversation.item_reads import entry_of
+from haku.console.conversation.item_reads import FromFrames, MessageItem, PromptItem, ToolCallItem, item_of
 from haku.console.conversation.prompt_origin import SPA_ORIGIN, MatrixOrigin, PromptOriginKind, SpaOrigin
-from haku.console.conversation.reads import (
-    FrameRecord,
-    FromFrames,
-    HarnessFrameRecord,
-    MessageEntry,
-    PromptEntry,
-    SessionCursor,
-    ToolCallEntry,
-    TurnCursor,
-)
+from haku.console.conversation.reads import FrameRecord, HarnessFrameRecord, SessionCursor, TurnCursor
 from haku.console.conversation_read_access import ConversationAccessDeniedError, ProfileScopedReads, UnrestrictedReads
 from haku.console.database_schema import (
     Conversation,
@@ -1007,10 +998,10 @@ async def test_a_turn_that_ended_on_no_frame_is_bounded_by_the_ones_it_recorded(
     assert brackets[spoke.turn_id] == (answer.frame_seq, answer.frame_seq)
 
 
-async def _conversation_entries(session_store, conversation_id, *, after_seq=None, limit=100):
-    """The store's page rows folded to entries, as `conversation_reader.ConversationReads` serves them."""
+async def _conversation_items(session_store, conversation_id, *, after_seq=None, limit=100):
+    """The store's page rows folded to items, as `conversation_reader.ConversationReads` serves them."""
     return [
-        entry_of(row)
+        item_of(row)
         for row in await session_store.read_item_rows(
             conversation_id, after_seq=after_seq, limit=limit, scope=UnrestrictedReads()
         )
@@ -1044,10 +1035,10 @@ async def test_the_items_read_as_the_conversation_rather_than_the_protocol(sessi
     )
     await session_store.end_turn(started.turn_id, TurnAnswered(), last_frame_seq=spoke.frame_seq)
 
-    entries = await _conversation_entries(session_store, conversation_id, limit=10)
+    items = await _conversation_items(session_store, conversation_id, limit=10)
 
-    assert [entry.kind for entry in entries] == ["prompt", "message"]
-    said = one(entry for entry in entries if isinstance(entry, MessageEntry))
+    assert [item.kind for item in items] == ["prompt", "message"]
+    said = one(item for item in items if isinstance(item, MessageItem))
     assert said.text == "a bad config"
     assert isinstance(said.provenance, FromFrames)
     assert said.provenance.session_id == view.session_id, "frames are session-level, so the appeal names whose"
@@ -1075,9 +1066,9 @@ async def test_the_items_read_hands_back_the_rows_the_writer_materialised(
     await _exchange(session_store, operator_id, view.session_id, "first?", "one")
     await _exchange(session_store, operator_id, view.session_id, "second?", "two")
 
-    entries = await _conversation_entries(session_store, conversation_id)
+    items = await _conversation_items(session_store, conversation_id)
 
-    spoken = [entry.text for entry in entries if isinstance(entry, MessageEntry)]
+    spoken = [item.text for item in items if isinstance(item, MessageItem)]
     assert spoken == await answers(migrated_sessions, view.session_id)
 
 
@@ -1090,18 +1081,18 @@ async def test_an_item_page_resumes_at_its_cursor_without_refolding_the_thread(s
     for index in range(3):
         await _exchange(session_store, operator_id, view.session_id, f"ask {index}", f"answer {index}")
 
-    whole = await _conversation_entries(session_store, conversation_id)
-    first = await _conversation_entries(session_store, conversation_id, limit=3)
-    rest = await _conversation_entries(session_store, conversation_id, after_seq=whole[3].opened_seq)
+    whole = await _conversation_items(session_store, conversation_id)
+    first = await _conversation_items(session_store, conversation_id, limit=3)
+    rest = await _conversation_items(session_store, conversation_id, after_seq=whole[3].opened_seq)
 
     assert first + rest == whole
-    assert [entry.opened_seq for entry in whole] == sorted({entry.opened_seq for entry in whole}), (
+    assert [item.opened_seq for item in whole] == sorted({item.opened_seq for item in whole}), (
         "opening positions are unique"
     )
 
 
 async def test_a_frame_the_fold_never_committed_is_not_an_item(session_store, operator_id) -> None:
-    """The entries are the conversation's record, so what is on them is what the fold committed —
+    """The items are the conversation's record, so what is on them is what the fold committed —
     never whatever the frame table happens to hold. `read_session_frames` still serves the frame by name."""
     view, token = await session_store.create(operator_id)
     conversation_id = await session_store.conversation_of(view.session_id)
@@ -1110,17 +1101,17 @@ async def test_a_frame_the_fold_never_committed_is_not_an_item(session_store, op
         view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, text_delta("h")
     )
 
-    entries = await _conversation_entries(session_store, conversation_id, limit=10)
+    items = await _conversation_items(session_store, conversation_id, limit=10)
     frames = await session_store.read_session_frames(
         view.session_id, cursor=None, limit=10, kinds=None, scope=UnrestrictedReads()
     )
 
-    assert entries == []
+    assert items == []
     assert len(frames) == 1, "the frame is recorded and readable; it just never became a fact"
 
 
-async def test_a_call_and_its_answer_are_one_entry(session_store, operator_id) -> None:
-    """The ask and the answer are one row and so one entry — the answer fields fill in when it
+async def test_a_call_and_its_answer_are_one_item(session_store, operator_id) -> None:
+    """The ask and the answer are one row and so one item — the answer fields fill in when it
     arrives, and `status` is what says whether it has."""
     view, token = await session_store.create(operator_id)
     conversation_id = await session_store.conversation_of(view.session_id)
@@ -1166,10 +1157,10 @@ async def test_a_call_and_its_answer_are_one_entry(session_store, operator_id) -
         ],
     )
 
-    entries = await _conversation_entries(session_store, conversation_id, limit=10)
+    items = await _conversation_items(session_store, conversation_id, limit=10)
 
-    assert [entry.kind for entry in entries] == ["prompt", "tool_call"]
-    call = one(entry for entry in entries if isinstance(entry, ToolCallEntry))
+    assert [item.kind for item in items] == ["prompt", "tool_call"]
+    call = one(item for item in items if isinstance(item, ToolCallItem))
     assert (call.tool_name, call.arguments) == ("Bash", {"command": "ls"})
     assert (call.status, call.content, call.structured, call.outcome) == (
         ItemStatus.COMPLETE,
@@ -1181,7 +1172,7 @@ async def test_a_call_and_its_answer_are_one_entry(session_store, operator_id) -
 
 async def test_the_items_read_spans_replaced_sessions(session_store, migrated_sessions, operator_id) -> None:
     """A conversation outlives its runners, so the read that follows one thread does not stop
-    where a sandbox died; which session produced an entry is on its provenance."""
+    where a sandbox died; which session produced an item is on its provenance."""
     view, token = await session_store.create(operator_id)
     conversation_id = await session_store.conversation_of(view.session_id)
     assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
@@ -1194,11 +1185,11 @@ async def test_the_items_read_spans_replaced_sessions(session_store, migrated_se
     )
     await _exchange(session_store, operator_id, replacement.session_id, "second?", "two")
 
-    entries = await _conversation_entries(session_store, conversation_id)
+    items = await _conversation_items(session_store, conversation_id)
 
-    spoken = [entry for entry in entries if isinstance(entry, MessageEntry)]
-    assert [entry.text for entry in spoken] == ["one", "two"]
-    assert [entry.provenance.session_id for entry in spoken if isinstance(entry.provenance, FromFrames)] == [
+    spoken = [item for item in items if isinstance(item, MessageItem)]
+    assert [item.text for item in spoken] == ["one", "two"]
+    assert [item.provenance.session_id for item in spoken if isinstance(item.provenance, FromFrames)] == [
         view.session_id,
         replacement.session_id,
     ]
@@ -1216,9 +1207,9 @@ async def test_a_prompt_admitted_before_any_session_is_on_the_conversations_item
         await db.delete(await db.get(Session, view.session_id))
     await session_store.enqueue_conversation_prompt(operator_id, conversation_id, "start", SPA_ORIGIN)
 
-    entry = one(await _conversation_entries(session_store, conversation_id, limit=10))
-    assert isinstance(entry, PromptEntry)
-    assert (entry.text, entry.origin) == ("start", PromptOriginKind.SPA)
+    item = one(await _conversation_items(session_store, conversation_id, limit=10))
+    assert isinstance(item, PromptItem)
+    assert (item.text, item.origin) == ("start", PromptOriginKind.SPA)
 
 
 async def test_operator_conversation_read_surface_keeps_inventory_and_transcript_separate(
@@ -1249,7 +1240,7 @@ async def test_operator_conversation_read_surface_keeps_inventory_and_transcript
     assert [attachment.address for attachment in detail.attachments] == [ROOM]
     assert detail.harness_kind == "claude_code"
     assert detail.session.session_id == matrix.session_id
-    asked = one(entry for entry in detail.entries if isinstance(entry, PromptEntry))
+    asked = one(item for item in detail.items if isinstance(item, PromptItem))
     assert asked.text == "What is happening?"
     assert detail.earlier_sessions == []
 
@@ -1270,7 +1261,7 @@ async def test_a_conversation_a_channel_holds_takes_a_prompt_typed_in_the_browse
         operator_id, await session_store.conversation_of(matrix.session_id)
     )
 
-    typed = one(entry for entry in detail.entries if isinstance(entry, PromptEntry))
+    typed = one(item for item in detail.items if isinstance(item, PromptItem))
     assert typed.text == "typed into the tab"
     assert [attachment.address for attachment in detail.attachments] == [ROOM]
 
@@ -2130,7 +2121,7 @@ async def test_an_update_carries_the_rows_the_events_after_a_position_name(sessi
     await _exchange(session_store, operator_id, session_id, "second", "two")
     changes = await session_store.read_operator_conversation_changes(operator_id, conversation_id, after=held, limit=50)
 
-    assert [(entry.kind, entry.text) for entry in changes.entries if isinstance(entry, PromptEntry | MessageEntry)] == [
+    assert [(item.kind, item.text) for item in changes.items if isinstance(item, PromptItem | MessageItem)] == [
         ("prompt", "second"),
         ("message", "two"),
     ]
@@ -2138,7 +2129,7 @@ async def test_an_update_carries_the_rows_the_events_after_a_position_name(sessi
     # Re-reading the same position is the same answer: the merge replaces by `opened_seq`, so a
     # duplicate costs nothing and nothing about delivery has to be exactly-once.
     again = await session_store.read_operator_conversation_changes(operator_id, conversation_id, after=held, limit=50)
-    assert [entry.opened_seq for entry in again.entries] == [entry.opened_seq for entry in changes.entries]
+    assert [item.opened_seq for item in again.items] == [item.opened_seq for item in changes.items]
 
 
 async def test_an_update_carries_what_a_replaced_session_wrote_after_the_position(session_store, operator_id) -> None:
@@ -2156,7 +2147,7 @@ async def test_an_update_carries_what_a_replaced_session_wrote_after_the_positio
     await _exchange(session_store, operator_id, second.session_id, "after it was replaced", "answered again")
     changes = await session_store.read_operator_conversation_changes(operator_id, conversation_id, after=held, limit=50)
 
-    assert [entry.text for entry in changes.entries if isinstance(entry, PromptEntry | MessageEntry)] == [
+    assert [item.text for item in changes.items if isinstance(item, PromptItem | MessageItem)] == [
         "before the sandbox died",
         "answered",
         "after it was replaced",
@@ -2174,8 +2165,8 @@ async def test_a_claimed_prompt_reaches_a_reader_as_the_responding_status(sessio
     conversation_id = await session_store.conversation_of(view.session_id)
     await session_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?", SPA_ORIGIN)
     enqueued = await session_store.read_operator_conversation_changes(operator_id, conversation_id, after=0, limit=50)
-    assert [entry.kind for entry in enqueued.entries] == ["prompt"]
-    asked = one(entry for entry in enqueued.entries if isinstance(entry, PromptEntry))
+    assert [item.kind for item in enqueued.items] == ["prompt"]
+    asked = one(item for item in enqueued.items if isinstance(item, PromptItem))
     assert asked.text == "why did it fail?"
 
     assert await session_store.next_prompt(view.session_id) is not None
@@ -2183,7 +2174,7 @@ async def test_a_claimed_prompt_reaches_a_reader_as_the_responding_status(sessio
         operator_id, conversation_id, after=enqueued.position, limit=50
     )
 
-    assert claimed.entries == []
+    assert claimed.items == []
     assert claimed.session.status == SessionStatus.RESPONDING
 
 
@@ -2218,7 +2209,7 @@ async def test_an_update_over_its_limit_is_refused_rather_than_shortened(session
 
     whole = await session_store.read_operator_conversation_changes(operator_id, conversation_id, after=0, limit=50)
     # Two exchanges of two rows each: the prompt and the answer.
-    assert len(whole.entries) == 4
+    assert len(whole.items) == 4
 
 
 async def test_the_update_refuses_a_conversation_another_operator_owns(session_store, operator_id) -> None:
@@ -2252,8 +2243,8 @@ async def test_open_wake_turn_brackets_a_harness_initiated_exchange(
         session_row = await db.get(Session, view.session_id)
         assert session_row is not None
         assert session_row.projected_frame_seq == 6
-    entries = await _conversation_entries(session_store, await session_store.conversation_of(view.session_id))
-    prompt = one(entry for entry in entries if isinstance(entry, PromptEntry))
+    items = await _conversation_items(session_store, await session_store.conversation_of(view.session_id))
+    prompt = one(item for item in items if isinstance(item, PromptItem))
     assert prompt.text == 'Background command "fetch" completed'
     assert prompt.origin == PromptOriginKind.HARNESS
 

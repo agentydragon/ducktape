@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import type { Conversation, ConversationEntry, ConversationFollowMessage } from "../client";
+import type { Conversation, Item, ConversationFollowMessage } from "../client";
 import { redirectToOperatorLogin } from "../operator_login";
 
 // The one close the shell acts on instead of reconnecting: the operator session reached its
@@ -20,15 +20,12 @@ export type FollowStatus = "connecting" | "live" | "offline";
  *
  * Replace rather than append: a row arrives whole in its current state, and arrives again when it
  * changes — a message being written once per coalescing window with the prose so far — so the
- * newest copy wins, a duplicate costs nothing, and an entry that arrives out of order still lands
+ * newest copy wins, a duplicate costs nothing, and an item that arrives out of order still lands
  * at its position.
  */
-function mergedEntries(
-  held: readonly ConversationEntry[],
-  arriving: readonly ConversationEntry[]
-): ConversationEntry[] {
-  const byPosition = new Map<number, ConversationEntry>(held.map((entry) => [entry.opened_seq, entry]));
-  for (const entry of arriving) byPosition.set(entry.opened_seq, entry);
+function mergedItems(held: readonly Item[], arriving: readonly Item[]): Item[] {
+  const byPosition = new Map<number, Item>(held.map((item) => [item.opened_seq, item]));
+  for (const item of arriving) byPosition.set(item.opened_seq, item);
   return [...byPosition.values()].sort((left, right) => left.opened_seq - right.opened_seq);
 }
 
@@ -36,7 +33,7 @@ function mergedEntries(
  *
  * The whole client half of the follow contract, in one pure function — there is no gap to detect
  * and no repair read to issue, because the server sends a snapshot itself whenever it cannot serve
- * a position. Only the entries merge — by replacement, since a row re-arrives whole when it
+ * a position. Only the items merge — by replacement, since a row re-arrives whole when it
  * changes; everything else the update carries arrives whole and replaces what is held, the
  * session block included, so nothing a follower shows can belong to a session it has just been
  * told was replaced.
@@ -51,7 +48,7 @@ export function followed(held: Conversation | null, message: ConversationFollowM
     ...held,
     attachments: message.attachments,
     earlier_sessions: message.earlier_sessions,
-    entries: mergedEntries(held.entries, message.entries),
+    items: mergedItems(held.items, message.items),
     session: message.session,
     provisioning: message.provisioning,
     narration: message.narration,

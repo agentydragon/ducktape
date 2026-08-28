@@ -13,7 +13,7 @@ import {
   SAMPLE_PENDING,
   SAMPLE_TOOL_CALLS,
 } from "./sample_data";
-import type { Conversation, ConversationEntry, ConversationPage, SessionFramePage } from "../client";
+import type { Conversation, Item, ConversationPage, SessionFramePage } from "../client";
 import { mockOperatorMcpFetch } from "../tool_rendering/screenshot/mcp_mock";
 import { ensureLedger, recordViolation, tracked } from "../tool_rendering/screenshot/visual_network_ledger";
 import { GOOGLE_CALENDAR_MCP_FIXTURES } from "../tool_rendering/google_calendar/fixtures";
@@ -31,7 +31,7 @@ function jsonResponse(body: unknown): Response {
 
 const scene = (window as unknown as { __SCENE__?: string }).__SCENE__;
 
-/** Entry builders over a running stream position, so a fixture reads in opening order. */
+/** Item builders over a running stream position, so a fixture reads in opening order. */
 let seq = 0;
 function next(): number {
   seq += 10;
@@ -40,10 +40,10 @@ function next(): number {
 
 const AUTHORED = { kind: "authored" } as const;
 
-type Lifecycle = ConversationEntry["status"];
+type Lifecycle = Item["status"];
 
 /** The session waking itself — a prompt nobody typed, whose text says what woke it. */
-function woke(text: string): ConversationEntry {
+function woke(text: string): Item {
   const opened = next();
   return {
     kind: "prompt",
@@ -56,7 +56,7 @@ function woke(text: string): ConversationEntry {
   };
 }
 
-function asked(text: string): ConversationEntry {
+function asked(text: string): Item {
   const opened = next();
   return {
     kind: "prompt",
@@ -69,7 +69,7 @@ function asked(text: string): ConversationEntry {
   };
 }
 
-function spoke(text: string, status: Lifecycle = "complete"): ConversationEntry {
+function spoke(text: string, status: Lifecycle = "complete"): Item {
   const opened = next();
   return {
     kind: "message",
@@ -88,7 +88,7 @@ function called(
   tool_name: string,
   args: Record<string, unknown>,
   answer?: { text: string; outcome: "succeeded" | "failed" }
-): ConversationEntry {
+): Item {
   const opened = next();
   return {
     kind: "tool_call",
@@ -106,7 +106,7 @@ function called(
 }
 
 /** A thought: dimmed to a line while withheld, folded behind "Thinking" once it has text. */
-function thought(text: string): ConversationEntry {
+function thought(text: string): Item {
   const opened = next();
   return {
     kind: "reasoning",
@@ -132,7 +132,7 @@ const DIFF_CHECK_OUTPUT = Array.from(
 const CATALOG_ANSWER =
   '{"servers": [{"server_id": "gmail", "status": "alive"}, {"server_id": "tana", "status": "degraded"}]}';
 
-const boundaryEntries: ConversationEntry[] = [
+const boundaryItems: Item[] = [
   asked("Try the Haku Console MCP tools."),
   spoke("I'll start with the catalog, then try a read-only query."),
   called(
@@ -159,13 +159,13 @@ const boundaryEntries: ConversationEntry[] = [
   ),
   spoke("The Haku Console catalog is available. Next I'll try the read-only query."),
 ];
-const standardEntries: ConversationEntry[] = [
+const standardItems: Item[] = [
   asked("Create a **short note** in the sandbox and tell me what you wrote."),
   spoke(
     "I created `/workspace/note.txt` with:\n\n> Hello from the disposable Haku sandbox.\n\n- Saved locally\n- Ready to inspect"
   ),
 ];
-const overflowingEntries: ConversationEntry[] = Array.from({ length: 8 }, (_unused, index) => [
+const overflowingItems: Item[] = Array.from({ length: 8 }, (_unused, index) => [
   asked(`Question **${index + 1}**: inspect the current sandbox state.`),
   spoke(
     index === 7
@@ -177,8 +177,8 @@ const overflowingEntries: ConversationEntry[] = Array.from({ length: 8 }, (_unus
 // The same transcript with every state a tool call can be in: answered, failed, still running, and
 // one long enough to need its own scroll — plus a message still being written, which is what
 // `status: "open"` renders as.
-const toolUsingEntries: ConversationEntry[] = [
-  ...standardEntries,
+const toolUsingItems: Item[] = [
+  ...standardItems,
   // One of each thinking shape: withheld folds to the one-liner, disclosed to an openable fold.
   thought(""),
   thought(
@@ -318,8 +318,8 @@ const conversationPage = {
 } satisfies ConversationPage;
 // Two exchanges; the second's answer was cut off by the runner dying, which is what
 // `status: "failed"` renders as.
-const conversationEntries: ConversationEntry[] = [
-  ...boundaryEntries,
+const conversationItems: Item[] = [
+  ...boundaryItems,
   asked("Now check whether the degraded server recovered."),
   { ...spoke("The reflection call timed out before I could ans"), status: "failed" },
 ];
@@ -335,7 +335,7 @@ const conversationDetail = {
   harness_kind: "claude_code",
   created_at: "2026-08-01T03:00:00Z",
   attachments: [{ surface: "matrix", address: "!ops:example.org", attached_at: "2026-08-01T03:00:00Z" }],
-  entries: conversationEntries,
+  items: conversationItems,
   session: conversationSession,
   provisioning: null,
   narration: setupNarration,
@@ -355,7 +355,7 @@ const conversationDetail = {
 // narration to show.
 const conversationBootstrap = {
   ...conversationDetail,
-  entries: [],
+  items: [],
   session: { ...conversationSession, status: "provisioning", updated_at: "2026-08-01T02:59:51Z" },
   narration: setupNarration.slice(0, 4),
 } satisfies Conversation;
@@ -363,7 +363,7 @@ const conversationBootstrap = {
 // session that never comes up.
 const conversationProvisioning = {
   ...conversationDetail,
-  entries: [],
+  items: [],
   session: { ...conversationSession, status: "provisioning", updated_at: "2026-08-01T03:00:03Z" },
   provisioning: {
     step: "waiting_for_pod_ready",
@@ -387,20 +387,20 @@ const conversationProvisioning = {
 // transcript opens scrolled to its newest message, which puts the collapsed panel above the fold.
 const conversationNarrationCollapsed = {
   ...conversationDetail,
-  entries: standardEntries,
+  items: standardItems,
 } satisfies Conversation;
 // A transcript long enough to overflow its viewport, so the scroll stays pinned to the newest
 // message rather than opening at the top.
 const conversationOverflow = {
   ...conversationDetail,
-  entries: overflowingEntries,
+  items: overflowingItems,
   narration: [],
 } satisfies Conversation;
 // Tool calls with their results, which is what the transcript's card rendering exists for — with
 // a message still being written at the tail.
 const conversationToolUse = {
   ...conversationDetail,
-  entries: toolUsingEntries,
+  items: toolUsingItems,
   narration: [],
 } satisfies Conversation;
 const conversationDetailForScene = scene?.startsWith("conversation-bootstrap")

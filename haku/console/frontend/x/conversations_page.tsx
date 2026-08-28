@@ -10,7 +10,7 @@ import {
   type ChatLaunchOption,
   type Conversation,
   type ConversationCursor,
-  type ConversationEntry,
+  type Item,
   type ConversationSummary,
   type Session,
 } from "../client";
@@ -134,23 +134,23 @@ function Thinking({ text, open }: { text: string; open: boolean }) {
   );
 }
 
-/** One entry of the conversation, in chat shape: the operator's prompts as right-side bubbles, the
+/** One item of the conversation, in chat shape: the operator's prompts as right-side bubbles, the
  * agent's prose flush left with no chrome of its own, thinking folded to one line, and a tool call
  * as a sibling of the message rather than a field on it. Who is speaking is carried by the layout —
  * a bubble on the right is the operator, everything on the left is the agent — so no line is spent
- * saying so. An entry is one item row in its current state: `status` is what marks a message still
+ * saying so. An item is one item row in its current state: `status` is what marks a message still
  * arriving ("…") or one its session died around. */
-function EntryView({ entry }: { entry: ConversationEntry }) {
-  switch (entry.kind) {
+function ItemView({ item }: { item: Item }) {
+  switch (item.kind) {
     case "tool_call":
-      return <ToolCallView call={entry} />;
+      return <ToolCallView call={item} />;
     case "reasoning":
-      return <Thinking text={entry.disclosure === "withheld" ? "" : entry.text} open={entry.status === "open"} />;
+      return <Thinking text={item.disclosure === "withheld" ? "" : item.text} open={item.status === "open"} />;
     case "prompt": {
-      const text = entry.text.trim();
+      const text = item.text.trim();
       // A harness-origin prompt is the session waking itself — a background command's notification,
       // a scheduled wakeup — so it renders as a note in the margin, never as the operator's bubble.
-      if (entry.origin === "harness") {
+      if (item.origin === "harness") {
         return (
           <Text c="dimmed" size="xs" fs="italic" className="haku-chat-wake">
             {text}
@@ -164,16 +164,16 @@ function EntryView({ entry }: { entry: ConversationEntry }) {
       );
     }
     case "message": {
-      const text = entry.text.trim();
+      const text = item.text.trim();
       return (
         <div className="haku-chat-assistant">
-          {entry.status === "failed" && (
+          {item.status === "failed" && (
             <Badge size="xs" variant="light" color="red" mb={4}>
               cut off
             </Badge>
           )}
-          <Markdown source={text || (entry.status === "open" ? "…" : "")} className="haku-chat-markdown" />
-          {!text && entry.status === "complete" && (
+          <Markdown source={text || (item.status === "open" ? "…" : "")} className="haku-chat-markdown" />
+          {!text && item.status === "complete" && (
             <Text c="dimmed" size="xs">
               Nothing was captured for this.
             </Text>
@@ -478,11 +478,11 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
   }
 
   const { session } = conversation;
-  const conversationEmpty = conversation.entries.length === 0;
+  const conversationEmpty = conversation.items.length === 0;
   const narration = bootstrapNarration(conversation, conversationEmpty);
   // In opening order — the row's position for its whole life, so the transcript is stable while
   // its newest items are still being written.
-  const rows = [...conversation.entries].sort((left, right) => left.opened_seq - right.opened_seq);
+  const rows = [...conversation.items].sort((left, right) => left.opened_seq - right.opened_seq);
 
   const close = async (sessionId: string) => {
     setClosing(true);
@@ -563,8 +563,8 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
                 Nothing was recorded for this conversation.
               </Text>
             )}
-            {rows.map((entry) => (
-              <EntryView key={entry.opened_seq} entry={entry} />
+            {rows.map((item) => (
+              <ItemView key={item.opened_seq} item={item} />
             ))}
           </div>
         </div>

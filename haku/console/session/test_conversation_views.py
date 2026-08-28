@@ -8,8 +8,8 @@ from uuid import uuid4
 
 import pytest_bazel
 
+from haku.console.conversation.item_reads import ToolCallItem
 from haku.console.conversation.prompt_origin import SPA_ORIGIN
-from haku.console.conversation.reads import ToolCallEntry
 from haku.console.database_schema import SessionFrame
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.session import conversation_views
@@ -102,9 +102,9 @@ async def test_a_calls_output_reads_back_as_the_items_text(session_store, operat
         )
 
     detail = await _detail(session_store, operator_id, view.session_id)
-    calls = [entry for entry in detail.entries if isinstance(entry, ToolCallEntry)]
+    calls = [item for item in detail.items if isinstance(item, ToolCallItem)]
 
-    assert {entry.call_id: entry.content for entry in calls} == {"toolu_text": "a.py\nb.py", "toolu_empty": ""}
+    assert {item.call_id: item.content for item in calls} == {"toolu_text": "a.py\nb.py", "toolu_empty": ""}
 
 
 def _frame(frame_seq: int, kind: BridgeFrameKind, payload: dict[str, Any]) -> SessionFrame:

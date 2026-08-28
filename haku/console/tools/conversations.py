@@ -14,8 +14,8 @@ nothing about which agent backend produced them, keyed by the conversation becau
 outlives every session that ran it. `read_session_frames` is the frames a **named** backend actually sent,
 verbatim — keyed by the session, because frames are one runner's wire and die with its provider
 shape. The first is what a reader almost always wants; the second is the appeal, and every item
-entry carries the session and frame range to appeal to (`provenance`). That path is the whole
-reason an entry records where it came from, so it is built to be walked: a `frames` provenance
+carries the session and frame range to appeal to (`provenance`). That path is the whole
+reason an item records where it came from, so it is built to be walked: a `frames` provenance
 hands `session_id` and `first_frame_seq` straight to `read_session_frames` as its `cursor`, with no
 arithmetic in between.
 
@@ -44,9 +44,10 @@ as a *range* over the same log, with what it cost and how it ended: enough to pi
 worth reading, without the frames themselves being reshaped around it.
 
 **The read models are the store's; the pages are this server's.** What a read produced — a
-session, a frame, a turn, a conversation entry, and the cursors that walk them — is defined
-beside the store that produces it (`haku/console/conversation/reads.py`). What is here is how
-those reads are handed out: the `Page` envelope.
+session, a frame, a turn, and the cursors that walk them — is defined beside the store that
+produces it (`haku/console/conversation/reads.py`), and the conversation item read beside its
+fold (`haku/console/conversation/item_reads.py`). What is here is how those reads are handed out:
+the `Page` envelope.
 
 **Reads require the configured in-process-server grant, and rows require the profile-DAG scope.**
 The outer Console MCP boundary places the revalidated caller in trusted request metadata; it is
@@ -66,14 +67,8 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, Field
 
-from haku.console.conversation.reads import (
-    ConversationEntry,
-    FrameRecord,
-    SessionCursor,
-    SessionRecord,
-    TurnCursor,
-    TurnRecord,
-)
+from haku.console.conversation.item_reads import Item
+from haku.console.conversation.reads import FrameRecord, SessionCursor, SessionRecord, TurnCursor, TurnRecord
 from haku.console.conversation_read_access import (
     ConversationAccessDeniedError,
     ConversationReadAccessPolicy,
@@ -125,7 +120,7 @@ class TurnPage(Page[TurnRecord, TurnCursor]):
     pass
 
 
-class ItemPage(Page[ConversationEntry, int]):
+class ItemPage(Page[Item, int]):
     pass
 
 
@@ -133,9 +128,10 @@ class ConversationReader(Protocol):
     """The console's session store, as this server needs it.
 
     A port rather than an import: the store lives in the experimental chat runtime, and this
-    server should not depend on that package's shape. The *records* it exchanges do come from
-    there (<../conversation/reads.py>), because the store is what produces them — but that
-    module is a leaf of models, so naming it pulls in no runtime.
+    server should not depend on that package's shape. The *records* it exchanges come from beside
+    the store — session, turn and frame reads in <../conversation/reads.py>, the item read in
+    <../conversation/item_reads.py> — because the store is what produces them, so naming them
+    pulls in those models, not the runtime.
 
     Every method answers "up to `limit` rows from `cursor`" and leaves the page to the caller.
     Two of the four tools also spend a byte budget the store knows nothing about, so the cut has
@@ -162,7 +158,7 @@ class ConversationReader(Protocol):
 
     async def read_conversation_items(
         self, conversation_id: UUID, *, cursor: int | None, limit: int, scope: ConversationReadScope
-    ) -> list[ConversationEntry]: ...
+    ) -> list[Item]: ...
 
 
 def split_page[ItemT](rows: Sequence[ItemT], *, limit: int) -> tuple[list[ItemT], ItemT | None]:
@@ -181,7 +177,7 @@ def build_mcp(
         name=HAKU_CONVERSATIONS_SERVER_ID,
         instructions=(
             "Read Haku's past conversations: start with `list_sessions`, then `list_turns`, then "
-            "`read_conversation_items`. Follow an entry's `provenance` into `read_session_frames` when normalization "
+            "`read_conversation_items`. Follow an item's `provenance` into `read_session_frames` when normalization "
             "needs checking. Every listing returns `items` and `next_cursor`; pass the cursor back "
             "as `cursor`. Read-only."
         ),
@@ -237,7 +233,7 @@ def build_mcp(
             int | None,
             Field(
                 default=None,
-                description="A previous page's `next_cursor` — the `opened_seq` of the first entry not yet "
+                description="A previous page's `next_cursor` — the `opened_seq` of the first item not yet "
                 "returned, inclusively. Omit to start at the beginning.",
             ),
         ] = None,
@@ -246,34 +242,34 @@ def build_mcp(
     ) -> ItemPage:
         """Read the conversation's prompts, messages, reasoning, and tool calls oldest first.
 
-        The whole thread, across replaced sessions, faithfully as stored: one entry per item row
-        in its current state, and this read does not stop where a sandbox died. Entries use the
+        The whole thread, across replaced sessions, faithfully as stored: one item per row
+        in its current state, and this read does not stop where a sandbox died. Items use the
         console's neutral vocabulary and carry `provenance`; follow it into `read_session_frames` when a
-        normalization needs checking. A `tool_call` entry is the ask and the answer together —
+        normalization needs checking. A `tool_call` item is the ask and the answer together —
         `outcome` is null exactly while no answer has arrived. `status` is the row's lifecycle:
-        an `open` entry is still being written and its text is as of this read (its `opened_seq` never
+        an `open` item is still being written and its text is as of this read (its `opened_seq` never
         moves, so re-reading a cursor serves the settled row at the same position); `failed` was
-        cut off by its session dying, kept with whatever had been said. A `prompt` entry says who
+        cut off by its session dying, kept with whatever had been said. A `prompt` item says who
         asked in its `origin`: `harness` is the agent resuming its own session, which nobody
-        typed. Exchanges are `list_turns`' business, not entries.
+        typed. Exchanges are `list_turns`' business, not items.
         """
         scope = read_scope(execution)
         try:
             rows = await reader.read_conversation_items(conversation_id, cursor=cursor, limit=limit + 1, scope=scope)
         except ConversationAccessDeniedError:
             raise ToolError("conversation access denied") from None
-        entries, more = split_page(rows, limit=limit)
-        return ItemPage(items=entries, next_cursor=more.opened_seq if more is not None else None)
+        items, more = split_page(rows, limit=limit)
+        return ItemPage(items=items, next_cursor=more.opened_seq if more is not None else None)
 
     @mcp.tool
     async def read_session_frames(
-        session_id: Annotated[UUID, Field(description="From `list_sessions`, or an entry's `provenance.session_id`.")],
+        session_id: Annotated[UUID, Field(description="From `list_sessions`, or an item's `provenance.session_id`.")],
         cursor: Annotated[
             int | None,
             Field(
                 default=None,
                 description="Start at this `frame_seq`, inclusively — a previous page's `next_cursor`, or an "
-                "entry's `first_frame_seq`. Omit to start at the beginning of the log; `limit=1` reads exactly "
+                "item's `first_frame_seq`. Omit to start at the beginning of the log; `limit=1` reads exactly "
                 "the named frame.",
             ),
         ] = None,

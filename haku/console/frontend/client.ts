@@ -35,10 +35,10 @@ export type OAuthConnectionResult =
   | components["schemas"]["ConnectionSucceeded"]
   | components["schemas"]["ConnectionFailed"];
 export type AgentView = components["schemas"]["AgentView"];
-// The one conversation-entry vocabulary, shared with the MCP conversation reads: one entry per
-// item row, keyed by the position it opened at, its lifecycle carried as `status`.
-export type ConversationEntry = components["schemas"]["ConversationEntry"];
-export type ToolCallEntry = components["schemas"]["ToolCallEntry"];
+// The one conversation item-read vocabulary, shared with the MCP conversation reads: one item per
+// row, keyed by the position it opened at, its lifecycle carried as `status`.
+export type Item = components["schemas"]["Item"];
+export type ToolCallItem = components["schemas"]["ToolCallItem"];
 export type ConversationSummary = components["schemas"]["ConversationSummary"];
 export type ConversationPage = components["schemas"]["ConversationPage"];
 export type ConversationCursor = components["schemas"]["ConversationCursor"];

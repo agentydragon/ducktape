@@ -217,7 +217,7 @@ whole streaming path depends on and it is cheap to state.
 **Reads hand out what the fold materialised, and the agent-facing item read is one of them.**
 `haku_conversations.read_conversation_items` pages `conversation_item` and `conversation_turn` by their
 defining stream positions; it re-reads neither `session_frames` through an adapter nor the log
-through a second fold. So the entries cannot disagree with the items and turns the writer derived,
+through a second fold. So the reads cannot disagree with the items and turns the writer derived,
 a reader of them needs neither a session's `runtime_kind` nor any harness vocabulary, a
 conversation that ran before a projection fix keeps the history it had rather than acquiring a new
 one on the next read — and a page's cost is the page's rows, not the conversation's length. What

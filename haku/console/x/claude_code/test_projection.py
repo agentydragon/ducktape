@@ -510,7 +510,7 @@ def test_a_batch_running_out_is_not_a_message_ending():
 
     assert [type(event) for event in second.events] == [ItemSegment]
     # And nothing closes it: an item the frames left open stays open, here and in the log, and an
-    # item that never completed is not an entry (<../item_entries.py>).
+    # item that never completed is not a completed read (<../item_reads.py>).
     assert state.open_message == OpenItem(opened_at_frame_seq=1, last_frame_seq=2, backend_item_id="msg_A")
 
 

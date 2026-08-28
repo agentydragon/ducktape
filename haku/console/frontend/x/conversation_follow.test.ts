@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import type { Conversation, ConversationEntry, ConversationUpdate, Session } from "../client";
+import type { Conversation, Item, ConversationUpdate, Session } from "../client";
 import { followed } from "./conversation_follow";
 
-function message(opened: number, text: string, status: ConversationEntry["status"] = "complete"): ConversationEntry {
+function message(opened: number, text: string, status: Item["status"] = "complete"): Item {
   return {
     kind: "message",
     opened_seq: opened,
@@ -26,13 +26,13 @@ function session(fields: Partial<Session>): Session {
   };
 }
 
-function conversation(entries: ConversationEntry[]): Conversation {
+function conversation(items: Item[]): Conversation {
   return {
     conversation_id: "c1",
     harness_kind: "claude_code",
     created_at: "2026-08-18T00:00:00Z",
     attachments: [],
-    entries,
+    items,
     session: session({}),
     provisioning: null,
     narration: [],
@@ -49,7 +49,7 @@ function update(fields: Partial<ConversationUpdate>): ConversationUpdate {
     narration: [],
     attachments: [],
     earlier_sessions: [],
-    entries: [],
+    items: [],
     ...fields,
   };
 }
@@ -70,9 +70,9 @@ describe("followed", () => {
   it("merges arriving rows over the ones held, keyed by opening position", () => {
     const held = conversation([message(1, "first")]);
 
-    const next = followed(held, update({ entries: [message(1, "first"), message(5, "second")] }));
+    const next = followed(held, update({ items: [message(1, "first"), message(5, "second")] }));
 
-    expect(next.entries.map((entry) => entry.opened_seq)).toEqual([1, 5]);
+    expect(next.items.map((item) => item.opened_seq)).toEqual([1, 5]);
   });
 
   it("replaces a row it already holds rather than repeating it", () => {
@@ -80,9 +80,9 @@ describe("followed", () => {
     // the same row lands again and again — newer state, same position.
     const held = conversation([message(1, "half an ans", "open")]);
 
-    const next = followed(held, update({ entries: [message(1, "half an answer")] }));
+    const next = followed(held, update({ items: [message(1, "half an answer")] }));
 
-    expect(next.entries.map((entry) => [entry.opened_seq, "text" in entry ? entry.text : "", entry.status])).toEqual([
+    expect(next.items.map((item) => [item.opened_seq, "text" in item ? item.text : "", item.status])).toEqual([
       [1, "half an answer", "complete"],
     ]);
   });
@@ -90,16 +90,16 @@ describe("followed", () => {
   it("puts an arriving row in opening order, not arrival order", () => {
     const held = conversation([message(5, "answer")]);
 
-    const next = followed(held, update({ entries: [message(2, "prompt")] }));
+    const next = followed(held, update({ items: [message(2, "prompt")] }));
 
-    expect(next.entries.map((entry) => entry.opened_seq)).toEqual([2, 5]);
+    expect(next.items.map((item) => item.opened_seq)).toEqual([2, 5]);
   });
 
   it("applying one update twice is applying it once", () => {
     // Delivery is not exactly-once by design: re-reading from an older position is always correct,
     // which is only true if the merge is.
     const held = conversation([message(1, "first")]);
-    const arriving = update({ entries: [message(5, "second")] });
+    const arriving = update({ items: [message(5, "second")] });
 
     expect(followed(followed(held, arriving), arriving)).toEqual(followed(held, arriving));
   });

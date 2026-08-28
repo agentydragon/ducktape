@@ -28,9 +28,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.console.conversation.conversation_event import TurnAnswered
-from haku.console.conversation.item_reads import entry_of
+from haku.console.conversation.item_reads import MessageItem, PromptItem, ToolCallItem, item_of
 from haku.console.conversation.prompt_origin import SPA_ORIGIN
-from haku.console.conversation.reads import MessageEntry, PromptEntry, ToolCallEntry
 from haku.console.conversation_read_access import UnrestrictedReads
 from haku.console.database_schema import Session, SubmittedPrompt
 from haku.console.notifications.session_wakes import SessionWakes
@@ -89,11 +88,11 @@ async def _transcript(store: Store, conversation_id: UUID) -> list[tuple[str, st
     """The prompt/message transcript pairs and the tool call, read through the store's reader."""
     rows = await store.read_item_rows(conversation_id, after_seq=None, limit=100, scope=UnrestrictedReads())
     out: list[tuple[str, str]] = []
-    for entry in map(entry_of, rows):
-        if isinstance(entry, PromptEntry | MessageEntry):
-            out.append((entry.kind, entry.text))
-        elif isinstance(entry, ToolCallEntry):
-            out.append((entry.kind, f"{entry.tool_name}:{entry.outcome}"))
+    for item in map(item_of, rows):
+        if isinstance(item, PromptItem | MessageItem):
+            out.append((item.kind, item.text))
+        elif isinstance(item, ToolCallItem):
+            out.append((item.kind, f"{item.tool_name}:{item.outcome}"))
     return out
 
 
@@ -156,7 +155,7 @@ async def test_the_cut_stack_answers_a_prompt_with_a_tool_call_over_the_journal(
 
             # The full stack: the prompt was admitted into the transcript, the tool call and its
             # result were projected by the runner and committed by the journal consumer, and the
-            # streamed message concatenated to its answer. The prompt entry keeps the stub's
+            # streamed message concatenated to its answer. The prompt item keeps the stub's
             # `[tool=echo]` stage direction: the item is materialised from the Console's own
             # `submitted_prompt` row, verbatim — the stub strips directives only from its answer.
             assert await _transcript(session_store, conversation_id) == [

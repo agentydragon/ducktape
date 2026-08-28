@@ -14,13 +14,11 @@ from more_itertools import one
 
 from haku.console.chat_models import ItemStatus
 from haku.console.conversation.conversation_event import TurnAnswered
+from haku.console.conversation.item_reads import FromFrames, Item, MessageItem
 from haku.console.conversation.reads import (
     ChannelAttachment,
-    ConversationEntry,
     FrameRecord,
-    FromFrames,
     HarnessFrameRecord,
-    MessageEntry,
     SessionCursor,
     SessionRecord,
     TurnCursor,
@@ -89,7 +87,7 @@ def _items(result: CallToolResult) -> ItemPage:
     """The page as its own declared model, which also checks that the wire round-trips into it.
 
     `result.data` reconstructs a page from the generated schema and leaves a discriminated union's
-    members as plain dicts, so an entry read off it is untyped either way.
+    members as plain dicts, so an item read off it is untyped either way.
     """
     return ItemPage.model_validate(result.structured_content)
 
@@ -119,8 +117,8 @@ def _frame(seq: int, kind: str = "assistant", payload: dict | None = None) -> Ha
     )
 
 
-def _message(seq: int, *, first_frame_seq: int, last_frame_seq: int | None = None) -> MessageEntry:
-    return MessageEntry(
+def _message(seq: int, *, first_frame_seq: int, last_frame_seq: int | None = None) -> MessageItem:
+    return MessageItem(
         opened_seq=seq,
         closed_seq=seq + 1,
         status=ItemStatus.COMPLETE,
@@ -135,9 +133,9 @@ def _message(seq: int, *, first_frame_seq: int, last_frame_seq: int | None = Non
 class _Reader:
     """A `ConversationReader` over lists, recording how it was queried."""
 
-    def __init__(self, *frames: HarnessFrameRecord, entries: Sequence[ConversationEntry] = (), denies: bool = False):
+    def __init__(self, *frames: HarnessFrameRecord, items: Sequence[Item] = (), denies: bool = False):
         self._frames: list[FrameRecord] = list(frames)
-        self._entries = list(entries)
+        self._items = list(items)
         self._denies = denies
         self.queries: list[dict] = []
         self.session_cursors: list[SessionCursor | None] = []
@@ -190,10 +188,10 @@ class _Reader:
 
     async def read_conversation_items(
         self, conversation_id: UUID, *, cursor: int | None, limit: int, scope: ConversationReadScope
-    ) -> list[ConversationEntry]:
+    ) -> list[Item]:
         self._point_read(scope)
         self.queries.append({"conversation_id": conversation_id, "cursor": cursor, "limit": limit})
-        selected = self._entries if cursor is None else [entry for entry in self._entries if entry.opened_seq >= cursor]
+        selected = self._items if cursor is None else [item for item in self._items if item.opened_seq >= cursor]
         return selected[:limit]
 
 
@@ -271,7 +269,7 @@ async def test_unprofiled_unknown_and_operator_actors_cannot_read_conversations(
 async def test_every_read_carries_the_callers_profile_dag_scope() -> None:
     """The row fence rides on every read: the caller's profile plus its transitive
     `can_read_profiles` closure, computed by the one authorizer Recall also uses."""
-    reader = _Reader(_frame(1), entries=[_message(2, first_frame_seq=1)])
+    reader = _Reader(_frame(1), items=[_message(2, first_frame_seq=1)])
 
     async with Client(_mcp(reader)) as client:
         for tool, arguments in PAGED_TOOLS:
@@ -284,7 +282,7 @@ async def test_every_read_carries_the_callers_profile_dag_scope() -> None:
 
 async def test_a_read_outside_the_scope_is_refused_as_denied() -> None:
     """Loud, not empty: a denied session must not read as an exhausted or absent one."""
-    reader = _Reader(_frame(1), entries=[_message(2, first_frame_seq=1)], denies=True)
+    reader = _Reader(_frame(1), items=[_message(2, first_frame_seq=1)], denies=True)
 
     async with Client(_mcp(reader)) as client:
         for tool, arguments in PAGED_TOOLS[1:]:  # every point read; the listing filters instead
@@ -296,7 +294,7 @@ async def test_a_read_outside_the_scope_is_refused_as_denied() -> None:
 async def test_every_listing_answers_in_the_same_shape() -> None:
     """The point of the surface: one loop reads any of them. A tool that grew its own envelope
     would pass its own test and still break that."""
-    reader = _Reader(_frame(1), entries=[_message(2, first_frame_seq=1)])
+    reader = _Reader(_frame(1), items=[_message(2, first_frame_seq=1)])
 
     async with Client(_mcp(reader)) as client:
         for tool, arguments in PAGED_TOOLS:
@@ -346,7 +344,7 @@ async def test_the_session_cursor_reaches_the_store_and_the_last_page_offers_non
 
 async def test_a_cursor_names_the_first_row_the_page_did_not_return() -> None:
     """Not the last row it did — so it is a position a caller can also arrive at from elsewhere,
-    which is what makes an entry's `first_frame_seq` a cursor as it stands."""
+    which is what makes an item's `first_frame_seq` a cursor as it stands."""
     reader = _Reader(*(_frame(seq) for seq in (1, 2, 3, 4)))
 
     async with Client(_mcp(reader)) as client:
@@ -396,7 +394,7 @@ async def test_the_cursor_reaches_the_store_rather_than_being_filtered_here() ->
 
 
 async def test_a_one_frame_page_is_the_named_frame_whole() -> None:
-    """The exact-frame recipe an entry's provenance hands out: cursor at the frame, `limit=1`."""
+    """The exact-frame recipe an item's provenance hands out: cursor at the frame, `limit=1`."""
     big = _frame(1, payload={"type": "user", "content": "x" * 500_000})
     reader = _Reader(big, _frame(2))
 
@@ -438,41 +436,39 @@ async def test_a_turn_carries_the_range_to_read() -> None:
     assert turn.end == {"outcome": "answered"}
 
 
-async def test_an_item_entry_reads_as_the_conversation_rather_than_the_protocol() -> None:
+async def test_an_item_reads_as_the_conversation_rather_than_the_protocol() -> None:
     """Nothing an MCP caller sees here is `assistant`, a content block or a `tool_use_result`."""
-    reader = _Reader(entries=[_message(7, first_frame_seq=3, last_frame_seq=5)])
+    reader = _Reader(items=[_message(7, first_frame_seq=3, last_frame_seq=5)])
 
     async with Client(_mcp(reader)) as client:
         result = await _call(client, "read_conversation_items", {"conversation_id": str(CONVERSATION)})
 
-    entry = one(_items(result).items)
-    assert isinstance(entry, MessageEntry)
-    assert entry.text == "answer 7"
-    assert entry.provenance == FromFrames(session_id=SESSION, first_frame_seq=3, last_frame_seq=5)
+    item = one(_items(result).items)
+    assert isinstance(item, MessageItem)
+    assert item.text == "answer 7"
+    assert item.provenance == FromFrames(session_id=SESSION, first_frame_seq=3, last_frame_seq=5)
 
 
-async def test_an_entrys_provenance_is_a_frame_read_with_no_arithmetic() -> None:
+async def test_an_items_provenance_is_a_frame_read_with_no_arithmetic() -> None:
     """The reason provenance exists: appeal a normalization to the frames behind it. It names the
     session because the conversation spans replaced sessions, and an exclusive cursor would need a
     `- 1` here — an off-by-one that reads the wrong frame while looking right."""
-    reader = _Reader(_frame(3), _frame(4), entries=[_message(7, first_frame_seq=3, last_frame_seq=4)])
+    reader = _Reader(_frame(3), _frame(4), items=[_message(7, first_frame_seq=3, last_frame_seq=4)])
 
     async with Client(_mcp(reader)) as client:
-        entry = one(
-            _items(await _call(client, "read_conversation_items", {"conversation_id": str(CONVERSATION)})).items
-        )
-        assert isinstance(entry.provenance, FromFrames)
+        item = one(_items(await _call(client, "read_conversation_items", {"conversation_id": str(CONVERSATION)})).items)
+        assert isinstance(item.provenance, FromFrames)
         span = await _call(
             client,
             "read_session_frames",
-            {"session_id": str(entry.provenance.session_id), "cursor": entry.provenance.first_frame_seq},
+            {"session_id": str(item.provenance.session_id), "cursor": item.provenance.first_frame_seq},
         )
 
     assert [frame.frame_seq for frame in _frames(span).items] == [3, 4]
 
 
 async def test_an_item_cursor_resumes_where_the_page_stopped() -> None:
-    reader = _Reader(entries=[_message(seq, first_frame_seq=seq) for seq in (2, 4, 6, 8)])
+    reader = _Reader(items=[_message(seq, first_frame_seq=seq) for seq in (2, 4, 6, 8)])
 
     async with Client(_mcp(reader)) as client:
         first = await _call(client, "read_conversation_items", {"conversation_id": str(CONVERSATION), "limit": 2})
@@ -480,9 +476,9 @@ async def test_an_item_cursor_resumes_where_the_page_stopped() -> None:
             client, "read_conversation_items", {"conversation_id": str(CONVERSATION), "limit": 2, "cursor": 6}
         )
 
-    assert [entry.opened_seq for entry in _items(first).items] == [2, 4]
+    assert [item.opened_seq for item in _items(first).items] == [2, 4]
     assert _items(first).next_cursor == 6
-    assert [entry.opened_seq for entry in _items(second).items] == [6, 8]
+    assert [item.opened_seq for item in _items(second).items] == [6, 8]
     assert _items(second).next_cursor is None
 
 
