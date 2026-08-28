@@ -239,6 +239,13 @@
       "filename": "reverse_engineer.skill"
     },
     {
+      "name": "semantic_branch_pruner",
+      "pkg": "skill-semantic_branch_pruner",
+      "target": "//skills/semantic_branch_pruner:semantic_branch_pruner_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/skills/semantic_branch_pruner/semantic_branch_pruner.skill",
+      "filename": "semantic_branch_pruner.skill"
+    },
+    {
       "name": "session_logs",
       "pkg": "skill-session_logs",
       "target": "//skills/session_logs:session_logs_skill",
