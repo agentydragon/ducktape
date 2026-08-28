@@ -334,6 +334,9 @@ rec {
   # Claude Desktop (GUI app): Anthropic's Electron desktop client, from the
   # official apt repo .deb. Distinct from Claude Code (the CLI).
   claude-desktop = pkgs.callPackage ./claude-desktop.nix { };
+  # ChatGPT desktop app (GUI app): OpenAI's Linux preview with Codex, from the
+  # official versioned Debian artifact.
+  chatgpt = pkgs.callPackage ./chatgpt.nix { };
   # fastmcp-slim owns the client CLI (`fastmcp call|list <url> --auth <bearer>`);
   # expose it as a standalone app for agent closures (flake.nix `.#agent-haku`).
   # The root metapackage remains the dependency consumed by the ducktape wheel.

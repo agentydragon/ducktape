@@ -291,6 +291,7 @@
     # Options: gnomeExtensions.syncthing-indicator, gnomeExtensions.syncthing-toggle, qsyncthingtray
     ducktapePackages.bebas-neue-font
     ducktapePackages.claude-desktop
+    ducktapePackages.chatgpt
     pkgs.inkscape
     pkgs.kicad
     pkgs.openscad

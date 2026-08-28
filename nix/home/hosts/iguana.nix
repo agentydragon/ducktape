@@ -25,7 +25,10 @@
     sopsFile = ../../../secrets/hosts/iguana-attic.yaml;
   };
 
-  home.packages = [ ducktapePackages.claude-desktop ];
+  home.packages = [
+    ducktapePackages.claude-desktop
+    ducktapePackages.chatgpt
+  ];
 
   # ActivityWatch capture + import into the central server. The importer folds this
   # host's buckets into iguana::<bucket> over the bearer-gated write route, using the
