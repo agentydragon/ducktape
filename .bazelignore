@@ -23,6 +23,10 @@ cluster/.direnv
 wt/.direnv
 props/.direnv
 
+# bb remote / bbr artifact downloads. Building a py_library materializes its
+# .py srcs here, which Gazelle would otherwise index as stray modules.
+bb-out
+
 # Trilium Notes extensions - deps not in main requirements
 trilium
 

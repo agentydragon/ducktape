@@ -342,6 +342,9 @@
         ducktapePkgs.bbapi
         ducktapePkgs.bbr
         ducktapePkgs.ducktape-git-hooks
+        # Repo-configured Gazelle; `gazelle` / `gazelle -mode=diff` from a
+        # checkout regenerate Python BUILD files without Bazel.
+        ducktapePkgs.gazelle
         ducktapePkgs.skills
         # Dev tools
         pkgs.pre-commit

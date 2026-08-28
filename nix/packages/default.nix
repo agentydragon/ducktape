@@ -345,6 +345,16 @@ rec {
   bb = pkgs.callPackage ./bb.nix { inherit artifacts; };
   telegram-desktop = pkgs.callPackage ./telegram-desktop.nix { };
 
+  # Released //devinfra:gazelle_python_binary — the same binary
+  # `bb run //devinfra:gazelle` builds (repo plugin config compiled in).
+  # On PATH so BUILD regeneration and `-mode=diff` need no Bazel; it reads
+  # devinfra/gazelle_python.yaml and the BUILD directives from the tree.
+  gazelle = mkBinaryArtifact {
+    pname = "gazelle";
+    src = artifacts.gazelle;
+    description = "Gazelle BUILD generator with ducktape's Python plugin";
+  };
+
   bbapi = pkgs.stdenv.mkDerivation {
     pname = "bbapi";
     version = "latest";

@@ -6,6 +6,12 @@ unresolvable import) is the drift check. Code-shape conventions (per-file librar
 `main_module` binaries, test-glob reservation, the conftest chain) live in
 <../../STYLE.md> § Gazelle.
 
+The same binary is released (the `gazelle` pin in <../../nix/artifact-pins.json>) and
+the devshell puts it on PATH: `gazelle` from anywhere in a checkout regenerates BUILD
+files, `gazelle -mode=diff` checks drift, no Bazel involved. The plugin and patch are
+compiled in; the manifest (<../gazelle_python.yaml>) and directives are read from the
+tree.
+
 ## Plugin and patch
 
 `rules_python_gazelle_plugin` 2.3.2 under per-file generation mode, plus
