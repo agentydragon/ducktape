@@ -24,6 +24,8 @@ spec:
       name: manifold-mcp
       namespace: manifold-mcp
   dependsOn:
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux
     - name: manifold-mcp-namespace

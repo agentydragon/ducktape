@@ -1,9 +1,9 @@
-# Build and push the Tana MCP Desktop image to GHCR.
+# Build and push the Tana MCP Desktop image to the Forgejo OCI registry.
 name: Tana MCP Image
 
 on:
   push:
-    branches: [main, devel]
+    branches: [devel]
     paths: ["tana/mcp_server/**"]
   workflow_dispatch:
   workflow_call:
@@ -14,19 +14,41 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   build-and-push:
     name: Build and Push
+    if: github.ref_name == 'devel'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      IMAGE: git.allegedly.works/ducktape-ci/tana-desktop
     steps:
       - uses: actions/checkout@v7
 
-      - uses: ./.github/actions/ghcr-build-push
+      - uses: ./.github/actions/setup-ci-secrets
         with:
-          image: ghcr.io/${{ github.repository_owner }}/tana-desktop
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Compute tag
+        id: meta
+        shell: bash
+        run: echo "pin_tag=devel-$(date -u +%Y%m%d%H%M%S)-${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Forgejo registry
+        shell: bash
+        run: echo "$FORGEJO_IMAGES_PASSWORD" | docker login git.allegedly.works -u "$FORGEJO_IMAGES_USERNAME" --password-stdin
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
           context: tana/mcp_server
-          cache_from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/tana-desktop:buildcache
-          cache_to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/tana-desktop:buildcache,mode=max
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:${{ steps.meta.outputs.pin_tag }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max

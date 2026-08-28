@@ -18,6 +18,8 @@ spec:
       labels:
         app.kubernetes.io/name: plaid-db-mcp
     spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
       automountServiceAccountToken: false
       securityContext:
         seccompProfile:
@@ -66,7 +68,7 @@ spec:
             initialDelaySeconds: 20
             periodSeconds: 20
         - name: facade
-          image: ghcr.io/agentydragon/mcp-oauth-facade:devel-20260828032552-24fd3de # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
+          image: git.allegedly.works/ducktape-ci/mcp-oauth-facade:devel-20260828032552-24fd3de # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
           imagePullPolicy: Always
           ports:
             - name: http

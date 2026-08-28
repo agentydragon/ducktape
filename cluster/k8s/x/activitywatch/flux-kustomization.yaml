@@ -27,5 +27,7 @@ spec:
   # seaweedfs sync-inbox are gone -- so no seaweedfs-csi dependency, which otherwise
   # blocks the revive whenever seaweedfs-csi is degraded.
   dependsOn:
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: local-path-provisioner
       namespace: ducktape-flux

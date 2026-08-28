@@ -4,5 +4,7 @@ metadata:
   name: tana-firebase-resigner
   namespace: flux-system
 spec:
-  image: ghcr.io/agentydragon/tana-firebase-resigner
+  image: git.allegedly.works/ducktape-ci/tana-firebase-resigner
   interval: 5m
+  secretRef:
+    name: forgejo-images-creds

@@ -19,6 +19,8 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: haku-mailbox-namespace
       namespace: ducktape-flux
     - name: haku-mailbox-db

@@ -1,6 +1,34 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
+  - aiquota-api-image-repository.yaml
+  - aiquota-api-image-policy.yaml
+  - airlock-image-repository.yaml
+  - airlock-image-policy.yaml
+  - aw-server-image-repository.yaml
+  - aw-server-image-policy.yaml
+  - grocy-mcp-oidc-server-image-repository.yaml
+  - grocy-mcp-oidc-server-image-policy.yaml
+  - loki-read-proxy-image-repository.yaml
+  - loki-read-proxy-image-policy.yaml
+  - manifold-mcp-server-image-repository.yaml
+  - manifold-mcp-server-image-policy.yaml
+  - mcp-oauth-facade-image-repository.yaml
+  - mcp-oauth-facade-image-policy.yaml
+  - plaid-mcp-server-image-repository.yaml
+  - plaid-mcp-server-image-policy.yaml
+  - postscanmail-mcp-server-image-repository.yaml
+  - postscanmail-mcp-server-image-policy.yaml
+  - stalwart-image-repository.yaml
+  - stalwart-image-policy.yaml
+  - study-casino-image-repository.yaml
+  - study-casino-image-policy.yaml
+  - tana-firebase-resigner-image-repository.yaml
+  - tana-firebase-resigner-image-policy.yaml
+  - tana-litellm-proxy-image-repository.yaml
+  - tana-litellm-proxy-image-policy.yaml
+  - tana-mcp-image-repository.yaml
+  - tana-mcp-image-policy.yaml
   - agent-workspace-image-repository.yaml
   - agent-workspace-image-policy.yaml
   - haku-sandbox-image-repository.yaml

@@ -24,6 +24,8 @@ spec:
       name: postscanmail-mcp
       namespace: postscanmail-mcp
   dependsOn:
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux
     - name: postscanmail-mcp-namespace

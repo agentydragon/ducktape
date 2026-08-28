@@ -1,8 +1,10 @@
 apiVersion: image.toolkit.fluxcd.io/v1beta2
 kind: ImageRepository
 metadata:
-  name: grocy-mcp-oidc-server
+  name: aiquota-api
   namespace: flux-system
 spec:
-  image: ghcr.io/agentydragon/grocy-mcp
+  image: git.allegedly.works/ducktape-ci/aiquota-api
   interval: 5m
+  secretRef:
+    name: forgejo-images-creds

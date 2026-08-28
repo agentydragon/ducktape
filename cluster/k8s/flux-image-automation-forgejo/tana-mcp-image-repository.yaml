@@ -1,8 +1,10 @@
 apiVersion: image.toolkit.fluxcd.io/v1beta2
 kind: ImageRepository
 metadata:
-  name: manifold-mcp-server
+  name: tana-mcp
   namespace: flux-system
 spec:
-  image: ghcr.io/agentydragon/manifold-mcp-server
+  image: git.allegedly.works/ducktape-ci/tana-desktop
   interval: 5m
+  secretRef:
+    name: forgejo-images-creds

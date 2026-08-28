@@ -17,6 +17,8 @@ spec:
       labels:
         app.kubernetes.io/name: loki-read-proxy
     spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
@@ -27,7 +29,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: proxy
-          image: ghcr.io/agentydragon/loki-read-proxy:devel-20260827014720-8427d07 # {"$imagepolicy": "flux-system:loki-read-proxy"}
+          image: git.allegedly.works/ducktape-ci/loki-read-proxy:devel-20260827014720-8427d07 # {"$imagepolicy": "flux-system:loki-read-proxy"}
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false

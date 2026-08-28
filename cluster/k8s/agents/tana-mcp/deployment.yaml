@@ -19,13 +19,15 @@ spec:
       labels:
         app.kubernetes.io/name: tana-mcp
     spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       serviceAccountName: tana-firebase-resigner
       containers:
         # Tana Desktop running under Xvfb with noVNC for graphical admin access
         - name: tana-desktop
-          image: ghcr.io/agentydragon/tana-desktop:devel-20260603203137-5af6401 # {"$imagepolicy": "flux-system:tana-mcp"}
+          image: git.allegedly.works/ducktape-ci/tana-desktop:devel-20260603203137-5af6401 # {"$imagepolicy": "flux-system:tana-mcp"}
           ports:
             - name: mcp
               containerPort: 8262
@@ -113,7 +115,7 @@ spec:
         # receiver as a tana://auth deep-link. See
         # cluster/docs/plans/tana_mcp_sane_signin.md.
         - name: firebase-resigner
-          image: ghcr.io/agentydragon/tana-firebase-resigner:devel-20260827015327-54384c2 # {"$imagepolicy": "flux-system:tana-firebase-resigner"}
+          image: git.allegedly.works/ducktape-ci/tana-firebase-resigner:devel-20260827015327-54384c2 # {"$imagepolicy": "flux-system:tana-firebase-resigner"}
           env:
             - name: FIREBASE_API_KEY
               # Tana web bundle's REACT_APP_FIREBASE_API_KEY for project

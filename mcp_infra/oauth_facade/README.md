@@ -30,7 +30,7 @@ MCP_FACADE_UPSTREAM__BEARER_TOKEN=... # http only, optional
 MCP_FACADE_UPSTREAM__COMMAND=["..."]  # stdio only (JSON list)
 ```
 
-The image binary is at `//x/mcp_oauth_facade:image` (`ghcr.io/agentydragon/mcp-oauth-facade`).
+The image binary is at `//x/mcp_oauth_facade:image` (`git.allegedly.works/ducktape-ci/mcp-oauth-facade`).
 
 ## Health, readiness, and metrics
 

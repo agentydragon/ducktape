@@ -18,13 +18,15 @@ spec:
       labels:
         app.kubernetes.io/name: plaid-mcp
     spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
       serviceAccountName: plaid-mcp
       securityContext:
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: plaid-web
-          image: ghcr.io/agentydragon/plaid-mcp-server:devel-20260828051312-b968fc8 # {"$imagepolicy": "flux-system:plaid-mcp-server"}
+          image: git.allegedly.works/ducktape-ci/plaid-mcp-server:devel-20260828051312-b968fc8 # {"$imagepolicy": "flux-system:plaid-mcp-server"}
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false

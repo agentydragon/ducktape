@@ -23,4 +23,6 @@ spec:
       kind: Deployment
       name: tana-mcp
       namespace: tana-mcp
-  dependsOn: []
+  dependsOn:
+    - name: forgejo-images
+      namespace: ducktape-flux

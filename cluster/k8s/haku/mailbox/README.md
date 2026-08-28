@@ -6,11 +6,11 @@ Haku (`haku@allegedly.works`) over an authenticated channel — contract in
 
 ## Layout
 
-| Path     | Role                                                                                               |
-| -------- | -------------------------------------------------------------------------------------------------- |
-| `db/`    | CNPG Postgres (OVH-HA profile) — Stalwart's data/blob/search/settings store                        |
-| `app/`   | Declarative plan + init reconciliation, production server, certificate, Services, and HTTPRoute    |
-| `image/` | Bazel repack of upstream Stalwart with `stalwart-cli` layered in (`ghcr.io/agentydragon/stalwart`) |
+| Path     | Role                                                                                                          |
+| -------- | ------------------------------------------------------------------------------------------------------------- |
+| `db/`    | CNPG Postgres (OVH-HA profile) — Stalwart's data/blob/search/settings store                                   |
+| `app/`   | Declarative plan + init reconciliation, production server, certificate, Services, and HTTPRoute               |
+| `image/` | Bazel repack of upstream Stalwart with `stalwart-cli` layered in (`git.allegedly.works/ducktape-ci/stalwart`) |
 
 ## Configuration model
 
@@ -61,7 +61,7 @@ deliberately tiny (its documented declarative-deployments workflow):
   ships the CLI only as a distroless image, not as an executable to layer into
   another container) plus the
   capability-free official server release binary. Published as
-  `ghcr.io/agentydragon/stalwart` by the push-images workflow, tag tracked
+  `git.allegedly.works/ducktape-ci/stalwart` by the push-images workflow, tag tracked
   by Flux image automation. Upgrading Stalwart = bumping the `stalwart`
   `oci.pull` (tag + digest) and, on CLI releases, the `stalwart_cli`
   `http_archive` sha in `MODULE.bazel`.

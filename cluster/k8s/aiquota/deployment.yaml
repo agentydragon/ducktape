@@ -18,6 +18,8 @@ spec:
       labels:
         app.kubernetes.io/name: aiquota
     spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
       automountServiceAccountToken: false
       enableServiceLinks: false
       securityContext:
@@ -28,7 +30,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: aiquota-api
-          image: ghcr.io/agentydragon/aiquota-api:devel-20260828024220-43df4c6 # {"$imagepolicy": "flux-system:aiquota-api"}
+          image: git.allegedly.works/ducktape-ci/aiquota-api:devel-20260828024220-43df4c6 # {"$imagepolicy": "flux-system:aiquota-api"}
           imagePullPolicy: Always
           ports:
             - name: http

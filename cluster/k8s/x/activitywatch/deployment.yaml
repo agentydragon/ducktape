@@ -19,6 +19,8 @@ spec:
       labels:
         app.kubernetes.io/name: activitywatch
     spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
       # No Kubernetes API access; don't mount a SA token.
       automountServiceAccountToken: false
       securityContext:
@@ -27,7 +29,7 @@ spec:
         topology.kubernetes.io/region: proxmox
       containers:
         - name: aw-server
-          image: ghcr.io/agentydragon/aw-server:devel-20260817024836-e6fd634
+          image: git.allegedly.works/ducktape-ci/aw-server:devel-20260817024836-e6fd634 # {"$imagepolicy": "flux-system:aw-server"}
           command:
             - /usr/local/bin/aw-server
             - --host

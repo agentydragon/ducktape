@@ -9,5 +9,7 @@ metadata:
       (//cluster/k8s/haku/mailbox/image), consumed by the haku-mailbox
       Deployment.
 spec:
-  image: ghcr.io/agentydragon/stalwart
+  image: git.allegedly.works/ducktape-ci/stalwart
   interval: 5m
+  secretRef:
+    name: forgejo-images-creds

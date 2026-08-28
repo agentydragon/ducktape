@@ -21,6 +21,8 @@ spec:
       name: study-casino
       namespace: study-casino
   dependsOn:
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux
     - name: study-casino-namespace

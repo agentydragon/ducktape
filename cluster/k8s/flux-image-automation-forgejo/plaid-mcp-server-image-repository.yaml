@@ -4,5 +4,7 @@ metadata:
   name: plaid-mcp-server
   namespace: flux-system
 spec:
-  image: ghcr.io/agentydragon/plaid-mcp-server
+  image: git.allegedly.works/ducktape-ci/plaid-mcp-server
   interval: 5m
+  secretRef:
+    name: forgejo-images-creds

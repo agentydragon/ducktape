@@ -24,6 +24,8 @@ spec:
       name: plaid-mcp
       namespace: plaid-mcp
   dependsOn:
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: plaid-mcp-namespace
       namespace: ducktape-flux
     - name: plaid-mcp-db

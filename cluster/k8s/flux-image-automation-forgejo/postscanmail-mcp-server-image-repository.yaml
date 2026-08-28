@@ -4,5 +4,7 @@ metadata:
   name: postscanmail-mcp-server
   namespace: flux-system
 spec:
-  image: ghcr.io/agentydragon/postscanmail-mcp-server
+  image: git.allegedly.works/ducktape-ci/postscanmail-mcp-server
   interval: 5m
+  secretRef:
+    name: forgejo-images-creds

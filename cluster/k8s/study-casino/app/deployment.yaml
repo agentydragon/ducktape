@@ -19,11 +19,13 @@ spec:
       labels:
         app.kubernetes.io/name: study-casino
     spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
       nodeSelector:
         topology.kubernetes.io/region: hil
       containers:
         - name: app
-          image: ghcr.io/agentydragon/study-casino:devel-20260827062954-c77d12b # {"$imagepolicy": "flux-system:study-casino"}
+          image: git.allegedly.works/ducktape-ci/study-casino:devel-20260827062954-c77d12b # {"$imagepolicy": "flux-system:study-casino"}
           imagePullPolicy: Always
           ports:
             - name: http

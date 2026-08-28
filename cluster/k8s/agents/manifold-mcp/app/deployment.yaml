@@ -18,11 +18,13 @@ spec:
       labels:
         app.kubernetes.io/name: manifold-mcp
     spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
       # No Kubernetes API access; don't mount a SA token.
       automountServiceAccountToken: false
       containers:
         - name: manifold-mcp-server
-          image: ghcr.io/agentydragon/manifold-mcp-server:devel-20260827074237-56f146a # {"$imagepolicy": "flux-system:manifold-mcp-server"}
+          image: git.allegedly.works/ducktape-ci/manifold-mcp-server:devel-20260827074237-56f146a # {"$imagepolicy": "flux-system:manifold-mcp-server"}
           imagePullPolicy: Always
           ports:
             - name: bridge
@@ -49,7 +51,7 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 20
         - name: facade
-          image: ghcr.io/agentydragon/mcp-oauth-facade:devel-20260828032552-24fd3de # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
+          image: git.allegedly.works/ducktape-ci/mcp-oauth-facade:devel-20260828032552-24fd3de # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
           imagePullPolicy: Always
           ports:
             - name: http

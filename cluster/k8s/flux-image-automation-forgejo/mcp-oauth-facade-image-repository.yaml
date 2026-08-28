@@ -4,5 +4,7 @@ metadata:
   name: mcp-oauth-facade
   namespace: flux-system
 spec:
-  image: ghcr.io/agentydragon/mcp-oauth-facade
+  image: git.allegedly.works/ducktape-ci/mcp-oauth-facade
   interval: 5m
+  secretRef:
+    name: forgejo-images-creds

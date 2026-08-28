@@ -18,6 +18,8 @@ spec:
       labels:
         app.kubernetes.io/name: ha-mcp
     spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
       automountServiceAccountToken: false
       containers:
         - name: ha-mcp
@@ -71,7 +73,7 @@ spec:
             - name: data
               mountPath: /data
         - name: facade
-          image: ghcr.io/agentydragon/mcp-oauth-facade:devel-20260828032552-24fd3de # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
+          image: git.allegedly.works/ducktape-ci/mcp-oauth-facade:devel-20260828032552-24fd3de # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
           imagePullPolicy: Always
           ports:
             - name: http

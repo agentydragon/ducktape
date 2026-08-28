@@ -17,11 +17,13 @@ spec:
       labels:
         app.kubernetes.io/name: tana-litellm
     spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 90
       containers:
         - name: litellm
-          image: ghcr.io/agentydragon/tana-litellm-proxy:devel-20260827014141-8427d07 # {"$imagepolicy": "flux-system:tana-litellm-proxy"}
+          image: git.allegedly.works/ducktape-ci/tana-litellm-proxy:devel-20260827014141-8427d07 # {"$imagepolicy": "flux-system:tana-litellm-proxy"}
           imagePullPolicy: Always
           args: ["--config", "/etc/litellm/config.yaml"]
           ports:

@@ -28,6 +28,8 @@ spec:
       labels:
         app.kubernetes.io/name: haku-mailbox
     spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
       automountServiceAccountToken: false
       nodeSelector:
         # OVH-only resilience: inbound mail must not depend on Proxmox, and the
@@ -41,7 +43,7 @@ spec:
         fsGroup: 1000
       initContainers:
         - name: initialize
-          image: ghcr.io/agentydragon/stalwart:devel-20260827015851-47bf7a1 # {"$imagepolicy": "flux-system:stalwart"}
+          image: git.allegedly.works/ducktape-ci/stalwart:devel-20260827015851-47bf7a1 # {"$imagepolicy": "flux-system:stalwart"}
           command: ["/bin/sh", "/etc/stalwart/initialize.sh"]
           terminationMessagePolicy: FallbackToLogsOnError
           env:
@@ -85,7 +87,7 @@ spec:
           # only as a distroless image, unusable from the pod. Published by
           # the push-images workflow; Flux image automation tracks the tag
           # (the initial placeholder resolves after the first devel push).
-          image: ghcr.io/agentydragon/stalwart:devel-20260827015851-47bf7a1 # {"$imagepolicy": "flux-system:stalwart"}
+          image: git.allegedly.works/ducktape-ci/stalwart:devel-20260827015851-47bf7a1 # {"$imagepolicy": "flux-system:stalwart"}
           command: ["/usr/local/bin/stalwart", "--config", "/etc/stalwart/config.json"]
           # Surface crash output in pod status (.lastState.terminated.message):
           # pods/log in this namespace is RBAC-fenced to the operator, but pod

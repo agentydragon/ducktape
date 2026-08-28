@@ -4,5 +4,7 @@ metadata:
   name: loki-read-proxy
   namespace: flux-system
 spec:
-  image: ghcr.io/agentydragon/loki-read-proxy
+  image: git.allegedly.works/ducktape-ci/loki-read-proxy
   interval: 5m
+  secretRef:
+    name: forgejo-images-creds

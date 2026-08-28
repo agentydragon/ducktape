@@ -16,6 +16,8 @@ spec:
   prune: true
   wait: true
   dependsOn:
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux
     - name: plaid-mcp-db

@@ -20,12 +20,14 @@ spec:
         app.kubernetes.io/name: airlock
         app.kubernetes.io/component: server
     spec:
+      imagePullSecrets:
+        - name: forgejo-images-creds
       serviceAccountName: airlock
       securityContext:
         fsGroup: 1000
       containers:
         - name: airlock
-          image: ghcr.io/agentydragon/airlock:devel-20260827013720-8427d07 # {"$imagepolicy": "flux-system:airlock"}
+          image: git.allegedly.works/ducktape-ci/airlock:devel-20260827013720-8427d07 # {"$imagepolicy": "flux-system:airlock"}
           imagePullPolicy: Always
           ports:
             - name: http

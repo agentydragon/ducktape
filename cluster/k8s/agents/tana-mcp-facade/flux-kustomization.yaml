@@ -21,6 +21,8 @@ spec:
       name: tana-mcp-facade
       namespace: tana-mcp
   dependsOn:
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux
     - name: tana-mcp

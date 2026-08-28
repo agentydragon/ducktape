@@ -1,8 +1,10 @@
 apiVersion: image.toolkit.fluxcd.io/v1beta2
 kind: ImageRepository
 metadata:
-  name: tana-mcp
+  name: airlock
   namespace: flux-system
 spec:
-  image: ghcr.io/agentydragon/tana-desktop
+  image: git.allegedly.works/ducktape-ci/airlock
   interval: 5m
+  secretRef:
+    name: forgejo-images-creds
