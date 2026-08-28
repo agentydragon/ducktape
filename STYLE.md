@@ -300,6 +300,33 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
     config pattern). Exact
     wire-format pins are valid only when an external contract or still-live consumer
     requires that value; name that contract in the test.
+- **Test value: what must break for this to fail?** Judge every test by that
+  question. If the answer is bread-and-butter behavior of a standard library —
+  pydantic parsing a plain `foo: int`, a StrEnum equalling its string, a
+  yaml-load echo — or the test restates the declarations it exercises (field
+  aliases, a default compared against the same imported constant), delete it:
+  libraries' documented basics get no tests here; our choices and edges do.
+  - **Bulk is the multiplier**: a short trivial test is a minor sin; a file
+    full of them, or 150 lines of JSON `model_validate`d onto a plain model, is
+    the real cost. A cheap one-liner may stay on judgment.
+  - **Library spikes are not trivia**: where a library's usage had to be
+    figured out (sharp edges, non-obvious wiring), a test pinning the working
+    pattern is executable documentation CI keeps honest — keep it, and say so
+    in its docstring. The axis is triviality of the usage, not the presence of
+    a library.
+  - **Change-detector guarding a real constraint → comment at the
+    declaration**: when a test's only enforcement is "the editor must update a
+    mirrored literal in a second file", move the constraint onto the
+    declaration itself (append-only, values persisted, edits need a migration)
+    and delete the test. A relation against a second live artifact (the running
+    database's enum, a generated config) stays a test.
+  - **Pin defaults where they act**: assert the boundary artifact carries the
+    value, as literals (the token request asks for the full scope list) — not
+    `field default == the same imported constant`, which passes even when the
+    constant changes.
+  - **Anchors and guards inherit their unit's value**: a positive anchor keeps
+    its negatives from passing vacuously; an anti-vacuity assert keeps an
+    invariant honest. Judge the unit, not the line.
 - **No lint silencing without approval**: no ignore rules or per-line silencing unless
   explicitly approved.
 - **Use pre-commit**: `pre-commit run --all-files` over invoking individual tools.
