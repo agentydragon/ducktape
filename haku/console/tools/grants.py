@@ -34,6 +34,12 @@ GRANTS_SERVER_ID = "grants"
 
 GrantDomain = Literal["kubernetes", "http"]
 
+# The declared read scope for `list_grants`. Only `self` (the caller's own grants) is served today,
+# and it is the value the argument-conditional auto-approval policy keys on; a broader nameable
+# principal is an Operator-reviewed follow-up. Absent means the (reserved) broader read, which stays
+# manual.
+GrantReadScope = Literal["self"]
+
 
 class KubernetesGrantRequest(BaseModel):
     """A Kubernetes grant to create: the ``kubernetes`` domain's scope/rule coverage."""
@@ -136,7 +142,14 @@ class GrantsToolsService:
         )
         return [HttpGrantView(grant=grant) for grant in http_grants]
 
-    async def list_grants(self, *, context: McpExecutionContext) -> list[GrantView]:
+    async def list_grants(
+        self, *, context: McpExecutionContext, principal: GrantReadScope | None = None
+    ) -> list[GrantView]:
+        # The read is actor-scoped regardless: `list_applicable_grants` filters to the caller's own
+        # grants via the trusted request principal. `principal` is the caller's declared scope,
+        # carried for argument-conditional auto-approval; only `self` is served today and it equals
+        # that own-scoped read.
+        del principal
         kubernetes_grants = await self._kubernetes.list_applicable_grants(request_principal=context.request_principal)
         http_grants = await self._http.list_applicable_grants(request_principal=context.request_principal)
         return [
@@ -260,8 +273,19 @@ def build_mcp(service: GrantsToolsService) -> FastMCP:
         )
 
     @mcp.tool
-    async def list_grants(context: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY) -> list[GrantView]:
-        return await service.list_grants(context=context)
+    async def list_grants(
+        principal: Annotated[
+            GrantReadScope | None,
+            Field(
+                description=(
+                    "Read scope. 'self' returns only this Agent's own grants (the only scope served "
+                    "today) and is the click-free path; omit it for the Operator-reviewed broader read."
+                )
+            ),
+        ] = None,
+        context: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
+    ) -> list[GrantView]:
+        return await service.list_grants(context=context, principal=principal)
 
     @mcp.tool
     async def get_grant(

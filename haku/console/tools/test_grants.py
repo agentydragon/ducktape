@@ -238,6 +238,10 @@ def test_server_exposes_exact_stable_tool_set_without_context_argument(console: 
         assert "context" not in tool.inputSchema.get("properties", {})
     assert set(tools["create_grant"].inputSchema["properties"]) == {"grants", "duration_seconds", "applies_to"}
     assert tools["create_grant"].inputSchema["properties"]["applies_to"]["default"] == "agent"
+    # `list_grants` carries only the optional own-scope declaration; `self` is the sole value.
+    assert set(tools["list_grants"].inputSchema["properties"]) == {"principal"}
+    principal_schema = tools["list_grants"].inputSchema["properties"]["principal"]
+    assert "self" in {branch.get("const") for branch in principal_schema["anyOf"]}
     assert set(tools["get_grant"].inputSchema["properties"]) == {"domain", "grant_id"}
     assert set(tools["release_grants"].inputSchema["properties"]) == {"domain", "grant_ids", "reason"}
     assert set(tools["revoke_grants"].inputSchema["properties"]) == {"domain", "owner_agent_id", "grant_ids", "reason"}
@@ -245,6 +249,25 @@ def test_server_exposes_exact_stable_tool_set_without_context_argument(console: 
     # The create payload discriminates the two domains' capability specs by `domain`.
     branches = tools["create_grant"].inputSchema["properties"]["grants"]["items"]["oneOf"]
     assert {branch["properties"]["domain"]["const"] for branch in branches} == {"kubernetes", "http"}
+
+
+def test_list_grants_is_actor_scoped_under_either_principal_declaration(console: _Console) -> None:
+    context = console.agent_context()
+
+    async def exercise() -> None:
+        (view,) = await console.service.create_grants(
+            context=context,
+            requests=[_kubernetes(_K8S_SPEC)],
+            duration_seconds=600,
+            applies_to=GrantPrincipalKind.AGENT,
+        )
+        # `principal=self` and the omitted (reserved broader) read both return only the caller's own
+        # grants today — the service is actor-scoped regardless; the scope arg only gates auto-approval.
+        for principal in ("self", None):
+            listed = await console.service.list_grants(context=context, principal=principal)
+            assert [item.grant.grant_id for item in listed] == [view.grant.grant_id]
+
+    console.call(exercise)
 
 
 def test_kubernetes_can_i_rides_the_grants_server(console: _Console) -> None:
