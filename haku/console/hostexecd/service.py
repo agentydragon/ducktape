@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.config import NodeDaemonsConfig
 from haku.console.database_schema import NodeDaemonExecution, NodeDaemonPresence
-from haku.console.node_daemon_models import NodeDaemonExecutionStatus, NodeDaemonPresenceStatus
+from haku.console.hostexecd.models import ExecutionStatus, PresenceStatus
 
 machine_router = APIRouter(prefix="/api/node-daemons/v1", tags=["node-daemons-machine"])
 operator_router = APIRouter(prefix="/api/node-daemons", tags=["node-daemons"])
@@ -89,7 +89,7 @@ class ExecutionResultRequest(LeaseRequest):
 class DaemonStatus(BaseModel):
     daemon_id: str
     display_name: str
-    status: NodeDaemonPresenceStatus
+    status: PresenceStatus
     last_heartbeat_at: datetime.datetime | None
     version: str | None
     backends: list[str]
@@ -106,7 +106,7 @@ class _DaemonCredential:
     fingerprint: bytes
 
 
-class NodeDaemonService:
+class Service:
     def __init__(self, sessions: async_sessionmaker[AsyncSession], config: NodeDaemonsConfig) -> None:
         self._sessions = sessions
         self.config = config
@@ -154,10 +154,10 @@ class NodeDaemonService:
                         update(NodeDaemonExecution)
                         .where(
                             NodeDaemonExecution.daemon_id == daemon_id,
-                            NodeDaemonExecution.status == NodeDaemonExecutionStatus.CLAIMED,
+                            NodeDaemonExecution.status == ExecutionStatus.CLAIMED,
                         )
                         .values(
-                            status=NodeDaemonExecutionStatus.FAILED,
+                            status=ExecutionStatus.FAILED,
                             error="daemon process replaced; execution outcome unknown",
                             completed_at=now,
                         )
@@ -176,25 +176,19 @@ class NodeDaemonService:
         await session.execute(
             update(NodeDaemonExecution)
             .where(
-                NodeDaemonExecution.status == NodeDaemonExecutionStatus.PENDING,
-                NodeDaemonExecution.dispatch_expires_at <= now,
+                NodeDaemonExecution.status == ExecutionStatus.PENDING, NodeDaemonExecution.dispatch_expires_at <= now
             )
             .values(
-                status=NodeDaemonExecutionStatus.FAILED,
+                status=ExecutionStatus.FAILED,
                 error="connected daemon did not claim execution before the dispatch deadline",
                 completed_at=now,
             )
         )
         await session.execute(
             update(NodeDaemonExecution)
-            .where(
-                NodeDaemonExecution.status == NodeDaemonExecutionStatus.CLAIMED,
-                NodeDaemonExecution.lease_expires_at <= now,
-            )
+            .where(NodeDaemonExecution.status == ExecutionStatus.CLAIMED, NodeDaemonExecution.lease_expires_at <= now)
             .values(
-                status=NodeDaemonExecutionStatus.FAILED,
-                error="daemon lease expired; execution outcome unknown",
-                completed_at=now,
+                status=ExecutionStatus.FAILED, error="daemon lease expired; execution outcome unknown", completed_at=now
             )
         )
 
@@ -216,7 +210,7 @@ class NodeDaemonService:
                     execution_id=execution_id,
                     daemon_id=daemon_id,
                     backend=backend,
-                    status=NodeDaemonExecutionStatus.PENDING,
+                    status=ExecutionStatus.PENDING,
                     payload_json=payload,
                     result_json=None,
                     error=None,
@@ -243,8 +237,7 @@ class NodeDaemonService:
                 select(func.count())
                 .select_from(NodeDaemonExecution)
                 .where(
-                    NodeDaemonExecution.daemon_id == daemon_id,
-                    NodeDaemonExecution.status == NodeDaemonExecutionStatus.CLAIMED,
+                    NodeDaemonExecution.daemon_id == daemon_id, NodeDaemonExecution.status == ExecutionStatus.CLAIMED
                 )
             )
             if cast(int, active) >= presence.capacity:
@@ -252,8 +245,7 @@ class NodeDaemonService:
             result = await session.scalars(
                 select(NodeDaemonExecution)
                 .where(
-                    NodeDaemonExecution.daemon_id == daemon_id,
-                    NodeDaemonExecution.status == NodeDaemonExecutionStatus.PENDING,
+                    NodeDaemonExecution.daemon_id == daemon_id, NodeDaemonExecution.status == ExecutionStatus.PENDING
                 )
                 .order_by(NodeDaemonExecution.created_at)
                 .with_for_update(skip_locked=True)
@@ -264,7 +256,7 @@ class NodeDaemonService:
                 return None
             lease_token = secrets.token_urlsafe(32)
             lease_expires_at = now + datetime.timedelta(seconds=self.config.lease_seconds)
-            execution.status = NodeDaemonExecutionStatus.CLAIMED
+            execution.status = ExecutionStatus.CLAIMED
             execution.claimed_at = now
             execution.instance_id = instance_id
             execution.lease_token_fingerprint = _fingerprint(lease_token)
@@ -310,7 +302,7 @@ class NodeDaemonService:
         execution = self._validate_lease_identity(
             await session.get(NodeDaemonExecution, execution_id, with_for_update=True), daemon_id, request
         )
-        if execution.status != NodeDaemonExecutionStatus.CLAIMED:
+        if execution.status != ExecutionStatus.CLAIMED:
             raise HTTPException(status_code=409, detail=f"execution is {execution.status}")
         if execution.lease_expires_at is None or execution.lease_expires_at <= _now():
             raise HTTPException(status_code=409, detail="execution lease expired")
@@ -325,20 +317,17 @@ class NodeDaemonService:
     async def finish(self, daemon_id: str, execution_id: UUID, request: ExecutionResultRequest) -> None:
         async with self._sessions.begin() as session:
             existing = await session.get(NodeDaemonExecution, execution_id, with_for_update=True)
-            if existing is not None and existing.status in {
-                NodeDaemonExecutionStatus.SUCCEEDED,
-                NodeDaemonExecutionStatus.FAILED,
-            }:
+            if existing is not None and existing.status in {ExecutionStatus.SUCCEEDED, ExecutionStatus.FAILED}:
                 self._validate_lease_identity(existing, daemon_id, request)
                 if (
-                    existing.status == NodeDaemonExecutionStatus(request.outcome)
+                    existing.status == ExecutionStatus(request.outcome)
                     and existing.result_json == request.result
                     and existing.error == request.error
                 ):
                     return
                 raise HTTPException(status_code=409, detail="execution already completed with a different outcome")
             execution = await self._claimed(session, daemon_id, execution_id, request)
-            execution.status = NodeDaemonExecutionStatus(request.outcome)
+            execution.status = ExecutionStatus(request.outcome)
             execution.result_json = request.result
             execution.error = request.error
             execution.completed_at = _now()
@@ -355,10 +344,10 @@ class NodeDaemonService:
                     return row.status, row.result_json, row.error
 
             state, result, error = await read()
-            if state == NodeDaemonExecutionStatus.SUCCEEDED:
+            if state == ExecutionStatus.SUCCEEDED:
                 assert result is not None
                 return result
-            if state == NodeDaemonExecutionStatus.FAILED:
+            if state == ExecutionStatus.FAILED:
                 raise RuntimeError(error or "node daemon execution failed")
             await asyncio.sleep(0.25)
 
@@ -373,9 +362,7 @@ class NodeDaemonService:
                 row.daemon_id: row.execution_id
                 for row in (
                     await session.scalars(
-                        select(NodeDaemonExecution).where(
-                            NodeDaemonExecution.status == NodeDaemonExecutionStatus.CLAIMED
-                        )
+                        select(NodeDaemonExecution).where(NodeDaemonExecution.status == ExecutionStatus.CLAIMED)
                     )
                 ).all()
             }
@@ -383,13 +370,13 @@ class NodeDaemonService:
         for daemon_id, definition in self.config.daemons.items():
             presence = presences.get(daemon_id)
             if presence is None or presence.last_heartbeat_at < offline_cutoff:
-                state = NodeDaemonPresenceStatus.OFFLINE
+                state = PresenceStatus.OFFLINE
             elif presence.last_heartbeat_at < connected_cutoff:
-                state = NodeDaemonPresenceStatus.STALE
+                state = PresenceStatus.STALE
             elif daemon_id in active:
-                state = NodeDaemonPresenceStatus.BUSY
+                state = PresenceStatus.BUSY
             else:
-                state = NodeDaemonPresenceStatus.CONNECTED
+                state = PresenceStatus.CONNECTED
             result.append(
                 DaemonStatus(
                     daemon_id=daemon_id,
@@ -404,14 +391,14 @@ class NodeDaemonService:
         return DaemonStatusResponse(daemons=result)
 
 
-def _service(request: Request) -> NodeDaemonService:
-    service = cast(NodeDaemonService | None, request.app.state.node_daemon_service)
+def _service(request: Request) -> Service:
+    service = cast(Service | None, request.app.state.hostexecd_service)
     if service is None:
         raise HTTPException(status_code=503, detail="node daemons are not configured")
     return service
 
 
-NodeDaemonServiceDep = Annotated[NodeDaemonService, Depends(_service)]
+ServiceDep = Annotated[Service, Depends(_service)]
 
 
 async def _daemon(request: Request, authorization: Annotated[str | None, Header()] = None) -> str:
@@ -422,28 +409,24 @@ DaemonIdDep = Annotated[str, Depends(_daemon)]
 
 
 @machine_router.post("/heartbeat")
-async def heartbeat(body: HeartbeatRequest, service: NodeDaemonServiceDep, daemon_id: DaemonIdDep) -> HeartbeatResponse:
+async def heartbeat(body: HeartbeatRequest, service: ServiceDep, daemon_id: DaemonIdDep) -> HeartbeatResponse:
     return await service.heartbeat(daemon_id, body)
 
 
 @machine_router.post("/work/claim", response_model=ClaimedExecution, responses={204: {"description": "No work"}})
-async def claim(
-    body: ClaimRequest, service: NodeDaemonServiceDep, daemon_id: DaemonIdDep
-) -> ClaimedExecution | Response:
+async def claim(body: ClaimRequest, service: ServiceDep, daemon_id: DaemonIdDep) -> ClaimedExecution | Response:
     execution = await service.claim(daemon_id, body)
     return execution if execution is not None else Response(status_code=204)
 
 
 @machine_router.post("/executions/{execution_id}/heartbeat")
-async def renew(
-    execution_id: UUID, body: LeaseRequest, service: NodeDaemonServiceDep, daemon_id: DaemonIdDep
-) -> LeaseResponse:
+async def renew(execution_id: UUID, body: LeaseRequest, service: ServiceDep, daemon_id: DaemonIdDep) -> LeaseResponse:
     return await service.renew(daemon_id, execution_id, body)
 
 
 @machine_router.post("/executions/{execution_id}/result", status_code=204)
 async def finish(
-    execution_id: UUID, body: ExecutionResultRequest, service: NodeDaemonServiceDep, daemon_id: DaemonIdDep
+    execution_id: UUID, body: ExecutionResultRequest, service: ServiceDep, daemon_id: DaemonIdDep
 ) -> Response:
     await service.finish(daemon_id, execution_id, body)
     return Response(status_code=204)

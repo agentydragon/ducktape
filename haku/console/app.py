@@ -47,7 +47,6 @@ from haku.console import (
     mcp_mount,
     mcp_operator_oauth,
     mcp_server,
-    node_daemons,
     operator_auth,
     operator_login_flow,
     push_routes,
@@ -62,6 +61,7 @@ from haku.console.chat_models import RuntimeKind
 from haku.console.config import MCP_PATH, Settings
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
+from haku.console.hostexecd import service
 from haku.console.http_decide_config import load_egress_decide
 from haku.console.http_decide_service import HttpDecideService
 from haku.console.http_grant_repository import PostgresHttpGrantRepository
@@ -299,10 +299,8 @@ def create_app(
         authentik_store=authentik_operator_token_store,
         refresh_authentik_tokens=hostexec_config is not None,
     )
-    node_daemon_service = (
-        node_daemons.NodeDaemonService(db_sessions, console_config.node_daemons)
-        if console_config.node_daemons is not None
-        else None
+    hostexecd_service = (
+        service.Service(db_sessions, console_config.node_daemons) if console_config.node_daemons is not None else None
     )
     agent_authority = PostgresAgentAuthority(
         db_sessions,
@@ -595,11 +593,11 @@ def create_app(
         # endpoint here (only in this branch) is safe.
         hostexec_server = None
         if hostexec_config is not None:
-            assert node_daemon_service is not None
+            assert hostexecd_service is not None
             hostexec_server = HostexecServerConfig(
                 config=hostexec_config,
                 token_endpoint=authentik_token_endpoint_for_issuer(settings.operator_oidc.issuer),
-                broker=node_daemon_service,
+                broker=hostexecd_service,
             )
         # Configured rather than switched on separately: `config.yaml` is where the server is
         # listed and where the policy that lets an agent call it lives, and a boolean elsewhere
@@ -702,7 +700,7 @@ def create_app(
         provider_store=provider_connection_store,
         dispatcher=dispatcher,
         catalogs=catalogs,
-        node_daemons=node_daemon_service,
+        node_daemons=hostexecd_service,
     )
 
     console_mcp = mcp_server.build_console_mcp(
@@ -793,7 +791,7 @@ def create_app(
     app.state.in_process_servers = in_process_servers
     app.state.mcp_dispatcher = dispatcher
     app.state.mcp_catalogs = catalogs
-    app.state.node_daemon_service = node_daemon_service
+    app.state.hostexecd_service = hostexecd_service
     app.state.push_subscription_store = push_subscription_store
     app.state.web_push_identity = web_push_identity
     app.state.kubernetes_authorization = kubernetes_authorization
@@ -848,11 +846,11 @@ def create_app(
     app.include_router(provider_connection.router, dependencies=operator_only)
     app.include_router(connection_result.router, dependencies=operator_only)
     app.include_router(enrollment_routes.operator_router, dependencies=operator_only)
-    app.include_router(node_daemons.operator_router, dependencies=operator_only)
+    app.include_router(service.operator_router, dependencies=operator_only)
     app.include_router(push_routes.router, dependencies=operator_only)
     # Machine endpoints use their own per-daemon bearer and deliberately do not accept an Operator
     # browser session.
-    app.include_router(node_daemons.machine_router)
+    app.include_router(service.machine_router)
     app.include_router(enrollment_routes.entry_router)
     app.include_router(session_runtime.internal_router)
     # Machine-to-machine, bearer-forwarding contract for the separate Kubernetes proxy. The

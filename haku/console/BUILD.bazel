@@ -326,10 +326,10 @@ py_library(
         ":grant_principal",
         ":http_grant_models",
         ":kubernetes_grant_models",
-        ":node_daemon_models",
         ":operator_identity",
         ":pydantic_column",
         "//haku/console/agents:models",
+        "//haku/console/hostexecd:models",
         "//haku/console/oauth:provider_connection_registry",
         "//util:enum_vocab",
         "//util:sqlalchemy_types",
@@ -529,24 +529,6 @@ py_library(
     name = "chat_models",
     srcs = ["chat_models.py"],
     deps = ["@pypi//pydantic"],
-)
-
-py_library(
-    name = "node_daemon_models",
-    srcs = ["node_daemon_models.py"],
-)
-
-py_library(
-    name = "node_daemons",
-    srcs = ["node_daemons.py"],
-    deps = [
-        ":config",
-        ":database_schema",
-        ":node_daemon_models",
-        "@pypi//fastapi",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-    ],
 )
 
 py_library(
@@ -907,10 +889,10 @@ py_library(
         ":mcp_execution",
         ":mcp_guidance",
         ":mcp_operator_oauth",
-        ":node_daemons",
         ":tool_call_actor",
         ":tool_call_service",
         "//haku/console/auto_approval:registry",
+        "//haku/console/hostexecd:service",
         "//haku/console/mcp_auth:fastmcp_adapter",
         "//haku/console/oauth:provider_connection",
         "//mcp_infra:naming",
@@ -1194,7 +1176,7 @@ py_library(
         ":mcp_operator_oauth",
         ":mcp_server",
         ":models",
-        ":node_daemons",
+        "//haku/console/hostexecd:service",
         "//haku/console/oauth:association_maintenance",
         "//haku/console/oauth:connection_result",
         "//haku/console/oauth:token_state",
@@ -1256,24 +1238,6 @@ py_library(
     ],
 )
 
-py_test(
-    name = "test_node_daemons",
-    size = "medium",
-    srcs = ["test_node_daemons.py"],
-    requires_docker = True,
-    deps = [
-        ":config",
-        ":conftest",
-        ":node_daemon_models",
-        ":node_daemons",
-        "//:conftest",
-        "@pypi//fastapi",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_binary(
     name = "server",
     main_module = "haku.console.app",
@@ -1316,10 +1280,10 @@ py_library(
         ":in_process_servers",
         ":mcp_config",
         ":mcp_server",
-        ":node_daemons",
         "//grocy_mcp:batch_tools",
         "//grocy_mcp:client",
         "//grocy_mcp:mcp_types",
+        "//haku/console/hostexecd:service",
         "//haku/console/tools:http_grants",
         "//haku/console/tools:kubernetes",
         "//mcp_infra:request_scoped_openapi",
@@ -1557,7 +1521,7 @@ py_test(
         ":mcp_approval",
         ":mcp_config",
         ":mcp_operator_oauth",
-        ":node_daemon_models",
+        "//haku/console/hostexecd:models",
         "//haku/console/oauth:token_state",
         ":operator_auth",
         ":operator_identity",

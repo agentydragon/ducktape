@@ -57,9 +57,9 @@ from haku.console.chat_models import (
     TurnOutcome,
 )
 from haku.console.grant_principal import GrantPrincipalKind
+from haku.console.hostexecd.models import ExecutionStatus
 from haku.console.http_grant_models import HttpMethod, HttpMethods, HttpScheme
 from haku.console.kubernetes_grant_models import KubernetesGrantScope, KubernetesGrantStatus, KubernetesRule
-from haku.console.node_daemon_models import NodeDaemonExecutionStatus
 from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
 from haku.console.operator_identity import OperatorStatus
 from haku.console.pydantic_column import PydanticColumn
@@ -749,8 +749,8 @@ class NodeDaemonExecution(Base):
     execution_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     daemon_id: Mapped[str] = mapped_column(Text, nullable=False)
     backend: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[NodeDaemonExecutionStatus] = mapped_column(
-        StrEnumColumn(NodeDaemonExecutionStatus, name="node_daemon_execution_status"), nullable=False
+    status: Mapped[ExecutionStatus] = mapped_column(
+        StrEnumColumn(ExecutionStatus, name="node_daemon_execution_status"), nullable=False
     )
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     result_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)

@@ -57,6 +57,7 @@ from pydantic import (
 
 from haku.console.auto_approval.registry import AutoApprovalPolicyRegistry, ToolAutoApprovalMode
 from haku.console.config import Settings, tool_call_console_url
+from haku.console.hostexecd.service import DaemonStatusResponse, Service
 from haku.console.mcp_approval import (
     DegradedReflection,
     DegradedServerState,
@@ -85,7 +86,6 @@ from haku.console.mcp_config import (
 )
 from haku.console.mcp_guidance import SERVER_INSTRUCTIONS, approval_request_preamble
 from haku.console.mcp_operator_oauth import McpOperatorAuthStatus, PostgresMcpOperatorOAuthStore
-from haku.console.node_daemons import DaemonStatusResponse, NodeDaemonService
 from haku.console.oauth.provider_connection import PostgresProviderConnectionStore, ProviderConnectionStatus
 from haku.console.tool_call_actor import OperatorActor, RuntimeActor
 from haku.console.tool_call_service import (
@@ -144,7 +144,7 @@ class ConsoleMcpContext:
     provider_store: PostgresProviderConnectionStore
     dispatcher: McpServerDispatcher
     catalogs: OperatorCatalogReconciler
-    node_daemons: NodeDaemonService | None = None
+    node_daemons: Service | None = None
 
 
 class ToolCallStub(BaseModel):

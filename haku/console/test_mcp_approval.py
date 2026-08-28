@@ -51,6 +51,7 @@ from haku.console.database_schema import (
     Session,
     StaticCredential,
 )
+from haku.console.hostexecd.models import ExecutionStatus
 from haku.console.mcp_approval import (
     DegradedReflection,
     McpServerDispatcher,
@@ -74,7 +75,6 @@ from haku.console.mcp_config import (
 from haku.console.mcp_execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext, OperatorMcpExecutionCaller
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp_reflection_cache import ReflectedCatalog
-from haku.console.node_daemon_models import NodeDaemonExecutionStatus
 from haku.console.oauth.token_state import new_token_state
 from haku.console.operator_identity import OperatorStatus
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
@@ -1845,7 +1845,7 @@ async def test_fresh_baseline_enum_values_match_domain_enums(db_url: str) -> Non
         "credential_kind": tuple(kind.value for kind in CredentialKind),
         "enrollment_phase": tuple(phase.value for phase in EnrollmentPhase),
         "operator_status": tuple(status.value for status in OperatorStatus),
-        "node_daemon_execution_status": tuple(status.value for status in NodeDaemonExecutionStatus),
+        "node_daemon_execution_status": tuple(status.value for status in ExecutionStatus),
         "tool_call_status": tuple(status.value for status in ToolCallStatus),
     }
     assert baseline_values == current_values

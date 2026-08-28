@@ -90,7 +90,7 @@ tree shows the packages, §3 and §4 settle what the files and classes inside th
     web_push.py  push_routes.py  console_events.py  connection_metrics.py  pg_wake.py  session_wakes.py  conversation_wakes.py
 
   hostexecd/           # console-side registry / machine-API for the hostexecd fleet — NOT node_daemons (§3)
-    node_daemons.py  node_daemon_models.py
+    service.py  models.py
 
   conversation/        # the durable, provider-neutral record (graduates from x/)
     conversation_event.py          # ONE Pydantic vocabulary: row body + MCP/SPA wire
@@ -125,8 +125,8 @@ haku/indexer/          # NEW tree (#4887, forthcoming) — the maintenance worke
 ```
 
 House rules that bound the shape (#4924, <../../../STYLE.md> § General): no grab-bag modules
-(`core.py`/`utils.py` banned), flat-over-nested (a `<3`-file domain gets no subdir — so `hostexecd/`
-may stay a flat pair if it does not grow), one `py_library` per file with
+(`core.py`/`utils.py` banned), flat-over-nested (a `<3`-file domain gets no subdir — `hostexecd/`
+is the landed example: a flat service.py/models.py pair, no nesting), one `py_library` per file with
 gazelle-managed BUILDs (every move is mechanical), import-from-defining-module.
 
 ## 3. Canonical terminology
@@ -253,7 +253,7 @@ every package the split creates, not just `grants/`:
   `haku/runtime/x/bridge/` (#4667), where the backend-prefix drop applies (`claude_code_projection.py`
   → `projection.py`). Console keeps no `runtimes/`; the residual harness _selection_ is `harnesses/`
   (`RuntimeAdapter` → `Adapter`, `RuntimeRegistry` → `Registry`).
-- **`notifications/`, `hostexecd/`**: same — e.g. `web_push.py` → `push.py`,
+- **`notifications/`**: same — e.g. `web_push.py` → `push.py`,
   `PendingApprovalNotifier` → `Notifier`.
 
 Two seams are handled deliberately — **do not reintroduce the prefix to dodge either**:
@@ -436,8 +436,8 @@ Needs operator go **and** the `<auth-context>` name pick.
   namespaces + connector + docs in a coordinated cutover; "Haku" kept as agent config; redirect/compat
   for external refs. The tool-id de-Haku rides C12.
 - **C15 · Remainder packaging (#4924)** _(mechanical)_ — once #4772 has settled what everything is
-  called (rename-before-move), the leftover flat modules package into `notifications/`,
-  `hostexecd/`, and the app shell in a final quiet-window sweep.
+  called (rename-before-move), the leftover flat modules package into `notifications/`
+  and the app shell in a final quiet-window sweep.
 
 ### Dependency-ordered picture
 
