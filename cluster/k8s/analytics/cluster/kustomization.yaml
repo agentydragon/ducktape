@@ -10,6 +10,7 @@ resources:
   - clickhouse.yaml
   - networkpolicy.yaml
   - podmonitor.yaml
+  - backup-cronjob.yaml
 
 configMapGenerator:
   - name: clickhouse-analytics-config

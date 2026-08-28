@@ -36,6 +36,18 @@ Each tenant gets its own database, least-privilege users, credentials, quotas,
 and query profile. A later Langfuse migration can therefore add a separate
 `langfuse` database without sharing aiquota's insert or Grafana credentials.
 
+Native ClickHouse backups run daily into the retained `analytics-backup`
+SeaweedFS bucket. Restore into an empty cluster with the admin account, for
+example:
+
+```sql
+RESTORE DATABASE aiquota FROM S3(
+  'http://seaweedfs-s3.seaweedfs.svc:8333/analytics-backup/<backup>',
+  '<access-key>',
+  '<secret-key>'
+);
+```
+
 Applications receive separate insert-only credentials; Grafana receives a
 read-only account. NetworkPolicy admits only those named consumers plus
 same-namespace administration and Alloy metrics scraping.

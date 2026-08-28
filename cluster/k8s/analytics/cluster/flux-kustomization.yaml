@@ -41,3 +41,5 @@ spec:
   dependsOn:
     - name: clickhouse-operator
       namespace: ducktape-flux
+    - name: seaweedfs-analytics-backup-bucket
+      namespace: ducktape-flux

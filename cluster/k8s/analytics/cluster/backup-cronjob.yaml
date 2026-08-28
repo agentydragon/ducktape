@@ -1,0 +1,72 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: clickhouse-analytics-backup
+  namespace: analytics
+spec:
+  schedule: "17 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 7200
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: clickhouse-backup
+            app.kubernetes.io/instance: analytics
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          containers:
+            - name: backup
+              image: clickhouse/clickhouse-server:26.3.20.7@sha256:c22a4aba84a1ea83e320a6f8620b87100649e04995b61d7dde160fc1ca33bc76
+              command: [bash, -ceu]
+              args:
+                - |
+                  backup_name="$(date -u +%Y%m%dT%H%M%SZ)"
+                  clickhouse-client \
+                    --host clickhouse-analytics.analytics.svc.cluster.local \
+                    --user admin \
+                    --multiquery <<SQL
+                  BACKUP DATABASE aiquota TO S3(
+                    'http://seaweedfs-s3.seaweedfs.svc:8333/analytics-backup/${backup_name}',
+                    '${S3_ACCESS_KEY}',
+                    '${S3_SECRET_KEY}'
+                  );
+                  SQL
+              env:
+                - name: CLICKHOUSE_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: clickhouse-admin-credentials
+                      key: password
+                - name: S3_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: s3-identity-analytics-backup
+                      key: accessKey
+                - name: S3_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: s3-identity-analytics-backup
+                      key: secretKey
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  cpu: "1"
+                  memory: 1Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                runAsNonRoot: true
+                runAsUser: 101
+                runAsGroup: 101
+                seccompProfile:
+                  type: RuntimeDefault

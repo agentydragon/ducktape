@@ -1,0 +1,14 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: analytics-backup
+  namespace: seaweedfs
+spec:
+  name: analytics-backup
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  reclaimPolicy: Retain
+  access:
+    - user: analytics-backup
+      actions: [Read, Write, List, Tagging]
