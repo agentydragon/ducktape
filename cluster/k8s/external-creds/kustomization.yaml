@@ -3,6 +3,8 @@ kind: Kustomization
 resources:
   - analysis-ai.sops.yaml
   - anthropic-haku.sops.yaml
+  - anthropic-haku-distribution.yaml
   - gemini.sops.yaml
+  - gemini-distribution.yaml
   - groq.sops.yaml
-  - distribution.yaml
+  - groq-distribution.yaml
