@@ -14,8 +14,8 @@ import pytest_bazel
 
 from haku.console.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.chat_models import MatrixOrigin
+from haku.console.conversation.conversation_event import TurnAnswered
 from haku.console.session.store import BridgeAuthentication, PromptRefusedError, Store
-from haku.console.x.session_events import TurnAnsweredBody
 
 ROOM = "!room:allegedly.works"
 
@@ -101,7 +101,7 @@ async def test_re_recording_an_event_moves_it_to_the_prompt_now_answering_for_it
     await session_store.submit_prompt(operator_id, conversation_id, "hi", _from_room("$a"), ledger.carrying(("$a",)))
     started = await session_store.next_prompt(session_id)
     assert started is not None
-    await session_store.end_turn(started.turn_id, TurnAnsweredBody())
+    await session_store.end_turn(started.turn_id, TurnAnswered())
     await session_store.submit_prompt(
         operator_id, conversation_id, "hi again", _from_room("$a"), ledger.carrying(("$a",))
     )

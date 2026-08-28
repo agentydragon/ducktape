@@ -64,32 +64,32 @@ from haku.console.chat_models import (
     PromptRejection,
     SpaOrigin,
 )
+from haku.console.conversation.conversation_event import (
+    ItemSegment,
+    LeaseExpired,
+    MessageCompleted,
+    MessageOpened,
+    PromptCompleted,
+    PromptOpened,
+    PromptRejected,
+    ReasoningCompleted,
+    ReasoningOpened,
+    SessionAdopted,
+    SessionEnded,
+    SessionProvisioning,
+    SetupNarration,
+    ToolCallCompleted,
+    ToolCallOpened,
+    TurnAborted,
+    TurnAnswered,
+    TurnFailed,
+    TurnOpened,
+    UnknownEventBody,
+    UnreadableInput,
+)
 from haku.console.database_schema import ChannelCursor, ConversationItem
 from haku.console.notifications.conversation_wakes import ConversationWakeEvent, ConversationWakes, RecheckHeld
 from haku.console.session.subscription import ConversationStream, StreamedEvent, StreamPosition, Subscription, Unstarted
-from haku.console.x.session_events import (
-    LeaseExpiredBody,
-    MessageCompletedBody,
-    MessageStartedBody,
-    PromptCompletedBody,
-    PromptRejectedBody,
-    PromptStartedBody,
-    ReasoningCompletedBody,
-    ReasoningStartedBody,
-    SegmentBody,
-    SessionAdoptedBody,
-    SessionEndedBody,
-    SessionProvisioningBody,
-    SetupNarrationBody,
-    ToolCallCompletedBody,
-    ToolCallStartedBody,
-    TurnAbortedBody,
-    TurnAnsweredBody,
-    TurnFailedBody,
-    TurnStartedBody,
-    UnknownEventBody,
-    UnreadableInputBody,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -225,48 +225,48 @@ def project_notice(event: StreamedEvent, *, conversation_id: UUID, room_id: str)
     silent for the whole roll, since this replica holds the notices election while it waits.
     """
     match event.body:
-        case PromptRejectedBody(reason=reason):
+        case PromptRejected(reason=reason):
             body = f"not delivered — {_why_not(reason)}; send it again"
             kind = RoomEventKind.REJECTED
-        case UnreadableInputBody(media_type=media_type):
+        case UnreadableInput(media_type=media_type):
             body = (
                 f"received a message Haku cannot read ({media_type}) — it reads text only; "
                 "describe it in words and it will reach the session"
             )
             kind = RoomEventKind.UNREADABLE
-        case PromptStartedBody():
+        case PromptOpened():
             # **The text is not on this row.** A prompt is an item and its prose is the segments
             # that follow, so the relay is said at the item's completion, where the whole of it is
             # readable — `reconcile_once`, beside the answer it is the mirror image of.
             return None
-        case TurnAbortedBody():
+        case TurnAborted():
             # An abort is a turn outcome now rather than an event of its own, so the room's line for
             # it is said here — on the one outcome of three that the operator caused. The work
             # span's line is retired beside it: the abort is the fact, the status was live state.
             body = ABORTED_BY_OPERATOR
             kind = RoomEventKind.LIFECYCLE
-        case TurnFailedBody(failure=failure):
+        case TurnFailed(failure=failure):
             # The one ending a room cannot read from what it was sent. An answered turn arrives as
             # the answer and an aborted one as the line above; a failure produces no message at all,
             # so without this the conversation just stops mid-exchange and never says why.
             body = f"the turn failed — {failure}"
             kind = RoomEventKind.LIFECYCLE
         case (
-            MessageStartedBody()
-            | ReasoningStartedBody()
-            | ToolCallStartedBody()
-            | SegmentBody()
-            | MessageCompletedBody()
-            | ReasoningCompletedBody()
-            | ToolCallCompletedBody()
-            | PromptCompletedBody()
-            | TurnStartedBody()
-            | TurnAnsweredBody()
-            | SessionProvisioningBody()
-            | SessionAdoptedBody()
-            | SetupNarrationBody()
-            | LeaseExpiredBody()
-            | SessionEndedBody()
+            MessageOpened()
+            | ReasoningOpened()
+            | ToolCallOpened()
+            | ItemSegment()
+            | MessageCompleted()
+            | ReasoningCompleted()
+            | ToolCallCompleted()
+            | PromptCompleted()
+            | TurnOpened()
+            | TurnAnswered()
+            | SessionProvisioning()
+            | SessionAdopted()
+            | SetupNarration()
+            | LeaseExpired()
+            | SessionEnded()
             | UnknownEventBody()
         ):
             return None
@@ -341,12 +341,12 @@ class ConversationSubscriber:
         for event in read.events:
             closes = state.advance(event)
             match event.body:
-                case MessageCompletedBody():
+                case MessageCompleted():
                     # The item's own text, read by the outbox: what the room is owed is the whole
                     # message, and this event deliberately carries none of it.
                     assert event.item_id is not None, "an item lifecycle row names its item"
                     await self._outbox.enqueue(attachment_id, event.item_id)
-                case PromptCompletedBody():
+                case PromptCompleted():
                     assert event.item_id is not None, "an item lifecycle row names its item"
                     if (relayed := await self._relayed(event.item_id, room_id)) is not None:
                         await self._deliver(
@@ -357,7 +357,7 @@ class ConversationSubscriber:
                             RoomEventKind.NARRATION,
                             event.position.event_seq,
                         )
-                case TurnAnsweredBody():
+                case TurnAnswered():
                     assert event.turn_id is not None, "a turn lifecycle row names its turn"
                     if await self._silent(event.turn_id):
                         await self._deliver(

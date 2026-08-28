@@ -20,7 +20,7 @@ def setup_output_frame(text: str) -> dict[str, Any]:
 
     It lives in the frame log because it **is** runner→console traffic: a `SetupOutput` envelope
     crossed the wire and only the splitting is ours. A fact the console is the sole witness to — a
-    lease changing hands — is a `session_events` row on the `authored` arm instead
-    (<session_events.py>).
+    lease changing hands — is a `conversation_event` row on the `authored` arm instead
+    (<../conversation/conversation_event.py>).
     """
     return {"kind": SETUP_OUTPUT_KIND, "text": text}

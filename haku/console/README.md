@@ -221,7 +221,7 @@ constraint fixes the second.
 
 **Readers tolerate narration and cross-replica payloads produced by a newer replica.** Those values
 must not raise merely because an older reader has no word for them. They decode to a named
-unknown—such as `util.sqlalchemy_types.UnknownValue` or `x/session_events.UnknownEventBody`—never
+unknown—such as `util.sqlalchemy_types.UnknownValue` or `conversation/conversation_event.UnknownEventBody`—never
 `None` or a nearby member, so each consumer must handle the uncertainty explicitly. Cross-replica
 payload models do not reject unknown fields.
 

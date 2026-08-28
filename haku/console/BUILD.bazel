@@ -333,6 +333,7 @@ py_library(
         ":operator_identity",
         ":pydantic_column",
         "//haku/console/agents:models",
+        "//haku/console/conversation:conversation_event",
         "//haku/console/hostexecd:models",
         "//haku/console/oauth:provider_connection_registry",
         "//util:enum_vocab",

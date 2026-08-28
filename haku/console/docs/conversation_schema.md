@@ -169,8 +169,8 @@ The schema itself lives in <../database_schema.py> — `Conversation`, `Conversa
 `ConversationItem`, `ConversationTurn`, `ConversationPrompt`, `ChannelAttachmentRow`, `ChannelCursor`,
 `Session`, `SessionFrame`, and the Matrix channel's own tables — with every column, constraint and
 index documented where it is declared. The stored event kinds and their provenance arms are
-`ConversationEventKind` and `AuthoredEventKind` in <../chat_models.py>, and the neutral event
-shapes the log stores are <../x/conversation_events.py>. `conversation_event` is the record: every
+`ConversationEventKind` and `AuthoredEventKind`, and the body shapes the log stores, are the one
+vocabulary in <../conversation/conversation_event.py>. `conversation_event` is the record: every
 fact is written there, once, and everything else is either derived from it or belongs to a layer
 below. What no single model can state is which table derives from which, and the invariants that
 span them:

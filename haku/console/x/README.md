@@ -8,14 +8,13 @@ runner-incarnation machinery to <../session/>, the wake wires to <../notificatio
 channels to <../channels/> (#4772/#4924; target layout: <../docs/naming_and_layout.md> § 2).
 What remains is what is still being restructured:
 
-| Where                                   | What it is                                                                                                                                                                |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `conversation_events.py`                | The provider-neutral vocabulary a conversation is read as; deletion-scheduled with the #4667 native-projector fold.                                                       |
-| `session_events.py`                     | The stream's two categories as stored rows — the one place the vocabularies meet the table. Merges into `conversation/conversation_event.py` (#4772 C5).                  |
-| `runtime.py`, `runtime_catalog.py`      | Backend-neutral runtime catalog and its application composition; the harness _selection_ residue headed for `harnesses/` (<../docs/naming_and_layout.md> § 2).            |
-| `x/claude_code/`, `x/codex_app_server/` | **One CLI harness each.** Named for the product whose binary they launch, not for the model. The native client + projection move runner-ward (#4667, deletion-scheduled). |
-| `testing/`                              | Stand-ins a test stands something up _with_, importable by non-pytest processes too (<testing/recording_claims.py> for the rationale).                                    |
-| `conftest.py`                           | Fixture re-registrations for the tests below this directory; the definitions live in <../session/conftest.py>.                                                            |
+| Where                                   | What it is                                                                                                                                                                                  |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `conversation_events.py`                | The v3 fold's in-memory event vocabulary, and `stored`, its bridge into the durable one (`../conversation/conversation_event.py`); deletion-scheduled with the #4667 native-projector fold. |
+| `runtime.py`, `runtime_catalog.py`      | Backend-neutral runtime catalog and its application composition; the harness _selection_ residue headed for `harnesses/` (<../docs/naming_and_layout.md> § 2).                              |
+| `x/claude_code/`, `x/codex_app_server/` | **One CLI harness each.** Named for the product whose binary they launch, not for the model. The native client + projection move runner-ward (#4667, deletion-scheduled).                   |
+| `testing/`                              | Stand-ins a test stands something up _with_, importable by non-pytest processes too (<testing/recording_claims.py> for the rationale).                                                      |
+| `conftest.py`                           | Fixture re-registrations for the tests below this directory; the definitions live in <../session/conftest.py>.                                                                              |
 
 How to place a module — the replace-the-other-axis test and the boundary cases — is
 <../docs/chat_layers.md> § Placing something new.

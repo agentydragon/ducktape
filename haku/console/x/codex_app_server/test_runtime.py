@@ -8,11 +8,12 @@ from typing import Any, cast
 import pytest_bazel
 
 from haku.console.chat_models import RuntimeKind
+from haku.console.conversation.conversation_event import FrameRange
 from haku.console.x.codex_app_server import projection
 from haku.console.x.codex_app_server.client import CodexThread
 from haku.console.x.codex_app_server.config import ReasoningEffort
 from haku.console.x.codex_app_server.runtime import CodexRuntimeAdapter, CodexTurnHandler
-from haku.console.x.conversation_events import FrameRange, ItemSegment, TurnAnswered, TurnCompleted, TurnFailed
+from haku.console.x.conversation_events import ItemSegment, TurnAnswered, TurnCompleted, TurnFailed
 from haku.console.x.runtime import OpenItemSeed, RuntimeLaunch, RuntimeMcpServer, TurnProjectionSeed
 from haku.runtime.x.bridge.client import FrameSink
 from haku.runtime.x.bridge.codex_options import CodexModelProvider

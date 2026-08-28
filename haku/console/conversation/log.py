@@ -1,8 +1,13 @@
-"""Appending to one conversation's log, and materialising the items it touches.
+"""Appending to one conversation's log, materialising the items it touches, and the row codec.
 
 The only writer of `conversation_event`, `conversation_item` and `conversation_turn`. Everything
 else that used to write a transcript row — the turn loop's own message bookkeeping, the paths that
 minted prose no log row stood behind — goes through here or does not happen.
+
+**The one place the vocabulary meets the table.** `item_row` and `authored` turn a
+<../conversation/conversation_event.py> body into a `ConversationEventRow`; `body_of` is the read
+half, and the only one there is. Nothing else reads or writes `conversation_event.body`, so the
+stored spelling of an event is settled here.
 
 **The log is written first and the entities follow from it, in one transaction.** That is the whole
 point of the shape: an item's `text` is the concatenation of its segments, so a reader can check it
@@ -35,36 +40,51 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.chat_models import (
+from haku.console.chat_models import ItemStatus, ItemType, PromptOrigin, ToolOutcome
+from haku.console.conversation.conversation_event import (
+    AuthoredEvent,
+    AuthoredEventKind,
     ConversationEventKind,
-    ItemStatus,
-    ItemType,
-    PromptOrigin,
-    ReasoningDisclosure,
-    ToolOutcome,
-)
-from haku.console.database_schema import Conversation, ConversationItem, ConversationTurn
-from haku.console.x import session_events
-from haku.console.x.conversation_events import (
-    CallRef,
-    ConversationEvent,
+    EventProvenance,
     FrameRange,
-    ItemRef,
+    ItemCompleted,
+    ItemOpened,
     ItemSegment,
     Json,
+    LeaseExpired,
     MessageCompleted,
-    MessageStarted,
-    OpenRef,
+    MessageOpened,
+    PromptCompleted,
+    PromptOpened,
+    PromptRejected,
     ReasoningCompleted,
-    ReasoningStarted,
+    ReasoningDisclosure,
+    ReasoningOpened,
+    SessionAdopted,
+    SessionEnded,
+    SessionProvisioning,
+    SetupNarration,
+    StoredEvent,
     ToolCallCompleted,
-    ToolCallStarted,
-    TurnCompleted,
+    ToolCallOpened,
+    TurnAborted,
+    TurnAnswered,
+    TurnEnd,
+    TurnFailed,
+    TurnOpened,
+    TurnOutcome,
+    UnknownEventBody,
+    UnreadableInput,
 )
+from haku.console.database_schema import Conversation, ConversationEventRow, ConversationItem, ConversationTurn
+from haku.console.x import conversation_events
+from haku.console.x.conversation_events import CallRef, ItemRef, OpenRef
 from haku.runtime.x.bridge import neutral_operations
+from util.enum_vocab import UnknownValue
 
 
 class UnknownItemError(LookupError):
@@ -109,22 +129,22 @@ class LogWriter:
         self.conversation.next_event_seq = allocated + 1
         return allocated
 
-    async def append(self, event: ConversationEvent) -> None:
-        """Write one neutral event: its log row, and what it makes of the item it names.
+    async def append(self, event: conversation_events.ConversationEvent) -> None:
+        """Write one v3 fold event: its log row, and what it makes of the item it names.
 
         A `TurnCompleted` writes nothing here — the turn's own row holds the outcome and the log
         states the two ends as authored rows, which `end_turn` writes.
         """
-        if isinstance(event, TurnCompleted):
+        if isinstance(event, conversation_events.TurnCompleted):
             return
-        if (stored := session_events.stored(event)) is None:
+        if (stored := conversation_events.stored(event)) is None:
             return
         kind, body = stored
         if not isinstance(frames := event.provenance, FrameRange):
             raise ValueError(f"{kind} is projected from frames and names none: {event=}")
         item_id = await self._item_for(event, frames)
         self.db.add(
-            session_events.item_row(
+            item_row(
                 kind,
                 body,
                 conversation_id=self.conversation.conversation_id,
@@ -137,10 +157,10 @@ class LogWriter:
             )
         )
 
-    async def _item_for(self, event: ConversationEvent, frames: FrameRange) -> UUID:
+    async def _item_for(self, event: conversation_events.ConversationEvent, frames: FrameRange) -> UUID:
         """The item this event is about, opening one where the event is what opens it."""
         match event:
-            case MessageStarted():
+            case conversation_events.MessageStarted():
                 # **Continues the turn's open message where there is one.** A fold resuming from a
                 # cursor mid-message was seeded empty, so it says "the agent began saying
                 # something" about a message its predecessor had already opened; taking that
@@ -149,34 +169,34 @@ class LogWriter:
                 if (resumed := await self._resume(ItemType.MESSAGE)) is not None:
                     return resumed
                 return await self._open(ItemType.MESSAGE)
-            case ReasoningStarted():
+            case conversation_events.ReasoningStarted():
                 return await self._open(ItemType.REASONING)
-            case ToolCallStarted():
+            case conversation_events.ToolCallStarted():
                 return await self._open(
                     ItemType.TOOL_CALL,
                     call_id=event.call_id,
                     tool_name=event.tool_name,
                     arguments=dict(event.arguments),
                 )
-            case ItemSegment():
+            case conversation_events.ItemSegment():
                 item = await self._item(await self._resolve(event.item))
                 item.item_text += event.text
                 item.updated_at = self.now
                 return item.item_id
-            case MessageCompleted():
+            case conversation_events.MessageCompleted():
                 item = await self._close(await self._resolve(OpenRef(item_type=ItemType.MESSAGE)))
                 item.backend_item_id = event.backend_item_id
                 return item.item_id
-            case ReasoningCompleted():
+            case conversation_events.ReasoningCompleted():
                 item = await self._close(await self._resolve(OpenRef(item_type=ItemType.REASONING)))
                 item.disclosure = event.disclosure
                 return item.item_id
-            case ToolCallCompleted():
+            case conversation_events.ToolCallCompleted():
                 item = await self._close(await self._resolve(event.item))
                 item.outcome = event.outcome
                 item.structured = event.structured
                 return item.item_id
-            case TurnCompleted():
+            case conversation_events.TurnCompleted():
                 raise AssertionError("a turn's end names no item")
 
     async def _open(
@@ -272,7 +292,7 @@ class LogWriter:
         return item
 
     async def runner_opened(self, opened: neutral_operations.ItemOpened, *, turn_id: UUID) -> UUID:
-        """One neutral-journal item opens: its row, and its `item_started` row.
+        """One neutral-journal item opens: its row, and its `item_opened` row.
 
         The runner arm of `_open`. Identity is still minted here — the runner's `item_id` is the
         *addressing* key later operations name (`uq_conversation_item_runner`), never this table's.
@@ -287,17 +307,17 @@ class LogWriter:
         call_id: str | None = None
         tool_name: str | None = None
         arguments: dict[str, Any] | None = None
-        body: session_events.ItemStartedBody
+        body: ItemOpened
         match opened.item:
             case neutral_operations.MessageOpen():
-                item_type, body = ItemType.MESSAGE, session_events.MessageStartedBody()
+                item_type, body = ItemType.MESSAGE, MessageOpened()
             case neutral_operations.ReasoningOpen():
-                item_type, body = ItemType.REASONING, session_events.ReasoningStartedBody()
+                item_type, body = ItemType.REASONING, ReasoningOpened()
             case neutral_operations.ToolCallOpen():
                 item_type = ItemType.TOOL_CALL
                 call_id, tool_name = str(opened.item_id), opened.item.tool_name
                 arguments = dict(opened.item.arguments)
-                body = session_events.ToolCallStartedBody(call_id=call_id, tool_name=tool_name, arguments=arguments)
+                body = ToolCallOpened(call_id=call_id, tool_name=tool_name, arguments=arguments)
         item_id = uuid4()
         self.db.add(
             ConversationItem(
@@ -321,8 +341,8 @@ class LogWriter:
         )
         await self.db.flush()
         self.db.add(
-            session_events.item_row(
-                ConversationEventKind.ITEM_STARTED,
+            item_row(
+                ConversationEventKind.ITEM_OPENED,
                 body,
                 conversation_id=self.conversation.conversation_id,
                 event_seq=self._next_seq(),
@@ -341,9 +361,9 @@ class LogWriter:
         item.item_text += segment.text
         item.updated_at = self.now
         self.db.add(
-            session_events.item_row(
+            item_row(
                 ConversationEventKind.ITEM_SEGMENT,
-                session_events.SegmentBody(text=segment.text),
+                ItemSegment(text=segment.text),
                 conversation_id=self.conversation.conversation_id,
                 event_seq=self._next_seq(),
                 item_id=item.item_id,
@@ -364,24 +384,24 @@ class LogWriter:
                 f"a completion's arm disagrees with the item it names:"
                 f" {completion.item_type=} {item.item_type=} {completed.item_id=}"
             )
-        body: session_events.ItemCompletedBody
+        body: ItemCompleted
         match completion:
             case neutral_operations.MessageCompletion():
-                body = session_events.MessageCompletedBody(backend_item_id=completed.backend_item_id)
+                body = MessageCompleted(backend_item_id=completed.backend_item_id)
             case neutral_operations.ReasoningCompletion():
                 item.disclosure = ReasoningDisclosure(completion.disclosure.value)
-                body = session_events.ReasoningCompletedBody(disclosure=item.disclosure)
+                body = ReasoningCompleted(disclosure=item.disclosure)
             case neutral_operations.ToolCallCompletion():
                 item.outcome = ToolOutcome(completion.outcome.value)
                 item.structured = completion.structured
-                body = session_events.ToolCallCompletedBody(structured=completion.structured, outcome=item.outcome)
+                body = ToolCallCompleted(structured=completion.structured, outcome=item.outcome)
         if completed.backend_item_id is not None:
             # The open may already have named it; a protocol that names the item only when closing
             # it supplies it here. None never clears what the open recorded.
             item.backend_item_id = completed.backend_item_id
         await self._close(item.item_id)
         self.db.add(
-            session_events.item_row(
+            item_row(
                 ConversationEventKind.ITEM_COMPLETED,
                 body,
                 conversation_id=self.conversation.conversation_id,
@@ -440,12 +460,12 @@ class LogWriter:
         )
         await self.db.flush()
         for kind, body in (
-            (ConversationEventKind.ITEM_STARTED, session_events.PromptStartedBody(origin=origin)),
-            (ConversationEventKind.ITEM_SEGMENT, session_events.SegmentBody(text=text)),
-            (ConversationEventKind.ITEM_COMPLETED, session_events.PromptCompletedBody()),
+            (ConversationEventKind.ITEM_OPENED, PromptOpened(origin=origin)),
+            (ConversationEventKind.ITEM_SEGMENT, ItemSegment(text=text)),
+            (ConversationEventKind.ITEM_COMPLETED, PromptCompleted()),
         ):
             self.db.add(
-                session_events.item_row(
+                item_row(
                     kind,
                     body,
                     conversation_id=self.conversation.conversation_id,
@@ -459,10 +479,10 @@ class LogWriter:
             )
         return item_id
 
-    def authored(self, body: session_events.AuthoredBody, *, turn_id: UUID | None = None) -> None:
+    def authored(self, body: AuthoredEvent, *, turn_id: UUID | None = None) -> None:
         """One of the console's own facts, appended at the next position."""
         self.db.add(
-            session_events.authored(
+            authored(
                 body,
                 conversation_id=self.conversation.conversation_id,
                 event_seq=self._next_seq(),
@@ -506,7 +526,7 @@ async def opened_turn(
     )
     writer.db.add(turn)
     await writer.db.flush()
-    writer.authored(session_events.TurnStartedBody(), turn_id=turn.turn_id)
+    writer.authored(TurnOpened(), turn_id=turn.turn_id)
     return turn
 
 
@@ -518,3 +538,175 @@ async def open_turn(
     turn = await opened_turn(writer)
     writer.turn_id = turn.turn_id
     return turn, writer
+
+
+def authored(
+    body: AuthoredEvent,
+    *,
+    conversation_id: UUID,
+    event_seq: int,
+    session_id: UUID | None,
+    turn_id: UUID | None,
+    now: datetime,
+) -> ConversationEventRow:
+    """The row one of the console's own facts is stored as.
+
+    No frame range because it crossed no wire. `session_id` is absent for a fact the conversation
+    holds that no session has taken, and `turn_id` is present only on the two that name an
+    exchange. Written in the transaction that makes the fact true, like every other row here.
+    """
+    return ConversationEventRow(
+        conversation_id=conversation_id,
+        event_seq=event_seq,
+        session_id=session_id,
+        turn_id=turn_id,
+        item_id=None,
+        kind=_authored_kind(body),
+        provenance=EventProvenance.AUTHORED,
+        source_first_frame_seq=None,
+        source_last_frame_seq=None,
+        body=body.model_dump(mode="json"),
+        created_at=now,
+    )
+
+
+def _authored_kind(body: AuthoredEvent) -> AuthoredEventKind:
+    match body:
+        case PromptRejected():
+            return AuthoredEventKind.PROMPT_REJECTED
+        case UnreadableInput():
+            return AuthoredEventKind.UNREADABLE_INPUT
+        case SessionAdopted():
+            return AuthoredEventKind.SESSION_ADOPTED
+        case LeaseExpired():
+            return AuthoredEventKind.LEASE_EXPIRED
+        case SessionProvisioning():
+            return AuthoredEventKind.SESSION_PROVISIONING
+        case SessionEnded():
+            return AuthoredEventKind.SESSION_ENDED
+        case SetupNarration():
+            return AuthoredEventKind.SETUP_NARRATION
+        case TurnOpened():
+            return AuthoredEventKind.TURN_OPENED
+        case TurnAnswered() | TurnAborted() | TurnFailed():
+            return AuthoredEventKind.TURN_ENDED
+
+
+def item_row(
+    kind: ConversationEventKind,
+    body: BaseModel,
+    *,
+    conversation_id: UUID,
+    event_seq: int,
+    item_id: UUID,
+    session_id: UUID | None,
+    turn_id: UUID | None,
+    provenance: FrameRange | None,
+    now: datetime,
+) -> ConversationEventRow:
+    """One row of an item's lifecycle.
+
+    `provenance` is the frame span this was folded from, or None for an item the console authored —
+    a prompt, which is accepted before anything crosses a wire. Both arms are legal here, which is
+    what separates an item kind from an authored one: the arm follows from what kind of item it is,
+    not from which of the three events this is.
+    """
+    return ConversationEventRow(
+        conversation_id=conversation_id,
+        event_seq=event_seq,
+        session_id=session_id,
+        turn_id=turn_id,
+        item_id=item_id,
+        kind=kind,
+        provenance=EventProvenance.FRAME_RANGE if provenance is not None else EventProvenance.AUTHORED,
+        source_first_frame_seq=provenance.first_frame_seq if provenance is not None else None,
+        source_last_frame_seq=provenance.last_frame_seq if provenance is not None else None,
+        body=body.model_dump(mode="json"),
+        created_at=now,
+    )
+
+
+def body_of(row: ConversationEventRow) -> StoredEvent:
+    """What a stored row says, back in the shape it was written from.
+
+    The read half of `item_row` and `authored`, and the only one there is. A kind added without an
+    arm fails the type check rather than the read.
+
+    A kind added by a **newer release than this one** cannot be type-checked against, so it takes
+    the `UnknownValue` arm instead of raising: the previous image reads every row of a conversation
+    for the length of a roll, and one row it has no words for must not cost it the rest.
+    """
+    match row.kind:
+        case UnknownValue():
+            return UnknownEventBody(kind=row.kind.value, body=row.body)
+        case ConversationEventKind.ITEM_OPENED:
+            return _opened_body(row.body)
+        case ConversationEventKind.ITEM_SEGMENT:
+            return ItemSegment.model_validate(row.body)
+        case ConversationEventKind.ITEM_COMPLETED:
+            return _completed_body(row.body)
+        case AuthoredEventKind.PROMPT_REJECTED:
+            return PromptRejected.model_validate(row.body)
+        case AuthoredEventKind.UNREADABLE_INPUT:
+            return UnreadableInput.model_validate(row.body)
+        case AuthoredEventKind.SESSION_ADOPTED:
+            return SessionAdopted.model_validate(row.body)
+        case AuthoredEventKind.LEASE_EXPIRED:
+            return LeaseExpired.model_validate(row.body)
+        case AuthoredEventKind.TURN_OPENED:
+            return TurnOpened.model_validate(row.body)
+        case AuthoredEventKind.TURN_ENDED:
+            return _turn_ended_body(row.body)
+        case AuthoredEventKind.SESSION_PROVISIONING:
+            return SessionProvisioning.model_validate(row.body)
+        case AuthoredEventKind.SESSION_ENDED:
+            return SessionEnded.model_validate(row.body)
+        case AuthoredEventKind.SETUP_NARRATION:
+            return SetupNarration.model_validate(row.body)
+
+
+def _turn_ended_body(body: dict[str, Any]) -> TurnEnd:
+    """Dispatched on the body's own `outcome`, as `_opened_body` dispatches on `item_type`."""
+    match body.get("outcome"):
+        case TurnOutcome.ANSWERED:
+            return TurnAnswered.model_validate(body)
+        case TurnOutcome.ABORTED:
+            return TurnAborted.model_validate(body)
+        case TurnOutcome.FAILED:
+            return TurnFailed.model_validate(body)
+        case other:
+            raise ValueError(f"turn_ended names no known outcome: {other=}")
+
+
+def _opened_body(body: dict[str, Any]) -> ItemOpened:
+    """Dispatched on the body's own `item_type` rather than on the row's kind.
+
+    The three item kinds say only where in a lifecycle a row sits; which shape its body has is the
+    item's type, which the log carries in the body because `conversation_event` does not join to
+    the item to read one.
+    """
+    match body.get("item_type"):
+        case ItemType.MESSAGE:
+            return MessageOpened.model_validate(body)
+        case ItemType.REASONING:
+            return ReasoningOpened.model_validate(body)
+        case ItemType.TOOL_CALL:
+            return ToolCallOpened.model_validate(body)
+        case ItemType.PROMPT:
+            return PromptOpened.model_validate(body)
+        case other:
+            raise ValueError(f"item_opened names no known item type: {other=}")
+
+
+def _completed_body(body: dict[str, Any]) -> ItemCompleted:
+    match body.get("item_type"):
+        case ItemType.MESSAGE:
+            return MessageCompleted.model_validate(body)
+        case ItemType.REASONING:
+            return ReasoningCompleted.model_validate(body)
+        case ItemType.TOOL_CALL:
+            return ToolCallCompleted.model_validate(body)
+        case ItemType.PROMPT:
+            return PromptCompleted.model_validate(body)
+        case other:
+            raise ValueError(f"item_completed names no known item type: {other=}")

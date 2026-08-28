@@ -27,7 +27,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from haku.console.chat_models import FrameDirection, ItemStatus, PromptOriginKind, ReasoningDisclosure, RuntimeKind
+from haku.console.chat_models import FrameDirection, ItemStatus, PromptOriginKind, RuntimeKind
+from haku.console.conversation.conversation_event import ReasoningDisclosure, TurnAborted, TurnAnswered, TurnFailed
 
 
 class ChannelAttachment(BaseModel):
@@ -133,7 +134,7 @@ class TurnRecord(BaseModel):
     )
     started_at: datetime.datetime
     ended_at: datetime.datetime | None = Field(description="Absent while the exchange is still running.")
-    end: TurnAnsweredEnd | TurnAbortedEnd | TurnFailedEnd | None = Field(
+    end: TurnAnswered | TurnAborted | TurnFailed | None = Field(
         discriminator="outcome",
         description="How the exchange ended, and on a failure why. Absent while it is still running.",
     )
@@ -289,24 +290,6 @@ class ToolCallEntry(_EntryBase):
         "None exactly while no answer has arrived — a call still running, or one its session died around."
     )
 
-
-class TurnAnsweredEnd(BaseModel):
-    outcome: Literal["answered"] = "answered"
-
-
-class TurnAbortedEnd(BaseModel):
-    outcome: Literal["aborted"] = "aborted"
-
-
-class TurnFailedEnd(BaseModel):
-    outcome: Literal["failed"] = "failed"
-    failure: str = Field(
-        description="Why the runtime could not finish, in the words it used. Present on every failed "
-        "turn and on no other, so a reader never has to ask why a failure states no reason."
-    )
-
-
-type TurnEnd = TurnAnsweredEnd | TurnAbortedEnd | TurnFailedEnd
 
 type ConversationEntry = Annotated[
     PromptEntry | MessageEntry | ReasoningEntry | ToolCallEntry, Field(discriminator="kind")

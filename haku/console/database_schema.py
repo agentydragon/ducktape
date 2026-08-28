@@ -40,20 +40,22 @@ from haku.console.agents.models import (
     EnrollmentPhase,
 )
 from haku.console.chat_models import (
-    AuthoredEventKind,
     BridgeFrameKind,
     ChannelSurface,
-    ConversationEventKind,
-    EventProvenance,
     FrameDirection,
     ItemStatus,
     ItemType,
     PromptOrigin,
-    ReasoningDisclosure,
     RuntimeKind,
     SessionStatus,
-    StoredEventKind,
     ToolOutcome,
+)
+from haku.console.conversation.conversation_event import (
+    AuthoredEventKind,
+    ConversationEventKind,
+    EventProvenance,
+    ReasoningDisclosure,
+    StoredEventKind,
     TurnOutcome,
 )
 from haku.console.grant_principal import GrantPrincipalKind
@@ -1364,8 +1366,8 @@ class ConversationEventRow(Base):
     provenance: Mapped[EventProvenance] = mapped_column(TextBackedStrEnumColumn(EventProvenance), nullable=False)
     source_first_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     source_last_frame_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    # The row's remaining fields, in the neutral spelling; `x/session_events.py` is the one place
-    # that reads or writes this shape.
+    # The row's remaining fields, in the neutral spelling (`conversation/conversation_event.py`);
+    # `x/conversation_log.py` is the one place that reads or writes this shape.
     body: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -1389,7 +1391,7 @@ class ConversationEventRow(Base):
         # `conversation_item.item_type`, which this table cannot see, and the kind states only
         # whether an item is named at all.
         CheckConstraint(
-            "(item_id IS NOT NULL) = (kind IN ('item_started','item_segment','item_completed'))",
+            "(item_id IS NOT NULL) = (kind IN ('item_opened','item_segment','item_completed'))",
             name="ck_conversation_event_item_kinds",
         ),
         # How a channel reads its thread: everything after a position. The primary key already
@@ -1540,7 +1542,7 @@ class ConversationItem(Base):
 
 
 class ConversationTurn(Base):
-    """One exchange, derived from the log's `turn_started` and `turn_ended`.
+    """One exchange, derived from the log's `turn_opened` and `turn_ended`.
 
     **One open turn per conversation, not per session.** "Only one session holds a conversation at a
     time" is a conversation-layer rule, so the index enforcing it belongs on the conversation.

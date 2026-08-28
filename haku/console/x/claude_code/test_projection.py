@@ -15,7 +15,8 @@ from itertools import product
 import pytest
 import pytest_bazel
 
-from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome
+from haku.console.chat_models import ItemType, ToolOutcome
+from haku.console.conversation.conversation_event import FrameRange, ReasoningDisclosure
 from haku.console.x.claude_code.projection import DeltaSource, OpenItem, ProjectionState, RecordedFrame, undelivered
 from haku.console.x.claude_code.testing.fold import in_batches, whole_capture
 from haku.console.x.claude_code.testing.wire import (
@@ -37,7 +38,6 @@ from haku.console.x.claude_code.testing.wire import (
 )
 from haku.console.x.conversation_events import (
     CallRef,
-    FrameRange,
     ItemSegment,
     Json,
     MessageCompleted,

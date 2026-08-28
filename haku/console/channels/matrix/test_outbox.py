@@ -26,9 +26,10 @@ from haku.console.channels.matrix.outbox import MAX_SEND_ATTEMPTS, PendingReply,
 from haku.console.channels.matrix.outbox_wake import OutboxWakes
 from haku.console.channels.matrix.pacer import RoomPacer
 from haku.console.chat_models import SPA_ORIGIN, ItemStatus, ItemType
+from haku.console.conversation.conversation_event import FrameRange
 from haku.console.database_schema import ConversationItem, MatrixOutbox
 from haku.console.session.store import BridgeAuthentication, Store
-from haku.console.x.conversation_events import FrameRange, ItemSegment, MessageCompleted, MessageStarted, OpenRef
+from haku.console.x.conversation_events import ItemSegment, MessageCompleted, MessageStarted, OpenRef
 
 
 @pytest.fixture

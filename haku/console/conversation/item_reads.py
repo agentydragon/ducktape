@@ -21,7 +21,8 @@ from dataclasses import dataclass
 
 from pydantic import TypeAdapter
 
-from haku.console.chat_models import ItemType, PromptOrigin, TurnOutcome
+from haku.console.chat_models import ItemType, PromptOrigin
+from haku.console.conversation.conversation_event import TurnAborted, TurnAnswered, TurnEnd, TurnFailed, TurnOutcome
 from haku.console.conversation.reads import (
     ConsoleAuthored,
     ConversationEntry,
@@ -32,10 +33,6 @@ from haku.console.conversation.reads import (
     PromptEntry,
     ReasoningEntry,
     ToolCallEntry,
-    TurnAbortedEnd,
-    TurnAnsweredEnd,
-    TurnEnd,
-    TurnFailedEnd,
 )
 from haku.console.database_schema import ConversationItem, ConversationTurn
 
@@ -64,12 +61,12 @@ def turn_end_of(turn: ConversationTurn) -> TurnEnd | None:
         case None:
             return None
         case TurnOutcome.ANSWERED:
-            return TurnAnsweredEnd()
+            return TurnAnswered()
         case TurnOutcome.ABORTED:
-            return TurnAbortedEnd()
+            return TurnAborted()
         case TurnOutcome.FAILED:
             assert turn.failure is not None, "ck_conversation_turn_failure"
-            return TurnFailedEnd(failure=turn.failure)
+            return TurnFailed(failure=turn.failure)
 
 
 def _provenance_of(row: ConversationPageRow) -> EntryProvenance:
