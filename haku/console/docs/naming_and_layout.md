@@ -190,7 +190,7 @@ atom, slim the execution context, and dissolve `ResolvedAgentBearer`. No schema 
 
 | Role                      | Canonical name                                                                                                                                     | Home                                                            | Representation                   | Verdict                                                                                                      |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Authentication context    | **`<auth-context>`** family (name pending); `AgentActor` = `principal` + `operator_id` + `binding_id` + `access_profile_id`; operator arm parallel | `identity/authentication_context.py`                            | dataclass                        | **compose** (part 1); `ToolCallActor` union → optionally `RuntimeActor`                                      |
+| Authentication context    | **`<auth-context>`** family (name pending); `AgentActor` = `principal` + `operator_id` + `binding_id` + `access_profile_id`; operator arm parallel | `identity/authentication_context.py`                            | dataclass                        | **compose** (part 1)                                                                                         |
 | Request principal         | `RequestPrincipal` (`agent_id` + `session_id`); profile beside it                                                                                  | `identity/request_principal.py`                                 | Pydantic                         | stays the atom; `from_source` deletes when the actor composes                                                |
 | Grant principal           | `GrantPrincipal` = `AgentGrantPrincipal \| SessionGrantPrincipal` (+ future `ProfileGrantPrincipal`)                                               | `grants/principal.py`                                           | Pydantic + `principal_*` columns | stays — durable stored selector                                                                              |
 | Submitter provenance      | `McpToolCallPrincipal` (+ `_ResolvedToolCallPrincipal`, `ToolCallCaller` attribution)                                                              | `database_schema.py` / `haku/shared/haku/console/tool_calls.py` | ORM + wire                       | **keep** (docstring only, no migration) — a rename is a table+trigger migration for zero behavior            |
@@ -224,11 +224,13 @@ docs. **"Haku" survives only as one configured agent/tenant.** Tool-server ids t
 
 ### 3.5 Tool-server names (#4918)
 
-`kubernetes` → `kubernetes_grants` (it carries grants **and** `can_i`); audit
-`gmail`/`google_calendar`/`hostexec`/`sandbox`/`http_grants` for under/over-promise; consider one
-`grants` server with a domain discriminator once #4889's envelope is in hand. Coordinated cutover:
-config + auto-approval policies + docs in one release; stored `server_id` audit rows keep the old
-name.
+**Decided 2026-08-28:** consolidate to one `grants` server with a domain discriminator
+(`kubernetes` | `http`), now that #4889's shared grants envelope landed (#5018); `can_i` splits into
+its own `kubernetes` server. The grants entity-prefix drop (`KubernetesGrant` → `Grant`,
+`HttpGrantSpec` → `GrantSpec`) rides this cutover. Remaining: the roster audit of
+`gmail`/`google_calendar`/`hostexec`/`sandbox`/`http_grants` for under/over-promise, then the
+coordinated cutover — config + auto-approval policies + frontend catalogs + docs in one release;
+stored ToolCall `server_id` audit history is left as-is.
 
 ## 4. Naming conventions — the reviewer checklist
 
@@ -249,12 +251,13 @@ every package the split creates, not just `grants/`:
 - **`grants/http/`**: symmetric — `http_grant_service.py` → `service.py`,
   `http_decide_config.py` → `decide_config.py`, etc. (landed with C11); `HttpGrantSpec` →
   `GrantSpec` etc. wait on seam 3.
-- **`conversation/`** _(files landed, with `ConversationRuntime` → `Runtime`)_: the remaining
-  entity drops (`ConversationEvent` → `Event`, `ConversationItem` → `Item`, `ConversationTurn` →
-  `Turn`) ride the C5 vocabulary merge that brings those definitions into the package; the ORM
-  rows stay concept-named in the central `database_schema.py`.
+- **`conversation/`** _(files landed, with `ConversationRuntime` → `Runtime`)_: C5 landed the
+  vocabulary into the package; the remaining entity drops (`ConversationEvent` → `Event`,
+  `ConversationItem` → `Item`, `ConversationTurn` → `Turn`) stay pending; the ORM rows stay
+  concept-named in the central `database_schema.py`.
 - **`session/`** _(files landed, with `SessionStore` → `Store`)_: the `Session`-trio
-  representations (`SessionRecord`/`SessionView`, §3.1) are C7's to settle.
+  representations (`SessionRecord`/`SessionView`, §3.1) landed — `SessionView` is the one REST
+  session shape.
 - **`mcp/`**: `mcp_server.py` → `server.py`, `mcp_approval.py` → `approval.py`, `mcp_execution.py` →
   `execution.py`; `McpExecutionContext` → `ExecutionContext`, `McpExecutionCaller` → `ExecutionCaller`.
 - **harness adapters**: the native client + `*_projection.py` move **runner-ward** into
@@ -428,19 +431,20 @@ Needs operator go **and** the `<auth-context>` name pick.
 - **C8 · Compose authentication-context (#4836 parts 1-4)** _(semantic, ~30 files)_ — compose the
   actor, reshape the execution caller onto the principal atom, slim `McpExecutionContext`, dissolve
   `ResolvedAgentBearer`. No schema/wire change.
-- **C9 · Role docstrings + `ToolCallActor` → `RuntimeActor`** _(mechanical rider)_ — the five-role
-  boundary at their definitions (also the fallback deliverable if C8 is declined).
 - **C10 · `identity/` package extraction** _(mechanical)_ — lands **with** the #4836 vocabulary, after
   C8 settles the names. Splits `grants/principal.py`: `RequestPrincipal` → `identity/request_principal.py`;
   the `GrantPrincipal` family + `applies_to` stay in `grants/principal.py`.
 
 ### Grants lane
 
-- **C12 · Tool-server naming (#4918)** _(semantic — coordinated cutover)_ — `kubernetes` →
-  `kubernetes_grants`, roster audit, the one-`grants`-server decision with #4889's envelope shape
-  in hand. Config + policies + docs in one release. The grants **entity**-prefix drop deferred by
-  §4.1 seam 3 (`KubernetesGrant` → `Grant`, `HttpGrantSpec` → `GrantSpec`, the wrapper/response
-  models) rides this cutover — the same published-surface recipe, one schema-consumer move.
+- **C12 · Tool-server naming (#4918)** _(semantic — coordinated cutover)_ — **Decided 2026-08-28:**
+  consolidate to one `grants` server with a domain discriminator (`kubernetes` | `http`), now that
+  #4889's shared grants envelope landed (#5018); `can_i` splits into its own `kubernetes` server.
+  The grants **entity**-prefix drop deferred by §4.1 seam 3 (`KubernetesGrant` → `Grant`,
+  `HttpGrantSpec` → `GrantSpec`, the wrapper/response models) rides this cutover — the same
+  published-surface recipe, one schema-consumer move. Remaining: the roster audit, then the
+  coordinated cutover — config + auto-approval policies + frontend catalogs + docs in one release;
+  stored ToolCall `server_id` audit history left as-is.
 
 ### De-Haku and final packaging — last
 
@@ -448,15 +452,16 @@ Needs operator go **and** the `<auth-context>` name pick.
   so it moves settled names once. Needs the blessed `<platform>` name; repo tree + cluster manifests +
   namespaces + connector + docs in a coordinated cutover; "Haku" kept as agent config; redirect/compat
   for external refs. The tool-id de-Haku rides C12.
-- **C15 · Remainder packaging (#4924)** _(mechanical)_ — once #4772 has settled what everything is
-  called (rename-before-move), the remaining flat top level settles around the app shell in a
-  final quiet-window sweep.
+- **C15 · Remainder packaging (#4924)** _(mechanical)_ — Landed: `oauth/` (#5000),
+  `notifications/` (#5001), `hostexecd/` (#5002) carved off the flat top level. Remaining: the rest
+  settles around the app shell once #4772 has settled what everything is called
+  (rename-before-move), in a final quiet-window sweep.
 
 ### Dependency-ordered picture
 
 ```text
 now ─┬─ C13               ← staged severing; ConversationItem home is the gate   [indexer lane, independent]
-     ├─ C8 → C9 → C10     ← after operator go + <auth-context>  [identity lane]
+     ├─ C8 → C10          ← after operator go + <auth-context>  [identity lane]
      ├─ C12               ← C11 landed with #4889's envelope    [grants lane]
      └─ C4e → C6                            ← packages + C5 landed         [conversation lane]
                   │

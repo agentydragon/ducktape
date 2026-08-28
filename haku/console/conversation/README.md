@@ -3,8 +3,7 @@
 A conversation is the one thread every surface reads and the only thing a channel or a session
 is offered — the layer contract is <../docs/chat_layers.md>, the schema's invariants
 <../docs/conversation_schema.md>. Graduated from `../x/` under #4772; the target layout is
-<../docs/naming_and_layout.md> § 2 (the one Pydantic event vocabulary, `conversation_event.py`,
-lands with C5 and until then stays in `../x/{conversation_events,session_events}.py`).
+<../docs/naming_and_layout.md> § 2, where the one Pydantic event vocabulary is `conversation_event.py`.
 
 | Module                | Role                                                                                                                                           |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
