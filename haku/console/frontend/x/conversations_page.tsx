@@ -281,14 +281,14 @@ function ConversationListPage() {
   return (
     <section className="haku-page" aria-label="Conversations">
       <header className="haku-page-header">
-        <div className="haku-page-bar">
+        <div className="haku-page-bar haku-conversation-list-header">
           <div>
             <Title order={1}>Conversations</Title>
             <Text c="dimmed" size="sm">
               Every thread you have with Haku, wherever it is being held.
             </Text>
           </div>
-          <Group gap="xs" wrap="nowrap">
+          <Group gap="xs" wrap="nowrap" className="haku-conversation-launcher">
             {shouldShowLaunchSelector(launchOptions) && (
               <Select
                 aria-label="Conversation Agent and runtime"
@@ -299,7 +299,7 @@ function ConversationListPage() {
                   label: `${option.agent_display_name} · ${option.runtime_display_name}`,
                 }))}
                 allowDeselect={false}
-                w={260}
+                className="haku-conversation-launcher-select"
               />
             )}
             <Button
