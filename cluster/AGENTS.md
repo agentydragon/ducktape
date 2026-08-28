@@ -142,7 +142,8 @@ When a `HelmRepository` or `GitRepository` is consumed by exactly one
 define them in the existing `helmrelease.yaml` as one multi-document file. Put the
 source resource first and the `HelmRelease` second, and update the directory's
 `kustomization.yaml` to reference only `helmrelease.yaml`. Keep the source in its
-own file when it is reused by another release or has independent ownership.
+own file when it is reused by another release, has independent ownership, or either
+manifest is consumed by a tool that requires a single YAML document.
 
 ## Agent RBAC Architecture
 
