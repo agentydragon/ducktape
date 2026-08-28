@@ -61,8 +61,6 @@ resources:
   - haku-console-static-image-policy.yaml
   - haku-indexer-image-repository.yaml
   - haku-indexer-image-policy.yaml
-  - haku-matrix-adapter-image-repository.yaml
-  - haku-matrix-adapter-image-policy.yaml
   - haku-harness-runner-image-repository.yaml
   - haku-harness-runner-image-policy.yaml
   - haku-managed-agent-image-repository.yaml

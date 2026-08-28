@@ -72,9 +72,6 @@ spec:
       name: haku-indexer
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
-      name: haku-matrix-adapter
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
       name: haku-managed-agent
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository

@@ -48,6 +48,12 @@ spec:
       # also OVH-pinned.
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      # Private Forgejo package — ducktape-ci credential reflected into this
+      # namespace from cluster/k8s/forgejo-images/. A Forgejo outage means no new
+      # pull; acceptable for this non-critical worker (the running replica keeps
+      # serving, and the console API is untouched).
+      imagePullSecrets:
+        - name: forgejo-images-creds
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
@@ -56,7 +62,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: adapter
-          image: ghcr.io/agentydragon/haku-matrix-adapter:devel-20260828000636-964d71d # {"$imagepolicy": "flux-system:haku-matrix-adapter"}
+          image: git.allegedly.works/ducktape-ci/haku-matrix-adapter:devel-20260828000636-964d71d # {"$imagepolicy": "flux-system:haku-matrix-adapter"}
           imagePullPolicy: Always
           env:
             - name: HAKU_MATRIX_ADAPTER_CONFIG_FILE

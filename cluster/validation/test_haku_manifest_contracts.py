@@ -1175,6 +1175,31 @@ def test_haku_matrix_adapter_worker_contract(k8s_dir: Path) -> None:
     ]
     assert adapter["metadata"]["namespace"] in reflection_namespaces.split(",")
 
+    # The image is a private Forgejo package: the pod's pull secret must be the ducktape-ci
+    # credential, whose reflection source must both name that Secret and grant this namespace —
+    # and the Flux scan must authenticate the same repository with the same credential.
+    pull_secret = one(adapter_pod["imagePullSecrets"])["name"]
+    registry_creds = one(
+        doc
+        for doc in yaml.safe_load_all(
+            (k8s_dir / "forgejo-images" / "registry-creds.sops.yaml").read_text(encoding="utf-8")
+        )
+        if doc.get("kind") == "Secret"
+    )
+    assert registry_creds["metadata"]["name"] == pull_secret
+    for scope in ("allowed", "auto"):
+        namespaces = registry_creds["metadata"]["annotations"][
+            f"reflector.v1.k8s.emberstack.com/reflection-{scope}-namespaces"
+        ]
+        assert adapter["metadata"]["namespace"] in namespaces.split(",")
+    image_repository = yaml.safe_load(
+        (k8s_dir / "flux-image-automation-forgejo" / "haku-matrix-adapter-image-repository.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert adapter_container["image"].startswith(image_repository["spec"]["image"] + ":")
+    assert image_repository["spec"]["secretRef"]["name"] == pull_secret
+
     # The operator-subject mapping is shared state with the console (one SSOT key), and it is the
     # only Secret the two pods share: the OIDC client secrets in that Secret's other keys stay off
     # this pod, and everything else the adapter mounts is its own.

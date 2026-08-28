@@ -7,6 +7,7 @@ spec:
   imageRepositoryRef:
     name: haku-matrix-adapter
   filterTags:
+    # Tags pushed by CI: {branch}-YYYYMMDDHHMMSS-{sha7} — alphabetical == chronological
     pattern: '^devel-\d{14}-[0-9a-f]{7}$'
   policy:
     alphabetical:
