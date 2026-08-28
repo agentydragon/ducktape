@@ -124,25 +124,18 @@ function buildMermaid(showDone) {
 }
 ```
 
-- **Render into a plain `<div>`, not `<pre class="mermaid">`** — the artifact
-  runtime processes mermaid fences itself and must not fight the page's own
-  renderer. `mermaid.initialize({ startOnLoad: false, securityLevel:
-"loose" })` — `loose` is required or the `<a>` labels are stripped — then
-  `mermaid.render(id, source)` and inject the SVG. Re-render on toggle with a
-  fresh id.
-- **Load the library with a STATIC `<script src>` tag; never inject it.** The
-  artifact CSP admits allowlisted-CDN scripts only as static tags — a
-  `document.createElement("script")` loader is blocked in the viewer while
-  curl from the workspace sees 200s, so it "fails from all CDNs" only in the
-  browser. Use ONE static tag —
-  `https://cdn.jsdelivr.net/npm/mermaid@11.<x>/dist/mermaid.min.js` — and
-  have the page poll for `window.mermaid`. Verified traps: cdnjs hosts the
-  UMD only through v10 (`11.x/mermaid.min.js` 404s), **v10 ignores this
-  page's layout config** (init spacing — a 3055px sprawl vs v11's compact
-  layout), and a second tag double-executes the UMD. **Pin the local render
-  harness's node_modules mermaid to the SAME version the page loads** — a
-  version-skewed harness proves nothing (an 11.x harness passed while the
-  viewer's 10.x broke).
+- **NEVER load a mermaid library — the artifact platform renders
+  `<pre class="mermaid">` natively and its docs forbid loading one.** Every
+  loader variant fails in the viewer (dynamic injection is CSP-blocked;
+  static CDN tags proved blocked/unreachable too; cdnjs only carries the v10
+  UMD, whose layout differs). The working shape: the inline script only
+  GENERATES the mermaid source from the dataset and mounts it as
+  `pre.className = "mermaid"; pre.textContent = source` during parse — the
+  platform's renderer picks script-created blocks up. Mount BOTH views'
+  blocks at load and make the toggle a pure-CSS swap of the pre-rendered
+  views (no re-render): hide the inactive view off-screen
+  (`position:absolute; left:-300vw; visibility:hidden`), never
+  `display:none`, which renders zero-size.
 - Completed nodes wear `done` + a `✓`; their real dependency edges stay, so
   provenance chains read (landed prerequisites → the merged integration PR →
   the running work). Prune a completed node once nothing live traces to it —
