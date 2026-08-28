@@ -13,7 +13,6 @@ from haku.console.database_schema import HttpGrantRow
 from haku.console.grants.envelope import (
     GrantNotFoundError,
     GrantOwnershipError,
-    derive_status,
     match_replayed_grant_set,
     request_principal_clause,
 )
@@ -35,7 +34,7 @@ def _row_spec(row: HttpGrantRow) -> HttpGrantSpec:
     )
 
 
-def _row_to_model(row: HttpGrantRow, *, now: datetime.datetime) -> HttpGrant:
+def _row_to_model(row: HttpGrantRow) -> HttpGrant:
     return HttpGrant(
         grant_id=row.grant_id,
         owner_agent_id=row.owner_agent_id,
@@ -44,9 +43,6 @@ def _row_to_model(row: HttpGrantRow, *, now: datetime.datetime) -> HttpGrant:
         ),
         source_tool_call_id=row.source_tool_call_id,
         spec=_row_spec(row),
-        status=derive_status(
-            released_at=row.released_at, revoked_at=row.revoked_at, expires_at=row.expires_at, now=now
-        ),
         created_at=row.created_at,
         expires_at=row.expires_at,
         released_at=row.released_at,
@@ -103,7 +99,7 @@ class PostgresHttpGrantRepository:
                     specs=[spec.model_dump_json() for spec in grants],
                     row_spec=lambda row: _row_spec(row).model_dump_json(),
                 )
-                return tuple(_row_to_model(row, now=created_at) for row in replayed)
+                return tuple(_row_to_model(row) for row in replayed)
             principal_agent_id, principal_session_id = grant_principal_column_values(grant_principal)
             rows = [
                 HttpGrantRow(
@@ -129,7 +125,7 @@ class PostgresHttpGrantRepository:
             ]
             session.add_all(rows)
             await session.flush()
-            return tuple(_row_to_model(row, now=created_at) for row in rows)
+            return tuple(_row_to_model(row) for row in rows)
 
     async def list(
         self, *, owner_agent_id: UUID, now: datetime.datetime, include_terminal: bool = True
@@ -141,16 +137,16 @@ class PostgresHttpGrantRepository:
             rows = (
                 await session.scalars(statement.order_by(HttpGrantRow.created_at.desc(), HttpGrantRow.grant_id))
             ).all()
-            return tuple(_row_to_model(row, now=now) for row in rows)
+            return tuple(_row_to_model(row) for row in rows)
 
-    async def get(self, *, owner_agent_id: UUID, grant_id: UUID, now: datetime.datetime) -> HttpGrant:
+    async def get(self, *, owner_agent_id: UUID, grant_id: UUID) -> HttpGrant:
         async with self._sessions() as session:
             row = await session.scalar(select(HttpGrantRow).where(HttpGrantRow.grant_id == grant_id))
             if row is None:
                 raise GrantNotFoundError(str(grant_id))
             if row.owner_agent_id != owner_agent_id:
                 raise GrantOwnershipError(str(grant_id))
-            return _row_to_model(row, now=now)
+            return _row_to_model(row)
 
     async def _end(
         self, *, owner_agent_id: UUID, grant_id: UUID, release: bool, reason: str, now: datetime.datetime
@@ -173,7 +169,7 @@ class PostgresHttpGrantRepository:
                     row.revoked_at = now
                 row.end_reason = reason
                 await session.flush()
-            return _row_to_model(row, now=now)
+            return _row_to_model(row)
 
     async def release(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime) -> HttpGrant:
         return await self._end(owner_agent_id=owner_agent_id, grant_id=grant_id, release=True, reason=reason, now=now)
@@ -191,7 +187,7 @@ class PostgresHttpGrantRepository:
             rows = (
                 await session.scalars(statement.order_by(HttpGrantRow.created_at.desc(), HttpGrantRow.grant_id))
             ).all()
-            return tuple(_row_to_model(row, now=now) for row in rows)
+            return tuple(_row_to_model(row) for row in rows)
 
     async def active_for_request_principal(
         self, *, request_principal: RequestPrincipal, now: datetime.datetime
@@ -208,4 +204,4 @@ class PostgresHttpGrantRepository:
                     .order_by(HttpGrantRow.expires_at, HttpGrantRow.created_at)
                 )
             ).all()
-            return tuple(_row_to_model(row, now=now) for row in rows)
+            return tuple(_row_to_model(row) for row in rows)

@@ -14,7 +14,6 @@ from fastapi.testclient import TestClient
 from haku.console import operator_auth
 from haku.console.agents.enrollment import OperatorAgent
 from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
-from haku.console.grants.envelope import GrantStatus
 from haku.console.grants.http.models import (
     HttpGrant,
     HttpGrantSpec,
@@ -31,7 +30,9 @@ from haku.console.tool_call_actor import OperatorActor
 OPERATOR_ID = UUID("10000000-0000-4000-8000-000000000001")
 AGENT_ID = UUID("30000000-0000-4000-8000-000000000003")
 GRANT_ID = UUID("50000000-0000-4000-8000-000000000005")
-NOW = datetime.datetime(2026, 8, 27, 0, 0, tzinfo=datetime.UTC)
+# Relative: the serialized status is computed against the live clock. Whole seconds, so the
+# expected wire timestamps below serialize without microseconds.
+NOW = datetime.datetime.now(datetime.UTC).replace(microsecond=0)
 
 
 def _agent() -> OperatorAgent:
@@ -48,6 +49,10 @@ def _agent() -> OperatorAgent:
     )
 
 
+def _wire(instant: datetime.datetime) -> str:
+    return instant.isoformat().replace("+00:00", "Z")
+
+
 def _grant() -> HttpGrant:
     return HttpGrant(
         grant_id=GRANT_ID,
@@ -58,9 +63,8 @@ def _grant() -> HttpGrant:
             origin=HttpOrigin(scheme=HttpScheme.HTTPS, host="grocy.example", port=443),
             coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET}), path_regex="/api/.*"),
         ),
-        status=GrantStatus.ACTIVE,
         created_at=NOW - datetime.timedelta(minutes=5),
-        expires_at=NOW + datetime.timedelta(minutes=25),
+        expires_at=NOW + datetime.timedelta(hours=2),
     )
 
 
@@ -118,8 +122,8 @@ def test_lists_only_the_authenticated_operators_agents_with_provenance() -> None
                         "credential_handle": None,
                     },
                     "status": "active",
-                    "created_at": "2026-08-26T23:55:00Z",
-                    "expires_at": "2026-08-27T00:25:00Z",
+                    "created_at": _wire(NOW - datetime.timedelta(minutes=5)),
+                    "expires_at": _wire(NOW + datetime.timedelta(hours=2)),
                     "released_at": None,
                     "revoked_at": None,
                     "end_reason": None,

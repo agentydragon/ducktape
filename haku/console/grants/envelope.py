@@ -97,7 +97,14 @@ class GrantSourceError(GrantError, ValueError):
 
 
 class GrantEnvelope(BaseModel):
-    """Domain-independent half of a durable grant returned by a grant service."""
+    """Domain-independent half of a durable grant returned by a grant service.
+
+    The end facts — ``released_at``, ``revoked_at``, ``end_reason`` — live here: at most one
+    end action ever exists, and :func:`derive_status` computes the lifecycle vocabulary from
+    the facts and the clock. ``status`` is deliberately not an envelope field: HTTP computes
+    it from these facts (`HttpGrant.status`), while Kubernetes still carries its stored
+    column until the #4883 contract step flips its readers onto the facts.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -105,9 +112,10 @@ class GrantEnvelope(BaseModel):
     owner_agent_id: UUID
     principal: GrantPrincipal
     source_tool_call_id: NON_EMPTY
-    status: GrantStatus
     created_at: AwareDatetime
     expires_at: AwareDatetime
+    released_at: AwareDatetime | None = None
+    revoked_at: AwareDatetime | None = None
     end_reason: str | None = None
 
     @model_validator(mode="after")
@@ -122,6 +130,12 @@ class GrantEnvelope(BaseModel):
     def validate_window(self) -> GrantEnvelope:
         if self.expires_at <= self.created_at:
             raise ValueError("expires_at must be after created_at")
+        return self
+
+    @model_validator(mode="after")
+    def validate_single_end_action(self) -> GrantEnvelope:
+        if self.released_at is not None and self.revoked_at is not None:
+            raise ValueError("a grant cannot be both released and revoked")
         return self
 
 
@@ -153,6 +167,11 @@ class GrantEnvelopeColumns:
     )
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # The end facts derive_status reads. Expiry deliberately records no fact — it derives from
+    # ``expires_at`` and the clock alone.
+    released_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    end_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 def grant_envelope_table_args(table: str) -> tuple[CheckConstraint | Index, ...]:

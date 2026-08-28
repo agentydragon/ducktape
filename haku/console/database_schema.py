@@ -510,12 +510,21 @@ class AuthorizationGrant(Base):
 class KubernetesGrantRow(GrantEnvelopeColumns, Base):
     """One Agent-owned, principal-scoped, time-bounded Kubernetes capability lease.
 
-    The envelope half of the row (`GrantEnvelopeColumns`) is shared with every grant domain.
+    The envelope half of the row (`GrantEnvelopeColumns`) is shared with every grant domain,
+    end facts included: this table now dual-writes ``released_at``/``revoked_at`` beside the
+    stored ``status``/``ended_at`` that pre-facts replicas still write and every reader still
+    trusts (facts-only derivation would read a mid-roll fact-less end as active — fail-open).
     Scope and rules are intentionally JSONB: Kubernetes evolves its resource vocabulary, while
-    the domain validates the stable namespace and RBAC-like shapes before writing. The stored
-    ``status`` column plus ``ended_at`` are this table's end-fact shape until #4883 dissolves
-    them onto the envelope's derived form.
+    the domain validates the stable namespace and RBAC-like shapes before writing.
     """
+
+    # CLEANUP(added 2026-08-28): #4883 contract step, once this dual-writing image is fully
+    #   rolled (no replica ends a grant without writing its end fact): backfill straggler
+    #   rows ended fact-lessly mid-roll (released_at/revoked_at := ended_at keyed on status),
+    #   NULL the sweeper's end_reason on expired rows, flip readers and the repository's
+    #   filters onto derive_status over the facts, delete the expire() sweeper, then drop
+    #   `status` + `ended_at`, the three status-bearing indexes, ck_kubernetes_grants_status_shape,
+    #   and fold the end-shape CHECK into grant_envelope_table_args.
 
     __tablename__ = "kubernetes_grants"
     __table_args__ = (
@@ -541,6 +550,9 @@ class KubernetesGrantRow(GrantEnvelopeColumns, Base):
             "AND end_reason IS NOT NULL AND btrim(end_reason) <> '')",
             name="ck_kubernetes_grants_status_shape",
         ),
+        # The envelope's end-shape CHECK arrives with the #4883 contract step; until then only
+        # the fact half that pre-facts writers cannot violate is enforced here.
+        CheckConstraint("num_nonnulls(released_at, revoked_at) <= 1", name="ck_kubernetes_grants_single_end_action"),
         Index("idx_kubernetes_grants_owner_status_expiry", "owner_agent_id", "status", "expires_at"),
         Index("idx_kubernetes_grants_agent_principal_status_expiry", "principal_agent_id", "status", "expires_at"),
         Index("idx_kubernetes_grants_session_principal_status_expiry", "principal_session_id", "status", "expires_at"),
@@ -550,7 +562,6 @@ class KubernetesGrantRow(GrantEnvelopeColumns, Base):
     rules: Mapped[list[KubernetesRule]] = mapped_column(PydanticColumn(list[KubernetesRule]), nullable=False)
     status: Mapped[GrantStatus] = mapped_column(TextBackedStrEnumColumn(GrantStatus), nullable=False)
     ended_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    end_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class HttpGrantRow(GrantEnvelopeColumns, Base):
@@ -593,9 +604,6 @@ class HttpGrantRow(GrantEnvelopeColumns, Base):
     # The handle is an inert config-registry name (`grants.http.decide_config`); the credential
     # value it resolves to lives in a deployment env reference and never enters Postgres.
     credential_handle: Mapped[str | None] = mapped_column(Text, nullable=True)
-    released_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    revoked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    end_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class StaticCredential(Base):

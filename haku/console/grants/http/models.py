@@ -17,6 +17,7 @@ them and the clock, so expiry needs no sweeper.
 
 from __future__ import annotations
 
+import datetime
 import ipaddress
 import re
 from enum import StrEnum
@@ -24,9 +25,18 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 import idna
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, PlainSerializer, field_validator, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    PlainSerializer,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
-from haku.console.grants.envelope import NON_EMPTY, GrantEnvelope, GrantStatus
+from haku.console.grants.envelope import NON_EMPTY, GrantEnvelope, GrantStatus, derive_status
 
 # One spelling for the inert credential-handle slug, shared with the deploy-config registry
 # (`decide_config.EgressCredentialEntry.handle`) that grants redeem from.
@@ -164,31 +174,31 @@ class HttpGrantSpec(BaseModel):
 class HttpGrant(GrantEnvelope):
     """Durable grant returned by the service: the shared envelope plus origin/coverage spec.
 
-    ``status`` is derived from the recorded end facts at read time
-    (`haku.console.grants.envelope.derive_status`), never stored.
+    ``status`` is computed from the envelope's recorded end facts and the clock at access
+    time (`haku.console.grants.envelope.derive_status`) — never stored and never a field, so
+    it cannot disagree with the facts.
     """
 
     spec: HttpGrantSpec
-    released_at: AwareDatetime | None = None
-    revoked_at: AwareDatetime | None = None
 
     @model_validator(mode="after")
-    def validate_end_facts(self) -> HttpGrant:
-        if self.released_at is not None and self.revoked_at is not None:
-            raise ValueError("a grant cannot be both released and revoked")
+    def validate_end_reason(self) -> HttpGrant:
         ended = self.released_at is not None or self.revoked_at is not None
         if ended != (self.end_reason is not None and bool(self.end_reason.strip())):
             raise ValueError("end_reason travels exactly with a recorded end action")
-        match self.status:
-            case GrantStatus.RELEASED if self.released_at is None:
-                raise ValueError("a released grant requires released_at")
-            case GrantStatus.REVOKED if self.revoked_at is None:
-                raise ValueError("a revoked grant requires revoked_at")
-            case GrantStatus.ACTIVE if ended:
-                raise ValueError("an active grant cannot carry end facts")
-            case _:
-                pass
         return self
+
+    # The ignore is pydantic's documented mypy accommodation for computed_field-on-property
+    # (mypy's prop-decorator limitation), not a silenced finding.
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def status(self) -> GrantStatus:
+        return derive_status(
+            released_at=self.released_at,
+            revoked_at=self.revoked_at,
+            expires_at=self.expires_at,
+            now=datetime.datetime.now(datetime.UTC),
+        )
 
 
 class HttpRequestAllowed(BaseModel):

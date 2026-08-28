@@ -42,7 +42,7 @@ class HttpGrantRepository(Protocol):
         self, *, owner_agent_id: UUID, now: datetime.datetime, include_terminal: bool = True
     ) -> tuple[HttpGrant, ...]: ...
 
-    async def get(self, *, owner_agent_id: UUID, grant_id: UUID, now: datetime.datetime) -> HttpGrant: ...
+    async def get(self, *, owner_agent_id: UUID, grant_id: UUID) -> HttpGrant: ...
 
     async def release(
         self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime
@@ -130,7 +130,7 @@ class HttpGrantService:
         )
 
     async def get_grant(self, *, owner_agent_id: UUID, grant_id: UUID) -> HttpGrant:
-        return await self._repository.get(owner_agent_id=owner_agent_id, grant_id=grant_id, now=self._now())
+        return await self._repository.get(owner_agent_id=owner_agent_id, grant_id=grant_id)
 
     async def get_applicable_grant(self, *, request_principal: RequestPrincipal, grant_id: UUID) -> HttpGrant:
         grant = await self.get_grant(owner_agent_id=request_principal.agent_id, grant_id=grant_id)

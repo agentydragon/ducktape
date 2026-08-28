@@ -151,12 +151,15 @@ def validate_grant_scope_rules(scope: KubernetesGrantScope, rules: Iterable[Kube
 class KubernetesGrant(GrantEnvelope):
     """Durable grant returned by the service: the shared envelope plus scope/rules coverage.
 
-    The stored ``status`` column and ``ended_at`` are this domain's end-fact shape until
-    #4883 dissolves them onto the envelope's derived form.
+    This domain now writes the envelope's end facts, but its readers still trust the stored
+    ``status`` plus ``ended_at``: rows ended by a pre-facts replica during the roll carry no
+    facts, so deriving status from them would fail open. The #4883 contract step (staged at
+    `KubernetesGrantRow`) flips readers onto ``derive_status`` and retires both fields.
     """
 
     scope: KubernetesGrantScope
     rules: tuple[KubernetesRule, ...] = Field(min_length=1)
+    status: GrantStatus
     ended_at: AwareDatetime | None = None
 
     @model_validator(mode="after")
@@ -171,6 +174,16 @@ class KubernetesGrant(GrantEnvelope):
                 raise ValueError("an active grant cannot have terminal fields")
         elif self.ended_at is None or not self.end_reason or not self.end_reason.strip():
             raise ValueError("a terminal grant requires ended_at and a non-empty end_reason")
+        return self
+
+    @model_validator(mode="after")
+    def validate_end_fact_coherence(self) -> KubernetesGrant:
+        # One direction only: a pre-facts replica's end writes no fact, so a terminal status
+        # without a fact stays valid until the #4883 contract step.
+        if self.released_at is not None and self.status is not GrantStatus.RELEASED:
+            raise ValueError("released_at requires a released stored status")
+        if self.revoked_at is not None and self.status is not GrantStatus.REVOKED:
+            raise ValueError("revoked_at requires a revoked stored status")
         return self
 
 

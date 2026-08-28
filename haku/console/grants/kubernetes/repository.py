@@ -59,6 +59,8 @@ class PostgresKubernetesGrantRepository:
             status=row.status,
             created_at=row.created_at,
             expires_at=row.expires_at,
+            released_at=row.released_at,
+            revoked_at=row.revoked_at,
             ended_at=row.ended_at,
             end_reason=row.end_reason,
         )
@@ -137,6 +139,8 @@ class PostgresKubernetesGrantRepository:
                     status=GrantStatus.ACTIVE,
                     created_at=created_at,
                     expires_at=expires_at,
+                    released_at=None,
+                    revoked_at=None,
                     ended_at=None,
                     end_reason=None,
                 )
@@ -186,6 +190,12 @@ class PostgresKubernetesGrantRepository:
                 row.status = GrantStatus.EXPIRED if ended_at >= row.expires_at else status
                 row.ended_at = ended_at
                 row.end_reason = "expired" if row.status is GrantStatus.EXPIRED else reason.strip()
+                # Dual-write the envelope end fact; an expiry relabel records none (expiry is
+                # derivational, never a fact).
+                if row.status is GrantStatus.RELEASED:
+                    row.released_at = ended_at
+                elif row.status is GrantStatus.REVOKED:
+                    row.revoked_at = ended_at
                 await session.flush()
             return self._row_to_model(row)
 
@@ -242,6 +252,8 @@ class PostgresKubernetesGrantRepository:
                 row.status = GrantStatus.EXPIRED if ended_at >= row.expires_at else GrantStatus.REVOKED
                 row.ended_at = ended_at
                 row.end_reason = "expired" if row.status is GrantStatus.EXPIRED else reason
+                if row.status is GrantStatus.REVOKED:
+                    row.revoked_at = ended_at
             await session.flush()
             return tuple(self._row_to_model(row) for row in rows)
 

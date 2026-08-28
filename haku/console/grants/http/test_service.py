@@ -57,7 +57,6 @@ def _grant(
         principal=principal,
         source_tool_call_id="tool-call-preexisting",
         spec=spec,
-        status=derive_status(released_at=released_at, revoked_at=revoked_at, expires_at=expires_at, now=created_at),
         created_at=created_at,
         expires_at=expires_at,
         released_at=released_at,
@@ -75,13 +74,12 @@ class FakeRepository:
         self.revoke_calls: list[tuple[UUID, UUID, str, datetime.datetime]] = []
 
     @staticmethod
-    def _at(grant: HttpGrant, now: datetime.datetime) -> HttpGrant:
-        return grant.model_copy(
-            update={
-                "status": derive_status(
-                    released_at=grant.released_at, revoked_at=grant.revoked_at, expires_at=grant.expires_at, now=now
-                )
-            }
+    def _active(grant: HttpGrant, now: datetime.datetime) -> bool:
+        return (
+            derive_status(
+                released_at=grant.released_at, revoked_at=grant.revoked_at, expires_at=grant.expires_at, now=now
+            )
+            is GrantStatus.ACTIVE
         )
 
     async def create_many(
@@ -94,7 +92,6 @@ class FakeRepository:
                 principal=grant_principal,
                 source_tool_call_id=source_tool_call_id,
                 spec=spec,
-                status=GrantStatus.ACTIVE,
                 created_at=created_at,
                 expires_at=expires_at,
             )
@@ -104,45 +101,40 @@ class FakeRepository:
         return created
 
     async def list(self, *, owner_agent_id, now, include_terminal=True):
-        return tuple(self._at(grant, now) for grant in self.grants.values() if grant.owner_agent_id == owner_agent_id)
+        return tuple(grant for grant in self.grants.values() if grant.owner_agent_id == owner_agent_id)
 
     async def list_for_request_principal(self, *, request_principal, now, include_terminal=True):
         return tuple(
-            self._at(grant, now)
+            grant
             for grant in self.grants.values()
             if grant_principal_applies_to(grant.principal, request_principal)
-            and (include_terminal or self._at(grant, now).status is GrantStatus.ACTIVE)
+            and (include_terminal or self._active(grant, now))
         )
 
-    async def get(self, *, owner_agent_id, grant_id, now):
+    async def get(self, *, owner_agent_id, grant_id):
         grant = self.grants[grant_id]
         assert grant.owner_agent_id == owner_agent_id
-        return self._at(grant, now)
+        return grant
 
     async def active_for_request_principal(self, *, request_principal, now):
         return tuple(
-            self._at(grant, now)
+            grant
             for grant in self.grants.values()
-            if grant_principal_applies_to(grant.principal, request_principal)
-            and self._at(grant, now).status is GrantStatus.ACTIVE
+            if grant_principal_applies_to(grant.principal, request_principal) and self._active(grant, now)
         )
 
     async def release(self, *, owner_agent_id, grant_id, reason, now):
         self.release_calls.append((owner_agent_id, grant_id, reason, now))
         grant = self.grants[grant_id]
         assert grant.owner_agent_id == owner_agent_id
-        self.grants[grant_id] = grant.model_copy(
-            update={"status": GrantStatus.RELEASED, "released_at": now, "end_reason": reason}
-        )
+        self.grants[grant_id] = grant.model_copy(update={"released_at": now, "end_reason": reason})
         return self.grants[grant_id]
 
     async def revoke(self, *, owner_agent_id, grant_id, reason, now):
         self.revoke_calls.append((owner_agent_id, grant_id, reason, now))
         grant = self.grants[grant_id]
         assert grant.owner_agent_id == owner_agent_id
-        self.grants[grant_id] = grant.model_copy(
-            update={"status": GrantStatus.REVOKED, "revoked_at": now, "end_reason": reason}
-        )
+        self.grants[grant_id] = grant.model_copy(update={"revoked_at": now, "end_reason": reason})
         return self.grants[grant_id]
 
 

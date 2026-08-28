@@ -21,7 +21,8 @@ from haku.console.grants.http.models import HttpGrantSpec, HttpMethod, HttpOrigi
 from haku.console.grants.http.repository import PostgresHttpGrantRepository
 from haku.console.grants.principal import AgentGrantPrincipal, RequestPrincipal, SessionGrantPrincipal
 
-_NOW = datetime(2026, 8, 27, 0, 0, tzinfo=UTC)
+# Relative: HttpGrant.status is computed against the live clock, so windows anchor to it.
+_NOW = datetime.now(UTC)
 _SPEC = HttpGrantSpec(
     origin=HttpOrigin(scheme=HttpScheme.HTTPS, host="grocy.example", port=443),
     coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})),
@@ -53,11 +54,11 @@ def test_repository_enforces_source_provenance_and_lifecycle(make_client: Any) -
                 source_tool_call_id=source_tool_call_id,
                 grants=(_SPEC,),
                 created_at=_NOW,
-                expires_at=_NOW + timedelta(minutes=5),
+                expires_at=_NOW + timedelta(hours=1),
             )
             assert grant.status is GrantStatus.ACTIVE
             assert grant.spec == _SPEC
-            assert (await repository.get(owner_agent_id=agent_id, grant_id=grant.grant_id, now=_NOW)) == grant
+            assert (await repository.get(owner_agent_id=agent_id, grant_id=grant.grant_id)) == grant
             assert await repository.active_for_request_principal(
                 request_principal=RequestPrincipal(agent_id=agent_id, session_id=None, access_profile_id=None), now=_NOW
             ) == (grant,)
@@ -94,17 +95,19 @@ def test_expiry_is_derived_and_ending_an_expired_grant_records_nothing(make_clie
         repository = PostgresHttpGrantRepository(sessions)
 
         async def exercise() -> None:
+            # A lease whose whole window is behind the clock: written directly at this layer,
+            # since the window bound is the service's validation, not the store's.
             (grant,) = await repository.create_many(
                 owner_agent_id=agent_id,
                 grant_principal=AgentGrantPrincipal(agent_id=agent_id),
                 source_tool_call_id=source_tool_call_id,
                 grants=(_SPEC,),
-                created_at=_NOW,
-                expires_at=_NOW + timedelta(minutes=5),
+                created_at=_NOW - timedelta(hours=2),
+                expires_at=_NOW - timedelta(hours=1),
             )
-            past_expiry = _NOW + timedelta(minutes=10)
+            past_expiry = _NOW
             # No sweeper ran, yet every read past the bound derives EXPIRED and excludes it.
-            expired = await repository.get(owner_agent_id=agent_id, grant_id=grant.grant_id, now=past_expiry)
+            expired = await repository.get(owner_agent_id=agent_id, grant_id=grant.grant_id)
             assert expired.status is GrantStatus.EXPIRED
             assert expired.released_at is None
             assert expired.revoked_at is None

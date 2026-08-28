@@ -502,7 +502,7 @@ class SessionStore:
         await db.execute(
             update(KubernetesGrantRow)
             .where(*kubernetes_session_principal, KubernetesGrantRow.status == GrantStatus.ACTIVE)
-            .values(status=GrantStatus.REVOKED, ended_at=now, end_reason="principal_ended")
+            .values(status=GrantStatus.REVOKED, ended_at=now, revoked_at=now, end_reason="principal_ended")
         )
         # HTTP grant status is derived, so already-expired leases need no write: one revocation
         # fact ends every lease this session could still exercise.

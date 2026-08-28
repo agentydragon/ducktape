@@ -171,7 +171,6 @@ def _grant_payload() -> dict[str, object]:
         "principal": AgentGrantPrincipal(agent_id=UUID("00000000-0000-4000-8000-000000000002")),
         "source_tool_call_id": "tc_source",
         "spec": spec(),
-        "status": GrantStatus.ACTIVE,
         "created_at": _CREATED,
         "expires_at": _EXPIRES,
     }
@@ -181,7 +180,7 @@ def _grant_payload() -> dict[str, object]:
 def test_grant_timestamps_require_timezone_awareness(field: str) -> None:
     payload = _grant_payload()
     if field == "released_at":
-        payload.update(status=GrantStatus.RELEASED, end_reason="done")
+        payload.update(end_reason="done")
     payload[field] = datetime.datetime(2026, 8, 21)
 
     with pytest.raises(ValidationError):
@@ -196,28 +195,35 @@ def test_agent_grant_principal_must_belong_to_lifecycle_owner() -> None:
         HttpGrant.model_validate(payload)
 
 
-def test_grant_end_facts_travel_together_and_match_the_status() -> None:
+def test_grant_end_facts_travel_together() -> None:
     early = datetime.datetime(2026, 8, 21, 0, 30, tzinfo=datetime.UTC)
 
     payload = _grant_payload()
-    payload["status"] = GrantStatus.REVOKED
-    with pytest.raises(ValidationError, match="revoked grant requires revoked_at"):
-        HttpGrant.model_validate(payload)
-
-    payload = _grant_payload()
-    payload.update(released_at=early, end_reason="early")
-    with pytest.raises(ValidationError, match="an active grant cannot carry end facts"):
-        HttpGrant.model_validate(payload)
-
-    payload = _grant_payload()
-    payload.update(status=GrantStatus.RELEASED, released_at=early)
+    payload.update(released_at=early)
     with pytest.raises(ValidationError, match="end_reason travels exactly with a recorded end action"):
         HttpGrant.model_validate(payload)
 
     payload = _grant_payload()
-    payload.update(status=GrantStatus.RELEASED, released_at=early, revoked_at=early, end_reason="both")
+    payload.update(released_at=early, revoked_at=early, end_reason="both")
     with pytest.raises(ValidationError, match="cannot be both released and revoked"):
         HttpGrant.model_validate(payload)
+
+
+def test_status_is_computed_from_facts_and_clock() -> None:
+    early = datetime.datetime(2026, 8, 21, 0, 30, tzinfo=datetime.UTC)
+
+    # _EXPIRES is in the past, so with no end fact the computed status is EXPIRED.
+    expired = HttpGrant.model_validate(_grant_payload())
+    assert expired.status is GrantStatus.EXPIRED
+
+    released = HttpGrant.model_validate({**_grant_payload(), "released_at": early, "end_reason": "done"})
+    assert released.status is GrantStatus.RELEASED
+    # The computed field still serializes: the wire keeps its status key.
+    assert released.model_dump()["status"] is GrantStatus.RELEASED
+
+    active_payload = _grant_payload()
+    active_payload["expires_at"] = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=1)
+    assert HttpGrant.model_validate(active_payload).status is GrantStatus.ACTIVE
 
 
 if __name__ == "__main__":

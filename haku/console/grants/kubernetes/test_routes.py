@@ -138,6 +138,8 @@ def test_lists_only_the_authenticated_operators_agents_with_provenance() -> None
                     "status": "active",
                     "created_at": "2026-08-21T23:55:00Z",
                     "expires_at": "2026-08-22T00:25:00Z",
+                    "released_at": None,
+                    "revoked_at": None,
                     "ended_at": None,
                     "end_reason": None,
                 },
