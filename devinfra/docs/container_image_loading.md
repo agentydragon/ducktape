@@ -18,12 +18,16 @@ freshly booted microVM with an empty image store.
 could not overlap, four consecutive runs still produced four distinct boot ids and four empty
 daemons.
 
-The marker and the lock are therefore local-development mechanisms under current RBE behaviour.
-That sits awkwardly with <../../debug/2026_08_14_docker_test_timeouts.md>, whose diagnosis assumed
-concurrent targets sharing one daemon per worker; either the platform behaved differently in
-August 2026 or that contention was only ever reachable locally. Worth resolving before anyone
-relies on the lock for anything remote — it is harmless either way, but its comment claims more
-than the current platform delivers.
+Both were therefore removed: `load_oci_image` is now a per-process `functools.cache`, which is
+the only scope that can hit. Nothing forks a loader — all 45 call sites are pytest fixtures inside
+one test process — and Docker tests run only under remote execution (root `AGENTS.md`), so no
+supported path has two processes racing for one daemon.
+
+This sits awkwardly with <../../debug/2026_08_14_docker_test_timeouts.md>, whose diagnosis assumed
+concurrent targets sharing one daemon per worker. Either the platform behaved differently in
+August 2026 or that contention was only ever reachable locally; the thundering herd it describes
+cannot recur while each action owns its VM, and would have to be re-argued from measurements if
+Docker tests ever run locally again.
 
 ## What it costs
 

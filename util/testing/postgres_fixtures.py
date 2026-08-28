@@ -63,9 +63,10 @@ def start_postgres_container(image: OciImage = POSTGRES_18) -> PostgresContainer
 
     **Every step says how long it took.** This runs in session fixture setup, before pytest has
     emitted a line, so when it wedges the whole test log is silence — which is how a five-minute
-    hang came to be read as a slow test (<../../debug/2026_08_14_docker_test_timeouts.md>). The
-    load itself is serialised per tag inside `load_oci_image`; what is left unbounded is the
-    daemon's own container start, so the least this can do is name where the time went.
+    hang came to be read as a slow test (<../../debug/2026_08_14_docker_test_timeouts.md>). Each
+    load costs ~14s and every remote action pays it in full
+    (<../../devinfra/docs/container_image_loading.md>), so the least this can do is name where the
+    time went.
     """
     with _onto_disk():
         for preloaded in (RYUK, image):
