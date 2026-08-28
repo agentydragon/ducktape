@@ -4,9 +4,6 @@ resources:
   - forgejo-images-creds-eso.yaml
   - sandboxtemplate-haku.yaml
   - sandboxwarmpool-haku.yaml
-  # #4943 GitHub egress spike (colocated-proxy routing variant; see the template's CLEANUP).
-  - sandboxtemplate-haku-egress-spike.yaml
-  - sandboxwarmpool-haku-egress-spike.yaml
   - sandboxtemplate-haku-claude.yaml
   - sandboxwarmpool-haku-claude.yaml
   - sandboxtemplate-haku-public-coder-codex.yaml

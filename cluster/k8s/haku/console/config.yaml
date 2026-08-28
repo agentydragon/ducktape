@@ -482,12 +482,18 @@ egress_decide:
         - scheme: https
           host: codeload.github.com
           port: 443
-  # Deploy-managed standing HTTP policy (#4941), first consumer: the #4943 GitHub spike. The haku
-  # Agent reaches the GitHub API and git-over-HTTPS smart-HTTP endpoints under standing policy,
-  # redeeming the bot credential at both — Bearer on the API, Basic (decoded/swapped/re-encoded
-  # proxy-side) on github.com. No path pin: git smart HTTP needs /info/refs?service=git-upload-pack
-  # through to the pack endpoints. codeload.github.com is deliberately NOT standing — the registry
-  # can redeem there, but reaching it takes a temporary grant, which is the spike's
+  # Deploy-managed standing HTTP policy (#4941), first consumer: the #4943 GitHub spike, driven
+  # from the public-coder-agent OpenClaw pod. The entries are nonetheless authored against the
+  # haku agent id, because that is the identity fenced traffic actually presents: the sidecar
+  # holds the one static fence credential above, so the decide service resolves EVERY fenced
+  # request to the haku Agent regardless of which pod sent it. Scoping these entries (or the
+  # registry credential) to public-coder's agent id would be dead config today — nothing presents
+  # that identity at the fence until #4670's minted per-claim fence credentials land.
+  # Coverage: the GitHub API and git-over-HTTPS smart-HTTP endpoints, redeeming the bot
+  # credential at both — Bearer on the API, Basic (decoded/swapped/re-encoded proxy-side) on
+  # github.com. No path pin: git smart HTTP needs /info/refs?service=git-upload-pack through to
+  # the pack endpoints. codeload.github.com is deliberately NOT standing — the registry can
+  # redeem there, but reaching it takes a temporary grant, which is the spike's
   # deny -> create_grant -> retry -> release leg (haku/egress/docs/github_spike.md).
   standing_policies:
     - id: haku-github-api

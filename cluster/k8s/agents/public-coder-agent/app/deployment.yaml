@@ -114,6 +114,18 @@ spec:
             # would never see it. See docs/personal_agents/findings/ F7, F10, F16.
             - name: GH_PAT
               value: "proxy-github-placeholder"
+            # The #4943 spike placeholder: requests sent through the colocated Console egress
+            # fence (haku-console:8888) carrying this value get the `github-bot` credential
+            # substituted server-side under standing policy (cluster/k8s/haku/console/config.yaml
+            # egress_decide). Inert on its own and on every other path — iron does not know it.
+            # Through the fence this pod acts as the haku bot, not agentydragon-agent: the fence
+            # presents one static fence credential, so the decide service resolves ALL fenced
+            # traffic to the haku Agent until per-agent fence credentials land (#4670). GH_PAT
+            # above stays the production GitHub path for the same reason. Not named GITHUB_TOKEN:
+            # OpenClaw strips that from exec env, and `gh` picking it up would send a
+            # fence-only placeholder down the iron path.
+            - name: HAKU_GITHUB_TOKEN
+              value: "github-token-placeholder"
             # Non-secret Haku Console bearer placeholder. The real static-Agent credential exists
             # only in Haku Console and this agent's iron-proxy, which replaces this value only in
             # Authorization headers sent to the exact haku.allegedly.works host.
@@ -238,6 +250,17 @@ spec:
               mountPath: /etc/ssl/certs/ca-certificates.crt
               subPath: ca-certificates.crt
               readOnly: true
+            # The #4943 fence trust anchor, deliberately in the exact shape the fleet
+            # inject-haku-egress-proxy policy would inject (same volume name, same mountPath):
+            # carrying the policy's own wiring is what its every rule preconditions on, so if
+            # the fleet injection ever widens to this namespace (#4670 adoption), this pod reads
+            # as already wired and no port-8080 env is appended over the iron values above.
+            # Pinned by cluster/validation/test_haku_manifest_contracts.py. Not merged into the
+            # `trust` bundle: fence trust stays a per-request opt-in
+            # (haku/egress/docs/github_spike.md) until the fence owns this pod's egress.
+            - name: haku-egress-proxy-ca-cert
+              mountPath: /egress-proxy-ca
+              readOnly: true
             - name: tmp
               mountPath: /tmp
           resources:
@@ -274,5 +297,10 @@ spec:
         - name: trust
           configMap:
             name: public-coder-agent-proxy-ca-cert
+        # Delivered here by the haku-egress-proxy trust-manager Bundle
+        # (../../haku-egress-proxy/trust-bundle.yaml namespaceSelector).
+        - name: haku-egress-proxy-ca-cert
+          configMap:
+            name: haku-egress-proxy-ca-cert
         - name: tmp
           emptyDir: {}
