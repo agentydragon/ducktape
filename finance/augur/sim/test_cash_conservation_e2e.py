@@ -65,7 +65,7 @@ from finance.augur.sim.scenario import (
     TaxProfile,
 )
 from finance.augur.sim.simulate import simulate, simulate_with_external_series
-from finance.augur.sim.test_state_helpers import cash_balances
+from finance.augur.sim.testing.state_helpers import cash_balances
 
 _VTI = SecurityKey(symbol=SecuritySymbol("vti"))
 _ACME = PrivateEquityAssetKey(issuer_id=IssuerId("acme"))

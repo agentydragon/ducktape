@@ -18,7 +18,7 @@ from finance.augur.model.series_model import SeriesModelBundle
 from finance.augur.sim.bench_scenario import build_bench_scenario
 from finance.augur.sim.scenario import InitialLot, SleeveTarget
 from finance.augur.sim.simulate import simulate
-from finance.augur.sim.test_state_helpers import asset_lots, rollout_status, series_values
+from finance.augur.sim.testing.state_helpers import asset_lots, rollout_status, series_values
 
 
 def test_bench_scenario_runs_at_low_rollout_count() -> None:

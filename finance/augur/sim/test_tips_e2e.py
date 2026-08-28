@@ -23,7 +23,7 @@ from finance.augur.sim.compiler.series import scenario_level_series_keys
 from finance.augur.sim.engine.jax_engine import run_jax_product_metric_arrays
 from finance.augur.sim.scenario import Agent, BondHolding, FilingStatus, InitialAccountBalance, Scenario, TaxProfile
 from finance.augur.sim.simulate import simulate
-from finance.augur.sim.test_state_helpers import cash_balances, ordinary_income_ytd
+from finance.augur.sim.testing.state_helpers import cash_balances, ordinary_income_ytd
 
 _HORIZON = 14
 _FACE = 1_000_000

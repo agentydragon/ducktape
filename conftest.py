@@ -10,6 +10,11 @@ import os
 
 import pytest
 
+# Imported so the pytest-asyncio plugin rides //:conftest into every test's
+# runfiles (pytest discovers installed plugins via entry points); the
+# asyncio_mode setting below only takes effect when the plugin is present.
+import pytest_asyncio
+
 
 def pytest_configure(config: pytest.Config) -> None:
     """Register all common test markers."""

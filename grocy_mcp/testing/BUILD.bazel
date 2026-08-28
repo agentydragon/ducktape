@@ -1,0 +1,12 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//grocy_mcp:__subpackages__"],
+)
+
+py_library(
+    name = "helpers",
+    srcs = ["helpers.py"],
+    deps = ["@pypi//fastmcp_slim"],
+)

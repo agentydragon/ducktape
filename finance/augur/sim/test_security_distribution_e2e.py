@@ -33,7 +33,7 @@ from finance.augur.sim.scenario import (
     TaxProfile,
 )
 from finance.augur.sim.simulate import simulate
-from finance.augur.sim.test_state_helpers import cash_balances, ordinary_income_ytd
+from finance.augur.sim.testing.state_helpers import cash_balances, ordinary_income_ytd
 
 _HORIZON = 13
 _SYMBOL = SecuritySymbol("bnd")
