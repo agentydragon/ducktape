@@ -9,12 +9,16 @@
 # one's digest appears only in devinfra/bbr.json, which no action hashes, so it
 # is free to churn with every artifact-pin bump.
 #
-# BASE_DIGEST is devinfra/image_pins.json's rbe_worker pin, passed by
-# .github/workflows/container-images.yml. Building against the pin rather than
-# `:latest` keeps the runner on the same OS the actions execute on, and makes a
-# worker repin cascade into a runner rebuild instead of silently diverging.
-ARG BASE_DIGEST
-FROM ghcr.io/agentydragon/rbe-worker@${BASE_DIGEST}
+# BASE_REF is the whole base reference, passed by
+# .github/workflows/container-images.yml as the rbe-worker image at
+# devinfra/image_pins.json's rbe_worker digest. Building against the pin rather
+# than `:latest` keeps the runner on the same OS the actions execute on, and
+# makes a worker repin cascade into a runner rebuild instead of silently
+# diverging. It is the whole reference and not just the digest so the image can
+# also be built against a locally built worker, which is how it gets exercised
+# without pulling the private GHCR package.
+ARG BASE_REF
+FROM ${BASE_REF}
 LABEL org.opencontainers.image.source=https://github.com/agentydragon/ducktape
 
 # --- Nix + devtools ---

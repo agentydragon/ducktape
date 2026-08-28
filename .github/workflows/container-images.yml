@@ -95,7 +95,7 @@ jobs:
 
       - id: base
         run: |
-          python3 -c "import json; print('digest=' + json.load(open('devinfra/image_pins.json'))['rbe_worker']['digest'])" >> "$GITHUB_OUTPUT"
+          python3 -c "import json; p=json.load(open('devinfra/image_pins.json'))['rbe_worker']; print('ref=' + p['image'] + '@' + p['digest'])" >> "$GITHUB_OUTPUT"
 
       # With no output or tags, Buildx evaluates the complete Dockerfile and
       # leaves the result only in its ephemeral build cache.
@@ -104,7 +104,7 @@ jobs:
         with:
           context: .
           file: devinfra/bbr_runner/Dockerfile
-          build-args: BASE_DIGEST=${{ steps.base.outputs.digest }}
+          build-args: BASE_REF=${{ steps.base.outputs.ref }}
           push: false
           cache-from: type=registry,ref=${{ env.RUNNER_IMAGE }}:buildcache
 
@@ -122,7 +122,7 @@ jobs:
 
       - id: base
         run: |
-          python3 -c "import json; print('digest=' + json.load(open('devinfra/image_pins.json'))['rbe_worker']['digest'])" >> "$GITHUB_OUTPUT"
+          python3 -c "import json; p=json.load(open('devinfra/image_pins.json'))['rbe_worker']; print('ref=' + p['image'] + '@' + p['digest'])" >> "$GITHUB_OUTPUT"
 
       - uses: ./.github/actions/ghcr-build-push
         id: build
@@ -130,7 +130,7 @@ jobs:
           image: ${{ env.RUNNER_IMAGE }}
           context: .
           file: devinfra/bbr_runner/Dockerfile
-          build_args: BASE_DIGEST=${{ steps.base.outputs.digest }}
+          build_args: BASE_REF=${{ steps.base.outputs.ref }}
           cache_from: type=registry,ref=${{ env.RUNNER_IMAGE }}:buildcache
           cache_to: type=registry,ref=${{ env.RUNNER_IMAGE }}:buildcache,mode=max
 

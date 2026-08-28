@@ -69,8 +69,21 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
     && rm -rf /var/lib/apt/lists/* \
     # libtinfo5: dropped from noble (24.04), fetch from jammy (22.04) archive.
     # GHC 9.0.2 bindist requires libtinfo.so.5 for ghc-pkg during toolchain setup.
-    && curl -fsSL -o /tmp/libtinfo5.deb \
-        http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_amd64.deb \
+    #
+    # Resolved from the pool index rather than pinned to a filename. Ubuntu
+    # rotates superseded point releases out of pool/, so a pinned name 404s the
+    # first time this layer is not a cache hit -- and with the buildx registry
+    # cache that is long after the rot, on whatever unrelated change finally
+    # invalidates the layer. The previous `6.3-2ubuntu0.1` pin died exactly that
+    # way: every rebuild since was triggered by a later layer, so the fetch never
+    # re-ran and the breakage stayed invisible. Prefer an `ubuntu` revision (a
+    # security update of the Debian version) and take the highest.
+    && LIBTINFO5_POOL=http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/ \
+    && LIBTINFO5_DEBS="$(curl -fsSL "$LIBTINFO5_POOL" | grep -o 'libtinfo5_[^"]*_amd64\.deb' | sort -u)" \
+    && LIBTINFO5_DEB="$(printf '%s\n' "$LIBTINFO5_DEBS" | grep ubuntu | sort -V | tail -1)" \
+    && [ -n "$LIBTINFO5_DEB" ] || LIBTINFO5_DEB="$(printf '%s\n' "$LIBTINFO5_DEBS" | sort -V | tail -1)" \
+    && [ -n "$LIBTINFO5_DEB" ] \
+    && curl -fsSL -o /tmp/libtinfo5.deb "${LIBTINFO5_POOL}${LIBTINFO5_DEB}" \
     && dpkg -i /tmp/libtinfo5.deb \
     && rm /tmp/libtinfo5.deb
 
