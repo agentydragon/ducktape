@@ -6,9 +6,9 @@ metadata:
     annotations:
         description: Shared credential for the ducktape-ci Forgejo registry tenant. username/password read by tf/gitops/forgejo-images; .dockerconfigjson is auto-reflected as a kubelet imagePullSecret to every namespace in the reflection-auto-namespaces list below, while flux-system uses its reflected copy for ImageRepository authentication. Reflector rather than an ExternalSecret against kubernetes-flux-system-secret-store, because that store grants a namespace read access to every Secret in flux-system; this grants one dockerconfigjson.
         reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: flux-system,activitywatch,aiquota,airlock,cli-proxy-api,codex-pod,cpap-sync,grocy-sf,grocy-vallejo,ha-mcp,haku-egress-proxy,haku-mailbox,haku-openclaw-spike,haku-console,litellm,loki-read-proxy,manifold-mcp,plaid-mcp,postscanmail-mcp,public-coder-agent,squid-egress-spike,study-casino,tana-mcp,osm-mcp
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: flux-system,activitywatch,aiquota,airlock,cli-proxy-api,codex-pod,cpap-sync,grocy-sf,grocy-vallejo,ha-mcp,haku-egress-proxy,haku-mailbox,haku-openclaw-spike,haku-console,litellm,loki-read-proxy,manifold-mcp,plaid-mcp,postscanmail-mcp,public-coder-agent,squid-egress-spike,study-casino,tana-mcp,osm-mcp,agent-workspaces,haku-sandbox
         reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: flux-system,activitywatch,aiquota,airlock,cli-proxy-api,codex-pod,cpap-sync,grocy-sf,grocy-vallejo,ha-mcp,haku-egress-proxy,haku-mailbox,haku-openclaw-spike,haku-console,litellm,loki-read-proxy,manifold-mcp,plaid-mcp,postscanmail-mcp,public-coder-agent,squid-egress-spike,study-casino,tana-mcp,osm-mcp
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: flux-system,activitywatch,aiquota,airlock,cli-proxy-api,codex-pod,cpap-sync,grocy-sf,grocy-vallejo,ha-mcp,haku-egress-proxy,haku-mailbox,haku-openclaw-spike,haku-console,litellm,loki-read-proxy,manifold-mcp,plaid-mcp,postscanmail-mcp,public-coder-agent,squid-egress-spike,study-casino,tana-mcp,osm-mcp,agent-workspaces,haku-sandbox
 type: kubernetes.io/dockerconfigjson
 stringData:
     username: ENC[AES256_GCM,data:XnlwU6aDs5umRek=,iv:SVT9j83TeU4WjSTzqJ7zdTxFLMf0eX78nHZnhAR5kHI=,tag:vwptNL3WK11WPFJOGVWN6A==,type:str]
@@ -35,7 +35,7 @@ sops:
             -----END AGE ENCRYPTED FILE-----
           recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
     encrypted_regex: ^(data|stringData)$
-    lastmodified: "2026-08-28T07:49:05Z"
-    mac: ENC[AES256_GCM,data:NXYI+JLy8Erma+8CWxRL8y5cJuyiu5oBXTj2LQ9fxT6kMrv3w448yfaGGMZY9g+YrvNpxp36HYCvaQ2ejZBmmT7Pt4BTtCxl0L0KLb/iFUaORTc+f5X9cgj1LbN24PpfKbwDEnasRQfChbjhEoKSUbeYF6QnNPeD2CY3TdjW3EQ=,iv:lXkgxW/Xvl73bsj0xDTQq5CzSpQ4iN+lBR87irzySVM=,tag:606zX3tJpdbaz8GdHrXs3w==,type:str]
+    lastmodified: "2026-08-28T08:19:38Z"
+    mac: ENC[AES256_GCM,data:PPFtkjBS17VrjAEnOV4GutoksRZl2sxn6I/RpDybq8vMBP6LFOXXffsMVime4yU8Ujc6CwDwhnE5MUf23PCGIWCyRpAP0FBxLXYWEaoqlMvvfE/OiMnVapzLdOztFrBpJVBDurrxemDqOqwCyGp2x49H/PbGDuRP2Yg2vfUHHOk=,iv:VoJMslY+ajE/3YLKVwMrnn/9mgb20IBsUy24It82820=,tag:zXCBfV+wZ00Q/TNEYrI7jg==,type:str]
     mac_only_encrypted: true
     version: 3.13.3
