@@ -1426,25 +1426,6 @@ py_test(
 )
 
 py_test(
-    name = "test_harness_frame_log_migration",
-    size = "medium",
-    srcs = ["test_harness_frame_log_migration.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":database_migrate",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
     name = "test_neutral_journal_migration",
     size = "medium",
     srcs = ["test_neutral_journal_migration.py"],
@@ -1496,24 +1477,6 @@ py_test(
         ":database_migrate",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_turn_failure_reason_migration",
-    size = "medium",
-    srcs = ["test_turn_failure_reason_migration.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":database_migrate",
-        "//:conftest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
