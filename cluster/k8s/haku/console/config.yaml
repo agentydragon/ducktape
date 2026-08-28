@@ -32,7 +32,7 @@ recall_indexes:
     branch: devel
     mirror_path: /tmp/haku-recall-index/ducktape.git
 
-chat_runtimes:
+harnesses:
   claude_code:
     agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
     namespace: haku-runtime-sandbox

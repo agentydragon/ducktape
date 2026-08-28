@@ -18,9 +18,9 @@ def test_deployed_console_config_is_valid() -> None:
     raw = yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/config.yaml").read_text())
     config = ConsoleConfigFile.model_validate(raw)
 
-    # The deployed ConfigMap still writes the deprecated `chat_runtimes` key (#4772 C4c expand);
-    # the loader maps it onto the canonical `harnesses` field.
-    assert "chat_runtimes" in raw
+    # The deployed ConfigMap writes only the canonical `harnesses` key (#4772 C4c).
+    assert "harnesses" in raw
+    assert "chat_runtimes" not in raw
     assert config.harnesses is not None
     claude = config.harnesses.claude_code
     assert claude.claim_prefix == "claude"

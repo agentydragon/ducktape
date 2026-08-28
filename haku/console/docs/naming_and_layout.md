@@ -168,7 +168,7 @@ to mean what it says.
 
 **"Entry" and "chat" leave the vocabulary.** Nothing is a _chat_ — the layers are sessions,
 conversations, channels, frames, items. `ChatSurface`, `chat_attachment`, `ChatAttachment`,
-`chat_runtimes` (config key), `SessionStore.chat_store` (param), and the
+`SessionStore.chat_store` (param), and the
 `chat_layers.md`/`chat_runtime_facts.md` docs each rename to the layer word they mean;
 `chat_models.py` has none — a grab-bag spanning every layer, it is scattered enum-by-enum and
 deleted rather than renamed (§6). An _entry_
@@ -383,17 +383,13 @@ conversation-domain quiet gap.
 - **C1 · `reason` → `failure`** _(mechanical)_ — folds into the #4667 cutover.
 - **C2 · `ConversationEventRow` at definition** _(mechanical)_ — one class rename in
   `database_schema.py` + delete 5 import aliases and their duplicated comments.
-- **C4 · de-"chat" sweep** _(mixed, split three ways)_: **C4a** `chat_store` → `session_store` param
+- **C4 · de-"chat" sweep** _(mixed)_: **C4a** `chat_store` → `session_store` param
   rename _(mechanical)_ — the param holds a `SessionStore`, so it takes the session layer's word;
   **C4b** `ChatSurface` → `ChannelSurface` member-drop + `chat_attachment` → `channel_attachment`
-  table/ORM _(semantic — CHECK + table migration)_; **C4c** `chat_runtimes` → `harnesses` config
-  key _(semantic — deploy-coordinated, ConfigMap ahead of image)_: expand landed (#4977 — loader
-  canonical field `harnesses`, `chat_runtimes` a tombstoned alias, both-set rejected); contract =
-  flip the ConfigMap key + drop the alias + loud-reject `chat_runtimes`, after the expand image is
-  rolled out. The `chat_models.py` **module** is deliberately **not** renamed by C4a: a transitional
-  grab-bag whose ~20 enums span every layer, it has no single layer word, so it is **deleted**
-  rather than renamed. Its survival _is_ the tracked cleanup item — the #4772 reorg is not done
-  until it is gone, each enum scattered to its true home:
+  table/ORM _(semantic — CHECK + table migration)_. The `chat_models.py` **module** is deliberately
+  **not** renamed by C4a: a transitional grab-bag whose ~20 enums span every layer, it has no single
+  layer word, so it is **deleted** rather than renamed. Its survival _is_ the tracked cleanup item —
+  the #4772 reorg is not done until it is gone, each enum scattered to its true home:
   - `SessionStatus`, `LeaseExpiryReason` (+ the session-status frozensets) → `session/` (C7-adjacent)
   - `ConversationEventKind`, `AuthoredEventKind`, `EventProvenance`, `TurnOutcome`, `ReasoningDisclosure`
     → `conversation/conversation_event.py` (C5, gated on the #4667 cutover)
@@ -405,10 +401,12 @@ conversation-domain quiet gap.
     `PromptRejection` → the prompt vocabulary (conversation lane)
 - **C4d · `runtime_kind` → `harness_kind`** _(semantic — coordinated stored + wire + OpenAPI)_ — the
   harness-kind discriminator (§3.1). #4431 made it a closed, published, read-only wire field, so the
-  rename rides expand/contract with its schema consumers, same care as C4b/C4c. The console harness
+  rename rides expand/contract with its schema consumers, same care as C4b. The console harness
   adapters (`x/claude_code`, `x/codex_app_server`) are deleted by the #4667 cutover (native projection
   moves runner-ward), so there is no console `runtimes/`→`harnesses/` move to schedule — only this
   discriminator rename and the small `harnesses/` selection residue.
+- **C4e · `allowed_chat_runtimes` → `allowed_harnesses`** _(semantic — per-profile config field,
+  deploy-coordinated expand/contract, same recipe as the `chat_runtimes` → `harnesses` key flip)_.
 - **C5 · One Pydantic conversation-event vocabulary** _(semantic — the contested one)_ — merge the
   fold + `*Body` into `conversation/conversation_event.py`, aligned to neutral-op names, dataclasses
   gone, `UnknownEventBody` arm preserved. Everything above lands independently of it.
@@ -456,7 +454,7 @@ now ─┬─ C0, C0b            (docs, immediate — this PR)
      ├─ C13               ← staged severing; ConversationItem home is the gate   [indexer lane, independent]
      ├─ C8 → C9 → C10     ← after operator go + <auth-context>  [identity lane]
      ├─ C11 → C12         ← after egress lands + #4889          [grants lane]
-     └─ (#4667 settles) → C1, C2, C4a  then  C4b, C4c, C5 → C6 → C7   [conversation lane]
+     └─ (#4667 settles) → C1, C2, C4a  then  C4b, C4e, C5 → C6 → C7   [conversation lane]
                                                     │
                      C14 (de-Haku) ─────────────────┴────→ after lanes settle names
                      C15 (final packaging) ──────────────→ last

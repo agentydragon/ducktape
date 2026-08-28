@@ -26,7 +26,7 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     template = yaml.safe_load((k8s_dir / "haku/workspaces/app/sandboxtemplate-haku-claude.yaml").read_text())
     template_namespace = template["metadata"]["namespace"]
     console_config = yaml.safe_load((k8s_dir / "haku/console/config.yaml").read_text())
-    runtime = console_config["chat_runtimes"]["claude_code"]
+    runtime = console_config["harnesses"]["claude_code"]
     assert runtime["namespace"] == template_namespace == "haku-runtime-sandbox"
     assert runtime["agent_id"] == "8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2"
     assert runtime["claim_prefix"] == "claude"
@@ -767,7 +767,7 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
     assert not (console_dir / "codex-runner-service.yaml").exists()
 
     shared_config = yaml.safe_load((k8s_dir / "haku/console/config.yaml").read_text())
-    codex = shared_config["chat_runtimes"]["codex_app_server"]
+    codex = shared_config["harnesses"]["codex_app_server"]
     assert codex["namespace"] == namespace
     assert codex["claim_prefix"] == "codex"
     assert codex["runtime_label"] == "codex-chat"
