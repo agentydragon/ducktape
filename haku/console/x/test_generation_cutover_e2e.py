@@ -160,9 +160,11 @@ async def test_the_cut_stack_answers_a_prompt_with_a_tool_call_over_the_journal(
 
             # The full stack: the prompt was admitted into the transcript, the tool call and its
             # result were projected by the runner and committed by the journal consumer, and the
-            # streamed message concatenated to its answer.
+            # streamed message concatenated to its answer. The prompt entry keeps the stub's
+            # `[tool=echo]` stage direction: the item is materialised from the Console's own
+            # `submitted_prompt` row, verbatim — the stub strips directives only from its answer.
             assert await _transcript(session_store, conversation_id) == [
-                ("prompt", "hello"),
+                ("prompt", "hello [tool=echo]"),
                 ("tool_call", "echo:succeeded"),
                 ("message", "re: hello"),
             ]

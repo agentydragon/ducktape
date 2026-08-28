@@ -2,7 +2,7 @@
 it, and take what is said in it into a turn.
 
 Ingress is here rather than beside the turn loop it feeds: `MatrixTurns.offer` takes homeserver
-events and hands them to `enqueue_prompt`, so a test of it is a test of the crossing. The turn loop's own admission rules are <../../test_session_runtime.py>, where no channel appears
+events and hands them to `submit_exclusive_prompt`, so a test of it is a test of the crossing. The turn loop's own admission rules are <../../test_session_runtime.py>, where no channel appears
 at all. The conversation-history tests remain here beside the replacement-session setup that creates
 their cross-session threads; the reader itself is channel-neutral.
 """
@@ -26,7 +26,7 @@ from haku.console.chat_models import (
     RuntimeKind,
 )
 from haku.console.conftest import console_sessions
-from haku.console.database_schema import Conversation, ConversationEventRow, ConversationItem, Session
+from haku.console.database_schema import Conversation, ConversationEventRow, ConversationItem, Session, SubmittedPrompt
 from haku.console.x import session_events
 from haku.console.x.channels.matrix.client import InboundMessage, UnmappableEvent
 from haku.console.x.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM
@@ -373,9 +373,10 @@ async def test_a_batch_offered_before_a_session_exists_becomes_conversation_dema
 
     assert isinstance(admitted, PromptAccepted)
     async with migrated_sessions() as db:
-        prompt = await db.get(ConversationItem, admitted.item_id)
+        prompt = await db.get(SubmittedPrompt, admitted.prompt_id)
     assert prompt is not None
-    assert (prompt.conversation_id, prompt.session_id, prompt.item_text) == (binding.conversation_id, None, "hi")
+    # Pending in the inbox — owed to whichever session eventually admits it, bound to none yet.
+    assert (prompt.conversation_id, prompt.text, prompt.admitted_at) == (binding.conversation_id, "hi", None)
 
 
 async def test_a_batch_offered_after_a_session_is_gone_becomes_replacement_demand(
@@ -503,12 +504,12 @@ async def test_a_batch_records_the_room_events_it_was_folded_from(
     operator_id: UUID,
     thread: UUID,
 ) -> None:
-    """The prompt is what was said; which events said it rides on the prompt's own event, in the
+    """The prompt is what was said; which events said it rides on the prompt's own record, in the
     order they were folded. Nothing puts an event id in the text any more, so this is the
     only copy — and it names the room as well as the event, which is what a reader comparing
     origins needs while one bot serves more than one.
     """
-    await serving_session(session_store, operator_id, thread)
+    session_id = await serving_session(session_store, operator_id, thread)
 
     offered = await turns.offer(
         binding, [operator_message("first", event_id="$a", at=1), operator_message("second", event_id="$b", at=2)]
@@ -516,12 +517,19 @@ async def test_a_batch_records_the_room_events_it_was_folded_from(
 
     assert isinstance(offered, PromptAccepted)
     async with migrated_sessions() as db:
-        prompt = await db.get(ConversationItem, offered.item_id)
+        accepted = await db.get(SubmittedPrompt, offered.prompt_id)
+    assert accepted is not None
+    assert (accepted.text, accepted.origin) == ("first\nsecond", MatrixOrigin(address=MATRIX_ROOM, refs=("$a", "$b")))
+    # Admission materialises the item from that row, and the origin rides its opening event.
+    started = await session_store.next_prompt(session_id)
+    assert started is not None
+    async with migrated_sessions() as db:
+        prompt = await db.get(ConversationItem, started.item_id)
         assert prompt is not None
         assert (prompt.item_type, prompt.item_text) == (ItemType.PROMPT, "first\nsecond")
         asked = await db.scalar(
             select(ConversationEventRow).where(
-                ConversationEventRow.item_id == offered.item_id,
+                ConversationEventRow.item_id == started.item_id,
                 ConversationEventRow.kind == ConversationEventKind.ITEM_STARTED,
             )
         )

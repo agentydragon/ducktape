@@ -294,7 +294,10 @@ class MatrixTurns:
     async def _enqueue(self, binding: RoomAttachment, prompt_text: str, event_ids: tuple[str, ...]) -> Admission:
         operator_id = await self._identities.resolve_configured_external_user_key(self._config.operator_subject)
         try:
-            prompt_id = await self._session_store.submit_prompt(
+            # The refusing variant, deliberately: this channel promises a mid-turn batch is
+            # rejected, not held (<SPEC.md> § Batching and admission), and under the inbox that
+            # policy is the surface's to choose (<../../prompt_inbox.py>).
+            prompt_id = await self._session_store.submit_exclusive_prompt(
                 operator_id,
                 binding.conversation_id,
                 prompt_text,
@@ -305,8 +308,8 @@ class MatrixTurns:
             logger.info("Matrix: bound conversation %s is gone, rejecting the batch", binding.conversation_id)
             return self._refused(binding, None, PromptRejection.NO_SESSION, prompt_text)
         except PromptRefusedError as refusal:
-            # Admission is `submit_prompt`'s alone, decided under `SELECT … FOR UPDATE`: a status
-            # read here could only agree with a decision that had not been made yet.
+            # Admission is `submit_exclusive_prompt`'s alone, decided under `SELECT … FOR UPDATE`:
+            # a status read here could only agree with a decision that had not been made yet.
             logger.info("Matrix: conversation %s rejected the batch: %s", binding.conversation_id, refusal.reason)
             return self._refused(binding, None, refusal.reason, prompt_text)
         return PromptAccepted(prompt_id=prompt_id)
