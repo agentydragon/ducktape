@@ -46,24 +46,17 @@ provider "litellm" {
 
 locals {
   # Model names must match generated model_name entries in
-  # cluster/k8s/litellm/app/proxy-config.yaml. During the #4823 staged rename each
-  # list carries the legacy names first, then the {provider}-{shape}-{model} names
-  # (derivations in cluster/k8s/litellm/app/model_rosters.py); the legacy rows drop
-  # once their consumers move. Spelled out rather than built with a for-expression
-  # so the names are greppable and so the test can compare structurally -- HCL2
-  # returns a for-expression as unevaluated source text, not a list.
+  # cluster/k8s/litellm/app/proxy-config.yaml ({provider}/{shape}/{model} scheme,
+  # derivations in cluster/k8s/litellm/app/model_rosters.py). Spelled out rather
+  # than built with a for-expression so the names are greppable and so the test
+  # can compare structurally -- HCL2 returns a for-expression as unevaluated
+  # source text, not a list.
   #
   # The Codex-subscription models on LiteLLM's Responses surface, for Codex CLI clients
   # (haku oai zone, codex-pod, agent-workspaces-codex) -- served by CLIProxyAPI; see
   # _cliproxy_responses_entries in cluster/k8s/litellm/app/test_litellm_config.py,
   # which pins this list against it.
   oai_lane_models = [
-    "gpt-5.4-chatgpt",
-    "gpt-5.5-chatgpt",
-    "gpt-5.6-sol-chatgpt",
-    "gpt-5.6-terra-chatgpt",
-    "gpt-5.6-luna-chatgpt",
-    "gpt-5.3-codex-spark-chatgpt",
     "chatgpt/oai-responses/gpt-5.4",
     "chatgpt/oai-responses/gpt-5.5",
     "chatgpt/oai-responses/gpt-5.6-sol",
@@ -73,9 +66,6 @@ locals {
   ]
   # Tana-UI models fronted through tana-litellm (TANA_MODELS in model_rosters.py).
   tana_client_models = [
-    "tana-claude-sonnet-4-6",
-    "tana-claude-opus-4-6",
-    "tana-claude-haiku-4-5",
     "tana/ant-messages/claude-sonnet-4-6",
     "tana/ant-messages/claude-opus-4-6",
     "tana/ant-messages/claude-haiku-4-5",
@@ -83,12 +73,6 @@ locals {
   # Codex-subscription models on the Anthropic Messages surface, fronted through
   # CLIProxyAPI (_cliproxy_messages_entries) -- Claude Code clients.
   codex_client_models = [
-    "codex-gpt-5.4",
-    "codex-gpt-5.5",
-    "codex-gpt-5.6-sol",
-    "codex-gpt-5.6-terra",
-    "codex-gpt-5.6-luna",
-    "codex-gpt-5.3-codex-spark",
     "chatgpt/ant-messages/gpt-5.4",
     "chatgpt/ant-messages/gpt-5.5",
     "chatgpt/ant-messages/gpt-5.6-sol",
@@ -102,8 +86,6 @@ locals {
   # route to it and should not gain one just to embed. Routing embeddings through
   # LiteLLM keeps them on the in-cluster path the agent already uses for turns.
   embedding_client_models = [
-    "gemini-embedding-2",
-    "gemini-embedding-001",
     "google/oai-embeddings/gemini-embedding-2",
     "google/oai-embeddings/gemini-embedding-001",
   ]
@@ -113,9 +95,6 @@ locals {
   # minor version are excluded. Consumed by the laptop gemini-claude alias and
   # public-coder-agent.
   gemini_client_models = [
-    "gemini-3.1-pro-preview",
-    "gemini-3.7-flash",
-    "gemini-3.5-flash-lite",
     "google/oai-chat/gemini-3.1-pro-preview",
     "google/oai-chat/gemini-3.7-flash",
     "google/oai-chat/gemini-3.5-flash-lite",
@@ -133,10 +112,10 @@ locals {
 # ============================================================================
 # codex-pod — OpenAI/ChatGPT-backend key for the interactive codex agent pod
 # ============================================================================
-# Routes the codex-pod agent's Codex CLI at LiteLLM's `*-chatgpt` (Codex-account)
-# models instead of an interactive ChatGPT sign-in. Scoped to the same oai lane
-# models as the haku oai lane (gpt-5.4/5.5/codex-spark-chatgpt); deleting this is
-# the kill switch. Reflected into codex-pod, consumed as LITELLM_API_KEY.
+# Routes the codex-pod agent's Codex CLI at LiteLLM's `chatgpt/oai-responses/*`
+# (Codex-account) models instead of an interactive ChatGPT sign-in. Scoped to the
+# oai lane models; deleting this is the kill switch. Reflected into codex-pod,
+# consumed as LITELLM_API_KEY.
 
 resource "litellm_key" "codex_pod" {
   key_alias       = "codex-pod"
@@ -153,7 +132,7 @@ resource "kubernetes_secret" "codex_pod" {
     name      = "litellm-key-codex-pod"
     namespace = "litellm"
     annotations = {
-      description                                                     = "LiteLLM virtual key for the codex-pod agent (*-chatgpt oai models only); reflected into codex-pod as LITELLM_API_KEY"
+      description                                                     = "LiteLLM virtual key for the codex-pod agent (chatgpt/oai-responses/* models only); reflected into codex-pod as LITELLM_API_KEY"
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
       "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "codex-pod"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
@@ -178,9 +157,9 @@ resource "litellm_key" "public_coder_agent" {
   key_alias = "public-coder-agent"
   # Codex subscription models on both wire surfaces, the Gemini chat lineup,
   # plus embeddings. The subscription lane is doubled because the two shells
-  # speak different protocols: OpenClaw drives the `codex-*` Anthropic-wire
+  # speak different protocols: OpenClaw drives the `chatgpt/ant-messages/*`
   # models, while the Console-launched Codex runner pins wire_api=responses and
-  # needs the `*-chatgpt` Responses-lane models.
+  # needs the `chatgpt/oai-responses/*` Responses-lane models.
   # Embeddings ride along because OpenClaw's memory index needs a backend and
   # this agent has no route to api.openai.com -- its egress allowlist is git
   # hosting plus package indexes, and it should not gain one merely to embed.
@@ -197,7 +176,7 @@ resource "kubernetes_secret" "public_coder_agent" {
     name      = "litellm-key-public-coder-agent"
     namespace = "litellm"
     annotations = {
-      description                                                     = "LiteLLM virtual key for public-coder-agent OpenClaw (codex-* Anthropic-wire models) and least-credential runner-proxy-mediated Haku Console Codex shells (*-chatgpt Responses-lane models); subscription models through CLIProxyAPI, Gemini chat models, plus embeddings"
+      description                                                     = "LiteLLM virtual key for public-coder-agent OpenClaw (chatgpt/ant-messages/* models) and least-credential runner-proxy-mediated Haku Console Codex shells (chatgpt/oai-responses/* models); subscription models through CLIProxyAPI, Gemini chat models, plus embeddings"
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
       "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "public-coder-agent"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
@@ -216,7 +195,7 @@ resource "kubernetes_secret" "public_coder_agent" {
 # Pattern-B pinned key: value in a git SOPS file in this module dir, decrypted with the
 # shared narrow client-key age key (the existing tf-runner
 # SOPS_AGE_KEY). The laptop tana-claude wrapper reads it via ducktape.sopsEnv
-# (TANA_LITELLM_KEY). The tana-* upstream reaches tana-litellm with the in-cluster master
+# (TANA_LITELLM_KEY). The tana/ant-messages/* upstream reaches tana-litellm with the in-cluster master
 # key, so this scoped key never carries it.
 
 data "sops_file" "tana_clients_key" {
@@ -249,7 +228,7 @@ resource "litellm_key" "tana_clients" {
 # ============================================================================
 # codex-clients — scoped key for laptop + agent-box + codex-pod codex-claude
 # ============================================================================
-# Same Pattern-B pinned key. The codex-* upstream reaches CLIProxyAPI with the in-cluster
+# Same Pattern-B pinned key. The chatgpt/ant-messages/* upstream reaches CLIProxyAPI with the in-cluster
 # cli-proxy client key (ESO-mirrored into litellm), so this key never carries it. codex-pod
 # receives the value via the reflected kubernetes_secret below (CODEX_LITELLM_KEY), NOT
 # sops — the image has no sops-nix.
@@ -286,7 +265,7 @@ resource "kubernetes_secret" "codex_clients_key" {
     name      = "litellm-codex-clients-key"
     namespace = "litellm"
     annotations = {
-      description                                                     = "LiteLLM virtual key for codex-claude consumers (codex-* models only); reflected into codex-pod as CODEX_LITELLM_KEY"
+      description                                                     = "LiteLLM virtual key for codex-claude consumers (chatgpt/ant-messages/* models only); reflected into codex-pod as CODEX_LITELLM_KEY"
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
       "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "codex-pod"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
@@ -339,7 +318,7 @@ resource "litellm_key" "gemini_clients" {
 # Disposable agent workspaces (cluster/k8s/agents/agent-sandbox/): operator-
 # codex workspace lane: the codex CLI's baked LiteLLM provider
 # (cluster/k8s/agents/agent-sandbox/workspace-image/codex-config.toml) uses
-# the `*-chatgpt` Codex-account models, same allowlist as codex-pod.
+# the `chatgpt/oai-responses/*` Codex-account models, same allowlist as codex-pod.
 resource "litellm_key" "agent_workspaces_codex" {
   key_alias = "agent-workspaces-codex"
   models    = local.oai_lane_models
@@ -355,7 +334,7 @@ resource "kubernetes_secret" "agent_workspaces_codex_key" {
     name      = "litellm-key-agent-workspaces-codex"
     namespace = "litellm"
     annotations = {
-      description                                                     = "LiteLLM virtual key for the codex workspace lane (*-chatgpt oai models only); reflected into agent-workspaces for the codex SandboxTemplate"
+      description                                                     = "LiteLLM virtual key for the codex workspace lane (chatgpt/oai-responses/* models only); reflected into agent-workspaces for the codex SandboxTemplate"
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
       "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "agent-workspaces"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"

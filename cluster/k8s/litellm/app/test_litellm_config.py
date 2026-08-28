@@ -1,7 +1,6 @@
 """Compose and verify the committed main LiteLLM config."""
 
-from collections.abc import Callable, Iterator
-from functools import partial
+from collections.abc import Iterator
 
 import pytest_bazel
 import yaml
@@ -16,10 +15,6 @@ from cluster.k8s.litellm.app.model_rosters import (
     ApiShape,
     Provider,
     exposed_name,
-    legacy_google_name,
-    legacy_messages_name,
-    legacy_responses_name,
-    legacy_tana_name,
 )
 from cluster.validation.terraform_hcl import locals_blocks
 from util.bazel.runfiles import get_required_path
@@ -62,7 +57,7 @@ _TANA_LITELLM_BASE = "http://tana-litellm.litellm.svc.cluster.local:4000"
 # Client key from CLIPROXY_CLIENT_KEY (cli-proxy-api-client-key mirrored into the litellm
 # namespace). Reasoning effort rides on the request (Claude Code's effortLevel, Codex's
 # `reasoning.effort`), never a model-slug suffix, so one entry per slug per surface.
-# Each wire surface is served under its legacy and its #4823 name (model_rosters.py).
+# Each wire surface is served under its #4823 scheme name (model_rosters.py).
 _CLIPROXY_BASE = "http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317"
 
 
@@ -94,28 +89,28 @@ def _groq_entries() -> Iterator[dict]:
         }
 
 
-def _gemini_chat_entries(name: Callable[[str], str]) -> Iterator[dict]:
+def _gemini_chat_entries() -> Iterator[dict]:
     for model in GEMINI_MODELS:
         yield {
-            "model_name": name(model),
+            "model_name": exposed_name(Provider.GOOGLE, ApiShape.OAI_CHAT, model),
             "litellm_params": {"model": f"gemini/{model}", "api_key": "os.environ/GEMINI_API_KEY"},
             "model_info": {"mode": "chat", "supports_function_calling": True},
         }
 
 
-def _gemini_embedding_entries(name: Callable[[str], str]) -> Iterator[dict]:
+def _gemini_embedding_entries() -> Iterator[dict]:
     for model in GEMINI_EMBEDDING_MODELS:
         yield {
-            "model_name": name(model),
+            "model_name": exposed_name(Provider.GOOGLE, ApiShape.OAI_EMBEDDINGS, model),
             "litellm_params": {"model": f"gemini/{model}", "api_key": "os.environ/GEMINI_API_KEY"},
             "model_info": {"mode": "embedding"},
         }
 
 
-def _tana_entries(name: Callable[[str], str]) -> Iterator[dict]:
+def _tana_entries() -> Iterator[dict]:
     for base, downstream in TANA_MODELS:
         yield {
-            "model_name": name(base),
+            "model_name": exposed_name(Provider.TANA, ApiShape.ANT_MESSAGES, base),
             "litellm_params": {
                 "model": f"anthropic/{downstream}",
                 "api_base": _TANA_LITELLM_BASE,
@@ -128,10 +123,10 @@ def _tana_entries(name: Callable[[str], str]) -> Iterator[dict]:
 # Anthropic Messages surface: the one path that translates Codex tool calls correctly
 # (function_call -> tool_use) for Claude Code — what LiteLLM's own Responses bridge could
 # not do (BerriAI/litellm#25429).
-def _cliproxy_messages_entries(name: Callable[[str], str]) -> Iterator[dict]:
+def _cliproxy_messages_entries() -> Iterator[dict]:
     for model in CLIPROXY_MODELS:
         yield {
-            "model_name": name(model),
+            "model_name": exposed_name(Provider.CHATGPT, ApiShape.ANT_MESSAGES, model),
             "litellm_params": {
                 "model": f"anthropic/{model}",
                 "api_base": _CLIPROXY_BASE,
@@ -146,10 +141,10 @@ def _cliproxy_messages_entries(name: Callable[[str], str]) -> Iterator[dict]:
 # the OpenAI provider and forwards to `{api_base}/responses`, whereas every other provider
 # — including the `anthropic/` entries above — gets a bridge that rewrites the request into
 # chat completions. api_base therefore carries the `/v1` the `anthropic/` entries omit.
-def _cliproxy_responses_entries(name: Callable[[str], str]) -> Iterator[dict]:
+def _cliproxy_responses_entries() -> Iterator[dict]:
     for model in CLIPROXY_MODELS:
         yield {
-            "model_name": name(model),
+            "model_name": exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, model),
             "litellm_params": {
                 "model": f"openai/{model}",
                 "api_base": f"{_CLIPROXY_BASE}/v1",
@@ -186,18 +181,13 @@ def _expected_main_config() -> dict:
     model_list: list[dict] = []
     for tag, ctx_variants in _MODELS:
         model_list.extend(_model_entries(tag, ctx_variants))
-    model_list.extend(_tana_entries(legacy_tana_name))
-    model_list.extend(_tana_entries(partial(exposed_name, Provider.TANA, ApiShape.ANT_MESSAGES)))
-    model_list.extend(_cliproxy_messages_entries(legacy_messages_name))
-    model_list.extend(_cliproxy_messages_entries(partial(exposed_name, Provider.CHATGPT, ApiShape.ANT_MESSAGES)))
-    model_list.extend(_cliproxy_responses_entries(legacy_responses_name))
-    model_list.extend(_cliproxy_responses_entries(partial(exposed_name, Provider.CHATGPT, ApiShape.OAI_RESPONSES)))
+    model_list.extend(_tana_entries())
+    model_list.extend(_cliproxy_messages_entries())
+    model_list.extend(_cliproxy_responses_entries())
     model_list.extend(_anthropic_entries())
     model_list.extend(_groq_entries())
-    model_list.extend(_gemini_chat_entries(legacy_google_name))
-    model_list.extend(_gemini_embedding_entries(legacy_google_name))
-    model_list.extend(_gemini_chat_entries(partial(exposed_name, Provider.GOOGLE, ApiShape.OAI_CHAT)))
-    model_list.extend(_gemini_embedding_entries(partial(exposed_name, Provider.GOOGLE, ApiShape.OAI_EMBEDDINGS)))
+    model_list.extend(_gemini_chat_entries())
+    model_list.extend(_gemini_embedding_entries())
 
     # Master key and Langfuse credentials are injected as env vars in the
     # Deployment; not repeated here.
@@ -236,10 +226,10 @@ def _litellm_keys_locals() -> dict:
 
 def test_terraform_codex_allowlists_match_the_cliproxy_model_list() -> None:
     tf_locals = _litellm_keys_locals()
-    assert tf_locals["oai_lane_models"] == [legacy_responses_name(model) for model in CLIPROXY_MODELS] + [
+    assert tf_locals["oai_lane_models"] == [
         exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, model) for model in CLIPROXY_MODELS
     ]
-    assert tf_locals["codex_client_models"] == [legacy_messages_name(model) for model in CLIPROXY_MODELS] + [
+    assert tf_locals["codex_client_models"] == [
         exposed_name(Provider.CHATGPT, ApiShape.ANT_MESSAGES, model) for model in CLIPROXY_MODELS
     ]
 
@@ -267,14 +257,11 @@ def test_terraform_key_allowlists_only_name_models_the_proxy_serves() -> None:
 # haku-console picks its Codex chat runtime's model from Git YAML — the one Codex consumer
 # whose model choice lives outside the baked-config and Terraform pins above. The runner
 # hardcodes wire_api="responses" (haku/runtime/x/bridge/codex_options.py), so the model
-# must be a Responses-wire entry (either era's name); a Messages-wire name fails every
-# turn at /v1/responses
+# must be a Responses-wire entry; a Messages-wire name fails every turn at /v1/responses
 # (haku/console/x/codex_app_server/testdata/real_provider_failure.sanitized.jsonl).
 def test_console_codex_chat_runtimes_use_oai_responses_wire_models() -> None:
     config = yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/config.yaml").read_text())
-    responses_wire_names = {legacy_responses_name(model) for model in CLIPROXY_MODELS} | {
-        exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, model) for model in CLIPROXY_MODELS
-    }
+    responses_wire_names = {exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, model) for model in CLIPROXY_MODELS}
     for name, runtime in config["chat_runtimes"].items():
         implementation = runtime["implementation"]
         if implementation["kind"] == "codex_app_server":

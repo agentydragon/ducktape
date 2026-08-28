@@ -275,15 +275,18 @@ See `cluster/k8s/agents/tana-mcp-facade/deployment.yaml` for a working example
   minted interactively does not belong in a checked-in secret. CLIProxyAPI logs in
   against the running pod (`-codex-device-login`), keeps the session alive with a
   refresh worker, and never puts the upstream OAuth session in git. The `*-chatgpt`
-  model names live on: LiteLLM serves them over CLIProxyAPI's native `/v1/responses`
-  (`openai/` passthrough, not a bridge), so the baked configs pinning those names
-  (<../k8s/agents/agent-sandbox/workspace-image/codex-config.toml>,
+  model names survived the swap: LiteLLM served them over CLIProxyAPI's native
+  `/v1/responses` (`openai/` passthrough, not a bridge), so the baked configs pinning
+  those names (<../k8s/agents/agent-sandbox/workspace-image/codex-config.toml>,
   <../../x/codex_pod_image/home.nix>, `oai_lane_models` in
-  <../../tf/gitops/litellm-keys/main.tf>) needed no rebuild; the `codex-*` entries stay
-  on `anthropic/` → `/v1/messages` for Claude Code.
+  <../../tf/gitops/litellm-keys/main.tf>) needed no rebuild, and the `codex-*` entries
+  stayed on `anthropic/` → `/v1/messages` for Claude Code. [#4823] later renamed the
+  lanes to `chatgpt/oai-responses/*` / `chatgpt/ant-messages/*` and retired both
+  legacy name families.
 
   [#3198]: https://github.com/agentydragon/ducktape/pull/3198
   [#3199]: https://github.com/agentydragon/ducktape/pull/3199
+  [#4823]: https://github.com/agentydragon/ducktape/issues/4823
 
 ## Suspended Kustomizations
 

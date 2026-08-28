@@ -37,12 +37,6 @@ _PUBLIC_CODER_AGENT_CONFIG = "ducktape/cluster/k8s/agents/public-coder-agent/app
 _HAKU_OPENCLAW_CONFIG = "ducktape/cluster/k8s/agents/haku-openclaw-spike/app/openclaw.json"
 _HAKU_OPENCLAW_DEPLOYMENT = "ducktape/cluster/k8s/agents/haku-openclaw-spike/app/deployment.yaml"
 _LITELLM_CONFIG = "ducktape/cluster/k8s/litellm/app/proxy-config.yaml"
-_LITELLM_KEYS_TF = "ducktape/tf/gitops/litellm-keys/main.tf"
-_TANA_MODELS = {
-    "tana-claude-haiku-4-5": "claude-haiku-4-5-20251001",
-    "tana-claude-opus-4-6": "claude-opus-4-6/high",
-    "tana-claude-sonnet-4-6": "claude-sonnet-4-6/medium",
-}
 
 
 def _public_coder_agent_models() -> list[dict]:
@@ -113,22 +107,6 @@ def test_current_anthropic_roster_matches_haku_openclaw() -> None:
         assert litellm_models[model_id] == {
             "model_name": model_id,
             "litellm_params": {"model": f"anthropic/{model_id}", "api_key": "os.environ/ANTHROPIC_API_KEY"},
-            "model_info": {"mode": "chat", "supports_function_calling": True},
-        }
-
-
-def test_tana_compatibility_roster_remains_explicitly_pinned() -> None:
-    litellm_models = _litellm_models()
-
-    assert {name for name in litellm_models if name.startswith("tana-claude-")} == _TANA_MODELS.keys()
-    for exposed, downstream in _TANA_MODELS.items():
-        assert litellm_models[exposed] == {
-            "model_name": exposed,
-            "litellm_params": {
-                "model": f"anthropic/{downstream}",
-                "api_base": "http://tana-litellm.litellm.svc.cluster.local:4000",
-                "api_key": "os.environ/LITELLM_MASTER_KEY",
-            },
             "model_info": {"mode": "chat", "supports_function_calling": True},
         }
 
