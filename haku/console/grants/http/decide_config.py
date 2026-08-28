@@ -49,7 +49,7 @@ class EgressCredentialEntry(BaseModel):
     """One Console-owned egress credential, addressable from grants by its inert handle.
 
     A temporary HTTP grant redeems the credential by naming ``handle``
-    (`grants.http.models.HttpGrantSpec.credential_handle`); the decide endpoint then emits the
+    (`grants.http.models.GrantSpec.credential_handle`); the decide endpoint then emits the
     ``placeholder`` → real-value substitution for requests the grant admits, but only for an
     Agent in ``agent_ids`` at an origin in ``origins`` — the #4670 redemption binding. Everything
     here except the env-referenced value is inert: safe to commit, log, and show to Agents.

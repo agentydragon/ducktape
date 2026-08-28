@@ -36,7 +36,7 @@ def test_deployed_console_config_is_valid() -> None:
     assert "codex_runtime" not in raw["settings"]
 
     profiles = {profile.id: profile for profile in config.access_profiles}
-    assert profiles["haku"].in_process_server_ids == {"haku_conversations", "kubernetes", "sandbox", "http_grants"}
+    assert profiles["haku"].in_process_server_ids == {"haku_conversations", "grants", "sandbox"}
 
     assert config.kubernetes_authorization is not None
     subjects = config.kubernetes_authorization.subjects_by_access_profile
@@ -59,21 +59,21 @@ def test_deployed_console_config_is_valid() -> None:
         if (server := policy.get("server")) is not None:
             named.add(server)
         assert named <= server_ids, policy["id"]
-    assert policies["kubernetes_reads"]["tools"] == {"kubernetes": ["can_i", "list_grants", "get_grant"]}
+    assert policies["kubernetes_reads"]["tools"] == {"grants": ["kubernetes_can_i"]}
     assert "kubernetes_reads" in policies["haku_v1"]["policies"]
     assert "kubernetes_reads" in policies["public_coder_safe_reads"]["policies"]
 
-    # Every Agent may ASK for egress: http_grants is exposed to every access profile (operator
-    # ruling on #4986). Safe only together with the pin below — nothing in it auto-approves.
+    # Every Agent may ASK for a grant: the unified `grants` server is exposed to every access profile
+    # (operator ruling on #4986). Safe only together with the pin below — nothing in it auto-approves.
     for profile in config.access_profiles:
-        assert "http_grants" in profile.in_process_server_ids, profile.id
+        assert "grants" in profile.in_process_server_ids, profile.id
 
     # An auto-approved source ToolCall cannot mint a grant (the repository's provenance check
-    # requires approval_policy_id absent), so auto-approving create_grant would make every HTTP
-    # grant creation fail after the fact instead of queueing for the Operator.
+    # requires approval_policy_id absent), so auto-approving create_grant would make every grant
+    # creation fail after the fact instead of queueing for the Operator.
     for policy in raw["auto_approval_policies"]:
         if policy["type"] == "exact_tools":
-            assert "create_grant" not in policy["tools"].get("http_grants", []), policy["id"]
+            assert "create_grant" not in policy["tools"].get("grants", []), policy["id"]
 
     # A standing entry's named credential must actually redeem what the entry admits — the decide
     # service otherwise skips substitution with only a warning, and the fenced workload's inert

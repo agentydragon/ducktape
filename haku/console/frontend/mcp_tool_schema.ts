@@ -34,7 +34,11 @@ export function objectProperties(schema: JsonSchema, context: string): Record<st
 }
 
 function compileCatalog(): CompiledSchema[] {
-  const servers = objectProperties(mcpToolArgumentsSchema as JsonSchema, "MCP tool schema catalog");
+  // `as unknown as JsonSchema`, matching the result catalog: the `grants` server's create_grant
+  // takes a `oneOf`-discriminated array of nested per-domain specs (#4918), which widens the JSON
+  // module's inferred type past what TS considers structurally overlapping with JsonSchema, though
+  // the value is valid JSON Schema.
+  const servers = objectProperties(mcpToolArgumentsSchema as unknown as JsonSchema, "MCP tool schema catalog");
   const compiled: CompiledSchema[] = [];
 
   for (const [serverId, serverSchema] of Object.entries(servers)) {

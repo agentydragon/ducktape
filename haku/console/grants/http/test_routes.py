@@ -14,14 +14,7 @@ from fastapi.testclient import TestClient
 from haku.console import operator_auth
 from haku.console.agents.enrollment import OperatorAgent
 from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
-from haku.console.grants.http.models import (
-    HttpGrant,
-    HttpGrantSpec,
-    HttpMethod,
-    HttpOrigin,
-    HttpRequestCoverage,
-    HttpScheme,
-)
+from haku.console.grants.http.models import Grant, GrantSpec, HttpMethod, HttpOrigin, HttpRequestCoverage, HttpScheme
 from haku.console.grants.http.routes import router
 from haku.console.grants.principal import AgentGrantPrincipal
 from haku.console.operator_auth import require_operator_mutation_origin
@@ -53,13 +46,13 @@ def _wire(instant: datetime.datetime) -> str:
     return instant.isoformat().replace("+00:00", "Z")
 
 
-def _grant() -> HttpGrant:
-    return HttpGrant(
+def _grant() -> Grant:
+    return Grant(
         grant_id=GRANT_ID,
         owner_agent_id=AGENT_ID,
         principal=AgentGrantPrincipal(agent_id=AGENT_ID),
         source_tool_call_id="tc_0123456789abcdef01234567",
-        spec=HttpGrantSpec(
+        spec=GrantSpec(
             origin=HttpOrigin(scheme=HttpScheme.HTTPS, host="grocy.example", port=443),
             coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET}), path_regex="/api/.*"),
         ),
@@ -79,10 +72,10 @@ class _FakeAgentService:
 
 @dataclass
 class _FakeGrantService:
-    current: HttpGrant = field(default_factory=_grant)
+    current: Grant = field(default_factory=_grant)
     listed: list[tuple[UUID, bool]] = field(default_factory=list)
 
-    async def list_grants(self, *, owner_agent_id: UUID, include_terminal: bool = True) -> tuple[HttpGrant, ...]:
+    async def list_grants(self, *, owner_agent_id: UUID, include_terminal: bool = True) -> tuple[Grant, ...]:
         self.listed.append((owner_agent_id, include_terminal))
         return (self.current,) if owner_agent_id == AGENT_ID else ()
 

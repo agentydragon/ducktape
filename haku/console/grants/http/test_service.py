@@ -10,15 +10,8 @@ import pytest
 import pytest_bazel
 
 from haku.console.grants.envelope import GrantNotFoundError, GrantStatus, derive_status
-from haku.console.grants.http.models import (
-    HttpGrant,
-    HttpGrantSpec,
-    HttpMethod,
-    HttpOrigin,
-    HttpRequestCoverage,
-    HttpScheme,
-)
-from haku.console.grants.http.service import HttpGrantService
+from haku.console.grants.http.models import Grant, GrantSpec, HttpMethod, HttpOrigin, HttpRequestCoverage, HttpScheme
+from haku.console.grants.http.service import GrantService
 from haku.console.grants.principal import (
     AgentGrantPrincipal,
     GrantPrincipal,
@@ -33,8 +26,8 @@ _OTHER_AGENT = UUID("10000000-0000-4000-8000-000000000002")
 _GRANT_PRINCIPAL = AgentGrantPrincipal(agent_id=_AGENT)
 _ORIGIN = HttpOrigin(scheme=HttpScheme.HTTPS, host="grocy.example", port=443)
 _OTHER_ORIGIN = HttpOrigin(scheme=HttpScheme.HTTPS, host="api.example", port=443)
-_SPEC = HttpGrantSpec(origin=_ORIGIN, coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})))
-_OTHER_SPEC = HttpGrantSpec(origin=_OTHER_ORIGIN, coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})))
+_SPEC = GrantSpec(origin=_ORIGIN, coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})))
+_OTHER_SPEC = GrantSpec(origin=_OTHER_ORIGIN, coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})))
 
 
 def _request_principal(agent_id: UUID = _AGENT, session_id: UUID | None = None) -> RequestPrincipal:
@@ -43,15 +36,15 @@ def _request_principal(agent_id: UUID = _AGENT, session_id: UUID | None = None) 
 
 def _grant(
     *,
-    spec: HttpGrantSpec = _SPEC,
+    spec: GrantSpec = _SPEC,
     principal: GrantPrincipal = _GRANT_PRINCIPAL,
     created_at: datetime.datetime = _NOW,
     expires_at: datetime.datetime,
     released_at: datetime.datetime | None = None,
     revoked_at: datetime.datetime | None = None,
     end_reason: str | None = None,
-) -> HttpGrant:
-    return HttpGrant(
+) -> Grant:
+    return Grant(
         grant_id=uuid4(),
         owner_agent_id=_AGENT,
         principal=principal,
@@ -69,12 +62,12 @@ class FakeRepository:
     """Facts-holding in-memory double: like the real store, status is derived at read time."""
 
     def __init__(self) -> None:
-        self.grants: dict[UUID, HttpGrant] = {}
+        self.grants: dict[UUID, Grant] = {}
         self.release_calls: list[tuple[UUID, UUID, str, datetime.datetime]] = []
         self.revoke_calls: list[tuple[UUID, UUID, str, datetime.datetime]] = []
 
     @staticmethod
-    def _active(grant: HttpGrant, now: datetime.datetime) -> bool:
+    def _active(grant: Grant, now: datetime.datetime) -> bool:
         return (
             derive_status(
                 released_at=grant.released_at, revoked_at=grant.revoked_at, expires_at=grant.expires_at, now=now
@@ -86,7 +79,7 @@ class FakeRepository:
         self, *, owner_agent_id, grant_principal, source_tool_call_id, grants, created_at, expires_at
     ):
         created = tuple(
-            HttpGrant(
+            Grant(
                 grant_id=uuid4(),
                 owner_agent_id=owner_agent_id,
                 principal=grant_principal,
@@ -140,7 +133,7 @@ class FakeRepository:
 
 async def test_create_and_match_require_the_explicit_agent_id() -> None:
     repo = FakeRepository()
-    service = HttpGrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
     (grant,) = await service.create_grants(
         owner_agent_id=_AGENT,
         grant_principal=_GRANT_PRINCIPAL,
@@ -164,13 +157,13 @@ async def test_create_and_match_require_the_explicit_agent_id() -> None:
 
 
 async def test_match_covers_only_the_exact_origin_method_and_path() -> None:
-    service = HttpGrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    service = GrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
     await service.create_grants(
         owner_agent_id=_AGENT,
         grant_principal=_GRANT_PRINCIPAL,
         source_tool_call_id="tool-call-1",
         grants=(
-            HttpGrantSpec(
+            GrantSpec(
                 origin=_ORIGIN, coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET}), path_regex="/api/.*")
             ),
         ),
@@ -197,7 +190,7 @@ async def test_match_covers_only_the_exact_origin_method_and_path() -> None:
 
 
 async def test_match_requires_an_absolute_path() -> None:
-    service = HttpGrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    service = GrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
 
     with pytest.raises(ValueError, match="absolute path"):
         await service.match_request(
@@ -206,13 +199,13 @@ async def test_match_requires_an_absolute_path() -> None:
 
 
 async def test_tunnel_matches_the_exact_origin_ignoring_method_and_path_coverage() -> None:
-    service = HttpGrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    service = GrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
     await service.create_grants(
         owner_agent_id=_AGENT,
         grant_principal=_GRANT_PRINCIPAL,
         source_tool_call_id="tool-call-1",
         grants=(
-            HttpGrantSpec(
+            GrantSpec(
                 origin=_ORIGIN, coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.POST}), path_regex="/api/.*")
             ),
         ),
@@ -232,7 +225,7 @@ async def test_tunnel_matches_the_exact_origin_ignoring_method_and_path_coverage
 
 
 async def test_tunnel_admission_carries_the_earliest_expiry() -> None:
-    service = HttpGrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    service = GrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
     (earlier,) = await service.create_grants(
         owner_agent_id=_AGENT,
         grant_principal=_GRANT_PRINCIPAL,
@@ -256,13 +249,13 @@ async def test_tunnel_admission_carries_the_earliest_expiry() -> None:
 
 
 async def test_match_reports_credential_handles_from_every_matching_grant() -> None:
-    service = HttpGrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    service = GrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
     await service.create_grants(
         owner_agent_id=_AGENT,
         grant_principal=_GRANT_PRINCIPAL,
         source_tool_call_id="tool-call-1",
         grants=(
-            HttpGrantSpec(
+            GrantSpec(
                 origin=_ORIGIN,
                 coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})),
                 credential_handle="github-bot",
@@ -293,7 +286,7 @@ async def test_match_reports_credential_handles_from_every_matching_grant() -> N
 
 async def test_principal_lifecycle_inherits_agent_grants_without_crossing_sessions() -> None:
     repo = FakeRepository()
-    service = HttpGrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
     session_a, session_b = uuid4(), uuid4()
     (agent_grant,) = await service.create_grants(
         owner_agent_id=_AGENT,
@@ -335,7 +328,7 @@ async def test_create_many_uses_one_source_and_shared_timestamps() -> None:
         clock_calls += 1
         return _NOW
 
-    service = HttpGrantService(repo, max_lifetime=timedelta(hours=1), clock=clock)
+    service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=clock)
     expires_at = _NOW + timedelta(minutes=5)
     grants = await service.create_grants(
         owner_agent_id=_AGENT,
@@ -353,7 +346,7 @@ async def test_create_many_uses_one_source_and_shared_timestamps() -> None:
 
 
 async def test_create_many_enforces_the_tool_batch_limit_in_the_service() -> None:
-    service = HttpGrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    service = GrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
 
     with pytest.raises(ValueError, match="at most 32 grants"):
         await service.create_grants(
@@ -361,7 +354,7 @@ async def test_create_many_enforces_the_tool_batch_limit_in_the_service() -> Non
             grant_principal=_GRANT_PRINCIPAL,
             source_tool_call_id="tool-call-1",
             grants=tuple(
-                HttpGrantSpec(
+                GrantSpec(
                     origin=HttpOrigin(scheme=HttpScheme.HTTPS, host=f"host{index}.example", port=443),
                     coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})),
                 )
@@ -373,7 +366,7 @@ async def test_create_many_enforces_the_tool_batch_limit_in_the_service() -> Non
 
 async def test_release_many_is_bounded_sequential_and_uses_one_timestamp() -> None:
     repo = FakeRepository()
-    service = HttpGrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
     grants = await service.create_grants(
         owner_agent_id=_AGENT,
         grant_principal=_GRANT_PRINCIPAL,
@@ -402,7 +395,7 @@ async def test_release_many_is_bounded_sequential_and_uses_one_timestamp() -> No
     ],
 )
 async def test_end_batches_reject_invalid_lists(grant_ids, message) -> None:
-    service = HttpGrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    service = GrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
 
     with pytest.raises(ValueError, match=message):
         await service.release_grants(owner_agent_id=_AGENT, grant_ids=grant_ids)
@@ -412,7 +405,7 @@ async def test_end_batches_reject_invalid_lists(grant_ids, message) -> None:
 
 async def test_release_many_keeps_earlier_releases_when_a_later_item_fails() -> None:
     repo = FakeRepository()
-    service = HttpGrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
     (grant,) = await service.create_grants(
         owner_agent_id=_AGENT,
         grant_principal=_GRANT_PRINCIPAL,
@@ -429,7 +422,7 @@ async def test_release_many_keeps_earlier_releases_when_a_later_item_fails() -> 
 
 async def test_revoke_many_is_bounded_sequential_and_uses_one_timestamp() -> None:
     repo = FakeRepository()
-    service = HttpGrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
     grants = await service.create_grants(
         owner_agent_id=_AGENT,
         grant_principal=_GRANT_PRINCIPAL,
@@ -460,7 +453,7 @@ async def test_revoke_many_is_bounded_sequential_and_uses_one_timestamp() -> Non
     ],
 )
 async def test_create_rejects_invalid_input(source_tool_call_id, grants, expires_at, message) -> None:
-    service = HttpGrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    service = GrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
 
     with pytest.raises(ValueError, match=message):
         await service.create_grants(
@@ -476,7 +469,7 @@ async def test_match_and_get_derive_expiry_without_writing() -> None:
     repo = FakeRepository()
     grant = _grant(created_at=_NOW - timedelta(minutes=10), expires_at=_NOW - timedelta(minutes=1))
     repo.grants[grant.grant_id] = grant
-    service = HttpGrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
 
     assert not (
         await service.match_request(
@@ -492,7 +485,7 @@ async def test_match_and_get_derive_expiry_without_writing() -> None:
 
 async def test_match_returns_the_earliest_expiration_bound() -> None:
     repo = FakeRepository()
-    service = HttpGrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
     (first,) = await service.create_grants(
         owner_agent_id=_AGENT,
         grant_principal=_GRANT_PRINCIPAL,

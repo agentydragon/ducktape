@@ -24,7 +24,7 @@ import { formatTimestamp } from "./approval_state";
 import { ExternalLink } from "./link";
 import { toolCallPath } from "./routing";
 import { toastError, toastSuccess } from "./toast";
-import { principalText } from "./tool_rendering/kubernetes/responses";
+import { principalText } from "./tool_rendering/grants/responses";
 
 export type GrantHistoryFilter = "active" | "history" | "all";
 

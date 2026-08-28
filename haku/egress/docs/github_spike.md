@@ -45,7 +45,7 @@ iron proxy remains the agent's production GitHub path, untouched by this exercis
   for smart HTTP), both redeeming `github-bot` — authored against the **haku** agent id, the
   identity fenced traffic actually presents (see above). `codeload.github.com` is deliberately
   _not_ standing — it is the temporary-grant leg's target.
-- **`http_grants`** in-process MCP server, exposed to every access profile (operator ruling on
+- **`grants`** in-process MCP server (HTTP-egress domain), exposed to every access profile (operator ruling on
   #4986): any Agent may ask for egress. Deliberately in no auto-approval policy: `create_grant`
   must be manually approved (auto-approved calls cannot mint grants), so every call here queues
   for the operator. The identity constraint above still binds the spike: only a grant owned by
@@ -213,11 +213,14 @@ traffic presents the haku fence credential, so only a haku-owned grant can match
 #4670 identity constraint again). Submit — by generated proxy tool or by name:
 
 ```json
-call_mcp_tool("http_grants", "create_grant", {
+call_mcp_tool("grants", "create_grant", {
   "grants": [
     {
-      "origin": { "scheme": "https", "host": "codeload.github.com", "port": 443 },
-      "coverage": { "methods": ["GET", "HEAD"] }
+      "domain": "http",
+      "spec": {
+        "origin": { "scheme": "https", "host": "codeload.github.com", "port": 443 },
+        "coverage": { "methods": ["GET", "HEAD"] }
+      }
     }
   ],
   "duration_seconds": 3600,
@@ -234,7 +237,7 @@ credential, which has no session identity, so a session-scoped grant would never
   Record the returned `grant_id`.
 - **Retry** step 4's tarball fetch in the pod → expect success (`file /tmp/dt.tgz` → gzip).
   Sidecar: `allow CONNECT codeload.github.com:443 ... decision_id=grant:<grant_id>`.
-- **Release**: `call_mcp_tool("http_grants", "release_grants", {"grant_ids": ["<grant_id>"], "reason": "spike complete"})`
+- **Release**: `call_mcp_tool("grants", "release_grants", {"domain": "http", "grant_ids": ["<grant_id>"], "reason": "spike complete"})`
   (operator-approve it), or let it expire.
 - **Retry again** → back to the CONNECT 403 deny. Release/expiry denies the next admission —
   there is no proxy-local decision cache.
@@ -266,7 +269,7 @@ Console sessions and is not required for #4943.)
 - The single-iron-`HTTP_PROXY` pod-env check from the workload section (the production route
   never moved).
 - The `create_grant`/`release_grants` tool-call IDs and the grant UUID with terminal status
-  `released` (console audit ledger `/_console/tool-calls`, or `http_grants.get_grant`).
+  `released` (console audit ledger `/_console/tool-calls`, or `grants.get_grant` (domain `http`)).
 
 ## Rollback / cleanup
 
@@ -275,7 +278,7 @@ rm -rf /tmp/ducktape-spike /tmp/dt.tgz   # inside the pod; /tmp is an emptyDir a
 ```
 
 Release any still-active spike grants (step 5). Nothing else changed: the pod's fence wiring,
-the standing policy, and the `http_grants` exposure are GitOps-managed and **stay** — they are
+the standing policy, and the `grants` server exposure are GitOps-managed and **stay** — they are
 the first adoption instance, not scaffolding — and the agent's production egress ran through
 iron untouched for the whole exercise. Retiring iron for this agent (repointing its default
 `HTTP_PROXY` at the fence and moving its credential substitutions server-side) is gated on

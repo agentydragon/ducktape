@@ -62,7 +62,7 @@ from haku.console.database_schema import (
 )
 from haku.console.grants.envelope import GrantStatus
 from haku.console.grants.http.models import HttpMethod, HttpScheme
-from haku.console.grants.kubernetes.models import KubernetesNamespacesGrantScope, KubernetesRule
+from haku.console.grants.kubernetes.models import NamespacesGrantScope, Rule
 from haku.console.grants.principal import GrantPrincipalKind
 from haku.console.notifications.session_wakes import SessionEvent, SessionEventKind
 from haku.console.session.conftest import age_lease, answers, attach_channel, lease_of, make_idle
@@ -313,7 +313,7 @@ async def test_session_end_terminalizes_exact_session_grants(session_store, migr
         db.add(
             McpToolCall(
                 tool_call_id=source_tool_call_id,
-                server_id="kubernetes",
+                server_id="grants",
                 tool_name="create_grant",
                 status=ToolCallStatus.RUNNING,
                 created_at=datetime.now(UTC),
@@ -344,8 +344,8 @@ async def test_session_end_terminalizes_exact_session_grants(session_store, migr
                 principal_agent_id=None,
                 principal_session_id=view.session_id,
                 source_tool_call_id=source_tool_call_id,
-                scope=KubernetesNamespacesGrantScope(namespaces=("public-coder-agent",)),
-                rules=[KubernetesRule(api_groups=("",), resources=("pods/log",), verbs=("get",))],
+                scope=NamespacesGrantScope(namespaces=("public-coder-agent",)),
+                rules=[Rule(api_groups=("",), resources=("pods/log",), verbs=("get",))],
                 status=GrantStatus.ACTIVE,
                 created_at=datetime.now(UTC),
                 expires_at=datetime.now(UTC) + timedelta(hours=1),
@@ -360,7 +360,7 @@ async def test_session_end_terminalizes_exact_session_grants(session_store, migr
         db.add(
             McpToolCall(
                 tool_call_id=http_source_tool_call_id,
-                server_id="http_grants",
+                server_id="grants",
                 tool_name="create_grant",
                 status=ToolCallStatus.RUNNING,
                 created_at=datetime.now(UTC),

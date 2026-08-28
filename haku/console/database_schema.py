@@ -51,7 +51,7 @@ from haku.console.conversation.conversation_event import (
 from haku.console.conversation.prompt_origin import PromptOrigin
 from haku.console.grants.envelope import GrantEnvelopeColumns, GrantStatus, grant_envelope_table_args
 from haku.console.grants.http.models import HttpMethod, HttpMethods, HttpScheme
-from haku.console.grants.kubernetes.models import KubernetesGrantScope, KubernetesRule
+from haku.console.grants.kubernetes.models import GrantScope, Rule
 from haku.console.hostexecd.models import ExecutionStatus
 from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
 from haku.console.operator_identity import OperatorStatus
@@ -553,8 +553,8 @@ class KubernetesGrantRow(GrantEnvelopeColumns, Base):
         Index("idx_kubernetes_grants_session_principal_status_expiry", "principal_session_id", "status", "expires_at"),
     )
 
-    scope: Mapped[KubernetesGrantScope] = mapped_column(PydanticColumn(KubernetesGrantScope), nullable=False)
-    rules: Mapped[list[KubernetesRule]] = mapped_column(PydanticColumn(list[KubernetesRule]), nullable=False)
+    scope: Mapped[GrantScope] = mapped_column(PydanticColumn(GrantScope), nullable=False)
+    rules: Mapped[list[Rule]] = mapped_column(PydanticColumn(list[Rule]), nullable=False)
     status: Mapped[GrantStatus] = mapped_column(TextBackedStrEnumColumn(GrantStatus), nullable=False)
     ended_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

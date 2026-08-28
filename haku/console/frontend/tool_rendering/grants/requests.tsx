@@ -4,7 +4,7 @@ import type { z } from "zod";
 import { Field } from "../../field";
 import { mcpToolSchema, type McpToolArgumentsFor } from "../../mcp_tool_schema";
 import { definePreview, type ToolPreview } from "../entry";
-import { KUBERNETES_SERVER_ID } from "../server_ids";
+import { GRANTS_SERVER_ID } from "../server_ids";
 import {
   COMPACT_ITEM_LIMIT,
   MoreLine,
@@ -15,34 +15,43 @@ import {
   type PreviewProps,
 } from "../vocabulary";
 
-export const zCreateGrantArgs: z.ZodType<McpToolArgumentsFor<typeof KUBERNETES_SERVER_ID, "create_grant">> =
-  mcpToolSchema(KUBERNETES_SERVER_ID, "create_grant");
-const zReleaseGrantsArgs: z.ZodType<McpToolArgumentsFor<typeof KUBERNETES_SERVER_ID, "release_grants">> = mcpToolSchema(
-  KUBERNETES_SERVER_ID,
+export const zCreateGrantArgs: z.ZodType<McpToolArgumentsFor<typeof GRANTS_SERVER_ID, "create_grant">> = mcpToolSchema(
+  GRANTS_SERVER_ID,
+  "create_grant"
+);
+const zReleaseGrantsArgs: z.ZodType<McpToolArgumentsFor<typeof GRANTS_SERVER_ID, "release_grants">> = mcpToolSchema(
+  GRANTS_SERVER_ID,
   "release_grants"
 );
 
 type CreateGrantArgs = z.infer<typeof zCreateGrantArgs>;
 type ReleaseGrantsArgs = z.infer<typeof zReleaseGrantsArgs>;
-export type GrantRule = {
+type CreateGrantItem = CreateGrantArgs["grants"][number];
+
+// Loose structural shapes the widgets render, so both the argument catalog (min-length arrays
+// generate as non-empty tuples) and the result catalog (plain arrays) satisfy them — the generated
+// per-catalog types diverge there, and one grant renders identically from either side. This mirrors
+// the pre-#4918 approach; the shared `domain` tag routes each item to the right shape.
+type KubernetesRule = {
   api_groups?: readonly string[];
   resources?: readonly string[];
   verbs: readonly string[];
   resource_names?: readonly string[];
   non_resource_urls?: readonly string[];
 };
-export type GrantScope =
+type KubernetesGrantScope =
   | { kind: "namespaces"; namespaces: readonly string[] }
   | { kind: "all_namespaces" }
   | { kind: "cluster" }
   | { kind: "non_resource" };
-
-export type GrantShape = {
-  scope: GrantScope;
-  rules: readonly GrantRule[];
+export type KubernetesGrantShape = { scope: KubernetesGrantScope; rules: readonly KubernetesRule[] };
+export type HttpGrantShape = {
+  origin: { scheme: string; host: string; port: number };
+  coverage: { methods: readonly string[]; path_regex?: string | null };
+  credential_handle?: string | null;
 };
 
-export function scopeLabel(scope: GrantScope): string {
+export function scopeLabel(scope: KubernetesGrantScope): string {
   switch (scope.kind) {
     case "namespaces":
       return `Namespaces: ${scope.namespaces.join(", ")}`;
@@ -55,7 +64,7 @@ export function scopeLabel(scope: GrantScope): string {
   }
 }
 
-function ruleTarget(rule: GrantRule): string {
+function ruleTarget(rule: KubernetesRule): string {
   if (rule.non_resource_urls?.length) return rule.non_resource_urls.join(", ");
   const group = rule.api_groups?.filter(Boolean).join(", ");
   const resources = rule.resources?.join(", ") || "resources";
@@ -63,7 +72,7 @@ function ruleTarget(rule: GrantRule): string {
   return rule.resource_names?.length ? `${target} (${rule.resource_names.join(", ")})` : target;
 }
 
-function RuleLine({ rule }: { rule: GrantRule }) {
+function RuleLine({ rule }: { rule: KubernetesRule }) {
   return (
     <Group gap={4} wrap="wrap">
       <PreviewBadge variant="light" color="teal">
@@ -76,25 +85,57 @@ function RuleLine({ rule }: { rule: GrantRule }) {
   );
 }
 
-export function GrantScopeAndRules({
-  grant,
+export function KubernetesGrantScopeAndRules({
+  spec,
   variant,
 }: {
-  grant: GrantShape;
+  spec: KubernetesGrantShape;
   variant: "compact" | "detailed";
 }): JSX.Element {
-  const rules = variant === "compact" ? grant.rules.slice(0, 1) : grant.rules;
+  const rules = variant === "compact" ? spec.rules.slice(0, 1) : spec.rules;
   return (
     <Stack gap={4}>
-      <PreviewTitle>{scopeLabel(grant.scope)}</PreviewTitle>
+      <PreviewTitle>{scopeLabel(spec.scope)}</PreviewTitle>
       <Stack gap={2}>
         {rules.map((rule, index) => (
           <RuleLine key={index} rule={rule} />
         ))}
-        <MoreLine count={grant.rules.length - rules.length} />
+        <MoreLine count={spec.rules.length - rules.length} />
       </Stack>
     </Stack>
   );
+}
+
+export function httpOriginLabel(origin: HttpGrantShape["origin"]): string {
+  return `${origin.scheme}://${origin.host}:${origin.port}`;
+}
+
+export function HttpGrantCoverage({ spec }: { spec: HttpGrantShape }): JSX.Element {
+  return (
+    <Stack gap={4}>
+      <Group gap={6}>
+        <PreviewTitle className="haku-shell-mono">{httpOriginLabel(spec.origin)}</PreviewTitle>
+        <PreviewBadge variant="light" color="teal">
+          {spec.coverage.methods.join(", ")}
+        </PreviewBadge>
+      </Group>
+      {spec.coverage.path_regex && (
+        <PreviewText span className="haku-shell-mono">
+          {spec.coverage.path_regex}
+        </PreviewText>
+      )}
+      {spec.credential_handle && <Field label="Credential">{spec.credential_handle}</Field>}
+    </Stack>
+  );
+}
+
+function GrantItemView({ item, variant }: { item: CreateGrantItem; variant: "compact" | "detailed" }): JSX.Element {
+  if (item.domain === "kubernetes") return <KubernetesGrantScopeAndRules spec={item.spec} variant={variant} />;
+  return <HttpGrantCoverage spec={item.spec} />;
+}
+
+function domainLabel(item: CreateGrantItem): string {
+  return item.domain === "kubernetes" ? "Kubernetes" : "HTTP egress";
 }
 
 function formatDuration(seconds: number): string {
@@ -105,18 +146,21 @@ function formatDuration(seconds: number): string {
 
 function CreateGrantPreview({ args, variant }: PreviewProps<CreateGrantArgs>) {
   const grants = variant === "compact" ? args.grants.slice(0, COMPACT_ITEM_LIMIT) : args.grants;
+  const domain = args.grants.length > 0 ? domainLabel(args.grants[0]) : "";
   return (
     <Stack gap="xs">
       <Group gap={6}>
-        <PreviewTitle>{plural(args.grants.length, "temporary grant")}</PreviewTitle>
+        <PreviewTitle>
+          {domain} {plural(args.grants.length, "temporary grant")}
+        </PreviewTitle>
         <PreviewBadge variant="outline">for {formatDuration(args.duration_seconds)}</PreviewBadge>
         <PreviewBadge variant="light">
           applies to {args.applies_to === "session" ? "this session" : "the Agent"}
         </PreviewBadge>
       </Group>
       <Stack gap="xs">
-        {grants.map((grant, index) => (
-          <GrantScopeAndRules key={index} grant={grant} variant={variant} />
+        {grants.map((item, index) => (
+          <GrantItemView key={index} item={item} variant={variant} />
         ))}
         <MoreLine count={args.grants.length - grants.length} />
       </Stack>
@@ -141,14 +185,17 @@ function GrantIdList({ ids, variant }: { ids: readonly string[]; variant: "compa
 function ReleaseGrantsPreview({ args, variant }: PreviewProps<ReleaseGrantsArgs>) {
   return (
     <Stack gap="xs">
-      <PreviewTitle>{plural(args.grant_ids.length, "grant")}</PreviewTitle>
+      <Group gap={6}>
+        <PreviewTitle>{plural(args.grant_ids.length, "grant")}</PreviewTitle>
+        <PreviewBadge variant="light">{args.domain}</PreviewBadge>
+      </Group>
       <GrantIdList ids={args.grant_ids} variant={variant} />
       <Field label="Reason">{args.reason ?? "released"}</Field>
     </Stack>
   );
 }
 
-export const kubernetesPreviews: {
+export const grantsPreviews: {
   create_grant: ToolPreview<typeof zCreateGrantArgs>;
   release_grants: ToolPreview<typeof zReleaseGrantsArgs>;
 } = {
