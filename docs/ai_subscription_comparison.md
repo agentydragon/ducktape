@@ -449,7 +449,13 @@ It also runs into the feedback loop noted above: a weaker model bills for its re
 
 **Where it still earns a place:** mechanical bulk with a cheap correctness check — codemods, test scaffolding, log triage, bulk summarisation — where index 34 is sufficient and 1000 tok/s with no rolling window is the point. Not for work where a wrong answer is expensive to detect.
 
-**Upgrade path, worth tracking.** Cerebras serves open weights and has migrated before (GLM-4.6, then 4.7 in June 2026). GLM-5.3's weights are due roughly two weeks after its 2026-08-14 launch. A 5.3 migration would move Cerebras from index 34 to 60 and change this verdict entirely — so prefer monthly billing and re-check the model list before renewing.
+**Upgrade path, worth tracking.** Cerebras serves open weights and has swapped the
+served model across vendors, not just versions: Cerebras Code
+[launched on Qwen3-Coder](https://www.cerebras.ai/blog/introducing-cerebras-code)
+(Alibaba's 480B coding model), then moved to GLM-4.6 and to 4.7 in June 2026. The
+[current FAQ](https://support.cerebras.net/articles/9996007307-cerebras-code-faq) is the
+only live statement of what a plan buys, and it is the thing to re-read before renewing —
+a launch announcement will not tell you. GLM-5.3's weights are due roughly two weeks after its 2026-08-14 launch. A 5.3 migration would move Cerebras from index 34 to 60 and change this verdict entirely — so prefer monthly billing and re-check the model list before renewing.
 
 **Z.ai still moved the wrong way on shape.** The [2026-07-30 plan revision](https://docs.z.ai/devpack/notice/usage-revision) switched GLM Coding Plans from prompt counts to credits, kept the 5-hour rolling window, and added a peak-hour multiplier: GLM-5.3 and GLM-5-Turbo bill at **3x during 14:00-18:00 SGT weekdays**, 1x off-peak. A 3x drain rate against the window that was already the problem.
 
