@@ -61,7 +61,7 @@ from haku.console.database_schema import (
 )
 from haku.console.grant_principal import GrantPrincipalKind
 from haku.console.kubernetes_grant_models import KubernetesGrantStatus
-from haku.console.x import conversation_log, prompt_inbox, session_events
+from haku.console.x import conversation_log, prompt_inbox, runtime_control, session_events
 from haku.console.x.conversation_events import (
     ConversationEvent,
     FrameRange,
@@ -1361,6 +1361,10 @@ class SessionStore:
             )
             if conversation is None:
                 raise KeyError(conversation_id)
+            # The maintenance-window gate, checked inside the accepting transaction so a prompt is
+            # never half-admitted across an operator closing admission (#4667 generation cut).
+            if await runtime_control.admission_closed(db):
+                raise PromptRefusedError(PromptRejection.ADMISSION_CLOSED)
             if required_session_id is None:
                 chat = await db.scalar(
                     select(Session)
@@ -1420,7 +1424,8 @@ class SessionStore:
 
         No busy/queued refusals: the runner accepts prompts while working and orders admission
         itself (#4667 § Prompt ordering), so the inbox deliberately queues where the v3 path
-        refused. Demand and the runner's dispatch are woken the same way the v3 queue was.
+        refused. The one gate is the maintenance switch. Demand and the runner's dispatch are woken
+        the same way the v3 queue was.
         """
         return await self._submit_prompt(operator_id, conversation_id, prompt_text, origin, records, exclusive=False)
 
@@ -1460,6 +1465,8 @@ class SessionStore:
             )
             if conversation is None:
                 raise KeyError(conversation_id)
+            if await runtime_control.admission_closed(db):
+                raise PromptRefusedError(PromptRejection.ADMISSION_CLOSED)
             chat = await db.scalar(
                 select(Session)
                 .where(Session.conversation_id == conversation_id, Session.status.in_(OPEN_SESSION_STATUSES))
@@ -2239,6 +2246,25 @@ class SessionStore:
     async def status(self, session_id: UUID) -> SessionStatus | None:
         outcome = await self.outcome(session_id)
         return outcome.status if outcome is not None else None
+
+    async def active_generation(self) -> str | None:
+        """The active runtime transport generation, or None pre-cut (#4667 generation gate).
+
+        Read at bridge admission: a Console built for the neutral-operation generation serves a
+        runner only once the cutover migration has named its generation active.
+        """
+        async with self._sessions() as db:
+            return await runtime_control.active_generation(db)
+
+    async def admission_open(self) -> bool:
+        """Whether new prompt admission is currently open — the operator's drain switch, read out."""
+        async with self._sessions() as db:
+            return not await runtime_control.admission_closed(db)
+
+    async def set_admission_open(self, *, open_admission: bool) -> None:
+        """Open or close prompt admission for the maintenance window. Raises pre-cut."""
+        async with self._sessions.begin() as db:
+            await runtime_control.set_admission(db, closed=not open_admission)
 
     async def runtime_kind_of(self, session_id: UUID) -> RuntimeKind:
         """Return the immutable runtime discriminator of a session's conversation."""

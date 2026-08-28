@@ -153,6 +153,15 @@ py_library(
 )
 
 py_library(
+    name = "runtime_control",
+    srcs = ["runtime_control.py"],
+    deps = [
+        "//haku/console:database_schema",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "session_events",
     srcs = ["session_events.py"],
     deps = [
@@ -188,6 +197,7 @@ py_library(
         ":prompt_inbox",
         ":runtime",
         ":runtime_catalog",
+        ":runtime_control",
         ":session_events",
         ":session_wakes",
         ":setup_output",
@@ -588,6 +598,23 @@ py_test(
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_runtime_control",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_runtime_control.py"],
+    deps = [
+        ":conftest",
+        ":session_store",
+        "//:conftest",
+        "//haku/console:chat_models",
+        "//haku/console:conftest",
+        "//haku/runtime/x/bridge:neutral_operations",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
     ],
 )
 
