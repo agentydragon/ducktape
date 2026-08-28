@@ -221,9 +221,7 @@ def create_app(
     claude_runtime = console_config.harnesses.claude_code if console_config.harnesses is not None else None
     codex_runtime = console_config.harnesses.codex_app_server if console_config.harnesses is not None else None
     static_by_id = {agent.agent_id: agent for agent in console_config.static_agents}
-    profile_runtime_kinds = {
-        profile.id: set(profile.allowed_chat_runtimes) for profile in console_config.access_profiles
-    }
+    profile_runtime_kinds = {profile.id: set(profile.allowed_harnesses) for profile in console_config.access_profiles}
     launchable_agent_ids = {entry.agent_id for entry in console_config.launchable_agents}
     # Each layer owns its own LISTEN connection on its own channel: a session and a conversation
     # are different layers, so their wakes share no wire, no connection, and no module. Two

@@ -431,6 +431,14 @@ quiet gap.
   schedule — only this discriminator rename and the small `harnesses/` selection residue.
 - **C4e · `allowed_chat_runtimes` → `allowed_harnesses`** _(semantic — per-profile config field,
   deploy-coordinated expand/contract, same recipe as the `chat_runtimes` → `harnesses` key flip)_.
+  **Expand landed**: `allowed_harnesses` is the canonical per-profile field, its readers (console
+  `app.py`, the harness/profile cross-check in `mcp_config.py`, the Matrix adapter worker) switched,
+  and both parsers of the shared YAML — `AccessProfile` (console, `extra="forbid"`) and
+  `ConfiguredProfile` (Matrix adapter) — accept the deployed `allowed_chat_runtimes` key as a
+  tombstoned alias and reject a profile setting both. The ConfigMap deliberately still writes
+  `allowed_chat_runtimes` until an image with these loaders is rolled out. **Remaining is the
+  contract**, after the expand has converged: flip the ConfigMap per-profile key to
+  `allowed_harnesses` and drop both twin aliases.
 - **C6 · "entry" → item read model** _(semantic)_ — `*Entry` → `Item…`, into `conversation/item_reads.py`
   (private to the conversation read surface, beside the store that produces it — not `mcp/`).
 

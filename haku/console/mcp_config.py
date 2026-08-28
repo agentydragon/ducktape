@@ -327,15 +327,32 @@ class AccessProfile(BaseModel):
     # This is independent from auto-approval (whether a call skips review) and Recall access
     # (whether a particular index can be searched).
     in_process_server_ids: set[InProcessServerId] = Field(default_factory=set)
-    # Chat runtime launch authority is configuration-owned.  The durable Agent row supplies the
+    # Harness launch authority is configuration-owned.  The durable Agent row supplies the
     # selected profile; callers never get to supply this field.
-    allowed_chat_runtimes: set[HarnessKind] = Field(default_factory=set)
+    allowed_harnesses: set[HarnessKind] = Field(default_factory=set)
     # Conversation-history visibility: which other profiles' conversations this one may read,
     # acyclic and transitive with self-read implicit. `conversation_read_access` derives the one
     # read scope both `haku_conversations` drilldowns and `haku_index` chat search enforce. The
     # graph grants information visibility only — never tool authority, approvals, credentials, or
     # runtime grants.
     can_read_profiles: set[str] = Field(default_factory=set)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_allowed_chat_runtimes_alias(cls, value: object) -> object:
+        # CLEANUP(added 2026-08-28): remove the allowed_chat_runtimes alias (and its Matrix-adapter
+        #   twin in channels/matrix/config.py) once the deployed haku-console-config ConfigMap
+        #   carries `allowed_harnesses` and no older image that reads only `allowed_chat_runtimes`
+        #   is deployable (contract step of #4772 C4e).
+        if isinstance(value, dict) and "allowed_chat_runtimes" in value:
+            if "allowed_harnesses" in value:
+                raise ValueError(
+                    "allowed_harnesses and its deprecated alias allowed_chat_runtimes are both set; "
+                    "keep only allowed_harnesses"
+                )
+            value = dict(value)
+            value["allowed_harnesses"] = value.pop("allowed_chat_runtimes")
+        return value
 
 
 class LaunchableAgent(BaseModel):
@@ -630,7 +647,7 @@ class ConsoleConfigFile(BaseModel):
                 raise ValueError(f"harness Agents are not launchable: {sorted(unlaunchable_runtime_agents)!r}")
             for runtime in self.harnesses.registrations:
                 profile = profiles[static_by_id[runtime.agent_id].access_profile_id]
-                if runtime.kind not in profile.allowed_chat_runtimes:
+                if runtime.kind not in profile.allowed_harnesses:
                     raise ValueError(f"harness Agent {runtime.agent_id} profile disallows {runtime.kind.value}")
             for agent_id in launchable_ids:
                 if not any(identity_agent_id == agent_id for identity_agent_id, _kind in configured_identities):

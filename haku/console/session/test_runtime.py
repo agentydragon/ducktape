@@ -249,9 +249,7 @@ def _console_config(**overrides: object) -> dict[str, object]:
     config: dict[str, object] = {
         "harnesses": {"claude_code": runtime_config().model_dump(mode="json")},
         "auto_approval_policies": [{"id": "manual", "type": "never"}],
-        "access_profiles": [
-            {"id": "manual", "auto_approval_policy": "manual", "allowed_chat_runtimes": ["claude_code"]}
-        ],
+        "access_profiles": [{"id": "manual", "auto_approval_policy": "manual", "allowed_harnesses": ["claude_code"]}],
         "default_access_profile_id": "manual",
         "static_agents": [
             {

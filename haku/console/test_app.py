@@ -113,8 +113,8 @@ def test_config_advertises_codex_and_explicit_launch_preserves_public_coder_isol
         },
         "auto_approval_policies": [{"id": "manual", "type": "never"}],
         "access_profiles": [
-            {"id": "haku", "auto_approval_policy": "manual", "allowed_chat_runtimes": ["claude_code"]},
-            {"id": "public-coder", "auto_approval_policy": "manual", "allowed_chat_runtimes": ["codex_app_server"]},
+            {"id": "haku", "auto_approval_policy": "manual", "allowed_harnesses": ["claude_code"]},
+            {"id": "public-coder", "auto_approval_policy": "manual", "allowed_harnesses": ["codex_app_server"]},
         ],
         "default_access_profile_id": "haku",
         "static_agents": [

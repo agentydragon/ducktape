@@ -39,7 +39,7 @@ def _config(**overrides: object) -> dict[str, object]:
             {
                 "id": "chat",
                 "auto_approval_policy": "manual",
-                "allowed_chat_runtimes": ["claude_code"],
+                "allowed_harnesses": ["claude_code"],
                 "can_read_profiles": ["review"],
             },
             {"id": "review", "auto_approval_policy": "manual"},
@@ -65,7 +65,32 @@ def test_launchable_agents_and_runtime_edges_are_deploy_config() -> None:
     config = ConsoleConfigFile.model_validate(_config())
     assert config.launchable_agents[0].agent_id == _AGENT
     assert config.launchable_agents[0].system_prompt_template == Path("/prompt")
-    assert config.access_profiles[0].allowed_chat_runtimes == {HarnessKind.CLAUDE_CODE}
+    assert config.access_profiles[0].allowed_harnesses == {HarnessKind.CLAUDE_CODE}
+
+
+def test_allowed_chat_runtimes_is_a_deprecated_alias_of_allowed_harnesses() -> None:
+    """#4772 C4e expand: a profile's deployed `allowed_chat_runtimes` key parses onto the canonical
+    `allowed_harnesses` field until the contract step flips the ConfigMap, and a profile carrying
+    both keys is rejected rather than one silently winning."""
+    aliased = ConsoleConfigFile.model_validate(
+        _config(
+            access_profiles=[{"id": "chat", "auto_approval_policy": "manual", "allowed_chat_runtimes": ["claude_code"]}]
+        )
+    )
+    assert aliased.access_profiles[0].allowed_harnesses == {HarnessKind.CLAUDE_CODE}
+    with pytest.raises(ValidationError, match="deprecated alias allowed_chat_runtimes"):
+        ConsoleConfigFile.model_validate(
+            _config(
+                access_profiles=[
+                    {
+                        "id": "chat",
+                        "auto_approval_policy": "manual",
+                        "allowed_harnesses": ["claude_code"],
+                        "allowed_chat_runtimes": ["claude_code"],
+                    }
+                ]
+            )
+        )
 
 
 def test_profile_read_graph_rejects_cycles() -> None:

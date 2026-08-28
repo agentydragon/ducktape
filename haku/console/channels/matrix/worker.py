@@ -182,7 +182,7 @@ def _launch_wiring(config: AdapterConfigFile) -> LaunchWiring | None:
     if config.default_chat_agent_id is None:
         raise ValueError("harnesses are configured but default_chat_agent_id is not")
     static_by_id = {agent.agent_id: agent for agent in config.static_agents}
-    profile_runtime_kinds = {profile.id: profile.allowed_chat_runtimes for profile in config.access_profiles}
+    profile_runtime_kinds = {profile.id: profile.allowed_harnesses for profile in config.access_profiles}
     authorizer = ChatLaunchAuthorizer(
         StaticLaunchAuthority(),
         launchable_agent_ids={entry.agent_id for entry in config.launchable_agents},

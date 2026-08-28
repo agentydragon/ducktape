@@ -37,7 +37,7 @@ ToolCallPrincipal -> exactly one of operator_id | binding_id
   capability bundle. Its authority dimensions are independent and default-deny: an auto-approval
   policy decides whether a permitted call skips review; `recall_index_ids` grants particular
   logical indexes; `in_process_server_ids` grants credential-free Console-held servers;
-  `allowed_chat_runtimes` grants launchable runtime kinds. A server grant is not Recall access and
+  `allowed_harnesses` grants launchable harness kinds. A server grant is not Recall access and
   neither is auto-approval. `can_read_profiles` is the reviewed, acyclic conversation-visibility
   graph: `conversation_read_access` derives each caller's transitive read closure and both the
   `haku_conversations` drilldown and `haku_index` chat search enforce it against the

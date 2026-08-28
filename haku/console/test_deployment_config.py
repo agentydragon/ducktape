@@ -264,8 +264,8 @@ def test_deployed_config_reads_identically_for_console_and_matrix_adapter() -> N
     assert {entry.agent_id for entry in adapter.launchable_agents} == {
         entry.agent_id for entry in console.launchable_agents
     }
-    assert {profile.id: profile.allowed_chat_runtimes for profile in adapter.access_profiles} == {
-        profile.id: profile.allowed_chat_runtimes for profile in console.access_profiles
+    assert {profile.id: profile.allowed_harnesses for profile in adapter.access_profiles} == {
+        profile.id: profile.allowed_harnesses for profile in console.access_profiles
     }
     assert {agent.agent_id: agent.access_profile_id for agent in adapter.static_agents} == {
         agent.agent_id: agent.access_profile_id for agent in console.static_agents
