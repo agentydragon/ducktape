@@ -1,0 +1,71 @@
+# Internal bearers shared by the Console API and its colocated egress proxy sidecar (#4942),
+# ESO-generated once (the plaid-mcp readonly-secret pattern; symbols disabled so the bearers travel
+# cleanly in Authorization headers).
+#
+# proxy-token: the static proxy-identity bearer the sidecar presents on every localhost decide call;
+#   the Console's egress_decide.proxy_token_env_var resolves the same value to authenticate it.
+# fence-credential-haku: the Agent-bound fence credential the sidecar presents; the Console derives
+#   the haku Agent from it via egress_decide.fence_credentials.
+#
+# Both are endpoint-scoped opaque bearers compared in-memory by load_egress_decide / HttpDecideService
+# (secrets.compare_digest) — registered nowhere DB-side, never valid for MCP/session/operator APIs — so
+# regeneration is safe: the deployment's Reloader annotation on this Secret restarts the pod and both
+# containers read the identical new values. They MUST differ: load_egress_decide rejects two equal
+# identity secrets ("duplicate egress decide credential values"). Hence two independent Password
+# generators, each rewriting its own `password` output onto a distinct key in this one Secret.
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: haku-egress-proxy-token-generator
+  namespace: haku-console
+spec:
+  length: 48
+  digits: 10
+  symbols: 0
+  noUpper: false
+  allowRepeat: true
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: haku-egress-fence-credential-haku-generator
+  namespace: haku-console
+spec:
+  length: 48
+  digits: 10
+  symbols: 0
+  noUpper: false
+  allowRepeat: true
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: haku-egress-proxy-identity
+  namespace: haku-console
+spec:
+  # A generated password is stable for the generator's lifetime; the long interval avoids an
+  # automatic rotation that would needlessly restart the console.
+  refreshInterval: 8760h
+  target:
+    name: haku-egress-proxy-identity
+    creationPolicy: Owner
+    deletionPolicy: Retain
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: haku-egress-proxy-token-generator
+      rewrite:
+        - regexp:
+            source: "^password$"
+            target: "proxy-token"
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: haku-egress-fence-credential-haku-generator
+      rewrite:
+        - regexp:
+            source: "^password$"
+            target: "fence-credential-haku"

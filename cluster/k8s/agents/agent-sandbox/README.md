@@ -162,8 +162,8 @@ LLM kill switch.
 - `codex`: the image bakes `~/.codex/config.toml`
   (`workspace-image/codex-config.toml`) with a LiteLLM provider over the
   Responses API; the template supplies `LITELLM_API_KEY` from
-  `litellm-key-agent-workspaces-codex` (`*-chatgpt` Codex-account models,
-  same allowlist as codex-pod).
+  `litellm-key-agent-workspaces-codex` (`chatgpt/oai-responses/*`
+  Codex-account models, same allowlist as codex-pod).
 
 Other credential classes follow the zones/codex-pod pattern: mirror a Secret
 into `agent-workspaces` (reflector or ESO) and reference it from the template.

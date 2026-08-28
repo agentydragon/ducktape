@@ -14,7 +14,6 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import ItemStatus, ItemType, RuntimeKind
-from haku.console.config import ChatRecallIndexDefinition, GitRecallIndexDefinition, RecallIndexSettings
 from haku.console.conversation_read_access import UnrestrictedReads
 from haku.console.database_schema import Conversation, ConversationItem, Operator, Session
 from haku.console.mcp_config import ConsoleConfigFile
@@ -22,6 +21,7 @@ from haku.console.operator_identity import OperatorStatus
 from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.recall_index_sync import RecallEmbeddingMaintenance, RecallIndexMaintenance, advisory_lock_for
 from haku.console.tools.recall_index import ChatIndexStatus, ChatSource, GitIndexStatus
+from haku.recall_index.config import ChatRecallIndexDefinition, GitRecallIndexDefinition
 from haku.recall_index.fake_embedder import ExplodingEmbedder, FakeEmbedder
 from haku.recall_index.schema import ContentEmbedding
 
@@ -33,11 +33,6 @@ _MANUAL_AUTHORITY_CONFIG = {
     "access_profiles": [{"id": "manual", "auto_approval_policy": "manual"}],
     "default_access_profile_id": "manual",
 }
-
-
-def test_recall_index_settings_contains_the_shared_chunk_budget() -> None:
-    config = RecallIndexSettings(chunk_budget={"target_bytes": 400, "max_bytes": 800, "overlap_codepoints": 48})
-    assert config.chunk_budget.overlap_codepoints == 48
 
 
 def test_deploy_config_declares_each_index_explicitly() -> None:

@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: analysis-ai-api-key
+    namespace: ducktape-flux
+type: Opaque
+stringData:
+    api-key: ENC[AES256_GCM,data:X+KqdL+EjA0T+dWWZZ6+JP1SBTBBpU60dywpycLIzCm2DKM=,iv:aa4U5c3cJH5zgxZl1gvgOctOKQgfFuxhzw4iAgf9Hd8=,tag:zroYV9nLVG6EoO7famxrlQ==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBhS0VXVTN5WVNGbE96NjhZ
+            NXFPV2dFMEtQenNFTlovcjAzSi91TjFuY1JnCmlJTEM0M25IcTJhQmJpUG9OTHNk
+            Y245RUhiK3pnTE00YkRyN1l1VWZVR3cKLS0tIDlWcmloRUY5aVVoMTJUbWpmODI0
+            YllTUE9DbXQ1MU9MWFBnVVpjV2RhRkEKCclGLHJDuY5dshfaeb8wH6UPhSopWoA+
+            869GZ5MTRdMWxj1sRBQcogqAmAg/aabeIRuVat9HneDWjC8UJMomKA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAxYTZwZGZ6eWp1cmpHbHN0
+            clpjUUZNNzAycEkweFYvQW9pd1p1VHZWcDM4ClUwdHJ0dE1GQmpKS0l1WFJiRk5Y
+            S29EQXBCNHFzOWpGWmZWK3U5STNTZEkKLS0tIDE2U29MSkpBdW1NeEZWeHNBakRN
+            dGxteDFMMk4yTmF4Ynk2SFJ5S2g1V3cK+3Qa0JD/2PRgb0l0kR1mzsGiZXD4VdLS
+            bRbM8v1qvUxBMalms4QS8WhZCosB8GLl9ZQfPviNOr5Uo0CB5ZMnyw==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-08-28T03:12:32Z"
+    mac: ENC[AES256_GCM,data:jzgZ0CLA7ygwJTsPSg9PMlnOKiDi7QyxxKMK+LVwUkyCf7/dF1hwFk7PjpFMTNCtUaXYS5bGF95dCR4LrqCOIHNUKketyp2kr7XkXJQ86zdYMBasmdUghNY14YFPKwZeUs2xi8hCuQQbJuqLudn4xFNAQNNar01fWCt49jaiD28=,iv:SpjJA+l7+ac+uuhpcciQ5Rss7NNs5c5pR0ucqC9SLvs=,tag:7yvXY+4MNeXTPVodR2yMPg==,type:str]
+    version: 3.13.3

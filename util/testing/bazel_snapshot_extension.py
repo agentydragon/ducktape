@@ -51,7 +51,7 @@ def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter, exitstatu
     target = os.environ.get("TEST_TARGET", "//path/to:target")
     terminalreporter.write_line("")
     terminalreporter.write_line("To update snapshots:")
-    terminalreporter.write_line(f"  bbr test {target} --test_arg=--snapshot-update --nocache_test_results")
     terminalreporter.write_line(
-        "  INV=$(cat ~/.cache/bbr/last_invocation_id) && bbapi artifact download $INV '*.ambr' --all"
+        f"  bbr --invocation-id-file=/tmp/bbr-inv test {target} --test_arg=--snapshot-update --nocache_test_results"
     )
+    terminalreporter.write_line("  bbapi artifact download $(cat /tmp/bbr-inv) '*.ambr' --all")

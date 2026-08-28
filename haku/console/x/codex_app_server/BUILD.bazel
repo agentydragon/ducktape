@@ -19,6 +19,7 @@ py_library(
     srcs = ["config.py"],
     visibility = [
         "//haku/console:__pkg__",
+        "//haku/console/session:__pkg__",
         "//haku/console/x:__pkg__",
     ],
     deps = [
@@ -126,20 +127,12 @@ py_test(
 
 py_test(
     name = "test_bridge",
-    size = "medium",
     srcs = ["test_bridge.py"],
-    data = ["//haku/console/x/codex_app_server/testing:stub_codex_bin"],
     deps = [
-        ":runtime",
         "//:conftest",
-        "//haku/console/x:conversation_events",
-        "//haku/console/x:runtime",
-        "//haku/runtime/x/bridge:client",
         "//haku/runtime/x/bridge:codex_options",
-        "//haku/runtime/x/bridge:protocol",
         "//haku/runtime/x/bridge:runner",
-        "//util/bazel:runfiles",
-        "@pypi//anyio",
+        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
     ],

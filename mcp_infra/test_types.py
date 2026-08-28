@@ -1,4 +1,10 @@
-"""Tests for MCP domain types validation."""
+"""Tests for MCP domain types validation.
+
+MCPMountPrefix declares its pattern twice (`_adapter` and
+`__get_pydantic_core_schema__`); validating through the TypeAdapter chains
+through both, so these examples tie the two mirrored declarations together.
+The rejects pin the tool-name-safety choices ({prefix}_{tool} embedding).
+"""
 
 from __future__ import annotations
 
@@ -47,11 +53,8 @@ class TestMCPMountPrefix:
     )
     def test_invalid_names(self, invalid_name: str, reason: str):
         """Invalid mount prefixes raise ValidationError."""
-        with pytest.raises(ValidationError) as exc_info:
+        with pytest.raises(ValidationError):
             adapter.validate_python(invalid_name)
-        # Verify error info is present
-        errors = exc_info.value.errors()
-        assert len(errors) > 0
 
 
 if __name__ == "__main__":

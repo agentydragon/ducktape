@@ -1,7 +1,17 @@
 # Force all external egress from the haku-sandbox namespace through the
 # dedicated haku-egress-proxy. Allows: DNS, cluster-internal traffic,
-# kube-apiserver, haku-egress-proxy port 8080. Blocks: direct external
+# kube-apiserver, haku-egress-proxy port 8080, and the colocated egress proxy in
+# the Console pod (haku-console, port 8888, #4942). Blocks: direct external
 # internet access.
+#
+# The colocated-proxy rule is explicit even though the `toEntities: cluster` rule
+# below already admits it at L4: it keeps the enforcement model legible (#4670 §
+# Enforcement topology — "DNS, cluster, apiserver, and the proxy's listener") and
+# survives the eventual tightening of that broad cluster rule into a ceiling. It
+# makes the colocated listener *reachable*; the Kyverno-injected HTTP_PROXY still
+# points sandbox clients at the port-8080 fence, so this PR opens the path without
+# cutting traffic over (the repoint is the adoption step). The oracle at
+# haku-console:8079 is loopback-bound, so nothing answers on the pod IP there.
 apiVersion: cilium.io/v2
 kind: CiliumClusterwideNetworkPolicy
 metadata:
@@ -44,4 +54,16 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
+              protocol: TCP
+    # Colocated egress proxy in the Console pod (#4942). The sidecar shares the Console pod's
+    # network namespace, so its listener is selected by the Console pod label on port 8888. Once
+    # the Kyverno HTTP_PROXY repoint lands, this becomes the sandbox's egress path; until then it is
+    # a reachable-but-unused route the adoption cutover switches to.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-console
+            k8s:app.kubernetes.io/name: haku-console
+      toPorts:
+        - ports:
+            - port: "8888"
               protocol: TCP

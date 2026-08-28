@@ -1,14 +1,14 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: clickhouse-aiquota-schema-v5
+  name: clickhouse-aiquota-schema-v6
   namespace: analytics
   labels:
     app.kubernetes.io/name: clickhouse-schema
     app.kubernetes.io/instance: analytics
     app.kubernetes.io/component: schema
   annotations:
-    description: Applies the first AIQuota schema revision with ClickHouse distributed DDL.
+    description: Applies the AIQuota schema, including the history projections, with ClickHouse distributed DDL.
 spec:
   activeDeadlineSeconds: 1200
   backoffLimit: 60

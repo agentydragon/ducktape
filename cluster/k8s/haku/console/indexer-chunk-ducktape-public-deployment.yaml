@@ -1,0 +1,107 @@
+# The haku-indexer chunk role for the ducktape-public logical index: source
+# sweeps for exactly this one registry entry. One Deployment per logical index
+# (issue #4886); the embedding drain is the same image's embed role
+# (indexer-embed-deployment.yaml). The console keeps serving
+# `haku_index.search`/`index_status` as database readers over the last committed
+# index state; staleness shows in `index_status`.
+#
+# Replicas of this index's pod may overlap freely — with each other, with the
+# other indexes' chunk pods, and with console replicas of a release that still
+# ran the whole-registry loop: this index is maintained under its own per-index
+# Postgres advisory lock, so co-existence costs a lost lock attempt, never a
+# double sync.
+#
+# Credential minimization by index: ducktape-public clones the canonical public
+# repository over HTTPS anonymously, so its registry entry names no credential
+# slots and this pod carries no Git credential — only the `haku_indexer` database
+# role (recall-index read/write + read-only chat source, see indexer-role.sql).
+# The system CA bundle the HTTPS clone trusts ships in the image; the worker
+# points libgit2 at it (`configure_ca_trust`) before fetching. Narrow identity
+# otherwise: no ServiceAccount token, no operator/agent auth, approval ledger,
+# connector credentials, or Web Push identity. The embedder endpoint lives only
+# on the embed pod: this role writes chunks, never vectors.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: haku-indexer-chunk-ducktape-public
+  namespace: haku-console
+  labels:
+    app.kubernetes.io/name: haku-indexer-chunk-ducktape-public
+  annotations:
+    # This pod's own config slice (indexer-chunk-ducktape-public-config.yaml): only its
+    # one index's definition, so a change to another index's definition — or to the
+    # console-only config — never touches this worker. Search in the console API is a
+    # database reader and needs no restart.
+    configmap.reloader.stakater.com/reload: haku-indexer-chunk-ducktape-public-config
+    secret.reloader.stakater.com/reload: haku-console-db-indexer
+spec:
+  replicas: 1
+  strategy:
+    # A replacement that cannot start (schema-incompatible image, bad config) crash-loops
+    # while the previous replica keeps maintaining the index; advisory locks make the
+    # surge overlap safe.
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: haku-indexer-chunk-ducktape-public
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: haku-indexer-chunk-ducktape-public
+    spec:
+      # Same zone as the console's Postgres (cnpg_conventions R5).
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: indexer
+          image: ghcr.io/agentydragon/haku-indexer:devel-20260828025820-2ef464f # {"$imagepolicy": "flux-system:haku-indexer"}
+          imagePullPolicy: Always
+          args: ["--role=chunk"]
+          env:
+            # The mounted per-index slice is the whole of this pod's registry: the config
+            # IS the index selection.
+            - name: HAKU_INDEXER_CONFIG_FILE
+              value: /etc/haku-indexer/config/config.yaml
+            # The narrow haku_indexer role (db/indexer-role-secret.yaml), never the
+            # application owner: the worker cannot read the approval ledger, identity,
+            # or OAuth state.
+            - name: HAKU_INDEXER_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: haku-console-db-indexer
+                  key: DATABASE_URL
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          volumeMounts:
+            # Bare Git mirror (mirror_path in the registry) lives on /tmp: losing the
+            # volume costs a clone, not an embedding — the chunk cache is
+            # content-addressed in Postgres.
+            - name: tmp
+              mountPath: /tmp
+            - name: config
+              mountPath: /etc/haku-indexer/config
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: config
+          configMap:
+            name: haku-indexer-chunk-ducktape-public-config

@@ -17,7 +17,7 @@ spec:
   healthChecks:
     - apiVersion: batch/v1
       kind: Job
-      name: clickhouse-aiquota-schema-v5
+      name: clickhouse-aiquota-schema-v6
       namespace: analytics
   dependsOn:
     - name: analytics-clickhouse

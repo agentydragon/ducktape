@@ -235,14 +235,14 @@ exactly one timing — `session_ttl_seconds`. Every other number the runtime's b
 module-level constant, so changing one is a code edit, a CI build and a roll. The ones that are
 genuinely operational knobs should move onto the config model:
 
-- `x/channels/matrix/spans.py` — `STATUS_AFTER` (8s before a turn says anything, R6.2),
+- `channels/matrix/spans.py` — `STATUS_AFTER` (8s before a turn says anything, R6.2),
   `STATUS_EDIT_INTERVAL` (5s edit floor, R6.5), `TYPING_REFRESH`.
-- `x/session_store.py` — `LEASE_TTL` / `LEASE_RENEW_INTERVAL`, `PROVISION_LEASE`, `ADOPTION_GRACE`.
-- `x/channels/matrix/pacer.py` — `SENDS_PER_SECOND`, `SEND_BURST`, `MAX_QUEUED_SENDS`, `FLUSH_SECONDS`.
-- `x/channels/matrix/conversation.py` — `SUPERVISE_INTERVAL`, `PROVISION_BACKOFF`,
+- `session/store.py` — `LEASE_TTL` / `LEASE_RENEW_INTERVAL`, `PROVISION_LEASE`, `ADOPTION_GRACE`.
+- `channels/matrix/pacer.py` — `SENDS_PER_SECOND`, `SEND_BURST`, `MAX_QUEUED_SENDS`, `FLUSH_SECONDS`.
+- `channels/matrix/conversation.py` — `SUPERVISE_INTERVAL`, `PROVISION_BACKOFF`,
   `RE_AWAKENING_MESSAGES` (the N of R3.3a).
-- `x/channels/matrix/conversation_subscriber.py` — `POLL_INTERVAL`, `ERROR_BACKOFF`; and
-  `MAX_BACKFILL_PAGES` / `TIMELINE_LIMIT` from `x/channels/matrix/client.py`.
+- `channels/matrix/conversation_subscriber.py` — `POLL_INTERVAL`, `ERROR_BACKOFF`; and
+  `MAX_BACKFILL_PAGES` / `TIMELINE_LIMIT` from `channels/matrix/client.py`.
 - `runtime/x/bridge/runner.py` — `MAX_DISCONNECTED_SECONDS`, `REPLAY_WINDOW`,
   `RECONNECT_{BASE,MAX}_DELAY`. **These live in the runner**, whose image is pinned at claim
   creation, so they are not console config at all: they reach a running sandbox only through the
@@ -337,8 +337,8 @@ session runs as is also what says which runner implementation to launch for it.
 ### A runner that talks to OpenAI models
 
 Through the Codex app server, or directly against the Responses API, either way routed at the
-in-cluster LiteLLM — <../../cluster/k8s/litellm/app/proxy-config.yaml> already carries `*-chatgpt`
-models on the `openai/` provider. Today `x/claude_code/` is the only runner, reached over the
+in-cluster LiteLLM — <../../cluster/k8s/litellm/app/proxy-config.yaml> already carries
+`chatgpt/oai-responses/*` models on the `openai/` provider. Today `x/claude_code/` is the only runner, reached over the
 bridge; the frame log and its adapter are what keep a runner's shape below the conversation layer
 (<docs/chat_layers.md>).
 
@@ -398,7 +398,7 @@ changing session Agent identity.
 - The comment above `_operator_auth_requires_canonical_public_origin` (`config.py`) describes an
   optional standing Kubernetes authorization policy field that is not on `Settings` —
   `kubernetes_authorization` is on `ConsoleConfigFile` in `mcp_config.py`. Delete the comment.
-- `HistorySender.ASSISTANT` (`x/system_prompt.py`) reads like the provider-LLM-API `assistant`
+- `HistorySender.ASSISTANT` (`session/system_prompt.py`) reads like the provider-LLM-API `assistant`
   role; it records harness-side provenance of a recorded message. Rename to say so (e.g.
   `HARNESS`) once the in-flight StrEnum PRs land.
 - `approval_mode` (`ApprovalMode` in `haku/shared/haku/console/tool_calls.py`, mirrored on

@@ -2,7 +2,7 @@
 
 Lets Haku consult what it actually did in an earlier session, rather than starting each one
 from the last twenty room messages and nothing else: the room is not the only corpus and it is the
-smaller one (<../x/channels/matrix/SPEC.md> § The agent's own view). What it reads are the console's
+smaller one (<../channels/matrix/SPEC.md> § The agent's own view). What it reads are the console's
 two durable records: the conversation — neutral events folded into items as each frame arrived —
 and `session_frames`, the verbatim wire they were read off. A tool call and the result it got
 are in both — which the room is not.
@@ -11,12 +11,12 @@ are in both — which the room is not.
 frames; a conversation has events, which fold into items. `read_conversation_items` is what a conversation
 *meant* — prompts, messages, reasoning, tool calls and their results, as one vocabulary that says
 nothing about which agent backend produced them, keyed by the conversation because the thread
-outlives every session that ran it. `read_frames` is the frames a **named** backend actually sent,
+outlives every session that ran it. `read_session_frames` is the frames a **named** backend actually sent,
 verbatim — keyed by the session, because frames are one runner's wire and die with its provider
 shape. The first is what a reader almost always wants; the second is the appeal, and every item
 entry carries the session and frame range to appeal to (`provenance`). That path is the whole
 reason an entry records where it came from, so it is built to be walked: a `frames` provenance
-hands `session_id` and `first_frame_seq` straight to `read_frames` as its `cursor`, with no
+hands `session_id` and `first_frame_seq` straight to `read_session_frames` as its `cursor`, with no
 arithmetic in between.
 
 **A drilldown, not a dump.** `list_sessions` finds the thread, `list_turns` finds the
@@ -34,10 +34,10 @@ whose cursor lied about the order underneath would be worse than the heterogenei
 
 **`list_` finds, `read_` reads.** `list_sessions` and `list_turns` are inventories: rows you
 scan to pick the one worth opening, each carrying enough accounting to choose. `read_conversation_items` and
-`read_frames` return the thing itself. The split is not paged-versus-whole — the reads page too.
+`read_session_frames` return the thing itself. The split is not paged-versus-whole — the reads page too.
 
 **Reading is a cursor over the log; turns are an index into it.** `frame_seq` already totally
-orders a session, so `read_frames` needs no notion of a turn — and a turn is the console's
+orders a session, so `read_session_frames` needs no notion of a turn — and a turn is the console's
 interpretation rather than the record, since the CLI folds a mid-turn prompt into the running
 turn and one `result` can then answer two prompts. `list_turns` therefore reports each exchange
 as a *range* over the same log, with what it cost and how it ended: enough to pick the exchange
@@ -45,7 +45,7 @@ worth reading, without the frames themselves being reshaped around it.
 
 **The read models are the store's; the pages are this server's.** What a read produced — a
 session, a frame, a turn, a conversation entry, and the cursors that walk them — is defined
-beside the store that produces it (`haku/console/x/conversation_reads.py`). What is here is how
+beside the store that produces it (`haku/console/conversation/reads.py`). What is here is how
 those reads are handed out: the `Page` envelope.
 
 **Reads require the configured in-process-server grant, and rows require the profile-DAG scope.**
@@ -67,14 +67,7 @@ from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, Field
 
 from haku.console.chat_models import BridgeFrameKind
-from haku.console.conversation_read_access import (
-    ConversationAccessDeniedError,
-    ConversationReadAccessPolicy,
-    ConversationReadScope,
-)
-from haku.console.in_process_server_access import InProcessServerAccessPolicy
-from haku.console.mcp_execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext
-from haku.console.x.conversation_reads import (
+from haku.console.conversation.reads import (
     ConversationEntry,
     FrameRecord,
     SessionCursor,
@@ -82,7 +75,16 @@ from haku.console.x.conversation_reads import (
     TurnCursor,
     TurnRecord,
 )
+from haku.console.conversation_read_access import (
+    ConversationAccessDeniedError,
+    ConversationReadAccessPolicy,
+    ConversationReadScope,
+)
+from haku.console.in_process_server_access import InProcessServerAccessPolicy
+from haku.console.mcp_execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext
 
+# Wire-frozen id: named by cluster/k8s/haku/console/config.yaml and persisted in
+# ledger `server_id` rows — renaming is a config + data migration.
 HAKU_CONVERSATIONS_SERVER_ID = "haku_conversations"
 
 # Rows per page. Small on purpose: a frame carries a whole tool result, and the console's
@@ -132,7 +134,7 @@ class ConversationReader(Protocol):
 
     A port rather than an import: the store lives in the experimental chat runtime, and this
     server should not depend on that package's shape. The *records* it exchanges do come from
-    there (<../x/conversation_reads.py>), because the store is what produces them — but that
+    there (<../conversation/reads.py>), because the store is what produces them — but that
     module is a leaf of models, so naming it pulls in no runtime.
 
     Every method answers "up to `limit` rows from `cursor`" and leaves the page to the caller.
@@ -144,7 +146,7 @@ class ConversationReader(Protocol):
         self, *, cursor: SessionCursor | None, limit: int, scope: ConversationReadScope
     ) -> list[SessionRecord]: ...
 
-    async def read_frames(
+    async def read_session_frames(
         self,
         session_id: UUID,
         *,
@@ -179,7 +181,7 @@ def build_mcp(
         name=HAKU_CONVERSATIONS_SERVER_ID,
         instructions=(
             "Read Haku's past conversations: start with `list_sessions`, then `list_turns`, then "
-            "`read_conversation_items`. Follow an entry's `provenance` into `read_frames` when normalization "
+            "`read_conversation_items`. Follow an entry's `provenance` into `read_session_frames` when normalization "
             "needs checking. Every listing returns `items` and `next_cursor`; pass the cursor back "
             "as `cursor`. Read-only."
         ),
@@ -246,7 +248,7 @@ def build_mcp(
 
         The whole thread, across replaced sessions, faithfully as stored: one entry per item row
         in its current state, and this read does not stop where a sandbox died. Entries use the
-        console's neutral vocabulary and carry `provenance`; follow it into `read_frames` when a
+        console's neutral vocabulary and carry `provenance`; follow it into `read_session_frames` when a
         normalization needs checking. A `tool_call` entry is the ask and the answer together —
         `outcome` is null exactly while no answer has arrived. `status` is the row's lifecycle:
         an `open` entry is still being written and its text is as of this read (its `opened_seq` never
@@ -264,7 +266,7 @@ def build_mcp(
         return ItemPage(items=entries, next_cursor=more.opened_seq if more is not None else None)
 
     @mcp.tool
-    async def read_frames(
+    async def read_session_frames(
         session_id: Annotated[UUID, Field(description="From `list_sessions`, or an entry's `provenance.session_id`.")],
         cursor: Annotated[
             int | None,
@@ -288,7 +290,7 @@ def build_mcp(
         """Read a session's native harness frames in order, rather than its normalized items."""
         scope = read_scope(execution)
         try:
-            rows = await reader.read_frames(
+            rows = await reader.read_session_frames(
                 session_id,
                 cursor=cursor,
                 limit=limit + 1,

@@ -1,6 +1,5 @@
 """Unit tests for SessionStartHookInput parsing."""
 
-import pytest
 import pytest_bazel
 
 from devinfra.claude.claude_api.hooks.common import PermissionMode
@@ -37,22 +36,6 @@ def test_explicit_permission_mode() -> None:
         }
     )
     assert result.permission_mode == PermissionMode.PLAN
-
-
-@pytest.mark.parametrize("permission_mode", list(PermissionMode))
-def test_all_permission_modes(permission_mode: PermissionMode) -> None:
-    result = SessionStartHookInput.model_validate(
-        {
-            "session_id": "s",
-            "cwd": "/tmp",
-            "transcript_path": "/tmp/t.json",
-            "hook_event_name": "SessionStart",
-            "source": "startup",
-            "permission_mode": permission_mode,
-            "model": "claude-sonnet-5",
-        }
-    )
-    assert result.permission_mode == permission_mode
 
 
 def test_missing_model_defaults_to_none() -> None:

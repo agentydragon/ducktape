@@ -94,14 +94,21 @@ def test_launchable_agent_must_be_a_configured_static_agent() -> None:
 def test_configured_runtime_requires_a_launchable_default_and_runtime_enabled_profiles() -> None:
     runtime = _runtime()
     with pytest.raises(ValidationError, match="default chat Agent must be launchable"):
-        ConsoleConfigFile.model_validate(_config(chat_runtimes={"claude_code": runtime}, launchable_agents=[]))
+        ConsoleConfigFile.model_validate(_config(harnesses={"claude_code": runtime}, launchable_agents=[]))
     with pytest.raises(ValidationError, match="profile disallows claude_code"):
         ConsoleConfigFile.model_validate(
             _config(
-                chat_runtimes={"claude_code": runtime},
-                access_profiles=[{"id": "chat", "auto_approval_policy": "manual"}],
+                harnesses={"claude_code": runtime}, access_profiles=[{"id": "chat", "auto_approval_policy": "manual"}]
             )
         )
+
+
+def test_chat_runtimes_key_is_rejected() -> None:
+    """The loader ignores unknown keys (the shared YAML's `settings` section), so a config still
+    spelling the retired `chat_runtimes` key must fail loudly rather than silently losing every
+    harness."""
+    with pytest.raises(ValidationError, match="chat_runtimes was renamed to harnesses"):
+        ConsoleConfigFile.model_validate(_config(chat_runtimes={"claude_code": _runtime()}))
 
 
 def test_launchable_agent_requires_its_own_runtime_registration() -> None:
@@ -109,10 +116,10 @@ def test_launchable_agent_requires_its_own_runtime_registration() -> None:
     static_agents = _config()["static_agents"]
     assert isinstance(static_agents, list)
     runtime = _runtime()
-    with pytest.raises(ValidationError, match="has no configured chat runtime registration"):
+    with pytest.raises(ValidationError, match="has no configured harness registration"):
         ConsoleConfigFile.model_validate(
             _config(
-                chat_runtimes={"claude_code": runtime},
+                harnesses={"claude_code": runtime},
                 static_agents=[
                     *static_agents,
                     {

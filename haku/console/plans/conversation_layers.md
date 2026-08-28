@@ -19,7 +19,7 @@ here is what remains to do.
 every identifier in it is transient by construction and a comment pointing at one goes stale
 without anything noticing. How the layers work once this plan is spent is <../docs/chat_layers.md>,
 a contract several call sites depend on belongs in <../x/README.md> or a `SPEC.md`
-(<../x/channels/matrix/SPEC.md> is where the Matrix channel's own guarantees live), and an invariant
+(<../channels/matrix/SPEC.md> is where the Matrix channel's own guarantees live), and an invariant
 one call site depends on belongs in that call site's own words.
 
 ## 1. The invariant this plan exists to reach
@@ -66,7 +66,7 @@ conversation's tail as prompt text.
 
 **Handover** is the operator's "only one session holds it at a time", and the lease is what holds
 it: `authenticate_bridge` admits one runner connection while a lease is valid, and expiry makes the
-row adoptable (§ 14). `chat_attachment`'s partial unique index is a different rule wearing the same
+row adoptable (§ 14). `channel_attachment`'s partial unique index is a different rule wearing the same
 words — **one live conversation per _address_** — and reading it as the handover rule is what makes
 a channel's row look like a statement about sessions (§ 7).
 
@@ -101,7 +101,7 @@ single path from the record outward, and a channel differs only in two ways:
 - **Whether its position is durable.** A room holds its own copy, so its position is a cursor the
   console owes work against; a tab holds none, so its position is an argument to the next read.
 
-The primitive is code: `Subscription.read()` over a `ConversationStream` in `x/subscription.py`,
+The primitive is code: `Subscription.read()` over a `ConversationStream` in `session/subscription.py`,
 where "no position given" is the `Unstarted` arm rather than a zero, and
 `WS /api/conversations/{id}/follow` is the same contract over one socket — a snapshot, then the
 changes, with the conversation wake as what says to read again. Matrix's
@@ -141,7 +141,7 @@ without it costs a follow-up, not a redesign.
   `pg_notify` names `conversation_id` and a conversation subscriber keys on it. Level-triggered,
   edge-scheduled — `LISTEN`/`NOTIFY` is broadcast, each replica wakes the followers it holds, and
   changes coalesce per window. The browser-facing invalidation
-  (<../x/conversation_live_updates.py>) names the conversation too — one more subscriber, with the
+  (<../conversation/live_updates.py>) names the conversation too — one more subscriber, with the
   console socket as its transport.
 - **The position belongs to whoever needs it, and its shape follows from what they hold.** A tab
   holds no copy that outlives it, so its position is a query parameter and the server keeps
@@ -180,7 +180,7 @@ else.
 
 ## 3. The room as the channel's own store
 
-`EventTag` (<../x/channels/matrix/client.py>) rides on every event the console sends: a `kind`, an
+`EventTag` (<../channels/matrix/client.py>) rides on every event the console sends: a `kind`, an
 optional `conversation_id`, and — on every record-derived event, sealed notices and span lines
 alike — one optional `ConversationEventSource {attachment_id, conversation_id, event_seq}`. The
 source's attachment prevents a conversation rebound to another room from reusing the old room's
@@ -192,7 +192,7 @@ ingress — only our sender, parse the tag, never a prompt — feeds `matrix_roo
 events' own `/sync` echoes; a sealed notice is projected only when no event already shows its
 source, the deterministic transaction id covers just the send-to-echo window, and a duplicate that
 lands inside it is redacted on observation. The standing guarantees are
-<../x/channels/matrix/SPEC.md> § The room's own copy.
+<../channels/matrix/SPEC.md> § The room's own copy.
 
 - **Redaction strips the tag**, since it lives in `content`. For a level-triggered reader that is
   the right behaviour — a retired status line's desired state is "none", and a redacted event reads
@@ -262,12 +262,12 @@ read from the record. Everything else the room shows is one of two editable span
 (`channels/matrix/spans.py`): a work line per turn folding reasoning and tool calls into a bounded
 activity-plus-tally, and a lifecycle line per session folding provisioning, narration and adoption,
 retired at the first turn and sealed by a lease expiry. The contract is
-<../x/channels/matrix/SPEC.md> § What the room shows while a turn runs.
+<../channels/matrix/SPEC.md> § What the room shows while a turn runs.
 
 ### What a notice body may do
 
 - **Read the neutral vocabulary, never a backend's frames.** The span fold
-  (<../x/channels/matrix/spans.py>) reads the stream's neutral bodies; a notice that reached into
+  (<../channels/matrix/spans.py>) reads the stream's neutral bodies; a notice that reached into
   Claude frames would weld the channel's rendering to one backend.
 - **Stay bounded independent of the span's length.** Forty tool calls summarise to a tally and the
   one in flight, not to forty lines: a room event is permanent and federated, and an edit
@@ -328,7 +328,7 @@ inside the channel.
 
 ## 6. The conversation is identity only
 
-`conversation(conversation_id, operator_id, created_at)` and `chat_attachment` exist, with
+`conversation(conversation_id, operator_id, created_at)` and `channel_attachment` exist, with
 the partial unique index on `(surface, address) where detached_at is null`. What forces the entity
 is a combination rather than a cardinality: **many sessions × many channels**. When the sandbox dies
 and session A is replaced by B, what has to move is _the set of attachments_, and a set has no name.
@@ -355,7 +355,7 @@ they are conversation facts (<../docs/chat_layers.md>); the session they name is
 key. Identity-only is a statement about the `conversation` row, not about the record: the log is
 keyed to the conversation and the conversation table still holds nothing but an id.
 
-`chat_attachment` is authoritative for which rooms the bot holds, and the rule its `user_id`
+`channel_attachment` is authoritative for which rooms the bot holds, and the rule its `user_id`
 primary key enforced — one bot user, one room, ever — is gone entirely: every operator-invited
 room binds beside the others, which was **the point rather than the cost** (§ 7).
 
@@ -367,7 +367,7 @@ room binds beside the others, which was **the point rather than the cost** (§ 7
   should mostly use the same affordances/operations/protocol as the matrix channel uses"). Same
   subscription, same operations, same neutral vocabulary, same provenance pointer on the prompts
   it sends. The one difference is **whether its position is durable**, and it
-  is the reason it gets no `chat_attachment` row: an attachment exists to hold a cursor, a cursor
+  is the reason it gets no `channel_attachment` row: an attachment exists to hold a cursor, a cursor
   exists because a channel holds a copy the console owes work against, and a tab holds no copy.
 
   Read that as narrow. It is a statement about **delivery state**, not a licence for the SPA to have
@@ -410,7 +410,7 @@ room binds beside the others, which was **the point rather than the cost** (§ 7
   reader is how the reconciler learns what the room currently shows, and that is a read, not a
   store.
 
-- **One bot serves many rooms, and that is what parallel sessions are.** `chat_attachment`'s partial
+- **One bot serves many rooms, and that is what parallel sessions are.** `channel_attachment`'s partial
   unique index expresses the rule that is actually wanted: **one live conversation per address**,
   which permits a bot in many rooms at once — and `bind_room` now binds each invited room beside
   the others rather than refusing the second.
@@ -460,7 +460,7 @@ operator invite creates a second conversation and starts its reconciler beside t
 
 - **The record and subscription.** `ConversationStream`, dense `conversation_event.event_seq` and
   `Subscription.read()` are shared with the browser rather than invented for Matrix.
-- **The attachment cursor.** `channel_cursor` is keyed by `chat_attachment`, advances monotonically,
+- **The attachment cursor.** `channel_cursor` is keyed by `channel_attachment`, advances monotonically,
   and represents work the channel still owes.
 - **Replies as channel-private retry state.** `matrix_outbox` is attachment-scoped, ordered and
   deduplicated by subject.
@@ -500,7 +500,7 @@ mixed into these PRs.
    it beside the sealed notices, off one cursor, with a takeover sweep for lines nothing open
    accounts for. The pure fold and the Matrix effect are tested separately.
 
-3. **Completed — session supervision is behind the conversation.** `ConversationRuntime` owns
+3. **Completed — session supervision is behind the conversation.** `conversation.runtime.Runtime` owns
    global lease expiry, terminal-claim cleanup and exactly-once idle-session creation under the
    conversation row lock. Web and Matrix admit prompts by conversation; Matrix has no session
    supervisor, lifecycle latch or `MXSE` lock. The runtime identity seam from #4431 may later inform
@@ -638,7 +638,7 @@ record (§ 5).
 Six behaviours. The first four are the surfaces working; the last two are what proves the
 architecture rather than the features, and each is the acceptance test for the thing that forced it.
 
-1. **The Matrix surface still works.** `x/channels/matrix/test_fullstack_e2e.py` against real
+1. **The Matrix surface still works.** `channels/matrix/test_fullstack_e2e.py` against real
    Synapse stays green throughout. A regression gate, not a new test.
 2. **The web surface works**: one merged surface lists conversations, creates one, sends, aborts,
    and shows a transcript.
@@ -661,7 +661,7 @@ session supervision adds replacement during a turn without either channel being 
 **Encode the invariants as tests too**, because each is false today and would otherwise creep back
 silently:
 
-- `session_store` contains no reference to `room_id`, and nothing under `x/channels/` names
+- `session_store` contains no reference to `room_id`, and nothing under `channels/` names
   `session_id` — two structural tests, and between them the whole of the two forbidden edges.
 - **Notice bodies are folds**, tested as folds: a list of `ConversationEvent`s in, a body out, no
   room and no database. The cases worth writing are the ones an end-to-end test cannot provoke on
@@ -735,7 +735,7 @@ other** rather than only against `devel`. Prune finished worktrees as you go.
 
 The console reads its session corpus through two surfaces that answer nearly the same questions off
 the same tables — REST for the browser, `haku_conversations` over MCP for agents. The two share one
-read model (`x/conversation_reads.py`, folded once in `x/item_entries.py`); what stays two is the
+read model (`conversation/reads.py`, folded once in `conversation/item_reads.py`); what stays two is the
 transport and its envelope.
 
 The boundary, stated as a rule:

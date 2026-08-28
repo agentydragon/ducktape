@@ -42,7 +42,7 @@ from haku.console.agents.models import (
 from haku.console.chat_models import (
     AuthoredEventKind,
     BridgeFrameKind,
-    ChatSurface,
+    ChannelSurface,
     ConversationEventKind,
     EventProvenance,
     FrameDirection,
@@ -57,11 +57,11 @@ from haku.console.chat_models import (
     TurnOutcome,
 )
 from haku.console.grant_principal import GrantPrincipalKind
+from haku.console.hostexecd.models import ExecutionStatus
 from haku.console.http_grant_models import HttpMethod, HttpMethods, HttpScheme
 from haku.console.kubernetes_grant_models import KubernetesGrantScope, KubernetesGrantStatus, KubernetesRule
-from haku.console.node_daemon_models import NodeDaemonExecutionStatus
+from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
 from haku.console.operator_identity import OperatorStatus
-from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.pydantic_column import PydanticColumn
 from haku.console.tool_calls import ToolCallStatus
 from util.enum_vocab import UnknownValue
@@ -749,8 +749,8 @@ class NodeDaemonExecution(Base):
     execution_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     daemon_id: Mapped[str] = mapped_column(Text, nullable=False)
     backend: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[NodeDaemonExecutionStatus] = mapped_column(
-        StrEnumColumn(NodeDaemonExecutionStatus, name="node_daemon_execution_status"), nullable=False
+    status: Mapped[ExecutionStatus] = mapped_column(
+        StrEnumColumn(ExecutionStatus, name="node_daemon_execution_status"), nullable=False
     )
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     result_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
@@ -949,7 +949,7 @@ class ProviderConnectionFlow(Base):
     scope: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
-class OAuthConnectionResult(Base):
+class OAuthConnectionResultRow(Base):
     """A short-lived, single-use browser handoff after an account-link callback.
 
     The browser receives only the opaque ``result_id``. The outcome stays server-side, is
@@ -1039,7 +1039,7 @@ class Conversation(Base):
 
     **A conversation never ends.** No `ended_at` and no terminal state: it is an id. "Start this room
     over" is detaching the address and attaching it to a new conversation, which
-    `uq_chat_attachment_live_address` already permits — so a surface listing these needs keyset
+    `uq_channel_attachment_live_address` already permits — so a surface listing these needs keyset
     paging, since the list only grows.
 
     **A session attached to nothing stays expressible**: a conversation with one session and no
@@ -1083,12 +1083,12 @@ class Conversation(Base):
     )
 
 
-class ChatAttachment(Base):
+class ChannelAttachmentRow(Base):
     """One channel holding a copy of a conversation, at the address it holds it under.
 
     **Copy-holding channels only.** A row exists to hold a cursor, and a cursor exists because the
     channel keeps a copy the console owes work against — a Matrix room does, a browser tab does not.
-    So `ck_chat_attachment_surface` admits no `spa` row, there is no synthetic address for a tab,
+    So `ck_channel_attachment_surface` admits no `spa` row, there is no synthetic address for a tab,
     and "the browser is looking at this conversation" is an absence rather than a row.
 
     Attach and detach are the row's whole lifecycle: `detached_at IS NULL` is the live binding, and
@@ -1098,13 +1098,13 @@ class ChatAttachment(Base):
     the conversation this attachment names.
     """
 
-    __tablename__ = "chat_attachment"
+    __tablename__ = "channel_attachment"
 
     attachment_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     conversation_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("conversation.conversation_id", ondelete="CASCADE"), nullable=False
     )
-    surface: Mapped[ChatSurface] = mapped_column(TextBackedStrEnumColumn(ChatSurface), nullable=False)
+    surface: Mapped[ChannelSurface] = mapped_column(TextBackedStrEnumColumn(ChannelSurface), nullable=False)
     # What the channel calls this conversation: a Matrix room id today. Opaque here — only the
     # channel that holds the copy knows how to reach it.
     address: Mapped[str] = mapped_column(Text, nullable=False)
@@ -1112,19 +1112,19 @@ class ChatAttachment(Base):
     detached_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
-        CheckConstraint("surface IN ('matrix')", name="ck_chat_attachment_surface"),
-        CheckConstraint("btrim(address) <> ''", name="ck_chat_attachment_address_nonempty"),
+        CheckConstraint("surface IN ('matrix')", name="ck_channel_attachment_surface"),
+        CheckConstraint("btrim(address) <> ''", name="ck_channel_attachment_address_nonempty"),
         CheckConstraint(
-            "detached_at IS NULL OR detached_at >= attached_at", name="ck_chat_attachment_detach_after_attach"
+            "detached_at IS NULL OR detached_at >= attached_at", name="ck_channel_attachment_detach_after_attach"
         ),
         Index(
-            "uq_chat_attachment_live_address",
+            "uq_channel_attachment_live_address",
             "surface",
             "address",
             unique=True,
             postgresql_where=text("detached_at IS NULL"),
         ),
-        Index("idx_chat_attachment_conversation", "conversation_id", "attached_at"),
+        Index("idx_channel_attachment_conversation", "conversation_id", "attached_at"),
     )
 
 
@@ -1149,7 +1149,7 @@ class ChannelCursor(Base):
     __tablename__ = "channel_cursor"
 
     attachment_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("chat_attachment.attachment_id", ondelete="CASCADE"), primary_key=True
+        PGUUID(as_uuid=True), ForeignKey("channel_attachment.attachment_id", ondelete="CASCADE"), primary_key=True
     )
     event_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
@@ -1195,7 +1195,7 @@ class Session(Base):
     bridge_token_fingerprint: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     bridge_connected_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # When this session's Agent Sandbox claim was deleted, and NULL until it has been — which is
-    # what puts an ended session in `SessionStore.claim_cleanup_candidates` and what takes it back
+    # what puts an ended session in `session.store.Store.claim_cleanup_candidates` and what takes it back
     # out. Only ever stamped on a session whose status is already ended.
     claim_cleaned_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # How far the fold has got: the `frame_seq` of the last frame whose projected effects are
@@ -1309,7 +1309,7 @@ class Session(Base):
         ).label("status")
 
 
-class ConversationEvent(Base):
+class ConversationEventRow(Base):
     """The record. Every fact about a conversation is written here, once.
 
     Everything else in this file's chat half is either derived from these rows or belongs to a
@@ -1442,7 +1442,7 @@ class ConversationItem(Base):
     opened_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
     closed_seq: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     # The concatenation of this item's segments in `event_seq` order. A materialisation of the log
-    # and never a second authority for it: `x/reprojection.py` asserts the two agree.
+    # and never a second authority for it: `conversation/reprojection.py` asserts the two agree.
     item_text: Mapped[str] = mapped_column("text", Text, nullable=False)
     # What the backend called this item. Provenance, never identity — Claude Code omits it on many
     # rows and on every delta, which is why the console mints its own.
@@ -1759,11 +1759,10 @@ class SessionFrame(Base):
     __table_args__ = (
         CheckConstraint("direction IN ('to_agent','from_agent')", name="ck_session_frames_direction"),
         CheckConstraint("kind IN ('harness_frame','setup_output')", name="ck_session_frames_kind"),
-        # The runner numbers what *it* puts on the wire, so a number on a frame this console sent
-        # would be one nobody assigned.
-        CheckConstraint(
-            "runner_seq IS NULL OR direction = 'from_agent'", name="ck_session_frames_runner_seq_direction"
-        ),
+        # No runner_seq-by-direction constraint: under the neutral-operation generation the runner
+        # numbers the native input it injects itself (the dispatched prompt, the interrupt) and
+        # echoes it back as a `to_agent` frame carrying its own seq, so a runner number now rides
+        # both directions and the dense sequence spans them. Uniqueness is `uq_session_frames_runner_seq`.
         Index("idx_session_frames_session", "session_id", "frame_seq"),
         # Reading a session by kind is otherwise a filter over its whole log, and the log holds
         # deltas — so the frame inspector, the narration read, and the MCP transcript fold would
@@ -1873,7 +1872,7 @@ class MatrixRevision(Base):
     A row per delivered message is a flushed-up-to position materialised one row at a time, and
     `channel_cursor` holds that properly. So only revisable subjects are here.
 
-    Both columns are opaque outside this channel, as `chat_attachment.address` is: `event_id` is
+    Both columns are opaque outside this channel, as `channel_attachment.address` is: `event_id` is
     where the channel put it and `subject` is what it decided to show there.
 
     **Live means the channel still shows it.** `retired_at` is set when the channel takes it back,
@@ -1886,7 +1885,7 @@ class MatrixRevision(Base):
 
     revision_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     attachment_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("chat_attachment.attachment_id", ondelete="CASCADE"), nullable=False
+        PGUUID(as_uuid=True), ForeignKey("channel_attachment.attachment_id", ondelete="CASCADE"), nullable=False
     )
     subject: Mapped[str] = mapped_column(Text, nullable=False)
     event_id: Mapped[str] = mapped_column(Text, nullable=False)
@@ -1932,7 +1931,7 @@ class MatrixRoomCopy(Base):
     # The attachment named by the event's own tag: a rebound room's old events keep naming the
     # attachment they were projected under, so the new attachment starts with no correspondence.
     attachment_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("chat_attachment.attachment_id", ondelete="CASCADE"), nullable=False
+        PGUUID(as_uuid=True), ForeignKey("channel_attachment.attachment_id", ondelete="CASCADE"), nullable=False
     )
     source_event_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
     replaces_event_id: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -1974,7 +1973,7 @@ class MatrixOutbox(Base):
     # rather than posting twice.
     outbox_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     attachment_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("chat_attachment.attachment_id", ondelete="CASCADE"), nullable=False
+        PGUUID(as_uuid=True), ForeignKey("channel_attachment.attachment_id", ondelete="CASCADE"), nullable=False
     )
     subject: Mapped[str] = mapped_column(Text, nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
@@ -2008,15 +2007,15 @@ class MatrixIngressEvent(Base):
     The dedupe key for ingress, and the Matrix channel's own table: an `event_id` is this
     channel's address for a message and nothing above the channel boundary reads it.
 
-    **A row is written in the prompt's own transaction** (`session_store.enqueue_prompt`'s
-    `records` hook), which is the whole point of the table. The watermark commits separately and
-    afterwards, so a crash between the two re-delivers a batch the session already holds; a row
-    written beside the watermark instead would be missing in exactly that case.
+    **A row is written in the prompt's own transaction** (`session_store.submit_prompt`'s `records`
+    hook), which is the whole point of the table. The watermark commits separately and afterwards,
+    so a crash between the two re-delivers a batch the session already holds; a row written beside
+    the watermark instead would be missing in exactly that case.
 
     **Presence therefore means the record carries the event, not that the loop saw it.** That is
-    what makes suppressing a re-delivered event safe: the prompt is in the transcript, queued on the
-    conversation rather than on the session that accepted it, so whichever session runs next claims
-    it.
+    what makes suppressing a re-delivered event safe: the prompt is in the durable inbox, queued on
+    the conversation rather than on the session that accepted it, so whichever session runs next
+    dispatches it.
 
     Rejected and unreadable events are deliberately absent: both are recorded in the transaction
     that advances the watermark, so a crash before it leaves neither the acknowledgement nor the
@@ -2026,10 +2025,11 @@ class MatrixIngressEvent(Base):
     __tablename__ = "matrix_ingress_event"
 
     event_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    # The `prompt` item this event became. A prompt is an item like any other now, so this points
-    # at the transcript rather than at a separate message table.
-    item_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("conversation_item.item_id", ondelete="CASCADE"), nullable=False
+    # The inbox prompt this event became (#4667). Under the neutral-operation generation a prompt is
+    # a durable `submitted_prompt` command before it is any transcript item, so ingress dedup points
+    # at the inbox row it created rather than at an item that does not exist until admission.
+    prompt_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("submitted_prompt.prompt_id", ondelete="CASCADE"), nullable=False
     )
 
-    __table_args__ = (Index("idx_matrix_ingress_event_item", "item_id"),)
+    __table_args__ = (Index("idx_matrix_ingress_event_prompt", "prompt_id"),)

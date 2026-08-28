@@ -27,9 +27,9 @@ import pygit2
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.config import ChatRecallIndexDefinition, ConfiguredRecallIndex, GitRecallIndexDefinition
 from haku.recall_index.chat_sync import ChatSyncReport, sync_chat
 from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
+from haku.recall_index.config import ChatRecallIndexDefinition, ConfiguredRecallIndex, GitRecallIndexDefinition
 from haku.recall_index.embedder import Embedder
 from haku.recall_index.embedding_sync import EmbeddingSyncReport, embed_pending
 from haku.recall_index.git_tree import fetch_branch, open_mirror, remote_tip

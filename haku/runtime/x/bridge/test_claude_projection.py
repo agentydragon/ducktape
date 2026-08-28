@@ -461,6 +461,31 @@ def test_a_tool_result_after_the_turn_ended_answers_without_opening_one():
     )
 
 
+def test_a_turn_whose_prose_exists_only_on_its_result_frame_mints_the_message():
+    """The v3 fold's `close_answer` fallback, ported: no stream, no completed block, and the
+    answer's only copy on the terminal frame — the turn mints it as one whole message there. A
+    turn that already completed a message mints nothing: the terminal `result` repeats it."""
+    subject = projector()
+    subject.admit(_PROMPT_1, after_batch_seq=None)
+
+    ended = subject.observe(1, result() | {"result": "re: three"}).operations
+
+    assert [type(operation) for operation in ended] == [ItemOpened, ItemSegment, ItemCompleted, TurnEnded]
+    minted = ended[0]
+    assert isinstance(minted, ItemOpened)
+    assert isinstance(minted.item, MessageOpen)
+    segment = ended[1]
+    assert isinstance(segment, ItemSegment)
+    assert segment.text == "re: three"
+
+    spoke = projector()
+    spoke.admit(_PROMPT_1, after_batch_seq=None)
+    spoke.observe(1, assistant(text_block("re: four"), message_id="msg_A"))
+    repeated = spoke.observe(2, result() | {"result": "re: four"}).operations
+    # Only the open message's close and the bracket's end — the prose was already said.
+    assert [type(operation) for operation in repeated] == [ItemCompleted, TurnEnded]
+
+
 def test_a_stray_result_with_no_turn_open_is_counted():
     operations, misses = fold(projector(), [result()])
 

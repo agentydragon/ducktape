@@ -59,6 +59,35 @@ analytics ClickHouse cluster:
   for direct Grafana queries. A ClickHouse materialized view projects these
   rows from the raw insert, avoiding a partial two-table write.
 
+### History endpoints
+
+Codex also serves two endpoints describing the past rather than the present,
+both of which the Codex CLI reads for its own `/usage` view:
+
+```text
+GET https://chatgpt.com/backend-api/wham/profiles/me
+GET https://chatgpt.com/backend-api/wham/rate-limit-reset-credits
+```
+
+`profiles/me` returns `stats.daily_usage_buckets` — one account-wide token total
+per day for the last twelve months. `rate-limit-reset-credits` returns each
+granted reset credit with its type, status and grant time. Both restate their
+whole series on every call, so the first successful poll backfills the period
+before aiquota existed, and a slower `AIQUOTA_HISTORY_INTERVAL_SECONDS`
+(default hourly) collects them without rewriting an unchanged year every five
+minutes.
+
+They land in `aiquota.raw_http_observations` under the provider's own `source`,
+with `quota_windows` empty and the `token_activity` / `reset_credits` columns
+populated; materialized views project those into `aiquota.token_activity_daily`
+and `aiquota.reset_credits`. Rows are kept per observation rather than collapsed,
+so the repeated readings of the current day show usage accruing within it and a
+credit's status change is dated. For the settled total of a past day, take
+`argMax(tokens, observed_at)` grouped by `start_date`.
+
+Raw capture is keyed per endpoint (`codex_token_activity`, `codex_reset_credits`)
+so a provider reading several endpoints in one cycle keeps every body.
+
 Raw response rows retain one year; typed quota observations retain five years.
 ClickHouse inserts use `JSONEachRow` over its internal HTTP endpoint with
 asynchronous inserts enabled, so small periodic batches are combined before

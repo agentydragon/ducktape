@@ -184,7 +184,8 @@ def test_analytics_clickhouse_distributed_ddl_contract(k8s_dir: Path) -> None:
     grants = configuration["users"]["aiquota_ingest/grants/query"]
     assert grants == [
         "GRANT INSERT ON aiquota.raw_http_observations",
-        "GRANT SELECT(event_id, observed_at, source, quota_windows) ON aiquota.raw_http_observations",
+        "GRANT SELECT(event_id, observed_at, source, quota_windows, token_activity, reset_credits) "
+        "ON aiquota.raw_http_observations",
     ]
 
     cluster_kustomization = yaml.safe_load((analytics_dir / "cluster/kustomization.yaml").read_text())
@@ -197,11 +198,15 @@ def test_analytics_clickhouse_distributed_ddl_contract(k8s_dir: Path) -> None:
         "CREATE TABLE IF NOT EXISTS aiquota.raw_http_observations ON CLUSTER analytics",
         "CREATE TABLE IF NOT EXISTS aiquota.aiquota_windows ON CLUSTER analytics",
         "CREATE MATERIALIZED VIEW IF NOT EXISTS aiquota.aiquota_windows_mv ON CLUSTER analytics",
+        "CREATE TABLE IF NOT EXISTS aiquota.token_activity_daily ON CLUSTER analytics",
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS aiquota.token_activity_daily_mv ON CLUSTER analytics",
+        "CREATE TABLE IF NOT EXISTS aiquota.reset_credits ON CLUSTER analytics",
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS aiquota.reset_credits_mv ON CLUSTER analytics",
     ):
         assert statement in schema_sql
 
     schema_job = yaml.safe_load((analytics_dir / "schema/schema-job.yaml").read_text())
-    assert schema_job["metadata"]["name"] == "clickhouse-aiquota-schema-v5"
+    assert schema_job["metadata"]["name"] == "clickhouse-aiquota-schema-v6"
     schema_args = schema_job["spec"]["template"]["spec"]["containers"][0]["args"]
     assert "--host=clickhouse-analytics.analytics.svc.cluster.local" in schema_args
     assert "--port=9000" in schema_args
@@ -209,7 +214,7 @@ def test_analytics_clickhouse_distributed_ddl_contract(k8s_dir: Path) -> None:
 
     schema_flux = yaml.safe_load((analytics_dir / "schema/flux-kustomization.yaml").read_text())
     assert schema_flux["spec"]["healthChecks"] == [
-        {"apiVersion": "batch/v1", "kind": "Job", "name": "clickhouse-aiquota-schema-v5", "namespace": "analytics"}
+        {"apiVersion": "batch/v1", "kind": "Job", "name": "clickhouse-aiquota-schema-v6", "namespace": "analytics"}
     ]
 
 

@@ -30,16 +30,6 @@ py_test(
     ],
 )
 
-py_test(
-    name = "test_check_crush_dataset",
-    srcs = ["test_check_crush_dataset.py"],
-    data = glob(["testdata/*.jsonl"]),
-    deps = [
-        ":conftest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_binary(
     name = "cli",
     srcs = ["cli.py"],

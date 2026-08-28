@@ -11,6 +11,7 @@ wires that router and serves the config endpoint. It can also mount the built SP
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import datetime
 import logging
@@ -34,8 +35,6 @@ from starlette.middleware.sessions import SessionMiddleware
 from haku.console import (
     agent_bearer_authority,
     capabilities,
-    connection_metrics,
-    console_events,
     http_decide_routes,
     http_grant_routes,
     kube_proxy_authorization,
@@ -46,25 +45,24 @@ from haku.console import (
     mcp_mount,
     mcp_operator_oauth,
     mcp_server,
-    node_daemons,
-    oauth_association_maintenance,
-    oauth_connection_result,
-    oauth_token_state,
     operator_auth,
     operator_login_flow,
-    provider_connection,
-    push_routes,
     tool_call_service,
-    web_push,
 )
 from haku.console.agents import enrollment_routes
 from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
 from haku.console.chat_models import RuntimeKind
-from haku.console.config import MCP_PATH, EmbedderConfig, Settings
+from haku.console.config import MCP_PATH, Settings
+
+# Aliased: bare `runtime` exists in three sibling packages, and `create_app` has a local `follow`.
+from haku.console.conversation import follow as conversation_follow, reader, runtime as conversation_runtime
+from haku.console.conversation.history import ConversationHistory
+from haku.console.conversation.live_updates import ConversationLiveUpdates
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
+from haku.console.hostexecd import service
 from haku.console.http_decide_config import load_egress_decide
 from haku.console.http_decide_service import HttpDecideService
 from haku.console.http_grant_repository import PostgresHttpGrantRepository
@@ -90,9 +88,17 @@ from haku.console.mcp_config import (
     validate_in_process_server_bindings,
 )
 from haku.console.models import ChatLaunchOption, ConfigResponse
+from haku.console.notifications import connection_metrics, console_events, push, push_routes
+from haku.console.notifications.conversation_wakes import ConversationWakes
+from haku.console.notifications.session_wakes import SessionWakes
+from haku.console.oauth import association_maintenance, connection_result, provider_connection, token_state
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.recall_index_reader import PostgresIndexSearcher
+from haku.console.session import runtime as session_runtime, sandbox_allocation, sandbox_claims
+from haku.console.session.launch_identity import ChatLaunchAuthorizer
+from haku.console.session.store import Store
+from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.tools import (
     gmail as gmail_tools,
     http_grants as http_grants_tools,
@@ -101,36 +107,8 @@ from haku.console.tools import (
     sandbox as sandbox_tools,
 )
 from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
-from haku.console.x import (
-    conversation_follow,
-    conversation_reader,
-    conversation_runtime,
-    runtime as console_runtime,
-    runtime_catalog,
-    sandbox_allocation,
-    sandbox_claims,
-    session_runtime,
-    subscription,
-)
-
-# Aliased: bare `conversation`, `sync` and `outbox` would each collide with something this module
-# already talks about (the console's own conversation record, the index sweeps, the push queue).
-from haku.console.x.channels.matrix import (
-    conversation as matrix_conversation,
-    ingress_ledger as matrix_ingress_ledger,
-    outbox as matrix_outbox,
-    outbox_wake as matrix_outbox_wake,
-    revisions as matrix_revisions,
-    sync as matrix_sync,
-)
-from haku.console.x.channels.matrix.room_copy import RoomCopy
-from haku.console.x.conversation_history import ConversationHistory
-from haku.console.x.conversation_live_updates import ConversationLiveUpdates
-from haku.console.x.conversation_wakes import ConversationWakes
-from haku.console.x.launch_identity import ChatLaunchAuthorizer
-from haku.console.x.session_store import SessionStore
-from haku.console.x.session_wakes import SessionWakes
-from haku.console.x.system_prompt import SystemPromptTemplate
+from haku.console.x import runtime as console_runtime, runtime_catalog
+from haku.recall_index.config import EmbedderConfig
 from haku.recall_index.openai_embedder import OpenAIEmbedder
 from haku.runtime.x.bridge.protocol import KUBERNETES_PROXY_URL_ENV, RUNNER_SETUP_ENV
 from haku.sandbox.kubernetes_client import InClusterSandboxClient
@@ -226,12 +204,12 @@ def create_app(
     db_sessions = async_sessionmaker(db_engine, expire_on_commit=False)
     operator_identity_store = PostgresOperatorIdentityStore(db_sessions, _operator_identity_trust(settings))
     operator_login_flows = operator_login_flow.PostgresOperatorLoginFlowStore(db_sessions)
-    oauth_token_states = oauth_token_state.PostgresOAuthTokenStateStore(
+    oauth_token_states = token_state.PostgresTokenStateStore(
         db_sessions, operator_identity_store=operator_identity_store
     )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
-    claude_runtime = console_config.chat_runtimes.claude_code if console_config.chat_runtimes is not None else None
-    codex_runtime = console_config.chat_runtimes.codex_app_server if console_config.chat_runtimes is not None else None
+    claude_runtime = console_config.harnesses.claude_code if console_config.harnesses is not None else None
+    codex_runtime = console_config.harnesses.codex_app_server if console_config.harnesses is not None else None
     static_by_id = {agent.agent_id: agent for agent in console_config.static_agents}
     profile_runtime_kinds = {
         profile.id: set(profile.allowed_chat_runtimes) for profile in console_config.access_profiles
@@ -265,19 +243,19 @@ def create_app(
         provider_clients=provider_clients,
         operator_connections=console_config.operator_connections,
     )
-    oauth_connection_result_store = oauth_connection_result.PostgresOAuthConnectionResultStore(
+    oauth_connection_result_store = connection_result.PostgresConnectionResultStore(
         db_sessions, operator_identity_store=operator_identity_store
     )
     # Web Push reaches the operator's browsers when none of them has the console open. Without a
     # VAPID identity there is nothing to sign with, so the console simply never notifies.
-    push_subscription_store = web_push.PostgresPushSubscriptionStore(db_sessions)
-    web_push_identity = web_push.WebPushIdentity(settings.web_push) if settings.web_push else None
-    approval_notifier: web_push.WebPushApprovalNotifier | web_push.NullApprovalNotifier = (
-        web_push.WebPushApprovalNotifier(
-            identity=web_push_identity, subscriptions=push_subscription_store, console_base_url=settings.public_base_url
+    push_subscription_store = push.PostgresPushSubscriptionStore(db_sessions)
+    push_identity = push.PushIdentity(settings.web_push) if settings.web_push else None
+    approval_notifier: push.Notifier | push.NullNotifier = (
+        push.Notifier(
+            identity=push_identity, subscriptions=push_subscription_store, console_base_url=settings.public_base_url
         )
-        if web_push_identity is not None
-        else web_push.NullApprovalNotifier()
+        if push_identity is not None
+        else push.NullNotifier()
     )
     # The operator's own Authentik token (captured at login via offline_access), self-refreshed with
     # the operator-OIDC client — hostexec exchanges it for a per-host token. The store derives the
@@ -291,7 +269,7 @@ def create_app(
         client_secret=settings.operator_oidc.client_secret.get_secret_value(),
         issuer=settings.operator_oidc.issuer,
     )
-    oauth_maintenance = oauth_association_maintenance.OAuthAssociationMaintenance(
+    oauth_maintenance = association_maintenance.AssociationMaintenance(
         db_engine,
         db_sessions,
         servers=console_config.mcp.servers,
@@ -300,10 +278,8 @@ def create_app(
         authentik_store=authentik_operator_token_store,
         refresh_authentik_tokens=hostexec_config is not None,
     )
-    node_daemon_service = (
-        node_daemons.NodeDaemonService(db_sessions, console_config.node_daemons)
-        if console_config.node_daemons is not None
-        else None
+    hostexecd_service = (
+        service.Service(db_sessions, console_config.node_daemons) if console_config.node_daemons is not None else None
     )
     agent_authority = PostgresAgentAuthority(
         db_sessions,
@@ -409,7 +385,7 @@ def create_app(
     # All read and write paths share one registry. Projection-only composition may link dormant
     # adapters, while launch-capable production composition includes only deliberately supported
     # adapters and resources; no hidden Claude fallback can reinterpret another runtime's rows.
-    session_store = SessionStore(db_sessions, runtime_registry)
+    session_store = Store(db_sessions, runtime_registry)
 
     async def _resolve_static_agent_definitions() -> tuple[StaticAgentDefinition, ...]:
         assert loaded_static_agents is not None
@@ -428,35 +404,6 @@ def create_app(
 
         return tuple([await resolve_agent(agent) for agent in loaded_static_agents])
 
-    # Matrix chat surface, absent when unconfigured: the console serves its approval queue
-    # without it and simply does not run the sync loop. Neutral runtime supervision is composed
-    # after the configured runtime catalog because it provisions sessions through that service.
-    matrix_sync_service: matrix_sync.MatrixSyncService | None = None
-    matrix_conversation_store: matrix_conversation.MatrixConversationStore | None = None
-    if (matrix_config := settings.matrix) is not None and matrix_config.password is not None:
-        matrix_conversation_store = matrix_conversation.MatrixConversationStore(db_sessions)
-        matrix_ledger = matrix_ingress_ledger.IngressLedger(db_sessions)
-        # The sync service hosts one reconciler per live attachment — each room's subscriber to the
-        # conversation record and the drain of its reply outbox — so the record readers, the
-        # correspondence store and the outbox are all composed into it.
-        matrix_sync_service = matrix_sync.MatrixSyncService(
-            matrix_config,
-            matrix_config.password,
-            db_engine,
-            matrix_sync.MatrixSyncStore(db_sessions),
-            matrix_conversation_store,
-            operator_identity_store,
-            matrix_conversation.MatrixTurns(matrix_config, session_store, operator_identity_store, matrix_ledger),
-            matrix_outbox.RoomOutbox(db_sessions),
-            matrix_revisions.RevisionLog(db_sessions),
-            matrix_ledger,
-            RoomCopy(db_sessions),
-            # The channel's own wake wire; the sync leader starts and stops it with its reconcilers.
-            matrix_outbox_wake.OutboxWakes(database_url),
-            db_sessions,
-            subscription.ConversationStream(db_sessions),
-            conversation_wakes,
-        )
     # Execution exists only when a launch-capable adapter was configured. Read-only replicas keep
     # the same registry in their store above but expose no session-creation runtime service.
     default_runtime_kind: RuntimeKind | None = None
@@ -494,10 +441,6 @@ def create_app(
             default_agent_id=default_chat_agent_id,
             default_runtime_kind=default_runtime_kind,
         )
-        if matrix_conversation_store is not None:
-            matrix_conversation_store.configure_launch_identity(
-                authorize_chat_launch, default_agent_id=default_chat_agent_id, default_runtime_kind=default_runtime_kind
-            )
     else:
         session_service = None
     sandbox_allocator = (
@@ -506,7 +449,7 @@ def create_app(
         else None
     )
     runtime_supervisor = (
-        conversation_runtime.ConversationRuntime(session_service, session_store, conversation_wakes, db_engine)
+        conversation_runtime.Runtime(session_service, session_store, conversation_wakes, db_engine)
         if session_service is not None
         else None
     )
@@ -596,11 +539,11 @@ def create_app(
         # endpoint here (only in this branch) is safe.
         hostexec_server = None
         if hostexec_config is not None:
-            assert node_daemon_service is not None
+            assert hostexecd_service is not None
             hostexec_server = HostexecServerConfig(
                 config=hostexec_config,
                 token_endpoint=authentik_token_endpoint_for_issuer(settings.operator_oidc.issuer),
-                broker=node_daemon_service,
+                broker=hostexecd_service,
             )
         # Configured rather than switched on separately: `config.yaml` is where the server is
         # listed and where the policy that lets an agent call it lives, and a boolean elsewhere
@@ -643,9 +586,7 @@ def create_app(
                 configured_recall_index_ids=tuple(index.index_id for index in console_config.recall_indexes),
                 # Only with an executable runtime: otherwise nothing writes sessions, so the read
                 # tools would reflect an always-empty corpus.
-                conversations=(
-                    conversation_reader.ConversationReads(session_store) if runtime_registry.configured_kinds else None
-                ),
+                conversations=(reader.ConversationReads(session_store) if runtime_registry.configured_kinds else None),
                 sandbox=sandbox_server,
                 kubernetes=(
                     kubernetes_tools.KubernetesToolsService(
@@ -703,7 +644,7 @@ def create_app(
         provider_store=provider_connection_store,
         dispatcher=dispatcher,
         catalogs=catalogs,
-        node_daemons=node_daemon_service,
+        node_daemons=hostexecd_service,
     )
 
     console_mcp = mcp_server.build_console_mcp(
@@ -727,7 +668,6 @@ def create_app(
         await mcp_operator_oauth_store.forget_unconfigured_servers(console_config.mcp.servers)
         if session_service is not None:
             await session_service.reconcile_terminal_claims()
-        matrix_running = matrix_sync_service.run() if matrix_sync_service is not None else contextlib.nullcontext()
         # Conversation demand owns session creation and replacement. It is a sibling of every
         # channel and of sandbox allocation, so browser-only and unattached conversations receive
         # the same maintenance as Matrix-bound ones.
@@ -735,7 +675,7 @@ def create_app(
         # Prompt demand is channel-neutral and durable. Start its elected reconciler only after
         # the notification listener is live; the first sweep is also the restart backstop.
         allocating = sandbox_allocator.run() if sandbox_allocator is not None else contextlib.nullcontext()
-        async with agent_authority.expiry_maintenance(), oauth_maintenance.run(), catalogs.run(), matrix_running:
+        async with agent_authority.expiry_maintenance(), oauth_maintenance.run(), catalogs.run():
             await console_event_hub.start()
             await session_wakes.start()
             await conversation_wakes.start()
@@ -794,9 +734,9 @@ def create_app(
     app.state.in_process_servers = in_process_servers
     app.state.mcp_dispatcher = dispatcher
     app.state.mcp_catalogs = catalogs
-    app.state.node_daemon_service = node_daemon_service
+    app.state.hostexecd_service = hostexecd_service
     app.state.push_subscription_store = push_subscription_store
-    app.state.web_push_identity = web_push_identity
+    app.state.push_identity = push_identity
     app.state.kubernetes_authorization = kubernetes_authorization
     app.state.kubernetes_grants = kubernetes_grants
     app.state.http_grants = http_grants
@@ -847,21 +787,24 @@ def create_app(
     app.include_router(http_grant_routes.router, dependencies=operator_only)
     app.include_router(mcp_operator_oauth.router, dependencies=operator_only)
     app.include_router(provider_connection.router, dependencies=operator_only)
-    app.include_router(oauth_connection_result.router, dependencies=operator_only)
+    app.include_router(connection_result.router, dependencies=operator_only)
     app.include_router(enrollment_routes.operator_router, dependencies=operator_only)
-    app.include_router(node_daemons.operator_router, dependencies=operator_only)
+    app.include_router(service.operator_router, dependencies=operator_only)
     app.include_router(push_routes.router, dependencies=operator_only)
     # Machine endpoints use their own per-daemon bearer and deliberately do not accept an Operator
     # browser session.
-    app.include_router(node_daemons.machine_router)
+    app.include_router(service.machine_router)
     app.include_router(enrollment_routes.entry_router)
     app.include_router(session_runtime.internal_router)
     # Machine-to-machine, bearer-forwarding contract for the separate Kubernetes proxy. The
     # endpoint remains fail-closed unless standing SAR policy is configured.
     app.include_router(kube_proxy_authorization.router)
-    # Machine-to-machine decision contract for the colocated egress proxy (#4670): proxy-identity
-    # bearer plus body fence credential, fail-closed unless egress_decide config wires both.
-    app.include_router(http_decide_routes.router)
+    # The colocated egress proxy's decision endpoint is deliberately NOT on this network app.
+    # It is the oracle that turns placeholders into real credentials, so it must never be routable
+    # from a sandbox workload — and every sandbox can reach this app through the haku-console
+    # Service (the force-proxy CCNP admits `toEntities: cluster`). `main()` serves it instead on a
+    # loopback-only listener (`build_internal_decide_app`) that no Service exposes, so sandbox
+    # unreachability is structural, not a NetworkPolicy (#4670 § Topology, acceptance criterion 14).
 
     @app.get("/api/deployment", dependencies=operator_only)
     async def deployment() -> DeploymentInfo:
@@ -933,14 +876,49 @@ def create_app(
     return app
 
 
-def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    settings = Settings()
-    loaded_static_agents = load_static_agents(settings)
-    # DDL belongs to the image-coupled release Job. Before binding a port, prove this image can
-    # read the already-migrated schema so an incompatible rollout never becomes Ready.
-    verify_schema(settings.database_url.get_secret_value())
-    app = create_app(settings, loaded_static_agents=loaded_static_agents)
+# The colocated egress proxy reaches the decision oracle here (#4942). Loopback and a fixed port,
+# matching the sidecar's HAKU_EGRESS_DECIDE_URL: no Service targets it, so it is unreachable from
+# any other pod — the structural half of acceptance criterion 14 (the proxy-identity bearer is the
+# other). Keep both in step with the console deployment's proxy sidecar env.
+INTERNAL_DECIDE_HOST = "127.0.0.1"
+INTERNAL_DECIDE_PORT = 8079
+
+
+class _SecondaryServer(uvicorn.Server):
+    """A uvicorn server sharing the process with the network server, which owns the signals.
+
+    The network server installs the SIGTERM/SIGINT handlers that reach the lifespan shutdown; a
+    second installer would overwrite them in the loop's signal registry, so this one installs none
+    and is asked to exit once the network server has.
+    """
+
+    def install_signal_handlers(self) -> None:
+        return None
+
+
+def build_internal_decide_app(http_decide: HttpDecideService) -> FastAPI:
+    """Loopback-only ASGI app carrying just the egress decision endpoint (#4942).
+
+    Colocation binds the oracle here rather than on the network app ``create_app`` builds: the
+    colocated proxy sidecar reaches it over the shared pod loopback, while a sandbox — which can
+    reach Console only through its Service — has no route to this listener at all (#4670 §
+    Topology). The proxy-identity bearer still authenticates every call; the localhost bind is
+    defense in depth, not a replacement for authentication.
+    """
+    internal = FastAPI(title="Haku console egress oracle")
+    internal.state.http_decide = http_decide
+    internal.include_router(http_decide_routes.router)
+    return internal
+
+
+async def _serve(app: FastAPI) -> None:
+    """Serve the network app, plus the loopback decision oracle when ``egress_decide`` is wired.
+
+    Both run in this one process and event loop so they share the single ``HttpDecideService`` and
+    its Postgres-backed grant lookups. The network server owns the process signal handlers and the
+    graceful-shutdown bound; the oracle installs none of its own and is asked to exit once the
+    network server has.
+    """
     # host/port are fixed, not env-driven: under the HAKU_CONSOLE_ prefix a `port`
     # setting would read the kubelet's HAKU_CONSOLE_PORT service-link var (a URL),
     # not an int. The cluster-wide Kyverno default keeps that legacy variable out.
@@ -952,7 +930,39 @@ def main() -> None:
     # handed back and the sweep fails it.
     # Bounding the wait makes uvicorn cancel the handlers and reach the lifespan, where the chat
     # service hands its leases back. Keep it below the deployment's terminationGracePeriodSeconds.
-    uvicorn.run(app, host="0.0.0.0", port=8080, log_level="info", timeout_graceful_shutdown=10)
+    network = uvicorn.Server(
+        uvicorn.Config(app, host="0.0.0.0", port=8080, log_level="info", timeout_graceful_shutdown=10)
+    )
+    http_decide = app.state.http_decide
+    if http_decide is None:
+        await network.serve()
+        return
+    oracle = _SecondaryServer(
+        uvicorn.Config(
+            build_internal_decide_app(http_decide),
+            host=INTERNAL_DECIDE_HOST,
+            port=INTERNAL_DECIDE_PORT,
+            log_level="warning",
+            timeout_graceful_shutdown=10,
+        )
+    )
+    oracle_task = asyncio.create_task(oracle.serve())
+    try:
+        await network.serve()
+    finally:
+        oracle.should_exit = True
+        await oracle_task
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    settings = Settings()
+    loaded_static_agents = load_static_agents(settings)
+    # DDL belongs to the image-coupled release Job. Before binding a port, prove this image can
+    # read the already-migrated schema so an incompatible rollout never becomes Ready.
+    verify_schema(settings.database_url.get_secret_value())
+    app = create_app(settings, loaded_static_agents=loaded_static_agents)
+    asyncio.run(_serve(app))
 
 
 def run_command(argv: list[str]) -> None:

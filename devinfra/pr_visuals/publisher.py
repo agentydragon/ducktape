@@ -1042,6 +1042,12 @@ def main() -> None:
         if not base_sha:
             # Devel push: advance the mutable per-target fallback pointers now
             # that this commit's immutable bundle is fully uploaded.
+            #
+            # Reachable only for a run that was not cancelled, so the invocation
+            # behind `tests` has necessarily finished. That is what keeps a
+            # superseded run's half-streamed read (README.md § Gotcha: a
+            # superseded run's publish races its own Bazel invocation) able to
+            # leave a pointer stale but never to move it somewhere wrong.
             write_baseline_pointers([test.slug for test in tests], commit_sha=args.sha, bucket=args.bucket, client=s3)
         public_url = f"{args.public_base_url.rstrip('/')}/commits/{args.sha}/"
         review_tests = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests

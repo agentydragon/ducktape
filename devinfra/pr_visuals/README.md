@@ -46,12 +46,34 @@ publish step took ~16 minutes. The artifact listing already carries each blob's
 `app.buildbuddy.io/file/download`, eight at a time: the same set lands in under 20
 seconds.
 
-A run cancelled as superseded publishes its commit bundle and nothing else: it
-often holds a complete manifest set, because cancellation kills the workflow
-rather than the Bazel invocation. It stays silent — the PR comment is a
-singleton, and the run that superseded it is already on its way with the real
-review — and it does not advance the baseline pointers, which are mutable and
-unordered across concurrent publishes.
+A run cancelled as superseded publishes whatever visual artifacts have reached
+BuildBuddy by then, and says nothing else: the PR comment is a singleton, and the
+run that superseded it is already on its way with the real review.
+
+**Gotcha: a superseded run's publish races its own Bazel invocation.** Cancelling
+the workflow does not cancel the invocation, so the cancelled CI run reaches
+`completed` at once while Bazel keeps streaming results for minutes afterwards.
+The publish reads BuildBuddy at that moment and takes what is there — often
+nothing, and nothing revisits the invocation once it finishes. Measured on
+`29154c806`: its publish ran 14:29–14:31 and found no manifests; its sweep ran
+14:26:40 → 14:32:27 and ended with all 34. That commit has no bundle.
+
+The damage is bounded to **staleness, never wrongness**, by two properties worth
+preserving:
+
+- Bundles and baseline resolution are both per-target, so a partially published
+  commit is not a broken baseline — each target it lacks resolves through the
+  pointer instead, marked `baseline_fallback`.
+- Only a complete invocation can advance a pointer. `publish_only` never writes
+  pointers, and the other path's write is reachable only when the run was _not_
+  cancelled — which means bazel-ci ran to completion, so its invocation is
+  finished.
+
+A chain of rapid devel merges therefore leaves baselines progressively older
+(`bazel-ci.yml` cancels the superseded run; `ci.yml` puts that at ~8 in 10
+pushes) and puts more `baseline_fallback` warnings on PR comments. The first
+uncancelled run heals it. Deferred fix: <devinfra/ci/TODO.md> § Visual publishing
+races the invocation it reads.
 
 ## Baseline resolution
 

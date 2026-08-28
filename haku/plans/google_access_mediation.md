@@ -9,7 +9,7 @@ Sequenced later than the common Agent lifecycle (H1–H3 there).
 ## Progress
 
 1. **G1 (done):** the console owns the per-Operator Google connection —
-   `haku/console/provider_connection.py` (Postgres per-Operator refresh storage + in-process
+   `haku/console/oauth/provider_connection.py` (Postgres per-Operator refresh storage + in-process
    self-refresh), the `/api/operator-connections/*` connect/status/disconnect flow, deploy-named
    connection bindings with execution-time Operator selection, and the Settings → Connected
    accounts UI. Gmail and Calendar have separate least-privilege grants and separate provider

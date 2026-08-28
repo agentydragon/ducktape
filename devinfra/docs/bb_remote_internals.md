@@ -146,10 +146,11 @@ base is HEAD and patches carry only uncommitted changes; in every other case
 A patchset of everything that differs between the base commit and the current
 working tree:
 
-1. `git diff <baseCommit>` — tracked modified files (text), as unified diff
-2. `git diff <baseCommit> --binary -- <files>` — binary modified files
-3. `git ls-files --others --exclude-standard` → for each untracked file,
-   `git diff --no-index /dev/null <file>` (synthetic "add file" patch)
+1. `git diff --binary <baseCommit>` — all tracked changes in one patch
+   (`--binary` is inert for text diffs and the only applyable form for binary
+   ones, deletions included)
+2. `git ls-files --others --exclude-standard` → for each untracked file,
+   `git diff --no-index --binary /dev/null <file>` (synthetic "add file" patch)
 
 Patches travel as `RepoState.Patch[]` in the `RunRequest`; the runner clones
 at the base commit/branch and `git apply`s each, reproducing your local
@@ -162,7 +163,7 @@ working tree.
   creates only `origin/devel`, so both `@{upstream}` and the
   `git rev-parse devel` fallback fail — `bazel-ci.yml` creates a local `devel`
   ref for PR builds. A stale `origin/devel` puts the diff base hundreds of
-  commits behind HEAD: a huge patchset — on stock `bb`, possibly an
+  commits behind HEAD: a huge patchset — on `bb` < 5.0.445, possibly an
   unappliable one (next bullet) — instead of the small diff you expect.
   `devinfra/bbr.py`'s `check_base_branch_freshness()` **refuses to run** when
   the tracked base looks stale (`BBR_ALLOW_STALE_BASE=1` overrides); it
@@ -171,18 +172,18 @@ working tree.
   current branch, if pushed, so bb can base on it directly) and retry. Session
   setup (`devinfra/claude/reconcile_bbr_remote.sh`) fetches once, at session
   start.
-- **A deleted binary file makes the patchset unappliable on stock `bb`**:
-  `generatePatches` runs `git diff --binary` only for files it detects as
-  _modified_ — `isBinaryFile` runs `file --mime` on the working-tree path,
+- **A deleted binary file made the patchset unappliable on `bb` < 5.0.445**:
+  `generatePatches` ran `git diff --binary` only for files it detected as
+  _modified_ — `isBinaryFile` ran `file --mime` on the working-tree path,
   which cannot classify a deleted file — so a binary file **deleted** since
-  the diff base lands in the plain-text patch as a content-less stub, and the
-  runner's `git apply` dies with
-  `cannot apply binary patch to '<file>' without full index line`. Every run
-  breaks during git setup, even on a fresh base, until the deleting commit is
-  pushed (moving the base past it). Upstream fix (unconditional `--binary`):
-  [buildbuddy#13067](https://github.com/buildbuddy-io/buildbuddy/pull/13067);
-  until a `bb` release carries it, the repo pins a patched build
-  (`5.0.387-pr13067`, <../../third_party/bb/README.md>).
+  the diff base landed in the plain-text patch as a content-less stub, and the
+  runner's `git apply` died with
+  `cannot apply binary patch to '<file>' without full index line`: every run
+  broke during git setup, even on a fresh base, until the deleting commit was
+  pushed (moving the base past it). Fixed upstream in
+  [buildbuddy#13067](https://github.com/buildbuddy-io/buildbuddy/pull/13067)
+  (unconditional `--binary`), released in `bb` 5.0.445; the repo consumes the
+  stock release.
 - **`--run_from_commit` disables patches**: the runner checks out exactly that
   commit. Patches are only generated when BOTH `--run_from_branch` and
   `--run_from_commit` are empty. Do NOT use `--run_from_commit` in wrapper
@@ -328,12 +329,53 @@ finalize and writes raw bytes, no ANSI escapes.
    RESULT=$(bb remote query 'deps(//foo)' 2>/dev/null)
    ```
 
-2. **`--invocation_id_file`** — write the invocation ID to a file, then fetch
-   logs post-hoc via the BuildBuddy API. `bbr` does this automatically
-   (`~/.cache/bbr/last_invocation_id`) and prints a post-run summary with
-   `bbapi` commands.
+2. **Pass `--invocation_id=<uuid>` after the verb**, then fetch logs post-hoc
+   via the BuildBuddy API. `bbr` does this automatically, prints the ID before
+   and after the run, and records it with `--invocation-id-file=PATH`
+   (§ Invocation IDs).
 3. **`--script` + file redirect** — redirect bazel output to a file on the
    runner, download via `--remote_download_regex`.
+
+## Invocation IDs
+
+A remote run produces two invocations:
+
+- **Outer (runner)**: minted server-side by hostedrunner, passed to ci_runner
+  via `--invocation_id`, returned to the CLI in `RunResponse` — the ID
+  `--invocation_id_file` records. Carries the runner log; its recorded command
+  is `remote <cmd> <first-target>`.
+- **Inner (Bazel)**: the `bazel` invocation ci_runner executes, carrying
+  targets, test results, and artifacts. Bazel mints its ID randomly unless
+  `--invocation_id=<uuid>` appears after the verb — bb forwards bazel args
+  verbatim, and ci_runner's bazel wrapper strips the flag only from the
+  `EXPLICIT_COMMAND_LINE` UI metadata, not from the real command. It links
+  back to the outer run via `PARENT_INVOCATION_ID` build metadata.
+
+`bbr` mints the inner ID itself (uuid4, appended after the verb) and prints it
+before the run and in the post-run summary. For scripting, either pass your
+own `--invocation_id=<uuid>` after the verb (adopted, not overridden) or use
+bbr's own `--invocation-id-file=PATH` flag, which writes the ID to that path
+before the run:
+
+```bash
+bbr --invocation-id-file=/tmp/bbr-inv test //foo:bar
+bbapi invocation "$(cat /tmp/bbr-inv)"
+```
+
+`bbapi` commands take either ID (outer auto-resolves to children), but the
+inner one names the targets/logs/artifacts directly.
+
+**Rejected: reading the ID back from `--invocation_id_file`.** bb writes that
+file once, at the end of a successfully tracked run, and bbr pointed every run
+at one shared per-user path — so a concurrent, failed, or interrupted run
+leaves another run's ID in place for the post-run read to report (observed
+2026-08-27: a `bbr test //cluster/...` run reported a concurrent run's
+`remote test //haku/console/x/...` invocation). A per-run file would fix the
+race but still name only the outer invocation; the outer ID stays discoverable
+from bb's own "Streaming remote runner logs to:" line. A bbr-written shared
+default file (`~/.cache/bbr/last_invocation_id`) has the same cross-run
+trampling for whoever reads it — recording is opt-in and per-run via
+`--invocation-id-file`.
 
 ## Downloaded artifacts land under `bb-out/bazel-out/`, NOT `bb-out/bazel-bin/`
 

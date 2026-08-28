@@ -18,12 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from haku.console.database_schema import OperatorAuthentikToken
-from haku.console.oauth_token_state import (
-    PostgresOAuthTokenStateStore,
-    new_oauth_token_state,
-    replace_oauth_token_state,
-)
-from haku.console.oauth_token_support import parse_token_response, token_request_headers
+from haku.console.oauth.token_state import PostgresTokenStateStore, new_token_state, replace_token_state
+from haku.console.oauth.token_support import parse_token_response, token_request_headers
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from mcp_infra.authentik_auth.config import authentik_token_endpoint_for_issuer
 
@@ -42,7 +38,7 @@ class PostgresAuthentikOperatorTokenStore:
         sessions: async_sessionmaker[AsyncSession],
         *,
         operator_identity_store: PostgresOperatorIdentityStore,
-        token_states: PostgresOAuthTokenStateStore,
+        token_states: PostgresTokenStateStore,
         client_id: str,
         client_secret: str,
         issuer: str,
@@ -79,7 +75,7 @@ class PostgresAuthentikOperatorTokenStore:
                     OperatorAuthentikToken(
                         operator_id=operator_id,
                         created_at=now,
-                        token_state=new_oauth_token_state(
+                        token_state=new_token_state(
                             operator_id=operator_id,
                             access_token=access_token,
                             refresh_token=refresh_token,
@@ -91,7 +87,7 @@ class PostgresAuthentikOperatorTokenStore:
                     )
                 )
                 return
-            replace_oauth_token_state(
+            replace_token_state(
                 row.token_state,
                 access_token=access_token,
                 refresh_token=refresh_token,

@@ -43,10 +43,7 @@ from haku.console.chat_models import (
     ToolOutcome,
     TurnOutcome,
 )
-
-# The ORM row and the neutral vocabulary's union share a name, because they are the same concept at
-# two layers. The row is aliased here so both can be named in one module.
-from haku.console.database_schema import ConversationEvent as ConversationEventRow
+from haku.console.database_schema import ConversationEventRow
 from haku.console.x.conversation_events import (
     ConversationEvent,
     FrameRange,

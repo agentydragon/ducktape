@@ -117,7 +117,7 @@ export function SessionFramesPage({ sessionId }: { sessionId: string }) {
             </Button>
             <Title order={1}>Raw frames</Title>
             <Text c="dimmed" size="sm">
-              {loaded?.runtime_kind ?? "The selected harness"}&apos;s protocol as it crossed the wire — raw JSON that
+              {loaded?.harness_kind ?? "The selected harness"}&apos;s protocol as it crossed the wire — raw JSON that
               the transcript projects into neutral conversation events.
             </Text>
           </div>

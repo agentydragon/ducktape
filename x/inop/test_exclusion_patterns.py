@@ -1,4 +1,6 @@
-"""Tests for gitignore-style exclusion patterns."""
+"""Library spike: pins the pathspec gitwildmatch semantics (negation, root
+anchoring, directory and recursive matches) that the exclude_patterns config
+consumed by runners/containerized_claude.py relies on."""
 
 import pathspec
 import pytest_bazel

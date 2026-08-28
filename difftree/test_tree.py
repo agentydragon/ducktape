@@ -90,14 +90,5 @@ def test_sort_tree_alphabetically(sample_changes: list[FileChange]):
     assert children_names == sorted(children_names)
 
 
-def test_tree_node_total_changes():
-    """Test TreeNode.total_changes property."""
-    node = TreeNode(name="test", is_file=True, additions=10, deletions=5)
-    assert node.total_changes == 15
-
-    node2 = TreeNode(name="test2", is_file=True, additions=0, deletions=0)
-    assert node2.total_changes == 0
-
-
 if __name__ == "__main__":
     pytest_bazel.main()

@@ -42,7 +42,8 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from cluster.validation.kyverno.apply import apply_policy, apply_twice
+from cluster.validation.kyverno.apply import apply_policy, apply_twice, assert_not_mutated
+from cluster.validation.kyverno.paths import manifest
 from util.bazel.runfiles import get_required_path
 
 # What every proxy-injection policy must inject. Split into the two halves it is
@@ -179,6 +180,24 @@ def test_injection_is_idempotent_under_reinvocation(reinvoked: dict) -> None:
         assert _dupes([m["name"] for m in container["volumeMounts"]]) == [], container["name"]
         assert _dupes([m["mountPath"] for m in container["volumeMounts"]]) == [], container["name"]
         assert _dupes([e["name"] for e in container["env"]]) == [], container["name"]
+
+
+def test_pod_carrying_its_own_wiring_is_left_alone() -> None:
+    """A pod that already holds the policy's proxy wiring is skipped whole, env included.
+
+    Every rule preconditions on the thing it appends being absent — the volume rule on the CA
+    volume, the env-and-mount rules on the CA volumeMount — so a pod template that ships the
+    complete wiring itself gets no injection at all. That is what lets a self-wired pod keep its
+    own `HTTP_PROXY`: env is last-entry-wins, so an appended fleet value would otherwise override
+    the pod's. The #4943 spike target — the public-coder-agent OpenClaw pod
+    (cluster/k8s/agents/public-coder-agent/app/deployment.yaml) — carries exactly this wiring, so
+    a widening of this policy's namespace match to its namespace would skip it rather than stamp
+    port-8080 values over its iron-proxy env.
+    """
+    assert_not_mutated(
+        get_required_path("_main/cluster/k8s/kyverno/policies/inject-haku-egress-proxy.yaml"),
+        manifest("pod_self_wired_egress_proxy.yaml"),
+    )
 
 
 def _env(container: dict) -> dict[str, str]:

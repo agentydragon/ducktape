@@ -12,9 +12,13 @@ resources:
   - node-daemon-rugged.sops.yaml
   - node-daemon-wyrm2.sops.yaml
   - httproute.yaml
-  - indexer-deployment.yaml
+  - indexer-chunk-ducktape-public-deployment.yaml
+  - indexer-chunk-haku-conversations-deployment.yaml
+  - indexer-chunk-haku-state-deployment.yaml
   - indexer-embed-deployment.yaml
   - indexer-role-provisioner-job.yaml
+  - matrix-adapter-deployment.yaml
+  - matrix-adapter-role-provisioner-job.yaml
   - kube-api-proxy.yaml
   - kubernetes-authorization-rbac.yaml
   - routine-launch-token.sops.yaml
@@ -23,6 +27,11 @@ resources:
   - static-metadata.yaml
   - static-service.yaml
   - web-push-vapid.sops.yaml
+  # Colocated egress proxy (#4942): sidecar listener Service, its ESO-generated shared proxy/fence
+  # bearers, and the github-bot credential the Console substitutes for the egress credential registry.
+  - egress-proxy-service.yaml
+  - haku-egress-proxy-identity-eso.yaml
+  - haku-egress-github-token-eso.yaml
 
 configMapGenerator:
   - name: haku-console-config
@@ -31,6 +40,21 @@ configMapGenerator:
       - haku_system_prompt.md.j2
       - public_coder_system_prompt.md.j2
       - chat_prompt_fragment.md.j2
+  # One instance, one config slice (#4886): each per-index chunk Deployment mounts only its own
+  # index's definition, so one index's config change (or parse breakage) never touches another
+  # index's pod. The slices are derivation-tested projections of config.yaml's recall_indexes.
+  - name: haku-indexer-chunk-haku-state-config
+    files:
+      - config.yaml=indexer-chunk-haku-state-config.yaml
+  - name: haku-indexer-chunk-haku-conversations-config
+    files:
+      - config.yaml=indexer-chunk-haku-conversations-config.yaml
+  - name: haku-indexer-chunk-ducktape-public-config
+    files:
+      - config.yaml=indexer-chunk-ducktape-public-config.yaml
   - name: haku-console-db-indexer-sql
     files:
       - indexer-role.sql
+  - name: haku-console-db-matrix-adapter-sql
+    files:
+      - matrix-adapter-role.sql

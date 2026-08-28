@@ -122,11 +122,9 @@ jobs:
       # `&&` matches the previous step ordering: build runs only if test passed.
       #
       # run_from_commit: have the runner check out the exact commit instead of mirroring the
-      # PR as a patchset (base=devel + diff). The patch path (bb's generatePatches) can't sync
-      # binary-file *deletions* — for a deleted binary it emits "Binary files differ" with no
-      # applyable hunk, so the runner's `git apply` fails (exit 255) before Bazel even runs.
-      # Checking out the commit skips patch sync entirely. Safe here because the CI checkout is
-      # a clean commit (no uncommitted changes for the patch path to drop). On pull_request
+      # PR as a patchset (base=devel + diff). The CI checkout is a clean commit (no
+      # uncommitted changes for the patch path to drop), so checking it out skips patch sync
+      # entirely — no patchset to generate, transfer, or apply. On pull_request
       # events, github.sha is GitHub's synthetic refs/pull/<n>/merge commit, so Bazel evaluates
       # and tests the PR combined with its event-time base instead of the isolated PR head.
       # GitHub serves that commit by exact SHA even though it is not an origin branch. On

@@ -21,7 +21,7 @@ from haku.console.chat_models import (
     StoredEventKind,
     ToolOutcome,
 )
-from haku.console.database_schema import ConversationEvent as ConversationEventRow
+from haku.console.database_schema import ConversationEventRow
 from haku.console.x import session_events
 from haku.console.x.conversation_events import (
     CallRef,

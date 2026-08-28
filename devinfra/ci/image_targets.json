@@ -24,6 +24,10 @@
       "target": "//haku/runtime/x/bridge:runner_image",
       "test": "//haku/runtime/x/bridge/..."
     },
+    "haku-egress-proxy": {
+      "target": "//haku/egress:proxy_image",
+      "test": "//haku/egress/..."
+    },
     "haku-kube-api-proxy": {
       "target": "//haku/kube_api_proxy:image",
       "test": "//haku/kube_api_proxy/..."
@@ -93,6 +97,11 @@
     "haku-indexer": {
       "target": "//haku/console:indexer_image",
       "test": "//haku/console/..."
+    },
+    "haku-matrix-adapter": {
+      "target": "//haku/console/channels/matrix:adapter_image",
+      "test": "//haku/console/...",
+      "registry": "forgejo"
     },
     "plaid-mcp-server": {
       "target": "//finance/plaid/link:server_image",

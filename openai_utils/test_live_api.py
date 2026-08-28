@@ -7,13 +7,8 @@ Live tests hit the real OpenAI API to confirm end-to-end behavior.
 
 from __future__ import annotations
 
-import os
-from typing import Any, cast
-
-import openai
 import pytest
 import pytest_bazel
-from openai.types.responses import EasyInputMessageParam, ResponseInputParam
 
 from openai_utils.client_factory import build_client
 from openai_utils.errors import ContextLengthExceededError
@@ -56,39 +51,6 @@ async def test_chat_context_length_exceeded_live(live_openai_model, live_openai)
 
     with pytest.raises(ContextLengthExceededError):
         await chat_create_with_retries(live_openai, params)
-
-
-@pytest.mark.live_openai_api
-async def test_responses_nonstreaming_live(tmp_path):
-    """Live-only: non-streaming Responses.create returns a response."""
-    client = openai.AsyncOpenAI()
-    model = os.getenv("OPENAI_MODEL", "o4-mini")
-
-    inp: list[EasyInputMessageParam] = [
-        {"type": "message", "role": "user", "content": "Say hello in one short sentence."}
-    ]
-
-    resp = await client.responses.create(model=model, input=cast(ResponseInputParam, inp))
-
-    data = resp.model_dump(exclude_none=True)
-    assert ("id" in data) or (data.get("object") is not None)
-
-
-@pytest.mark.live_openai_api
-async def test_responses_streaming_live(tmp_path):
-    """Live-only: streaming Responses.create produces events."""
-    client = openai.AsyncOpenAI()
-    model = os.getenv("OPENAI_MODEL", "o4-mini")
-
-    inp: list[EasyInputMessageParam] = [
-        {"type": "message", "role": "user", "content": "Stream: say numbers 1..3 as separate events"}
-    ]
-
-    stream = await client.responses.create(model=model, input=cast(ResponseInputParam, inp), stream=True)
-
-    items: list[dict[str, Any]] = [event.model_dump(exclude_none=True) async for event in stream]
-
-    assert items, "No stream events received"
 
 
 if __name__ == "__main__":

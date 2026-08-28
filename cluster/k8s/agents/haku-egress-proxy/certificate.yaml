@@ -15,9 +15,13 @@ spec:
   secretTemplate:
     annotations:
       reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-      reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: cert-manager
+      # haku-console: the colocated egress proxy sidecar (#4942) intercepts with this same shared
+      # CA, so fenced sandboxes — which already trust it via haku-egress-proxy-ca-cert — trust the
+      # colocated listener too. When the iron/mitmproxy fence retires (#4670 end state) this CA's
+      # ownership moves out of this directory with it.
+      reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: cert-manager,haku-console
       reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-      reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: cert-manager
+      reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: cert-manager,haku-console
   issuerRef:
     name: cluster-ca-bootstrap
     kind: ClusterIssuer

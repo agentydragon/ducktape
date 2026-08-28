@@ -366,7 +366,10 @@ rec {
   # each `.skill` zip is already rooted under `<name>/`.
   skills =
     let
-      skillList = (builtins.fromJSON (builtins.readFile ../../skills/skills_registry.json)).skills;
+      registry = builtins.fromJSON (builtins.readFile ../../skills/skills_registry.json);
+      skillList = builtins.filter (
+        skill: builtins.hasAttr "skill-${skill.name}" artifacts
+      ) registry.skills;
     in
     pkgs.runCommand "claude-hooks-skills" { nativeBuildInputs = [ pkgs.libarchive ]; } (
       "mkdir -p $out/share/claude-hooks/skills\n"

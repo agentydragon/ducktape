@@ -4,13 +4,22 @@ import base64
 import hashlib
 import json
 import uuid
-from collections.abc import Mapping
-from datetime import UTC
+from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from typing import Protocol
 
 import httpx
 
-from aiquota.models import AllQuotas, FetchError, FetchSuccess, ProviderQuota
+from aiquota.models import (
+    AllQuotas,
+    FetchError,
+    FetchSuccess,
+    HistoryObservation,
+    ProviderQuota,
+    ResetCreditsObservation,
+    TokenActivityObservation,
+    history_capture_key,
+)
 
 _DATASET = "aiquota"
 
@@ -28,6 +37,17 @@ class RawUpstreamResponse(Protocol):
 class QuotaSnapshot(Protocol):
     @property
     def quotas(self) -> AllQuotas: ...
+
+    @property
+    def raw_responses(self) -> Mapping[str, RawUpstreamResponse]: ...
+
+
+class HistorySnapshot(Protocol):
+    @property
+    def observations(self) -> Sequence[HistoryObservation]: ...
+
+    @property
+    def fetched_at(self) -> datetime: ...
 
     @property
     def raw_responses(self) -> Mapping[str, RawUpstreamResponse]: ...
@@ -65,6 +85,22 @@ class ClickHouseSnapshotSink:
         ) as client:
             await self._insert(client, self._raw_table, raw_rows)
         return len(raw_rows) + window_count
+
+    async def write_history(self, snapshot: HistorySnapshot) -> int:
+        """Append history observations to the same raw table the quota poll writes.
+
+        History rows carry no quota windows; the typed projections read the
+        `token_activity` / `reset_credits` columns instead.
+        """
+
+        rows = [_history_row(snapshot, observation) for observation in snapshot.observations]
+        if not rows:
+            return 0
+        async with httpx.AsyncClient(
+            auth=(self._username, self._password), timeout=self._timeout, transport=self._transport
+        ) as client:
+            await self._insert(client, self._raw_table, rows)
+        return len(rows)
 
     async def _insert(self, client: httpx.AsyncClient, table: str, rows: list[dict[str, object]]) -> None:
         body = "".join(f"{json.dumps(row, separators=(',', ':'))}\n" for row in rows)
@@ -114,6 +150,48 @@ def _raw_row(snapshot: QuotaSnapshot, provider_name: str) -> dict[str, object]:
         "quota_windows": quota_windows,
         "normalized_body": normalized,
         "error": error,
+    }
+
+
+def _history_row(snapshot: HistorySnapshot, observation: HistoryObservation) -> dict[str, object]:
+    payload = observation.payload
+    raw = snapshot.raw_responses.get(history_capture_key(observation.provider, payload.kind))
+    raw_bytes, raw_sha256, body_size, truncated = _raw_bytes(raw)
+    match payload:
+        case TokenActivityObservation():
+            token_activity = [{"start_date": day.start_date.isoformat(), "tokens": day.tokens} for day in payload.days]
+            reset_credits: list[dict[str, object]] = []
+        case ResetCreditsObservation():
+            token_activity = []
+            reset_credits = [
+                {
+                    "credit_id": credit.credit_id,
+                    "reset_type": credit.reset_type,
+                    "status": credit.status,
+                    "granted_at": credit.granted_at.isoformat(),
+                    "expires_at": credit.expires_at.isoformat() if credit.expires_at else None,
+                }
+                for credit in payload.credits
+            ]
+    event_key = f"{observation.provider}:{payload.kind}:{observation.observed_at.isoformat()}:{raw_sha256}"
+    return {
+        "event_id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"aiquota:{event_key}")),
+        "schema_version": 1,
+        "dataset": _DATASET,
+        "source": observation.provider,
+        "observed_at": observation.observed_at.isoformat(),
+        "ingested_at": snapshot.fetched_at.astimezone(UTC).isoformat(),
+        "status_code": raw.status_code if raw else 0,
+        "content_type": (raw.content_type or "") if raw else "",
+        "raw_body_base64": base64.b64encode(raw_bytes).decode(),
+        "raw_body_sha256": raw_sha256,
+        "raw_body_size_bytes": body_size,
+        "raw_body_truncated": truncated,
+        "quota_windows": [],
+        "token_activity": token_activity,
+        "reset_credits": reset_credits,
+        "normalized_body": observation.model_dump_json(),
+        "error": "",
     }
 
 

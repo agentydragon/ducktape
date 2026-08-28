@@ -14,9 +14,9 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from haku.console.chat_models import RuntimeKind
+from haku.console.session.sandbox_claims import SandboxClaims
+from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.x.conversation_events import ConversationEvent, TurnEnd
-from haku.console.x.sandbox_claims import SandboxClaims
-from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.runtime.x.bridge.client import FrameSink, ReceivedFrame, SentPrompt
 from haku.runtime.x.bridge.protocol import HarnessFrame, HarnessLaunch, TextWebSocket
 from haku.runtime.x.bridge.transport import ProgressSink
@@ -186,6 +186,15 @@ class RuntimeAdapter(Protocol):
 
     @property
     def display_name(self) -> str: ...
+
+    def build_launch(self, launch: RuntimeLaunch) -> HarnessLaunch:
+        """The native `HarnessLaunch` for these generic launch facts.
+
+        The journal bridge (#4667) sends this to the runner directly: under the neutral-operation
+        generation the Console composes no native protocol itself, so it needs the launch the
+        runner obeys without the `client` that used to wrap it.
+        """
+        ...
 
     def client(
         self, websocket: TextWebSocket, launch: RuntimeLaunch, progress: ProgressSink | None, frames_to: FrameSink

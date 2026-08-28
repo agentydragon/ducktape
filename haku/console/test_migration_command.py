@@ -46,11 +46,17 @@ def test_server_startup_checks_schema_without_applying_migrations(monkeypatch: p
         database_url = DatabaseUrl()
 
     checked: list[str] = []
+
+    async def serve_without_binding(_app: object) -> None:
+        pass
+
     monkeypatch.setattr(app, "Settings", TestSettings)
     monkeypatch.setattr(app, "load_static_agents", lambda settings: [])
     monkeypatch.setattr(app, "verify_schema", checked.append)
     monkeypatch.setattr(app, "create_app", lambda settings, loaded_static_agents: object())
-    monkeypatch.setattr(app.uvicorn, "run", lambda *args, **kwargs: None)
+    # The schema check under test runs before main() serves; stub the serve step so the test
+    # neither binds a port nor enters the event loop.
+    monkeypatch.setattr(app, "_serve", serve_without_binding)
 
     app.main()
 

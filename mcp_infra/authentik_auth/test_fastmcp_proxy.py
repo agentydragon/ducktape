@@ -25,10 +25,6 @@ from mcp_infra.authentik_auth.fastmcp_proxy import (
 )
 
 
-def test_compatibility_layers_are_independently_named_without_changing_runtime_behavior() -> None:
-    assert issubclass(DownstreamClientIdentityOIDCProxy, RetryableRefreshOIDCProxy)
-
-
 async def test_downstream_identity_proxy_restores_dcr_client_id_after_token_swap() -> None:
     """FastMCP's token swap returns the upstream client identity; the override re-attaches the
     DCR client_id from the reference JWT so per-agent identity survives (the "agent

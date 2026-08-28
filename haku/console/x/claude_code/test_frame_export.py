@@ -15,13 +15,13 @@ import pytest_bazel
 from more_itertools import one
 
 from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, FrameDirection
+from haku.console.session.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
+from haku.console.session.store import BridgeAuthentication
 from haku.console.x.claude_code import frame_export, frames
 from haku.console.x.claude_code.projection import RecordedFrame
 from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
 from haku.console.x.claude_code.testing.fold import whole_capture
 from haku.console.x.conversation_events import ToolCallCompleted, ToolCallStarted
-from haku.console.x.session_store import BridgeAuthentication
-from haku.console.x.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
 from haku.runtime.x.bridge.protocol import HarnessFrame
 
 # A bearer smuggled into the log the only realistic way one gets there: an operator ran a command
@@ -71,24 +71,24 @@ SESSION_FRAMES: list[dict[str, Any]] = [
 
 
 @pytest.fixture
-async def exported(chat_store, migrated_sessions, operator_id) -> frame_export.ExportedSession:
+async def exported(session_store, migrated_sessions, operator_id) -> frame_export.ExportedSession:
     """One session recorded through the write path, with a console-authored `setup_output` row in it."""
-    view, token = await chat_store.create(operator_id)
+    view, token = await session_store.create(operator_id)
     session_id: UUID = view.session_id
-    assert await chat_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
-    await chat_store.record_frame(
+    assert await session_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
+    await session_store.record_frame(
         session_id, FrameDirection.FROM_AGENT, SETUP_OUTPUT_KIND, setup_output_frame("cloning the repo")
     )
-    await chat_store.enqueue_prompt(operator_id, session_id, "start the build", SPA_ORIGIN)
-    started = await chat_store.next_prompt(session_id)
+    await session_store.enqueue_prompt(operator_id, session_id, "start the build", SPA_ORIGIN)
+    started = await session_store.next_prompt(session_id)
     assert started is not None
     handler = ClaudeRuntimeAdapter().turn_handler()
     for payload in SESSION_FRAMES:
-        recorded = await chat_store.record_frame(
+        recorded = await session_store.record_frame(
             session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, payload
         )
         effects = handler.apply(frame_seq=recorded.frame_seq, frame=HarnessFrame(frame=payload))
-        await chat_store.apply_frame(session_id, started.turn_id, recorded.frame_seq, effects.events)
+        await session_store.apply_frame(session_id, started.turn_id, recorded.frame_seq, effects.events)
     async with migrated_sessions() as db:
         return await frame_export.export_session(db, session_id)
 

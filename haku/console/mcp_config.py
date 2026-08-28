@@ -27,16 +27,15 @@ from haku.console.agents.naming import normalize_agent_name
 from haku.console.chat_models import RuntimeKind
 from haku.console.config import (
     ChatRuntimesConfig,
-    ConfiguredRecallIndex,
-    GitRecallIndexDefinition,
     HostexecConfig,
     KubernetesAuthorizationConfig,
     NodeDaemonsConfig,
     Settings,
 )
 from haku.console.http_decide_config import EgressDecideConfig
-from haku.console.provider_connection_registry import ProviderConnectionKind
+from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_actor import RuntimeActor
+from haku.recall_index.config import ConfiguredRecallIndex, GitRecallIndexDefinition
 from haku.sandbox.config import SandboxEnvironmentConfig
 from mcp_infra.prefix import MCPMountPrefix
 
@@ -384,7 +383,7 @@ class ConsoleConfigFile(BaseModel):
     git_ca_bundle: Path = Path("/etc/ssl/certs/ca-certificates.crt")
     # Closed implementation kinds, not deploy-chosen runtime instance ids. Absent config preserves
     # the existing console-without-chat mode. Real provider credentials remain outside sandboxes.
-    chat_runtimes: ChatRuntimesConfig | None = None
+    harnesses: ChatRuntimesConfig | None = None
     auto_approval_policies: list[AutoApprovalPolicy] = Field(min_length=1)
     access_profiles: list[AccessProfile] = Field(min_length=1)
     default_access_profile_id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
@@ -426,10 +425,13 @@ class ConsoleConfigFile(BaseModel):
     @classmethod
     def _reject_retired_runtime_shape(cls, value: object) -> object:
         # This model intentionally ignores the independent top-level `settings` section in the
-        # shared YAML, so it cannot globally forbid extras. Reject this retired sibling explicitly
+        # shared YAML, so it cannot globally forbid extras. Reject retired siblings explicitly
         # rather than silently accepting stale deployment wiring.
-        if isinstance(value, dict) and "claude_runtime" in value:
-            raise ValueError("claude_runtime was replaced by chat_runtimes.claude_code")
+        if isinstance(value, dict):
+            if "claude_runtime" in value:
+                raise ValueError("claude_runtime was replaced by harnesses.claude_code")
+            if "chat_runtimes" in value:
+                raise ValueError("chat_runtimes was renamed to harnesses")
         return value
 
     @model_validator(mode="after")
@@ -598,27 +600,27 @@ class ConsoleConfigFile(BaseModel):
         default_chat_agent_id = self.default_chat_agent_id
         if default_chat_agent_id is not None and default_chat_agent_id not in launchable_ids:
             raise ValueError("default chat Agent must be launchable")
-        if self.chat_runtimes is not None:
+        if self.harnesses is not None:
             if default_chat_agent_id is None:
-                raise ValueError("configured chat runtimes require a default chat Agent")
+                raise ValueError("configured harnesses require a default chat Agent")
             static_by_id = {agent.agent_id: agent for agent in self.static_agents}
-            configured_identities = {(runtime.agent_id, runtime.kind) for runtime in self.chat_runtimes.registrations}
+            configured_identities = {(runtime.agent_id, runtime.kind) for runtime in self.harnesses.registrations}
             runtime_agent_ids = {agent_id for agent_id, _kind in configured_identities}
             unknown_runtime_agents = runtime_agent_ids - static_ids
             if unknown_runtime_agents:
                 raise ValueError(
-                    f"chat runtimes reference Agents that are not configured: {sorted(unknown_runtime_agents)!r}"
+                    f"harnesses reference Agents that are not configured: {sorted(unknown_runtime_agents)!r}"
                 )
             unlaunchable_runtime_agents = runtime_agent_ids - launchable_ids
             if unlaunchable_runtime_agents:
-                raise ValueError(f"chat runtime Agents are not launchable: {sorted(unlaunchable_runtime_agents)!r}")
-            for runtime in self.chat_runtimes.registrations:
+                raise ValueError(f"harness Agents are not launchable: {sorted(unlaunchable_runtime_agents)!r}")
+            for runtime in self.harnesses.registrations:
                 profile = profiles[static_by_id[runtime.agent_id].access_profile_id]
                 if runtime.kind not in profile.allowed_chat_runtimes:
-                    raise ValueError(f"chat runtime Agent {runtime.agent_id} profile disallows {runtime.kind.value}")
+                    raise ValueError(f"harness Agent {runtime.agent_id} profile disallows {runtime.kind.value}")
             for agent_id in launchable_ids:
                 if not any(identity_agent_id == agent_id for identity_agent_id, _kind in configured_identities):
-                    raise ValueError(f"launchable Agent {agent_id} has no configured chat runtime registration")
+                    raise ValueError(f"launchable Agent {agent_id} has no configured harness registration")
         for profile in profiles.values():
             unknown_read_profiles = profile.can_read_profiles - profiles.keys()
             if unknown_read_profiles:
@@ -662,7 +664,7 @@ def server_tool_prefix(server_id: str) -> MCPMountPrefix:
 
 
 def load_console_config(path: Path) -> ConsoleConfigFile:
-    """Parse the deploy-owned console config file. Also the haku-indexer worker's registry read."""
+    """Parse the deploy-owned console config file."""
     if not path.is_file():
         raise RuntimeError(f"haku-console config file does not exist: {path}")
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}

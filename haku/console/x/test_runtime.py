@@ -9,6 +9,7 @@ import pytest
 import pytest_bazel
 
 from haku.console.chat_models import RuntimeKind
+from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.x.claude_code import projection
 from haku.console.x.claude_code.testing.fold import whole_capture
 from haku.console.x.claude_code.testing.wire import assistant, recorded, text_block
@@ -20,7 +21,6 @@ from haku.console.x.runtime import (
     UnsupportedRuntimeError,
 )
 from haku.console.x.runtime_catalog import projection_registry
-from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.runtime.x.bridge.protocol import HarnessFrame
 
 

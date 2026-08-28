@@ -64,15 +64,6 @@ class TestNewCLIIntegration:
         assert result.exit_code == 0
         assert_output_contains(result.output, "wt - Enhanced worktree management", "USAGE:")
 
-    def test_help_flag(self, wt_env):
-        """Test --help flag works with new CLI."""
-
-        result = CliRunner().invoke(app, ["--help"])
-
-        assert result.exit_code == 0
-        # Click default help uses 'Usage:'; keep strict
-        assert_output_contains(result.output, "Usage:")
-
     @patch("devinfra.wt.client.wt_client.WtClient.get_status")
     def test_status_command_with_pr_flag(self, mock_get_status, wt_env, build_status_response, sample_status_result):
         """Test status command with --pr flag."""

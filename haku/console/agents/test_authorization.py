@@ -23,7 +23,6 @@ from sqlalchemy.orm import Session
 
 from haku.console.agents.authorization import (
     PostgresAgentAuthority,
-    StaticAgentAuthorization,
     StaticAgentDefinition,
     StaticAgentRejectedError,
     fingerprint_static_token,
@@ -37,6 +36,7 @@ from haku.console.agents.enrollment import (
     EnrollmentDecisionConflictError,
     ReconnectAgentDecision,
 )
+from haku.console.agents.launch_authority import StaticAgentAuthorization
 from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind, EnrollmentPhase
 from haku.console.chat_models import RuntimeKind
 from haku.console.conftest import console_sessions
@@ -69,7 +69,7 @@ from haku.console.operator_identity import (
     VerifiedExternalIdentity,
 )
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.x.launch_identity import ChatLaunchAuthorizer, LaunchAgentRejectedError, LaunchIdentity
+from haku.console.session.launch_identity import ChatLaunchAuthorizer, LaunchAgentRejectedError, LaunchIdentity
 from haku.console.x.runtime import RuntimeKey
 from mcp_infra.authentik_auth.oidc_principal import VerifiedOidcPrincipal
 from third_party.containers.rlocations import PGVECTOR_PG18

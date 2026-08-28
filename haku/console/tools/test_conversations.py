@@ -13,6 +13,19 @@ from fastmcp.client.client import CallToolResult
 from more_itertools import one
 
 from haku.console.chat_models import BridgeFrameKind, ItemStatus, RuntimeKind
+from haku.console.conversation.reads import (
+    ChannelAttachment,
+    ConversationEntry,
+    FrameRecord,
+    FromFrames,
+    HarnessFrameRecord,
+    MessageEntry,
+    SessionCursor,
+    SessionRecord,
+    TurnAnsweredEnd,
+    TurnCursor,
+    TurnRecord,
+)
 from haku.console.conversation_read_access import (
     ConversationAccessDeniedError,
     ConversationReadAccessPolicy,
@@ -29,20 +42,7 @@ from haku.console.mcp_execution import (
     mcp_execution_request_meta,
 )
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
-from haku.console.tools.conversations import HAKU_CONVERSATIONS_SERVER_ID, FramePage, ItemPage, SessionPage, build_mcp
-from haku.console.x.conversation_reads import (
-    ChannelAttachment,
-    ConversationEntry,
-    FrameRecord,
-    FromFrames,
-    HarnessFrameRecord,
-    MessageEntry,
-    SessionCursor,
-    SessionRecord,
-    TurnAnsweredEnd,
-    TurnCursor,
-    TurnRecord,
-)
+from haku.console.tools.conversations import FramePage, ItemPage, SessionPage, build_mcp
 
 SESSION = UUID("11111111-1111-1111-1111-111111111111")
 CONVERSATION = UUID("44444444-4444-4444-4444-444444444444")
@@ -79,7 +79,7 @@ PAGED_TOOLS: tuple[tuple[str, dict[str, str]], ...] = (
     ("list_sessions", {}),
     ("list_turns", {"session_id": str(SESSION)}),
     ("read_conversation_items", {"conversation_id": str(CONVERSATION)}),
-    ("read_frames", {"session_id": str(SESSION)}),
+    ("read_session_frames", {"session_id": str(SESSION)}),
 )
 
 
@@ -102,6 +102,7 @@ def _session(session_id: UUID, created_at: datetime.datetime) -> SessionRecord:
         session_id=session_id,
         conversation_id=CONVERSATION,
         runtime_kind=RuntimeKind.CLAUDE_CODE,
+        harness_kind=RuntimeKind.CLAUDE_CODE,
         attachments=[ChannelAttachment(surface="matrix", address="!room:example.org", attached_at=created_at)],
         status="closed",
         created_at=created_at,
@@ -159,7 +160,7 @@ class _Reader:
             if cursor is None or (session.created_at, session.session_id) <= (cursor.created_at, cursor.session_id)
         ][:limit]
 
-    async def read_frames(
+    async def read_session_frames(
         self,
         session_id: UUID,
         *,
@@ -222,8 +223,23 @@ async def test_tool_surface() -> None:
     async with Client(_mcp(_Reader())) as client:
         tools = {tool.name for tool in await client.list_tools()}
 
-    assert tools == {"list_sessions", "list_turns", "read_conversation_items", "read_frames"}
-    assert HAKU_CONVERSATIONS_SERVER_ID == "haku_conversations"
+    assert tools == {"list_sessions", "list_turns", "read_conversation_items", "read_session_frames"}
+
+
+async def test_runtime_and_harness_kind_are_required_closed_identity_fields_on_a_session() -> None:
+    # runtime_kind→harness_kind wire rename (naming_and_layout.md §3.1, #4772): readers are on
+    # `harness_kind`; a session keeps publishing both names, each a required carrier of the same
+    # closed enum, until the contract step drops `runtime_kind` after the reader-switch image
+    # rolls out.
+    async with Client(_mcp(_Reader())) as client:
+        list_sessions = one(tool for tool in await client.list_tools() if tool.name == "list_sessions")
+
+    schema = list_sessions.outputSchema
+    assert schema is not None
+    session = schema["properties"]["items"]["items"]  # FastMCP serves the page schema fully dereferenced.
+    for field_name in ("runtime_kind", "harness_kind"):
+        assert session["properties"][field_name]["enum"] == ["claude_code", "codex_app_server"]
+        assert field_name in session["required"]
 
 
 async def test_ungranted_actor_cannot_read_conversations() -> None:
@@ -298,7 +314,7 @@ async def test_a_session_names_its_thread_and_the_channels_holding_a_copy_of_it(
     assert not result.is_error
     page = SessionPage.model_validate(result.structured_content)
     assert page.items[0].conversation_id == CONVERSATION
-    assert page.items[0].runtime_kind == "claude_code"
+    assert page.items[0].harness_kind == "claude_code"
     assert [attachment.address for attachment in page.items[0].attachments] == ["!room:example.org"]
 
 
@@ -334,7 +350,7 @@ async def test_a_cursor_names_the_first_row_the_page_did_not_return() -> None:
     reader = _Reader(*(_frame(seq) for seq in (1, 2, 3, 4)))
 
     async with Client(_mcp(reader)) as client:
-        result = await _call(client, "read_frames", {"session_id": str(SESSION), "limit": 2})
+        result = await _call(client, "read_session_frames", {"session_id": str(SESSION), "limit": 2})
 
     page = _frames(result)
     assert [frame.frame_seq for frame in page.items] == [1, 2]
@@ -346,7 +362,7 @@ async def test_a_short_page_is_the_last_one() -> None:
     reader = _Reader(_frame(1), _frame(2))
 
     async with Client(_mcp(reader)) as client:
-        result = await _call(client, "read_frames", {"session_id": str(SESSION), "limit": 25})
+        result = await _call(client, "read_session_frames", {"session_id": str(SESSION), "limit": 25})
 
     assert _frames(result).next_cursor is None
 
@@ -356,7 +372,7 @@ async def test_frames_return_discriminator_free_native_json_unchanged() -> None:
     reader = _Reader(_frame(1, payload=native))
 
     async with Client(_mcp(reader)) as client:
-        result = await _call(client, "read_frames", {"session_id": str(SESSION)})
+        result = await _call(client, "read_session_frames", {"session_id": str(SESSION)})
 
     [only] = _frames(result).items
     assert isinstance(only, HarnessFrameRecord)
@@ -369,7 +385,9 @@ async def test_the_cursor_reaches_the_store_rather_than_being_filtered_here() ->
     reader = _Reader(*(_frame(seq) for seq in (1, 2, 3)))
 
     async with Client(_mcp(reader)) as client:
-        await _call(client, "read_frames", {"session_id": str(SESSION), "cursor": 2, "kinds": ["harness_frame"]})
+        await _call(
+            client, "read_session_frames", {"session_id": str(SESSION), "cursor": 2, "kinds": ["harness_frame"]}
+        )
 
     # 26 rather than 25: the extra row is how the page tells "exactly full" from "more to come".
     assert reader.queries == [
@@ -383,7 +401,7 @@ async def test_a_one_frame_page_is_the_named_frame_whole() -> None:
     reader = _Reader(big, _frame(2))
 
     async with Client(_mcp(reader)) as client:
-        result = await _call(client, "read_frames", {"session_id": str(SESSION), "cursor": 1, "limit": 1})
+        result = await _call(client, "read_session_frames", {"session_id": str(SESSION), "cursor": 1, "limit": 1})
 
     page = _frames(result)
     [only] = page.items
@@ -402,7 +420,7 @@ async def test_a_one_frame_page_reads_any_native_json_shape() -> None:
     reader = _Reader(frame)
 
     async with Client(_mcp(reader)) as client:
-        result = await _call(client, "read_frames", {"session_id": str(SESSION), "cursor": 8, "limit": 1})
+        result = await _call(client, "read_session_frames", {"session_id": str(SESSION), "cursor": 8, "limit": 1})
 
     [only] = _frames(result).items
     assert isinstance(only, HarnessFrameRecord)
@@ -446,7 +464,7 @@ async def test_an_entrys_provenance_is_a_frame_read_with_no_arithmetic() -> None
         assert isinstance(entry.provenance, FromFrames)
         span = await _call(
             client,
-            "read_frames",
+            "read_session_frames",
             {"session_id": str(entry.provenance.session_id), "cursor": entry.provenance.first_frame_seq},
         )
 
@@ -471,7 +489,9 @@ async def test_an_item_cursor_resumes_where_the_page_stopped() -> None:
 async def test_a_page_size_above_the_cap_is_refused() -> None:
     """The cap is the only thing keeping a read from being a dump."""
     async with Client(_mcp(_Reader())) as client:
-        result = await _call(client, "read_frames", {"session_id": str(SESSION), "limit": 10_000}, raise_on_error=False)
+        result = await _call(
+            client, "read_session_frames", {"session_id": str(SESSION), "limit": 10_000}, raise_on_error=False
+        )
 
     assert result.is_error
 
@@ -481,7 +501,7 @@ async def test_a_session_id_that_is_not_an_id_is_refused_here() -> None:
     is never handed something it would have to validate."""
     reader = _Reader()
     async with Client(_mcp(reader)) as client:
-        result = await _call(client, "read_frames", {"session_id": "not-an-id"}, raise_on_error=False)
+        result = await _call(client, "read_session_frames", {"session_id": "not-an-id"}, raise_on_error=False)
 
     assert result.is_error
     assert reader.queries == []

@@ -347,7 +347,7 @@ would have to change.
   scope, and conversations predating pinned identity match no profile list.
 
 The drilldown shares the fence: `haku_conversations`'s `list_sessions`, `list_turns`,
-`read_conversation_items` and `read_frames` apply the same scope, because scoping search but not
+`read_conversation_items` and `read_session_frames` apply the same scope, because scoping search but not
 the drilldown it hands off to would be theatre — the ids in a hit are exactly what those reads
 take. Why ranked retrieval was the urgent half is worth keeping: a drilldown makes reading
 another conversation a deliberate act (you have to name the session), while ranked retrieval

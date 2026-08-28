@@ -286,6 +286,8 @@ repos:
             cluster/k8s/litellm/tana/proxy-config\.yaml|
             cluster/k8s/x/haku/dispatch/litellm/workers-litellm-config\.yaml|
             cluster/k8s/haku/console/config\.yaml|
+            # per-index haku-indexer chunk config slices mounted via configMapGenerator
+            cluster/k8s/haku/console/indexer-chunk-[a-z0-9-]+-config\.yaml|
             # dispatcher Job template with ${...} placeholders, mounted via configMapGenerator
             cluster/k8s/x/haku/dispatch/dispatcher/job-template\.yaml|
             cluster/k8s/x/haku/dispatch/dispatcher/zones\.yaml|

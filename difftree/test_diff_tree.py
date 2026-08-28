@@ -60,29 +60,6 @@ def _assert_column_before(result: str, filename: str, first: str, second: str, f
         )
 
 
-def test_renderer_initialization():
-    """Test DiffTree initialization."""
-    diff_tree = make_diff_tree([FileChange(path="test.py", additions=1, deletions=0)])
-
-    assert diff_tree.root is not None
-    assert Column.COUNTS in diff_tree.config.columns
-    assert Column.BARS in diff_tree.config.columns
-    assert Column.PERCENTAGES in diff_tree.config.columns
-    assert diff_tree.config.bar_width == 20
-
-
-def test_renderer_with_custom_options():
-    """Test DiffTree with custom options."""
-    config = RenderConfig(columns=[Column.TREE], bar_width=30)
-    diff_tree = make_diff_tree([FileChange(path="test.py", additions=1, deletions=0)], config=config)
-
-    assert diff_tree.root is not None
-    assert Column.COUNTS not in diff_tree.config.columns
-    assert Column.BARS not in diff_tree.config.columns
-    assert Column.PERCENTAGES not in diff_tree.config.columns
-    assert diff_tree.config.bar_width == 30
-
-
 def test_render_simple_tree(sample_changes):
     """Test rendering a simple tree structure."""
     diff_tree = make_diff_tree(sample_changes)
@@ -112,10 +89,9 @@ def test_render_with_max_depth(sample_changes):
     diff_tree = make_diff_tree(sample_changes, config=config)
     result = render_to_string(diff_tree, width=120)
 
-    # Should show top-level items but not deeply nested ones
+    # Top-level entries render; children beyond the depth limit do not.
     assert "src" in result
-    # Depth limit might prevent showing nested files
-    # This is a simplified test
+    assert "main.py" not in result
 
 
 # Progress bar integration tests

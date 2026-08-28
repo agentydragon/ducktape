@@ -14,6 +14,9 @@ recall_indexes:
   # `index_id` is the durable search/grant boundary. Source and remote configuration belong in
   # Git rather than being inferred from an environment-variable name; only the Git credential is
   # secret and therefore remains an env reference.
+  # Sync contract: each entry is mirrored verbatim into its chunk pod's own config slice
+  # (indexer-chunk-<index>-config.yaml) — the derivation tests fail this file against the slices
+  # on any drift.
   - index_id: haku-state
     index_type: git
     repo_url: http://forgejo-http.forgejo:3000/haku/haku-state.git
@@ -32,7 +35,7 @@ recall_indexes:
     branch: devel
     mirror_path: /tmp/haku-recall-index/ducktape.git
 
-chat_runtimes:
+harnesses:
   claude_code:
     agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
     namespace: haku-runtime-sandbox
@@ -362,7 +365,7 @@ auto_approval_policies:
   # Reading back what happened and what is written down: the frames of a past session, and
   # semantic search over the same sessions plus haku-state. One atom because they are one
   # authority — every tool here reads a corpus Haku can already reach (it has a haku-state clone,
-  # and `read_frames` spans every session in its read scope), so search adds discoverability
+  # and `read_session_frames` spans every session in its read scope), so search adds discoverability
   # rather than reachability. Both cross rooms and sessions but are fenced identically per
   # conversation by the profile-DAG read scope over `can_read_profiles`
   # (haku/recall_index/README.md § Read scoping).
@@ -373,7 +376,7 @@ auto_approval_policies:
         - list_sessions
         - list_turns
         - read_conversation_items
-        - read_frames
+        - read_session_frames
       haku_index:
         - search
         - index_status
@@ -412,6 +415,7 @@ access_profiles:
       - haku_conversations
       - kubernetes
       - sandbox
+      - http_grants
   - id: public-coder
     auto_approval_policy: public_coder_safe_reads
     allowed_chat_runtimes:
@@ -422,10 +426,16 @@ access_profiles:
     in_process_server_ids:
       - kubernetes
       - haku_index
+      - http_grants
   - id: manual-review
     auto_approval_policy: manual_review
     allowed_chat_runtimes: []
     can_read_profiles: []
+    # Even the fallback profile may ASK for egress: every http_grants call queues for the
+    # operator, and create_grant is never auto-approvable (operator ruling on #4986; pinned in
+    # haku/console/test_deployment_config.py).
+    in_process_server_ids:
+      - http_grants
 default_access_profile_id: manual-review
 # Evaluate standing Kubernetes access as a synthetic, non-login access-profile identity. The
 # username satisfies Console's explicit SAR subject schema; RBAC grants the same deploy-owned group.
@@ -448,6 +458,102 @@ kubernetes_authorization:
 # in that call shares one start and expiry. This deploy-owned bound is authoritative even if a
 # client constructs a wider duration than the tool schema recommends.
 kubernetes_grant_max_lifetime_seconds: 3600
+# The colocated egress fence's decision endpoint (#4670, #4942). Absent keeps it fail-closed (503)
+# and the proxy denying; wiring it here turns on Console-authorized egress. Secret values stay in
+# env references (haku/console/deployment.yaml); handles, placeholders, match headers and
+# prohibited CIDRs are inert and committable by design.
+egress_decide:
+  # The static proxy-identity bearer the colocated sidecar presents on every localhost decide call.
+  proxy_token_env_var: HAKU_EGRESS_PROXY_TOKEN
+  # Agent-bound fence credentials the endpoint resolves to an Agent. First and only: the haku
+  # Agent, whose one fence credential the single shared proxy presents. Per #4670, minted per-claim
+  # fence credentials replace this static wiring later.
+  fence_credentials:
+    - agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
+      token_env_var: HAKU_EGRESS_FENCE_HAKU
+  # Console-owned egress credential registry (#4951): a grant redeems a credential by naming its
+  # handle, and the endpoint returns the placeholder->value substitution only for an Agent in
+  # `agent_ids` at an origin in `origins`. First entry: the bot GitHub token (mirrors the retiring
+  # iron fence's substitution). The sandbox only ever holds `github-token-placeholder`.
+  credentials:
+    - handle: github-bot
+      placeholder: github-token-placeholder
+      value_env_var: HAKU_EGRESS_CREDENTIAL_GITHUB_BOT
+      match_headers: [authorization]
+      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      origins:
+        - scheme: https
+          host: api.github.com
+          port: 443
+        - scheme: https
+          host: github.com
+          port: 443
+        - scheme: https
+          host: codeload.github.com
+          port: 443
+    # End-to-end substitution smoke test (haku/egress/docs/test_substitution.md): both sides of
+    # this swap are committed EXAMPLE- literals — the placeholder here and the deployment's
+    # literal HAKU_EGRESS_CREDENTIAL_SUBSTITUTION_SMOKE value — so watching the swap arrive at
+    # the public echo host exercises the whole decide→substitute path with no secret anywhere.
+    - handle: substitution-smoke
+      placeholder: EXAMPLE-EGRESS-SMOKE-PLACEHOLDER
+      value_env_var: HAKU_EGRESS_CREDENTIAL_SUBSTITUTION_SMOKE
+      match_headers: [authorization]
+      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      origins:
+        - scheme: https
+          host: postman-echo.com
+          port: 443
+  # Deploy-managed standing HTTP allowances (#4941), evaluated before temporary grants; admissions
+  # carry `standing:<id>` provenance.
+  standing_policies:
+    # The reachability half of the substitution smoke test — exactly GET /headers at the public
+    # echo host, redeeming the inert credential above.
+    - id: substitution-smoke
+      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      origins:
+        - scheme: https
+          host: postman-echo.com
+          port: 443
+      coverage:
+        methods: [GET]
+        path_regex: /headers
+      credential_handle: substitution-smoke
+    # The #4943 GitHub spike, driven from the public-coder-agent OpenClaw pod. These entries are
+    # nonetheless authored against the haku agent id, because that is the identity fenced traffic
+    # actually presents: the sidecar holds the one static fence credential above, so the decide
+    # service resolves EVERY fenced request to the haku Agent regardless of which pod sent it.
+    # Scoping these entries (or the registry credential) to public-coder's agent id would be dead
+    # config today — nothing presents that identity at the fence until #4670's minted per-claim
+    # fence credentials land.
+    # Coverage: the GitHub API and git-over-HTTPS smart-HTTP endpoints, redeeming the bot
+    # credential at both — Bearer on the API, Basic (decoded/swapped/re-encoded proxy-side) on
+    # github.com. No path pin: git smart HTTP needs /info/refs?service=git-upload-pack through to
+    # the pack endpoints. codeload.github.com is deliberately NOT standing — the registry can
+    # redeem there, but reaching it takes a temporary grant, which is the spike's
+    # deny -> create_grant -> retry -> release leg (haku/egress/docs/github_spike.md).
+    - id: haku-github-api
+      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      origins:
+        - scheme: https
+          host: api.github.com
+          port: 443
+      coverage:
+        methods: [DELETE, GET, HEAD, PATCH, POST, PUT]
+      credential_handle: github-bot
+    - id: haku-github-git
+      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      origins:
+        - scheme: https
+          host: github.com
+          port: 443
+      coverage:
+        methods: [GET, POST]
+      credential_handle: github-bot
+  # Cluster pod + service CIDRs, denied in resolved answers on top of the always-prohibited classes
+  # (loopback, link-local, multicast, private/RFC1918/ULA — which already cover 10/8). Named per the
+  # field's contract so the internal boundary is legible and survives a re-IP off 10/8.
+  prohibited_cidrs: [10.42.0.0/16, 10.244.0.0/16]
 #
 # The one Agent Sandbox environment the `sandbox` server hands out: the Haku pool in
 # cluster/k8s/haku/workspaces/ and the reviewed bootstrap each claim runs. Each claim records the
@@ -594,6 +700,18 @@ mcp:
         kind: in_process
         credential:
           kind: none
+    # Temporary HTTP egress grants (#4670; first exercised by the #4943 spike): create/list/get/
+    # release for the calling Agent's own exact-origin allowances, evaluated by the egress decide
+    # endpoint after standing policy. Credential-free — the grant ledger is Console's own Postgres.
+    # Exposed to EVERY access profile (operator ruling on #4986): any Agent may ask. Deliberately
+    # in NO auto-approval policy: grant creation requires a manually approved source ToolCall (an
+    # auto-approved call cannot mint a grant), and the reads stay behind the same queue until
+    # there is a reason to open them.
+    - id: http_grants
+      backend:
+        kind: in_process
+        credential:
+          kind: none
     # postscanmail-mcp (x/postscanmail_mcp_server): the PostScan Mail Developer API behind the
     # shared mcp-oauth-facade OIDCProxy — same facade shape as tana-mcp-facade, so
     # haku-console reaches it via operator OAuth (DCR against the facade's own OAuth surface,
@@ -712,12 +830,13 @@ mcp:
     # public Ducktape source, and Haku's own past conversations. Listing it here is what builds
     # the searcher, and the
     # console refuses to start unless an embedder is configured too (`HAKU_CONSOLE_EMBEDDER__*`,
-    # Ollama) — search embeds its query. Keeping the corpora current is the two role-flagged
-    # haku-indexer Deployments (haku/console/indexer.py). The chunk role reads the same
-    # recall_indexes registry above: the conversations corpus from the console's tables,
-    # haku-state through a read-only mirror fetched with `HAKU_CONSOLE_HAKU_STATE_GIT_*`, and
-    # Ducktape from GitHub without a credential. The embed role fills the shared vector queue
-    # those chunks land in.
+    # Ollama) — search embeds its query. Keeping the corpora current is the role-flagged
+    # haku-indexer Deployments (haku/console/indexer.py): one chunk Deployment per index below,
+    # plus the shared embed drain. Each chunk pod mounts only its own index's slice of the
+    # recall_indexes registry above (indexer-chunk-<index>-config.yaml, derivation-tested against
+    # these entries) — the conversations corpus from the console's tables, haku-state through a
+    # read-only mirror fetched with `HAKU_CONSOLE_HAKU_STATE_GIT_*`, and Ducktape from GitHub
+    # without a credential. The embed role fills the shared vector queue those chunks land in.
     - id: haku_index
       backend:
         kind: in_process

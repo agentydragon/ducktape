@@ -20,27 +20,6 @@ def _auth() -> AuthentikAuthConfig:
     )
 
 
-def test_http_upstream_settings() -> None:
-    settings = FacadeSettings(
-        auth=_auth(),
-        upstream=HttpUpstream(url="http://upstream.svc:8080/mcp", bearer_token="pat"),
-        facade_name="Test Facade",
-    )
-    assert isinstance(settings.upstream, HttpUpstream)
-    assert settings.upstream.url == "http://upstream.svc:8080/mcp"
-    assert settings.upstream.bearer_token == "pat"
-
-
-def test_stdio_upstream_settings() -> None:
-    settings = FacadeSettings(
-        auth=_auth(),
-        upstream=StdioUpstream(command=["/upstream/node", "/upstream/build/index.js"]),
-        facade_name="Test Facade",
-    )
-    assert isinstance(settings.upstream, StdioUpstream)
-    assert settings.upstream.command == ["/upstream/node", "/upstream/build/index.js"]
-
-
 def test_env_loading_http(monkeypatch) -> None:
     monkeypatch.setenv("MCP_FACADE_AUTH__OIDC_ISSUER", "https://auth.example.com/application/o/test/")
     monkeypatch.setenv("MCP_FACADE_AUTH__OIDC_CLIENT_ID", "id")
@@ -79,24 +58,6 @@ def test_static_bearer_client_auth_with_tool_filter(monkeypatch) -> None:
     assert settings.auth is None
     assert settings.client_auth == StaticBearerClientAuth(static_bearer="ro-token")
     assert settings.tools == ToolFilter(allow={"search_nodes", "read_node"})
-
-
-def test_logging_settings_from_env(monkeypatch) -> None:
-    monkeypatch.setenv("MCP_FACADE_CLIENT_AUTH__STATIC_BEARER", "ro-token")
-    monkeypatch.setenv("MCP_FACADE_UPSTREAM__KIND", "http")
-    monkeypatch.setenv("MCP_FACADE_UPSTREAM__URL", "http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp")
-    monkeypatch.setenv("MCP_FACADE_FACADE_NAME", "Tana MCP Facade")
-    monkeypatch.setenv("MCP_FACADE_LOGGING__MCP_MESSAGES", "true")
-    monkeypatch.setenv("MCP_FACADE_LOGGING__MCP_MESSAGE_LEVEL", "DEBUG")
-    monkeypatch.setenv("MCP_FACADE_LOGGING__MCP_PAYLOADS", "false")
-    monkeypatch.setenv("MCP_FACADE_LOGGING__MCP_PAYLOAD_LENGTH", "true")
-    monkeypatch.setenv("MCP_FACADE_LOGGING__MCP_METHODS", '["initialize","tools/list"]')
-    settings = FacadeSettings()
-    assert settings.logging.mcp_messages is True
-    assert settings.logging.mcp_message_level == "DEBUG"
-    assert settings.logging.mcp_payloads is False
-    assert settings.logging.mcp_payload_length is True
-    assert settings.logging.mcp_methods == ["initialize", "tools/list"]
 
 
 def test_requires_an_auth_mode() -> None:

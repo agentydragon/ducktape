@@ -100,7 +100,7 @@ inadvertent detail actually lives — out of mixed rooms by construction.
 
 Operator, 2026-08-15: an agent reads only the transcripts and conversations its tier gives it
 access to. That **settles a deferral that has been open on purpose** — the Matrix channel leaves
-reads unscoped and says so explicitly (<../console/x/channels/matrix/SPEC.md> § The agent's own
+reads unscoped and says so explicitly (<../console/channels/matrix/SPEC.md> § The agent's own
 view), on the grounds that with one operator, one Haku and one room a fence would separate Haku
 from its own history and nothing else. Several agents at several tiers is exactly the condition that premise was waiting on.
 
@@ -114,7 +114,7 @@ function at one call site in the shape the approval policy already has — not s
 through the transport. Three things it needs:
 
 - **A conversation needs a tier of its own.** A session's room is its conversation's live
-  `chat_attachment`; the tier goes beside it, derived from the room's fixed tier for a Matrix
+  `channel_attachment`; the tier goes beside it, derived from the room's fixed tier for a Matrix
   conversation and from the agent kind otherwise. Those two must agree, and the room's is
   authoritative where both exist.
 - **Unlabelled is highest, so it fails closed.** Every session predating the column has no tier
@@ -160,7 +160,7 @@ Matrix surface run as ordinary separate sessions, separate rows, separate sandbo
 several agents needs the turn loop, the store or the bridge to change.
 
 Nothing enforces "one Matrix session, one room" any more: **two rooms on one bot account — what
-the operator asked for — work today.** `chat_attachment` admits a live row per address, ingress
+the operator asked for — work today.** `channel_attachment` admits a live row per address, ingress
 resolves each inbound message's attachment from its room (adopting operator traffic in unbound
 joined rooms), and one reconciler per live attachment owns that room's cursor, outbox, revisions
 and send budget, swept under the sync leader's one `MXSY` lock — one loop on one account serves N
@@ -228,7 +228,7 @@ Six consequences, in the order they will bite:
   the coordination room"). Hanging them off `session_id` loses every subscription at each
   rotation — the same data-losing shape R11.3a already flags for room bindings. An attachment is
   owned by the conversation, and which session runs under it moves freely.
-- **`chat_attachment` is the right table, with a role.** It is
+- **`channel_attachment` is the right table, with a role.** It is
   `(attachment_id, conversation_id, surface, address, attached_at, detached_at)` with a partial
   unique index on the address. What this section asks of that design: add `role`, and a
   second partial unique index enforcing **at most one attached room per agent**. One table, and
@@ -521,7 +521,7 @@ only calibration signal the classifier will ever get.
 - **A withheld message has to be visible as withheld.** Silently dropping one leaves the operator
   unable to tell whether the agent answered, and leaves the other agents waiting on a reply that
   is never coming. It wants its own `RoomEventKind` in the tag vocabulary
-  (<../console/x/channels/matrix/client.py>) so the room shows that something was said and held.
+  (<../console/channels/matrix/client.py>) so the room shows that something was said and held.
 - **Loop protection stops being optional.** matrix_chat_runtime puts mention gating, sender
   allowlists and multi-bot loop protection out of scope explicitly **because it is a DM** (R3.5).
   Several bots in a room reinstates all three, and R1.5's "ignore my own sender" is no longer
