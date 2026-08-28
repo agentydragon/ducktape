@@ -9,7 +9,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from haku.console.chat_models import SPA_ORIGIN, ItemType, LeaseExpiryReason, MatrixOrigin, ToolOutcome
+from haku.console.chat_models import ItemType, ToolOutcome
 from haku.console.conversation import conversation_event, log
 from haku.console.conversation.conversation_event import (
     AuthoredEventKind,
@@ -19,7 +19,9 @@ from haku.console.conversation.conversation_event import (
     ReasoningDisclosure,
     StoredEventKind,
 )
+from haku.console.conversation.prompt_origin import SPA_ORIGIN, MatrixOrigin
 from haku.console.database_schema import ConversationEventRow
+from haku.console.session.status import LeaseExpiryReason
 from haku.console.x import conversation_events
 from haku.console.x.conversation_events import (
     CallRef,

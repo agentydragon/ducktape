@@ -19,19 +19,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 
-from haku.console.chat_models import (
-    ENDED_SESSION_STATUSES,
-    SPA_ORIGIN,
-    BridgeFrameKind,
-    FrameDirection,
-    ItemType,
-    PromptOrigin,
-    RuntimeKind,
-    SessionStatus,
-)
+from haku.console.chat_models import ItemType, RuntimeKind
 from haku.console.conversation import conversation_event
 from haku.console.conversation.history import ConversationHistory
 from haku.console.conversation.journal_consumer import JournalConsumer, JournalViolationError
+from haku.console.conversation.prompt_origin import SPA_ORIGIN, PromptOrigin
 from haku.console.notifications.session_wakes import SessionEvent, SessionEventKind, SessionWakes
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.session.conversation_views import (
@@ -46,6 +38,8 @@ from haku.console.session.conversation_views import (
 )
 from haku.console.session.launch_identity import LaunchAgentRejectedError, LaunchAuthorizer
 from haku.console.session.sandbox_claims import SandboxProvisioningView
+from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
+from haku.console.session.status import ENDED_SESSION_STATUSES, SessionStatus
 from haku.console.session.store import (
     LEASE_RENEW_INTERVAL,
     BridgeAuthentication,

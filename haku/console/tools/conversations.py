@@ -66,7 +66,6 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, Field
 
-from haku.console.chat_models import BridgeFrameKind
 from haku.console.conversation.reads import (
     ConversationEntry,
     FrameRecord,
@@ -82,6 +81,7 @@ from haku.console.conversation_read_access import (
 )
 from haku.console.in_process_server_access import InProcessServerAccessPolicy
 from haku.console.mcp_execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext
+from haku.console.session.session_frames import BridgeFrameKind
 
 # Wire-frozen id: named by cluster/k8s/haku/console/config.yaml and persisted in
 # ledger `server_id` rows — renaming is a config + data migration.

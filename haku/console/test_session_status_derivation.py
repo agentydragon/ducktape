@@ -19,16 +19,16 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import (
-    ENDED_SESSION_STATUSES,
-    LEASED_SESSION_STATUSES,
-    OPEN_SESSION_STATUSES,
-    RuntimeKind,
-    SessionStatus,
-)
+from haku.console.chat_models import RuntimeKind
 from haku.console.database_schema import Conversation, Session
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.session.conversation_views import live_status
+from haku.console.session.status import (
+    ENDED_SESSION_STATUSES,
+    LEASED_SESSION_STATUSES,
+    OPEN_SESSION_STATUSES,
+    SessionStatus,
+)
 
 _NOW = datetime.datetime(2026, 8, 27, tzinfo=datetime.UTC)
 

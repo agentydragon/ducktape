@@ -45,13 +45,14 @@ from haku.console.channels.matrix.revisions import RevisionLog
 from haku.console.channels.matrix.room_copy import RoomCopy
 from haku.console.channels.matrix.spans import Span, SpanKind
 from haku.console.channels.matrix.sync import SyncService, SyncStore
-from haku.console.chat_models import MatrixOrigin, PromptRejection
 from haku.console.conversation.conversation_event import (
     AuthoredEventKind,
     PromptRejected as PromptRejectedEvent,  # the record body; `conversation.PromptRejected` is the admission answer
+    PromptRejection,
     StoredEventKind,
     UnreadableInput,
 )
+from haku.console.conversation.prompt_origin import MatrixOrigin
 from haku.console.database_schema import ConversationEventRow
 from haku.console.session.store import BridgeAuthentication, Store
 from haku.console.session.subscription import ConversationStream

@@ -12,10 +12,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentRejectedError, fingerprint_static_token
-from haku.console.chat_models import SessionStatus
 from haku.console.database_schema import Conversation, Session
 from haku.console.mcp_auth.fastmcp_adapter import AgentGrantAuthorityUnavailableError
 from haku.console.session.launch_identity import LaunchAgentRejectedError
+from haku.console.session.status import SessionStatus
 from haku.console.tool_call_actor import AgentActor
 
 _STATIC_BINDING_CREDENTIAL_PREFIX = "haku-static-binding:"

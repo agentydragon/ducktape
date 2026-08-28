@@ -14,10 +14,12 @@ import pytest_bazel
 from more_itertools import one
 from sqlalchemy import delete, update
 
-from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, FrameDirection, ItemType
+from haku.console.chat_models import ItemType
 from haku.console.conversation import reprojection
 from haku.console.conversation.conversation_event import ConversationEventKind, TurnAborted
+from haku.console.conversation.prompt_origin import SPA_ORIGIN
 from haku.console.database_schema import ConversationEventRow, ConversationItem, Session
+from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
 from haku.console.session.store import BridgeAuthentication
 from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
 from haku.console.x.claude_code.testing.wire import content_block_stop, input_json_delta, tool_use_start

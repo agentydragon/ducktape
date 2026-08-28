@@ -21,8 +21,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from haku.console.channels.matrix.client import InboundMessage, UnmappableEvent
 from haku.console.channels.matrix.config import Config
 from haku.console.channels.matrix.ingress_ledger import IngressLedger
-from haku.console.chat_models import ChannelSurface, MatrixOrigin, PromptRejection, RuntimeKind
+from haku.console.chat_models import ChannelSurface, RuntimeKind
 from haku.console.conversation import conversation_event
+from haku.console.conversation.conversation_event import PromptRejection
+from haku.console.conversation.prompt_origin import MatrixOrigin
 from haku.console.database_schema import ChannelAttachmentRow, Conversation, Operator
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.session.launch_identity import LaunchAuthorizer, LaunchIdentity

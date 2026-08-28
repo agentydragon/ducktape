@@ -28,9 +28,9 @@ py_library(
     deps = [
         ":envelope",
         ":principal",
-        "//haku/console:chat_models",
         "//haku/console:database_schema",
         "//haku/console/agents:models",
+        "//haku/console/session:status",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//sqlalchemy",
     ],

@@ -8,10 +8,12 @@ from uuid import uuid4
 
 import pytest_bazel
 
-from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, FrameDirection, RuntimeKind
+from haku.console.chat_models import RuntimeKind
+from haku.console.conversation.prompt_origin import SPA_ORIGIN
 from haku.console.conversation.reads import ToolCallEntry
 from haku.console.database_schema import SessionFrame
 from haku.console.session import conversation_views
+from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
 from haku.console.session.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
 from haku.console.session.store import BridgeAuthentication
 from haku.console.x.claude_code import projection

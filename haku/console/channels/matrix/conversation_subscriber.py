@@ -55,15 +55,7 @@ from haku.console.channels.matrix.conversation import RoomAttachment
 from haku.console.channels.matrix.outbox import RoomOutbox
 from haku.console.channels.matrix.room_copy import RoomCopy
 from haku.console.channels.matrix.spans import LiveSpans, RetireSpan, RoomFrontend, SealSpan
-from haku.console.chat_models import (
-    HarnessOrigin,
-    ItemStatus,
-    ItemType,
-    MatrixOrigin,
-    PromptOrigin,
-    PromptRejection,
-    SpaOrigin,
-)
+from haku.console.chat_models import ItemStatus, ItemType
 from haku.console.conversation.conversation_event import (
     ItemSegment,
     LeaseExpired,
@@ -72,6 +64,7 @@ from haku.console.conversation.conversation_event import (
     PromptCompleted,
     PromptOpened,
     PromptRejected,
+    PromptRejection,
     ReasoningCompleted,
     ReasoningOpened,
     SessionAdopted,
@@ -87,6 +80,7 @@ from haku.console.conversation.conversation_event import (
     UnknownEventBody,
     UnreadableInput,
 )
+from haku.console.conversation.prompt_origin import HarnessOrigin, MatrixOrigin, PromptOrigin, SpaOrigin
 from haku.console.database_schema import ChannelCursor, ConversationItem
 from haku.console.notifications.conversation_wakes import ConversationWakeEvent, ConversationWakes, RecheckHeld
 from haku.console.session.subscription import ConversationStream, StreamedEvent, StreamPosition, Subscription, Unstarted

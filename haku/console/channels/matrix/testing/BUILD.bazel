@@ -49,6 +49,7 @@ py_library(
         "//haku/console:chat_models",
         "//haku/console:conversation_read_access",
         "//haku/console:database_schema",
+        "//haku/console/session:status",
         "//haku/console/session:store",
         "//haku/console/x/testing:waiting",
         "//util:net",

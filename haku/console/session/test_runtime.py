@@ -27,24 +27,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
-from haku.console.chat_models import (
-    OPEN_SESSION_STATUSES,
-    SPA_ORIGIN,
-    BridgeFrameKind,
-    FrameDirection,
-    ItemStatus,
-    ItemType,
-    PromptOriginKind,
-    RuntimeKind,
-    SessionStatus,
-    ToolOutcome,
-)
+from haku.console.chat_models import ItemStatus, ItemType, RuntimeKind, ToolOutcome
 from haku.console.config import ChatRuntimesConfig, ClaudeCodeImplementationConfig, RuntimeRegistrationConfig
 from haku.console.conftest import console_sessions
 from haku.console.conversation import conversation_event, reprojection
 from haku.console.conversation.conversation_event import FrameRange
 from haku.console.conversation.history import ConversationHistory
 from haku.console.conversation.item_reads import entry_of
+from haku.console.conversation.prompt_origin import SPA_ORIGIN, PromptOriginKind
 from haku.console.conversation.reads import PromptEntry
 from haku.console.conversation_read_access import UnrestrictedReads
 from haku.console.database_schema import (
@@ -79,6 +69,8 @@ from haku.console.session.runtime import (
     create_conversation,
 )
 from haku.console.session.sandbox_claims import ProvisioningStep, provisioning_view
+from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
+from haku.console.session.status import OPEN_SESSION_STATUSES, SessionStatus
 from haku.console.session.store import ADOPTION_GRACE, BridgeAuthentication, Store
 from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.x.claude_code.client import ClaudeCli
