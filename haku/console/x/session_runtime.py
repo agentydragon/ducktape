@@ -75,7 +75,6 @@ from haku.console.x.session_store import (
 )
 from haku.console.x.session_wakes import SessionEvent, SessionEventKind, SessionWakes
 from haku.console.x.system_prompt import HistoryMessage, HistorySender, SessionIntroduction
-from haku.runtime.x.bridge import neutral_operations
 from haku.runtime.x.bridge.backend import BRIDGE_CREDENTIAL_VARIABLE
 from haku.runtime.x.bridge.client import ReceivedFrame, RecordedFrame
 from haku.runtime.x.bridge.neutral_operations import OperationBatch, RunnerHello
@@ -819,7 +818,9 @@ class SessionService:
 
         The scaffolding — runtime resolution, the retryable-denial handshake, the lease, claim
         cleanup — is shared with the v3 `handle_runner` (deletion-scheduled at stage 5). What differs
-        is the generation gate and that the serve loop is a journal pump, not a turn loop.
+        is that the serve loop is a journal pump, not a turn loop. Generation peering needs no gate
+        here: a v3 peer fails the protocol-version intersection, and a v4 peer of another generation
+        fails `JournalConsumer.resume`'s check of its journal hello.
         """
         try:
             configured = await self._configured(session_id)
@@ -830,26 +831,6 @@ class SessionService:
             return
         except KeyError:
             await websocket.close(code=NOT_ADMITTED_CODE, reason="invalid or consumed runner credential")
-            return
-
-        # The generation gate, read at admission. `None` is pre-cut — the migration has not run on
-        # the database this replica sees, a transient deploy-ordering state the runner should retry
-        # through. A generation other than this build's is a peer that must not serve this
-        # session; the runner finds a matching replica or releases the sandbox.
-        active = await self._store.active_generation()
-        if active is None:
-            await websocket.send_denial_response(
-                Response(status_code=503, content=b"runtime transport generation is not yet cut on this replica")
-            )
-            return
-        if active != neutral_operations.GENERATION:
-            logger.error(
-                "session %s: active generation %r is not this build's %r; refusing",
-                session_id,
-                active,
-                neutral_operations.GENERATION,
-            )
-            await websocket.close(code=NOT_ADMITTED_CODE, reason="runtime transport generation mismatch")
             return
 
         authentication = await self._store.authenticate_bridge(session_id, bearer)
@@ -1378,43 +1359,6 @@ async def read_session_provisioning(
         return await service.sandbox_provisioning(actor.operator_id, session_id)
     except KeyError as error:
         raise HTTPException(status_code=404, detail="session not found") from error
-
-
-class AdmissionState(BaseModel):
-    """The maintenance-window switch and the active transport generation (#4667 stage 4).
-
-    `generation` is None before the cut and names the active generation after — a read the operator
-    uses to confirm the migration ran before opening admission for the post-roll health gate.
-    """
-
-    admission_open: bool
-    generation: str | None
-
-
-class AdmissionRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    admission_open: bool
-
-
-@router.get("/api/runtime/admission")
-async def read_admission(actor: OperatorActorDep, store: SessionStoreDep) -> AdmissionState:
-    """The current admission switch and active generation — the operator's window dashboard."""
-    return AdmissionState(admission_open=await store.admission_open(), generation=await store.active_generation())
-
-
-@router.post("/api/runtime/admission")
-async def set_admission(body: AdmissionRequest, actor: OperatorActorDep, store: SessionStoreDep) -> AdmissionState:
-    """Open or close prompt admission for the maintenance window (#4667 § runbook).
-
-    Closed refuses new prompts so the window drains and the post-roll health gate runs before
-    general traffic resumes. 409 before the cut, when there is no switch to flip yet.
-    """
-    try:
-        await store.set_admission_open(open_admission=body.admission_open)
-    except LookupError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
-    return AdmissionState(admission_open=await store.admission_open(), generation=await store.active_generation())
 
 
 @router.post("/api/sessions/{session_id}/abort", status_code=202)

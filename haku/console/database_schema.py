@@ -1156,43 +1156,6 @@ class ChannelCursor(Base):
     __table_args__ = (CheckConstraint("event_seq >= 0", name="ck_channel_cursor_event_seq"),)
 
 
-class RuntimeControl(Base):
-    """The one global switch pair the maintenance-gated generation cut turns (#4667).
-
-    A single row — `ck_runtime_control_singleton` pins `id` to 1 — set once by the cutover
-    migration and read on every launch and every bridge admission. Two facts:
-
-    - `generation`: the active runtime transport generation, e.g. ``runner_projection_v1``. The
-      migration sets it inside the freeze transaction; a runner presents its own build's generation
-      on the journal hello (`neutral_operations.RunnerHello.generation`) and the Console admits only
-      an exact match. **Its presence is the cut**: no row means pre-cut, and a Console built for the
-      neutral-operation generation refuses to serve any session until the row names its generation —
-      the fail-safe against an image that rolled ahead of its migration.
-    - `admission_closed`: the operator's drain switch. Closed refuses new prompt admission
-      (channels, SPA, inbox) so the post-roll health gate can run before general traffic resumes.
-      The cut lands it open — the exact-generation peering, not this flag, is what makes the cut
-      atomic — and the operator closes it through the API for the health-gate window.
-
-    Deliberately not a config value: both must be transactional with the freeze assertions and
-    readable by every replica the same way, which a per-pod ConfigMap is not.
-    """
-
-    __tablename__ = "runtime_control"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, server_default=text("1"))
-    # NOT NULL: the row exists only post-cut, and it always names the generation it cut to. A
-    # Console reading no row is pre-cut; a Console reading a generation other than its build's is
-    # mismatched — both refuse rather than guess.
-    generation: Mapped[str] = mapped_column(Text, nullable=False)
-    admission_closed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
-    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-
-    __table_args__ = (
-        CheckConstraint("id = 1", name="ck_runtime_control_singleton"),
-        CheckConstraint("btrim(generation) <> ''", name="ck_runtime_control_generation_nonempty"),
-    )
-
-
 class Session(Base):
     """One Operator-owned agent conversation and its Agent Sandbox rendezvous.
 

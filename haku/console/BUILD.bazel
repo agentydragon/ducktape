@@ -2072,7 +2072,6 @@ py_test(
         ":conftest",
         ":database_migrate",
         "//:conftest",
-        "//haku/runtime/x/bridge:neutral_operations",
         "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

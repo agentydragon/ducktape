@@ -4,12 +4,12 @@ A real runner process (`//haku/runtime/x/bridge:runner_bin`) over a real websock
 journal handler, with the stub `claude` as the only stand-in — replacing the v3 bridge e2e, which
 went with the fold it pinned. This is stage 4's health gate
 (#4667 comment 5422375226 step 5): the same flow the operator runs after rolling the images to
-prove the cut before reopening admission — handshake, a streamed message carried as journal batches,
-a tool call and its result, prompt admission materialising the authored item, cumulative ACK, and a
-console restart the runner resumes across.
+prove the cut — handshake, a streamed message carried as journal batches, a tool call and its
+result, prompt admission materialising the authored item, cumulative ACK, and a console restart the
+runner resumes across.
 
-The migration to head has already cut the generation (admission lands open — the peering gate is the
-cut's safety); the gate establishes a session and drives it exactly as the runbook says.
+The migration to head has already cut the generation; the gate establishes a session and drives it
+exactly as the runbook says.
 """
 
 from __future__ import annotations
@@ -115,12 +115,6 @@ async def test_the_cut_stack_answers_a_prompt_with_a_tool_call_over_the_journal(
     workspace.mkdir()
     stub_state = tmp_path / "stub"
     stub_state.mkdir()
-
-    # The migration to head cut the generation; that is what the runner is admitted against, and it
-    # is active on a database migrated to head. Admission lands open (the peering gate is the cut's
-    # safety), so the gate can submit straight away.
-    assert await session_store.active_generation() == "runner_projection_v1"
-    assert await session_store.admission_open()
 
     view, token = await session_store.create(operator_id)
     session_id = view.session_id

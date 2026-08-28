@@ -3,9 +3,11 @@
 **MERGING THE PR THAT ADDS THIS MIGRATION ARMS THE CUT.** It runs on the next deploy's migration
 Job, and it **refuses to apply while any session is live** — the assertions below RAISE inside the
 transaction, so nothing changes and the deploy's migration step fails until the window is drained.
-Merging it is therefore the act of scheduling the window: close admission, drain, deploy (this cuts
-or refuses), roll the images, run the health gate, reopen. The full runbook is
-<../../docs/generation_cutover_runbook.md>.
+Merging it is therefore the act of scheduling the window: drain by simply not using the app, deploy
+(this cuts or refuses), roll the images, run the health gate. The full runbook is
+<../../docs/generation_cutover_runbook.md>. The cut's safety is the exact-generation peering
+carried by the images themselves — an old bridge-v3 peer finds no common protocol version, and a
+v4 peer of another generation fails the journal hello — so the schema holds no switch.
 
 What one transaction does, per issue #4667 comment 5422375226 as amended by comment 5438689552:
 
@@ -13,22 +15,14 @@ What one transaction does, per issue #4667 comment 5422375226 as amended by comm
    claimed runner sandboxes, and zero pending runner commands (the old `conversation_prompt` queue
    and the new `submitted_prompt` inbox both empty of pending rows). Any remnant RAISEs, and the
    transaction rolls back with nothing done.
-2. **Set the generation.** Create the singleton `runtime_control` row naming
-   ``runner_projection_v1`` as the active transport generation. The runner presents its build's
-   generation on the journal hello and the Console admits only an exact match; an old bridge-v3 peer
-   already fails the protocol-version intersection before this, so this is the second, explicit half
-   of the exact-generation peering — the switch that makes the cut atomic, not the admission flag.
-   Admission lands **open** (the steady state): the peering gate, not the flag, is the cut's safety,
-   and the operator closes admission through the API for the health-gate window once the switch
-   exists (<../../docs/generation_cutover_runbook.md>).
-3. **Mark legacy sessions non-launchable.** After the assert only idle (unclaimed) sessions can
+2. **Mark legacy sessions non-launchable.** After the assert only idle (unclaimed) sessions can
    remain; close them so no pre-cut session is resumed under the new protocol. Terminal/history rows
    stay readable. **`session_frames` is deliberately untouched** (comment 5438689552): the frames
    table stays durable for new sessions, keyed by runner frame seq, record-only — only its
    projection-input role retires, and that retirement is code, not schema.
 
 The stage-3 columns and the `submitted_prompt` inbox already exist (0106); this migration flips no
-schema those depend on, only adds the control switch and closes the door on legacy launches.
+schema those depend on, only closes the door on legacy launches.
 
 Revision ID: 0109
 Revises: 0108
@@ -46,11 +40,6 @@ revision: str = "0109"
 down_revision: str | None = "0108"
 branch_labels: str | None = None
 depends_on: str | None = None
-
-# The generation this cut activates. Must equal `haku.runtime.x.bridge.neutral_operations.GENERATION`
-# — the value a runner presents and the Console admits against — which
-# `test_generation_cutover_migration.py` pins so the two cannot drift.
-GENERATION = "runner_projection_v1"
 
 # Each assertion: a human name, and the SQL counting what must be zero for the cut to be safe. Run
 # in one transaction before any change, so a non-zero count rolls the whole migration back.
@@ -86,26 +75,6 @@ def upgrade() -> None:
             "the generation cut refuses to apply while the window is not drained — "
             f"close admission and wait for these to clear, then re-deploy: {detail}"
         )
-
-    op.create_table(
-        "runtime_control",
-        sa.Column("id", sa.Integer(), nullable=False, server_default=sa.text("1")),
-        sa.Column("generation", sa.Text(), nullable=False),
-        sa.Column("admission_closed", sa.Boolean(), nullable=False, server_default=sa.text("false")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.PrimaryKeyConstraint("id", name="runtime_control_pkey"),
-        sa.CheckConstraint("id = 1", name="ck_runtime_control_singleton"),
-        sa.CheckConstraint("btrim(generation) <> ''", name="ck_runtime_control_generation_nonempty"),
-    )
-    # Admission lands open (the steady state). The exact-generation peering is the cut's safety, so
-    # the switch is a drain/traffic control the operator closes through the API for the health-gate
-    # window once this row exists — not the cut's atomicity mechanism.
-    op.execute(
-        sa.text(
-            "INSERT INTO runtime_control (id, generation, admission_closed, updated_at)"
-            " VALUES (1, :generation, false, :now)"
-        ).bindparams(generation=GENERATION, now=datetime.datetime.now(datetime.UTC))
-    )
 
     # Legacy sessions non-launchable: only idle (unclaimed) sessions can remain past the assert;
     # close them so none is resumed under the new protocol. A clean close — no error — leaves them
@@ -147,9 +116,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # The generation cut is one-way by construction: the images that follow it speak only the new
-    # protocol, so a schema downgrade cannot un-cut a running system. Restoring the switch table, the
-    # frame-direction constraint, and the ingress table's old shape is the whole of what is
-    # reversible here; recovery from a failed cut is the runbook's DB restore, not this.
+    # protocol, so a schema downgrade cannot un-cut a running system. Restoring the frame-direction
+    # constraint and the ingress table's old shape is the whole of what is reversible here;
+    # recovery from a failed cut is the runbook's DB restore, not this.
     op.drop_index("idx_matrix_ingress_event_prompt", table_name="matrix_ingress_event")
     op.drop_table("matrix_ingress_event")
     op.create_table(
@@ -165,4 +134,3 @@ def downgrade() -> None:
     op.create_check_constraint(
         "ck_session_frames_runner_seq_direction", "session_frames", "runner_seq IS NULL OR direction = 'from_agent'"
     )
-    op.drop_table("runtime_control")

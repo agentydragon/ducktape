@@ -270,9 +270,9 @@ async def carried_prompt(
     """A prompt in the record carrying *event_id*, as an accepted batch leaves one behind."""
     view, token = await session_store.create(operator_id)
     assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await session_store.enqueue_prompt(
+    await session_store.submit_prompt(
         operator_id,
-        view.session_id,
+        await session_store.conversation_of(view.session_id),
         f"[{event_id}] {body}",
         MatrixOrigin(address=MATRIX_ROOM, refs=(event_id,)),
         ledger.carrying((event_id,)),

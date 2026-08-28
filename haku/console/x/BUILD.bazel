@@ -153,15 +153,6 @@ py_library(
 )
 
 py_library(
-    name = "runtime_control",
-    srcs = ["runtime_control.py"],
-    deps = [
-        "//haku/console:database_schema",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
     name = "session_events",
     srcs = ["session_events.py"],
     deps = [
@@ -197,7 +188,6 @@ py_library(
         ":prompt_inbox",
         ":runtime",
         ":runtime_catalog",
-        ":runtime_control",
         ":session_events",
         ":session_wakes",
         ":setup_output",

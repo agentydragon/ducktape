@@ -1,10 +1,9 @@
-"""0109 arms the generation cut: it sets the generation, lands admission open, and refuses to
-apply while a session is live.
+"""0109 arms the generation cut: it closes legacy sessions and refuses to apply while one is live.
 
 The refusal is the safety the whole maintenance window rests on (#4667 comment 5422375226): merging
 the migration is scheduling the window, and it must fail the deploy rather than cut over a running
-system. Pins the assert-and-reject, the generation value against the code constant a runner is
-admitted against, and the open-admission landing state.
+system. Pins the assert-and-reject, the non-launchable close of the drained remainder, and the
+frames-constraint relaxation the runner's two-direction numbering needs.
 
 Temporary per `AGENTS.md` § "Do not keep tests for old migrations": delete once the chain is roughly
 five revisions past 0109.
@@ -20,7 +19,6 @@ import pytest_bazel
 from sqlalchemy import Connection, create_engine, text
 
 from haku.console.database_migrate import apply_migrations, sync_database_url
-from haku.runtime.x.bridge.neutral_operations import GENERATION
 
 _NOW = datetime.datetime(2026, 8, 27, tzinfo=datetime.UTC)
 
@@ -65,7 +63,16 @@ def _session(conn: Connection, *, live: bool) -> None:
     )
 
 
-def test_0109_cuts_a_drained_database_and_lands_admission_open(db_url: str) -> None:
+def _frames_direction_constraint(conn: Connection) -> bool:
+    return (
+        conn.execute(
+            text("SELECT count(*) FROM pg_constraint WHERE conname = 'ck_session_frames_runner_seq_direction'")
+        ).scalar_one()
+        == 1
+    )
+
+
+def test_0109_cuts_a_drained_database(db_url: str) -> None:
     apply_migrations(db_url, "0108")
     engine = create_engine(sync_database_url(db_url))
     try:
@@ -73,14 +80,10 @@ def test_0109_cuts_a_drained_database_and_lands_admission_open(db_url: str) -> N
             _session(conn, live=False)  # an idle session does not block the cut
         apply_migrations(db_url)
         with engine.begin() as conn:
-            row = conn.execute(text("SELECT generation, admission_closed FROM runtime_control WHERE id = 1")).one()
-            # The generation the migration set is the exact value a runner is admitted against; the
-            # cut is coherent only if the two agree. Admission lands open — the peering gate is the
-            # cut's safety, and the operator closes admission through the API for the gate window.
-            assert row.generation == GENERATION
-            assert row.admission_closed is False
             # The idle session is closed — non-launchable — while its history stays readable.
             assert conn.execute(text("SELECT count(*) FROM sessions WHERE ended_at IS NULL")).scalar_one() == 0
+            # A runner number rides both directions now, so the v3 direction constraint is gone.
+            assert not _frames_direction_constraint(conn)
     finally:
         engine.dispose()
 
@@ -93,10 +96,10 @@ def test_0109_refuses_to_cut_while_a_session_is_live(db_url: str) -> None:
             _session(conn, live=True)
         with pytest.raises(Exception, match=r"not drained|live session"):
             apply_migrations(db_url)
-        # Nothing changed: the switch table was never created, so admission is not even a concept yet.
+        # Nothing changed: the session is still live, and the v3 frames constraint still stands.
         with engine.connect() as conn:
-            exists = conn.execute(text("SELECT to_regclass('public.runtime_control')")).scalar_one()
-            assert exists is None
+            assert conn.execute(text("SELECT count(*) FROM sessions WHERE ended_at IS NULL")).scalar_one() == 1
+            assert _frames_direction_constraint(conn)
     finally:
         engine.dispose()
 
