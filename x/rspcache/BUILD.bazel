@@ -108,10 +108,9 @@ py_library(
     ],
 )
 
-py_binary(
+py_library(
     name = "codegen",
     srcs = ["codegen.py"],
-    visibility = ["//:__subpackages__"],
     deps = [
         ":admin_app",
         ":app",
@@ -119,6 +118,13 @@ py_binary(
         "@pypi//httpx",
         "@pypi//pyyaml",
     ],
+)
+
+py_binary(
+    name = "codegen_bin",
+    main_module = "x.rspcache.codegen",
+    visibility = ["//:__subpackages__"],
+    deps = [":codegen"],
 )
 
 py_library(

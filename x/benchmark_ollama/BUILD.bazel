@@ -1,7 +1,7 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 py_library(
-    name = "benchmark_ollama_lib",
+    name = "benchmark_ollama",
     srcs = ["benchmark_ollama.py"],
     deps = [
         "//util/bazel:workspace",
@@ -10,7 +10,7 @@ py_library(
 )
 
 py_binary(
-    name = "benchmark_ollama",
+    name = "benchmark_ollama_bin",
     main_module = "hack.benchmark_ollama.benchmark_ollama",
-    deps = [":benchmark_ollama_lib"],
+    deps = [":benchmark_ollama"],
 )

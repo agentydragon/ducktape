@@ -30,11 +30,11 @@ x/eob_matching/
 
 ## Bazel targets
 
-| Target                               | What                                                                                |
-| ------------------------------------ | ----------------------------------------------------------------------------------- |
-| `//x/eob_matching:parse_eob_listing` | Parse HTML → `output/eob_listing.json`                                              |
-| `//x/eob_matching:extract_summaries` | Vision model PDF extraction → `output/eob_summaries.json` (needs ollama + pdftoppm) |
-| `//x/eob_matching:eob_matching`      | Match payments → `output/payment_*.csv`                                             |
+| Target                                   | What                                                                                |
+| ---------------------------------------- | ----------------------------------------------------------------------------------- |
+| `//x/eob_matching:parse_eob_listing_bin` | Parse HTML → `output/eob_listing.json`                                              |
+| `//x/eob_matching:extract_summaries`     | Vision model PDF extraction → `output/eob_summaries.json` (needs ollama + pdftoppm) |
+| `//x/eob_matching:eob_matching`          | Match payments → `output/payment_*.csv`                                             |
 
 ## Data sources
 
