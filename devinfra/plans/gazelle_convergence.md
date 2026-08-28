@@ -10,18 +10,22 @@ rewriting the packages it already visited.
 
 ## Landed with this plan
 
-<../../patches/rules_python_gazelle_ducktape.patch> (`single_version_override` on
-`rules_python_gazelle_plugin` 1.9.2):
+Plugin bumped 1.9.2 → 2.3.2 plus
+<../../patches/rules_python_gazelle_ducktape.patch> (`single_version_override`):
 
-1. Per-file mode generates a `py_library` for every `.py` file. Upstream instead splits
-   files containing `if __name__ == "__main__"` (893 here) into `py_binary` targets,
-   stealing the module's library. Upstream candidate: a directive gating binary
-   generation.
-2. Upstream's `getRulesWithInvalidSrcs` deletes every `py_binary` without `srcs` — i.e.
-   all `main_module` binaries. Upstream candidate: straight bugfix.
-3. `py_{library,test,binary}` loads emit from `//devinfra/python:defs.bzl`.
+1. Per-file mode generates a `py_library` for every `.py` file. Upstream (still on
+   `main`) splits files containing `if __name__ == "__main__"` (893 here) into
+   `py_binary` targets, stealing the module's library. Upstream candidate: a directive
+   gating binary generation.
+2. `py_{library,test,binary}` loads emit from `//devinfra/python:defs.bzl`.
    Repo-specific, stays a patch: same-name `map_kind` load redirection is impossible
-   (gazelle rejects `py_library py_library <bzl>` as a kind loop).
+   (gazelle rejects `py_library py_library <bzl>` as a kind loop), and 2.x's new
+   `alias_kind` directive only registers differently-named wrappers for rule
+   _recognition_ — it rejects same-name aliases and does not affect emitted loads.
+
+A third 1.9.2 problem — `getRulesWithInvalidSrcs` deleting every `py_binary` without
+`srcs`, i.e. all `main_module` binaries — is fixed upstream in 2.x; the bump picks that
+up. 2.x still misses namespace-package dists in the generated manifest (step 1 stands).
 
 The root `map_kind py_binary py_library` directive is removed — gazelle applies
 map_kind to existing rules too, rewriting hand-written binaries' kind to `py_library`.
@@ -110,9 +114,12 @@ Independently landable PRs; step 3's per-tree PRs go in parallel.
 
 ## Known limitations
 
-- Two files use PEP 695 / 3.13 type-parameter syntax the plugin's tree-sitter grammar
-  cannot parse (`agent_core/script_handler.py`, `mcp_infra/request_scoped_openapi.py`):
-  gazelle warns and may emit wrong deps for them. Try a plugin upgrade (rebasing the
-  patch) before hand-managing those two targets.
-- Gazelle does not delete a per-file library whose `.py` file was deleted; the build
-  error on the missing src is the signal.
+- `agent_core/script_handler.py` uses PEP 695 type-parameter-default syntax
+  (`type ScriptGen[T = None]`) that even 2.3.2's tree-sitter grammar cannot parse
+  (the 1.9.2 plugin also choked on `mcp_infra/request_scoped_openapi.py`; the bump
+  fixed that one): gazelle warns and may emit wrong deps for it. Try a further plugin
+  upgrade (rebasing the patch) before hand-managing that target.
+- Plugin 2.x can also delete `py_library`/`py_test` rules whose `srcs` files were
+  deleted, but only under a gazelle release carrying
+  [bazel-gazelle#2362](https://github.com/bazel-contrib/bazel-gazelle/pull/2362);
+  until then the build error on the missing src is the signal.
