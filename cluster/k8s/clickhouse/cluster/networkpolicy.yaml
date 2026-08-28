@@ -44,20 +44,6 @@ spec:
       ports:
         - port: 8123
           protocol: TCP
-    # Temporary side-by-side migration path: the old Langfuse-bundled
-    # ClickHouse may stream its static source tables into this instance.
-    # Remove this rule when the old bundle is removed after the rollback
-    # window.
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: langfuse
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/component: clickhouse
-      ports:
-        - port: 9000
-          protocol: TCP
     - from:
         - namespaceSelector:
             matchLabels:
