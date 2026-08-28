@@ -312,8 +312,9 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
   - **Library spikes are not trivia**: where a library's usage had to be
     figured out (sharp edges, non-obvious wiring), a test pinning the working
     pattern is executable documentation CI keeps honest — keep it, and say so
-    in its docstring. The axis is triviality of the usage, not the presence of
-    a library.
+    in the test or file docstring, unless local context (a README, an `x/`
+    folder) already does. The axis is triviality of the usage, not the
+    presence of a library.
   - **Change-detector guarding a real constraint → comment at the
     declaration**: when a test's only enforcement is "the editor must update a
     mirrored literal in a second file", move the constraint onto the
