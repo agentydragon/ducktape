@@ -167,7 +167,10 @@ def test_deployed_console_settings_load_from_the_shared_yaml(monkeypatch: pytest
     assert isinstance(implementation, CodexAppServerImplementationConfig)
     assert implementation.api_base_url == "http://litellm.litellm.svc.cluster.local:4000/v1"
     assert codex.mcp_url == "http://haku-console.haku-console.svc.cluster.local:9090/mcp"
-    assert codex.https_proxy == ("http://public-coder-codex-runner-proxy.public-coder-agent.svc.cluster.local:8080")
+    # Codex routes through the colocated Console egress fence (#4670), not its retiring iron proxy.
+    assert codex.https_proxy == "http://haku-egress-proxy.haku-console.svc.cluster.local:8888"
+    # LiteLLM stays OUT of no_proxy: its model traffic must traverse the fence for the virtual-key
+    # substitution (admitted through the standing policy's allow_prohibited_address).
     assert "litellm.litellm.svc.cluster.local" not in codex.no_proxy
 
 

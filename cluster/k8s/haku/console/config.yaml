@@ -68,10 +68,23 @@ harnesses:
     runtime_label: codex-chat
     cwd: /workspace
     session_ttl_seconds: 7200
-    https_proxy: http://public-coder-codex-runner-proxy.public-coder-agent.svc.cluster.local:8080
+    # Colocated Console egress fence (#4670): replaces the dedicated public-coder-codex-runner-proxy
+    # iron proxy. Codex's two credentialed hosts — the internal LiteLLM model gateway and GitHub —
+    # are registered in `egress_decide` below with matching standing policies; LiteLLM's carries
+    # `allow_prohibited_address` because it resolves into the cluster service CIDR, the boundary the
+    # fence otherwise denies. The iron proxy's :8080 network rule stays (public-coder-runner-egress)
+    # so reverting this line needs no policy change; the CA differs (below), so a full revert also
+    # restores the iron CA mount.
+    https_proxy: http://haku-egress-proxy.haku-console.svc.cluster.local:8888
+    # The Codex sandbox now mounts the fence's trust bundle (haku-egress-proxy-ca-cert — full
+    # public + cluster + interception roots) at this path in place of the iron proxy's CA
+    # (sandboxtemplate-haku-public-coder-codex.yaml), so every TLS client — GnuTLS git included —
+    # trusts the fence.
     ca_bundle: /etc/ssl/certs/ca-certificates.crt
-    # Control-plane traffic stays direct while LiteLLM provider authentication traverses the
-    # least-credential runner proxy.
+    # Control-plane traffic (Console bridge/MCP, the Kubernetes auth proxy) stays direct. LiteLLM is
+    # deliberately NOT in no_proxy: its model traffic must traverse the fence for the virtual-key
+    # substitution, and the fence admits its cluster-internal resolution through the standing
+    # policy's allow_prohibited_address. Other cluster-internal hosts stay direct.
     no_proxy: 127.0.0.1,localhost,haku-console.haku-console.svc.cluster.local,haku-kube-api-proxy.haku-console.svc.cluster.local
     mcp_url: http://haku-console.haku-console.svc.cluster.local:9090/mcp
     implementation:
@@ -516,6 +529,42 @@ egress_decide:
         - scheme: https
           host: postman-echo.com
           port: 443
+    # The Console-launched Codex runner's egress credentials, mirrored from the retiring
+    # public-coder-codex-runner-proxy iron proxy (cluster/k8s/agents/public-coder-agent/proxy/
+    # codex-runner-iron.yaml) as the runner moves onto this colocated fence (#4670). Authored
+    # against the haku agent id like every entry here: the sidecar presents the one shared fence
+    # credential, so the decide service resolves every fenced request to the haku Agent regardless
+    # of which pod sent it. The sandbox only ever holds the inert placeholder.
+    #   The public-coder LiteLLM virtual key, substituted only on the internal LiteLLM model gateway;
+    #   its standing policy carries allow_prohibited_address because the gateway is a cluster ClusterIP.
+    - handle: codex-litellm
+      placeholder: proxy-litellm-public-coder-placeholder
+      value_env_var: HAKU_EGRESS_CREDENTIAL_LITELLM_PUBLIC_CODER
+      match_headers: [authorization]
+      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      origins:
+        - scheme: http
+          host: litellm.litellm.svc.cluster.local
+          port: 4000
+    #   Codex's GitHub access is the same agentydragon-agent PAT as `github-bot`, presented under a
+    #   different inert placeholder (the Codex sandbox holds proxy-github-placeholder). A second
+    #   presentation of one credential is a second entry sharing its value_env_var under its own
+    #   handle and placeholder (decide_config.EgressCredentialEntry).
+    - handle: codex-github-bot
+      placeholder: proxy-github-placeholder
+      value_env_var: HAKU_EGRESS_CREDENTIAL_GITHUB_BOT
+      match_headers: [authorization]
+      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      origins:
+        - scheme: https
+          host: api.github.com
+          port: 443
+        - scheme: https
+          host: github.com
+          port: 443
+        - scheme: https
+          host: codeload.github.com
+          port: 443
   # Deploy-managed standing HTTP allowances (#4941), evaluated before temporary grants; admissions
   # carry `standing:<id>` provenance.
   standing_policies:
@@ -562,6 +611,68 @@ egress_decide:
       coverage:
         methods: [GET, POST]
       credential_handle: github-bot
+    # The Console-launched Codex runner's standing reachability, mirroring the host set the retiring
+    # public-coder-codex-runner-proxy iron proxy allowed (codex-runner-iron.yaml). codex- ids keep
+    # these distinct from the haku- GitHub entries above: both resolve to the shared haku fence
+    # identity, so a GitHub request matches both and unions their credentials — the proxy is handed
+    # both placeholders and swaps only the one the sending sandbox actually presents.
+    #   The internal LiteLLM model gateway is Codex's model access. allow_prohibited_address admits
+    #   its cluster-internal resolution (litellm.litellm.svc → a ClusterIP inside prohibited_cidrs),
+    #   scoped to this exact origin — unrestricted methods, matching the iron rule's host-only
+    #   substitution so a denied method is never a broken model turn.
+    - id: codex-litellm
+      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      origins:
+        - scheme: http
+          host: litellm.litellm.svc.cluster.local
+          port: 4000
+      coverage:
+        methods: [DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT]
+      credential_handle: codex-litellm
+      allow_prohibited_address: true
+    - id: codex-github-api
+      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      origins:
+        - scheme: https
+          host: api.github.com
+          port: 443
+      coverage:
+        methods: [DELETE, GET, HEAD, PATCH, POST, PUT]
+      credential_handle: codex-github-bot
+    - id: codex-github-git
+      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      origins:
+        - scheme: https
+          host: github.com
+          port: 443
+      coverage:
+        methods: [GET, POST]
+      credential_handle: codex-github-bot
+    #   Archive/tarball downloads a git clone redirects to; reached freely under iron, so standing.
+    - id: codex-github-codeload
+      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      origins:
+        - scheme: https
+          host: codeload.github.com
+          port: 443
+      coverage:
+        methods: [GET, HEAD]
+      credential_handle: codex-github-bot
+    #   githubusercontent CDN (pre-signed URLs) — pure reachability, no credential, matching iron.
+    - id: codex-githubusercontent
+      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      origins:
+        - scheme: https
+          host: objects.githubusercontent.com
+          port: 443
+        - scheme: https
+          host: raw.githubusercontent.com
+          port: 443
+        - scheme: https
+          host: release-assets.githubusercontent.com
+          port: 443
+      coverage:
+        methods: [GET, HEAD]
   # Cluster pod + service CIDRs, denied in resolved answers on top of the always-prohibited classes
   # (loopback, link-local, multicast, private/RFC1918/ULA — which already cover 10/8). Named per the
   # field's contract so the internal boundary is legible and survives a re-IP off 10/8.

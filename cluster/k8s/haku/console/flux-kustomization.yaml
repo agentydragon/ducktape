@@ -48,3 +48,5 @@ spec:
     # the provider must exist first.
     - name: agent-machine-access-tf
       namespace: ducktape-flux
+    - name: reflector
+      namespace: ducktape-flux

@@ -69,10 +69,19 @@ resource "authentik_policy_binding" "postscanmail_mcp_users" {
   order  = 0
 }
 
-resource "kubernetes_secret" "postscanmail_mcp_oidc" {
+# Canonical OIDC client credentials. Reflector mirrors this Secret into the
+# facade namespace after that namespace has been created.
+resource "kubernetes_secret" "postscanmail_mcp_oidc_source" {
   metadata {
     name      = "postscanmail-mcp-oidc"
-    namespace = "postscanmail-mcp"
+    namespace = "authentik"
+    annotations = {
+      description                                                     = "PostScan Mail MCP OIDC client credentials"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "postscanmail-mcp"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "postscanmail-mcp"
+    }
   }
 
   data = {
@@ -80,5 +89,6 @@ resource "kubernetes_secret" "postscanmail_mcp_oidc" {
     client_secret = authentik_provider_oauth2.postscanmail_mcp.client_secret
   }
 }
+
 
 # --- Plaid DB MCP facade (public OAuth facade over read-only Postgres MCP) ---
