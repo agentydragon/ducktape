@@ -36,6 +36,9 @@ Langfuse's source ClickHouse must also be backed up before switching the
 HelmRelease. Keep the current Langfuse version unchanged, stop Langfuse
 ingestion for the final copy, and copy only the `langfuse` data with a
 ClickHouse-supported ClickHouse-to-ClickHouse or backup/restore procedure.
+On the current bundled chart, the source database is `default`; the target
+configuration uses the isolated `langfuse` database. Enumerate the source
+tables before copying and map `default.<table>` to `langfuse.<table>`.
 Do not copy the `system` database or Keeper metadata. The target table
 definitions must come from Langfuse's own migrations so they are created as
 replicated tables on the new cluster; copy rows into those target tables
