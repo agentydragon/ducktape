@@ -64,6 +64,11 @@
       "target": "@ducktape_activitywatch//importer:aw_importer_bin",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/external/ducktape_activitywatch+/importer/aw_importer_bin",
       "release": "aw-importer"
+    },
+    "gazelle": {
+      "target": "//devinfra:gazelle_python_binary",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/gazelle_python_binary_/gazelle_python_binary",
+      "release": "gazelle"
     }
   },
   "releases": {
@@ -116,6 +121,10 @@
     },
     "aw-importer": {
       "tests": "@ducktape_activitywatch//importer:aw_importer_test",
+      "nixPackage": false
+    },
+    "gazelle": {
+      "tests": "",
       "nixPackage": false
     }
   }
