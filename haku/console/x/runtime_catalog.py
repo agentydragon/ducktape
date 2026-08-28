@@ -9,17 +9,10 @@ from haku.console.config import ClaudeCodeImplementationConfig, RuntimeRegistrat
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.sandbox_claims import SandboxClaims
 from haku.console.session.system_prompt import SystemPromptTemplate
-from haku.console.x.claude_code.client import cli_over_websocket
 from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
 from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
 from haku.console.x.codex_app_server.runtime import CodexRuntimeAdapter
-from haku.console.x.runtime import (
-    AgentRuntimeResources,
-    RuntimeAdapter,
-    RuntimeClientFactory,
-    RuntimeKey,
-    RuntimeRegistry,
-)
+from haku.console.x.runtime import AgentRuntimeResources, RuntimeAdapter, RuntimeKey, RuntimeRegistry
 from haku.runtime.x.bridge.codex_options import CodexModelProvider
 
 
@@ -58,14 +51,13 @@ def runtime_registration(
     claims: SandboxClaims,
     *,
     system_prompt: SystemPromptTemplate,
-    client_factory: RuntimeClientFactory = cli_over_websocket,
     access_profile_id: str | None = None,
     execution_environment: Mapping[str, str] | None = None,
 ) -> RuntimeRegistration:
     """Build one runtime from shared resources and its discriminated implementation."""
     implementation = config.implementation
     if isinstance(implementation, ClaudeCodeImplementationConfig):
-        adapter: RuntimeAdapter = ClaudeRuntimeAdapter(client_factory=client_factory)
+        adapter: RuntimeAdapter = ClaudeRuntimeAdapter()
     elif isinstance(implementation, CodexAppServerImplementationConfig):
         adapter = CodexRuntimeAdapter(
             model=implementation.model,

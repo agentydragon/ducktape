@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, cast
 from uuid import UUID
@@ -20,7 +19,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 
 from haku.console.chat_models import ItemType
-from haku.console.conversation import conversation_event
 from haku.console.conversation.history import ConversationHistory
 from haku.console.conversation.journal_consumer import JournalConsumer, JournalViolationError
 from haku.console.conversation.prompt_origin import SPA_ORIGIN, PromptOrigin
@@ -40,38 +38,26 @@ from haku.console.session.conversation_views import (
 from haku.console.session.launch_identity import LaunchAgentRejectedError, LaunchAuthorizer
 from haku.console.session.sandbox_claims import SandboxProvisioningView
 from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
-from haku.console.session.status import ENDED_SESSION_STATUSES, SessionStatus
+from haku.console.session.status import SessionStatus
 from haku.console.session.store import (
     LEASE_RENEW_INTERVAL,
     BridgeAuthentication,
     PromptRecords,
     PromptRefusedError,
-    ResumedTurn,
     SandboxDemand,
     Store,
-    TurnStart,
-    WakeTurn,
 )
 from haku.console.session.system_prompt import HistoryMessage, HistorySender, SessionIntroduction
-from haku.console.x.conversation_events import ConversationEvent, TurnAborted, TurnAnswered, TurnEnd, TurnFailed
 from haku.console.x.runtime import (
-    Checkpoint,
     ConfiguredRuntime,
-    OpenItemSeed,
-    RuntimeAdapter,
-    RuntimeClient,
     RuntimeLaunch,
     RuntimeMcpServer,
     RuntimeNotConfiguredError,
     RuntimeRegistry,
-    RuntimeUnusable,
-    RuntimeWakeWatcher,
-    TurnCompletion,
-    TurnProjectionSeed,
     UnsupportedRuntimeError,
 )
 from haku.runtime.x.bridge.backend import BRIDGE_CREDENTIAL_VARIABLE
-from haku.runtime.x.bridge.client import ReceivedFrame, RecordedFrame
+from haku.runtime.x.bridge.client import RecordedFrame
 from haku.runtime.x.bridge.neutral_operations import OperationBatch, RunnerHello
 from haku.runtime.x.bridge.protocol import (
     GOING_AWAY_CODE,
@@ -233,43 +219,6 @@ class RolloutRecorder:
         return await self._store.record_frame(self._session_id, direction, kind, payload, runner_seq=runner_seq)
 
 
-def _inherited(turn: TurnStart | ResumedTurn | WakeTurn) -> TurnProjectionSeed:
-    """Where an adopting replica's fold picks the turn up.
-
-    Empty only for a turn this process opened. What the store hands back is the open message, when
-    there is one, so the prose lands on the same row either way; what this carries is how much of it
-    has been said, without which the completed block arriving next is stored on top of the half
-    already there. Materialised call ids are inherited independently of prose so completed
-    compatibility blocks arriving after a roll stay duplicates rather than new calls.
-    """
-    if not isinstance(turn, ResumedTurn):
-        return TurnProjectionSeed()
-    if turn.streaming is None and turn.reasoning is None:
-        return TurnProjectionSeed(seen_call_ids=turn.seen_call_ids, completed_call_ids=turn.completed_call_ids)
-    return TurnProjectionSeed(
-        open_message=(
-            None
-            if turn.streaming is None
-            else OpenItemSeed(
-                first_frame_seq=turn.streaming.first_frame_seq,
-                last_frame_seq=turn.streaming.last_frame_seq,
-                text=turn.streaming.text,
-            )
-        ),
-        open_reasoning=(
-            None
-            if turn.reasoning is None
-            else OpenItemSeed(
-                first_frame_seq=turn.reasoning.first_frame_seq,
-                last_frame_seq=turn.reasoning.last_frame_seq,
-                text=turn.reasoning.text,
-            )
-        ),
-        seen_call_ids=turn.seen_call_ids,
-        completed_call_ids=turn.completed_call_ids,
-    )
-
-
 class SessionService:
     def __init__(
         self,
@@ -295,9 +244,6 @@ class SessionService:
         # Per session, the last view read off the cluster; `_observed` drops entries older than
         # `OBSERVATION_TTL` as it goes.
         self._observations: dict[UUID, SandboxProvisioningView] = {}
-
-    async def _runtime(self, session_id: UUID) -> RuntimeAdapter:
-        return self._runtimes[await self._store.runtime_kind_of(session_id)]
 
     async def _configured(self, session_id: UUID) -> ConfiguredRuntime:
         identity = await self._store.session_identity(session_id)
@@ -548,259 +494,6 @@ class SessionService:
             )
         )
 
-    def _progress_reporter(self, session_id: UUID) -> Callable[[str], Awaitable[None]]:
-        """Record every sandbox progress report; subscribers decide how attached channels show it."""
-
-        async def report(detail: str) -> None:
-            logger.info("runtime sandbox %s: %s", session_id, detail)
-            await self._store.narrate(session_id, detail)
-
-        return report
-
-    async def handle_runner(self, websocket: WebSocket, session_id: UUID, bearer: str) -> None:
-        # Resolve execution resources before bridge authentication takes the session lease. During
-        # a rolling update an older replica can read the new immutable session identity but cannot
-        # execute its runtime. A retryable denial lets the runner find a capable replica without
-        # the old one first marking the session Ready and holding its lease until expiry.
-        try:
-            configured = await self._configured(session_id)
-        except (RuntimeNotConfiguredError, UnsupportedRuntimeError):
-            logger.info(
-                "session %s targets a runtime this replica cannot execute; telling the runner to retry", session_id
-            )
-            await websocket.send_denial_response(
-                Response(status_code=503, content=b"session runtime is not configured on this replica")
-            )
-            return
-        except KeyError:
-            await websocket.close(code=NOT_ADMITTED_CODE, reason="invalid or consumed runner credential")
-            return
-
-        authentication = await self._store.authenticate_bridge(session_id, bearer)
-        if authentication == BridgeAuthentication.HELD:
-            # **A denial response, not a close.** uvicorn renders any pre-`accept()` close as
-            # HTTP 403 whatever code is passed, and the runner gives up on a 4xx. The ASGI
-            # `websocket.http.response` extension is what lets this answer 503 instead, which
-            # `_worth_redialling` retries along with every other 5xx.
-            logger.info("session %s is held by another replica; telling the runner to retry", session_id)
-            await websocket.send_denial_response(
-                Response(status_code=503, content=b"session is held by another replica")
-            )
-            return
-        if authentication == BridgeAuthentication.TERMINAL:
-            await self._cleanup_terminal_claim(session_id)
-            await websocket.close(code=NOT_ADMITTED_CODE, reason="runner session is already terminal")
-            return
-        if authentication == BridgeAuthentication.REJECTED:
-            await websocket.close(code=NOT_ADMITTED_CODE, reason="invalid or consumed runner credential")
-            return
-        # The sandbox outlived the previous holder, so the rest of its exchange is about to arrive
-        # on this socket; what it recorded and did not get to project comes back with the turn, to
-        # be fed to the loop ahead of the live stream.
-        #
-        # **Read before the socket is accepted**, which is what stops a frame being both replayed
-        # here and delivered fresh: `RolloutRecorder.received` records a frame at the moment
-        # the runtime client's reader routes it, and nothing is being read on this connection yet.
-        runtime = configured.adapter
-        resources = configured.resources
-        resumed = await self._store.adopt_open_turn(session_id)
-        if resumed is not None:
-            logger.warning(
-                "session %s adopted with turn %s still running; re-projecting %d recorded frame(s)",
-                session_id,
-                resumed.turn_id,
-                len(resumed.replay),
-            )
-        # Rendered before the socket is accepted, with the other admission failures, so a broken
-        # prompt ends the session where the supervisor can see it rather than raising past the
-        # cleanup below and stranding the claim. Failing is deliberate: a session that silently
-        # started without its identity is a generic assistant, and invisibly so.
-        try:
-            appended = await self._appended_prompt(session_id)
-        except Exception as error:
-            logger.exception("runtime system prompt failed to render for session %s", session_id)
-            await self._store.fail(session_id, f"system prompt failed to render: {error}")
-            await self._cleanup_terminal_claim(session_id)
-            await websocket.close(code=1011, reason="system prompt failed to render")
-            return
-        # Launch assembly is deploy/config interpretation, so keep it on the admission side of
-        # `accept()` too. A malformed endpoint must fail and release the claim rather than accept
-        # the runner, escape the lifecycle handler below, and leave the session leased until its
-        # sweeper deadline.
-        try:
-            launch = RuntimeLaunch(
-                cwd=resources.cwd,
-                environment=resources.environment,
-                mcp_servers={
-                    name: RuntimeMcpServer(url=url, bearer_environment_variable=BRIDGE_CREDENTIAL_VARIABLE)
-                    for name, url in resources.mcp_server_urls.items()
-                },
-                appended_system_prompt=appended,
-                resume_from=await self._store.highest_runner_seq(session_id),
-            )
-            client = runtime.client(
-                StarletteTextWebSocket(websocket),
-                # The cursor is read here, per connection, off the session's own rows — so a replica
-                # adopting a session mid-turn asks for what it is missing rather than being handed the
-                # runner's whole replay window (`Store.highest_runner_seq`).
-                launch,
-                self._progress_reporter(session_id),
-                RolloutRecorder(self._store, session_id),
-            )
-        except Exception as error:
-            logger.exception("runtime launch preparation failed for session %s", session_id)
-            await self._store.fail(session_id, f"runtime launch preparation failed: {error}")
-            await self._cleanup_terminal_claim(session_id)
-            await websocket.close(code=1011, reason="runtime launch preparation failed")
-            return
-        await websocket.accept()
-        abort_event = asyncio.Event()
-        # Whether the sandbox should outlive this connection. False for an ending session — one
-        # closed, or failed in a way the CLI cannot be asked to continue past — and true when it
-        # is only this replica that is going away.
-        keep_sandbox = False
-        # Two nested handlers because Python forbids `except` and `except*` on one `try`.
-        try:
-            try:
-                async with asyncio.TaskGroup() as helpers:
-                    abort_watch = helpers.create_task(self._watch_aborts(session_id, abort_event))
-                    # Says "this replica is still here" for as long as it is. Its absence is
-                    # what another replica reclaims the session by; see `expire_stale_leases`.
-                    renewal = helpers.create_task(self._renew_lease(session_id))
-                    # Turns the runner's socket dropping into a `WebSocketDisconnect` here, even
-                    # when this handler is parked in the idle prompt-wait with nothing reading the
-                    # socket. Without it a roll leaves an idle session waiting out the whole
-                    # graceful-shutdown timeout before it hands back.
-                    connection = helpers.create_task(self._watch_connection(client))
-                    # **One read of the stream in flight, ever, owned here.** An async generator
-                    # refuses to be advanced twice at once and cancelling a read closes it, so the
-                    # pending read survives idle waits and is handed into the turn that consumes it
-                    # rather than being restarted. Declared before the try so the finally can always
-                    # ask about it.
-                    pending_frame: asyncio.Task[ReceivedFrame] | None = None
-                    try:
-                        await client.connect()
-                        # One stream for the session, not one per turn: a folded prompt is answered
-                        # with no second `result`, and an adopted turn was issued by a process that
-                        # is gone. A turn is a bracket over this stream, not a request/response
-                        # pair.
-                        frames = _replaying(() if resumed is None else resumed.replay, client.frames().__aiter__())
-                        watcher: RuntimeWakeWatcher | None = None
-                        while True:
-                            status = await self._store.status(session_id)
-                            if status is None or status in ENDED_SESSION_STATUSES:
-                                break
-                            # The inherited turn before any new prompt, and once: its remaining
-                            # frames are already on their way, so opening a second turn to take them
-                            # would deliver one exchange's answer into another's bracket.
-                            turn: TurnStart | ResumedTurn | WakeTurn | None = resumed
-                            resumed = None
-                            if turn is None:
-                                turn = await self._store.next_prompt(session_id)
-                            if turn is None:
-                                # **An exchange has two legitimate initiators, so idle is one wait
-                                # on both**: the operator's prompt queue, and the stream itself —
-                                # the harness waking to observe work it left running. Whichever
-                                # speaks first decides what the next turn is. A runtime with no
-                                # wake watcher keeps the old contract: only the queue can start an
-                                # exchange, and the stream is read only inside one.
-                                if watcher is None:
-                                    watcher = runtime.wake_watcher()
-                                if watcher is None:
-                                    # Wait for a LISTEN/NOTIFY instead of polling. Any kind about
-                                    # this session wakes it; the loop re-checks the queue, so a
-                                    # wake it did not need costs one query.
-                                    await self._notifications.wait(session_id, timeout_seconds=30.0)
-                                    continue
-                                if pending_frame is None:
-                                    pending_frame = asyncio.ensure_future(anext(frames))
-                                prompted = asyncio.ensure_future(
-                                    self._notifications.wait(session_id, timeout_seconds=30.0)
-                                )
-                                await asyncio.wait([pending_frame, prompted], return_when=asyncio.FIRST_COMPLETED)
-                                prompted.cancel()
-                                if not pending_frame.done():
-                                    continue
-                                received = pending_frame.result()
-                                pending_frame = None
-                                if (wake := watcher.observe(received.envelope)) is None:
-                                    # Idle chatter — task bookkeeping, lifecycle markers. Consumed
-                                    # and dropped: it projects to nothing, so an adoption replaying
-                                    # over it loses nothing.
-                                    continue
-                                opened = await self._store.open_wake_turn(
-                                    session_id, wake.description, first_frame_seq=received.frame_seq
-                                )
-                                if opened is None:
-                                    continue
-                                # The frame that began the exchange goes back on the front of the
-                                # stream, so the turn loop reads the exchange from its first frame.
-                                frames = _replaying((received,), frames)
-                                turn = opened
-                                watcher = None
-                            # Cleared before the turn, not after: an abort notified just as the
-                            # previous one ended would otherwise sit set through the idle wait and
-                            # kill this turn on arrival.
-                            abort_event.clear()
-                            handed_frame, pending_frame = pending_frame, None
-                            try:
-                                await self._run_turn(
-                                    client, frames, session_id, turn, abort_event=abort_event, pending=handed_frame
-                                )
-                            except Exception as error:
-                                if _transient_database_error(error):
-                                    # Says nothing about the session, so it gets the lost-runner
-                                    # treatment rather than a terminal row: hand the session back,
-                                    # and whichever replica the runner redials adopts the
-                                    # still-open turn and replays it from the cursor.
-                                    logger.exception(
-                                        "transient database error mid-turn for session %s; leaving it for adoption",
-                                        session_id,
-                                    )
-                                    keep_sandbox = True
-                                    await self._store.release_lease(session_id)
-                                    break
-                                logger.exception("turn failed for session %s", session_id)
-                                await self._store.fail(session_id, str(error))
-                                break
-                    finally:
-                        abort_watch.cancel()
-                        renewal.cancel()
-                        connection.cancel()
-                        # Closes the stream, which is fine: this connection is over either way.
-                        if pending_frame is not None:
-                            pending_frame.cancel()
-            except* WebSocketDisconnect:
-                # The runner went away, which is not the session being over: it keeps the CLI alive
-                # across a lost socket and redials. Hand the session back and let the lease decide —
-                # a runner that never returns leaves the row to the sweep.
-                logger.info("session %s lost its runner; leaving it for adoption", session_id)
-                keep_sandbox = True
-                await self._store.release_lease(session_id)
-            except* Exception as errors:
-                # `fail` records the message; the traceback is what says which call produced it.
-                logger.exception("%s runtime failed for session %s", runtime.display_name, session_id)
-                await self._store.fail(session_id, f"{runtime.display_name} runtime failed: {_first_message(errors)}")
-        except asyncio.CancelledError:
-            # A `BaseException`, so neither clause above sees it. This is the replica going away —
-            # a rolling update, an evicted pod — which says nothing about the session: recording it
-            # as a failure gives the session a terminal row, which refuses the runner's reconnect.
-            # Hand it back instead; the sandbox outlives this process and whichever replica the
-            # runner redials adopts it. Nothing is swallowed — the sweep fails the session once its
-            # adoption window passes with no runner back.
-            keep_sandbox = True
-            await self._store.release_lease(session_id)
-            raise
-        finally:
-            # Shielded because everything here is an `await` and this task may already be
-            # cancelled, in which case the first would re-raise and the rest silently not happen.
-            # Best effort even so: a SIGKILL runs no finalizer, so the lease and not this block is
-            # what guarantees the session stops looking alive.
-            with contextlib.suppress(asyncio.CancelledError, TimeoutError):
-                await asyncio.shield(
-                    asyncio.wait_for(self._finalize(session_id, websocket, client, keep_sandbox), timeout=10)
-                )
-
     async def handle_journal_runner(self, websocket: WebSocket, session_id: UUID, bearer: str) -> None:
         """Serve one runner at the neutral-operation generation (#4667 stage 4).
 
@@ -998,26 +691,6 @@ class SessionService:
         await self._cleanup_terminal_claim(session_id)
         await self._store.closed(session_id)
 
-    async def _finalize(
-        self, session_id: UUID, websocket: WebSocket, client: RuntimeClient, keep_sandbox: bool
-    ) -> None:
-        """Let go of one runner connection, and of the session itself unless it outlives us.
-
-        `keep_sandbox` is the difference between "this conversation is over" and "this replica is".
-        Never delete the claim on the second: the sandbox is what the adopting replica reconnects
-        to.
-        """
-        if keep_sandbox:
-            # Said with a code rather than by dropping the socket, so the runner reconnects
-            # because it was told to rather than because it guessed.
-            with contextlib.suppress(Exception):
-                await websocket.close(code=GOING_AWAY_CODE, reason="console replica going away")
-            await client.aclose()
-            return
-        await client.aclose()
-        await self._cleanup_terminal_claim(session_id)
-        await self._store.closed(session_id)
-
     async def _renew_lease(self, session_id: UUID) -> None:
         """Hold *session_id*'s lease for as long as this replica runs it, and keep its sandbox with it.
 
@@ -1032,17 +705,6 @@ class SessionService:
                 session_id=session_id, expires_at=datetime.now(UTC) + timedelta(seconds=resources.session_ttl_seconds)
             )
             await asyncio.sleep(LEASE_RENEW_INTERVAL.total_seconds())
-
-    async def _watch_connection(self, client: RuntimeClient) -> None:
-        """Raise `WebSocketDisconnect` the moment the runner's stream ends.
-
-        The reader is a detached task, so a dropped socket cannot propagate into the task group by
-        itself — it becomes a `None` sentinel only a *turn* consumer sees, and an idle session is
-        not consuming. Waking here routes the drop to the `except* WebSocketDisconnect` clause, so
-        a roll hands the session back at once instead of after the graceful-shutdown timeout.
-        """
-        await client.wait_closed()
-        raise WebSocketDisconnect(code=GOING_AWAY_CODE)
 
     async def _watch_aborts(self, session_id: UUID, abort_event: asyncio.Event) -> None:
         """Set *abort_event* every time this session is told to abort, until cancelled.
@@ -1062,139 +724,6 @@ class SessionService:
         with self._notifications.watch_session(session_id, on_event):
             await asyncio.Event().wait()
 
-    async def _run_turn(
-        self,
-        client: RuntimeClient,
-        frames: AsyncIterator[ReceivedFrame],
-        session_id: UUID,
-        turn: TurnStart | ResumedTurn | WakeTurn,
-        *,
-        abort_event: asyncio.Event,
-        pending: asyncio.Task[ReceivedFrame] | None = None,
-    ) -> None:
-        """Ask *turn*'s question if it has not been asked, then consume the stream until the turn
-        completes.
-
-        **Project, then act.** Every frame goes through the selected runtime adapter and this loop
-        acts on the neutral events that come back, so what it knows about is prose, messages, tool calls
-        and a completed turn rather than any harness's native frame vocabulary
-        (<conversation_events.py>).
-
-        *frames* belongs to the session, not to this call — see `handle_runner`. This call is the
-        turn's span and the only thing that closes it, so a turn left open means no code got to
-        close it, which is what a replica losing its pod mid-exchange looks like from outside and
-        what `ResumedTurn` picks back up.
-
-        **No provider protocol state is interpreted here.** The selected handler privately carries
-        the native fold for this turn; the loop sees only neutral effects and checkpoint decisions.
-        Each non-terminal frame's effects are written with the projection cursor in one transaction
-        (`Store.apply_frame`), and `complete_frame` does the same for the terminal frame and
-        turn close. A process dying anywhere therefore leaves the items saying what happened and
-        the session saying which frame it got through — what makes adoption a replay from a durable
-        position and its effects exactly-once (`Store.apply_frame`).
-        """
-        runtime = await self._runtime(session_id)
-        turn_id = turn.turn_id
-        if isinstance(turn, TurnStart):
-            # A resumed turn's question was asked by a process that is gone, and a wake turn's was
-            # never asked at all — the harness began the exchange itself. Either way only the
-            # answer is still coming.
-            await client.query(turn.prompt)
-        # The provider owns every bit of protocol state. The generic loop gives it only durable
-        # neutral facts inherited from the open turn and acts on the neutral effects it returns.
-        handler = runtime.turn_handler(_inherited(turn))
-        completion: TurnCompletion | None = None
-        completion_frame_seq: int | None = None
-        terminal_events: tuple[ConversationEvent, ...] = ()
-        unusable: RuntimeUnusable | None = None
-        aborted = asyncio.ensure_future(abort_event.wait())
-        # Set once the abort has been seen and the harness interrupted, from which point this loop
-        # stops racing the abort event and drains what is left of the turn to its terminal frame.
-        interrupted = False
-        try:
-            while completion is None:
-                # Exactly one `anext` in flight, and the drain consumes the one it finds rather
-                # than starting another: an async generator refuses to be advanced twice at once,
-                # and an abort always arrives while this call is parked here. The caller's idle
-                # wait may already hold that one read (`pending`); it is consumed first for the
-                # same reason.
-                next_frame = pending if pending is not None else asyncio.ensure_future(anext(frames))
-                pending = None
-                if not interrupted:
-                    await asyncio.wait([next_frame, aborted], return_when=asyncio.FIRST_COMPLETED)
-                    if interrupted := abort_event.is_set():
-                        with contextlib.suppress(Exception):
-                            await client.interrupt()
-                # **The drain is this loop, not a second one beside it.** A harness may finish the
-                # message it is mid-way through between the interrupt and its terminal frame; each
-                # intervening frame is applied like any other
-                # It therefore moves `said_anything` and
-                # `queued_reply`, which is what keeps the tail below from owing the room the turn's
-                # final text as well.
-                #
-                # The stream stays open for the next turn: it is the session's, so an interrupt
-                # ends a turn rather than the conversation.
-                received = await next_frame
-                frame_seq = received.frame_seq
-                effects = handler.apply(frame_seq=frame_seq, frame=received.envelope)
-                unusable = unusable or effects.unusable
-                # The frame that ends the turn goes no further: what is left of the exchange is
-                # written below and `end_turn` is the transaction that closes it and carries the
-                # cursor past this frame, so projecting it into `apply_frame` would advance the
-                # cursor ahead of the turn's own last word.
-                if effects.completion is not None:
-                    completion = effects.completion
-                    completion_frame_seq = frame_seq
-                    terminal_events = effects.events
-                elif effects.checkpoint is Checkpoint.HOLD:
-                    # The integration has private state that is not durably representable yet. Keep
-                    # the cursor before it so adoption rebuilds that state from the raw frames.
-                    pass
-                else:
-                    await self._store.apply_frame(session_id, turn_id, frame_seq, effects.events)
-            assert completion_frame_seq is not None
-            # An abort is the operator's, so it outranks whatever the provider called the turn.
-            ended = conversation_event.TurnAborted() if abort_event.is_set() else _ended(completion.end)
-            # The terminal frame can carry ordinary durable effects as well as completion. They,
-            # the answer close, the turn outcome and the cursor belong to one transaction: a split
-            # would either lose terminal effects or let the cursor outrun the close on replica
-            # death. The completion text remains only a fallback for a provider whose prose first
-            # appears on that frame.
-            await self._store.complete_frame(
-                session_id,
-                turn_id,
-                completion_frame_seq,
-                terminal_events,
-                ended=ended,
-                final_text="" if isinstance(ended, conversation_event.TurnFailed) else completion.final_text,
-            )
-            # **A failed turn is not a failed session.** The exchange is closed and carries its own
-            # reason, so the operator can read it and send another prompt. Only the runtime saying
-            # it can serve no other ends the session, and it says that separately from the turn.
-            if unusable is not None:
-                raise RuntimeError(
-                    f"the agent's turn failed: {ended.failure}"
-                    if isinstance(ended, conversation_event.TurnFailed)
-                    else unusable.reason
-                )
-        except Exception as error:
-            if _transient_database_error(error):
-                # The transaction never committed, so the turn is still open and its cursor still
-                # points before the unwritten frame. Closing it FAILED would record a permanent
-                # outcome for an infrastructure blip; the caller hands the session back for
-                # adoption instead, which replays the open turn from the cursor.
-                raise
-            # Bounded only where the failure was diagnosed from a terminal frame; otherwise this
-            # turn ended on no frame of its own and `end_turn` bounds it by what it recorded.
-            await self._store.end_turn(
-                turn_id, conversation_event.TurnFailed(failure=str(error)), last_frame_seq=completion_frame_seq
-            )
-            await self._store.fail(session_id, str(error))
-            raise
-        finally:
-            # The event outlives the turn (it is the session's), so only this turn's waiter goes.
-            aborted.cancel()
-
     async def aclose(self) -> None:
         # Called from the lifespan on the way down. Handing every held lease back in one statement
         # is the guarantee the per-connection releases cannot be: a cancelled `handle_runner` may
@@ -1204,32 +733,6 @@ class SessionService:
         if released:
             logger.info("Released %d held session lease(s) on shutdown", released)
         await self._runtimes.aclose()
-
-
-def _ended(end: TurnEnd) -> conversation_event.TurnEnd:
-    """The turn's own end as the row that records it."""
-    match end:
-        case TurnAnswered():
-            return conversation_event.TurnAnswered()
-        case TurnAborted():
-            return conversation_event.TurnAborted()
-        case TurnFailed():
-            return conversation_event.TurnFailed(failure=end.reason)
-
-
-async def _replaying(
-    recorded: Sequence[ReceivedFrame], live: AsyncIterator[ReceivedFrame]
-) -> AsyncIterator[ReceivedFrame]:
-    """The frames past the session's cursor, then the ones still to arrive.
-
-    **This is what makes adoption and steady state one call.** The turn loop consumes one iterator
-    and cannot tell which half a frame came from, so a turn whose ending is among the recorded
-    frames closes without the socket being consulted (`Store.apply_frame`).
-    """
-    for frame in recorded:
-        yield frame
-    async for frame in live:
-        yield frame
 
 
 def _service(request: Request) -> SessionService:

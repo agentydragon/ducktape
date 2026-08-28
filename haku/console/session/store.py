@@ -87,9 +87,7 @@ from haku.console.session.status import (
 )
 from haku.console.session.subscription import stream_head
 from haku.console.x.conversation_events import ConversationEvent, ItemSegment, MessageCompleted, MessageStarted, OpenRef
-from haku.console.x.runtime import RuntimeAdapter, RuntimeRegistry
-from haku.runtime.x.bridge.client import ReceivedFrame, RecordedFrame
-from haku.runtime.x.bridge.protocol import HarnessFrame
+from haku.runtime.x.bridge.client import RecordedFrame
 
 logger = logging.getLogger(__name__)
 
@@ -319,35 +317,6 @@ class OpenItem:
 
 
 @dataclass(frozen=True, slots=True)
-class ResumedTurn:
-    """A turn a departed holder opened and asked, handed to whoever adopted the session.
-
-    What the departed holder got through is on the turn's own row (`TurnState`), so adoption reads
-    it rather than rebuilding it out of the frame log.
-
-    `replay` is the rest of that account — the frames recorded past the session's projection
-    cursor, whose effects therefore did not commit. Feeding them to the turn loop ahead of the live
-    stream is what makes adoption the same call as steady state with a cursor that happens to be
-    behind (see `apply_frame`). Empty for a session with no cursor, where adoption falls
-    back to reading the frames itself.
-
-    `streaming` is the message the departed holder left open, which the adopting fold has to be
-    given: the store resumes the *item*, so the prose lands on the right row either way, but only
-    what has already been said tells the completed block arriving next how much of itself is a
-    repeat (`claude_code.projection.undelivered`).
-    """
-
-    turn_id: UUID
-    replay: tuple[ReceivedFrame, ...]
-    streaming: OpenItem | None = None
-    reasoning: OpenItem | None = None
-    # Calls already materialised for this turn. A late completed backend block may repeat a call
-    # the stream declared before a replica handover; deriving these ids keeps that replay idempotent.
-    seen_call_ids: frozenset[str] = frozenset()
-    completed_call_ids: frozenset[str] = frozenset()
-
-
-@dataclass(frozen=True, slots=True)
 class TurnState:
     """How far a turn has got, read off the items it opened.
 
@@ -433,15 +402,8 @@ class PositionUnusableError(Exception):
 class Store:
     """Async Postgres store for agent sessions."""
 
-    def __init__(
-        self,
-        sessions: async_sessionmaker[AsyncSession],
-        runtime_registry: RuntimeRegistry,
-        *,
-        adoption_grace: timedelta = ADOPTION_GRACE,
-    ):
+    def __init__(self, sessions: async_sessionmaker[AsyncSession], *, adoption_grace: timedelta = ADOPTION_GRACE):
         self._sessions = sessions
-        self._runtime_registry = runtime_registry
         # Injectable so a full-stack test can exercise the real adoption path without spending the
         # production window in wall clock; `console_replica` is the only caller that shortens it.
         self._adoption_grace = adoption_grace
@@ -1149,74 +1111,6 @@ class Store:
                 ),
             )
             return result.rowcount
-
-    async def adopt_open_turn(self, session_id: UUID) -> ResumedTurn | None:
-        """Say what the previous holder's open turn was, and hand back the one worth finishing.
-
-        The sandbox outlives the replica, so an adopting console inherits the exchange too. One
-        question is asked here: **was the prompt ever asked?** No prompt frame means the previous
-        holder claimed the prompt and died before writing it, so it goes back on the queue. A
-        projection cursor cannot answer that — the console's own outbound write is the evidence,
-        and the fold projects the selected runtime adapter's outbound prompt frames to nothing on
-        purpose.
-
-        Everything else is the fold's. The turn resumes with the frames past its cursor, and if one
-        of them is the turn's ending then projecting it closes the turn; how far the answer got is
-        on the turn's row, which `_run_turn` reads the same way whether it opened the turn or
-        inherited it.
-
-        Leaving a turn open is safe only because `uq_session_turns_open` permits exactly one,
-        which is what stops `next_prompt` opening a second beside the inherited one.
-        """
-        async with self._sessions.begin() as db:
-            runtime_kind = await db.scalar(
-                select(Conversation.runtime_kind)
-                .join(Session, Session.conversation_id == Conversation.conversation_id)
-                .where(Session.session_id == session_id)
-            )
-            if runtime_kind is None:
-                raise KeyError(session_id)
-            turn = await db.scalar(
-                select(ConversationTurn)
-                .where(ConversationTurn.session_id == session_id, ConversationTurn.ended_at.is_(None))
-                .with_for_update()
-            )
-            if turn is None:
-                return None
-            turn_id, first_frame_seq = turn.turn_id, turn.first_frame_seq
-            if not await _prompt_left(
-                db, session_id, first_frame_seq or 0, runtime=self._runtime_registry[runtime_kind]
-            ):
-                await _requeue(db, turn_id)
-                await notify(db, SessionEventKind.PROMPT, session_id)
-            else:
-                cursor = await db.scalar(select(Session.projected_frame_seq).where(Session.session_id == session_id))
-                # A cursor inside this turn is a position this turn's own writes put there.
-                # One from before the turn opened is stale — a replica that projects without
-                # advancing it left it behind — and re-projecting from a stale position would
-                # redo effects that did commit, which is a duplicated message and a duplicated
-                # room reply rather than a lost one. `next_prompt` anchors it at the frame before
-                # the turn, so the normal case satisfies this by construction.
-                if cursor is not None and cursor >= (first_frame_seq or 1) - 1:
-                    return ResumedTurn(
-                        turn_id=turn_id,
-                        replay=await _unprojected_frames(db, session_id, cursor),
-                        streaming=await _open_item(db, turn_id, ItemType.MESSAGE),
-                        reasoning=await _open_item(db, turn_id, ItemType.REASONING),
-                        seen_call_ids=await _seen_call_ids(db, turn_id),
-                        completed_call_ids=await _completed_call_ids(db, turn_id),
-                    )
-        # Two ways to arrive here, one outcome. A turn that never asked its prompt has nothing to
-        # finish, and a turn whose cursor sits before it has no position to resume from — so
-        # neither has an outcome but failure.
-        await self.end_turn(
-            turn_id,
-            conversation_event.TurnFailed(
-                failure="the console could not resume this exchange: its prompt was never asked, "
-                "or its projection cursor no longer reaches it"
-            ),
-        )
-        return None
 
     async def claim_cleanup_candidates(self) -> list[UUID]:
         """Terminal sessions whose sandbox claim has not been recorded as deleted."""
@@ -2385,28 +2279,6 @@ def _advance_cursor(chat: Session, frame_seq: int | None) -> None:
         chat.projected_frame_seq = frame_seq
 
 
-async def _unprojected_frames(db: AsyncSession, session_id: UUID, cursor: int) -> tuple[ReceivedFrame, ...]:
-    """The recorded frames past *cursor* — the ones whose effects did not commit.
-
-    Deltas are in it, because their effects are message content and the cursor is what says whether
-    that content landed. `setup_output` is not: the console authored it, and it carries no protocol
-    `type` for the fold to read.
-    """
-    rows = await db.scalars(
-        select(SessionFrame)
-        .where(
-            SessionFrame.session_id == session_id,
-            SessionFrame.frame_seq > cursor,
-            SessionFrame.kind == BridgeFrameKind.HARNESS_FRAME,
-        )
-        .order_by(SessionFrame.frame_seq)
-    )
-    return tuple(
-        ReceivedFrame(envelope=HarnessFrame(frame=row.payload, seq=row.runner_seq), frame_seq=row.frame_seq)
-        for row in rows
-    )
-
-
 async def _queued_prompt(db: AsyncSession, conversation_id: UUID, *, lock: bool = False) -> ConversationPrompt | None:
     """The prompt this conversation is waiting to run, if it has one.
 
@@ -2497,57 +2369,6 @@ async def _has_pending_prompt(db: AsyncSession, conversation_id: UUID) -> bool:
     return (
         await db.scalar(select(pending.c.conversation_id).where(pending.c.conversation_id == conversation_id).limit(1))
     ) is not None
-
-
-async def _open_item(db: AsyncSession, turn_id: UUID, item_type: ItemType) -> OpenItem | None:
-    """The prose item this turn is streaming into, with the frames its rows were read from."""
-    item = await db.scalar(
-        select(ConversationItem).where(
-            ConversationItem.turn_id == turn_id,
-            ConversationItem.item_type == item_type,
-            ConversationItem.status == ItemStatus.OPEN,
-        )
-    )
-    if item is None:
-        return None
-    span = (
-        await db.execute(
-            select(
-                func.min(ConversationEventRow.source_first_frame_seq),
-                func.max(ConversationEventRow.source_last_frame_seq),
-            ).where(ConversationEventRow.item_id == item.item_id)
-        )
-    ).one()
-    # Every row that opens a message names its frame, so the aggregate is null only for a message
-    # with no rows at all — a shape nothing writes, and one that would leave a completion pointing
-    # at frames rather than fabricating a span.
-    first, last = span if span[0] is not None else (0, 0)
-    return OpenItem(text=item.item_text, first_frame_seq=first, last_frame_seq=last)
-
-
-async def _seen_call_ids(db: AsyncSession, turn_id: UUID) -> frozenset[str]:
-    """The provider call ids this turn already materialised, for idempotent replay."""
-    call_ids = await db.scalars(
-        select(ConversationItem.call_id).where(
-            ConversationItem.turn_id == turn_id,
-            ConversationItem.item_type == ItemType.TOOL_CALL,
-            ConversationItem.call_id.is_not(None),
-        )
-    )
-    return frozenset(call_id for call_id in call_ids if call_id is not None)
-
-
-async def _completed_call_ids(db: AsyncSession, turn_id: UUID) -> frozenset[str]:
-    """Provider call ids whose materialized items have already completed."""
-    call_ids = await db.scalars(
-        select(ConversationItem.call_id).where(
-            ConversationItem.turn_id == turn_id,
-            ConversationItem.item_type == ItemType.TOOL_CALL,
-            ConversationItem.status == ItemStatus.COMPLETE,
-            ConversationItem.call_id.is_not(None),
-        )
-    )
-    return frozenset(call_id for call_id in call_ids if call_id is not None)
 
 
 async def _turn_state(db: AsyncSession, turn_id: UUID) -> TurnState:
@@ -2670,49 +2491,3 @@ async def _open_turn(db: AsyncSession, conversation_id: UUID) -> UUID | None:
         )
     )
     return turn_id
-
-
-async def _prompt_left(db: AsyncSession, session_id: UUID, first_frame_seq: int, *, runtime: RuntimeAdapter) -> bool:
-    """Whether the turn starting at *first_frame_seq* ever wrote its prompt to the agent.
-
-    **The console's own record is the evidence, not the harness's acknowledgement.** `sent()` records
-    the frame before `channel.write` (`claude_code.client._write`), so a row here means this end committed
-    to sending the prompt. A native lifecycle frame — the only thing that would say whether the
-    *harness* has it — may still be sitting unrecorded in the runner's replay window, since replay
-    does not begin until the socket is accepted and this runs before that.
-
-    So the ambiguous middle — recorded, and then the write or the replica died — is deliberately
-    treated as delivered: a duplicate turn is the worse of the two failures. What this closes is
-    the window where nothing was recorded at all.
-    """
-    written = await db.scalars(
-        select(SessionFrame)
-        .where(
-            SessionFrame.session_id == session_id,
-            SessionFrame.frame_seq >= first_frame_seq,
-            SessionFrame.direction == FrameDirection.TO_AGENT,
-            SessionFrame.kind == BridgeFrameKind.HARNESS_FRAME,
-        )
-        .order_by(SessionFrame.frame_seq)
-    )
-    return runtime.prompt_submitted(HarnessFrame(frame=row.payload, seq=row.runner_seq) for row in written.all())
-
-
-async def _requeue(db: AsyncSession, turn_id: UUID) -> None:
-    """Put the prompts *turn_id* claimed back where `next_prompt` will find them again.
-
-    Three writes because the claim is recorded in three places, and a prompt left in any of them is
-    one the queue no longer offers: the queue row's `claimed_at`, the transcript row's status, and
-    the link saying this turn answered it — which has to go, or the turn that finally does answer
-    cannot record that it did (`(turn_id, message_id)` is the primary key).
-    """
-    returned = cast(
-        "CursorResult[Any]",
-        await db.execute(
-            update(ConversationPrompt)
-            .where(ConversationPrompt.turn_id == turn_id)
-            .values(turn_id=None, claimed_at=None, claimed_by_session_id=None)
-        ),
-    ).rowcount
-    if returned:
-        logger.warning("turn %s never asked its prompt; re-queued %d", turn_id, returned)

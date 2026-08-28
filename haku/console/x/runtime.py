@@ -7,38 +7,15 @@ protocol.  The runner itself remains one Pydantic-envelope process bridge for ev
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
-from enum import StrEnum
-from typing import Any, Protocol
+from typing import Protocol
 from uuid import UUID
 
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.sandbox_claims import SandboxClaims
 from haku.console.session.system_prompt import SystemPromptTemplate
-from haku.console.x.conversation_events import ConversationEvent, TurnEnd
-from haku.runtime.x.bridge.client import FrameSink, ReceivedFrame, SentPrompt
-from haku.runtime.x.bridge.protocol import HarnessFrame, HarnessLaunch, TextWebSocket
-from haku.runtime.x.bridge.transport import ProgressSink
-
-
-class RuntimeClient(Protocol):
-    """The provider-neutral part of a connected harness client used by the turn loop."""
-
-    async def connect(self) -> Mapping[str, Any]: ...
-
-    async def query(self, text: str) -> SentPrompt: ...
-
-    async def interrupt(self) -> None: ...
-
-    def frames(self) -> AsyncIterator[ReceivedFrame]: ...
-
-    async def wait_closed(self) -> None: ...
-
-    async def aclose(self) -> None: ...
-
-
-RuntimeClientFactory = Callable[[TextWebSocket, HarnessLaunch, ProgressSink | None, FrameSink], RuntimeClient]
+from haku.runtime.x.bridge.protocol import HarnessLaunch
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,113 +50,13 @@ class RuntimeKey:
     runtime_kind: HarnessKind
 
 
-@dataclass(frozen=True, slots=True)
-class TurnCompletion:
-    """Provider-neutral interpretation of the native frame that ended a turn.
-
-    `end` rather than an outcome beside an optional reason, so an answered turn cannot carry a
-    failure and a failed one cannot arrive without saying what failed.
-    """
-
-    end: TurnEnd
-    final_text: str
-
-
-@dataclass(frozen=True, slots=True)
-class OpenItemSeed:
-    """Durable part of an open prose item a replacement turn handler inherits."""
-
-    text: str
-    first_frame_seq: int
-    last_frame_seq: int
-
-
-@dataclass(frozen=True, slots=True)
-class TurnProjectionSeed:
-    """Provider-neutral durable facts from which one turn handler resumes."""
-
-    open_message: OpenItemSeed | None = None
-    open_reasoning: OpenItemSeed | None = None
-    seen_call_ids: frozenset[str] = frozenset()
-    completed_call_ids: frozenset[str] = frozenset()
-
-
-EMPTY_TURN_PROJECTION_SEED = TurnProjectionSeed()
-
-
-class Checkpoint(StrEnum):
-    """Whether a frame's effects and projection cursor may commit yet."""
-
-    ADVANCE = "advance"
-    HOLD = "hold"
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeUnusable:
-    """The runtime says it can serve no further exchange on this session.
-
-    **A failed turn does not imply this and must not be read as it.** Codex states it separately,
-    as a `systemError` thread status; Claude never states it, and its CLI answers the next prompt
-    after a failure like any other. Only this ends the session.
-    """
-
-    reason: str
-
-
-@dataclass(frozen=True, slots=True)
-class FrameEffects:
-    """One native frame's neutral effects, produced by its harness integration.
-
-    ``events`` remain durable even when the same frame supplies ``completion``; the terminal write
-    commits them atomically with the turn close. ``HOLD`` is for provider state that is not durably
-    representable yet, such as partial JSON tool arguments. It is only valid with no emitted events
-    or completion; replay then starts before the composition and the integration rebuilds its
-    private state from the same raw frames.
-    """
-
-    events: tuple[ConversationEvent, ...] = ()
-    completion: TurnCompletion | None = None
-    checkpoint: Checkpoint = Checkpoint.ADVANCE
-    unusable: RuntimeUnusable | None = None
-
-    def __post_init__(self) -> None:
-        if self.checkpoint is Checkpoint.HOLD and self.events:
-            raise ValueError("a held frame cannot emit durable conversation events")
-        if self.checkpoint is Checkpoint.HOLD and self.completion is not None:
-            raise ValueError("a terminal frame cannot hold the durable projection cursor")
-
-
-class RuntimeTurnHandler(Protocol):
-    """Stateful provider-owned interpretation of one turn's native frames."""
-
-    def apply(self, *, frame_seq: int, frame: HarnessFrame) -> FrameEffects: ...
-
-
-@dataclass(frozen=True, slots=True)
-class WakeStart:
-    """The harness began an exchange of its own while no turn was open.
-
-    *description* is what woke it, in the harness's words where it gave any — a background task's
-    completion notification, or the generic fallback where the wake carried no prose.
-    """
-
-    description: str
-
-
-class RuntimeWakeWatcher(Protocol):
-    """Provider-owned classification of frames arriving while no turn is open.
-
-    Stateful across one idle span: the frames announcing a wake (a task notification, a command
-    lifecycle marker) precede the frame that begins the exchange, so the watcher remembers what it
-    has seen. `observe` returns a `WakeStart` for the frame that begins an exchange — that frame is
-    then the opened turn's first — and None for every frame that is idle chatter.
-    """
-
-    def observe(self, frame: HarnessFrame) -> WakeStart | None: ...
-
-
 class RuntimeAdapter(Protocol):
-    """Provider-owned protocol behavior behind one immutable ``HarnessKind``."""
+    """Provider-owned launch behavior behind one immutable ``HarnessKind``.
+
+    Launch is all a runtime owes the neutral-operation generation (#4667): the runner interprets
+    its own native stream and projects it, so the Console composes no native protocol and projects
+    no native frames for any harness.
+    """
 
     @property
     def kind(self) -> HarnessKind: ...
@@ -188,30 +65,7 @@ class RuntimeAdapter(Protocol):
     def display_name(self) -> str: ...
 
     def build_launch(self, launch: RuntimeLaunch) -> HarnessLaunch:
-        """The native `HarnessLaunch` for these generic launch facts.
-
-        The journal bridge (#4667) sends this to the runner directly: under the neutral-operation
-        generation the Console composes no native protocol itself, so it needs the launch the
-        runner obeys without the `client` that used to wrap it.
-        """
-        ...
-
-    def client(
-        self, websocket: TextWebSocket, launch: RuntimeLaunch, progress: ProgressSink | None, frames_to: FrameSink
-    ) -> RuntimeClient: ...
-
-    def turn_handler(self, seed: TurnProjectionSeed = EMPTY_TURN_PROJECTION_SEED) -> RuntimeTurnHandler: ...
-
-    def wake_watcher(self) -> RuntimeWakeWatcher | None:
-        """A fresh watcher for one idle span, or None for a harness that never wakes itself.
-
-        None is also the conservative answer: a provider whose idle-time frames are unclassified
-        keeps the pre-wake behaviour, where the stream is only consumed inside a turn.
-        """
-        ...
-
-    def prompt_submitted(self, frames: Iterable[HarnessFrame]) -> bool:
-        """Whether these outbound native frames include the turn's prompt submission."""
+        """The native `HarnessLaunch` the journal bridge (#4667) sends the runner directly."""
         ...
 
 
