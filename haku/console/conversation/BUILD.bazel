@@ -137,6 +137,7 @@ py_library(
         "//haku/console/session:session_frames",
         "//haku/console/x:conversation_events",
         "//haku/console/x:runtime",
+        "//haku/console/x/claude_code:runtime",
         "//haku/runtime/x/bridge:protocol",
         "//util:enum_vocab",
         "@pypi//sqlalchemy",

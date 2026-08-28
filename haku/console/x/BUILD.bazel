@@ -45,6 +45,7 @@ py_test(
         "//haku/console:conftest",
         "//haku/console/session:system_prompt",
         "//haku/console/x/claude_code:projection",
+        "//haku/console/x/claude_code:runtime",
         "//haku/console/x/claude_code/testing:fold",
         "//haku/console/x/claude_code/testing:wire",
         "//haku/runtime/x/bridge:protocol",

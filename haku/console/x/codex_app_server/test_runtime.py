@@ -1,23 +1,16 @@
-"""Codex as one concrete implementation of the neutral Console runtime seam."""
+"""Codex as the Console's launch adapter — the runner owns its protocol and projection (#4667)."""
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import pytest_bazel
 
 from haku.console.chat_models import RuntimeKind
-from haku.console.conversation.conversation_event import FrameRange
-from haku.console.x.codex_app_server import projection
-from haku.console.x.codex_app_server.client import CodexThread
 from haku.console.x.codex_app_server.config import ReasoningEffort
-from haku.console.x.codex_app_server.runtime import CodexRuntimeAdapter, CodexTurnHandler
-from haku.console.x.conversation_events import ItemSegment, TurnAnswered, TurnCompleted, TurnFailed
-from haku.console.x.runtime import OpenItemSeed, RuntimeLaunch, RuntimeMcpServer, TurnProjectionSeed
-from haku.runtime.x.bridge.client import FrameSink
+from haku.console.x.codex_app_server.runtime import CodexRuntimeAdapter
+from haku.console.x.runtime import RuntimeLaunch, RuntimeMcpServer
 from haku.runtime.x.bridge.codex_options import CodexModelProvider
-from haku.runtime.x.bridge.protocol import HarnessFrame, TextWebSocket
 
 
 def _launch(**overrides: Any) -> RuntimeLaunch:
@@ -36,22 +29,8 @@ def _launch(**overrides: Any) -> RuntimeLaunch:
     return RuntimeLaunch(**values)
 
 
-class CapturingFactory:
-    def __init__(self) -> None:
-        self.launch: Any = None
-        self.thread: CodexThread | None = None
-        self.result = object()
-
-    def __call__(self, websocket, launch, progress, frames_to, thread):
-        self.launch = launch
-        self.thread = thread
-        return self.result
-
-
-def test_codex_builds_process_and_thread_configuration_from_the_same_neutral_launch() -> None:
-    factory = CapturingFactory()
+def test_codex_launch_carries_the_provider_argv_and_the_runner_thread_params() -> None:
     adapter = CodexRuntimeAdapter(
-        client_factory=factory,
         model="codex-gpt-5.6-sol",
         reasoning_effort=ReasoningEffort.LOW,
         model_provider=CodexModelProvider(
@@ -61,11 +40,9 @@ def test_codex_builds_process_and_thread_configuration_from_the_same_neutral_lau
             api_key_env_var="OPENAI_API_KEY",
         ),
     )
-    result = adapter.client(cast(TextWebSocket, object()), _launch(), None, cast(FrameSink, object()))
+    launch = adapter.build_launch(_launch())
 
-    assert result is factory.result
-    assert factory.launch is not None
-    assert factory.launch.arguments == (
+    assert launch.arguments == (
         "-c",
         'model_provider = "haku"',
         "-c",
@@ -79,87 +56,16 @@ def test_codex_builds_process_and_thread_configuration_from_the_same_neutral_lau
         "--listen",
         "stdio://",
     )
-    assert factory.launch.cwd == "/workspace"
-    assert factory.launch.resume_from == 29
-    # The thread params the runner now owns `thread/start` for ride the launch environment beside
-    # the console's own, and match the v3 `CodexThread` below.
-    assert factory.launch.environment == {
+    assert launch.cwd == "/workspace"
+    assert launch.resume_from == 29
+    # The runner owns thread/start now, so model, reasoning effort and developer instructions ride
+    # the launch environment for the runner's CodexHarness to read.
+    assert launch.environment == {
         "CODEX_HOME": "/codex-home",
         "HAKU_CODEX_MODEL": "codex-gpt-5.6-sol",
         "HAKU_CODEX_REASONING_EFFORT": "low",
         "HAKU_CODEX_DEVELOPER_INSTRUCTIONS": "you are Haku",
     }
-    assert factory.thread == CodexThread(
-        cwd=Path("/workspace"),
-        model="codex-gpt-5.6-sol",
-        reasoning_effort=ReasoningEffort.LOW,
-        developer_instructions="you are Haku",
-    )
-
-
-def test_codex_prompt_detection_reads_only_its_native_request_method() -> None:
-    adapter = CodexRuntimeAdapter()
-
-    assert adapter.prompt_submitted([HarnessFrame(frame={"method": "turn/start", "id": 3, "params": {}})])
-    assert not adapter.prompt_submitted([HarnessFrame(frame={"method": "turn/started", "params": {}})])
-    assert not adapter.prompt_submitted([HarnessFrame(frame={"type": "user"})])
-
-
-def test_turn_handler_seeds_open_message_reasoning_and_call_completion_state() -> None:
-    handler = cast(
-        CodexTurnHandler,
-        CodexRuntimeAdapter().turn_handler(
-            TurnProjectionSeed(
-                open_message=OpenItemSeed(text="half answer", first_frame_seq=4, last_frame_seq=6),
-                open_reasoning=OpenItemSeed(text="half thought", first_frame_seq=7, last_frame_seq=8),
-                seen_call_ids=frozenset({"call-open", "call-done"}),
-                completed_call_ids=frozenset({"call-done"}),
-            )
-        ),
-    )
-
-    assert handler.state == projection.ProjectionState(
-        open_message=projection.OpenItem(4, 6, None, "half answer"),
-        open_reasoning=projection.OpenItem(7, 8, None, "half thought"),
-        seen_call_ids=frozenset({"call-open", "call-done"}),
-        completed_call_ids=frozenset({"call-done"}),
-    )
-
-
-def test_live_turn_handler_emits_neutral_events_and_terminal_completion() -> None:
-    handler = CodexRuntimeAdapter().turn_handler()
-    frames = [
-        {"method": "item/started", "params": {"item": {"type": "agentMessage", "id": "message-1"}}},
-        {"method": "item/agentMessage/delta", "params": {"itemId": "message-1", "delta": "hello"}},
-        {"method": "item/completed", "params": {"item": {"type": "agentMessage", "id": "message-1", "text": "hello"}}},
-        {"method": "turn/completed", "params": {"turn": {"id": "turn-1", "status": "completed"}}},
-    ]
-    effects = [handler.apply(frame_seq=index, frame=HarnessFrame(frame=frame)) for index, frame in enumerate(frames, 1)]
-
-    assert any(isinstance(event, ItemSegment) for effect in effects for event in effect.events)
-    assert effects[-1].events[-1] == TurnCompleted(end=TurnAnswered(), provenance=FrameRange(4, 4))
-    assert effects[-1].completion is not None
-    assert effects[-1].completion.end == TurnAnswered()
-    assert effects[-1].completion.final_text == ""
-
-
-def test_failed_native_turn_becomes_a_neutral_failure() -> None:
-    effects = (
-        CodexRuntimeAdapter()
-        .turn_handler()
-        .apply(
-            frame_seq=9,
-            frame=HarnessFrame(
-                frame={
-                    "method": "turn/completed",
-                    "params": {"turn": {"id": "turn-1", "status": "failed", "error": {"message": "boom"}}},
-                }
-            ),
-        )
-    )
-
-    assert effects.completion is not None
-    assert effects.completion.end == TurnFailed(reason="boom")
 
 
 def test_adapter_identity_is_codex_without_making_it_a_configured_runtime() -> None:

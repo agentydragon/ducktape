@@ -2,9 +2,8 @@
 
 The Codex half of the #4667 boundary: the runner interprets the app-server's own JSON-RPC-shaped
 notifications and emits the materialized operations of <neutral_operations.py>, so the Console stops
-parsing native payloads. Semantics are ported from the Console projector this replaces at the
-generation cut (`haku/console/x/codex_app_server/projection.py`), written against what the wire does
-rather than what it documents.
+parsing native payloads. The projection is written against what the wire does rather than what it
+documents.
 
 **Turns are brackets the runner draws.** Codex never wakes itself and never opens a turn on its own
 stream, so — unlike Claude — a turn opens only when a prompt is admitted (`admit`, `PromptsCause`),

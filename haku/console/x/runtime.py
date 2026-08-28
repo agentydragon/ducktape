@@ -7,7 +7,7 @@ protocol.  The runner itself remains one Pydantic-envelope process bridge for ev
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Iterable, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Protocol
@@ -179,7 +179,14 @@ class RuntimeWakeWatcher(Protocol):
 
 
 class RuntimeAdapter(Protocol):
-    """Provider-owned protocol behavior behind one immutable ``RuntimeKind``."""
+    """Provider-owned launch behavior behind one immutable ``RuntimeKind``.
+
+    Launch is all a runtime owes the neutral-operation generation: the Console composes no native
+    protocol and projects no native frames — the runner interprets its own stream (#4667). Native
+    projection is a Claude-only console concern of the v3 turn loop, so its methods (`client`,
+    `turn_handler`, `wake_watcher`, `prompt_submitted`) live on `ClaudeRuntimeAdapter` and the v3
+    consumers narrow to it, rather than on this protocol every runtime must satisfy.
+    """
 
     @property
     def kind(self) -> RuntimeKind: ...
@@ -192,26 +199,8 @@ class RuntimeAdapter(Protocol):
 
         The journal bridge (#4667) sends this to the runner directly: under the neutral-operation
         generation the Console composes no native protocol itself, so it needs the launch the
-        runner obeys without the `client` that used to wrap it.
+        runner obeys without a `client` to wrap it.
         """
-        ...
-
-    def client(
-        self, websocket: TextWebSocket, launch: RuntimeLaunch, progress: ProgressSink | None, frames_to: FrameSink
-    ) -> RuntimeClient: ...
-
-    def turn_handler(self, seed: TurnProjectionSeed = EMPTY_TURN_PROJECTION_SEED) -> RuntimeTurnHandler: ...
-
-    def wake_watcher(self) -> RuntimeWakeWatcher | None:
-        """A fresh watcher for one idle span, or None for a harness that never wakes itself.
-
-        None is also the conservative answer: a provider whose idle-time frames are unclassified
-        keeps the pre-wake behaviour, where the stream is only consumed inside a turn.
-        """
-        ...
-
-    def prompt_submitted(self, frames: Iterable[HarnessFrame]) -> bool:
-        """Whether these outbound native frames include the turn's prompt submission."""
         ...
 
 

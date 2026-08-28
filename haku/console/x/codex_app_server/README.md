@@ -1,42 +1,19 @@
-# Codex app-server runtime adapter
+# Codex app-server launch adapter
 
-This isolated package parses and projects the app-server protocol shipped by
-`@openai/codex@0.144.1`. It implements the same Console runtime and shared-runner seams as Claude,
-but remains unconfigured for production execution: it adds no deploy runtime selection, sandbox
-namespace, credentials, or conversation writer.
+Codex runs at the neutral-operation generation (#4667): the runner (`haku/runtime/x/bridge`,
+`codex_harness.py` / `codex_projection.py`) starts `codex app-server`, drives its handshake and
+turns, and projects its notifications to neutral operations. The Console composes no native protocol
+and projects no native frames for Codex.
 
-The committed `testdata/real_text_command.sanitized.jsonl` is a real, reviewed capture from
-`codex-cli 0.144.1` (two bounded turns: text-only and command execution). Its capture and
-sanitization provenance is recorded in `testdata/README.md`; `testdata/schema_derived_turn.synthetic.jsonl`
-is synthetic schema coverage and must not be described as observed wire evidence.
+This package therefore holds only what the Console still owns for Codex:
 
-## Capture a real sanitized trace
+- `config.py` — the deploy config (`CodexAppServerImplementationConfig`) and the pinned Codex wire
+  vocabularies (`ReasoningEffort`, `ApprovalPolicy`, `SandboxMode`).
+- `runtime.py` — the launch adapter (`CodexRuntimeAdapter`): `kind`, `display_name`, and
+  `build_launch`, which turns the shared runtime's neutral launch facts into Codex's process argv
+  plus the `thread/start` params (model, reasoning effort, developer instructions) the runner reads
+  from the launch environment.
 
-Run inside a disposable credentialed Codex workspace with a fixed, reviewable prompt:
-
-```sh
-bbr run //haku/console/x/codex_app_server:capture_bin -- \
-  --codex /path/to/pinned/codex \
-  --cwd /disposable/workspace \
-  --output /tmp/codex-app-server.sanitized.jsonl \
-  --prompt 'Reply with exactly TRACE_OK. Do not inspect files or run commands.'
-```
-
-For a command lifecycle, use an equally bounded prompt that names a harmless command and expected
-literal output. MCP lifecycle capture additionally requires a deliberately configured safe MCP
-server; do not add credentials or MCP configuration to this package.
-
-The utility:
-
-- launches `codex app-server --listen stdio://`;
-- performs `initialize`/`initialized`, `thread/start`, and `turn/start`;
-- records direction-labelled JSONL through the matching `turn/completed`;
-- drains but never records stderr;
-- records no environment block and substring-replaces inherited environment values, skipping values
-  shorter than 12 characters (not credential material, and replacing them corrupts unrelated text);
-- replaces the prompt whole at the prompt-bearing protocol paths (`turn/start` input, `userMessage`
-  content), so a short prompt like `hi` cannot mangle other frame text;
-- replaces workspace paths — refusing a workspace shorter than 12 characters — native IDs,
-  credential-shaped keys, bearer values, and OpenAI-key-shaped strings before writing.
-
-Sanitization is not a substitute for review. Follow `testdata/README.md` before committing output.
+The native client, protocol/frame vocabulary, projection and capture tooling that used to live here
+moved runner-side with the #4667 cut; git holds the pre-cut versions and the protocol-evidence
+capture.

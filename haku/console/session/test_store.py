@@ -79,6 +79,7 @@ from haku.console.session.store import (
     TurnState,
 )
 from haku.console.tool_calls import ToolCallStatus
+from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
 from haku.console.x.claude_code.testing.wire import assistant, result, text_block, text_delta
 from haku.console.x.conversation_events import (
     CallRef,
@@ -89,7 +90,7 @@ from haku.console.x.conversation_events import (
     ToolCallCompleted,
     ToolCallStarted,
 )
-from haku.console.x.runtime import RuntimeAdapter, RuntimeRegistry
+from haku.console.x.runtime import RuntimeRegistry
 
 ROOM = "!room:example.org"
 
@@ -100,25 +101,21 @@ def _harness(frames: Sequence[FrameRecord]) -> list[HarnessFrameRecord]:
     return cast(list[HarnessFrameRecord], list(frames))
 
 
-class _AlternateFrameVocabulary:
-    """A harness whose native JSON has no conventional discriminator keys."""
-
-    kind = RuntimeKind.CLAUDE_CODE
-
-    def prompt_submitted(self, outbound) -> bool:
-        return any(frame.frame.get("动作") == "提问" for frame in outbound)
-
-
 async def test_store_delegates_prompt_semantics_and_keeps_native_json_opaque(migrated_sessions, operator_id) -> None:
-    runtime = cast(RuntimeAdapter, _AlternateFrameVocabulary())
-    store = Store(migrated_sessions, RuntimeRegistry({RuntimeKind.CLAUDE_CODE: runtime}))
+    store = Store(migrated_sessions, RuntimeRegistry({RuntimeKind.CLAUDE_CODE: ClaudeRuntimeAdapter()}))
     view, token = await store._create_provisioning_for_test(operator_id)
     assert await store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await store.enqueue_prompt(operator_id, view.session_id, "question", SPA_ORIGIN)
     assert await store.next_prompt(view.session_id) is not None
+    # The runtime, not the store, knows a prompt frame: adoption asks the adapter whether the
+    # departed holder wrote one, rather than parsing native JSON itself.
     await store.record_frame(
-        view.session_id, FrameDirection.TO_AGENT, BridgeFrameKind.HARNESS_FRAME, {"动作": "提问", "正文": "hello"}
+        view.session_id,
+        FrameDirection.TO_AGENT,
+        BridgeFrameKind.HARNESS_FRAME,
+        {"type": "user", "message": {"role": "user", "content": "hello"}},
     )
+    # Native output the store keeps verbatim, without parsing.
     await store.record_frame(
         view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"阶段": "碎片", "正文": "你"}
     )
@@ -129,7 +126,7 @@ async def test_store_delegates_prompt_semantics_and_keeps_native_json_opaque(mig
     assert await store.adopt_open_turn(view.session_id) is not None
     frames = await store.read_session_frames(view.session_id, cursor=None, limit=25, scope=UnrestrictedReads())
     assert [frame.payload for frame in _harness(frames)] == [
-        {"动作": "提问", "正文": "hello"},
+        {"type": "user", "message": {"role": "user", "content": "hello"}},
         {"阶段": "碎片", "正文": "你"},
         {"阶段": "最终", "正文": "你好"},
     ]
@@ -1538,7 +1535,7 @@ async def test_abort_reaches_the_replica_running_the_turn(
     try:
         requesting = Store(
             async_sessionmaker(other_engine, expire_on_commit=False),
-            RuntimeRegistry({RuntimeKind.CLAUDE_CODE: cast(RuntimeAdapter, _AlternateFrameVocabulary())}),
+            RuntimeRegistry({RuntimeKind.CLAUDE_CODE: ClaudeRuntimeAdapter()}),
         )
         received: asyncio.Queue[SessionEvent] = asyncio.Queue()
         with session_wakes.watch_session(view.session_id, received.put_nowait):

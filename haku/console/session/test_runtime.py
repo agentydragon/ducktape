@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-from collections.abc import Awaitable, Callable, Iterable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from unittest.mock import patch
@@ -93,29 +93,13 @@ from haku.console.x.claude_code.testing.wire import (
 from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
 from haku.console.x.conversation_events import (
     CallRef,
-    ConversationEvent as NeutralConversationEvent,
     ItemSegment,
-    MessageCompleted,
-    MessageStarted,
     OpenRef,
     ReasoningStarted,
     ToolCallCompleted,
     ToolCallStarted,
-    TurnAnswered,
-    TurnCompleted,
-    TurnFailed,
 )
-from haku.console.x.runtime import (
-    EMPTY_TURN_PROJECTION_SEED,
-    Checkpoint,
-    FrameEffects,
-    OpenItemSeed,
-    RuntimeKey,
-    RuntimeRegistry,
-    RuntimeUnusable,
-    TurnCompletion,
-    TurnProjectionSeed,
-)
+from haku.console.x.runtime import Checkpoint, OpenItemSeed, RuntimeKey, RuntimeRegistry, TurnProjectionSeed
 from haku.console.x.testing.recording_claims import RecordingClaims
 from haku.runtime.x.bridge.client import FrameSink, ReceivedFrame, SentPrompt
 from haku.runtime.x.bridge.protocol import NOT_ADMITTED_CODE, HarnessFrame
@@ -533,173 +517,6 @@ class _FakeCli:
 
     async def aclose(self) -> None:
         self.closed = True
-
-
-class _UnrelatedTurnHandler:
-    """A stateful native fold whose wire shares no vocabulary with Claude or JSON-RPC."""
-
-    def __init__(self, seed: TurnProjectionSeed):
-        self._opened_at = None if seed.open_message is None else seed.open_message.first_frame_seq
-        self._last = None if seed.open_message is None else seed.open_message.last_frame_seq
-
-    def apply(self, *, frame_seq: int, frame: HarnessFrame) -> FrameEffects:
-        payload = frame.frame
-        if payload.get("阶段") == "碎片":
-            provenance = FrameRange(frame_seq, frame_seq)
-            fragment_events: list[NeutralConversationEvent] = []
-            if self._opened_at is None:
-                self._opened_at = frame_seq
-                fragment_events.append(MessageStarted(provenance=provenance))
-            self._last = frame_seq
-            fragment_events.append(
-                ItemSegment(item=OpenRef(item_type=ItemType.MESSAGE), text=str(payload["正文"]), provenance=provenance)
-            )
-            return FrameEffects(events=tuple(fragment_events))
-        if payload.get("阶段") == "最终":
-            provenance = FrameRange(frame_seq, frame_seq)
-            final_events: list[NeutralConversationEvent] = []
-            if self._opened_at is None and payload.get("正文"):
-                final_events.extend(
-                    (
-                        MessageStarted(provenance=provenance),
-                        ItemSegment(
-                            item=OpenRef(item_type=ItemType.MESSAGE), text=str(payload["正文"]), provenance=provenance
-                        ),
-                    )
-                )
-            if tail := payload.get("尾声"):
-                final_events.append(
-                    ItemSegment(item=OpenRef(item_type=ItemType.MESSAGE), text=str(tail), provenance=provenance)
-                )
-            if self._opened_at is not None or payload.get("正文"):
-                final_events.append(MessageCompleted(backend_item_id=None, provenance=provenance))
-            final_events.append(TurnCompleted(end=TurnAnswered(), provenance=provenance))
-            return FrameEffects(
-                events=tuple(final_events),
-                completion=TurnCompletion(end=TurnAnswered(), final_text=str(payload.get("正文") or "").strip()),
-            )
-        return FrameEffects()
-
-
-class _UnrelatedRuntimeAdapter:
-    kind = RuntimeKind.CLAUDE_CODE
-    display_name = "Unrelated test harness"
-
-    def turn_handler(self, seed: TurnProjectionSeed = EMPTY_TURN_PROJECTION_SEED) -> _UnrelatedTurnHandler:
-        return _UnrelatedTurnHandler(seed)
-
-    def prompt_submitted(self, frames: Iterable[HarnessFrame]) -> bool:
-        return any(frame.frame.get("动作") == "输入" for frame in frames)
-
-    def wake_watcher(self) -> None:
-        return None
-
-    def build_launch(self, launch):
-        raise AssertionError("this projection-only test must not build a runner launch")
-
-    def client(self, websocket, launch, progress, frames_to):
-        raise AssertionError("this projection-only test must not construct a runner client")
-
-
-class _GivingUpTurnHandler:
-    """Fails its turn, and says whether the runtime can still serve another."""
-
-    def __init__(self, *, unusable: bool) -> None:
-        self._unusable = unusable
-
-    def apply(self, *, frame_seq: int, frame: HarnessFrame) -> FrameEffects:
-        end = TurnFailed(reason="the provider gave up")
-        return FrameEffects(
-            events=(TurnCompleted(end=end, provenance=FrameRange(frame_seq, frame_seq)),),
-            completion=TurnCompletion(end=end, final_text=""),
-            unusable=RuntimeUnusable(reason="the thread reported a system error") if self._unusable else None,
-        )
-
-
-class _GivingUpRuntimeAdapter(_UnrelatedRuntimeAdapter):
-    def __init__(self, *, unusable: bool) -> None:
-        self._unusable = unusable
-
-    def turn_handler(self, seed: TurnProjectionSeed = EMPTY_TURN_PROJECTION_SEED) -> Any:
-        return _GivingUpTurnHandler(unusable=self._unusable)
-
-
-async def _one_failed_turn(session_store, session_wakes, operator_id, *, unusable: bool) -> UUID:
-    view, token = await session_store.create(operator_id)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await session_store.enqueue_prompt(operator_id, view.session_id, "go", SPA_ORIGIN)
-    turn = await session_store.next_prompt(view.session_id)
-    assert turn is not None
-    runtimes = RuntimeRegistry({RuntimeKind.CLAUDE_CODE: _GivingUpRuntimeAdapter(unusable=unusable)})
-    service = SessionService(runtimes, session_store, session_wakes)
-    client = _FakeCli([{"done": True}])
-    await service._run_turn(client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event())
-    session_id: UUID = view.session_id
-    return session_id
-
-
-async def test_a_failed_turn_alone_leaves_the_session_usable(session_store, session_wakes, operator_id) -> None:
-    """#4752: the exchange failing is not the session failing.
-
-    The turn closes with its reason, so the operator can read it and send another prompt. Only the
-    runtime saying it can serve no other ends the session, which it says separately.
-    """
-    session_id = await _one_failed_turn(session_store, session_wakes, operator_id, unusable=False)
-
-    [record] = await session_store.list_turns(str(session_id), cursor=None, limit=5, scope=UnrestrictedReads())
-    assert record.end == conversation_event.TurnFailed(failure="the provider gave up")
-    assert await session_store.status(session_id) != SessionStatus.FAILED
-
-
-async def test_a_runtime_that_declares_itself_unusable_ends_the_session(
-    session_store, session_wakes, operator_id
-) -> None:
-    """The other half: when the runtime does say so, the session ends carrying the turn's reason."""
-    with pytest.raises(RuntimeError, match="the provider gave up"):
-        await _one_failed_turn(session_store, session_wakes, operator_id, unusable=True)
-
-
-async def test_generic_turn_loop_is_opaque_to_a_discriminator_free_harness(
-    session_store, migrated_sessions, session_wakes, operator_id
-) -> None:
-    """Unrelated keys survive dedup/storage while only the integration assigns semantics."""
-    view, token = await session_store.create(operator_id)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    await session_store.enqueue_prompt(operator_id, view.session_id, "say hello", SPA_ORIGIN)
-    turn = await session_store.next_prompt(view.session_id)
-    assert turn is not None
-
-    recorder = RolloutRecorder(session_store, view.session_id)
-    prompt_frame_seq = await recorder.sent(HarnessFrame(frame={"动作": "输入", "正文": "say hello"}, seq=10))
-    native = [
-        HarnessFrame(frame={"阶段": "碎片", "正文": "你"}, seq=11),
-        HarnessFrame(frame={"阶段": "碎片", "正文": "好"}, seq=12),
-        HarnessFrame(frame={"阶段": "最终", "正文": "你好!", "尾声": "!", "成功": True}, seq=13),
-    ]
-    recorded = [await recorder.received(frame) for frame in native]
-    duplicate = await recorder.received(native[1])
-    assert duplicate.frame_seq == recorded[1].frame_seq
-
-    runtimes = RuntimeRegistry({RuntimeKind.CLAUDE_CODE: _UnrelatedRuntimeAdapter()})
-    service = SessionService(runtimes, session_store, session_wakes)
-    client = _FakeCli(
-        [frame.frame for frame in native],
-        frame_seqs=[frame.frame_seq for frame in recorded],
-        prompt_frame_seq=prompt_frame_seq,
-    )
-    await service._run_turn(client, client.frames().__aiter__(), view.session_id, turn, abort_event=asyncio.Event())
-
-    assert await answers(migrated_sessions, view.session_id) == ["你好!"]
-    raw = await session_store.read_session_frames(view.session_id, cursor=None, limit=25, scope=UnrestrictedReads())
-    assert [frame.payload for frame in raw] == [
-        {"动作": "输入", "正文": "say hello"},
-        {"阶段": "碎片", "正文": "你"},
-        {"阶段": "碎片", "正文": "好"},
-        {"阶段": "最终", "正文": "你好!", "尾声": "!", "成功": True},
-    ]
-    async with migrated_sessions() as db:
-        report = await reprojection.check_session(db, view.session_id, runtimes=runtimes)
-    assert one(report.turns).outcome == reprojection.Agrees()
 
 
 _TOOL_USE_SCRIPT = [
