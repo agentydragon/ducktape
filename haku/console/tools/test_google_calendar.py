@@ -5,7 +5,7 @@ from unittest.mock import Mock
 import pytest_bazel
 from fastmcp import Client
 
-from haku.console.tools.google_calendar import GOOGLE_CALENDAR_SERVER_ID, build_mcp
+from haku.console.tools.google_calendar import build_mcp
 from haku.console.tools.google_calendar_client import CalendarEvent, CalendarEventsPage
 
 
@@ -17,7 +17,6 @@ async def test_tool_surface():
     async with Client(_mcp()) as client:
         tools = {tool.name for tool in await client.list_tools()}
     assert tools == {"create_event", "get_event", "list_event_instances", "list_events"}
-    assert GOOGLE_CALENDAR_SERVER_ID == "google_calendar"
 
 
 async def test_create_event_dispatches_to_calendar_client():

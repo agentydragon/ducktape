@@ -7,7 +7,7 @@ see <README.md> § Tests run against a real database.
 
 **Nothing here may import a channel.** A second channel has to inherit this file unchanged, so
 anything a room has — the homeserver identities, the room/session binding — belongs in
-<../x/channels/matrix/conftest.py> instead.
+<../channels/matrix/conftest.py> instead.
 """
 
 from __future__ import annotations

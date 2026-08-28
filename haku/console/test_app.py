@@ -155,7 +155,7 @@ def test_config_advertises_codex_and_explicit_launch_preserves_public_coder_isol
         codex = client.post("/api/conversations", json={"agent_id": coder_id, "runtime": "codex_app_server"})
         assert codex.status_code == 201
         assert codex.json()["agent_id"] == coder_id
-        assert codex.json()["runtime_kind"] == "codex_app_server"
+        assert codex.json()["harness_kind"] == "codex_app_server"
 
         forbidden = client.post("/api/conversations", json={"agent_id": coder_id, "runtime": "claude_code"})
         assert forbidden.status_code == 403
@@ -176,7 +176,7 @@ def test_config_advertises_codex_and_explicit_launch_preserves_public_coder_isol
         selected_default = client.post("/api/conversations", json={"agent_id": coder_id, "runtime": "codex_app_server"})
         assert selected_default.status_code == 201
         assert selected_default.json()["agent_id"] == coder_id
-        assert selected_default.json()["runtime_kind"] == "codex_app_server"
+        assert selected_default.json()["harness_kind"] == "codex_app_server"
 
     wrong_codex_slot = copy.deepcopy(shared_config)
     wrong_codex_slot["harnesses"]["codex_app_server"]["implementation"] = {

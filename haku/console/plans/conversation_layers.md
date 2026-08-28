@@ -19,7 +19,7 @@ here is what remains to do.
 every identifier in it is transient by construction and a comment pointing at one goes stale
 without anything noticing. How the layers work once this plan is spent is <../docs/chat_layers.md>,
 a contract several call sites depend on belongs in <../x/README.md> or a `SPEC.md`
-(<../x/channels/matrix/SPEC.md> is where the Matrix channel's own guarantees live), and an invariant
+(<../channels/matrix/SPEC.md> is where the Matrix channel's own guarantees live), and an invariant
 one call site depends on belongs in that call site's own words.
 
 ## 1. The invariant this plan exists to reach
@@ -180,7 +180,7 @@ else.
 
 ## 3. The room as the channel's own store
 
-`EventTag` (<../x/channels/matrix/client.py>) rides on every event the console sends: a `kind`, an
+`EventTag` (<../channels/matrix/client.py>) rides on every event the console sends: a `kind`, an
 optional `conversation_id`, and — on every record-derived event, sealed notices and span lines
 alike — one optional `ConversationEventSource {attachment_id, conversation_id, event_seq}`. The
 source's attachment prevents a conversation rebound to another room from reusing the old room's
@@ -192,7 +192,7 @@ ingress — only our sender, parse the tag, never a prompt — feeds `matrix_roo
 events' own `/sync` echoes; a sealed notice is projected only when no event already shows its
 source, the deterministic transaction id covers just the send-to-echo window, and a duplicate that
 lands inside it is redacted on observation. The standing guarantees are
-<../x/channels/matrix/SPEC.md> § The room's own copy.
+<../channels/matrix/SPEC.md> § The room's own copy.
 
 - **Redaction strips the tag**, since it lives in `content`. For a level-triggered reader that is
   the right behaviour — a retired status line's desired state is "none", and a redacted event reads
@@ -262,12 +262,12 @@ read from the record. Everything else the room shows is one of two editable span
 (`channels/matrix/spans.py`): a work line per turn folding reasoning and tool calls into a bounded
 activity-plus-tally, and a lifecycle line per session folding provisioning, narration and adoption,
 retired at the first turn and sealed by a lease expiry. The contract is
-<../x/channels/matrix/SPEC.md> § What the room shows while a turn runs.
+<../channels/matrix/SPEC.md> § What the room shows while a turn runs.
 
 ### What a notice body may do
 
 - **Read the neutral vocabulary, never a backend's frames.** The span fold
-  (<../x/channels/matrix/spans.py>) reads the stream's neutral bodies; a notice that reached into
+  (<../channels/matrix/spans.py>) reads the stream's neutral bodies; a notice that reached into
   Claude frames would weld the channel's rendering to one backend.
 - **Stay bounded independent of the span's length.** Forty tool calls summarise to a tally and the
   one in flight, not to forty lines: a room event is permanent and federated, and an edit
@@ -638,7 +638,7 @@ record (§ 5).
 Six behaviours. The first four are the surfaces working; the last two are what proves the
 architecture rather than the features, and each is the acceptance test for the thing that forced it.
 
-1. **The Matrix surface still works.** `x/channels/matrix/test_fullstack_e2e.py` against real
+1. **The Matrix surface still works.** `channels/matrix/test_fullstack_e2e.py` against real
    Synapse stays green throughout. A regression gate, not a new test.
 2. **The web surface works**: one merged surface lists conversations, creates one, sends, aborts,
    and shows a transcript.
@@ -661,7 +661,7 @@ session supervision adds replacement during a turn without either channel being 
 **Encode the invariants as tests too**, because each is false today and would otherwise creep back
 silently:
 
-- `session_store` contains no reference to `room_id`, and nothing under `x/channels/` names
+- `session_store` contains no reference to `room_id`, and nothing under `channels/` names
   `session_id` — two structural tests, and between them the whole of the two forbidden edges.
 - **Notice bodies are folds**, tested as folds: a list of `ConversationEvent`s in, a body out, no
   room and no database. The cases worth writing are the ones an end-to-end test cannot provoke on

@@ -35,8 +35,9 @@ exist on `devel` yet, it is the forthcoming destination of an in-flight issue, c
 
 The end state for the console app is domain packages, not the current ~90-module flat top level plus
 a ~30-module `x/` chat subtree. The indexer **worker** exits console entirely to `haku/indexer/`
-(#4887); `x/` **dissolves** as its modules graduate into `conversation/`, `session/`, and `channels/`,
-while the harness adapters' native projection heads **runner-ward** (#4667), leaving only a small
+(#4887); `x/` **dissolves** as its modules graduate into `conversation/` and `session/`
+(`channels/` has already graduated), while the harness adapters' native projection heads
+**runner-ward** (#4667), leaving only a small
 `harnesses/` selection residue console-side (§2). The whole tree later re-roots under
 `<platform>/console/` (#4865, the
 last chunk).
@@ -109,7 +110,7 @@ tree shows the packages, §3 and §4 settle what the files and classes inside th
     conversation_views.py  sandbox_allocation.py  sandbox_claims.py
     subscription.py  system_prompt.py  launch_identity.py  setup_output.py
 
-  channels/            # how a messaging service holds a copy (from x/channels/)
+  channels/            # how a messaging service holds a copy
     matrix/
 
   harnesses/           # harness *selection*, NOT projection — the only harness-specific code that stays
@@ -250,7 +251,6 @@ every package the split creates, not just `grants/`:
   representations (`SessionRecord`/`SessionView`, §3.1) are C7's to settle.
 - **`mcp/`**: `mcp_server.py` → `server.py`, `mcp_approval.py` → `approval.py`, `mcp_execution.py` →
   `execution.py`; `McpExecutionContext` → `ExecutionContext`, `McpExecutionCaller` → `ExecutionCaller`.
-- **`channels/matrix/`**: `matrix_outbox_wake.py` → `outbox_wake.py`; drop `matrix_` on entities inside.
 - **harness adapters**: the native client + `*_projection.py` move **runner-ward** into
   `haku/runtime/x/bridge/` (#4667), where the backend-prefix drop applies (`claude_code_projection.py`
   → `projection.py`). Console keeps no `runtimes/`; the residual harness _selection_ is `harnesses/`
@@ -388,11 +388,15 @@ quiet gap.
   - the prompt-origin models (`SpaOrigin`/`MatrixOrigin`/`HarnessOrigin`/`PromptOriginKind`) and
     `PromptRejection` → the prompt vocabulary (conversation lane)
 - **C4d · `runtime_kind` → `harness_kind`** _(semantic — coordinated stored + wire + OpenAPI)_ — the
-  harness-kind discriminator (§3.1). #4431 made it a closed, published, read-only wire field, so the
-  rename rides expand/contract with its schema consumers, same care as C4b. The console harness
-  adapters (`x/claude_code`, `x/codex_app_server`) are deleted by the #4667 cutover (native projection
-  moves runner-ward), so there is no console `runtimes/`→`harnesses/` move to schedule — only this
-  discriminator rename and the small `harnesses/` selection residue.
+  harness-kind discriminator (§3.1), mid-roll: every wire surface publishes both names and every
+  reader is on `harness_kind`. Remaining: drop `runtime_kind` from the writers (wire models, their
+  schema pins, the SPA mirror) once the reader-switch image is rolled out — earlier breaks a
+  still-deployed reader mid-roll; then the stored `conversation.runtime_kind` column and the
+  `RuntimeKind` enum / OpenAPI component → `HarnessKind`, a stored + published rename that needs its
+  own expand/contract roll story, same care as C4b. The console harness adapters (`x/claude_code`,
+  `x/codex_app_server`) are deleted by the #4667 cutover (native projection moves runner-ward), so
+  there is no console `runtimes/`→`harnesses/` move to schedule — only this discriminator rename and
+  the small `harnesses/` selection residue.
 - **C4e · `allowed_chat_runtimes` → `allowed_harnesses`** _(semantic — per-profile config field,
   deploy-coordinated expand/contract, same recipe as the `chat_runtimes` → `harnesses` key flip)_.
 - **C5 · One Pydantic conversation-event vocabulary** _(semantic — the contested one)_ — merge the

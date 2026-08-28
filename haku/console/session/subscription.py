@@ -11,7 +11,7 @@ copy that outlives it — several tabs can watch one conversation at different p
 position is the read's own argument and the console keeps nothing (`ClientHeldCursor`). A Matrix
 room holds a federated copy that outlives every console process, so after a restart the channel has
 to know what it already put in the room: its position is durable and lives in the channel's own
-storage (<../x/channels/matrix/conversation_subscriber.py>).
+storage (<../channels/matrix/conversation_subscriber.py>).
 
 What is shared is this interface and the read behind it. There is deliberately **no
 `conversation_cursor` table**: durability is one `Cursor` implementation's concern, not a property
@@ -19,7 +19,7 @@ of subscribing.
 
 **Read, then keep.** `Subscription.read` never advances the position. A subscriber keeps its new
 one once it has done whatever the events oblige it to do — the discipline
-<../x/channels/matrix/revisions.py>'s `retire` already follows — so a crash in that window replays rather than skips. That is what makes a durable
+<../channels/matrix/revisions.py>'s `retire` already follows — so a crash in that window replays rather than skips. That is what makes a durable
 subscriber at-least-once; a client-held one cannot skip at all, since it never asks for a position
 it did not receive.
 """

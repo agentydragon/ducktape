@@ -1429,7 +1429,7 @@ class Store:
 
         Admission policy is the surface's, not the inbox's (<prompt_inbox.py>): the Matrix channel
         promises a batch that arrives mid-turn or behind a pending prompt is refused, not held
-        (<../x/channels/matrix/SPEC.md> § Batching and admission), so it submits through this. Decided
+        (<../channels/matrix/SPEC.md> § Batching and admission), so it submits through this. Decided
         under the conversation row lock, in the accepting transaction, with the v3 queue's reasons.
         """
         return await self._submit_prompt(operator_id, conversation_id, prompt_text, origin, records, exclusive=True)

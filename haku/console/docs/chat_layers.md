@@ -82,7 +82,7 @@ that re-derived everything would silently delete every fact no frame carries.
 
 - **A module** goes to the directory of the one axis it varies on: the channel-neutral,
   harness-neutral runtime (`conversation/`, `session/`, the wakes in `notifications/`), one
-  channel (`x/channels/<name>/`), and one CLI harness each in a directory named for the product
+  channel (`channels/<name>/`), and one CLI harness each in a directory named for the product
   whose binary it launches (`x/claude_code/`, `x/codex_app_server/` — the harness and the model
   behind it are different axes). The test is what
   the module would take with it if the other axis were replaced: a second channel must reuse

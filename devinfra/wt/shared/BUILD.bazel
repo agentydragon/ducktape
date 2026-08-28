@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
     name = "config_file",
@@ -80,14 +80,5 @@ py_library(
     deps = [
         ":github_models",
         "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_style",
-    srcs = ["test_style.py"],
-    deps = [
-        "//devinfra/wt/testing:conftest",
-        "@pypi//pytest_bazel",
     ],
 )

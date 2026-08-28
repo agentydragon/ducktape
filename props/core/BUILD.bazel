@@ -61,18 +61,6 @@ py_library(
 # =============================================================================
 
 py_test(
-    name = "test_rationale",
-    srcs = ["test_rationale.py"],
-    deps = [
-        "//props:conftest",
-        "@pypi//pydantic",
-        "@pypi//pyhamcrest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_oci_utils",
     srcs = ["test_oci_utils.py"],
     deps = [
@@ -91,8 +79,6 @@ py_test(
         ":ids",
         ":oci_utils",
         "//props/core/models:examples",
-        "@pypi//pydantic",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

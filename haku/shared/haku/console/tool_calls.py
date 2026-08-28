@@ -38,7 +38,10 @@ class McpToolCallMetadata(BaseModel):
 
 
 class ToolCallStatus(StrEnum):
-    """Declaration order is the Postgres ``tool_call_status`` enum's label order — append only."""
+    """Append only: the string values are parsed off the wire by haku-state, and the Postgres
+    ``tool_call_status`` enum's label order must match the declaration order (live-database
+    relation: test_mcp_approval.py::test_fresh_baseline_enum_values_match_domain_enums).
+    """
 
     PENDING_APPROVAL = "pending_approval"
     RUNNING = "running"

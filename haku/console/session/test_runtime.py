@@ -3,7 +3,7 @@
 **No channel is imported here, deliberately.** An attachment only selects whether the conversation
 gets the shared direct-chat system prompt; setup, answers, silence and live state are durable facts
 that channel subscribers project. What a homeserver's messages become is
-<channels/matrix/test_conversation.py>, beside the `MatrixTurns` that makes them turns.
+<channels/matrix/test_conversation.py>, beside the `Turns` that makes them turns.
 """
 
 from __future__ import annotations
@@ -2464,7 +2464,7 @@ async def test_a_session_that_failed_to_come_up_still_says_what_it_was_stuck_beh
     view = await chat_service.sandbox_provisioning(operator_id, session.session_id)
 
     assert view.status is SessionStatus.FAILED
-    assert view.runtime_kind == "claude_code"
+    assert view.harness_kind == "claude_code"
     assert view.sandbox.step is ProvisioningStep.WAITING_FOR_POD
     assert view.sandbox.claim_message == "no warm sandbox available"
 
