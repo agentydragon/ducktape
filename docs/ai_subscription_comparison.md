@@ -447,6 +447,19 @@ That is the whole self-serve menu. There is no GLM-5.2, GLM-5.3, Kimi, Qwen, or 
 
 It also runs into the feedback loop noted above: a weaker model bills for its retries, so 120M tokens/day of index-34 output completes fewer tasks than the headline number implies. The tokens-per-dollar advantage shrinks by however much rework the model causes.
 
+**The served context window is undocumented, and every Cerebras figure that _is_
+documented is 131K.** GLM-4.7's native window is
+[204,800 tokens](https://openrouter.ai/z-ai/glm-4.7). Cerebras Code
+[launched at "131k-token context window"](https://www.cerebras.ai/blog/introducing-cerebras-code),
+the [current FAQ](https://support.cerebras.net/articles/9996007307-cerebras-code-faq)
+states no window at all, and both public endpoints cap at
+[131K on paid tiers](https://inference-docs.cerebras.ai/models/overview). Whether a
+subscription serves the full 200K is unknown — ask before buying. If it is still 131K,
+the plan sells a third less window than the same weights get elsewhere, and that
+compounds with the cap rather than sitting beside it: a smaller window forces compaction
+sooner, and each compaction re-sends context against the same 24M/120M tokens/day. It is
+a second multiplier on the token cap, independent of the retry loop above.
+
 **Where it still earns a place:** mechanical bulk with a cheap correctness check — codemods, test scaffolding, log triage, bulk summarisation — where index 34 is sufficient and 1000 tok/s with no rolling window is the point. Not for work where a wrong answer is expensive to detect.
 
 **Upgrade path, worth tracking.** Cerebras serves open weights and has swapped the
@@ -1295,6 +1308,7 @@ Routing traffic to cheaper models is the other half and is free. Since Max is me
 - **AA cost-per-task is API pricing.** It does not model subscription quotas, and a plan's effective rate can beat or trail it by several times depending on saturation.
 - **Token-pool figures assume saturation.** No one sustains 24M tokens/day every day; the tokens-per-dollar column is a ceiling, not an expectation, and the realized multiple depends entirely on how much load actually moves to the new plan.
 - **Per-agent request and burn rates here are estimates.** The 10-20 RPM per agent behind the Cerebras arithmetic is a planning number, not a measurement, and it swings with task shape, context size, and endpoint speed. Measure a real fleet-hour before sizing a plan on it.
+- **A plan's served context window is not the model's native window.** Subscriptions rarely state it: Cerebras Code documents none for GLM-4.7, whose native window is 200K, while every Cerebras figure that is published is 131K. Confirm the served window before sizing agent context on a plan.
 - **Benchmarks proxy for the loop, badly.** Index scores say little about tool-call reliability, long-context coherence, or structured-output discipline — the properties that actually decide whether an agent run completes. GLM-4.7 is a case in point: index 34 overall, but Cerebras cites it as #1 on the Berkeley Function Calling Leaderboard, and tool-call reliability is what governs whether a fleet run finishes.
 - **The committed index data is a 2026-08-23 snapshot.** AA re-scores on new releases and index revisions, and models are added weekly. Re-fetch before treating any ranking here as current; the refresh recipe is in <artificial_analysis/README.md>.
 - **Quotas drift fast.** Z.ai re-tiered twice in 2026; OpenAI added a $100 Pro tier in April; Gemini CLI quotas change without notice. Re-check before committing.
