@@ -23,6 +23,9 @@ from util.testing.postgres_fixtures import postgres_container
 def postgres_admin_url(postgres_container: PostgresContainer) -> str:
     host = postgres_container.get_container_host_ip()
     port = int(postgres_container.get_exposed_port(5432))
+    # gazelle:include_dep @pypi//psycopg
+    # (SQLAlchemy loads the psycopg dialect at runtime via this URL scheme;
+    # nothing imports it, so gazelle cannot see the dependency.)
     return f"postgresql+psycopg://postgres:postgres@{host}:{port}/postgres"
 
 

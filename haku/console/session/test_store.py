@@ -25,10 +25,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from haku.console.chat_models import (
     OPEN_SESSION_STATUSES,
     SPA_ORIGIN,
-    AuthoredEventKind,
     BridgeFrameKind,
-    ConversationEventKind,
-    EventProvenance,
     FrameDirection,
     ItemStatus,
     ItemType,
@@ -40,6 +37,16 @@ from haku.console.chat_models import (
     SessionStatus,
     SpaOrigin,
     ToolOutcome,
+)
+from haku.console.conversation.conversation_event import (
+    AuthoredEventKind,
+    ConversationEventKind,
+    EventProvenance,
+    FrameRange,
+    PromptOpened,
+    TurnAborted,
+    TurnAnswered,
+    TurnFailed,
     TurnOutcome,
 )
 from haku.console.conversation.item_reads import entry_of
@@ -85,7 +92,6 @@ from haku.console.tool_calls import ToolCallStatus
 from haku.console.x.claude_code.testing.wire import assistant, result, text_block, text_delta
 from haku.console.x.conversation_events import (
     CallRef,
-    FrameRange,
     ItemSegment,
     MessageCompleted,
     MessageStarted,
@@ -94,7 +100,6 @@ from haku.console.x.conversation_events import (
     ToolCallStarted,
 )
 from haku.console.x.runtime import RuntimeAdapter, RuntimeRegistry
-from haku.console.x.session_events import PromptStartedBody, TurnAbortedBody, TurnAnsweredBody, TurnFailedBody
 
 ROOM = "!room:example.org"
 
@@ -924,13 +929,13 @@ async def test_a_prompt_records_the_channel_events_it_was_folded_from(
     )
     turn = await session_store.next_prompt(view.session_id)
     assert turn is not None
-    await session_store.end_turn(turn.turn_id, TurnAnsweredBody())
+    await session_store.end_turn(turn.turn_id, TurnAnswered())
     await session_store.enqueue_prompt(operator_id, view.session_id, "do the thing", SPA_ORIGIN)
 
     asked = [
-        PromptStartedBody.model_validate(row.body)
+        PromptOpened.model_validate(row.body)
         for row in await item_events(migrated_sessions, view.session_id)
-        if row.kind == ConversationEventKind.ITEM_STARTED and row.body.get("item_type") == ItemType.PROMPT
+        if row.kind == ConversationEventKind.ITEM_OPENED and row.body.get("item_type") == ItemType.PROMPT
     ]
 
     assert [body.origin for body in asked] == [MatrixOrigin(address=ROOM, refs=("$a", "$b")), SpaOrigin()]
@@ -945,7 +950,7 @@ async def test_exchanges_page_by_their_own_keyset(session_store, operator_id) ->
         await session_store.enqueue_prompt(operator_id, view.session_id, f"prompt {index}", SPA_ORIGIN)
         turn = await session_store.next_prompt(view.session_id)
         assert turn is not None
-        await session_store.end_turn(turn.turn_id, TurnAnsweredBody())
+        await session_store.end_turn(turn.turn_id, TurnAnswered())
 
     # One row past the page, exactly as the tool asks: the cursor names the first row not returned.
     *page, resume = await session_store.list_turns(view.session_id, cursor=None, limit=3, scope=UnrestrictedReads())
@@ -973,7 +978,7 @@ async def test_a_turn_ends_at_the_frame_it_names_rather_than_at_the_head_of_the_
         view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "command_lifecycle"}
     )
 
-    await session_store.end_turn(turn.turn_id, TurnAnsweredBody(), last_frame_seq=ending.frame_seq)
+    await session_store.end_turn(turn.turn_id, TurnAnswered(), last_frame_seq=ending.frame_seq)
 
     [record] = await session_store.list_turns(view.session_id, cursor=None, limit=5, scope=UnrestrictedReads())
     assert record.last_frame_seq == ending.frame_seq
@@ -991,7 +996,7 @@ async def test_a_turn_that_ended_on_no_frame_is_bounded_by_the_ones_it_recorded(
     await session_store.enqueue_prompt(operator_id, view.session_id, "first", SPA_ORIGIN)
     silent = await session_store.next_prompt(view.session_id)
     assert silent is not None
-    await session_store.end_turn(silent.turn_id, TurnFailedBody(failure="the runtime went away"))
+    await session_store.end_turn(silent.turn_id, TurnFailed(failure="the runtime went away"))
     await session_store.enqueue_prompt(operator_id, view.session_id, "second", SPA_ORIGIN)
     spoke = await session_store.next_prompt(view.session_id)
     assert spoke is not None
@@ -1002,7 +1007,7 @@ async def test_a_turn_that_ended_on_no_frame_is_bounded_by_the_ones_it_recorded(
         assistant(text_block("half an answer")),
     )
 
-    await session_store.end_turn(spoke.turn_id, TurnFailedBody(failure="the runtime went away"))
+    await session_store.end_turn(spoke.turn_id, TurnFailed(failure="the runtime went away"))
 
     brackets = {
         record.turn_id: (record.first_frame_seq, record.last_frame_seq)
@@ -1047,7 +1052,7 @@ async def test_the_items_read_as_the_conversation_rather_than_the_protocol(sessi
             MessageCompleted(backend_item_id="msg_1", provenance=where),
         ],
     )
-    await session_store.end_turn(started.turn_id, TurnAnsweredBody(), last_frame_seq=spoke.frame_seq)
+    await session_store.end_turn(started.turn_id, TurnAnswered(), last_frame_seq=spoke.frame_seq)
 
     entries = await _conversation_entries(session_store, conversation_id, limit=10)
 
@@ -1368,7 +1373,7 @@ async def test_a_second_prompt_is_refused_while_a_turn_is_open(session_store, op
         await session_store.enqueue_prompt(operator_id, view.session_id, "second", SPA_ORIGIN)
     assert refusal.value.reason is PromptRejection.TURN_IN_FLIGHT
 
-    await session_store.end_turn(turn.turn_id, TurnAnsweredBody())
+    await session_store.end_turn(turn.turn_id, TurnAnswered())
     await session_store.enqueue_prompt(operator_id, view.session_id, "second", SPA_ORIGIN)
 
 
@@ -1479,7 +1484,7 @@ async def test_the_view_says_responding_for_as_long_as_the_turn_is_open(session_
         "the column itself no longer carries turn state"
     )
 
-    await session_store.end_turn(turn.turn_id, TurnAnsweredBody())
+    await session_store.end_turn(turn.turn_id, TurnAnswered())
     assert (await session_store.get(operator_id, view.session_id)).status == SessionStatus.READY
 
 
@@ -1522,7 +1527,7 @@ async def test_abort_is_refused_until_a_turn_is_actually_running(session_store, 
     assert turn is not None
     assert await session_store.request_abort(view.session_id) is True
 
-    await session_store.end_turn(turn.turn_id, TurnAnsweredBody())
+    await session_store.end_turn(turn.turn_id, TurnAnswered())
     assert await session_store.request_abort(view.session_id) is False
 
 
@@ -1747,7 +1752,7 @@ async def test_an_accepted_prompt_is_an_item_like_any_other(session_store, migra
 
     asked, said, closed = await item_events(migrated_sessions, view.session_id)
     assert [row.kind for row in (asked, said, closed)] == [
-        ConversationEventKind.ITEM_STARTED,
+        ConversationEventKind.ITEM_OPENED,
         ConversationEventKind.ITEM_SEGMENT,
         ConversationEventKind.ITEM_COMPLETED,
     ]
@@ -1772,7 +1777,7 @@ async def test_an_aborted_turn_is_a_row_in_the_stream_and_names_its_turn(
     turn = await session_store.next_prompt(session_id)
     assert turn is not None
 
-    await session_store.end_turn(turn.turn_id, TurnAbortedBody())
+    await session_store.end_turn(turn.turn_id, TurnAborted())
 
     stopped = one(
         event
@@ -1791,8 +1796,8 @@ async def test_a_turn_that_ended_any_other_way_leaves_no_abort_row(
     turn = await session_store.next_prompt(session_id)
     assert turn is not None
 
-    await session_store.end_turn(turn.turn_id, TurnAnsweredBody())
-    await session_store.end_turn(turn.turn_id, TurnAbortedBody())
+    await session_store.end_turn(turn.turn_id, TurnAnswered())
+    await session_store.end_turn(turn.turn_id, TurnAborted())
 
     outcomes = [
         event.body["outcome"]
@@ -2001,8 +2006,8 @@ async def test_a_frames_events_land_as_rows_with_the_cursor_that_says_they_did(
         )
         assert (await db.get(Session, session_id)).projected_frame_seq == 8
     assert [row.kind for row in rows if row.provenance is EventProvenance.FRAME_RANGE] == [
-        ConversationEventKind.ITEM_STARTED,  # the call
-        ConversationEventKind.ITEM_STARTED,  # the message
+        ConversationEventKind.ITEM_OPENED,  # the call
+        ConversationEventKind.ITEM_OPENED,  # the message
         ConversationEventKind.ITEM_SEGMENT,
         ConversationEventKind.ITEM_COMPLETED,
         ConversationEventKind.ITEM_SEGMENT,  # what the call printed
@@ -2047,7 +2052,7 @@ async def test_an_event_row_cannot_be_written_without_a_provenance_union(
             "session_id": view.session_id,
             "turn_id": started.turn_id,
             "item_id": item_id,
-            "kind": ConversationEventKind.ITEM_STARTED,
+            "kind": ConversationEventKind.ITEM_OPENED,
             "provenance": EventProvenance.FRAME_RANGE,
             "source_first_frame_seq": 3,
             "source_last_frame_seq": 4,
@@ -2116,7 +2121,7 @@ async def _exchange(session_store, operator_id, session_id: UUID, prompt: str, a
             MessageCompleted(backend_item_id=None, provenance=FrameRange(spoke.frame_seq, spoke.frame_seq)),
         ],
     )
-    await session_store.end_turn(turn.turn_id, TurnAnsweredBody(), last_frame_seq=spoke.frame_seq)
+    await session_store.end_turn(turn.turn_id, TurnAnswered(), last_frame_seq=spoke.frame_seq)
 
 
 async def test_an_update_carries_the_rows_the_events_after_a_position_name(session_store, operator_id) -> None:

@@ -45,11 +45,16 @@ from haku.console.channels.matrix.revisions import RevisionLog
 from haku.console.channels.matrix.room_copy import RoomCopy
 from haku.console.channels.matrix.spans import Span, SpanKind
 from haku.console.channels.matrix.sync import SyncService, SyncStore
-from haku.console.chat_models import AuthoredEventKind, MatrixOrigin, PromptRejection, StoredEventKind
+from haku.console.chat_models import MatrixOrigin, PromptRejection
+from haku.console.conversation.conversation_event import (
+    AuthoredEventKind,
+    PromptRejected as PromptRejectedEvent,  # the record body; `conversation.PromptRejected` is the admission answer
+    StoredEventKind,
+    UnreadableInput,
+)
 from haku.console.database_schema import ConversationEventRow
 from haku.console.session.store import BridgeAuthentication, Store
 from haku.console.session.subscription import ConversationStream
-from haku.console.x.session_events import PromptRejectedBody, UnreadableInputBody
 
 
 @dataclass
@@ -126,13 +131,13 @@ class _FakeTurns:
             return PromptAccepted(prompt_id=uuid4())
         return PromptRejected(
             reason=self.reason,
-            facts=self._facts(binding, PromptRejectedBody(reason=self.reason, text="\n".join(self.offered[-1]))),
+            facts=self._facts(binding, PromptRejectedEvent(reason=self.reason, text="\n".join(self.offered[-1]))),
         )
 
     async def unreadable(self, binding: RoomAttachment, events: Sequence[UnmappableEvent]) -> ConversationFacts:
-        return self._facts(binding, *(UnreadableInputBody(media_type=event.msgtype) for event in events))
+        return self._facts(binding, *(UnreadableInput(media_type=event.msgtype) for event in events))
 
-    def _facts(self, binding: RoomAttachment, *bodies: PromptRejectedBody | UnreadableInputBody) -> ConversationFacts:
+    def _facts(self, binding: RoomAttachment, *bodies: PromptRejectedEvent | UnreadableInput) -> ConversationFacts:
         return ConversationFacts(
             conversation_id=binding.conversation_id, session_id=self.session_id, bodies=tuple(bodies)
         )
@@ -337,7 +342,7 @@ async def test_a_recording_that_cannot_be_written_takes_the_watermark_with_it(sy
     Advancing separately would leave the homeserver told the message was handled with nothing
     written about it and nothing said."""
     orphan = ConversationFacts(
-        conversation_id=uuid4(), session_id=None, bodies=(UnreadableInputBody(media_type="m.image"),)
+        conversation_id=uuid4(), session_id=None, bodies=(UnreadableInput(media_type="m.image"),)
     )
 
     with pytest.raises(KeyError):

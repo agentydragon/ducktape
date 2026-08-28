@@ -142,21 +142,28 @@ runs:
           [[ -n "$line" ]] && ENV_ARGS+=(--remote_run_header="x-buildbuddy-platform.env-overrides=$line")
         done <<< "$INPUT_ENV_OVERRIDES"
 
-        # Resolve the runner + RBE executor image.
+        # Resolve the runner and the RBE executor image — two different artifacts
+        # since the rbe-worker/bbr-runner image split: the runner VM boots
+        # `.bbr_runner` (Bazel client + repo devtools: bazel-diff, nix, …), while
+        # Bazel actions execute on `.rbe_worker`.
         # --container_image is a `bb remote` flag (runner VM): must come before the Bazel subcommand.
         # --remote_default_exec_properties is a Bazel command flag (RBE executor): must come after the subcommand.
         #
-        # When no override is given, read the pinned image from image_pins.json so that
-        # repo-rule resolution (pip wheel builds) runs on the custom image with system libs
-        # (pkg-config, libcairo2-dev, etc.). Without this, bb remote uses BuildBuddy's
-        # default image which lacks these dependencies.
+        # When no override is given, read the pinned executor image from image_pins.json
+        # so that repo-rule resolution (pip wheel builds) runs on the custom image with
+        # system libs (pkg-config, libcairo2-dev, etc.). Without this, bb remote uses
+        # BuildBuddy's default image which lacks these dependencies. The rbe_image input
+        # overrides only the executor (that's what rbe-image validation exercises); the
+        # runner always boots the pinned bbr_runner image.
         RBE_IMAGE="$INPUT_RBE_IMAGE"
         if [[ -z "$RBE_IMAGE" ]]; then
           pin_image=$(jq -r '.rbe_worker.image' devinfra/image_pins.json)
           pin_digest=$(jq -r '.rbe_worker.digest' devinfra/image_pins.json)
           RBE_IMAGE="${pin_image}@${pin_digest}"
         fi
-        BB_IMAGE_ARGS=(--container_image="docker://${RBE_IMAGE}")
+        runner_image=$(jq -r '.bbr_runner.image' devinfra/image_pins.json)
+        runner_digest=$(jq -r '.bbr_runner.digest' devinfra/image_pins.json)
+        BB_IMAGE_ARGS=(--container_image="docker://${runner_image}@${runner_digest}")
 
         RUNNER_EXEC_PROPS=(
           --runner_exec_properties=EstimatedFreeDiskBytes="$INPUT_DISK_BYTES"

@@ -1,3 +1,4 @@
+# gazelle:exclude migrations
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(

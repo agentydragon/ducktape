@@ -17,7 +17,7 @@ py_library(
         "//props/db/sync",
         "//props/db/sync:model_metadata",
         "@pypi//rich",
-        "@pypi//typer_slim",
+        "@pypi//typer",
     ],
 )
 

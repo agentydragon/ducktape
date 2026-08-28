@@ -1,3 +1,4 @@
+# gazelle:exclude mcp_server
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(

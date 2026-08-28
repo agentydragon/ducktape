@@ -43,6 +43,8 @@ def _generate_colors(n):
 
 
 def _main() -> None:
+    # gazelle:ignore pivy,pivy.coin
+    # (pivy ships inside the FreeCAD container; not a repo dependency)
     from pivy import coin  # noqa: PLC0415 — must import after GUI binary starts
 
     doc = FreeCAD.openDocument(input_path)

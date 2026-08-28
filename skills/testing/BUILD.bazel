@@ -1,0 +1,18 @@
+# The frontmatter test template matches the *_test.py glob but must not get a
+# generated per-file py_test: it only runs with SKILL_ARCHIVE set, via the
+# per-skill py_test that skill_package() generates (see //skills:defs.bzl).
+# gazelle:exclude frontmatter_test.py
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_testonly = True)
+
+py_library(
+    name = "frontmatter_test",
+    srcs = ["frontmatter_test.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//skills:frontmatter_validation",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

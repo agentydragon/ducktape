@@ -22,7 +22,9 @@ py_library(
         ":conftest",
         "//agent_core/testing:fixtures",
         "//agent_core/testing/mcp:fixtures",
-        "//mcp_infra/exec:docker",
+        "//mcp_infra/exec/docker:container_session",
+        "//mcp_infra/exec/docker:launcher",
+        "//mcp_infra/exec/docker:server",
         "//mcp_infra/testing:fixtures",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep

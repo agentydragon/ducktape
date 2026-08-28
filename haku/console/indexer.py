@@ -3,10 +3,12 @@
 One binary, two roles selected by ``--role``, each running one maintenance stage of
 `recall_index_sync` in its own Deployment:
 
-- ``chunk`` sweeps every configured source in the deploy-owned recall-index registry and
-  materializes chunks. Replicas — and console replicas of a release that still carried the loop —
-  may overlap freely: each logical index is maintained under its per-index Postgres advisory
-  lock, so co-existence costs a lost lock attempt, never a double sync.
+- ``chunk`` materializes the indexes its mounted config file defines. One Deployment per logical
+  index (#4886), each mounting only its own index's slice of the deploy-owned registry — the
+  mounted config *is* the selection, so a malformed definition for one index can never parse-break
+  another index's pod. Replicas of an index's pod, and console replicas of a release that still
+  carried the whole-registry loop, may overlap freely: each logical index is maintained under its
+  per-index Postgres advisory lock, so co-existence costs a lost lock attempt, never a double sync.
 - ``embed`` drains the shared embedding queue. Replicas share the queue in disjoint batches
   (`embed_pending` claims ``FOR UPDATE SKIP LOCKED``), so overlap scales the drain instead of
   double-embedding.
@@ -15,9 +17,10 @@ The console keeps serving `haku_index.search`/`index_status` as database readers
 failing or rolling leaves search on the last committed index state, with staleness visible in
 `index_status`.
 
-Each role's settings model requires only that role's credentials — the chunk pod holds index Git
-credentials and no embedder endpoint, the embed pod holds the embedder endpoint and no Git
-credential — so a pod cannot start with the other role's secrets missing *or* present-but-unused.
+Each role's settings model requires only that role's configuration — a chunk pod holds its own
+index's config slice and Git credential (none for the chat or anonymous-Git index) and no embedder
+endpoint, the embed pod holds the embedder endpoint and no Git credential or config file — so a pod
+cannot start with the other role's secrets missing *or* present-but-unused.
 """
 
 from __future__ import annotations
@@ -69,11 +72,18 @@ class _WorkerSettings(BaseSettings):
 
 
 class ChunkSettings(_WorkerSettings):
-    """The chunk role: source sweeps against the deploy-owned registry."""
+    """The chunk role: sweep the indexes the mounted config file defines into chunks.
 
-    # The shared deploy-owned console config file: `recall_indexes` is the registry of what this
-    # role materializes, and one file keeps the console's readers and this role's writers on the
-    # same registry and Git credential slots.
+    One instance, one config slice (#4886): each per-index Deployment mounts only its own index's
+    definition, so the mounted config is the selection — no selector setting — and a pod carries
+    only that index's credential (the chat and anonymous-Git indexes carry no Git slot). Overlap
+    between the per-index pods, and with a rolling old whole-registry release, stays safe under the
+    per-logical-index advisory lock.
+    """
+
+    # The pod's own slice of the deploy-owned registry, derivation-tested against the console's
+    # `recall_indexes` (test_deployment_config) so the console's readers and this role's writers
+    # stay on the same registry entry and Git credential slots.
     config_file: Path
     recall_index: RecallIndexSettings = Field(default_factory=RecallIndexSettings)
 

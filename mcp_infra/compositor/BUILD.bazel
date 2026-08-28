@@ -148,7 +148,7 @@ py_test(
         "//mcp_infra:naming",
         "//mcp_infra:prefix",
         "//mcp_infra/testing:fixtures",
-        "//mcp_infra/testing:stdio_app",
+        "//mcp_infra/testing:stdio_app_bin",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
         "@pypi//pytest",

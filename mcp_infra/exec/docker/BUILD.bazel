@@ -1,0 +1,90 @@
+load("//devinfra/deps:check.bzl", "assert_no_deps")
+load("//devinfra/python:defs.bzl", "py_library")
+
+py_library(
+    name = "types",
+    srcs = ["types.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+assert_no_deps(
+    name = "types_no_fastmcp",
+    forbidden = [
+        "@pypi//fastmcp_slim",
+        "@pypi//aiodocker",
+        "@pypi//mcp",
+    ],
+    targets = ["//mcp_infra/exec/docker:types"],
+)
+
+py_library(
+    name = "container_session",
+    srcs = ["container_session.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":types",
+        "//mcp_infra:constants",
+        "//mcp_infra:prefix",
+        "//mcp_infra/enhanced:flat_mixin",
+        "//mcp_infra/enhanced:server",
+        "//mcp_infra/enhanced:simple",
+        "//mcp_infra/exec:models",
+        "//mcp_infra/exec:read_image",
+        "//util:logging",
+        "//util:typer",
+        "@pypi//aiodocker",
+        "@pypi//anyio",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//typer_di",
+    ],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":container_session",
+        ":types",
+        "//mcp_infra:constants",
+        "//mcp_infra:prefix",
+        "//mcp_infra/enhanced:flat_mixin",
+        "//mcp_infra/enhanced:server",
+        "//mcp_infra/enhanced:simple",
+        "//mcp_infra/exec:models",
+        "//mcp_infra/exec:read_image",
+        "//util:logging",
+        "//util:typer",
+        "@pypi//aiodocker",
+        "@pypi//anyio",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//typer_di",
+    ],
+)
+
+py_library(
+    name = "launcher",
+    srcs = ["launcher.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":server",
+        ":types",
+        "//mcp_infra:constants",
+        "//mcp_infra:prefix",
+        "//mcp_infra/enhanced:flat_mixin",
+        "//mcp_infra/enhanced:server",
+        "//mcp_infra/enhanced:simple",
+        "//mcp_infra/exec:models",
+        "//mcp_infra/exec:read_image",
+        "//util:logging",
+        "//util:typer",
+        "@pypi//aiodocker",
+        "@pypi//anyio",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//typer_di",
+    ],
+)

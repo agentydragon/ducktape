@@ -1484,7 +1484,7 @@ def test_an_event_names_an_item_exactly_when_its_kind_is_about_one(db_url: str) 
                     "conversation_id": conversation_id,
                     "event_seq": 1,
                     "item_id": item_id,
-                    "kind": "item_started",
+                    "kind": "item_opened",
                     "now": now,
                 },
             )
@@ -1492,7 +1492,7 @@ def test_an_event_names_an_item_exactly_when_its_kind_is_about_one(db_url: str) 
                 _EVENT,
                 {"conversation_id": conversation_id, "event_seq": 2, "item_id": None, "kind": "turn_ended", "now": now},
             )
-        for event_seq, item, kind in ((3, None, "item_segment"), (4, item_id, "turn_started")):
+        for event_seq, item, kind in ((3, None, "item_segment"), (4, item_id, "turn_opened")):
             with pytest.raises(IntegrityError, match="ck_conversation_event_item_kinds"), engine.begin() as conn:
                 conn.execute(
                     _EVENT,

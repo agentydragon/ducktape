@@ -29,7 +29,7 @@ from finance.augur.sim.scenario import (
     TaxProfile,
 )
 from finance.augur.sim.simulate import simulate_with_external_series
-from finance.augur.sim.test_state_helpers import capital_gains_ytd
+from finance.augur.sim.testing.state_helpers import capital_gains_ytd
 from finance.augur.sim.tlh_harvest import HarvestYieldParams
 
 # A high peak yield + strong drawdown sensitivity makes the harvested losses large enough to read

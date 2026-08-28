@@ -16,6 +16,9 @@ import json
 import os
 
 import FreeCAD
+
+# gazelle:ignore PySide6,PySide6.QtCore,PySide6.QtGui
+# (Qt ships inside the FreeCAD container; not a repo dependency)
 from PySide6 import QtCore, QtGui
 
 from skills.freecad.examples.freecad_helpers import init_gui, log, pump, run_gui_script

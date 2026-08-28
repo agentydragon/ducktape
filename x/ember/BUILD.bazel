@@ -1,3 +1,5 @@
+# gazelle:exclude integrations
+# gazelle:exclude resources/examples/matrix_client
 """Ember agent package."""
 
 # gazelle:resolve py x.ember //x/ember:system_prompt

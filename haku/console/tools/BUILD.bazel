@@ -57,6 +57,7 @@ py_library(
         "//gmail_api:labels",
         "//gmail_api:messages",
         "@pypi//fastmcp_slim",
+        "@pypi//mcp",
         "@pypi//pydantic",
     ],
 )
@@ -69,6 +70,7 @@ py_library(
         ":google_calendar_client",
         ":google_service",
         "@pypi//fastmcp_slim",
+        "@pypi//mcp",
         "@pypi//pydantic",
     ],
 )
@@ -78,10 +80,10 @@ py_library(
     srcs = ["conversations.py"],
     visibility = ["//haku/console:__subpackages__"],
     deps = [
+        "//haku/console:chat_models",
         "//haku/console:conversation_read_access",
         "//haku/console:in_process_server_access",
         "//haku/console:mcp_execution",
-        "//haku/console:tool_call_actor",
         "//haku/console/conversation:reads",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
@@ -94,10 +96,8 @@ py_library(
     visibility = ["//haku/console:__subpackages__"],
     deps = [
         "//haku/console:conversation_read_access",
-        "//haku/console:mcp_config",
         "//haku/console:mcp_execution",
         "//haku/console:recall_index_access",
-        "//haku/console:tool_call_actor",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],
@@ -109,6 +109,7 @@ py_test(
     deps = [
         ":recall_index",
         "//:conftest",
+        "//haku/console:conftest",
         "//haku/console:conversation_read_access",
         "//haku/console:grant_principal",
         "//haku/console:mcp_config",
@@ -129,12 +130,14 @@ py_test(
         ":conversations",
         "//:conftest",
         "//haku/console:chat_models",
+        "//haku/console:conftest",
         "//haku/console:conversation_read_access",
         "//haku/console:grant_principal",
         "//haku/console:in_process_server_access",
         "//haku/console:mcp_config",
         "//haku/console:mcp_execution",
         "//haku/console:tool_call_actor",
+        "//haku/console/conversation:conversation_event",
         "//haku/console/conversation:reads",
         "@pypi//fastmcp_slim",
         "@pypi//more_itertools",
@@ -193,6 +196,7 @@ py_test(
     deps = [
         ":sandbox",
         "//:conftest",
+        "//haku/console:conftest",
         "//haku/sandbox:config",
         "//haku/sandbox:models",
         "//mcp_infra/exec:models",
@@ -225,6 +229,7 @@ py_test(
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -254,6 +259,7 @@ py_test(
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
@@ -298,14 +304,13 @@ py_test(
     deps = [
         ":hostexec_token",
         "//:conftest",
+        "//haku/console:conftest",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//respx",
-        # See test_gmail: pytest-asyncio must be a runtime dep for auto-mode plugin autoload;
-        # Gazelle drops it on regen since nothing imports it.
-        "@pypi//pytest_asyncio",
     ],
 )
 
@@ -328,13 +333,12 @@ py_test(
     deps = [
         ":hostexec_client",
         "//:conftest",
+        "//haku/console:conftest",
         "//mcp_infra/exec:models",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        # See test_gmail: pytest-asyncio must be a runtime dep for auto-mode plugin autoload;
-        # Gazelle drops it on regen since nothing imports it.
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -345,12 +349,11 @@ py_test(
     deps = [
         ":hostexec",
         "//:conftest",
+        "//haku/console:conftest",
         "//mcp_infra/exec:models",
         "@pypi//fastmcp_slim",
-        "@pypi//pytest_bazel",
-        # See test_gmail: pytest-asyncio must be a runtime dep for auto-mode plugin autoload;
-        # Gazelle drops it on regen since nothing imports it.
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -370,13 +373,11 @@ py_test(
         "//gmail_api:filters",
         "//gmail_api:labels",
         "//gmail_api:messages",
+        "//haku/console:conftest",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        # Not statically imported -- pytest-asyncio auto mode (set in root conftest.py) needs the
-        # plugin importable at runtime for its entry-point autoload; Gazelle can't see that and
-        # will try to drop this dep on regen.
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -389,8 +390,10 @@ py_test(
         "//gmail_api:filters",
         "//gmail_api:labels",
         "//gmail_api:messages",
+        "//haku/console:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -402,11 +405,10 @@ py_test(
         ":google_calendar",
         ":google_calendar_client",
         "//:conftest",
+        "//haku/console:conftest",
         "@pypi//fastmcp_slim",
-        "@pypi//pytest_bazel",
-        # See test_gmail: pytest-asyncio must be a runtime dep for auto-mode plugin autoload;
-        # Gazelle drops it on regen since nothing imports it.
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -416,7 +418,9 @@ py_test(
     deps = [
         ":google_calendar_client",
         "//:conftest",
+        "//haku/console:conftest",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -427,11 +431,10 @@ py_test(
     deps = [
         ":routine",
         "//:conftest",
+        "//haku/console:conftest",
         "@pypi//fastmcp_slim",
-        "@pypi//pytest_bazel",
-        # See test_gmail: pytest-asyncio must be a runtime dep for auto-mode plugin autoload;
-        # Gazelle drops it on regen since nothing imports it.
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -442,14 +445,13 @@ py_test(
         ":routine",
         "//:conftest",
         "//haku/console:config",
+        "//haku/console:conftest",
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//respx",
-        # See test_gmail: pytest-asyncio must be a runtime dep for auto-mode plugin autoload;
-        # Gazelle drops it on regen since nothing imports it.
-        "@pypi//pytest_asyncio",
     ],
 )
 
@@ -460,6 +462,7 @@ py_library(
     deps = [
         "@pypi//fastmcp_slim",
         "@pypi//google_api_python_client",  # keep: discovery docs loaded via importlib.resources (no import stmt)
+        "@pypi//mcp",
         "@pypi//pydantic",
     ],
 )
@@ -470,7 +473,9 @@ py_test(
     deps = [
         ":google_discovery",
         "//:conftest",
+        "//haku/console:conftest",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

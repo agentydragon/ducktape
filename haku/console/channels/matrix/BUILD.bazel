@@ -69,7 +69,7 @@ py_library(
         ":conversation",
         ":outbox_wake",
         ":pacer",
-        ":revisions",
+        "//haku/console:chat_models",
         "//haku/console:database_schema",
         "@pypi//sqlalchemy",
         "@pypi//tenacity",
@@ -96,9 +96,9 @@ py_library(
         "//haku/console:chat_models",
         "//haku/console:database_schema",
         "//haku/console:operator_identity_store",
+        "//haku/console/conversation:conversation_event",
         "//haku/console/session:launch_identity",
         "//haku/console/session:store",
-        "//haku/console/x:session_events",
         "@pypi//sqlalchemy",
     ],
 )
@@ -114,9 +114,9 @@ py_library(
         ":spans",
         "//haku/console:chat_models",
         "//haku/console:database_schema",
+        "//haku/console/conversation:conversation_event",
         "//haku/console/notifications:conversation_wakes",
         "//haku/console/session:subscription",
-        "//haku/console/x:session_events",
         "@pypi//sqlalchemy",
     ],
 )
@@ -136,8 +136,8 @@ py_library(
     srcs = ["spans.py"],
     deps = [
         "//haku/console:chat_models",
+        "//haku/console/conversation:conversation_event",
         "//haku/console/session:subscription",
-        "//haku/console/x:session_events",
     ],
 )
 
@@ -157,7 +157,6 @@ py_library(
         ":revisions",
         ":room_copy",
         ":spans",
-        "//haku/console:chat_models",
         "//haku/console:database_schema",
         "//haku/console:operator_identity_store",
         "//haku/console/conversation:log",
@@ -186,8 +185,10 @@ py_test(
     name = "test_formatted_body",
     srcs = ["test_formatted_body.py"],
     deps = [
+        ":conftest",
         ":formatted_body",
         "//:conftest",
+        "//haku/console:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -197,7 +198,9 @@ py_test(
     srcs = ["test_client.py"],
     deps = [
         ":client",
+        ":conftest",
         "//:conftest",
+        "//haku/console:conftest",
         "@pypi//matrix_nio",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
@@ -210,8 +213,10 @@ py_test(
     srcs = ["test_pacer.py"],
     deps = [
         ":client",
+        ":conftest",
         ":pacer",
         "//:conftest",
+        "//haku/console:conftest",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
@@ -228,13 +233,12 @@ py_test(
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
-        "//haku/console:database_schema",
+        "//haku/console/conversation:conversation_event",
         "//haku/console/session:conftest",
         "//haku/console/session:store",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -253,6 +257,7 @@ py_test(
         "//haku/console:chat_models",
         "//haku/console:conftest",
         "//haku/console:database_schema",
+        "//haku/console/conversation:conversation_event",
         "//haku/console/session:conftest",
         "//haku/console/session:store",
         "//haku/console/x:conversation_events",
@@ -278,14 +283,14 @@ py_test(
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "//haku/console/agents:authorization",
+        "//haku/console/conversation:conversation_event",
         "//haku/console/conversation:history",
         "//haku/console/session:conftest",
         "//haku/console/session:launch_identity",
-        "//haku/console/session:runtime",
         "//haku/console/session:store",
+        "//haku/console/x:conversation_events",
         "//haku/console/x:runtime",
-        "//haku/console/x:session_events",
-        "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -326,11 +331,11 @@ py_test(
         "//haku/console:chat_models",
         "//haku/console:conftest",
         "//haku/console:database_schema",
+        "//haku/console/conversation:conversation_event",
         "//haku/console/conversation:log",
         "//haku/console/session:conftest",
         "//haku/console/session:store",
         "//haku/console/session:subscription",
-        "//haku/console/x:session_events",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
@@ -342,11 +347,13 @@ py_test(
     name = "test_spans",
     srcs = ["test_spans.py"],
     deps = [
+        ":conftest",
         ":spans",
         "//:conftest",
         "//haku/console:chat_models",
+        "//haku/console:conftest",
+        "//haku/console/conversation:conversation_event",
         "//haku/console/session:subscription",
-        "//haku/console/x:session_events",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
     ],
@@ -369,14 +376,12 @@ py_test(
         ":sync",
         "//:conftest",
         "//haku/console:chat_models",
-        "//haku/console:config",
         "//haku/console:conftest",
         "//haku/console:database_schema",
+        "//haku/console/conversation:conversation_event",
         "//haku/console/session:conftest",
         "//haku/console/session:store",
         "//haku/console/session:subscription",
-        "//haku/console/x:session_events",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
@@ -395,8 +400,10 @@ py_test(
     requires_docker = True,
     deps = [
         ":client",
+        ":conftest",
         ":outbox",
         "//:conftest",
+        "//haku/console:conftest",
         "//haku/console/channels/matrix/testing:operator_room",
         "//haku/console/channels/matrix/testing:synapse_container",
         "@pypi//matrix_nio",
@@ -485,6 +492,7 @@ py_library(
         "//haku/console/session:subscription",
         "//haku/console/x:runtime",
         "@pypi//more_itertools",
+        "@pypi//psycopg",  # keep: runtime-only — SQLAlchemy's psycopg dialect imports it dynamically for the sync schema probe (verify_worker_schema)
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
         "@pypi//sqlalchemy",

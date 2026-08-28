@@ -28,30 +28,22 @@ from haku.console.channels.matrix.conversation import (
     Turns,
 )
 from haku.console.channels.matrix.ingress_ledger import IngressLedger
-from haku.console.chat_models import (
-    SPA_ORIGIN,
-    ConversationEventKind,
-    ItemType,
-    MatrixOrigin,
-    PromptRejection,
-    RuntimeKind,
-)
+from haku.console.chat_models import SPA_ORIGIN, ItemType, MatrixOrigin, PromptRejection, RuntimeKind
 from haku.console.conftest import console_sessions
+from haku.console.conversation import conversation_event
+from haku.console.conversation.conversation_event import ConversationEventKind, FrameRange
 from haku.console.conversation.history import ConversationHistory
 from haku.console.database_schema import Conversation, ConversationEventRow, ConversationItem, Session, SubmittedPrompt
 from haku.console.session.launch_identity import ChatLaunchAuthorizer, LaunchIdentity
 from haku.console.session.store import BridgeAuthentication, Store
-from haku.console.x import session_events
 from haku.console.x.conversation_events import (
     ConversationEvent as FoldedEvent,
-    FrameRange,
     ItemSegment,
     MessageCompleted,
     MessageStarted,
     OpenRef,
 )
 from haku.console.x.runtime import RuntimeKey
-from haku.console.x.session_events import PromptStartedBody, TurnAnsweredBody
 
 
 async def test_first_matrix_bind_pins_complete_identity_with_production_authorizer(
@@ -155,7 +147,7 @@ async def exchange(session_store: Store, operator_id: UUID, session_id: UUID, as
     await say(session_store, session_id, start.turn_id, answered)
     # Ended, because admission asks about the turn: a session left mid-turn refuses the next
     # prompt, and these tests are conversations rather than one exchange each.
-    await session_store.end_turn(start.turn_id, TurnAnsweredBody())
+    await session_store.end_turn(start.turn_id, conversation_event.TurnAnswered())
 
 
 async def say(session_store: Store, session_id: UUID, turn_id: UUID, answered: str, *, complete: bool = True) -> None:
@@ -359,7 +351,7 @@ async def test_a_batch_offered_mid_turn_is_rejected_with_the_reason_and_the_text
     assert admitted.reason is PromptRejection.TURN_IN_FLIGHT
     assert (admitted.facts.conversation_id, admitted.facts.session_id) == (thread, None)
     assert admitted.facts.bodies == (
-        session_events.PromptRejectedBody(reason=PromptRejection.TURN_IN_FLIGHT, text="and another thing"),
+        conversation_event.PromptRejected(reason=PromptRejection.TURN_IN_FLIGHT, text="and another thing"),
     )
 
 
@@ -454,8 +446,8 @@ async def test_an_unreadable_event_is_a_fact_per_event_on_the_live_conversation(
         conversation_id=thread,
         session_id=None,
         bodies=(
-            session_events.UnreadableInputBody(media_type="m.image"),
-            session_events.UnreadableInputBody(media_type="m.audio"),
+            conversation_event.UnreadableInput(media_type="m.image"),
+            conversation_event.UnreadableInput(media_type="m.audio"),
         ),
     )
 
@@ -470,7 +462,7 @@ async def test_an_unreadable_event_with_no_session_behind_the_room_is_still_reco
     assert facts == ConversationFacts(
         conversation_id=binding.conversation_id,
         session_id=None,
-        bodies=(session_events.UnreadableInputBody(media_type="m.image"),),
+        bodies=(conversation_event.UnreadableInput(media_type="m.image"),),
     )
 
 
@@ -503,11 +495,13 @@ async def test_a_batch_records_the_room_events_it_was_folded_from(
         asked = await db.scalar(
             select(ConversationEventRow).where(
                 ConversationEventRow.item_id == started.item_id,
-                ConversationEventRow.kind == ConversationEventKind.ITEM_STARTED,
+                ConversationEventRow.kind == ConversationEventKind.ITEM_OPENED,
             )
         )
     assert asked is not None
-    assert PromptStartedBody.model_validate(asked.body).origin == MatrixOrigin(address=MATRIX_ROOM, refs=("$a", "$b"))
+    assert conversation_event.PromptOpened.model_validate(asked.body).origin == MatrixOrigin(
+        address=MATRIX_ROOM, refs=("$a", "$b")
+    )
 
 
 if __name__ == "__main__":

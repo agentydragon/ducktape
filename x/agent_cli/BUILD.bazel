@@ -1,7 +1,5 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
-# gazelle:map_kind py_binary py_library cli.py
-
 py_library(
     name = "cli",
     srcs = ["cli.py"],

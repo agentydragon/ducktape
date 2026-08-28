@@ -1,0 +1,26 @@
+diff --git a/python/generate.go b/python/generate.go
+index 90e06a1..c07bd62 100644
+--- a/python/generate.go
++++ b/python/generate.go
+@@ -280,7 +280,7 @@ func (py *Python) GenerateRules(args language.GenerateArgs) language.GenerateRes
+ 			log.Fatalf("ERROR: %v\n", err)
+ 		}
+ 
+-		if !hasPyBinaryEntryPointFile {
++		if !hasPyBinaryEntryPointFile && !cfg.PerFileGeneration() {
+ 			// Creating one py_binary target per main module when __main__.py doesn't exist.
+ 			mainFileNames := make([]string, 0, len(mainModules))
+ 			for name := range mainModules {
+diff --git a/python/kinds.go b/python/kinds.go
+index dac271b..2181b71 100644
+--- a/python/kinds.go
++++ b/python/kinds.go
+@@ -117,7 +117,7 @@ func apparentLoads(moduleToApparentName func(string) string) []rule.LoadInfo {
+ 
+ 	return []rule.LoadInfo{
+ 		{
+-			Name: "@rules_python//python:defs.bzl",
++			Name: "//devinfra/python:defs.bzl",
+ 			Symbols: []string{
+ 				pyBinaryKind,
+ 				pyLibraryKind,

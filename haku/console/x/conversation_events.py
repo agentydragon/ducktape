@@ -1,8 +1,13 @@
-"""What a conversation is, once a provider's frames have been read.
+"""What a conversation is, once a provider's frames have been read — the console-side fold.
 
-The vocabulary every surface renders and every backend adapter produces. Nothing in it is
-Claude-shaped: no `assistant`, no content block, no `msg_…`, no `tool_use_result`. The Claude
-adapter is <claude_code/projection.py>.
+The in-memory vocabulary the v3 native projectors produce. Nothing in it is Claude-shaped: no
+`assistant`, no content block, no `msg_…`, no `tool_use_result`. The Claude adapter is
+<claude_code/projection.py>; `stored` below is the bridge into the durable vocabulary
+(`conversation/conversation_event.py`), which is what every reader consumes.
+
+CLEANUP(added 2026-08-28): the v3 native-projection path — this fold, the console-side
+`claude_code`/`codex_app_server` projections, and `session_runtime.handle_runner` — deletes at
+#4667 stage 5, once the journal generation is the only runner path left in the tree.
 
 **Everything is an item, and an item is a type and three events**: started, then any number of
 segments, then completed. Both stream-native harness protocols reached that decomposition
@@ -35,22 +40,17 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome, TurnOutcome
+from pydantic import BaseModel
 
-# Whatever a provider put in a field this layer passes through rather than reads. Open by nature:
-# a tool's structured result is per-tool, not per-protocol.
-type Json = None | bool | int | float | str | list[Json] | dict[str, Json]
-
-
-@dataclass(frozen=True, slots=True)
-class FrameRange:
-    """The inclusive span of provider frames one event was projected from.
-
-    A span, not a set: a message interrupted by a tool result spans the interruption too.
-    """
-
-    first_frame_seq: int
-    last_frame_seq: int
+from haku.console.chat_models import ItemType, ToolOutcome
+from haku.console.conversation import conversation_event
+from haku.console.conversation.conversation_event import (
+    ConversationEventKind,
+    FrameRange,
+    Json,
+    ReasoningDisclosure,
+    TurnOutcome,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,3 +262,41 @@ class Projection:
 
     events: tuple[ConversationEvent, ...]
     unprojected: Mapping[str, int]
+
+
+def stored(event: ConversationEvent) -> tuple[ConversationEventKind, BaseModel] | None:
+    """The kind and body *event* is written as, or None for one whose durable home is elsewhere.
+
+    The fold's bridge into the one durable vocabulary (`conversation/conversation_event.py`),
+    module-qualified below because the two spell several event names alike.
+
+    A `TurnCompleted` has none: `conversation_turn` already holds the exchange's outcome and its
+    frame bracket, and the log states the two ends as authored rows.
+
+    **Every event that reaches a row here is frame-derived**, so one carrying `Authored` is an
+    adapter that did not say where it read the fact. The caller checks that, because it is the one
+    holding the provenance.
+    """
+    match event:
+        case TurnCompleted():
+            return None
+        case MessageStarted():
+            return ConversationEventKind.ITEM_OPENED, conversation_event.MessageOpened()
+        case ReasoningStarted():
+            return ConversationEventKind.ITEM_OPENED, conversation_event.ReasoningOpened()
+        case ToolCallStarted():
+            asked = conversation_event.ToolCallOpened(
+                call_id=event.call_id, tool_name=event.tool_name, arguments=dict(event.arguments)
+            )
+            return ConversationEventKind.ITEM_OPENED, asked
+        case ItemSegment():
+            return ConversationEventKind.ITEM_SEGMENT, conversation_event.ItemSegment(text=event.text)
+        case MessageCompleted():
+            completed = conversation_event.MessageCompleted(backend_item_id=event.backend_item_id)
+            return ConversationEventKind.ITEM_COMPLETED, completed
+        case ReasoningCompleted():
+            disclosed = conversation_event.ReasoningCompleted(disclosure=event.disclosure)
+            return ConversationEventKind.ITEM_COMPLETED, disclosed
+        case ToolCallCompleted():
+            answered = conversation_event.ToolCallCompleted(structured=event.structured, outcome=event.outcome)
+            return ConversationEventKind.ITEM_COMPLETED, answered

@@ -256,16 +256,6 @@ py_test(
     ],
 )
 
-py_library(
-    name = "test_helpers",
-    testonly = True,
-    srcs = ["test_helpers.py"],
-    visibility = ["//grocy_mcp:__subpackages__"],
-    deps = [
-        "@pypi//fastmcp_slim",
-    ],
-)
-
 py_test(
     name = "test_e2e",
     size = "medium",
@@ -277,9 +267,9 @@ py_test(
         ":grocy_container",
         ":grocy_fixtures",
         ":server",
-        ":test_helpers",
         ":tool_metadata",
         "//:conftest",
+        "//grocy_mcp/testing:helpers",
         "//mcp_infra:request_scoped_openapi",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",

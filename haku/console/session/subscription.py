@@ -34,8 +34,8 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from haku.console.conversation import conversation_event, log
 from haku.console.database_schema import ConversationEventRow
-from haku.console.x import session_events
 
 # How many rows one read takes. A ceiling on the work a woken subscriber does in one pass rather
 # than a page size: `Backlog.more` says to come straight back, so a subscriber catching up after an
@@ -65,7 +65,7 @@ class StreamedEvent:
     No kind beside `body`: the body's type *is* the kind, so a consumer dispatches on it with
     `isinstance` and cannot be handed a pair that disagrees.
 
-    A row written by a **newer release than this one** arrives as `session_events.UnknownEventBody`
+    A row written by a **newer release than this one** arrives as `conversation_event.UnknownEventBody`
     rather than not arriving. It keeps its position, which is the point: the read stops at its limit
     where it should, `more` stays true where it should, and a subscriber's kept position advances
     over what it was actually handed instead of over a row that raised.
@@ -82,7 +82,7 @@ class StreamedEvent:
     # which is the item's to answer and not this event's.
     item_id: UUID | None
     created_at: datetime
-    body: session_events.StoredBody
+    body: conversation_event.StoredEvent
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,7 +170,7 @@ def _streamed(row: ConversationEventRow) -> StreamedEvent:
         turn_id=row.turn_id,
         item_id=row.item_id,
         created_at=row.created_at,
-        body=session_events.body_of(row),
+        body=log.body_of(row),
     )
 
 

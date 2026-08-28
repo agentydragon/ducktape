@@ -1,0 +1,15 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "state_helpers",
+    srcs = ["state_helpers.py"],
+    deps = [
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)

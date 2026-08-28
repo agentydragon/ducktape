@@ -6,7 +6,7 @@ load("@rules_pkg//pkg:mappings.bzl", "pkg_filegroup", "pkg_files", "strip_prefix
 load("@rules_pkg//pkg:zip.bzl", "pkg_zip")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-_FRONTMATTER_TEST_LIB = "//skills:skill_frontmatter_test_lib"
+_FRONTMATTER_TEST_LIB = "//skills/testing:frontmatter_test"
 _FRONTMATTER_VALIDATION_BIN = "//skills:frontmatter_validation_bin"
 _SKILL_SPEC_LIB = "//skills:skill_spec"
 
@@ -154,7 +154,7 @@ def skill_package(name, srcs = None, contents = None, visibility = None):
     )
     py_test(
         name = name + "_frontmatter_test",
-        main_module = "skills.skill_frontmatter_test",
+        main_module = "skills.testing.frontmatter_test",
         data = [":" + name + "_skill"],
         deps = [_FRONTMATTER_TEST_LIB],
         env = {

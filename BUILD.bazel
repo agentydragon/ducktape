@@ -3,25 +3,59 @@
 # or don't need exclusion (cache dirs with no .py files like __pycache__)
 # gazelle:exclude ansible
 # gazelle:exclude homeassistant  # TODO: merge @pypi_homeassistant into @pypi to enable Gazelle here
+#
+# Deliberately unbazelized trees: one-off scripts, investigations, doc-run
+# artifacts, host configs. Pull a tree out of this list to bazelize it.
+# gazelle:exclude cluster/docs/inference
+# gazelle:exclude cluster/k8s/sdr
+# gazelle:exclude cluster/k8s/x
+# gazelle:exclude debug/atlas
+# gazelle:exclude debug/kernel-6.18-amd-kvm-stall
+# gazelle:exclude debug/sqlite_storage_bench
+# gazelle:exclude nix/nixos
+# gazelle:exclude tgarchive
+# gazelle:exclude x/domains
+# gazelle:exclude x/ember_evals
+# gazelle:exclude x/local_llm
+# gazelle:exclude x/rl_finetune
 
 # gazelle:python_root
 # gazelle:python_generation_mode file
 # gazelle:python_default_visibility NONE
 # gazelle:python_manifest_file_name devinfra/gazelle_python.yaml
-# Map py_binary -> py_library globally: the codebase pattern is one py_library per .py file,
-# with py_binary targets named differently (using main_module). Prevents name conflicts when a
-# .py file with __main__ already has a py_library target of the same name.
-# gazelle:map_kind py_binary py_library @rules_python//python:defs.bzl
+# The codebase pattern is one py_library per .py file, with py_binary targets hand-written
+# (main_module, no srcs) and named off the module stems so Gazelle never manages them.
+# Enforced by patches/rules_python_gazelle_ducktape.patch, which replaced a
+# `map_kind py_binary py_library` directive here: Gazelle applies map_kind to existing
+# hand-written py_binary rules too, rewriting their kind.
 #
 # Bazel-provided libraries (not from PyPI)
 # gazelle:resolve py rules_python.python.runfiles @rules_python//python/runfiles
 # gazelle:resolve py python.runfiles @rules_python//python/runfiles
+# gazelle:resolve py pkg.private @rules_pkg//pkg/private:manifest
+#
+# The generated manifest maps dotted namespace-package keys (opentelemetry.sdk,
+# google.oauth2, testcontainers.postgres, ...) but has no bare-module entry, so a
+# plain `import opentelemetry` doesn't resolve; pin it to the dist owning the root.
+# gazelle:resolve py opentelemetry @pypi//opentelemetry_api
+#
+# FreeCAD provides these modules at runtime (scripts run inside its bundled
+# Python); the stubs dist supplies types for mypy, mirroring the hand-written deps.
+# gazelle:resolve py FreeCAD @pypi//freecad_stubs
+# gazelle:resolve py FreeCADGui @pypi//freecad_stubs
+# gazelle:resolve py Part @pypi//freecad_stubs
+# gazelle:resolve py Sketcher @pypi//freecad_stubs
+# gazelle:resolve py TechDraw @pypi//freecad_stubs
+# gazelle:resolve py TechDrawGui @pypi//freecad_stubs
 #
 # Non-standard import paths (import name doesn't match directory structure)
 # gazelle:resolve py samplebooks_parts_data //inventree_utils:samplebooks_parts_data
 # haku/shared is a nested Bazel module (bazelignored), so Gazelle cannot index the library
 # that provides this namespace-package import; pin it to the module's label.
 # gazelle:resolve py haku.console.tool_calls @ducktape_haku//haku/console:tool_calls
+# runner.py backs both :runner and the hand-rolled :runner_bin py_binary (same srcs), which
+# makes the import ambiguous to Gazelle; pin it to the library.
+# gazelle:resolve py haku.runtime.x.bridge.runner //haku/runtime/x/bridge:runner
 
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_js//npm:defs.bzl", "npm_link_package")
@@ -75,6 +109,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
     ],
 )
 

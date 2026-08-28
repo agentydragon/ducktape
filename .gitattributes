@@ -87,6 +87,8 @@ cluster/k8s/x/haku/dispatch/dispatcher/job-template.yaml cluster-manifest-ignore
 cluster/k8s/x/haku/dispatch/dispatcher/zones.yaml cluster-manifest-ignored=true
 # haku-console config, mounted via configMapGenerator — not a K8s manifest.
 cluster/k8s/haku/console/config.yaml cluster-manifest-ignored=true
+# per-index haku-indexer chunk config slices, mounted via configMapGenerator — not K8s manifests.
+cluster/k8s/haku/console/indexer-chunk-*-config.yaml cluster-manifest-ignored=true
 # iron-proxy config for the coder agent's egress proxy, mounted via
 # configMapGenerator — not a K8s manifest.
 cluster/k8s/agents/public-coder-agent/proxy/iron.yaml cluster-manifest-ignored=true

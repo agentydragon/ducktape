@@ -84,6 +84,7 @@ py_library(
         "//haku/console/session:store",
         "//haku/console/session:subscription",
         "//haku/console/session:system_prompt",
+        "//haku/console/x:runtime_catalog",
         "//haku/console/x/testing:recording_claims",
         "@pypi//fastapi",
         "@pypi//pydantic",

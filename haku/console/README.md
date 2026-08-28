@@ -145,10 +145,12 @@ Built-ins are assembled in `in_process_servers.py`:
   calls may read every configured index. In the console it is a database reader over the committed
   index state (`recall_index_reader.py`). Source materialization and embedding are the separate
   maintenance stages of `recall_index_sync.py`, run by the independently deployed `haku-indexer`
-  worker (`indexer.py`) as two role-flagged Deployments. The chunk role is what holds the
-  `haku-state` Git credential (Haku's Forgejo account, capable of writes but used read-only;
-  public Ducktape is anonymous), the embed role the batch embedder endpoint — so this API pod
-  carries no Git credential. <../recall_index/README.md> owns the index design.
+  worker (`indexer.py`) as role-flagged Deployments: one chunk Deployment per logical index, each
+  mounting only its own index's config slice, plus one shared embed Deployment. Only the
+  `haku-state` chunk pod holds the `haku-state` Git credential (Haku's Forgejo account, capable of
+  writes but used read-only; public Ducktape is anonymous), the embed role the batch embedder
+  endpoint — so this API pod carries no Git credential. <../recall_index/README.md> owns the index
+  design.
 - `haku_conversations` exposes actor-scoped reads over the console's chat records; the runtime and
   record vocabulary are documented under <x/README.md>.
 - `haku_routine` launches the reviewed routine through ordinary approval.
@@ -219,7 +221,7 @@ constraint fixes the second.
 
 **Readers tolerate narration and cross-replica payloads produced by a newer replica.** Those values
 must not raise merely because an older reader has no word for them. They decode to a named
-unknown—such as `util.sqlalchemy_types.UnknownValue` or `x/session_events.UnknownEventBody`—never
+unknown—such as `util.sqlalchemy_types.UnknownValue` or `conversation/conversation_event.UnknownEventBody`—never
 `None` or a nearby member, so each consumer must handle the uncertainty explicitly. Cross-replica
 payload models do not reject unknown fields.
 

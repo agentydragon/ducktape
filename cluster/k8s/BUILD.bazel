@@ -120,7 +120,12 @@ filegroup(
         "haku/console/haku-console-github-mcp-client-credentials.sops.yaml",
         "haku/console/haku_system_prompt.md.j2",
         "haku/console/httproute.yaml",
-        "haku/console/indexer-deployment.yaml",
+        "haku/console/indexer-chunk-ducktape-public-config.yaml",
+        "haku/console/indexer-chunk-ducktape-public-deployment.yaml",
+        "haku/console/indexer-chunk-haku-conversations-config.yaml",
+        "haku/console/indexer-chunk-haku-conversations-deployment.yaml",
+        "haku/console/indexer-chunk-haku-state-config.yaml",
+        "haku/console/indexer-chunk-haku-state-deployment.yaml",
         "haku/console/indexer-embed-deployment.yaml",
         "haku/console/indexer-role.sql",
         "haku/console/kube-api-proxy.yaml",
@@ -253,13 +258,28 @@ filegroup(
     visibility = ["//haku/console:__pkg__"],
 )
 
-# Both role Deployments of the one indexer binary, so the test that parses their `--role`
-# flags exercises the manifests the cluster actually runs rather than fixtures.
+# Every Deployment of the one indexer binary — the per-index chunk roles and the shared embed
+# role — so the test that parses their `--role` flags exercises the manifests the cluster
+# actually runs rather than fixtures.
 filegroup(
     name = "haku_indexer_deployments",
     srcs = [
-        "haku/console/indexer-deployment.yaml",
+        "haku/console/indexer-chunk-ducktape-public-deployment.yaml",
+        "haku/console/indexer-chunk-haku-conversations-deployment.yaml",
+        "haku/console/indexer-chunk-haku-state-deployment.yaml",
         "haku/console/indexer-embed-deployment.yaml",
+    ],
+    visibility = ["//haku/console:__pkg__"],
+)
+
+# The per-index chunk config slices, so the derivation test pins each checked-in slice to the
+# registry it projects rather than to a fixture.
+filegroup(
+    name = "haku_indexer_chunk_configs",
+    srcs = [
+        "haku/console/indexer-chunk-ducktape-public-config.yaml",
+        "haku/console/indexer-chunk-haku-conversations-config.yaml",
+        "haku/console/indexer-chunk-haku-state-config.yaml",
     ],
     visibility = ["//haku/console:__pkg__"],
 )

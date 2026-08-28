@@ -35,7 +35,7 @@ from finance.augur.sim.scenario import (
     TransferIncomeCategory,
 )
 from finance.augur.sim.simulate import simulate
-from finance.augur.sim.test_state_helpers import ordinary_income_ytd
+from finance.augur.sim.testing.state_helpers import ordinary_income_ytd
 
 # December of the first year, so the year-end accrual has fired.
 _HORIZON_MONTHS = 13

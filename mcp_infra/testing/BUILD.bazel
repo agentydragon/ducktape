@@ -9,7 +9,9 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":fixtures",
-        "//mcp_infra/exec:docker",
+        "//mcp_infra/exec/docker:container_session",
+        "//mcp_infra/exec/docker:launcher",
+        "//mcp_infra/exec/docker:server",
         "@pypi//pytest",
     ],
 )
@@ -33,14 +35,16 @@ py_library(
     deps = [
         ":notifications",
         ":simple_servers",
-        ":stdio_app_lib",
-        ":stdio_notifier_lib",
+        ":stdio_app",
+        ":stdio_notifier",
         "//mcp_infra:prefix",
         "//mcp_infra/compositor",
         "//mcp_infra/compositor:notifications_buffer",
         "//mcp_infra/compositor:resources_server",
         "//mcp_infra/enhanced:server",
-        "//mcp_infra/exec:docker",
+        "//mcp_infra/exec/docker:container_session",
+        "//mcp_infra/exec/docker:launcher",
+        "//mcp_infra/exec/docker:server",
         "//mcp_infra/stubs:resources_stub",
         "//mcp_infra/stubs:typed_stubs",
         "//util/bazel:subprocess",
@@ -88,7 +92,7 @@ py_library(
 )
 
 py_library(
-    name = "stdio_app_lib",
+    name = "stdio_app",
     srcs = ["stdio_app.py"],
     visibility = ["//:__subpackages__"],
     deps = [
@@ -98,14 +102,14 @@ py_library(
 )
 
 py_binary(
-    name = "stdio_app",
+    name = "stdio_app_bin",
     main_module = "mcp_infra.testing.stdio_app",
     visibility = ["//:__subpackages__"],
-    deps = [":stdio_app_lib"],
+    deps = [":stdio_app"],
 )
 
 py_library(
-    name = "stdio_notifier_lib",
+    name = "stdio_notifier",
     srcs = ["stdio_notifier.py"],
     visibility = ["//:__subpackages__"],
     deps = [
@@ -115,8 +119,8 @@ py_library(
 )
 
 py_binary(
-    name = "stdio_notifier",
+    name = "stdio_notifier_bin",
     main_module = "mcp_infra.testing.stdio_notifier",
     visibility = ["//:__subpackages__"],
-    deps = [":stdio_notifier_lib"],
+    deps = [":stdio_notifier"],
 )

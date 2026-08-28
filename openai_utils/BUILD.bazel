@@ -3,6 +3,7 @@ load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
 
 # gazelle:exclude test_live_api.py
 # gazelle:exclude test_pydantic_strict_mode.py
+# gazelle:exclude openai_api_examples
 
 py_library(
     name = "api_shape",

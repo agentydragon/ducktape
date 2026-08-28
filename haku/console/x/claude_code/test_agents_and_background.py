@@ -22,10 +22,10 @@ import pytest_bazel
 from more_itertools import one
 
 from haku.console.chat_models import ToolOutcome
+from haku.console.conversation.conversation_event import FrameRange
 from haku.console.x.claude_code.projection import RecordedFrame
 from haku.console.x.claude_code.testing.fold import whole_capture
 from haku.console.x.conversation_events import (
-    FrameRange,
     ItemSegment,
     MessageCompleted,
     MessageStarted,
