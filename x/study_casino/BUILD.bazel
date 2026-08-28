@@ -178,6 +178,7 @@ py_library(
         ":stats",
         ":store",
         "@pypi//fastapi",
+        "@pypi//psycopg",
         "@pypi//sqlalchemy",
         "@pypi//uvicorn",
     ],
