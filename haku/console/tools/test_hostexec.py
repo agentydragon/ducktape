@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest_bazel
 from fastmcp import Client
 
-from haku.console.tools.hostexec import HOSTEXEC_SERVER_ID, build_mcp
+from haku.console.tools.hostexec import build_mcp
 from mcp_infra.exec.models import BaseExecResult, Exited
 
 
@@ -18,7 +18,6 @@ async def test_tool_surface() -> None:
     async with Client(build_mcp(Mock())) as client:
         tools = {tool.name for tool in await client.list_tools()}
     assert tools == {"bash"}
-    assert HOSTEXEC_SERVER_ID == "hostexec"
 
 
 async def test_bash_forwards_cmd_and_returns_result() -> None:
