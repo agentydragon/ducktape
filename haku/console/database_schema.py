@@ -39,7 +39,7 @@ from haku.console.agents.models import (
     CredentialKind,
     EnrollmentPhase,
 )
-from haku.console.chat_models import ChannelSurface, ItemStatus, ItemType, RuntimeKind, ToolOutcome
+from haku.console.chat_models import ChannelSurface, ItemStatus, ItemType, ToolOutcome
 from haku.console.conversation.conversation_event import (
     AuthoredEventKind,
     ConversationEventKind,
@@ -52,6 +52,7 @@ from haku.console.conversation.prompt_origin import PromptOrigin
 from haku.console.grants.envelope import GrantEnvelopeColumns, GrantStatus, grant_envelope_table_args
 from haku.console.grants.http.models import HttpMethod, HttpMethods, HttpScheme
 from haku.console.grants.kubernetes.models import KubernetesGrantScope, KubernetesRule
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.hostexecd.models import ExecutionStatus
 from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
 from haku.console.operator_identity import OperatorStatus
@@ -1004,11 +1005,20 @@ class Conversation(Base):
         PGUUID(as_uuid=True), ForeignKey("agents.agent_id", ondelete="RESTRICT"), nullable=True
     )
     access_profile_id: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Immutable conversation identity. It lives here rather than on a session so a replacement
-    # runner necessarily inherits the implementation whose prompt, replay and projection semantics
-    # created the thread. Text + CHECK is deliberate: the next runtime widens one transactional
-    # constraint rather than altering a PostgreSQL enum type.
-    runtime_kind: Mapped[RuntimeKind] = mapped_column(TextBackedStrEnumColumn(RuntimeKind), nullable=False)
+    # Immutable conversation identity: the harness a conversation is pinned to. It lives here rather
+    # than on a session so a replacement runner necessarily inherits the implementation whose prompt,
+    # replay and projection semantics created the thread. Text + CHECK is deliberate: the next
+    # harness widens one transactional constraint rather than altering a PostgreSQL enum type.
+    harness_kind: Mapped[HarnessKind | None] = mapped_column(TextBackedStrEnumColumn(HarnessKind), nullable=True)
+    # CLEANUP(added 2026-08-28): expand step of runtime_kind→harness_kind (naming_and_layout.md §3.1
+    #   C4d, #4772). `harness_kind` is the rename target; this release backfills it and dual-writes
+    #   both columns but still *reads* `runtime_kind`, which post-#5050 replicas also read — so no
+    #   replica reads a vanished column mid-roll. `harness_kind` is nullable only for rows a #5050
+    #   replica inserts during this expand roll (it does not know the column); the read-switch
+    #   release backfills those and makes it NOT NULL. Contract sequence, each after the prior has
+    #   converged: (1) switch reads to `harness_kind`, backfill+NOT NULL; (2) stop writing/mapping
+    #   `runtime_kind`, make it nullable; (3) drop `runtime_kind` and `ck_conversation_runtime_kind`.
+    runtime_kind: Mapped[HarnessKind] = mapped_column(TextBackedStrEnumColumn(HarnessKind), nullable=False)
     # The next `conversation_event.event_seq` to hand out, taken under `SELECT … FOR UPDATE` in the
     # writing transaction. A counter here rather than a sequence because the log's address must be
     # **dense** — a sequence is unique but leaves gaps, and a gap a channel cannot distinguish from
@@ -1023,6 +1033,9 @@ class Conversation(Base):
         ),
         CheckConstraint("(agent_id IS NULL) = (access_profile_id IS NULL)", name="ck_conversation_agent_profile_pair"),
         CheckConstraint("runtime_kind IN ('claude_code', 'codex_app_server')", name="ck_conversation_runtime_kind"),
+        # NULL passes (a #5050 replica's expand-roll insert); the read-switch release backfills and
+        # adds NOT NULL. Dropped with `runtime_kind`'s CHECK once the column is the sole survivor.
+        CheckConstraint("harness_kind IN ('claude_code', 'codex_app_server')", name="ck_conversation_harness_kind"),
         CheckConstraint("next_event_seq > 0", name="ck_conversation_next_event_seq"),
         Index("idx_conversation_operator", "operator_id", "created_at"),
     )

@@ -28,13 +28,14 @@ from haku.console.channels.matrix.conversation import (
     Turns,
 )
 from haku.console.channels.matrix.ingress_ledger import IngressLedger
-from haku.console.chat_models import ItemType, RuntimeKind
+from haku.console.chat_models import ItemType
 from haku.console.conftest import console_sessions
 from haku.console.conversation import conversation_event
 from haku.console.conversation.conversation_event import ConversationEventKind, FrameRange, PromptRejection
 from haku.console.conversation.history import ConversationHistory
 from haku.console.conversation.prompt_origin import SPA_ORIGIN, MatrixOrigin
 from haku.console.database_schema import Conversation, ConversationEventRow, ConversationItem, Session, SubmittedPrompt
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.launch_identity import ChatLaunchAuthorizer, LaunchIdentity
 from haku.console.session.store import BridgeAuthentication, Store
 from haku.console.x.conversation_events import (
@@ -73,8 +74,8 @@ async def test_first_matrix_bind_pins_complete_identity_with_production_authoriz
     production = ChatLaunchAuthorizer(
         authority,
         launchable_agent_ids={agent_id},
-        registered_runtime_identities={RuntimeKey(agent_id, RuntimeKind.CLAUDE_CODE)},
-        profile_runtime_kinds={"chat": {RuntimeKind.CLAUDE_CODE}},
+        registered_runtime_identities={RuntimeKey(agent_id, HarnessKind.CLAUDE_CODE)},
+        profile_runtime_kinds={"chat": {HarnessKind.CLAUDE_CODE}},
     )
     calls: list[bool] = []
 
@@ -82,7 +83,7 @@ async def test_first_matrix_bind_pins_complete_identity_with_production_authoriz
         db: AsyncSession,
         operator_id: UUID,
         agent_id: UUID,
-        runtime_kind: RuntimeKind,
+        runtime_kind: HarnessKind,
         *,
         expected_profile_id: str | None = None,
     ) -> LaunchIdentity:
@@ -101,7 +102,7 @@ async def test_first_matrix_bind_pins_complete_identity_with_production_authoriz
         agent_id,
         "chat",
     )
-    assert conversation.runtime_kind is RuntimeKind.CLAUDE_CODE
+    assert conversation.runtime_kind is HarnessKind.CLAUDE_CODE
     assert calls == [True]
 
 

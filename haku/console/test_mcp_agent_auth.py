@@ -27,10 +27,10 @@ from haku.console.agents.authorization import (
     fingerprint_static_token,
 )
 from haku.console.agents.launch_authority import StaticAgentAuthorization
-from haku.console.chat_models import RuntimeKind
 from haku.console.config import McpOAuthConfig, OperatorIdentityConfig, OperatorOidcConfig, Settings
 from haku.console.conftest import console_sessions, operator_id
 from haku.console.database_schema import Agent, Conversation, Operator, Session
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.mcp_agent_auth import OAuthMcpAuth, StaticMcpAuth, build_auth
 from haku.console.mcp_auth.fastmcp_adapter import (
     AgentGrantAuthorityUnavailableError,
@@ -274,7 +274,7 @@ async def test_session_bearer_resolves_the_pinned_agent_profile_and_session(
                 operator_id=resolved_operator_id,
                 agent_id=agent_id,
                 access_profile_id="pinned",
-                runtime_kind=RuntimeKind.CLAUDE_CODE,
+                runtime_kind=HarnessKind.CLAUDE_CODE,
                 created_at=now,
             )
         )
@@ -427,7 +427,7 @@ async def test_session_bearer_is_rejected_after_its_session_ends(
                 operator_id=resolved_operator_id,
                 agent_id=agent_id,
                 access_profile_id="pinned",
-                runtime_kind=RuntimeKind.CLAUDE_CODE,
+                runtime_kind=HarnessKind.CLAUDE_CODE,
                 created_at=now,
             )
         )

@@ -11,7 +11,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from haku.console.chat_models import RuntimeKind
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.x.codex_app_server import frames, projection
 from haku.console.x.codex_app_server.client import CodexClientFactory, CodexThread, app_server_over_websocket
 from haku.console.x.codex_app_server.config import ReasoningEffort
@@ -54,8 +54,8 @@ class CodexRuntimeAdapter:
     model_provider: CodexModelProvider | None = None
 
     @property
-    def kind(self) -> RuntimeKind:
-        return RuntimeKind.CODEX_APP_SERVER
+    def kind(self) -> HarnessKind:
+        return HarnessKind.CODEX_APP_SERVER
 
     @property
     def display_name(self) -> str:

@@ -15,8 +15,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.channels.matrix.revisions import RevisionLog
-from haku.console.chat_models import ChannelSurface, RuntimeKind
+from haku.console.chat_models import ChannelSurface
 from haku.console.database_schema import ChannelAttachmentRow, Conversation
+from haku.console.harnesses.kind import HarnessKind
 
 
 @pytest.fixture
@@ -33,7 +34,8 @@ async def attachment_id(migrated_sessions: async_sessionmaker[AsyncSession], ope
             Conversation(
                 conversation_id=conversation_id,
                 operator_id=operator_id,
-                runtime_kind=RuntimeKind.CLAUDE_CODE,
+                harness_kind=HarnessKind.CLAUDE_CODE,
+                runtime_kind=HarnessKind.CLAUDE_CODE,
                 created_at=now,
             )
         )

@@ -40,7 +40,6 @@ from haku.console.agents.models import (
     CredentialKind,
     EnrollmentPhase,
 )
-from haku.console.chat_models import RuntimeKind
 from haku.console.conftest import operator_id, write_config
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import (
@@ -53,6 +52,7 @@ from haku.console.database_schema import (
     Session,
     StaticCredential,
 )
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.hostexecd.models import ExecutionStatus
 from haku.console.mcp_approval import (
     DegradedReflection,
@@ -654,7 +654,7 @@ async def test_session_agent_tool_call_retains_exact_session_attribution(
                     operator_id=static_actor.operator_id,
                     agent_id=static_actor.agent_id,
                     access_profile_id=static_actor.access_profile_id,
-                    runtime_kind=RuntimeKind.CLAUDE_CODE,
+                    runtime_kind=HarnessKind.CLAUDE_CODE,
                     created_at=now,
                 )
             )

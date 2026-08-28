@@ -26,7 +26,7 @@ from sqlalchemy import CursorResult, Select, Subquery, func, literal, select, te
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import ItemStatus, ItemType, RuntimeKind
+from haku.console.chat_models import ItemStatus, ItemType
 from haku.console.conversation import conversation_event, log, prompt_inbox
 from haku.console.conversation.conversation_event import FrameRange, PromptRejection
 from haku.console.conversation.item_reads import ConversationPageRow, entry_of, turn_end_of
@@ -61,6 +61,7 @@ from haku.console.database_schema import (
 )
 from haku.console.grants.envelope import GrantStatus
 from haku.console.grants.principal import GrantPrincipalKind
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.notifications.conversation_wakes import ConversationWakeKind, notify_conversation, notify_update
 from haku.console.notifications.session_wakes import SessionEventKind, notify
 from haku.console.session.conversation_views import (
@@ -385,7 +386,7 @@ class OperatorSessionIdentity:
     status: SessionStatus
     agent_id: UUID | None
     access_profile_id: str | None
-    runtime_kind: RuntimeKind
+    runtime_kind: HarnessKind
 
 
 @dataclass(frozen=True, slots=True)
@@ -502,7 +503,7 @@ class Store:
         conversation_id: UUID | None = None,
         agent_id: UUID | None = None,
         access_profile_id: str | None = None,
-        runtime_kind: RuntimeKind | None = None,
+        runtime_kind: HarnessKind | None = None,
         launch_authorizer: LaunchAuthorizer | None = None,
     ) -> tuple[SessionView, str]:
         """Open the idle session used by every production caller."""
@@ -522,7 +523,7 @@ class Store:
         conversation_id: UUID | None = None,
         agent_id: UUID | None = None,
         access_profile_id: str | None = None,
-        runtime_kind: RuntimeKind | None = None,
+        runtime_kind: HarnessKind | None = None,
         launch_authorizer: LaunchAuthorizer | None = None,
     ) -> tuple[SessionView, str]:
         """Open an authorized idle session without allocating its sandbox.
@@ -544,7 +545,7 @@ class Store:
                     if agent_id is None:
                         raise LaunchAgentRejectedError
                     identity = await launch_authorizer(
-                        db, operator_id, agent_id, runtime_kind or RuntimeKind.CLAUDE_CODE
+                        db, operator_id, agent_id, runtime_kind or HarnessKind.CLAUDE_CODE
                     )
                     agent_id = identity.agent_id
                     agent_binding_id = identity.binding_id
@@ -557,7 +558,10 @@ class Store:
                         operator_id=operator_id,
                         agent_id=agent_id,
                         access_profile_id=access_profile_id,
-                        runtime_kind=runtime_kind or RuntimeKind.CLAUDE_CODE,
+                        # Expand step of runtime_kind→harness_kind (database_schema.py C4d): dual-write
+                        # both, still read `runtime_kind`, until the contract releases drop it.
+                        harness_kind=runtime_kind or HarnessKind.CLAUDE_CODE,
+                        runtime_kind=runtime_kind or HarnessKind.CLAUDE_CODE,
                         created_at=now,
                     )
                 )
@@ -752,7 +756,7 @@ class Store:
         conversation_id: UUID | None = None,
         agent_id: UUID | None = None,
         access_profile_id: str | None = None,
-        runtime_kind: RuntimeKind | None = None,
+        runtime_kind: HarnessKind | None = None,
     ) -> tuple[SessionView, str]:
         """Seed the pre-lazy allocated state for focused tests of an already-running session."""
         now = datetime.now(UTC)
@@ -767,7 +771,10 @@ class Store:
                         operator_id=operator_id,
                         agent_id=agent_id,
                         access_profile_id=access_profile_id,
-                        runtime_kind=runtime_kind or RuntimeKind.CLAUDE_CODE,
+                        # Expand step of runtime_kind→harness_kind (database_schema.py C4d): dual-write
+                        # both, still read `runtime_kind`, until the contract releases drop it.
+                        harness_kind=runtime_kind or HarnessKind.CLAUDE_CODE,
+                        runtime_kind=runtime_kind or HarnessKind.CLAUDE_CODE,
                         created_at=now,
                     )
                 )
@@ -2183,7 +2190,7 @@ class Store:
         outcome = await self.outcome(session_id)
         return outcome.status if outcome is not None else None
 
-    async def runtime_kind_of(self, session_id: UUID) -> RuntimeKind:
+    async def runtime_kind_of(self, session_id: UUID) -> HarnessKind:
         """Return the immutable runtime discriminator of a session's conversation."""
         async with self._sessions() as db:
             kind = await db.scalar(

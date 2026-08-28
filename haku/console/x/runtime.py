@@ -13,7 +13,7 @@ from enum import StrEnum
 from typing import Any, Protocol
 from uuid import UUID
 
-from haku.console.chat_models import RuntimeKind
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.sandbox_claims import SandboxClaims
 from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.x.conversation_events import ConversationEvent, TurnEnd
@@ -64,13 +64,13 @@ class RuntimeMcpServer:
 class RuntimeKey:
     """The immutable Agent/runtime pair selected for one conversation.
 
-    ``RuntimeKind`` is deliberately only a protocol discriminator.  Execution resources are
+    ``HarnessKind`` is deliberately only a protocol discriminator.  Execution resources are
     selected with this key so two Agents using the same protocol cannot accidentally share a
     sandbox pool, prompt, environment, or MCP endpoint.
     """
 
     agent_id: UUID
-    runtime_kind: RuntimeKind
+    runtime_kind: HarnessKind
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,10 +179,10 @@ class RuntimeWakeWatcher(Protocol):
 
 
 class RuntimeAdapter(Protocol):
-    """Provider-owned protocol behavior behind one immutable ``RuntimeKind``."""
+    """Provider-owned protocol behavior behind one immutable ``HarnessKind``."""
 
     @property
-    def kind(self) -> RuntimeKind: ...
+    def kind(self) -> HarnessKind: ...
 
     @property
     def display_name(self) -> str: ...
@@ -258,14 +258,14 @@ class RuntimeRegistry:
 
     def __init__(
         self,
-        adapters: Mapping[RuntimeKind, RuntimeAdapter],
-        resources: Mapping[RuntimeKind | RuntimeKey, AgentRuntimeResources] | None = None,
+        adapters: Mapping[HarnessKind, RuntimeAdapter],
+        resources: Mapping[HarnessKind | RuntimeKey, AgentRuntimeResources] | None = None,
     ):
         self._adapters = dict(adapters)
-        self._resources: dict[RuntimeKind, AgentRuntimeResources] = {}
+        self._resources: dict[HarnessKind, AgentRuntimeResources] = {}
         self._resources_by_identity: dict[RuntimeKey, AgentRuntimeResources] = {}
         for key, source in (resources or {}).items():
-            if isinstance(key, RuntimeKind):
+            if isinstance(key, HarnessKind):
                 self._resources[key] = source
                 continue
             identity = key
@@ -295,7 +295,7 @@ class RuntimeRegistry:
         if unknown_resources:
             raise ValueError(f"runtime resources have no adapter: {sorted(kind.value for kind in unknown_resources)}")
 
-    def adapter(self, kind: RuntimeKind) -> RuntimeAdapter:
+    def adapter(self, kind: HarnessKind) -> RuntimeAdapter:
         try:
             return self._adapters[kind]
         except KeyError as error:
@@ -303,8 +303,8 @@ class RuntimeRegistry:
 
     def configured(
         self,
-        kind_or_agent: RuntimeKind | UUID | RuntimeKey | None = None,
-        runtime_kind: RuntimeKind | None = None,
+        kind_or_agent: HarnessKind | UUID | RuntimeKey | None = None,
+        runtime_kind: HarnessKind | None = None,
         *,
         access_profile_id: str | None = None,
         agent_id: UUID | None = None,
@@ -329,7 +329,7 @@ class RuntimeRegistry:
                 raise TypeError("runtime_kind is only valid once with a RuntimeKey")
             runtime_kind = kind_or_agent.runtime_kind
             kind_or_agent = kind_or_agent.agent_id
-        if isinstance(kind_or_agent, RuntimeKind):
+        if isinstance(kind_or_agent, HarnessKind):
             if runtime_kind is not None:
                 raise TypeError("runtime_kind is only valid with an Agent id")
             kind = kind_or_agent
@@ -360,18 +360,18 @@ class RuntimeRegistry:
         """Explicit spelling for execution callers selecting by immutable session identity."""
         return self.configured(identity.agent_id, identity.runtime_kind, access_profile_id=access_profile_id)
 
-    def __getitem__(self, kind: RuntimeKind) -> RuntimeAdapter:
+    def __getitem__(self, kind: HarnessKind) -> RuntimeAdapter:
         return self.adapter(kind)
 
-    def __contains__(self, kind: RuntimeKind) -> bool:
+    def __contains__(self, kind: HarnessKind) -> bool:
         return kind in self._adapters
 
     @property
-    def kinds(self) -> frozenset[RuntimeKind]:
+    def kinds(self) -> frozenset[HarnessKind]:
         return frozenset(self._adapters)
 
     @property
-    def configured_kinds(self) -> frozenset[RuntimeKind]:
+    def configured_kinds(self) -> frozenset[HarnessKind]:
         return frozenset(self._resources) | frozenset(identity.runtime_kind for identity in self._resources_by_identity)
 
     @property

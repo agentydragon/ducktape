@@ -27,9 +27,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from haku.console.chat_models import ItemStatus, RuntimeKind
+from haku.console.chat_models import ItemStatus
 from haku.console.conversation.conversation_event import ReasoningDisclosure, TurnAborted, TurnAnswered, TurnFailed
 from haku.console.conversation.prompt_origin import PromptOriginKind
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.session_frames import FrameDirection
 
 
@@ -66,7 +67,7 @@ class SessionRecord(BaseModel):
     status: str
     created_at: datetime.datetime
     error: str | None = None
-    harness_kind: RuntimeKind = Field(description="The immutable runner implementation pinned by that conversation.")
+    harness_kind: HarnessKind = Field(description="The immutable runner implementation pinned by that conversation.")
 
 
 class SessionCursor(BaseModel):

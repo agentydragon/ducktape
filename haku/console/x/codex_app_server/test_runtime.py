@@ -7,8 +7,8 @@ from typing import Any, cast
 
 import pytest_bazel
 
-from haku.console.chat_models import RuntimeKind
 from haku.console.conversation.conversation_event import FrameRange
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.x.codex_app_server import projection
 from haku.console.x.codex_app_server.client import CodexThread
 from haku.console.x.codex_app_server.config import ReasoningEffort
@@ -157,7 +157,7 @@ def test_failed_native_turn_becomes_a_neutral_failure() -> None:
 
 def test_adapter_identity_is_codex_without_making_it_a_configured_runtime() -> None:
     adapter = CodexRuntimeAdapter()
-    assert adapter.kind is RuntimeKind.CODEX_APP_SERVER
+    assert adapter.kind is HarnessKind.CODEX_APP_SERVER
     assert adapter.display_name == "Codex"
 
 

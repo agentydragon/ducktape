@@ -7,7 +7,7 @@ py_library(
     srcs = ["runtime.py"],
     deps = [
         ":conversation_events",
-        "//haku/console:chat_models",
+        "//haku/console/harnesses:kind",
         "//haku/console/session:sandbox_claims",
         "//haku/console/session:system_prompt",
         "//haku/runtime/x/bridge:client",
@@ -21,8 +21,8 @@ py_library(
     srcs = ["runtime_catalog.py"],
     deps = [
         ":runtime",
-        "//haku/console:chat_models",
         "//haku/console:config",
+        "//haku/console/harnesses:kind",
         "//haku/console/session:sandbox_claims",
         "//haku/console/session:system_prompt",
         "//haku/console/x/claude_code:client",
@@ -41,8 +41,8 @@ py_test(
         ":runtime",
         ":runtime_catalog",
         "//:conftest",
-        "//haku/console:chat_models",
         "//haku/console:conftest",
+        "//haku/console/harnesses:kind",
         "//haku/console/session:system_prompt",
         "//haku/console/x/claude_code:projection",
         "//haku/console/x/claude_code/testing:fold",

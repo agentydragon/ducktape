@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from haku.console.chat_models import RuntimeKind
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.http_url import UncredentialedHttpUrl
 from haku.runtime.x.bridge.backend import BRIDGE_CREDENTIAL_VARIABLE
 
@@ -63,7 +63,7 @@ class CodexAppServerImplementationConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    kind: Literal[RuntimeKind.CODEX_APP_SERVER] = RuntimeKind.CODEX_APP_SERVER
+    kind: Literal[HarnessKind.CODEX_APP_SERVER] = HarnessKind.CODEX_APP_SERVER
     model: str
     # A field default rather than a required cluster config.yaml key: the ConfigMap applies
     # ahead of the image, and an image without this field would reject the unknown key at

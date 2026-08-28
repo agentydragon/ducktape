@@ -11,11 +11,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
-from haku.console.chat_models import RuntimeKind
 from haku.console.conftest import console_sessions
 from haku.console.conversation.prompt_origin import SPA_ORIGIN
 from haku.console.conversation.runtime import Runtime
 from haku.console.database_schema import ConversationItem, Session
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.conftest import configured_runtimes
 from haku.console.session.launch_identity import ChatLaunchAuthorizer, LaunchIdentity
 from haku.console.session.runtime import SessionService
@@ -94,8 +94,8 @@ async def test_demanded_replacement_reauthorizes_pinned_identity_in_creation_tra
     production = ChatLaunchAuthorizer(
         authority,
         launchable_agent_ids={expected_agent_id},
-        registered_runtime_identities={RuntimeKey(expected_agent_id, RuntimeKind.CLAUDE_CODE)},
-        profile_runtime_kinds={"pinned": {RuntimeKind.CLAUDE_CODE}},
+        registered_runtime_identities={RuntimeKey(expected_agent_id, HarnessKind.CLAUDE_CODE)},
+        profile_runtime_kinds={"pinned": {HarnessKind.CLAUDE_CODE}},
     )
     calls: list[tuple[UUID, str | None, bool]] = []
 
@@ -103,7 +103,7 @@ async def test_demanded_replacement_reauthorizes_pinned_identity_in_creation_tra
         db: AsyncSession,
         operator_id: UUID,
         agent_id: UUID,
-        runtime_kind: RuntimeKind,
+        runtime_kind: HarnessKind,
         *,
         expected_profile_id: str | None = None,
     ) -> LaunchIdentity:

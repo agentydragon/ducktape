@@ -138,6 +138,7 @@ py_test(
         "//haku/console/conversation:conversation_event",
         "//haku/console/conversation:reads",
         "//haku/console/grants:principal",
+        "//haku/console/harnesses:kind",
         "//haku/console/session:session_frames",
         "@pypi//fastmcp_slim",
         "@pypi//more_itertools",

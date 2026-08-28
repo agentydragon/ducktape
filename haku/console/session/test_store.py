@@ -22,7 +22,7 @@ from sqlalchemy import select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from haku.console.chat_models import ItemStatus, ItemType, RuntimeKind, ToolOutcome
+from haku.console.chat_models import ItemStatus, ItemType, ToolOutcome
 from haku.console.conversation.conversation_event import (
     AuthoredEventKind,
     ConversationEventKind,
@@ -64,6 +64,7 @@ from haku.console.grants.envelope import GrantStatus
 from haku.console.grants.http.models import HttpMethod, HttpScheme
 from haku.console.grants.kubernetes.models import KubernetesNamespacesGrantScope, KubernetesRule
 from haku.console.grants.principal import GrantPrincipalKind
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.notifications.session_wakes import SessionEvent, SessionEventKind
 from haku.console.session.conftest import age_lease, answers, attach_channel, lease_of, make_idle
 from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
@@ -103,7 +104,7 @@ def _harness(frames: Sequence[FrameRecord]) -> list[HarnessFrameRecord]:
 class _AlternateFrameVocabulary:
     """A harness whose native JSON has no conventional discriminator keys."""
 
-    kind = RuntimeKind.CLAUDE_CODE
+    kind = HarnessKind.CLAUDE_CODE
 
     def prompt_submitted(self, outbound) -> bool:
         return any(frame.frame.get("动作") == "提问" for frame in outbound)
@@ -111,7 +112,7 @@ class _AlternateFrameVocabulary:
 
 async def test_store_delegates_prompt_semantics_and_keeps_native_json_opaque(migrated_sessions, operator_id) -> None:
     runtime = cast(RuntimeAdapter, _AlternateFrameVocabulary())
-    store = Store(migrated_sessions, RuntimeRegistry({RuntimeKind.CLAUDE_CODE: runtime}))
+    store = Store(migrated_sessions, RuntimeRegistry({HarnessKind.CLAUDE_CODE: runtime}))
     view, token = await store._create_provisioning_for_test(operator_id)
     assert await store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await store.enqueue_prompt(operator_id, view.session_id, "question", SPA_ORIGIN)
@@ -1538,7 +1539,7 @@ async def test_abort_reaches_the_replica_running_the_turn(
     try:
         requesting = Store(
             async_sessionmaker(other_engine, expire_on_commit=False),
-            RuntimeRegistry({RuntimeKind.CLAUDE_CODE: cast(RuntimeAdapter, _AlternateFrameVocabulary())}),
+            RuntimeRegistry({HarnessKind.CLAUDE_CODE: cast(RuntimeAdapter, _AlternateFrameVocabulary())}),
         )
         received: asyncio.Queue[SessionEvent] = asyncio.Queue()
         with session_wakes.watch_session(view.session_id, received.put_nowait):

@@ -13,7 +13,7 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
-from haku.console.chat_models import RuntimeKind
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.http_url import UncredentialedHttpUrl
 from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
 from haku.recall_index.config import EmbedderConfig, RecallIndexSettings
@@ -270,7 +270,7 @@ class ClaudeCodeImplementationConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    kind: Literal[RuntimeKind.CLAUDE_CODE] = RuntimeKind.CLAUDE_CODE
+    kind: Literal[HarnessKind.CLAUDE_CODE] = HarnessKind.CLAUDE_CODE
     oauth_placeholder: str
 
 
@@ -288,8 +288,8 @@ class RuntimeRegistrationConfig(RuntimeExecutionConfig):
     implementation: RuntimeImplementationConfig
 
     @property
-    def kind(self) -> RuntimeKind:
-        return RuntimeKind(self.implementation.kind)
+    def kind(self) -> HarnessKind:
+        return HarnessKind(self.implementation.kind)
 
     def environment(self) -> dict[str, str]:
         implementation = self.implementation
@@ -322,7 +322,7 @@ class ChatRuntimesConfig(BaseModel):
     @field_validator("claude_code")
     @classmethod
     def _claude_slot_accepts_only_claude(cls, value: RuntimeRegistrationConfig) -> RuntimeRegistrationConfig:
-        if value.kind is not RuntimeKind.CLAUDE_CODE:
+        if value.kind is not HarnessKind.CLAUDE_CODE:
             raise ValueError("harnesses.claude_code must select the claude_code implementation")
         return value
 
@@ -331,7 +331,7 @@ class ChatRuntimesConfig(BaseModel):
     def _codex_slot_accepts_only_codex(
         cls, value: RuntimeRegistrationConfig | None
     ) -> RuntimeRegistrationConfig | None:
-        if value is not None and value.kind is not RuntimeKind.CODEX_APP_SERVER:
+        if value is not None and value.kind is not HarnessKind.CODEX_APP_SERVER:
             raise ValueError("harnesses.codex_app_server must select the codex_app_server implementation")
         return value
 

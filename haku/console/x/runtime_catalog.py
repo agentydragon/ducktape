@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from haku.console.chat_models import RuntimeKind
 from haku.console.config import ClaudeCodeImplementationConfig, RuntimeRegistrationConfig
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.sandbox_claims import SandboxClaims
 from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.x.claude_code.client import cli_over_websocket
@@ -37,7 +37,7 @@ class RuntimeRegistration:
     resources: AgentRuntimeResources
 
     @property
-    def key(self) -> RuntimeKey | RuntimeKind:
+    def key(self) -> RuntimeKey | HarnessKind:
         """Resource selector, with a kind-only form for rolling-compatible callers."""
         if self.resources.agent_id is None or self.resources.access_profile_id is None:
             return self.adapter.kind
