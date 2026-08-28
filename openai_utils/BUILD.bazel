@@ -140,6 +140,7 @@ py_test(
         ":conftest",
         ":model",
         "//openai_utils/testing:fixtures",
+        "@pypi//openai",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -200,7 +201,6 @@ live_openai_py_test(
         ":model",
         ":retry",
         "//openai_utils/testing:fixtures",
-        "@pypi//openai",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
