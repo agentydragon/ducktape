@@ -65,12 +65,5 @@ resource "kubernetes_secret" "tana_mcp_facade_oidc_source" {
   }
 }
 
-removed {
-  from = kubernetes_secret.tana_mcp_facade_oidc
-
-  lifecycle {
-    destroy = false
-  }
-}
 
 # --- Manifold MCP facade (public OAuth facade, gates access to Manifold Markets) ---

@@ -149,13 +149,6 @@ resource "kubernetes_secret" "haku_console_oidc_source" {
   }
 }
 
-removed {
-  from = kubernetes_secret.haku_console_oidc
-
-  lifecycle {
-    destroy = false
-  }
-}
 
 # Dedicated static-Agent bearer for public-coder-agent -> Haku Console MCP. The real value is
 # delivered only to Haku Console and public-coder-agent's iron-proxy; the OpenClaw container gets
@@ -185,16 +178,5 @@ resource "kubernetes_secret" "haku_console_public_coder_agent_source" {
 
   data = {
     token = random_password.haku_console_public_coder_agent.result
-  }
-}
-
-removed {
-  # The old resource managed both target copies through for_each. Remove the
-  # whole state-only resource without deleting either object; Reflector takes
-  # ownership of both target copies after the source is created.
-  from = kubernetes_secret.haku_console_public_coder_agent
-
-  lifecycle {
-    destroy = false
   }
 }

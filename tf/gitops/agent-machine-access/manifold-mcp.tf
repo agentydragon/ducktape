@@ -70,12 +70,5 @@ resource "kubernetes_secret" "manifold_mcp_oidc_source" {
   }
 }
 
-removed {
-  from = kubernetes_secret.manifold_mcp_oidc
-
-  lifecycle {
-    destroy = false
-  }
-}
 
 # --- PostScan Mail MCP facade (public OAuth facade, gates access to PostScan Mail) ---

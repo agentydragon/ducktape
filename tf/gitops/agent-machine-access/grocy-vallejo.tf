@@ -112,12 +112,5 @@ resource "kubernetes_secret" "grocy_mcp_oidc_vallejo_source" {
   }
 }
 
-removed {
-  from = kubernetes_secret.grocy_mcp_oidc_vallejo
-
-  lifecycle {
-    destroy = false
-  }
-}
 
 # --- Tana MCP facade (public OAuth facade, downstream static bearer) ---

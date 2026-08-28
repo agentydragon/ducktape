@@ -115,11 +115,3 @@ resource "kubernetes_secret" "grocy_mcp_oidc_sf_source" {
     grocy_proxy_client_id = authentik_provider_proxy.grocy_sf.client_id
   }
 }
-
-removed {
-  from = kubernetes_secret.grocy_mcp_oidc_sf
-
-  lifecycle {
-    destroy = false
-  }
-}

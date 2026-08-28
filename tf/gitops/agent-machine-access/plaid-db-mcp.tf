@@ -64,11 +64,3 @@ resource "kubernetes_secret" "plaid_db_mcp_oidc_source" {
     client_secret = authentik_provider_oauth2.plaid_db_mcp.client_secret
   }
 }
-
-removed {
-  from = kubernetes_secret.plaid_db_mcp_oidc
-
-  lifecycle {
-    destroy = false
-  }
-}

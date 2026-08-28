@@ -90,12 +90,5 @@ resource "kubernetes_secret" "postscanmail_mcp_oidc_source" {
   }
 }
 
-removed {
-  from = kubernetes_secret.postscanmail_mcp_oidc
-
-  lifecycle {
-    destroy = false
-  }
-}
 
 # --- Plaid DB MCP facade (public OAuth facade over read-only Postgres MCP) ---
