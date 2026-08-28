@@ -46,15 +46,29 @@ describe("grantsPreviews", () => {
     ).toBe("Grants: Create HTTP 1 grant");
   });
 
-  it("renders batched release calls, names the domain, and marks them destructive", () => {
+  it("names an Agent's release (no owner_agent_id) and marks it destructive", () => {
     const args = {
       domain: "kubernetes" as const,
       grant_ids: ["20000000-0000-4000-8000-000000000002", "20000000-0000-4000-8000-000000000003"],
       reason: "probe complete",
     };
-    expect(renderPreview(grantsPreviews.release_grants, args, "compact")).not.toBeNull();
-    expect(toolActionDescription(GRANTS_SERVER_ID, "release_grants", args)).toEqual({
+    expect(renderPreview(grantsPreviews.revoke_grants, args, "compact")).not.toBeNull();
+    expect(toolActionDescription(GRANTS_SERVER_ID, "revoke_grants", args)).toEqual({
       text: "Grants: Release Kubernetes 2 grants",
+      destructive: true,
+    });
+  });
+
+  it("names an Operator revoke when owner_agent_id is present", () => {
+    const args = {
+      domain: "http" as const,
+      owner_agent_id: "10000000-0000-4000-8000-000000000001",
+      grant_ids: ["20000000-0000-4000-8000-000000000002"],
+      reason: "operator revoked",
+    };
+    expect(renderPreview(grantsPreviews.revoke_grants, args, "detailed")).not.toBeNull();
+    expect(toolActionDescription(GRANTS_SERVER_ID, "revoke_grants", args)).toEqual({
+      text: "Grants: Revoke HTTP 1 grant",
       destructive: true,
     });
   });

@@ -5,7 +5,7 @@ import type { McpToolArgumentsFor } from "../../mcp_tool_schema";
 import type { McpToolResultFor } from "../../mcp_tool_result_schema";
 
 type CreateGrantItem = McpToolArgumentsFor<"grants", "create_grant">["grants"][number];
-type GrantView = McpToolResultFor<"grants", "release_grants">[number];
+type GrantView = McpToolResultFor<"grants", "revoke_grants">[number];
 
 const KUBERNETES_ITEM: CreateGrantItem = {
   domain: "kubernetes" as const,
@@ -72,9 +72,9 @@ const PREVIEW_FIXTURES = [
     ],
   },
   {
-    title: "Release several Kubernetes grants",
+    title: "Release several Kubernetes grants (Agent)",
     serverId: "grants",
-    toolName: "release_grants",
+    toolName: "revoke_grants",
     args: {
       domain: "kubernetes" as const,
       grant_ids: [KUBERNETES_VIEW.grant.grant_id, "20000000-0000-4000-8000-000000000003"],
@@ -89,6 +89,35 @@ const PREVIEW_FIXTURES = [
           released_at: "2026-08-23T10:15:00Z",
           revoked_at: null,
           end_reason: "probe complete",
+        },
+      },
+    ],
+  },
+  {
+    title: "Revoke an owned Agent's grant (Operator)",
+    serverId: "grants",
+    toolName: "revoke_grants",
+    args: {
+      domain: "http" as const,
+      owner_agent_id: KUBERNETES_VIEW.grant.owner_agent_id,
+      grant_ids: ["20000000-0000-4000-8000-000000000004"],
+      reason: "operator revoked",
+    },
+    result: [
+      {
+        domain: "http" as const,
+        grant: {
+          grant_id: "20000000-0000-4000-8000-000000000004",
+          owner_agent_id: KUBERNETES_VIEW.grant.owner_agent_id,
+          principal: { kind: "agent" as const, agent_id: KUBERNETES_VIEW.grant.owner_agent_id },
+          source_tool_call_id: "tc_create_grant",
+          spec: HTTP_ITEM.spec,
+          status: "revoked" as const,
+          created_at: "2026-08-23T10:00:00Z",
+          expires_at: "2026-08-23T11:00:00Z",
+          released_at: null,
+          revoked_at: "2026-08-23T10:20:00Z",
+          end_reason: "operator revoked",
         },
       },
     ],

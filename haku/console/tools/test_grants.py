@@ -226,14 +226,7 @@ def test_server_exposes_exact_stable_tool_set_without_context_argument(console: 
             return list(await client.list_tools())
 
     tools = {tool.name: tool for tool in console.call(list_tools)}
-    assert set(tools) == {
-        "create_grant",
-        "list_grants",
-        "get_grant",
-        "release_grants",
-        "revoke_grants",
-        "kubernetes_can_i",
-    }
+    assert set(tools) == {"create_grant", "list_grants", "get_grant", "revoke_grants", "kubernetes_can_i"}
     for tool in tools.values():
         assert "context" not in tool.inputSchema.get("properties", {})
     assert set(tools["create_grant"].inputSchema["properties"]) == {"grants", "duration_seconds", "applies_to"}
@@ -243,8 +236,8 @@ def test_server_exposes_exact_stable_tool_set_without_context_argument(console: 
     principal_schema = tools["list_grants"].inputSchema["properties"]["principal"]
     assert "self" in {branch.get("const") for branch in principal_schema["anyOf"]}
     assert set(tools["get_grant"].inputSchema["properties"]) == {"domain", "grant_id"}
-    assert set(tools["release_grants"].inputSchema["properties"]) == {"domain", "grant_ids", "reason"}
-    assert set(tools["revoke_grants"].inputSchema["properties"]) == {"domain", "owner_agent_id", "grant_ids", "reason"}
+    # One end-grants tool: an Agent omits owner_agent_id (relinquishes its own); an Operator names it.
+    assert set(tools["revoke_grants"].inputSchema["properties"]) == {"domain", "grant_ids", "reason", "owner_agent_id"}
     assert set(tools["kubernetes_can_i"].inputSchema["properties"]) == {"requests"}
     # The create payload discriminates the two domains' capability specs by `domain`.
     branches = tools["create_grant"].inputSchema["properties"]["grants"]["items"]["oneOf"]
@@ -370,7 +363,8 @@ def test_release_routes_by_domain_and_ends_in_the_supplied_order(console: _Conso
             duration_seconds=600,
             applies_to=GrantPrincipalKind.AGENT,
         )
-        released = await console.service.release_grants(
+        # An Agent caller's revoke_grants relinquishes its own grants: the recorded fact is a release.
+        released = await console.service.revoke_grants(
             context=context,
             domain="kubernetes",
             grant_ids=[second.grant.grant_id, first.grant.grant_id],
@@ -406,8 +400,9 @@ def test_revoke_is_operator_direct_and_scoped_to_owned_agents(
             applies_to=GrantPrincipalKind.AGENT,
         )
         grant_id = view.grant.grant_id
-        # An Agent caller never revokes — it releases its own grants instead.
-        with pytest.raises(PermissionError, match="Operator-direct"):
+        # An Agent caller never names an owner: naming owner_agent_id is rejected, and omitting it
+        # relinquishes only its own grants (a release, covered above).
+        with pytest.raises(PermissionError, match="may not name owner_agent_id"):
             await console.service.revoke_grants(
                 context=agent_context, domain=domain, owner_agent_id=console.agent_id, grant_ids=[grant_id], reason="no"
             )
@@ -449,12 +444,6 @@ def test_revoke_is_operator_direct_and_scoped_to_owned_agents(
         pytest.param(
             lambda service: service.get_grant(context=_foreign_operator_context(), domain="http", grant_id=UUID(int=2)),
             id="get",
-        ),
-        pytest.param(
-            lambda service: service.release_grants(
-                context=_foreign_operator_context(), domain="http", grant_ids=[UUID(int=2)], reason="x"
-            ),
-            id="release",
         ),
     ],
 )

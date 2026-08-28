@@ -126,9 +126,10 @@ The Haku-backed temporary-grant workflow is the escalation path when standing SA
 Kubernetes request. Use the `kubernetes` MCP server's `can_i` first, then submit one approval-gated
 `create_grant` call containing every exact scope/rule item needed for the task. All items created by
 that call share one start and expiry; do not split a coherent debugging session into per-operation
-approval work. End a set with one `release_grants` call containing the durable grant IDs returned
-by `create_grant`. Release is deliberately sequential rather than transactional: if one item fails,
-earlier releases remain effective, so reconcile the result with `list_grants`. The Operator UI
+approval work. End a set with one `revoke_grants` call containing the durable grant IDs returned
+by `create_grant`; as an Agent you relinquish your own grants (recorded as a release). It is
+deliberately sequential rather than transactional: if one item fails, earlier releases remain
+effective, so reconcile the result with `list_grants`. The Operator UI
 groups rows by source ToolCall and can revoke every still-active row from one approval together.
 
 The proxy's static execution ceiling is `cluster-admin`, but the standing SAR group remains the

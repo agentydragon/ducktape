@@ -225,7 +225,7 @@ docs. **"Haku" survives only as one configured agent/tenant.** Tool-server ids t
 ### 3.5 Tool-server names (#4918)
 
 **Landed (C12):** one `grants` server exposes the shared grant verbs
-(`create_grant`/`list_grants`/`get_grant`/`release_grants`/`revoke_grants`) over #4889's envelope
+(`create_grant`/`list_grants`/`get_grant`/`revoke_grants`) over #4889's envelope
 with a `domain` discriminator (`kubernetes` | `http`) on each per-domain capability payload; the
 kubernetes SAR check rides the same server as `kubernetes_can_i`, not a separate `kubernetes`
 server. The grants entity-prefix drop (`KubernetesGrant` → `Grant`, `HttpGrantSpec` → `GrantSpec`,

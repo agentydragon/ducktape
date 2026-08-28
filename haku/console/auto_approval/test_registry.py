@@ -741,7 +741,7 @@ def test_grant_self_list_is_conditional_only_for_list_grants() -> None:
     )
     # No other grant verb — including the unconditional reads served by a separate exact-tools policy
     # in production — is auto-approvable through this argument-conditional one.
-    for tool in ("get_grant", "create_grant", "release_grants", "revoke_grants", "kubernetes_can_i"):
+    for tool in ("get_grant", "create_grant", "revoke_grants", "kubernetes_can_i"):
         assert (
             _GRANT_READS_REGISTRY.tool_mode(AGENT_ACTOR, "grants", tool)
             is ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED

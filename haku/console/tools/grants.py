@@ -1,7 +1,7 @@
 """Credential-free in-process MCP tools for owned, principal-scoped temporary grants.
 
 One `grants` server fronts every grant domain (#4918): the shared verb set
-(`create_grant`/`list_grants`/`get_grant`/`release_grants`/`revoke_grants`) over the #4889
+(`create_grant`/`list_grants`/`get_grant`/`revoke_grants`) over the #4889
 grant envelope, discriminated by a ``domain`` tag (`kubernetes` | `http`) on each per-domain
 capability payload. The domains keep their own services, tables, and typed coverage
 (`grants.kubernetes` scope/rules; `grants.http` exact origins); this module only routes a
@@ -13,7 +13,7 @@ them apart. Kubernetes SAR inspection (`can_i`) is not a grant verb and lives on
 from __future__ import annotations
 
 import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, assert_never
 from uuid import UUID
 
 from fastmcp import FastMCP
@@ -28,7 +28,12 @@ import haku.console.tools.kubernetes as kubernetes_tools
 from haku.console.grants.envelope import GRANT_SET_LIMIT, GrantNotFoundError
 from haku.console.grants.principal import GrantPrincipalKind, grant_principal_for
 from haku.console.identity.enrollment import AgentEnrollmentService
-from haku.console.mcp_execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext, OperatorMcpExecutionCaller
+from haku.console.mcp_execution import (
+    EXECUTION_CONTEXT_DEPENDENCY,
+    AgentMcpExecutionCaller,
+    McpExecutionContext,
+    OperatorMcpExecutionCaller,
+)
 
 GRANTS_SERVER_ID = "grants"
 
@@ -168,42 +173,51 @@ class GrantsToolsService:
             grant=await self._http.get_applicable_grant(request_principal=context.request_principal, grant_id=grant_id)
         )
 
-    async def release_grants(
-        self, *, context: McpExecutionContext, domain: GrantDomain, grant_ids: list[UUID], reason: str
-    ) -> list[GrantView]:
-        if domain == "kubernetes":
-            released = await self._kubernetes.release_applicable_grants(
-                request_principal=context.request_principal, grant_ids=grant_ids, reason=reason
-            )
-            return [KubernetesGrantView(grant=grant) for grant in released]
-        http_released = await self._http.release_applicable_grants(
-            request_principal=context.request_principal, grant_ids=grant_ids, reason=reason
-        )
-        return [HttpGrantView(grant=grant) for grant in http_released]
-
     async def revoke_grants(
         self,
         *,
         context: McpExecutionContext,
         domain: GrantDomain,
-        owner_agent_id: UUID,
         grant_ids: list[UUID],
         reason: str,
+        owner_agent_id: UUID | None = None,
     ) -> list[GrantView]:
-        """Operator-direct revocation of an owned Agent's grants; Agents release, never revoke."""
+        """End owned grants, dispatching on the trusted caller to the matching end fact.
 
-        if not isinstance(context.caller, OperatorMcpExecutionCaller):
-            raise PermissionError("grant revocation requires Operator-direct execution")
-        owned = await self._agents.list_agents(operator_id=context.caller.operator_id)
-        if owner_agent_id not in {agent.agent_id for agent in owned}:
-            raise GrantNotFoundError(str(owner_agent_id))
-        if domain == "kubernetes":
-            revoked = await self._kubernetes.revoke_grants(
-                owner_agent_id=owner_agent_id, grant_ids=grant_ids, reason=reason
-            )
-            return [KubernetesGrantView(grant=grant) for grant in revoked]
-        http_revoked = await self._http.revoke_grants(owner_agent_id=owner_agent_id, grant_ids=grant_ids, reason=reason)
-        return [HttpGrantView(grant=grant) for grant in http_revoked]
+        An Agent relinquishes only its own grants — ``released_at`` → RELEASED — and may not name
+        ``owner_agent_id``. An Operator ends an owned Agent's grants — ``revoked_at`` → REVOKED —
+        and must name which owned Agent; a foreign Agent is not found.
+        """
+
+        match context.caller:
+            case OperatorMcpExecutionCaller(operator_id=operator_id):
+                if owner_agent_id is None:
+                    raise ToolError("Operator revocation must name the owned Agent (owner_agent_id)")
+                owned = await self._agents.list_agents(operator_id=operator_id)
+                if owner_agent_id not in {agent.agent_id for agent in owned}:
+                    raise GrantNotFoundError(str(owner_agent_id))
+                if domain == "kubernetes":
+                    revoked = await self._kubernetes.revoke_grants(
+                        owner_agent_id=owner_agent_id, grant_ids=grant_ids, reason=reason
+                    )
+                    return [KubernetesGrantView(grant=grant) for grant in revoked]
+                http_revoked = await self._http.revoke_grants(
+                    owner_agent_id=owner_agent_id, grant_ids=grant_ids, reason=reason
+                )
+                return [HttpGrantView(grant=grant) for grant in http_revoked]
+            case AgentMcpExecutionCaller(principal=principal):
+                if owner_agent_id is not None:
+                    raise PermissionError("an Agent relinquishes only its own grants and may not name owner_agent_id")
+                if domain == "kubernetes":
+                    released = await self._kubernetes.release_applicable_grants(
+                        request_principal=principal, grant_ids=grant_ids, reason=reason
+                    )
+                    return [KubernetesGrantView(grant=grant) for grant in released]
+                http_released = await self._http.release_applicable_grants(
+                    request_principal=principal, grant_ids=grant_ids, reason=reason
+                )
+                return [HttpGrantView(grant=grant) for grant in http_released]
+        assert_never(context.caller)
 
 
 def build_mcp(service: GrantsToolsService) -> FastMCP:
@@ -212,14 +226,15 @@ def build_mcp(service: GrantsToolsService) -> FastMCP:
     mcp = FastMCP(
         name=GRANTS_SERVER_ID,
         instructions=(
-            "Create/list/get/release/revoke explicit Agent- or session-scoped temporary grants across grant "
+            "Create/list/get/end explicit Agent- or session-scoped temporary grants across grant "
             "domains. Each create item carries a 'domain' tag: 'kubernetes' for RBAC-like scope/rule coverage, "
             "'http' for one exact canonical public origin narrowed by method set and optional path regex. One "
-            "create_grant call creates grants in a single domain, atomically, with one shared expiry. get_grant, "
-            "release_grants, and revoke_grants take the 'domain' of the grant IDs (as returned by create/list). "
-            "One release_grants call may release up to 32 durable grant IDs sequentially; revoke_grants is the "
-            "Operator's direct revocation surface. Agent identity and tool-call provenance are trusted request "
-            "metadata, never tool arguments; grant creation is checked before any temporary authority is issued. "
+            "create_grant call creates grants in a single domain, atomically, with one shared expiry. get_grant "
+            "and revoke_grants take the 'domain' of the grant IDs (as returned by create/list). One revoke_grants "
+            "call ends up to 32 durable grant IDs sequentially, dispatching on the caller: an Agent relinquishes "
+            "its own grants (released), an Operator ends an owned Agent's grants (revoked) by naming "
+            "owner_agent_id. Agent identity and tool-call provenance are trusted request metadata, never tool "
+            "arguments; grant creation is checked before any temporary authority is issued. "
             + kubernetes_tools.CAN_I_INSTRUCTIONS
         ),
     )
@@ -296,39 +311,31 @@ def build_mcp(service: GrantsToolsService) -> FastMCP:
         return await service.get_grant(context=context, domain=domain, grant_id=grant_id)
 
     @mcp.tool
-    async def release_grants(
+    async def revoke_grants(
         domain: Annotated[GrantDomain, Field(description="Domain of the grant IDs, as returned by create/list.")],
         grant_ids: Annotated[
             list[UUID],
             Field(
                 min_length=1,
                 max_length=GRANT_SET_LIMIT,
-                description="Grant UUIDs returned by create_grant; released sequentially in the supplied order.",
+                description="Grant UUIDs returned by create_grant; ended sequentially in the supplied order.",
             ),
         ],
         reason: Annotated[str, Field(min_length=1, max_length=500)] = "released",
-        context: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
-    ) -> list[GrantView]:
-        return await service.release_grants(context=context, domain=domain, grant_ids=grant_ids, reason=reason)
-
-    @mcp.tool
-    async def revoke_grants(
-        domain: Annotated[GrantDomain, Field(description="Domain of the grant IDs, as returned by create/list.")],
-        owner_agent_id: Annotated[UUID, Field(description="The acting Operator's owned Agent whose grants to end.")],
-        grant_ids: Annotated[
-            list[UUID],
+        owner_agent_id: Annotated[
+            UUID | None,
             Field(
-                min_length=1,
-                max_length=GRANT_SET_LIMIT,
-                description="Grant UUIDs revoked sequentially in the supplied order.",
+                description=(
+                    "Operator-only: the acting Operator's owned Agent whose grants to revoke. Omit as an Agent "
+                    "caller — you relinquish only your own grants."
+                )
             ),
-        ],
-        reason: Annotated[str, Field(min_length=1, max_length=500)],
+        ] = None,
         context: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
     ) -> list[GrantView]:
-        """Operator-direct only: an Agent caller is rejected and should release_grants instead."""
+        """End owned grants: an Agent relinquishes its own (released); an Operator revokes an owned Agent's (revoked)."""
         return await service.revoke_grants(
-            context=context, domain=domain, owner_agent_id=owner_agent_id, grant_ids=grant_ids, reason=reason
+            context=context, domain=domain, grant_ids=grant_ids, reason=reason, owner_agent_id=owner_agent_id
         )
 
     return mcp

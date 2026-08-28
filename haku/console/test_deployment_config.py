@@ -75,12 +75,11 @@ def test_deployed_console_config_is_valid() -> None:
     # An auto-approved source ToolCall cannot mint a grant (the repository's provenance check
     # requires approval_policy_id absent), so auto-approving create_grant would make every grant
     # creation fail after the fact instead of queueing for the Operator. The mutating grant verbs
-    # (create/release/revoke) never auto-approve — only the reads above do.
+    # (create/revoke) never auto-approve — only the reads above do.
     for policy in raw["auto_approval_policies"]:
         if policy["type"] == "exact_tools":
             grant_tools = policy["tools"].get("grants", [])
             assert "create_grant" not in grant_tools, policy["id"]
-            assert "release_grants" not in grant_tools, policy["id"]
             assert "revoke_grants" not in grant_tools, policy["id"]
 
     # A standing entry's named credential must actually redeem what the entry admits — the decide

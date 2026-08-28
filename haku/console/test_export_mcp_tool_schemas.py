@@ -40,7 +40,7 @@ _EXPECTED_TOOLS = {
         "threads_modify_labels",
     ),
     "google_calendar": ("create_event", "get_event", "list_event_instances", "list_events"),
-    "grants": ("create_grant", "get_grant", "kubernetes_can_i", "list_grants", "release_grants", "revoke_grants"),
+    "grants": ("create_grant", "get_grant", "kubernetes_can_i", "list_grants", "revoke_grants"),
     # grocy-sf is reflected only for the batch tools the console renders previews for.
     "grocy-sf": (
         "locations_list",

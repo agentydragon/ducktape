@@ -43,7 +43,7 @@ describe("grantsResultPreviews", () => {
       expect(
         renderResultPreview(grantsResultPreviews.create_grant, [KUBERNETES_VIEW, HTTP_VIEW], variant)
       ).not.toBeNull();
-      expect(renderResultPreview(grantsResultPreviews.release_grants, [KUBERNETES_VIEW], variant)).not.toBeNull();
+      expect(renderResultPreview(grantsResultPreviews.revoke_grants, [KUBERNETES_VIEW], variant)).not.toBeNull();
     }
   });
 });

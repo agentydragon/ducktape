@@ -272,7 +272,7 @@ auto_approval_policies:
   # grant owned by and applicable to the calling Agent (else not-found), and an Operator cannot call
   # it over MCP at all — so auto-approving it never exposes another principal's grant. `list_grants`
   # is auto-approved separately, only for the explicit own scope (see `grants_own_list`).
-  # `create_grant`/`release_grants`/`revoke_grants` stay manual: they change the Agent's temporary
+  # `create_grant`/`revoke_grants` stay manual: they change the Agent's temporary
   # authority or its lifecycle.
   - id: kubernetes_reads
     type: exact_tools
