@@ -101,7 +101,6 @@ def _session(session_id: UUID, created_at: datetime.datetime) -> SessionRecord:
     return SessionRecord(
         session_id=session_id,
         conversation_id=CONVERSATION,
-        runtime_kind=RuntimeKind.CLAUDE_CODE,
         harness_kind=RuntimeKind.CLAUDE_CODE,
         attachments=[ChannelAttachment(surface="matrix", address="!room:example.org", attached_at=created_at)],
         status="closed",
@@ -226,20 +225,20 @@ async def test_tool_surface() -> None:
     assert tools == {"list_sessions", "list_turns", "read_conversation_items", "read_session_frames"}
 
 
-async def test_runtime_and_harness_kind_are_required_closed_identity_fields_on_a_session() -> None:
-    # runtime_kind→harness_kind wire rename (naming_and_layout.md §3.1, #4772): readers are on
-    # `harness_kind`; a session keeps publishing both names, each a required carrier of the same
-    # closed enum, until the contract step drops `runtime_kind` after the reader-switch image
-    # rolls out.
+async def test_harness_kind_is_a_required_closed_identity_field_on_a_session() -> None:
+    # runtime_kind→harness_kind wire rename (naming_and_layout.md §3.1, #4772): the contract step
+    # dropped `runtime_kind` from the wire, so a session publishes only `harness_kind` — a required
+    # carrier of the closed harness enum. (The enum's OpenAPI component stays named `RuntimeKind`
+    # until the C4d phase-2 stored+published rename.)
     async with Client(_mcp(_Reader())) as client:
         list_sessions = one(tool for tool in await client.list_tools() if tool.name == "list_sessions")
 
     schema = list_sessions.outputSchema
     assert schema is not None
     session = schema["properties"]["items"]["items"]  # FastMCP serves the page schema fully dereferenced.
-    for field_name in ("runtime_kind", "harness_kind"):
-        assert session["properties"][field_name]["enum"] == ["claude_code", "codex_app_server"]
-        assert field_name in session["required"]
+    assert session["properties"]["harness_kind"]["enum"] == ["claude_code", "codex_app_server"]
+    assert "harness_kind" in session["required"]
+    assert "runtime_kind" not in session["properties"]
 
 
 async def test_ungranted_actor_cannot_read_conversations() -> None:

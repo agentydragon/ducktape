@@ -278,7 +278,6 @@ const conversationPage = {
   conversations: [
     {
       conversation_id: conversationId,
-      runtime_kind: "claude_code",
       harness_kind: "claude_code",
       created_at: "2026-08-01T03:00:00Z",
       last_activity_at: "2026-08-01T03:01:00Z",
@@ -295,7 +294,6 @@ const conversationPage = {
     },
     {
       conversation_id: "70000000-0000-4000-8000-0000000000a2",
-      runtime_kind: "claude_code",
       harness_kind: "claude_code",
       created_at: "2026-07-31T18:20:00Z",
       last_activity_at: "2026-07-31T18:42:00Z",
@@ -306,7 +304,6 @@ const conversationPage = {
     },
     {
       conversation_id: "70000000-0000-4000-8000-0000000000a3",
-      runtime_kind: "claude_code",
       harness_kind: "claude_code",
       created_at: "2026-07-30T09:10:00Z",
       last_activity_at: "2026-07-30T09:12:00Z",
@@ -335,7 +332,6 @@ const conversationSession = {
 } satisfies Conversation["session"];
 const conversationDetail = {
   conversation_id: conversationId,
-  runtime_kind: "claude_code",
   harness_kind: "claude_code",
   created_at: "2026-08-01T03:00:00Z",
   attachments: [{ surface: "matrix", address: "!ops:example.org", attached_at: "2026-08-01T03:00:00Z" }],
@@ -424,7 +420,6 @@ const claudeFrame = (payload: Record<string, unknown>) => payload;
 
 const conversationFrames = {
   conversation_id: conversationId,
-  runtime_kind: "claude_code",
   harness_kind: "claude_code",
   frames: [
     {

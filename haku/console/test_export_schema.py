@@ -38,22 +38,21 @@ def test_a_message_carries_the_components_a_read_returns() -> None:
     assert union["discriminator"]["propertyName"] == "kind"
 
 
-def test_runtime_and_harness_kind_are_read_only_closed_identity_fields() -> None:
-    # runtime_kind→harness_kind wire rename (naming_and_layout.md §3.1, #4772): readers are on
-    # `harness_kind`; every identity-bearing model keeps publishing both names, each a required
-    # reference to the same closed enum, until the contract step drops `runtime_kind` after the
-    # reader-switch image rolls out.
+def test_harness_kind_is_a_read_only_closed_identity_field() -> None:
+    # runtime_kind→harness_kind wire rename (naming_and_layout.md §3.1, #4772): the contract step
+    # dropped `runtime_kind` from the wire, so every identity-bearing model publishes only
+    # `harness_kind` — a required reference to the closed harness enum. (The enum's OpenAPI
+    # component stays named `RuntimeKind` until the C4d phase-2 stored+published rename.)
     published = schemas()
     runtime_ref = {"$ref": "#/components/schemas/RuntimeKind"}
     assert published["RuntimeKind"]["enum"] == ["claude_code", "codex_app_server"]
     for model in ("ConversationSummary", "ConversationView", "SessionFramePage", "SessionProvisioningView"):
         properties = published[model]["properties"]
-        required = published[model]["required"]
-        for field_name in ("runtime_kind", "harness_kind"):
-            field = properties[field_name]
-            # Pydantic wraps a referenced enum in `allOf` when the field also carries a description.
-            assert field.get("$ref") == runtime_ref["$ref"] or field.get("allOf") == [runtime_ref]
-            assert field_name in required
+        field = properties["harness_kind"]
+        # Pydantic wraps a referenced enum in `allOf` when the field also carries a description.
+        assert field.get("$ref") == runtime_ref["$ref"] or field.get("allOf") == [runtime_ref]
+        assert "harness_kind" in published[model]["required"]
+        assert "runtime_kind" not in properties
 
 
 def test_tool_call_serializer_preserves_the_structured_frontend_schema() -> None:

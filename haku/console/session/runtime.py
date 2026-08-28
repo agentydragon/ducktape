@@ -443,7 +443,6 @@ class SessionService:
         identity = await self._store.operator_session_identity(operator_id, session_id)
         return SessionProvisioningView(
             session_id=session_id,
-            runtime_kind=identity.runtime_kind,
             harness_kind=identity.runtime_kind,
             status=identity.status,
             sandbox=None if identity.status == SessionStatus.IDLE else await self._observed(session_id),

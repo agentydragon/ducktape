@@ -56,10 +56,6 @@ class ConversationSummary(BaseModel):
     conversation_id: UUID
     agent_id: UUID | None = None
     access_profile_id: str | None = None
-    # CLEANUP(added 2026-08-28): contract step of runtime_kind→harness_kind (naming_and_layout.md
-    #   §3.1, #4772). Readers are on `harness_kind`; drop this field once the image carrying the
-    #   switched readers is rolled out.
-    runtime_kind: RuntimeKind
     created_at: datetime
     last_activity_at: datetime = Field(
         description="When the most recent session under this conversation last moved. What the list is ordered by."
@@ -118,10 +114,6 @@ class ConversationView(BaseModel):
     conversation_id: UUID
     agent_id: UUID | None = None
     access_profile_id: str | None = None
-    # CLEANUP(added 2026-08-28): contract step of runtime_kind→harness_kind (naming_and_layout.md
-    #   §3.1, #4772). Readers are on `harness_kind`; drop this field once the image carrying the
-    #   switched readers is rolled out.
-    runtime_kind: RuntimeKind
     created_at: datetime
     attachments: list[ChannelAttachment]
     entries: list[ConversationEntry] = Field(
@@ -238,12 +230,6 @@ class SessionProvisioningView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     session_id: UUID
-    # CLEANUP(added 2026-08-28): contract step of runtime_kind→harness_kind (naming_and_layout.md
-    #   §3.1, #4772). Readers are on `harness_kind`; drop this field once the image carrying the
-    #   switched readers is rolled out.
-    runtime_kind: RuntimeKind = Field(
-        description="The immutable runner implementation pinned by this session's conversation."
-    )
     status: SessionStatus = Field(
         description="The session's row-derived status. `responding` never appears here: it is "
         "derived from an open turn by `session_view`, which the row cannot spell."
@@ -293,10 +279,6 @@ class SessionFramePage(BaseModel):
         description="The thread this session ran. The inspector is addressed by session, so this is what its reader "
         "needs to get back to the conversation the session belongs to."
     )
-    # CLEANUP(added 2026-08-28): contract step of runtime_kind→harness_kind (naming_and_layout.md
-    #   §3.1, #4772). Readers are on `harness_kind`; drop this field once the image carrying the
-    #   switched readers is rolled out.
-    runtime_kind: RuntimeKind = Field(description="The immutable runner implementation whose wire these frames use.")
     next_before_seq: int | None = Field(
         description="Pass back as `before_seq` for the page of earlier frames, or absent at the start of the log."
     )
@@ -324,7 +306,6 @@ def frame_page(
     return SessionFramePage(
         frames=frames,
         conversation_id=conversation_id,
-        runtime_kind=runtime_kind,
         harness_kind=runtime_kind,
         next_before_seq=frames[0].frame_seq if len(frames) == limit else None,
     )

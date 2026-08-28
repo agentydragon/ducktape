@@ -16,9 +16,6 @@ export function prependEarlierPage(page: SessionFramePage, loaded: SessionFrameP
   return {
     frames: [...earlier, ...loaded.frames],
     conversation_id: loaded.conversation_id,
-    // `runtime_kind` mirrors `harness_kind` until the wire drops it (naming_and_layout.md §3.1,
-    // #4772 C4d contract step); reading `harness_kind` keeps this build off the field being dropped.
-    runtime_kind: loaded.harness_kind,
     harness_kind: loaded.harness_kind,
     next_before_seq: page.next_before_seq,
   };

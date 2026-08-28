@@ -29,7 +29,6 @@ function session(fields: Partial<Session>): Session {
 function conversation(entries: ConversationEntry[]): Conversation {
   return {
     conversation_id: "c1",
-    runtime_kind: "claude_code",
     harness_kind: "claude_code",
     created_at: "2026-08-18T00:00:00Z",
     attachments: [],
