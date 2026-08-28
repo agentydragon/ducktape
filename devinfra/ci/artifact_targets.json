@@ -2,165 +2,121 @@
   "pins": {
     "workspace-gc": {
       "target": "//devinfra/gc:workspace_gc_wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/gc/workspace_gc-0.1.0-py3-none-any.whl",
+      "filename": "workspace_gc-0.1.0-py3-none-any.whl",
       "release": "workspace-gc"
     },
     "difftree": {
       "target": "//difftree:difftree_wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/difftree/difftree-0.1.0-py3-none-any.whl",
+      "filename": "difftree-0.1.0-py3-none-any.whl",
       "release": "difftree"
     },
     "gmail-archiver": {
       "target": "//gmail_archiver:gmail_archiver_wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/gmail_archiver/gmail_archiver-0.1.0-py3-none-any.whl",
+      "filename": "gmail_archiver-0.1.0-py3-none-any.whl",
       "release": "gmail-archiver"
     },
     "vm-interact": {
       "target": "//cluster/skills/proxmox_vm:vm_interact_wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/cluster/skills/proxmox_vm/vm_interact-0.1.0-py3-none-any.whl",
+      "filename": "vm_interact-0.1.0-py3-none-any.whl",
       "release": "vm-interact"
     },
     "ws": {
       "target": "//devinfra/ws:ws_wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/ws/ducktape_ws-0.1.0-py3-none-any.whl",
-      "release": "ws"
-    },
-    "workspace-gc": {
-      "target": "//devinfra/gc:workspace_gc_wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/gc/workspace_gc-0.1.0-py3-none-any.whl",
-      "release": "workspace-gc"
-    },
-    "difftree": {
-      "target": "//difftree:difftree_wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/difftree/difftree-0.1.0-py3-none-any.whl",
-      "release": "difftree"
-    },
-    "gmail-archiver": {
-      "target": "//gmail_archiver:gmail_archiver_wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/gmail_archiver/gmail_archiver-0.1.0-py3-none-any.whl",
-      "release": "gmail-archiver"
-    },
-    "vm-interact": {
-      "target": "//cluster/skills/proxmox_vm:vm_interact_wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/cluster/skills/proxmox_vm/vm_interact-0.1.0-py3-none-any.whl",
-      "release": "vm-interact"
-    },
-    "ws": {
-      "target": "//devinfra/ws:ws_wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/ws/ducktape_ws-0.1.0-py3-none-any.whl",
+      "filename": "ducktape_ws-0.1.0-py3-none-any.whl",
       "release": "ws"
     },
     "bbr": {
       "target": "//:bbr_wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/bbr-0.1.0-py3-none-any.whl",
+      "filename": "bbr-0.1.0-py3-none-any.whl",
       "release": "bbr"
     },
     "claude-statusline": {
       "target": "//devinfra/claude/statusline:claude_statusline_wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/claude/statusline/claude_statusline-0.1.0-py3-none-any.whl",
+      "filename": "claude_statusline-0.1.0-py3-none-any.whl",
       "release": "claude-statusline"
     },
     "ducktape-claude-api": {
       "target": "//devinfra/claude/claude_api:claude_api_wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/claude/claude_api/ducktape_claude_api-0.1.0-py3-none-any.whl",
+      "filename": "ducktape_claude_api-0.1.0-py3-none-any.whl",
       "release": "ducktape-claude-api"
     },
     "ducktape-git-hooks": {
       "target": "//:ducktape_git_hooks_wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/ducktape_git_hooks-0.1.0-py3-none-any.whl",
+      "filename": "ducktape_git_hooks-0.1.0-py3-none-any.whl",
       "release": "ducktape-git-hooks"
     },
     "ducktape-util": {
       "target": "//util:wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/util/ducktape_util-0.1.0-py3-none-any.whl",
+      "filename": "ducktape_util-0.1.0-py3-none-any.whl",
       "release": "ducktape-util"
     },
     "gterm-theme": {
       "target": "//gnome/gterm_theme:wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/gnome/gterm_theme/gterm_theme-0.1.0-py3-none-any.whl",
+      "filename": "gterm_theme-0.1.0-py3-none-any.whl",
       "release": "gterm-theme"
     },
     "aiquota": {
       "target": "//aiquota:aiquota_wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/aiquota/aiquota-0.1.0-py3-none-any.whl",
+      "filename": "aiquota-0.1.0-py3-none-any.whl",
       "release": "aiquota"
     },
     "aiquota-extension": {
       "target": "//aiquota/gnome:aiquota_zip",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/aiquota/gnome/aiquota.zip",
+      "filename": "aiquota.zip",
       "release": "aiquota"
     },
     "plaid-spend-desktop": {
       "target": "//finance/plaid/spend/desktop:plaid_spend_desktop_wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/finance/plaid/spend/desktop/plaid_spend_desktop-0.1.0-py3-none-any.whl",
+      "filename": "plaid_spend_desktop-0.1.0-py3-none-any.whl",
       "release": "plaid-spend-desktop"
     },
     "plaid-spend-desktop-extension": {
       "target": "//finance/plaid/spend/gnome:plaid_spend_extension",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/finance/plaid/spend/gnome/plaid-spend-desktop.zip",
+      "filename": "plaid-spend-desktop.zip",
       "release": "plaid-spend-desktop"
     },
     "bbapi": {
       "target": "//devinfra/buildbuddy_cli:bbapi",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/buildbuddy_cli/bbapi_/bbapi",
+      "filename": "bbapi",
       "release": "bbapi"
     },
     "claude-hook": {
       "target": "//devinfra/claude/claude_hook:claude_hook",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/claude/claude_hook/claude_hook",
+      "filename": "claude_hook",
       "release": "claude-hook"
     },
     "debundle": {
       "target": "//devinfra/js/debundle:debundle",
-      "output": "bb-out/bazel-out/k8-opt/bin/devinfra/js/debundle/debundle",
+      "filename": "debundle",
       "release": "debundle"
     },
     "aw-importer": {
       "target": "@ducktape_activitywatch//importer:aw_importer_bin",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/external/ducktape_activitywatch+/importer/aw_importer_bin",
+      "filename": "aw_importer_bin",
       "release": "aw-importer"
     },
     "gazelle": {
       "target": "//devinfra:gazelle_python_binary",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/gazelle_python_binary_/gazelle_python_binary",
+      "filename": "gazelle_python_binary",
       "release": "gazelle"
     },
     "agentplane-cli": {
       "target": "//agentplane/cli:cli_release",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/agentplane/cli/agentplane-cli",
+      "filename": "agentplane-cli",
       "release": "agentplane-cli"
     },
     "pr-visuals": {
       "target": "//devinfra/pr_visuals:wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/pr_visuals/pr_visuals-0.1.0-py3-none-any.whl",
+      "filename": "pr_visuals-0.1.0-py3-none-any.whl",
       "release": "pr-visuals"
     },
     "cpap-gateway-health": {
       "target": "//cpap/gateway:health_wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/cpap/gateway/cpap_gateway_health-0.1.0-py3-none-any.whl",
+      "filename": "cpap_gateway_health-0.1.0-py3-none-any.whl",
       "release": "cpap-gateway-health"
     }
   },
   "releases": {
-    "workspace-gc": {
-      "tests": "//devinfra/gc/...",
-      "nixPackage": true
-    },
-    "difftree": {
-      "tests": "//difftree/...",
-      "nixPackage": true
-    },
-    "gmail-archiver": {
-      "tests": "//gmail_api/... //gmail_archiver/...",
-      "nixPackage": true
-    },
-    "vm-interact": {
-      "nixPackage": true
-    },
-    "ws": {
-      "tests": "//devinfra/ws/...",
-      "nixPackage": true
-    },
     "workspace-gc": {
       "tests": "//devinfra/gc/...",
       "nixPackage": true

@@ -17,11 +17,11 @@ Each skill is its own `.skill` zip built by the `skill_package` macro (`defs.bzl
 
 ## Registry
 
-`skills_registry.json` (hand-written) decides what is built and released. Entry
-fields: `name` (skill, `.skill` subdir, and skills dir name), `pkg` (`skill-<name>`),
-`target` / `output` (`skill_package` target and its `bb-out/` path), `filename`
-(`<name>.skill`), optional `nix` (default `true`; `false` = released but not pinned or
-deployed via Nix). Consumers: `.github/workflows/release.yml`,
+`skills_registry.json` (hand-written) decides what is built and released. Each
+entry carries the skill `name`, release `pkg`, Bazel `target`, released `filename`,
+and optional `nix` setting (default `true`; `false` means released but not pinned
+or deployed by Nix). `release_assets.py` resolves each target's path from the
+build event stream. Consumers: `.github/workflows/release.yml`,
 `devinfra/ci/artifacts.py` (pin sync), `flake.nix` / `nix/packages/default.nix`. A
 `skill_package` with no registry entry is valid — just not released or deployed.
 

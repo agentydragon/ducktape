@@ -1,17 +1,14 @@
 """Read a finished Bazel invocation's outputs and test verdicts from BuildBuddy.
 
-`bazel-ci` already builds and tests everything on a devel push — measured on the
-`//...` sweep, that covers 41 of 42 image `.digest` outputs and 47 of 50 release
-artifacts. The publish planners used to rebuild those in their own `bb remote`
-invocations; this reads what the first build already produced instead. What a
-`//...` sweep cannot cover — an external repository, a `manual` target, another
-configuration — takes the slow path, and devinfra/ci/docs/publish_planning.md
-lists which rows those are.
+`bazel-ci` builds and tests a broad `//...` target set on each devel push. The
+publish planners read its invocation streams for output digests and labels instead
+of rebuilding targets to decide what changed. An external repository, a `manual`
+target, or another configuration can fall outside that sweep and takes the slow
+path; devinfra/ci/docs/publish_planning.md lists the known gaps.
 
-BuildBuddy serves the invocation's whole Build Event Protocol stream as JSON, and
-it carries three things at once: every output file with its content digest, the
-per-target test verdicts, and the labels that produced them. One request, ~34 MB
-and ~2s for a full `//...` sweep.
+BuildBuddy serves the invocation's whole Build Event Protocol stream as JSON. It
+contains output files and content digests, per-target test verdicts, and the
+labels that produced them.
 
 Two things are easy to get wrong here:
 
@@ -42,7 +39,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 DEFAULT_BASE_URL = "https://app.buildbuddy.io"
 
@@ -72,6 +69,10 @@ class Output:
     digest: str
     size: int
     output_group: str
+    #: The aspect that produced this file, or "" for the target's own outputs.
+    #: bazel-ci runs the lint aspects, whose report files complete under the same
+    #: label; a caller after the target's real artifact must filter these out.
+    aspect: str = ""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -199,6 +200,7 @@ def parse(raw: bytes) -> Invocation:
         if completed is None:
             continue
         label = event["id"]["targetCompleted"]["label"]
+        aspect = event["id"]["targetCompleted"].get("aspect", "")
         for group in completed.get("outputGroup") or []:
             outputs.extend(
                 Output(
@@ -208,11 +210,32 @@ def parse(raw: bytes) -> Invocation:
                     digest=file.get("digest", ""),
                     size=int(file.get("length", 0)),
                     output_group=group.get("name", ""),
+                    aspect=aspect,
                 )
                 for file in files_in(group.get("fileSets") or [])
             )
     # The file-set DAG can list the same output through multiple branches.
     return Invocation(outputs=list(dict.fromkeys(outputs)), test_status=test_status)
+
+
+def artifact_output(by_label: Mapping[str, list[Output]], label: str) -> Output | str:
+    """The one file `label` published as its artifact, or a reason it has none.
+
+    "Artifact" means the target's own default output group — not lint-aspect
+    reports completing under the same label, and not `_validation` outputs. A
+    release/pin target publishes exactly one such file; anything else is a reason
+    string the caller turns into its own failure mode (the planner fails open,
+    the asset resolver fails loud).
+    """
+    artifacts = sorted(
+        {o for o in by_label.get(label, []) if not o.aspect and o.output_group == "default"}, key=lambda o: o.path
+    )
+    if not artifacts:
+        return f"{label}: not reported by the build"
+    if len(artifacts) > 1:
+        paths = ", ".join(o.path for o in artifacts)
+        return f"{label}: reports {len(artifacts)} default outputs ({paths}); an artifact target must publish one"
+    return artifacts[0]
 
 
 def merge(invocations: Iterable[Invocation]) -> Invocation | None:

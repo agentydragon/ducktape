@@ -182,7 +182,7 @@ jobs:
             -p "$FORGEJO_IMAGES_PASSWORD"
 
       # This job builds exactly one image, so a search by target name is unambiguous
-      # here even though it would not be in the planner's 42-target build. Resolving
+      # here even though it was outside the planner's default //... sweep. Resolving
       # locally also means the push never depends on which outputs `bb remote build`
       # chose to bring back for the planner.
       - name: Resolve image output path

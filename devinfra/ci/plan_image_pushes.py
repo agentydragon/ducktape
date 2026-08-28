@@ -1,15 +1,13 @@
 """Decide which container images actually need publishing, before any job fans out.
 
 `.github/workflows/push-images.yml` used to give every image its own matrix job,
-which checked out the repo, installed the devshell, ran the image's tests and asked
-Bazel for a digest only to discover the digest was unchanged — 42 runner slots and
-~92 `bb remote` invocations per merge to publish, typically, nothing.
+repeating checkout, devshell setup, tests, and a digest build even when nothing
+needed publishing.
 
-This runs once instead, and builds nothing at all. `bazel-ci` already built every
-image's `.digest` sibling on this commit (41 of 42, measured on devel's `//...`
-sweep), and BuildBuddy still holds that invocation's build event stream. So the
-planner asks the stream where each digest file is and fetches it — ~70 bytes
-apiece — rather than allocating a runner to rebuild them.
+This planner reads `bazel-ci`'s build event stream instead of building digest
+targets to decide what changed. For each digest the stream reports, it finds the
+file by target label and fetches its contents. An image whose digest target is
+absent stays in the push matrix for its own job to build and check.
 
 An image is not identified the way a release is. A release's identity *is* its
 output's content digest, which the stream reports directly; an image's identity

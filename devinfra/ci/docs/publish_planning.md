@@ -1,18 +1,18 @@
 # How publishing decides what to publish
 
-A merge to `devel` can publish 42 container images and 50 release artifacts.
-Almost none of them changed. This is how CI works out which ones did.
+This is how CI identifies the release artifacts and images whose content changed.
 
 ## The rule
 
-**Build once, then read what that build produced.** `bazel-ci` already runs
-`bazel test //...` and `bazel build //...` on every devel push, so by the time
-anything is published, every artifact has been built and every test has a
-verdict. Nothing downstream rebuilds any of it.
+**Use the devel build to plan, then build only what a publish job needs.**
+`bazel-ci` runs `bazel test //...` and `bazel build //...` on each devel push.
+The planners read those invocation streams to skip items already published. A
+release job still runs its configured tests and rebuilds changed release assets;
+an image job builds its image before pushing. The stream also records test
+verdicts, but the publish jobs do not currently reuse them.
 
 BuildBuddy keeps that invocation's Build Event Protocol stream and serves it as
-JSON. One request — 33 MB, about two seconds for a full sweep — carries three
-things at once:
+JSON. Each stream carries three things at once:
 
 - every output file, with its content digest, path prefix and producing label;
 - a `testSummary` verdict per test target;
@@ -26,8 +26,8 @@ consume it. `bazel-ci` publishes its invocation ids as a workflow output and
 
 A release's tag is `<pkg>-<first 12 of its content hash>`. For a single-asset
 release that hash **is** the artifact's sha256, which the stream already
-reports — so no bytes are fetched at all. Multi-asset releases (only `aiquota`)
-compose the same hash from the same digests via
+reports — so no bytes are fetched at all. Multi-asset releases compose the same
+hash from the same digests via
 `release_content_hash_from_digests`, byte-identically to hashing the files. It
 has to stay byte-identical: a different hash republishes every package once,
 under a new tag, and Flux chases each one.
@@ -50,6 +50,13 @@ reconstructed, and most image targets here are literally named `image` — a pat
 or basename guess resolves to a different image's file, quietly. Where only a
 path is available, it is `pathPrefix` + `name`: a source file and the generated
 file of the same name differ only by prefix.
+
+The publish side resolves the same way: `artifact_targets.json` names targets
+and released filenames, never Bazel output paths, and after each build
+`release_assets.py` reads that build's own stream to find where the assets
+landed (`bes.artifact_output` — the one default-group, non-aspect file a label
+reports; bazel-ci's lint aspects complete report files under the same label).
+Unlike the planner it fails loud, because it runs in the job about to publish.
 
 ## The planner fails open; the push job does not
 
@@ -91,21 +98,9 @@ Some rows are outside the sweep, and no amount of care here brings them in:
 | `gterm-theme` | `tags = ["manual"]` (needs libgirepository, libdbus), so wildcards skip it |
 | `debundle`    | builds under `-c opt`, a different configuration                           |
 
-Before Manifold MCP was decommissioned, measured coverage on devel's sweep was **41 of
-42** images and **47 of 50** releases. Its image is no longer in the publishing roster.
-
-**A row in that table is a live defect until its own job re-checks.** This design
-replaced one that named every digest label out of the roster and built them, so it
-covered 42 of 42; reading the sweep instead is what made the table non-empty. For
-three weeks before retirement, `manifold-mcp-server` — whose image content had not
-changed since June — hit fail-open on every devel push and minted a tag Flux committed
-back, once per merge. Removing its decommissioned image from the roster closes that
-case. The remaining gaps still need the image's own job to prove it unchanged, or the
-item to leave the roster.
-
-So do not add a row here and stop. Either the item's own job proves the item
-unchanged before publishing (what `push_image.py` now does, and why a row here is
-merely wasteful rather than wrong), or the row does not belong in the roster.
+**Rows in that table are slow paths:** the default devel sweep cannot prove
+their identity. They stay in the publish matrix, where their own jobs build and
+check the required artifact before publishing.
 
 ## Alternatives, and why not
 
@@ -142,7 +137,7 @@ there for the typical merge. Each push job builds its image's OCI layout and
 downloads it before pushing, and that download is irreducible; one job doing it
 for every changed image serialises them onto one runner's disk. The burst is real
 and not hypothetical — 8 images in one run on 2026-08-27, after a string of
-superseded runs left their changes outstanding, and a base-image bump moves all 42. `fail-fast: false` also keeps one image's failing test gate from taking the
+superseded runs left their changes outstanding, and a base-image bump can move the full image roster. `fail-fast: false` also keeps one image's failing test gate from taking the
 other publishes down with it.
 
 The two modules stay separate for the same reason and no other: `plan_image_pushes`
@@ -176,9 +171,9 @@ a recycled Firecracker VM.
   handed is this commit's build. The id comes from `bazel-ci` in the same run,
   which is as direct as it gets, but it is an assumption where
   `--remote_require_cached` would be a proof.
-- **Stream size.** 33 MB per read, twice (bazel-ci reports a test and a build
-  invocation). Fine at this repo's size; worth re-measuring if `//...` grows
-  much larger.
+- **Stream size.** The planners read a large stream from both the test and build
+  invocations. Re-measure if `//...` grows enough for the API request to become
+  a material part of publish latency.
 - **`bazel-ci` staying unstamped.** Stamping it, or moving `release-artifact`'s
   hash onto its stamped build, breaks the correspondence above. Neither
   mis-publishes — every tag would simply stop matching and every release would

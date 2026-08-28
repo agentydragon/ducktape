@@ -9,7 +9,7 @@
 # nix-attic-push.yml still does the full-fleet build against pinned artifacts on
 # push to devel/main; this workflow is the fast per-PR gate.
 #
-# Source of truth for pin → Bazel target + output: devinfra/ci/artifact_targets.json.
+# Source of truth for pin → Bazel target + asset filename: devinfra/ci/artifact_targets.json.
 # Keep it in sync with the artifact entries in release.yml's matrix (SYNC
 # comment there points here).
 name: Nix wheel check
@@ -156,9 +156,9 @@ jobs:
           echo "nix_checks=$nix_checks" >> "$GITHUB_OUTPUT"
 
       # `bb remote build`'s post-run download returns an arbitrary subset of a
-      # large request (12 of these 13 outputs), so "Fetch artifacts" below reads
-      # every output from the build event stream instead. Its own role keeps the
-      # id apart from bazel-ci's when trusted-fork-pr-ci.yml calls both in one run.
+      # large request, so "Fetch artifacts" below retrieves every required output
+      # from this invocation's event stream. Its own role keeps the id apart from
+      # bazel-ci's when trusted-fork-pr-ci.yml calls both in one run.
       - name: Choose artifact build invocation
         id: invocation
         run: |
@@ -188,19 +188,16 @@ jobs:
           INVOCATIONS: ${{ steps.invocation.outputs.id }}
         run: |
           set -euo pipefail
-          mapfile -t outputs < <(jq -r '
-            . as $doc |
-            $doc.pins | to_entries[] |
-            select($doc.releases[.value.release].nixPackage) |
-            .value.output
-          ' devinfra/ci/artifact_targets.json)
+          overrides_file="$RUNNER_TEMP/nix-wheel-artifact-overrides.tsv"
+          python3 -m devinfra.ci.release_assets nix-overrides \
+            --invocations "$INVOCATIONS" > "$overrides_file"
+          mapfile -t outputs < <(cut -f2 "$overrides_file")
           python3 -m devinfra.ci.fetch_build_outputs --invocations "$INVOCATIONS" "${outputs[@]}"
 
       # Emit the JSON blob flake.nix's artifacts logic consumes. Every pin
       # in an in-gate release gets an override entry (including every asset in
-      # a multi-asset release). Verifying every
-      # expected output exists surfaces build/output-path drift with a
-      # clear error before nix reads a missing file.
+      # a multi-asset release). The TSV was resolved from the build's stream,
+      # then the fetch step materialized those files from CAS.
       - name: Assemble artifact overrides
         id: overrides
         shell: bash
@@ -214,12 +211,7 @@ jobs:
             fi
             abs=$(readlink -f "$rel")
             json=$(jq -c --arg k "$pin" --arg v "$abs" '. + {($k): $v}' <<<"$json")
-          done < <(jq -r '
-            . as $doc |
-            $doc.pins | to_entries[] |
-            select($doc.releases[.value.release].nixPackage) |
-            "\(.key)\t\(.value.output)"
-          ' devinfra/ci/artifact_targets.json)
+          done < "$RUNNER_TEMP/nix-wheel-artifact-overrides.tsv"
           {
             echo 'overrides<<EOF'
             echo "$json"

@@ -24,12 +24,12 @@ Decide when images move off GHCR, not before.
 ## Gate publishing on the verdicts bazel-ci already recorded
 
 Every publish job re-runs its item's tests as a gate. The same build event stream
-carries a `testSummary` per target — on devel's `//...` sweep, 979 of them,
-correctly reporting the two that timed out. A publish could consult that instead
-of re-running, which also gives per-target granularity rather than per-pattern.
+carries a `testSummary` per target, but a publish can reuse one only after proving
+that the invocation belongs to the exact revision and configuration and covers
+every required test.
 
-`devinfra/ci/bes.py` already parses them (`Invocation.test_status`); nothing
-consumes it yet.
+`devinfra/ci/bes.py` parses these summaries into `Invocation.test_status`; no
+publish path consumes them yet.
 
 ## Visual publishing races the invocation it reads
 
