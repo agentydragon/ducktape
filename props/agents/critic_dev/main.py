@@ -38,6 +38,13 @@ from props.db.database import Database
 from props.db.models import GradingPending
 from util.oci import write_docker_auth
 
+# The critic-dev image bundles the recipe modules so in-container agents can import
+# them (they are advertised in prompt_base.md.mako); no Python import reaches them.
+# gazelle:include_dep //props/agents/critic_dev/recipes:examples_and_scopes
+# gazelle:include_dep //props/agents/critic_dev/recipes:ground_truth
+# gazelle:include_dep //props/agents/critic_dev/recipes:recall_metrics
+# gazelle:include_dep //props/agents/critic_dev/recipes:run_analysis
+
 logger = logging.getLogger(__name__)
 
 
