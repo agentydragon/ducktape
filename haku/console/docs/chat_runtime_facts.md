@@ -50,7 +50,7 @@ only measurement of the room's real budget the console ever receives.
 
 ## A websocket closed before `accept()` is an HTTP 403, not a close code
 
-Every admission refusal in `handle_runner` closes before accepting, and uvicorn answers the
+Every admission refusal in `handle_journal_runner` closes before accepting, and uvicorn answers the
 handshake with **403** rather than the close code passed to it (`websockets_impl.py`,
 `websockets_sansio_impl.py`, `wsproto_impl.py`, all checked against the pinned version). The client
 then raises `InvalidStatus` — a subclass of `InvalidHandshake`, **not** of `OSError`. The runner's
@@ -59,7 +59,7 @@ on, a 5xx or an `OSError` is transient.
 
 ## The CLI reports a prompt's lifecycle only when the prompt carries a `uuid`
 
-`ClaudeCli.query` stamps one. Without it the CLI emits no `command_lifecycle` for that prompt at
+The dispatched prompt carries one. Without it the CLI emits no `command_lifecycle` for that prompt at
 all, which is the only confirmation of a mid-turn fold rather than an inference from behaviour, and
 what makes the prompt reachable by `interrupt`'s `cancel_queued`. Measured in
 <../../cli_protocol/probes/steering.py>.

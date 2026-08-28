@@ -8,30 +8,28 @@ runner-incarnation machinery to <../session/>, the wake wires to <../notificatio
 channels to <../channels/> (#4772/#4924; target layout: <../docs/naming_and_layout.md> § 2).
 What remains is what is still being restructured:
 
-| Where                                   | What it is                                                                                                                                                                                  |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `conversation_events.py`                | The v3 fold's in-memory event vocabulary, and `stored`, its bridge into the durable one (`../conversation/conversation_event.py`); deletion-scheduled with the #4667 native-projector fold. |
-| `runtime.py`, `runtime_catalog.py`      | Backend-neutral runtime catalog and its application composition; the harness _selection_ residue headed for `harnesses/` (<../docs/naming_and_layout.md> § 2).                              |
-| `x/claude_code/`, `x/codex_app_server/` | **One CLI harness each.** Named for the product whose binary they launch, not for the model. The native client + projection move runner-ward (#4667, deletion-scheduled).                   |
-| `testing/`                              | Stand-ins a test stands something up _with_, importable by non-pytest processes too (<testing/recording_claims.py> for the rationale).                                                      |
-| `conftest.py`                           | Fixture re-registrations for the tests below this directory; the definitions live in <../session/conftest.py>.                                                                              |
+| Where                                   | What it is                                                                                                                                                             |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `conversation_events.py`                | The neutral in-memory event vocabulary log writes are expressed in, and `stored`, its bridge into the durable one (`../conversation/conversation_event.py`).           |
+| `runtime.py`, `runtime_catalog.py`      | Backend-neutral runtime catalog and its application composition; the harness _selection_ residue headed for `harnesses/` (<../docs/naming_and_layout.md> § 2).         |
+| `x/claude_code/`, `x/codex_app_server/` | **One CLI harness each, launch-only.** Named for the product whose binary they launch, not for the model. The native protocol and projection live runner-ward (#4667). |
+| `testing/`                              | Stand-ins a test stands something up _with_, importable by non-pytest processes too (<testing/recording_claims.py> for the rationale).                                 |
+| `conftest.py`                           | Fixture re-registrations for the tests below this directory; the definitions live in <../session/conftest.py>.                                                         |
 
 How to place a module — the replace-the-other-axis test and the boundary cases — is
 <../docs/chat_layers.md> § Placing something new.
 
 ## Harness adapters
 
-`claude_code/` speaks Claude Code's newline-delimited JSON: `frames.py` (the CLI's own `type`
-vocabulary and the readers that pick a value out of one), `client.py` (the protocol client),
-`projection.py` (the reducer into the neutral vocabulary — its contract is its own docstring;
-read <../../cli_protocol/protocol.md> and the adjacent fixtures before changing it),
-`runtime.py` (the adapter), `wake.py` (classifying idle-time frames), and `redaction.py` with
-`frame_export.py`/`frame_export_main.py` — recording a production session as a redacted JSONL
-fixture, how-to in <claude_code/frame_export_main.py>.
+`claude_code/` and `codex_app_server/` are launch-only (#4667): each names the CLI whose binary it
+launches, and the runner (<../../runtime/x/bridge/>) owns that CLI's native protocol, projection and
+fixture capture.
 
-`codex_app_server/` is the second harness, over Codex's app-server JSON-RPC: the same
-client/frames/projection/runtime split, plus `capture.py` for recording sanitized fixtures off
-a real Codex.
+- `claude_code/`: `frames.py` (Claude Code's own `type` vocabulary and the readers that pick a value
+  out of one, kept for classifying stored frames) and `runtime.py` (the launch adapter, which builds
+  the `HarnessLaunch` the journal bridge sends the runner).
+- `codex_app_server/`: `config.py` (the deploy-owned implementation config) and `runtime.py` (the
+  Codex launch adapter).
 
 ## Tests
 

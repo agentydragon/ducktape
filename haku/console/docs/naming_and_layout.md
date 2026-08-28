@@ -99,8 +99,8 @@ tree shows the packages, §3 and §4 settle what the files and classes inside th
 
   conversation/        # the durable, provider-neutral record (landed)
     conversation_event.py          # ONE Pydantic vocabulary: row body + wire (#4772 core, landed C5);
-                                    #   the v3 fold residue in x/conversation_events.py deletes with #4667 stage 5
-    reads.py  reader.py  log.py  follow.py  history.py  live_updates.py  runtime.py  reprojection.py
+                                    #   x/conversation_events.py is the neutral in-memory vocabulary that bridges into it
+    reads.py  reader.py  log.py  follow.py  history.py  live_updates.py  runtime.py
     item_reads.py                  # folded item read models ("entry" leaves with C6) — private to the
                                    #   conversation read surface (the store/reader that produce them + the
                                    #   haku_conversations tool that serves them); NOT a generic mcp/ file (§4.2)

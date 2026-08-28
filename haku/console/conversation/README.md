@@ -18,4 +18,3 @@ is offered — the layer contract is <../docs/chat_layers.md>, the schema's inva
 | `live_updates.py`     | Conversation changes as console-socket invalidations for open tabs.                                                                            |
 | `history.py`          | The finished conversation tail handed to a replacement session.                                                                                |
 | `runtime.py`          | Elected reconciler (`CRUN`): conversation-owned prompt demand into sessions, plus global lease/claim maintenance.                              |
-| `reprojection.py`     | Re-project a recorded session's frames and report where the stored log disagrees.                                                              |
