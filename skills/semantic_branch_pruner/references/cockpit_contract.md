@@ -21,8 +21,6 @@ Keep one current record per branch with at least:
   "rationale": "The exact behavior landed in PR #123; this ref has no remaining unique objective.",
   "evidence_links": [{ "label": "PR #123", "url": "..." }],
   "probability": 97,
-  "interval_low": 92,
-  "interval_high": 99,
   "premise_pack": "migration-complete"
 }
 ```

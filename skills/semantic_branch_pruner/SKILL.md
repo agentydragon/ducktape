@@ -48,7 +48,7 @@ Build a premise pack only after individual branch review. Store its exact member
 When probabilities are requested, estimate `P(owner chooses to delete this remote ref now)`, not code quality or abstract obsolescence.
 
 - Assign every probability from an individual semantic judgment.
-- Give a brief rationale and uncertainty interval.
+- Give a brief rationale.
 - Link the strongest merged-work, successor-code, or retired-owner evidence.
 - Use prior owner decisions and the overall deletion rate only as calibration checks.
 - Never silently fill missing branches with a family-level or age-based score.
