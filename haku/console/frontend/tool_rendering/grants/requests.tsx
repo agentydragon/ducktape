@@ -151,7 +151,7 @@ function CreateGrantPreview({ args, variant }: PreviewProps<CreateGrantArgs>) {
     <Stack gap="xs">
       <Group gap={6}>
         <PreviewTitle>
-          {domain} {plural(args.grants.length, "temporary grant")}
+          {domain} {plural(args.grants.length, "grant")}
         </PreviewTitle>
         <PreviewBadge variant="outline">for {formatDuration(args.duration_seconds)}</PreviewBadge>
         <PreviewBadge variant="light">
