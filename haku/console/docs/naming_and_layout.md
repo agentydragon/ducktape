@@ -83,7 +83,8 @@ tree shows the packages, §3 and §4 settle what the files and classes inside th
     auto_approval/
 
   oauth/               # provider account-linking + operator OAuth token machinery
-    provider_connection*.py  oauth_token_state.py  oauth_connection_result.py  oauth_*.py
+    provider_connection.py  provider_connection_registry.py  token_state.py  token_support.py
+    connection_result.py  association_maintenance.py  callback_page.py
 
   notifications/       # Web Push pending-approval domain (README Notifications section as a package)
     web_push.py  push_routes.py  console_events.py  connection_metrics.py  pg_wake.py  session_wakes.py  conversation_wakes.py
@@ -168,7 +169,7 @@ to mean what it says.
 
 **"Entry" and "chat" leave the vocabulary.** Nothing is a _chat_ — the layers are sessions,
 conversations, channels, frames, items. `ChatSurface`, `chat_attachment`, `ChatAttachment`,
-`chat_runtimes` (config key), `SessionStore.chat_store` (param), and the
+`SessionStore.chat_store` (param), and the
 `chat_layers.md`/`chat_runtime_facts.md` docs each rename to the layer word they mean;
 `chat_models.py` has none — a grab-bag spanning every layer, it is scattered enum-by-enum and
 deleted rather than renamed (§6). An _entry_
@@ -252,7 +253,7 @@ every package the split creates, not just `grants/`:
   `haku/runtime/x/bridge/` (#4667), where the backend-prefix drop applies (`claude_code_projection.py`
   → `projection.py`). Console keeps no `runtimes/`; the residual harness _selection_ is `harnesses/`
   (`RuntimeAdapter` → `Adapter`, `RuntimeRegistry` → `Registry`).
-- **`notifications/`, `oauth/`, `hostexecd/`**: same — e.g. `web_push.py` → `push.py`,
+- **`notifications/`, `hostexecd/`**: same — e.g. `web_push.py` → `push.py`,
   `PendingApprovalNotifier` → `Notifier`.
 
 Two seams are handled deliberately — **do not reintroduce the prefix to dodge either**:
@@ -345,19 +346,10 @@ change-unit, split by change and dispatched in parallel where the domains do not
 = a quiet-window rename/move needing no design review; **semantic** = a reshape that needs review. The
 scarce resource is operator review, so ready mechanical work never queues behind a contested reshape.
 
-**Four lanes** run in parallel — indexer, identity, grants, conversation — plus the immediate docs
-chunks and the trailing de-Haku/packaging sweep. The only real waits are **content** dependencies (a
+**Four lanes** run in parallel — indexer, identity, grants, conversation — plus the trailing
+de-Haku/packaging sweep. The only real waits are **content** dependencies (a
 blessed `<platform>` name, the `<auth-context>` pick, #4889's envelope shape, #4667's deletion). "It
 will conflict" / "touches the same file" is not a wait — whoever lands second rebases.
-
-### Land immediately — no domain collision
-
-- **C0 · STYLE addendum** _(mechanical, docs)_ — add the directory-as-namespace / no-redundant-prefix
-  rule and the "suffix on the definition, never re-minted per import" clause to <../../../STYLE.md>.
-  Unblocks citations. Depends on nothing.
-- **C0b · This design doc** _(mechanical, docs)_ — the citable target. Every later PR cites it.
-
-C0 and C0b are this PR — the first no-collision chunks.
 
 ### Indexer lane — independent of all naming work
 
@@ -383,17 +375,13 @@ conversation-domain quiet gap.
 - **C1 · `reason` → `failure`** _(mechanical)_ — folds into the #4667 cutover.
 - **C2 · `ConversationEventRow` at definition** _(mechanical)_ — one class rename in
   `database_schema.py` + delete 5 import aliases and their duplicated comments.
-- **C4 · de-"chat" sweep** _(mixed, split three ways)_: **C4a** `chat_store` → `session_store` param
+- **C4 · de-"chat" sweep** _(mixed)_: **C4a** `chat_store` → `session_store` param
   rename _(mechanical)_ — the param holds a `SessionStore`, so it takes the session layer's word;
   **C4b** `ChatSurface` → `ChannelSurface` member-drop + `chat_attachment` → `channel_attachment`
-  table/ORM _(semantic — CHECK + table migration)_; **C4c** `chat_runtimes` → `harnesses` config
-  key _(semantic — deploy-coordinated, ConfigMap ahead of image)_: expand landed (#4977 — loader
-  canonical field `harnesses`, `chat_runtimes` a tombstoned alias, both-set rejected); contract =
-  flip the ConfigMap key + drop the alias + loud-reject `chat_runtimes`, after the expand image is
-  rolled out. The `chat_models.py` **module** is deliberately **not** renamed by C4a: a transitional
-  grab-bag whose ~20 enums span every layer, it has no single layer word, so it is **deleted**
-  rather than renamed. Its survival _is_ the tracked cleanup item — the #4772 reorg is not done
-  until it is gone, each enum scattered to its true home:
+  table/ORM _(semantic — CHECK + table migration)_. The `chat_models.py` **module** is deliberately
+  **not** renamed by C4a: a transitional grab-bag whose ~20 enums span every layer, it has no single
+  layer word, so it is **deleted** rather than renamed. Its survival _is_ the tracked cleanup item —
+  the #4772 reorg is not done until it is gone, each enum scattered to its true home:
   - `SessionStatus`, `LeaseExpiryReason` (+ the session-status frozensets) → `session/` (C7-adjacent)
   - `ConversationEventKind`, `AuthoredEventKind`, `EventProvenance`, `TurnOutcome`, `ReasoningDisclosure`
     → `conversation/conversation_event.py` (C5, gated on the #4667 cutover)
@@ -405,10 +393,12 @@ conversation-domain quiet gap.
     `PromptRejection` → the prompt vocabulary (conversation lane)
 - **C4d · `runtime_kind` → `harness_kind`** _(semantic — coordinated stored + wire + OpenAPI)_ — the
   harness-kind discriminator (§3.1). #4431 made it a closed, published, read-only wire field, so the
-  rename rides expand/contract with its schema consumers, same care as C4b/C4c. The console harness
+  rename rides expand/contract with its schema consumers, same care as C4b. The console harness
   adapters (`x/claude_code`, `x/codex_app_server`) are deleted by the #4667 cutover (native projection
   moves runner-ward), so there is no console `runtimes/`→`harnesses/` move to schedule — only this
   discriminator rename and the small `harnesses/` selection residue.
+- **C4e · `allowed_chat_runtimes` → `allowed_harnesses`** _(semantic — per-profile config field,
+  deploy-coordinated expand/contract, same recipe as the `chat_runtimes` → `harnesses` key flip)_.
 - **C5 · One Pydantic conversation-event vocabulary** _(semantic — the contested one)_ — merge the
   fold + `*Body` into `conversation/conversation_event.py`, aligned to neutral-op names, dataclasses
   gone, `UnknownEventBody` arm preserved. Everything above lands independently of it.
@@ -446,17 +436,16 @@ Needs operator go **and** the `<auth-context>` name pick.
   namespaces + connector + docs in a coordinated cutover; "Haku" kept as agent config; redirect/compat
   for external refs. The tool-id de-Haku rides C12.
 - **C15 · Remainder packaging (#4924)** _(mechanical)_ — once #4772 has settled what everything is
-  called (rename-before-move), the leftover flat modules package into `oauth/`, `notifications/`,
+  called (rename-before-move), the leftover flat modules package into `notifications/`,
   `hostexecd/`, and the app shell in a final quiet-window sweep.
 
 ### Dependency-ordered picture
 
 ```text
-now ─┬─ C0, C0b            (docs, immediate — this PR)
-     ├─ C13               ← staged severing; ConversationItem home is the gate   [indexer lane, independent]
+now ─┬─ C13               ← staged severing; ConversationItem home is the gate   [indexer lane, independent]
      ├─ C8 → C9 → C10     ← after operator go + <auth-context>  [identity lane]
      ├─ C11 → C12         ← after egress lands + #4889          [grants lane]
-     └─ (#4667 settles) → C1, C2, C4a  then  C4b, C4c, C5 → C6 → C7   [conversation lane]
+     └─ (#4667 settles) → C1, C2, C4a  then  C4b, C4e, C5 → C6 → C7   [conversation lane]
                                                     │
                      C14 (de-Haku) ─────────────────┴────→ after lanes settle names
                      C15 (final packaging) ──────────────→ last

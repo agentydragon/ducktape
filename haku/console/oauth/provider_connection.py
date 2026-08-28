@@ -42,21 +42,26 @@ from haku.console.mcp_config import (
     OperatorConnectionDefinition,
     OperatorConnectionProviderDefinition,
 )
-from haku.console.oauth_connection_result import (
-    OAuthConnectionFailed,
-    OAuthConnectionResultStoreDep,
-    OAuthConnectionSucceeded,
+from haku.console.oauth.connection_result import (
+    ConnectionFailed,
+    ConnectionResultStoreDep,
+    ConnectionSucceeded,
     bounded_result_message,
     result_redirect,
 )
-from haku.console.oauth_token_state import (
-    OAuthRefreshFailureEpisode,
-    PostgresOAuthTokenStateStore,
-    new_oauth_token_state,
+from haku.console.oauth.provider_connection_registry import (
+    PROVIDER_DESCRIPTORS,
+    ProviderConnectionDescriptor,
+    ProviderConnectionKind,
+)
+from haku.console.oauth.token_state import (
+    PostgresTokenStateStore,
+    RefreshFailureEpisode,
+    new_token_state,
     refresh_failure_episode,
 )
-from haku.console.oauth_token_support import (
-    OAuthTokenResponseError,
+from haku.console.oauth.token_support import (
+    TokenResponseError,
     parse_token_response,
     public_base_url,
     token_expires_at,
@@ -64,11 +69,6 @@ from haku.console.oauth_token_support import (
 )
 from haku.console.operator_auth import OperatorActorDep
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.provider_connection_registry import (
-    PROVIDER_DESCRIPTORS,
-    ProviderConnectionDescriptor,
-    ProviderConnectionKind,
-)
 
 PROVIDER_CONNECTION_CALLBACK_PATH = "/api/provider-connections/callback"
 _FLOW_TTL = datetime.timedelta(minutes=10)
@@ -99,7 +99,7 @@ class ProviderDegraded(ProviderConnectionStatusBase):
     connected_at: datetime.datetime
     token_expires_at: datetime.datetime | None = None
     scope: str | None = None
-    refresh_failure: OAuthRefreshFailureEpisode
+    refresh_failure: RefreshFailureEpisode
 
 
 class ProviderUnconnected(ProviderConnectionStatusBase):
@@ -222,7 +222,7 @@ async def _exchange_code(
     response = await _post_token(descriptor, data)
     try:
         return await parse_token_response(response, label=f"{descriptor.display_name} token exchange")
-    except OAuthTokenResponseError as error:
+    except TokenResponseError as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
 
 
@@ -260,7 +260,7 @@ class PostgresProviderConnectionStore:
         sessions: async_sessionmaker[AsyncSession],
         *,
         operator_identity_store: PostgresOperatorIdentityStore,
-        token_states: PostgresOAuthTokenStateStore,
+        token_states: PostgresTokenStateStore,
         provider_definitions: dict[str, OperatorConnectionProviderDefinition],
         provider_clients: dict[str, ProviderOAuthClientConfig],
         operator_connections: dict[str, OperatorConnectionDefinition],
@@ -439,7 +439,7 @@ class PostgresProviderConnectionStore:
                 provider_name=flow.provider_name,
                 provider=flow.provider,
                 created_at=now,
-                token_state=new_oauth_token_state(
+                token_state=new_token_state(
                     operator_id=flow.operator_id,
                     access_token=token.access_token,
                     refresh_token=token.refresh_token,
@@ -523,7 +523,7 @@ async def disconnect_provider_connection(
 async def provider_connection_callback(
     *,
     store: ProviderConnectionStoreDep,
-    result_store: OAuthConnectionResultStoreDep,
+    result_store: ConnectionResultStoreDep,
     event_hub: ConsoleEventHubDep,
     actor: OperatorActorDep,
     state: str | None = None,
@@ -535,7 +535,7 @@ async def provider_connection_callback(
         return await result_redirect(
             result_store,
             operator_id=operator_id,
-            result=OAuthConnectionFailed(
+            result=ConnectionFailed(
                 title="Couldn't connect the account",
                 message=bounded_result_message(f"Authorization failed: {error}", fallback="Authorization failed."),
             ),
@@ -544,7 +544,7 @@ async def provider_connection_callback(
         return await result_redirect(
             result_store,
             operator_id=operator_id,
-            result=OAuthConnectionFailed(
+            result=ConnectionFailed(
                 title="Couldn't connect the account", message="The authorization response was incomplete."
             ),
         )
@@ -555,7 +555,7 @@ async def provider_connection_callback(
         return await result_redirect(
             result_store,
             operator_id=operator_id,
-            result=OAuthConnectionFailed(
+            result=ConnectionFailed(
                 title="Couldn't connect the account",
                 message=bounded_result_message(detail, fallback="Connection failed."),
             ),
@@ -566,7 +566,7 @@ async def provider_connection_callback(
     return await result_redirect(
         result_store,
         operator_id=operator_id,
-        result=OAuthConnectionSucceeded(
+        result=ConnectionSucceeded(
             title=f"Connected to {status.display_name}", message="The account is now available in Haku Console."
         ),
     )

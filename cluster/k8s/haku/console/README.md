@@ -118,7 +118,7 @@ reads mirroring the REST API, draft creation, thread-label changes, label CRUD) 
 `google_calendar` (`haku/console/tools/google_calendar.py` — recurrence-aware event reads and
 creation), both behind the ordinary operator-approval queue — execute as the **acting
 Operator's own Google account**: each call resolves that Operator's per-Operator Google access
-token from the console's own connection store (`haku/console/provider_connection.py`),
+token from the console's own connection store (`haku/console/oauth/provider_connection.py`),
 self-refreshed in-process. This replaces Airlock's brokered `haku_console_google` token — the
 console holds the Google OAuth clients and each Operator's refresh token itself. The console pod
 starts fine before anything is connected; until an Operator connects, both servers are

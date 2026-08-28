@@ -86,7 +86,7 @@ from haku.console.mcp_config import (
 from haku.console.mcp_guidance import SERVER_INSTRUCTIONS, approval_request_preamble
 from haku.console.mcp_operator_oauth import McpOperatorAuthStatus, PostgresMcpOperatorOAuthStore
 from haku.console.node_daemons import DaemonStatusResponse, NodeDaemonService
-from haku.console.provider_connection import PostgresProviderConnectionStore, ProviderConnectionStatus
+from haku.console.oauth.provider_connection import PostgresProviderConnectionStore, ProviderConnectionStatus
 from haku.console.tool_call_actor import OperatorActor, RuntimeActor
 from haku.console.tool_call_service import (
     AgentActorRequiredError,

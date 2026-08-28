@@ -25,7 +25,7 @@ _ERROR_BODY_LIMIT = 512
 _OAUTH_ERROR_FIELDS = ("error", "error_description", "error_uri")
 
 
-class OAuthTokenResponseError(RuntimeError):
+class TokenResponseError(RuntimeError):
     """A safe, structured token-endpoint rejection or invalid success response."""
 
     def __init__(self, message: str, *, status_code: int, oauth_error: str | None, invalid_response: bool) -> None:
@@ -72,7 +72,7 @@ def token_request_headers(headers: Mapping[str, str] | None = None) -> dict[str,
 async def parse_token_response(response: httpx.Response, *, label: str) -> OAuthToken:
     if response.status_code != 200:
         detail, oauth_error = _oauth_error_detail(response)
-        raise OAuthTokenResponseError(
+        raise TokenResponseError(
             f"{label} failed: {response.status_code}{detail}",
             status_code=response.status_code,
             oauth_error=oauth_error,
@@ -81,7 +81,7 @@ async def parse_token_response(response: httpx.Response, *, label: str) -> OAuth
     try:
         return await handle_token_response_scopes(response)
     except ValidationError as e:
-        raise OAuthTokenResponseError(
+        raise TokenResponseError(
             f"{label} response was invalid: {e}",
             status_code=response.status_code,
             oauth_error=None,

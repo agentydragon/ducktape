@@ -102,6 +102,7 @@ def _session(session_id: UUID, created_at: datetime.datetime) -> SessionRecord:
         session_id=session_id,
         conversation_id=CONVERSATION,
         runtime_kind=RuntimeKind.CLAUDE_CODE,
+        harness_kind=RuntimeKind.CLAUDE_CODE,
         attachments=[ChannelAttachment(surface="matrix", address="!room:example.org", attached_at=created_at)],
         status="closed",
         created_at=created_at,
@@ -224,6 +225,21 @@ async def test_tool_surface() -> None:
 
     assert tools == {"list_sessions", "list_turns", "read_conversation_items", "read_session_frames"}
     assert HAKU_CONVERSATIONS_SERVER_ID == "haku_conversations"
+
+
+async def test_runtime_and_harness_kind_are_required_closed_identity_fields_on_a_session() -> None:
+    # Expand step of the runtime_kind→harness_kind wire rename (naming_and_layout.md §3.1, #4772):
+    # a session publishes both names, each a required carrier of the same closed enum, so a
+    # consumer can move to `harness_kind` before `runtime_kind` is dropped in the contract step.
+    async with Client(_mcp(_Reader())) as client:
+        list_sessions = one(tool for tool in await client.list_tools() if tool.name == "list_sessions")
+
+    schema = list_sessions.outputSchema
+    assert schema is not None
+    session = schema["properties"]["items"]["items"]  # FastMCP serves the page schema fully dereferenced.
+    for field_name in ("runtime_kind", "harness_kind"):
+        assert session["properties"][field_name]["enum"] == ["claude_code", "codex_app_server"]
+        assert field_name in session["required"]
 
 
 async def test_ungranted_actor_cannot_read_conversations() -> None:

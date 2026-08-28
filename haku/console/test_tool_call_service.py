@@ -34,9 +34,9 @@ from haku.console.mcp_config import (
     RemoteMcpBackend,
 )
 from haku.console.mcp_execution import AgentMcpExecutionCaller, McpExecutionContext
-from haku.console.oauth_token_state import PostgresOAuthTokenStateStore
+from haku.console.oauth.provider_connection import PostgresProviderConnectionStore
+from haku.console.oauth.token_state import PostgresTokenStateStore
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.provider_connection import PostgresProviderConnectionStore
 from haku.console.recall_index_access import RecallIndexAccessPolicy
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_call_service import (
@@ -319,7 +319,7 @@ def _service(
     servers: list[dict[str, Any]] | None = None,
     in_process_servers: InProcessServers | None = None,
 ) -> ToolCallApplicationService:
-    token_states = PostgresOAuthTokenStateStore(sessions, operator_identity_store=identity_store)
+    token_states = PostgresTokenStateStore(sessions, operator_identity_store=identity_store)
     config_file = write_config(
         tmp_path / "tool-call-service.yaml",
         {
