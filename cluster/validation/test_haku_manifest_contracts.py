@@ -792,11 +792,14 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
     assert not {"HAKU_GIT_USERNAME", "HAKU_GIT_PASSWORD", "HAKU_GITHUB_TOKEN"} & environment.keys()
     workspace = one(volume for volume in pod["volumes"] if volume["name"] == "workspace")
     assert workspace == {"name": "workspace", "emptyDir": {"sizeLimit": "10Gi"}}
-    trust_mount = one(
-        mount for mount in container["volumeMounts"] if mount["name"] == "public-coder-agent-proxy-ca-cert"
-    )
+    # The runner trusts the colocated Console egress fence it now routes through (#4670): the bundle
+    # mounted at the system trust path is the fence CA (haku-egress-proxy-ca-cert), replacing the
+    # retiring iron proxy's, so GnuTLS git and everything else verify the fence's leaves.
+    trust_mount = one(mount for mount in container["volumeMounts"] if mount["name"] == "egress-proxy-ca")
     assert trust_mount["mountPath"] == "/etc/ssl/certs/ca-certificates.crt"
     assert trust_mount["subPath"] == "ca-certificates.crt"
+    trust_volume = one(volume for volume in pod["volumes"] if volume["name"] == "egress-proxy-ca")
+    assert trust_volume["configMap"]["name"] == "haku-egress-proxy-ca-cert"
 
     policy_objects = list(yaml.safe_load_all((k8s_dir / "haku/runtime-namespace/networkpolicy.yaml").read_text()))
     egress = one(obj for obj in policy_objects if obj["metadata"]["name"] == "public-coder-runner-egress")
@@ -811,9 +814,14 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
     }
     assert destinations == {
         ("haku-console", "haku-console", 8080),
+        # The colocated Console egress fence (#4670): the runner's HTTPS_PROXY now points here. The
+        # iron proxy :8080 rule stays for a config-only rollback.
+        ("haku-console", "haku-console", 8888),
         ("haku-console", "haku-kube-api-proxy", 8443),
         ("public-coder-agent", "public-coder-codex-runner-proxy", 8080),
     }
+    # LiteLLM is reached only THROUGH the fence, never a direct runner egress; the fence is on the
+    # haku-console pod, so no runner rule targets the litellm or haku-egress-proxy namespaces.
     assert not any(target_namespace in {"litellm", "haku-egress-proxy"} for target_namespace, _, _ in destinations)
 
     trust_objects = list(
@@ -857,7 +865,8 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
     assert implementation["provider_id"] == "haku"
     assert implementation["api_key_env_var"] == "OPENAI_API_KEY"
     assert implementation["api_base_url"] == "http://litellm.litellm.svc.cluster.local:4000/v1"
-    assert codex["https_proxy"] == ("http://public-coder-codex-runner-proxy.public-coder-agent.svc.cluster.local:8080")
+    # Codex routes through the colocated Console egress fence (#4670), not its retiring iron proxy.
+    assert codex["https_proxy"] == "http://haku-egress-proxy.haku-console.svc.cluster.local:8888"
     assert codex["mcp_url"] == "http://haku-console.haku-console.svc.cluster.local:9090/mcp"
     assert "kubernetes_proxy_url" not in codex
     assert "litellm.litellm.svc.cluster.local" not in codex["no_proxy"]
@@ -953,7 +962,11 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
 
     workspaces_flux = yaml.safe_load((k8s_dir / "haku/workspaces/app/flux-kustomization.yaml").read_text())
     workspace_dependencies = {entry["name"] for entry in workspaces_flux["spec"]["dependsOn"]}
-    assert {"haku-runtime-namespace", "public-coder-agent-proxy", "litellm-keys-tf"} <= workspace_dependencies
+    # The Codex sandbox template now mounts the fence CA (haku-egress-proxy-ca-cert) instead of the
+    # iron proxy's, so its trust-bundle generator is the ordering dependency; the dropped
+    # public-coder-agent-proxy dep is gone with that mount (#4670).
+    assert {"haku-runtime-namespace", "haku-egress-proxy", "litellm-keys-tf"} <= workspace_dependencies
+    assert "public-coder-agent-proxy" not in workspace_dependencies
 
 
 def test_haku_console_deployment_version_contract(k8s_dir: Path) -> None:

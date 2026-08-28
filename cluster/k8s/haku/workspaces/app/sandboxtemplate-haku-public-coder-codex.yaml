@@ -62,10 +62,13 @@ spec:
               mountPath: /workspace
             - name: tmp
               mountPath: /tmp
-            - name: public-coder-agent-proxy-ca-cert
-              # Replace the distro bundle with the shared public + cluster + interception roots.
-              # This covers Git's GnuTLS linkage; Node/Python also receive explicit env pointers
-              # from Console because they otherwise carry their own trust behavior.
+            - name: egress-proxy-ca
+              # The colocated Console egress fence's trust bundle (haku-egress-proxy-ca-cert: the
+              # shared public + cluster + haku-egress-proxy interception roots), replacing the
+              # retiring iron proxy's CA as the Codex runner moves onto the fence (#4670). At
+              # /etc/ssl/certs it covers Git's GnuTLS linkage (which reads no SSL_CERT_FILE);
+              # Node/Python/curl also receive explicit env pointers from Console (ca_bundle) at this
+              # same path.
               mountPath: /etc/ssl/certs/ca-certificates.crt
               subPath: ca-certificates.crt
               readOnly: true
@@ -77,6 +80,6 @@ spec:
             sizeLimit: 10Gi
         - name: tmp
           emptyDir: {}
-        - name: public-coder-agent-proxy-ca-cert
+        - name: egress-proxy-ca
           configMap:
-            name: public-coder-agent-proxy-ca-cert
+            name: haku-egress-proxy-ca-cert

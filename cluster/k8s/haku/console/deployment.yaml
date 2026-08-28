@@ -38,7 +38,7 @@ metadata:
     # do NOT use reloader's blanket auto mode: the projected static-image metadata
     # changes on every frontend release and must not restart API/MCP/background work.
     configmap.reloader.stakater.com/reload: haku-console-config
-    secret.reloader.stakater.com/reload: haku-routine-launch-token,haku-console-oidc,haku-console-web-push-vapid,tana-agentydragon-gmail-com-account-pat,ha-mcp-bearer,haku-console-db-app,haku-console-agent-api,haku-console-public-coder-agent,haku-console-node-daemon-wyrm2,haku-console-node-daemon-rugged,haku-console-google-client-credentials,haku-console-google-calendar-client-credentials,haku-console-github-mcp-client-credentials,haku-egress-proxy-identity,haku-egress-github-token
+    secret.reloader.stakater.com/reload: haku-routine-launch-token,haku-console-oidc,haku-console-web-push-vapid,tana-agentydragon-gmail-com-account-pat,ha-mcp-bearer,haku-console-db-app,haku-console-agent-api,haku-console-public-coder-agent,haku-console-node-daemon-wyrm2,haku-console-node-daemon-rugged,haku-console-google-client-credentials,haku-console-google-calendar-client-credentials,haku-console-github-mcp-client-credentials,haku-egress-proxy-identity,haku-egress-github-token,litellm-key-public-coder-agent
 spec:
   replicas: 2
   strategy:
@@ -413,6 +413,19 @@ spec:
                 secretKeyRef:
                   name: haku-egress-github-token
                   key: token
+                  optional: true
+            #   - the public-coder LiteLLM virtual key for the Console-launched Codex runner, mirrored
+            #     from the retiring public-coder-codex-runner-proxy (codex-runner-iron.yaml) as it
+            #     moves onto this fence (#4670). The SAME litellm-key-public-coder-agent the iron proxy
+            #     reads, delivered into this trusted namespace by widening its emberstack reflection at
+            #     the owning Terraform (tf/gitops/litellm-keys) — not re-minted. optional (#4970) like
+            #     github-bot: an unsynced reflection degrades the codex-litellm handle rather than
+            #     crash-looping the console.
+            - name: HAKU_EGRESS_CREDENTIAL_LITELLM_PUBLIC_CODER
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-key-public-coder-agent
+                  key: api-key
                   optional: true
             #   - the substitution-smoke registry credential: a committed EXAMPLE- literal rather
             #     than a Secret, deliberately — both sides of that swap are inert so the fence's

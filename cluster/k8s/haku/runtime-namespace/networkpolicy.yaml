@@ -42,6 +42,18 @@ spec:
       toPorts:
         - ports:
             - { port: "8080", protocol: TCP }
+    # Colocated Console egress fence (#4670): the runner's HTTPS_PROXY now points at
+    # haku-egress-proxy.haku-console.svc:8888. The sidecar shares the Console pod's network
+    # namespace, so it is selected by the same haku-console pod label on the fence container port.
+    # The iron proxy rule below stays until public-coder-codex-runner-proxy retires, so reverting the
+    # runner's proxy in config.yaml needs no policy change.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-console
+            k8s:app.kubernetes.io/name: haku-console
+      toPorts:
+        - ports:
+            - { port: "8888", protocol: TCP }
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: public-coder-agent

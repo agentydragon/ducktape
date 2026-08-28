@@ -149,9 +149,11 @@ resource "kubernetes_secret" "codex_pod" {
 # public-coder-agent — OpenClaw and Console shells, Codex + Gemini lane
 # ============================================================================
 # OpenClaw and its Console-launched Codex sandbox are two shells for the same durable Agent.
-# The key is reflected only into public-coder-agent: OpenClaw may consume it directly, while the
-# least-credential runner proxy substitutes it for the Console runner's inert placeholder. Deleting this
-# key is the Agent's provider kill switch.
+# The key is reflected into public-coder-agent (OpenClaw consumes it directly) and into haku-console:
+# once the Console-launched Codex runner moves onto the colocated egress fence (#4670), the Console
+# holds this key and substitutes it into the fence's decide responses for the `codex-litellm` handle,
+# so the sandbox only ever presents the inert placeholder. Deleting this key is the Agent's provider
+# kill switch.
 
 resource "litellm_key" "public_coder_agent" {
   key_alias = "public-coder-agent"
@@ -178,9 +180,9 @@ resource "kubernetes_secret" "public_coder_agent" {
     annotations = {
       description                                                     = "LiteLLM virtual key for public-coder-agent OpenClaw (chatgpt/ant-messages/* models) and least-credential runner-proxy-mediated Haku Console Codex shells (chatgpt/oai-responses/* models); subscription models through CLIProxyAPI, Gemini chat models, plus embeddings"
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "public-coder-agent"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "public-coder-agent,haku-console"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "public-coder-agent"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "public-coder-agent,haku-console"
     }
   }
 
