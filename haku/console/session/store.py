@@ -59,7 +59,6 @@ from haku.console.database_schema import (
     SessionFrame,
     SubmittedPrompt,
 )
-from haku.console.grants.envelope import GrantStatus
 from haku.console.grants.principal import GrantPrincipalKind
 from haku.console.notifications.conversation_wakes import ConversationWakeKind, notify_conversation, notify_update
 from haku.console.notifications.session_wakes import SessionEventKind, notify
@@ -462,38 +461,20 @@ class Store:
         writer.authored(conversation_event.SessionEnded(status=chat.status, error=error))
         # Exact-session authority never transfers to a replacement session. End it in the same
         # transaction as the session's terminal event so authorization and the durable account
-        # cannot disagree. Expiration wins when the lease had already reached its time bound.
-        kubernetes_session_principal = (
-            KubernetesGrantRow.principal_kind == GrantPrincipalKind.SESSION,
-            KubernetesGrantRow.principal_session_id == chat.session_id,
-        )
-        await db.execute(
-            update(KubernetesGrantRow)
-            .where(
-                *kubernetes_session_principal,
-                KubernetesGrantRow.status == GrantStatus.ACTIVE,
-                KubernetesGrantRow.expires_at <= now,
+        # cannot disagree. Grant status is derived, so already-expired leases need no write: one
+        # revocation fact ends every lease this session could still exercise.
+        for row in (KubernetesGrantRow, HttpGrantRow):
+            await db.execute(
+                update(row)
+                .where(
+                    row.principal_kind == GrantPrincipalKind.SESSION,
+                    row.principal_session_id == chat.session_id,
+                    row.released_at.is_(None),
+                    row.revoked_at.is_(None),
+                    row.expires_at > now,
+                )
+                .values(revoked_at=now, end_reason="principal_ended")
             )
-            .values(status=GrantStatus.EXPIRED, ended_at=now, end_reason="expired")
-        )
-        await db.execute(
-            update(KubernetesGrantRow)
-            .where(*kubernetes_session_principal, KubernetesGrantRow.status == GrantStatus.ACTIVE)
-            .values(status=GrantStatus.REVOKED, ended_at=now, revoked_at=now, end_reason="principal_ended")
-        )
-        # HTTP grant status is derived, so already-expired leases need no write: one revocation
-        # fact ends every lease this session could still exercise.
-        await db.execute(
-            update(HttpGrantRow)
-            .where(
-                HttpGrantRow.principal_kind == GrantPrincipalKind.SESSION,
-                HttpGrantRow.principal_session_id == chat.session_id,
-                HttpGrantRow.released_at.is_(None),
-                HttpGrantRow.revoked_at.is_(None),
-                HttpGrantRow.expires_at > now,
-            )
-            .values(revoked_at=now, end_reason="principal_ended")
-        )
 
     async def create(
         self,

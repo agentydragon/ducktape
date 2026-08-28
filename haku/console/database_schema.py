@@ -49,7 +49,7 @@ from haku.console.conversation.conversation_event import (
     TurnOutcome,
 )
 from haku.console.conversation.prompt_origin import PromptOrigin
-from haku.console.grants.envelope import GrantEnvelopeColumns, GrantStatus, grant_envelope_table_args
+from haku.console.grants.envelope import GrantEnvelopeColumns, grant_envelope_table_args
 from haku.console.grants.http.models import HttpMethod, HttpMethods, HttpScheme
 from haku.console.grants.kubernetes.models import KubernetesGrantScope, KubernetesRule
 from haku.console.hostexecd.models import ExecutionStatus
@@ -506,20 +506,11 @@ class KubernetesGrantRow(GrantEnvelopeColumns, Base):
     """One Agent-owned, principal-scoped, time-bounded Kubernetes capability lease.
 
     The envelope half of the row (`GrantEnvelopeColumns`) is shared with every grant domain,
-    end facts included: this table now dual-writes ``released_at``/``revoked_at`` beside the
-    stored ``status``/``ended_at`` that pre-facts replicas still write and every reader still
-    trusts (facts-only derivation would read a mid-roll fact-less end as active — fail-open).
-    Scope and rules are intentionally JSONB: Kubernetes evolves its resource vocabulary, while
-    the domain validates the stable namespace and RBAC-like shapes before writing.
+    end facts included: status is derived from ``released_at``/``revoked_at`` and the clock
+    (`grants.envelope.derive_status`), never stored, so expiry needs no sweeper. Scope and
+    rules are intentionally JSONB: Kubernetes evolves its resource vocabulary, while the domain
+    validates the stable namespace and RBAC-like shapes before writing.
     """
-
-    # CLEANUP(added 2026-08-28): #4883 contract step, once this dual-writing image is fully
-    #   rolled (no replica ends a grant without writing its end fact): backfill straggler
-    #   rows ended fact-lessly mid-roll (released_at/revoked_at := ended_at keyed on status),
-    #   NULL the sweeper's end_reason on expired rows, flip readers and the repository's
-    #   filters onto derive_status over the facts, delete the expire() sweeper, then drop
-    #   `status` + `ended_at`, the three status-bearing indexes, ck_kubernetes_grants_status_shape,
-    #   and fold the end-shape CHECK into grant_envelope_table_args.
 
     __tablename__ = "kubernetes_grants"
     __table_args__ = (
@@ -539,24 +530,13 @@ class KubernetesGrantRow(GrantEnvelopeColumns, Base):
             "OR (scope->>'kind' <> 'namespaces' AND NOT (scope ? 'namespaces')))",
             name="ck_kubernetes_grants_scope_shape",
         ),
-        CheckConstraint(
-            "(status = 'active' AND ended_at IS NULL AND end_reason IS NULL) OR "
-            "(status IN ('released', 'revoked', 'expired') AND ended_at IS NOT NULL "
-            "AND end_reason IS NOT NULL AND btrim(end_reason) <> '')",
-            name="ck_kubernetes_grants_status_shape",
-        ),
-        # The envelope's end-shape CHECK arrives with the #4883 contract step; until then only
-        # the fact half that pre-facts writers cannot violate is enforced here.
-        CheckConstraint("num_nonnulls(released_at, revoked_at) <= 1", name="ck_kubernetes_grants_single_end_action"),
-        Index("idx_kubernetes_grants_owner_status_expiry", "owner_agent_id", "status", "expires_at"),
-        Index("idx_kubernetes_grants_agent_principal_status_expiry", "principal_agent_id", "status", "expires_at"),
-        Index("idx_kubernetes_grants_session_principal_status_expiry", "principal_session_id", "status", "expires_at"),
+        Index("idx_kubernetes_grants_owner_expiry", "owner_agent_id", "expires_at"),
+        Index("idx_kubernetes_grants_agent_principal_expiry", "principal_agent_id", "expires_at"),
+        Index("idx_kubernetes_grants_session_principal_expiry", "principal_session_id", "expires_at"),
     )
 
     scope: Mapped[KubernetesGrantScope] = mapped_column(PydanticColumn(KubernetesGrantScope), nullable=False)
     rules: Mapped[list[KubernetesRule]] = mapped_column(PydanticColumn(list[KubernetesRule]), nullable=False)
-    status: Mapped[GrantStatus] = mapped_column(TextBackedStrEnumColumn(GrantStatus), nullable=False)
-    ended_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class HttpGrantRow(GrantEnvelopeColumns, Base):
@@ -574,14 +554,6 @@ class HttpGrantRow(GrantEnvelopeColumns, Base):
     __tablename__ = "http_grants"
     __table_args__ = (
         *grant_envelope_table_args("http_grants"),
-        # The fact shape the derivation reads: at most one end action, and a reason exactly when
-        # one is recorded.
-        CheckConstraint(
-            "num_nonnulls(released_at, revoked_at) <= 1 "
-            "AND ((num_nonnulls(released_at, revoked_at) = 1) = (end_reason IS NOT NULL)) "
-            "AND (end_reason IS NULL OR btrim(end_reason) <> '')",
-            name="ck_http_grants_end_shape",
-        ),
         CheckConstraint(
             "credential_handle IS NULL OR btrim(credential_handle) <> ''",
             name="ck_http_grants_credential_handle_nonempty",

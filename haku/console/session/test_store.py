@@ -60,7 +60,6 @@ from haku.console.database_schema import (
     McpToolCallPrincipal,
     Session,
 )
-from haku.console.grants.envelope import GrantStatus
 from haku.console.grants.http.models import HttpMethod, HttpScheme
 from haku.console.grants.kubernetes.models import KubernetesNamespacesGrantScope, KubernetesRule
 from haku.console.grants.principal import GrantPrincipalKind
@@ -346,10 +345,10 @@ async def test_session_end_terminalizes_exact_session_grants(session_store, migr
                 source_tool_call_id=source_tool_call_id,
                 scope=KubernetesNamespacesGrantScope(namespaces=("public-coder-agent",)),
                 rules=[KubernetesRule(api_groups=("",), resources=("pods/log",), verbs=("get",))],
-                status=GrantStatus.ACTIVE,
                 created_at=datetime.now(UTC),
                 expires_at=datetime.now(UTC) + timedelta(hours=1),
-                ended_at=None,
+                released_at=None,
+                revoked_at=None,
                 end_reason=None,
             )
         )
@@ -412,9 +411,9 @@ async def test_session_end_terminalizes_exact_session_grants(session_store, migr
     async with migrated_sessions() as db:
         grant = await db.get(KubernetesGrantRow, grant_id)
         assert grant is not None
-        assert grant.status is GrantStatus.REVOKED
+        assert grant.revoked_at is not None
+        assert grant.released_at is None
         assert grant.end_reason == "principal_ended"
-        assert grant.ended_at is not None
         http_grant = await db.get(HttpGrantRow, http_grant_id)
         assert http_grant is not None
         assert http_grant.revoked_at is not None

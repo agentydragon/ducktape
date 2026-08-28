@@ -14,17 +14,17 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import (
-    AwareDatetime,
     BaseModel,
     ConfigDict,
     Field,
     ValidationInfo,
+    computed_field,
     field_serializer,
     field_validator,
     model_validator,
 )
 
-from haku.console.grants.envelope import NON_EMPTY, GrantEnvelope, GrantStatus
+from haku.console.grants.envelope import NON_EMPTY, GrantEnvelope, GrantStatus, derive_status
 
 
 class KubernetesGrantScopeKind(StrEnum):
@@ -151,16 +151,13 @@ def validate_grant_scope_rules(scope: KubernetesGrantScope, rules: Iterable[Kube
 class KubernetesGrant(GrantEnvelope):
     """Durable grant returned by the service: the shared envelope plus scope/rules coverage.
 
-    This domain now writes the envelope's end facts, but its readers still trust the stored
-    ``status`` plus ``ended_at``: rows ended by a pre-facts replica during the roll carry no
-    facts, so deriving status from them would fail open. The #4883 contract step (staged at
-    `KubernetesGrantRow`) flips readers onto ``derive_status`` and retires both fields.
+    ``status`` is computed from the envelope's recorded end facts and the clock at access
+    time (`haku.console.grants.envelope.derive_status`) — never stored and never a field, so
+    it cannot disagree with the facts.
     """
 
     scope: KubernetesGrantScope
     rules: tuple[KubernetesRule, ...] = Field(min_length=1)
-    status: GrantStatus
-    ended_at: AwareDatetime | None = None
 
     @model_validator(mode="after")
     def validate_scope_rules(self) -> KubernetesGrant:
@@ -168,23 +165,23 @@ class KubernetesGrant(GrantEnvelope):
         return self
 
     @model_validator(mode="after")
-    def validate_terminal_fields(self) -> KubernetesGrant:
-        if self.status is GrantStatus.ACTIVE:
-            if self.ended_at is not None or self.end_reason is not None:
-                raise ValueError("an active grant cannot have terminal fields")
-        elif self.ended_at is None or not self.end_reason or not self.end_reason.strip():
-            raise ValueError("a terminal grant requires ended_at and a non-empty end_reason")
+    def validate_end_reason(self) -> KubernetesGrant:
+        ended = self.released_at is not None or self.revoked_at is not None
+        if ended != (self.end_reason is not None and bool(self.end_reason.strip())):
+            raise ValueError("end_reason travels exactly with a recorded end action")
         return self
 
-    @model_validator(mode="after")
-    def validate_end_fact_coherence(self) -> KubernetesGrant:
-        # One direction only: a pre-facts replica's end writes no fact, so a terminal status
-        # without a fact stays valid until the #4883 contract step.
-        if self.released_at is not None and self.status is not GrantStatus.RELEASED:
-            raise ValueError("released_at requires a released stored status")
-        if self.revoked_at is not None and self.status is not GrantStatus.REVOKED:
-            raise ValueError("revoked_at requires a revoked stored status")
-        return self
+    # The ignore is pydantic's documented mypy accommodation for computed_field-on-property
+    # (mypy's prop-decorator limitation), not a silenced finding.
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def status(self) -> GrantStatus:
+        return derive_status(
+            released_at=self.released_at,
+            revoked_at=self.revoked_at,
+            expires_at=self.expires_at,
+            now=datetime.datetime.now(datetime.UTC),
+        )
 
 
 class KubernetesGrantSpec(BaseModel):

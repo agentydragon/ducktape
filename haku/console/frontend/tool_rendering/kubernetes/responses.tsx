@@ -56,6 +56,7 @@ export function principalText(principal: KubernetesGrant["principal"]): string {
 }
 
 function GrantResult({ grant, variant }: { grant: KubernetesGrant; variant: PreviewVariant }) {
+  const endedAt = grant.released_at ?? grant.revoked_at;
   return (
     <Stack gap="xs">
       <Group gap={6}>
@@ -70,7 +71,7 @@ function GrantResult({ grant, variant }: { grant: KubernetesGrant; variant: Prev
           <Field label="Applies to">{principalText(grant.principal)}</Field>
           <Timestamp label="Created" value={grant.created_at} />
           <Timestamp label="Expires" value={grant.expires_at} />
-          {grant.ended_at && <Timestamp label="Ended" value={grant.ended_at} />}
+          {endedAt && <Timestamp label="Ended" value={endedAt} />}
           {grant.end_reason && <Field label="End reason">{grant.end_reason}</Field>}
         </Stack>
       )}
