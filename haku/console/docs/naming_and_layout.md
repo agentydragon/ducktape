@@ -61,14 +61,17 @@ tree shows the packages, §3 and §4 settle what the files and classes inside th
     fastmcp_adapter.py            # from mcp_auth/
     mcp_agent_auth.py
     authentication_context.py     # the `<auth-context>` composed actor family (was tool_call_actor.py) [#4836 part 1]
-    request_principal.py          # the RequestPrincipal atom, split out of grant_principal.py
+    request_principal.py          # the RequestPrincipal atom, split out of grants/principal.py
 
-  grants/              # shared-envelope grant model — materializes with #4889
-    principal.py       # GrantPrincipal family + applies_to (rest of grant_principal.py)
-    envelope.py        # shared ownership/approval/lifetime/audit/binding envelope (#4889, forthcoming)
-    kubernetes/        # from kubernetes_grant_{models,repository,service,routes}, kubernetes_authorization,
-                       #   kubectl_passthrough_policy, kube_proxy_authorization
-    http/              # from http_grant_{models,repository,service,routes}, http_decide_{config,routes,service}
+  grants/              # shared-envelope grant model (#4889, landed)
+    principal.py       # GrantPrincipal family + RequestPrincipal + applies_to; RequestPrincipal leaves with C10
+    envelope.py        # the shared envelope: GrantStatus + derive_status, the Grant*Error family,
+                       #   GrantEnvelope model base, GrantEnvelopeColumns mixin + per-table envelope
+                       #   constraints, applicability clause, idempotent grant-set replay, window/batch validators
+    provenance.py      # manual-approval source-ToolCall invariant (reads database_schema, so split from envelope)
+    kubernetes/        # models, repository, service, routes, authorization, kubectl_passthrough_policy,
+                       #   proxy_authorization (file prefixes dropped; entity names wait on §4.1 seam 3)
+    http/              # models, repository, service, routes, decide_{config,routes,service}
 
   mcp/                 # the approval / audit / execution surface
     server.py  approval.py  config.py  catalog_reconciler.py  guidance.py  mount.py  reflection_cache.py
@@ -203,12 +206,13 @@ names graduate into <agent_authority.md>'s boundary section, not a separate doc.
 
 ### 3.3 Grant vocabulary (#4838)
 
-| Concept              | Canonical name                                                                               | Notes                                                                                                                                                                            |
-| -------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Grant (domain / row) | `KubernetesGrant` / `KubernetesGrantRow` (`kubernetes_grants`); `HttpGrant` / `HttpGrantRow` | the `…Row`-at-definition pattern is already right on the K8s side — mirror it for HTTP. Inside `grants/{kubernetes,http}/` the prefix drops to `Grant`/`GrantRow` (§4.1)         |
-| Principal axis       | `GrantPrincipalKind` {`AGENT`, `SESSION`, future `PROFILE`}                                  | the Agent-facing `applies_to` stays `{agent, session}` **permanently**; profile principals are operator-initiated only, never Agent-requestable (#4838's load-bearing asymmetry) |
-| Lifetime axis        | temporary \| permanent                                                                       | reject `permanent × session` and click-approved `permanent × profile` by construction                                                                                            |
-| Shared envelope      | `grants/envelope.py` (#4889, forthcoming)                                                    | ownership / approval / lifetime / audit / credential-binding — the `grants/` package materializes when this lands                                                                |
+| Concept              | Canonical name                                                                               | Notes                                                                                                                                                                                              |
+| -------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Grant (domain / row) | `KubernetesGrant` / `KubernetesGrantRow` (`kubernetes_grants`); `HttpGrant` / `HttpGrantRow` | the `…Row`-at-definition pattern holds in both domains; rows stay at their central `database_schema.py` definitions. The in-package drop to `Grant`/`GrantSpec` waits on §4.1 seam 3 and rides C12 |
+| Principal axis       | `GrantPrincipalKind` {`AGENT`, `SESSION`, future `PROFILE`}                                  | the Agent-facing `applies_to` stays `{agent, session}` **permanently**; profile principals are operator-initiated only, never Agent-requestable (#4838's load-bearing asymmetry)                   |
+| Lifetime axis        | temporary \| permanent                                                                       | reject `permanent × session` and click-approved `permanent × profile` by construction                                                                                                              |
+| Lifecycle vocabulary | `GrantStatus` {`ACTIVE`, `RELEASED`, `REVOKED`, `EXPIRED`} + `derive_status`                 | one envelope enum (was per-domain `KubernetesGrantStatus`/`HttpGrantStatus`); stored values unchanged. K8s still stores it + `ended_at` until #4883 dissolves that onto the derived form           |
+| Shared envelope      | `grants/envelope.py` + `grants/provenance.py` (#4889, landed)                                | principal columns, validity window, lifecycle owner, and manual-approval source-ToolCall provenance/audit linkage consolidated; per-domain end facts are #4883's remaining seam                    |
 
 ### 3.4 De-Haku (#4865) — `Haku` → `<platform>`
 
@@ -238,11 +242,14 @@ Once files live in a domain package, the package name **is** the namespace; the 
 filenames **and** the entities they define. This is the operator decision that generalizes across
 every package the split creates, not just `grants/`:
 
-- **`grants/kubernetes/`**: `kubernetes_grant_models.py` → `models.py`; `KubernetesGrant` → `Grant`,
-  `KubernetesGrantRow` → `GrantRow`, `KubernetesGrantService` → `Service`;
-  `routes`/`authorization`/`kubectl_passthrough_policy`/`kube_proxy_authorization` lose the
-  `kubernetes`/`kube` prefix.
-- **`grants/http/`**: symmetric — `HttpGrantSpec` → `GrantSpec`, `http_grant_service.py` → `service.py`, etc.
+- **`grants/kubernetes/`**: `kubernetes_grant_models.py` → `models.py`,
+  `kubernetes_authorization.py` → `authorization.py`, `kube_proxy_authorization.py` →
+  `proxy_authorization.py` (landed with C11; `kubectl_passthrough_policy.py` keeps its name —
+  `kubectl` names the external kubectl-passthrough MCP server, not the package). The entity drop
+  (`KubernetesGrant` → `Grant`, `KubernetesGrantService` → `Service`, …) waits on seam 3 below.
+- **`grants/http/`**: symmetric — `http_grant_service.py` → `service.py`,
+  `http_decide_config.py` → `decide_config.py`, etc. (landed with C11); `HttpGrantSpec` →
+  `GrantSpec` etc. wait on seam 3.
 - **`conversation/`**: `conversation_log.py` → `log.py`, `conversation_reads.py` → `reads.py`;
   `ConversationItem` → `Item`, `ConversationEvent` → `Event`, `ConversationTurn` → `Turn`,
   `ConversationRuntime` → `Runtime`.
@@ -255,7 +262,7 @@ every package the split creates, not just `grants/`:
   → `projection.py`). Console keeps no `runtimes/`; the residual harness _selection_ is `harnesses/`
   (`RuntimeAdapter` → `Adapter`, `RuntimeRegistry` → `Registry`).
 
-Two seams are handled deliberately — **do not reintroduce the prefix to dodge either**:
+Three seams are handled deliberately — **do not reintroduce the prefix to dodge any of them**:
 
 1. **Cross-package collision.** A consumer importing both `grants.kubernetes` and `grants.http` sees
    `Grant`/`GrantSpec` collide. Disambiguate by **module qualification** (`kubernetes.Grant` vs
@@ -265,6 +272,15 @@ Two seams are handled deliberately — **do not reintroduce the prefix to dodge 
    `RequestAttributes`/SAR types are cross-cutting primitives used **outside** grants (egress decision
    models, standing policy, kube-api-proxy). They keep a clear shared home and keep meaningful names.
    The prefix-drop is for domain-specific grant entities, not cross-cutting primitives.
+3. **Published schema components rename only in a coordinated wire pass.** The console OpenAPI
+   document and the exported MCP tool schemas key components by Pydantic **class name** in one flat
+   namespace, where module qualification cannot reach: the two domains' `Grant`/`GrantSpec`, the
+   routes' wrapper/response models, and `KubernetesGrantScope` against the egress decision
+   vocabulary's `GrantScope` all collide there, and pydantic degrades a collision to
+   module-path-qualified component keys that the SPA's generated types then carry. So a model whose
+   class name is a published component key renames with the C4d recipe — schema consumers in
+   lockstep — not as a package-extraction rider. C11 moved the files and left these class names;
+   the entity pass rides C12.
 
 **Extension, gated on `<platform>` (#4865):** once the tree re-roots under `<platform>/console/`, the
 `Haku`/`haku_` prefix on internal entities and tool-server names is redundant by the identical logic.
@@ -420,17 +436,16 @@ Needs operator go **and** the `<auth-context>` name pick.
 - **C9 · Role docstrings + `ToolCallActor` → `RuntimeActor`** _(mechanical rider)_ — the five-role
   boundary at their definitions (also the fallback deliverable if C8 is declined).
 - **C10 · `identity/` package extraction** _(mechanical)_ — lands **with** the #4836 vocabulary, after
-  C8 settles the names. Splits `grant_principal.py`: `RequestPrincipal` → `identity/`,
-  `GrantPrincipal` + `applies_to` → `grants/`.
+  C8 settles the names. Splits `grants/principal.py`: `RequestPrincipal` → `identity/request_principal.py`;
+  the `GrantPrincipal` family + `applies_to` stay in `grants/principal.py`.
 
-### Grants lane — after egress lands + #4889
+### Grants lane
 
-- **C11 · `grants/` package extraction** _(mechanical move of a semantic consolidation)_ — materializes
-  **with #4889's shared envelope**; K8s + HTTP grant modules → `grants/{kubernetes,http}/` +
-  `grants/principal.py` + `grants/envelope.py`.
 - **C12 · Tool-server naming (#4918)** _(semantic — coordinated cutover)_ — `kubernetes` →
-  `kubernetes_grants`, roster audit, the one-`grants`-server decision with #4889's shape in hand.
-  Config + policies + docs in one release.
+  `kubernetes_grants`, roster audit, the one-`grants`-server decision with #4889's envelope shape
+  in hand. Config + policies + docs in one release. The grants **entity**-prefix drop deferred by
+  §4.1 seam 3 (`KubernetesGrant` → `Grant`, `HttpGrantSpec` → `GrantSpec`, the wrapper/response
+  models) rides this cutover — the same published-surface recipe, one schema-consumer move.
 
 ### De-Haku and final packaging — last
 
@@ -447,7 +462,7 @@ Needs operator go **and** the `<auth-context>` name pick.
 ```text
 now ─┬─ C13               ← staged severing; ConversationItem home is the gate   [indexer lane, independent]
      ├─ C8 → C9 → C10     ← after operator go + <auth-context>  [identity lane]
-     ├─ C11 → C12         ← after egress lands + #4889          [grants lane]
+     ├─ C12               ← C11 landed with #4889's envelope    [grants lane]
      └─ (#4667 settles) → C1, C2, C4a  then  C4b, C4e, C5 → C6 → C7   [conversation lane]
                                                     │
                      C14 (de-Haku) ─────────────────┴────→ after lanes settle names

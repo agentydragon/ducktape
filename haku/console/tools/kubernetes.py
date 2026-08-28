@@ -11,8 +11,8 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, ConfigDict, Field
 
-from haku.console.grant_principal import GrantPrincipalKind, grant_principal_for
-from haku.console.kubernetes_authorization import (
+from haku.console.grants.envelope import GRANT_SET_LIMIT
+from haku.console.grants.kubernetes.authorization import (
     AuthorizationRequest,
     AuthorizationResponse,
     KubernetesAuthorizationService,
@@ -21,8 +21,9 @@ from haku.console.kubernetes_authorization import (
     required_rule,
     required_scope,
 )
-from haku.console.kubernetes_grant_models import KubernetesGrant, KubernetesGrantScopeKind, KubernetesGrantSpec
-from haku.console.kubernetes_grant_service import KubernetesGrantService
+from haku.console.grants.kubernetes.models import KubernetesGrant, KubernetesGrantScopeKind, KubernetesGrantSpec
+from haku.console.grants.kubernetes.service import KubernetesGrantService
+from haku.console.grants.principal import GrantPrincipalKind, grant_principal_for
 from haku.console.mcp_execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext
 
 KUBERNETES_SERVER_ID = "kubernetes"
@@ -163,7 +164,7 @@ def build_mcp(service: KubernetesToolsService) -> FastMCP:
             list[KubernetesGrantSpec],
             Field(
                 min_length=1,
-                max_length=32,
+                max_length=GRANT_SET_LIMIT,
                 description="Exact grants to create atomically with one shared start and expiry.",
             ),
         ],
@@ -210,7 +211,7 @@ def build_mcp(service: KubernetesToolsService) -> FastMCP:
             list[UUID],
             Field(
                 min_length=1,
-                max_length=32,
+                max_length=GRANT_SET_LIMIT,
                 description="Grant UUIDs returned by create_grant; released sequentially in the supplied order.",
             ),
         ],

@@ -59,8 +59,8 @@ from haku.console.database_schema import (
     SessionFrame,
     SubmittedPrompt,
 )
-from haku.console.grant_principal import GrantPrincipalKind
-from haku.console.kubernetes_grant_models import KubernetesGrantStatus
+from haku.console.grants.envelope import GrantStatus
+from haku.console.grants.principal import GrantPrincipalKind
 from haku.console.x import conversation_log, prompt_inbox, session_events
 from haku.console.x.conversation_events import (
     ConversationEvent,
@@ -494,15 +494,15 @@ class SessionStore:
             update(KubernetesGrantRow)
             .where(
                 *kubernetes_session_principal,
-                KubernetesGrantRow.status == KubernetesGrantStatus.ACTIVE,
+                KubernetesGrantRow.status == GrantStatus.ACTIVE,
                 KubernetesGrantRow.expires_at <= now,
             )
-            .values(status=KubernetesGrantStatus.EXPIRED, ended_at=now, end_reason="expired")
+            .values(status=GrantStatus.EXPIRED, ended_at=now, end_reason="expired")
         )
         await db.execute(
             update(KubernetesGrantRow)
-            .where(*kubernetes_session_principal, KubernetesGrantRow.status == KubernetesGrantStatus.ACTIVE)
-            .values(status=KubernetesGrantStatus.REVOKED, ended_at=now, end_reason="principal_ended")
+            .where(*kubernetes_session_principal, KubernetesGrantRow.status == GrantStatus.ACTIVE)
+            .values(status=GrantStatus.REVOKED, ended_at=now, end_reason="principal_ended")
         )
         # HTTP grant status is derived, so already-expired leases need no write: one revocation
         # fact ends every lease this session could still exercise.

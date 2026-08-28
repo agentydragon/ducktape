@@ -8,9 +8,9 @@ against; tool-call principal rows are the durable submitter provenance both are 
 The five roles, at their definitions:
 
 - **Authentication context** — `RuntimeActor` (`OperatorActor | AgentActor`), this module: the actor.
-- **Request principal** — `RequestPrincipal` (`grant_principal.py`): the `agent_id`/`session_id`
+- **Request principal** — `RequestPrincipal` (`grants/principal.py`): the `agent_id`/`session_id`
   atom the actor projects to, dropping the accountability identities applicability must not read.
-- **Grant principal** — `GrantPrincipal` (`grant_principal.py`): the durable stored selector a
+- **Grant principal** — `GrantPrincipal` (`grants/principal.py`): the durable stored selector a
   request principal is tested against.
 - **Submitter provenance** — `McpToolCallPrincipal` (`database_schema.py`; wire in
   `haku/shared/haku/console/tool_calls.py`): the durable submitter provenance.

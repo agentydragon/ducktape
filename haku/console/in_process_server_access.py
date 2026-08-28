@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from haku.console.grant_principal import RequestPrincipal
+from haku.console.grants.principal import RequestPrincipal
 from haku.console.mcp_config import AccessProfile
 from haku.console.mcp_execution import AgentMcpExecutionCaller, McpExecutionCaller
 from haku.console.tool_call_actor import AgentActor, RuntimeActor

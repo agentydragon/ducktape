@@ -84,10 +84,10 @@ provenance both are revalidated from. The five, at their definitions:
 
 - **Authentication context** — `RuntimeActor` (`OperatorActor | AgentActor`, `tool_call_actor.py`):
   the actor.
-- **Request principal** — `RequestPrincipal` (`grant_principal.py`): the `agent_id`/`session_id`
+- **Request principal** — `RequestPrincipal` (`grants/principal.py`): the `agent_id`/`session_id`
   atom the actor projects to, dropping the accountability identities applicability must not read.
 - **Grant principal** — `GrantPrincipal` = `AgentGrantPrincipal | SessionGrantPrincipal`
-  (`grant_principal.py`): the durable stored selector a request principal is tested against.
+  (`grants/principal.py`): the durable stored selector a request principal is tested against.
 - **Submitter provenance** — `McpToolCallPrincipal` (`database_schema.py`; wire in
   `haku/shared/haku/console/tool_calls.py`): the durable audit record both the actor and the grant
   principal are revalidated from.

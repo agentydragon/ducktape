@@ -1,0 +1,49 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//haku/console:__subpackages__"])
+
+py_library(
+    name = "principal",
+    srcs = ["principal.py"],
+    deps = [
+        "//haku/console:tool_call_actor",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "envelope",
+    srcs = ["envelope.py"],
+    deps = [
+        ":principal",
+        "//util:sqlalchemy_types",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "provenance",
+    srcs = ["provenance.py"],
+    deps = [
+        ":envelope",
+        ":principal",
+        "//haku/console:chat_models",
+        "//haku/console:database_schema",
+        "//haku/console/agents:models",
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_principal",
+    srcs = ["test_principal.py"],
+    deps = [
+        ":principal",
+        "//haku/console:tool_call_actor",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

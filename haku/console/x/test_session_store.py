@@ -55,9 +55,10 @@ from haku.console.database_schema import (
     McpToolCallPrincipal,
     Session,
 )
-from haku.console.grant_principal import GrantPrincipalKind
-from haku.console.http_grant_models import HttpMethod, HttpScheme
-from haku.console.kubernetes_grant_models import KubernetesGrantStatus, KubernetesNamespacesGrantScope, KubernetesRule
+from haku.console.grants.envelope import GrantStatus
+from haku.console.grants.http.models import HttpMethod, HttpScheme
+from haku.console.grants.kubernetes.models import KubernetesNamespacesGrantScope, KubernetesRule
+from haku.console.grants.principal import GrantPrincipalKind
 from haku.console.tool_calls import ToolCallStatus
 from haku.console.x.claude_code.testing.wire import assistant, result, text_block, text_delta
 from haku.console.x.conftest import age_lease, answers, attach_channel, lease_of, make_idle
@@ -351,7 +352,7 @@ async def test_session_end_terminalizes_exact_session_grants(session_store, migr
                 source_tool_call_id=source_tool_call_id,
                 scope=KubernetesNamespacesGrantScope(namespaces=("public-coder-agent",)),
                 rules=[KubernetesRule(api_groups=("",), resources=("pods/log",), verbs=("get",))],
-                status=KubernetesGrantStatus.ACTIVE,
+                status=GrantStatus.ACTIVE,
                 created_at=datetime.now(UTC),
                 expires_at=datetime.now(UTC) + timedelta(hours=1),
                 ended_at=None,
@@ -417,7 +418,7 @@ async def test_session_end_terminalizes_exact_session_grants(session_store, migr
     async with migrated_sessions() as db:
         grant = await db.get(KubernetesGrantRow, grant_id)
         assert grant is not None
-        assert grant.status is KubernetesGrantStatus.REVOKED
+        assert grant.status is GrantStatus.REVOKED
         assert grant.end_reason == "principal_ended"
         assert grant.ended_at is not None
         http_grant = await db.get(HttpGrantRow, http_grant_id)

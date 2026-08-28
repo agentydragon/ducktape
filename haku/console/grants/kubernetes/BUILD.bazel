@@ -1,0 +1,187 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//haku/console:__subpackages__"])
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    deps = [
+        "//haku/console/grants:envelope",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "repository",
+    srcs = ["repository.py"],
+    deps = [
+        ":models",
+        "//haku/console:database_schema",
+        "//haku/console/grants:envelope",
+        "//haku/console/grants:principal",
+        "//haku/console/grants:provenance",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "service",
+    srcs = ["service.py"],
+    deps = [
+        ":models",
+        "//haku/console/grants:envelope",
+        "//haku/console/grants:principal",
+    ],
+)
+
+py_library(
+    name = "routes",
+    srcs = ["routes.py"],
+    deps = [
+        ":models",
+        ":service",
+        "//haku/console:operator_agents",
+        "//haku/console:operator_auth",
+        "//haku/console/grants:envelope",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "authorization",
+    srcs = ["authorization.py"],
+    deps = [
+        ":models",
+        ":service",
+        "//haku/console:agent_bearer_authority",
+        "//haku/console:config",
+        "//haku/console/grants:principal",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "kubectl_passthrough_policy",
+    srcs = ["kubectl_passthrough_policy.py"],
+    deps = [
+        ":authorization",
+        ":models",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "proxy_authorization",
+    srcs = ["proxy_authorization.py"],
+    deps = [
+        ":authorization",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_grants",
+    srcs = ["test_grants.py"],
+    deps = [
+        ":models",
+        ":service",
+        "//haku/console/grants:envelope",
+        "//haku/console/grants:principal",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_service",
+    srcs = ["test_service.py"],
+    deps = [
+        ":models",
+        ":service",
+        "//haku/console/grants:envelope",
+        "//haku/console/grants:principal",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_repository",
+    size = "medium",
+    srcs = ["test_repository.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":models",
+        ":repository",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "//haku/console/grants:envelope",
+        "//haku/console/grants:principal",
+        "@pypi//fastapi",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_routes",
+    srcs = ["test_routes.py"],
+    deps = [
+        ":models",
+        ":routes",
+        "//haku/console:operator_auth",
+        "//haku/console:tool_call_actor",
+        "//haku/console/agents:enrollment",
+        "//haku/console/agents:models",
+        "//haku/console/grants:envelope",
+        "//haku/console/grants:principal",
+        "@pypi//fastapi",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "test_kubectl_passthrough_policy",
+    size = "medium",
+    srcs = ["test_kubectl_passthrough_policy.py"],
+    deps = [
+        ":authorization",
+        ":kubectl_passthrough_policy",
+        "//haku/console:conftest",
+        "//haku/console:tool_call_actor",
+        "//haku/console:tool_call_service",
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_proxy_authorization",
+    srcs = ["test_proxy_authorization.py"],
+    deps = [
+        ":authorization",
+        ":proxy_authorization",
+        "//haku/console:tool_call_actor",
+        "//haku/console/grants:principal",
+        "@pypi//fastapi",
+        "@pypi//httpx2",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
