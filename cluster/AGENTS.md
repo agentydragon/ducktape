@@ -135,6 +135,15 @@ with `ImageRepository` first and `ImagePolicy` second. Keep an
 or a separate `GitRepository`. A Receiver reference alone does not require splitting
 the pair; Receivers address the Kubernetes resource by name.
 
+### Colocating simple Helm sources and releases
+
+When a `HelmRepository` or `GitRepository` is consumed by exactly one
+`HelmRelease`, and the source and release belong to the same component directory,
+define them in the existing `helmrelease.yaml` as one multi-document file. Put the
+source resource first and the `HelmRelease` second, and update the directory's
+`kustomization.yaml` to reference only `helmrelease.yaml`. Keep the source in its
+own file when it is reused by another release or has independent ownership.
+
 ## Agent RBAC Architecture
 
 When adding agent read access to a new service namespace, create a new `agent-rbac/`
