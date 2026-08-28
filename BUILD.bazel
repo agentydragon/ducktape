@@ -8,10 +8,11 @@
 # gazelle:python_generation_mode file
 # gazelle:python_default_visibility NONE
 # gazelle:python_manifest_file_name devinfra/gazelle_python.yaml
-# Map py_binary -> py_library globally: the codebase pattern is one py_library per .py file,
-# with py_binary targets named differently (using main_module). Prevents name conflicts when a
-# .py file with __main__ already has a py_library target of the same name.
-# gazelle:map_kind py_binary py_library @rules_python//python:defs.bzl
+# The codebase pattern is one py_library per .py file, with py_binary targets hand-written
+# (main_module, no srcs) and named off the module stems so Gazelle never manages them.
+# Enforced by patches/rules_python_gazelle_ducktape.patch, which replaced a
+# `map_kind py_binary py_library` directive here: Gazelle applies map_kind to existing
+# hand-written py_binary rules too, rewriting their kind.
 #
 # Bazel-provided libraries (not from PyPI)
 # gazelle:resolve py rules_python.python.runfiles @rules_python//python/runfiles
