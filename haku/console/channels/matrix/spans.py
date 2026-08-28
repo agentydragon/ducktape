@@ -39,30 +39,30 @@ from typing import Protocol
 from uuid import UUID
 
 from haku.console.chat_models import LeaseExpiryReason
-from haku.console.session.subscription import START, StreamedEvent, StreamPosition
-from haku.console.x.session_events import (
-    LeaseExpiredBody,
-    MessageCompletedBody,
-    MessageStartedBody,
-    PromptCompletedBody,
-    PromptRejectedBody,
-    PromptStartedBody,
-    ReasoningCompletedBody,
-    ReasoningStartedBody,
-    SegmentBody,
-    SessionAdoptedBody,
-    SessionEndedBody,
-    SessionProvisioningBody,
-    SetupNarrationBody,
-    ToolCallCompletedBody,
-    ToolCallStartedBody,
-    TurnAbortedBody,
-    TurnAnsweredBody,
-    TurnFailedBody,
-    TurnStartedBody,
+from haku.console.conversation.conversation_event import (
+    ItemSegment,
+    LeaseExpired,
+    MessageCompleted,
+    MessageOpened,
+    PromptCompleted,
+    PromptOpened,
+    PromptRejected,
+    ReasoningCompleted,
+    ReasoningOpened,
+    SessionAdopted,
+    SessionEnded,
+    SessionProvisioning,
+    SetupNarration,
+    ToolCallCompleted,
+    ToolCallOpened,
+    TurnAborted,
+    TurnAnswered,
+    TurnFailed,
+    TurnOpened,
     UnknownEventBody,
-    UnreadableInputBody,
+    UnreadableInput,
 )
+from haku.console.session.subscription import START, StreamedEvent, StreamPosition
 
 # Below this the answer itself is the status, and a status/answer pair is clutter.
 STATUS_AFTER = timedelta(seconds=8)
@@ -256,19 +256,19 @@ class LiveSpans:
 
     def _transition(self, event: StreamedEvent) -> tuple[SpanClose, ...]:
         match event.body:
-            case SessionProvisioningBody():
+            case SessionProvisioning():
                 return self._open_session(event, PROVISIONING_STATUS)
-            case SessionAdoptedBody(holder=holder):
+            case SessionAdopted(holder=holder):
                 return self._open_session(event, f"another console replica ({holder}) took this session over")
-            case SetupNarrationBody(text=text):
+            case SetupNarration(text=text):
                 return self._open_session(event, text)
-            case SessionEndedBody():
+            case SessionEnded():
                 # An orderly ending is live state spent, not news: the pre-span rendering never
                 # announced it either, and a lease expiry still seals the thread's account below.
                 return self._end_session(event, seal_body=None)
-            case LeaseExpiredBody(reason=reason):
+            case LeaseExpired(reason=reason):
                 return self._end_session(event, seal_body=f"the session ended — {_why_it_lapsed(reason)}")
-            case TurnStartedBody():
+            case TurnOpened():
                 closed = self._retire_turn()
                 if self._session is not None:
                     # A moving conversation is its own evidence of life, so the pre-turn
@@ -285,40 +285,40 @@ class LiveSpans:
                     started_at=event.created_at,
                 )
                 return closed
-            case MessageStartedBody() | ReasoningStartedBody() if self._turn is not None and event.item_id is not None:
+            case MessageOpened() | ReasoningOpened() if self._turn is not None and event.item_id is not None:
                 self._turn.open_items[event.item_id] = None
                 self._refresh_activity()
-            case ToolCallStartedBody(tool_name=tool_name) if self._turn is not None and event.item_id is not None:
+            case ToolCallOpened(tool_name=tool_name) if self._turn is not None and event.item_id is not None:
                 self._turn.open_items[event.item_id] = tool_name
                 self._refresh_activity()
-            case MessageCompletedBody() | ReasoningCompletedBody() if self._turn is not None:
+            case MessageCompleted() | ReasoningCompleted() if self._turn is not None:
                 if event.item_id is not None:
                     self._turn.open_items.pop(event.item_id, None)
                 self._refresh_activity()
-            case ToolCallCompletedBody() if self._turn is not None:
+            case ToolCallCompleted() if self._turn is not None:
                 if event.item_id is not None:
                     self._turn.open_items.pop(event.item_id, None)
                 self._turn.tools_done += 1
                 self._refresh_activity()
-            case TurnAnsweredBody() | TurnAbortedBody() | TurnFailedBody() if (
+            case TurnAnswered() | TurnAborted() | TurnFailed() if (
                 self._turn is not None and event.turn_id == self._turn.turn_id
             ):
                 return self._retire_turn()
             case (
-                SegmentBody()
-                | PromptStartedBody()
-                | PromptCompletedBody()
-                | PromptRejectedBody()
-                | UnreadableInputBody()
-                | MessageStartedBody()
-                | ReasoningStartedBody()
-                | ToolCallStartedBody()
-                | MessageCompletedBody()
-                | ReasoningCompletedBody()
-                | ToolCallCompletedBody()
-                | TurnAnsweredBody()
-                | TurnAbortedBody()
-                | TurnFailedBody()
+                ItemSegment()
+                | PromptOpened()
+                | PromptCompleted()
+                | PromptRejected()
+                | UnreadableInput()
+                | MessageOpened()
+                | ReasoningOpened()
+                | ToolCallOpened()
+                | MessageCompleted()
+                | ReasoningCompleted()
+                | ToolCallCompleted()
+                | TurnAnswered()
+                | TurnAborted()
+                | TurnFailed()
                 | UnknownEventBody()
             ):
                 pass

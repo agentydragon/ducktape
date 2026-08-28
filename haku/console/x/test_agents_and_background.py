@@ -23,8 +23,9 @@ from collections.abc import Sequence
 import pytest_bazel
 from more_itertools import one
 
-from haku.console.chat_models import ConversationEventKind, ToolOutcome
-from haku.console.x import session_events
+from haku.console.chat_models import ToolOutcome
+from haku.console.conversation.conversation_event import ConversationEventKind, FrameRange
+from haku.console.x import conversation_events
 from haku.console.x.claude_code.projection import RecordedFrame
 from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
 from haku.console.x.claude_code.testing.fold import whole_capture
@@ -40,7 +41,6 @@ from haku.console.x.claude_code.testing.wire import (
 )
 from haku.console.x.conversation_events import (
     ConversationEvent,
-    FrameRange,
     ItemSegment,
     MessageCompleted,
     ToolCallCompleted,
@@ -69,7 +69,9 @@ def _rows(events: Sequence[ConversationEvent]) -> list[ConversationEventKind]:
     One member of the vocabulary has no row at all, so this is shorter than the event list — which
     is the point of asking it rather than counting events.
     """
-    return [kind for event in events if (stored := session_events.stored(event)) is not None for kind, _ in (stored,)]
+    return [
+        kind for event in events if (stored := conversation_events.stored(event)) is not None for kind, _ in (stored,)
+    ]
 
 
 def _subagent_frames(*, nested: bool) -> list[RecordedFrame]:
@@ -276,7 +278,7 @@ def test_the_write_path_no_longer_splits_a_message_across_its_frames():
     events = _write_path(_interleaved_frames())
 
     assert _rows(events) == [
-        ConversationEventKind.ITEM_STARTED,
+        ConversationEventKind.ITEM_OPENED,
         ConversationEventKind.ITEM_SEGMENT,
         ConversationEventKind.ITEM_SEGMENT,
         ConversationEventKind.ITEM_COMPLETED,

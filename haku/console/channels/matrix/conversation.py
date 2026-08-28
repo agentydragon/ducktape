@@ -22,12 +22,11 @@ from haku.console.channels.matrix.client import InboundMessage, UnmappableEvent
 from haku.console.channels.matrix.config import Config
 from haku.console.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.chat_models import ChannelSurface, MatrixOrigin, PromptRejection, RuntimeKind
+from haku.console.conversation import conversation_event
 from haku.console.database_schema import ChannelAttachmentRow, Conversation, Operator
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.session.launch_identity import LaunchAuthorizer, LaunchIdentity
 from haku.console.session.store import PromptRefusedError, Store
-from haku.console.x import session_events
-from haku.console.x.session_events import PromptRejectedBody, UnreadableInputBody
 
 logger = logging.getLogger(__name__)
 
@@ -223,9 +222,9 @@ class ConversationFacts:
 
     conversation_id: UUID
     session_id: UUID | None
-    bodies: tuple[session_events.AuthoredBody, ...]
+    bodies: tuple[conversation_event.AuthoredEvent, ...]
 
-    def then(self, *more: session_events.AuthoredBody) -> ConversationFacts:
+    def then(self, *more: conversation_event.AuthoredEvent) -> ConversationFacts:
         return ConversationFacts(
             conversation_id=self.conversation_id, session_id=self.session_id, bodies=self.bodies + more
         )
@@ -318,7 +317,7 @@ class Turns:
             facts=ConversationFacts(
                 conversation_id=binding.conversation_id,
                 session_id=session_id,
-                bodies=(PromptRejectedBody(reason=reason, text=prompt_text),),
+                bodies=(conversation_event.PromptRejected(reason=reason, text=prompt_text),),
             ),
         )
 
@@ -327,7 +326,7 @@ class Turns:
         return ConversationFacts(
             conversation_id=binding.conversation_id,
             session_id=None,
-            bodies=tuple(UnreadableInputBody(media_type=event.msgtype) for event in events),
+            bodies=tuple(conversation_event.UnreadableInput(media_type=event.msgtype) for event in events),
         )
 
 

@@ -19,6 +19,7 @@ from more_itertools import one
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, FrameDirection, ItemStatus, ItemType, SessionStatus
+from haku.console.conversation.conversation_event import FrameRange, TurnAnswered
 from haku.console.conversation.follow import ConversationFollow
 from haku.console.conversation.reads import ConversationEntry, MessageEntry, PromptEntry
 from haku.console.notifications.conversation_wakes import ConversationWakes
@@ -31,8 +32,7 @@ from haku.console.session.conversation_views import (
 )
 from haku.console.session.runtime import SessionService
 from haku.console.session.store import Store
-from haku.console.x.conversation_events import FrameRange, ItemSegment, MessageCompleted, MessageStarted, OpenRef
-from haku.console.x.session_events import TurnAnsweredBody
+from haku.console.x.conversation_events import ItemSegment, MessageCompleted, MessageStarted, OpenRef
 from haku.console.x.testing.recording_claims import RecordingClaims
 
 # Long enough that several writes land inside one window on a loaded machine, short enough that
@@ -96,7 +96,7 @@ async def _exchange(session_store: Store, operator_id: UUID, session_id: UUID, p
             MessageCompleted(backend_item_id=None, provenance=where),
         ],
     )
-    await session_store.end_turn(turn.turn_id, TurnAnsweredBody(), last_frame_seq=spoke.frame_seq)
+    await session_store.end_turn(turn.turn_id, TurnAnswered(), last_frame_seq=spoke.frame_seq)
 
 
 async def test_a_follow_opens_with_the_conversation_whole(
@@ -318,7 +318,7 @@ async def test_an_update_carries_the_channels_holding_the_conversation(
 async def test_a_sandbox_still_coming_up_is_read_again_with_no_wake_to_carry_it(
     following: ConversationFollow, session_store: Store, operator_id: UUID, recording_claims: RecordingClaims
 ) -> None:
-    """Kubernetes writes no `session_events` row when a pod goes ready, so a follower waiting only
+    """Kubernetes writes no `conversation_event` row when a pod goes ready, so a follower waiting only
     for wakes would show a provisioning panel frozen at whatever it opened on — during exactly the
     phase that panel exists for."""
     view, _ = await session_store.create(operator_id)

@@ -94,9 +94,9 @@ tree shows the packages, §3 and §4 settle what the files and classes inside th
   hostexecd/           # console-side registry / machine-API for the hostexecd fleet — NOT node_daemons (§3)
     service.py  models.py
 
-  conversation/        # the durable, provider-neutral record (landed except conversation_event.py)
-    conversation_event.py          # ONE Pydantic vocabulary: row body + MCP/SPA wire — still x/-side
-                                    #   (merges x/conversation_events.py + x/session_events.py)  [#4772 core, C5]
+  conversation/        # the durable, provider-neutral record (landed)
+    conversation_event.py          # ONE Pydantic vocabulary: row body + wire (#4772 core, landed C5);
+                                    #   the v3 fold residue in x/conversation_events.py deletes with #4667 stage 5
     reads.py  reader.py  log.py  follow.py  history.py  live_updates.py  runtime.py  reprojection.py
     item_reads.py                  # folded item read models ("entry" leaves with C6) — private to the
                                    #   conversation read surface (the store/reader that produce them + the
@@ -105,8 +105,9 @@ tree shows the packages, §3 and §4 settle what the files and classes inside th
 
   session/             # one runner incarnation + its wire log (landed except session_frames.py)
     store.py  runtime.py
-    session_frames.py              # forthcoming with the inversion fix (§3): C5 moving the conversation
-                                    #   bodies out of x/session_events.py frees the name for the wire log
+    session_frames.py              # forthcoming: the wire log's own vocabulary (BridgeFrameKind/
+                                   #   FrameDirection graduate here); the name freed by C5
+                                   #   (x/session_events.py dissolved)
     conversation_views.py  sandbox_allocation.py  sandbox_claims.py
     subscription.py  system_prompt.py  launch_identity.py  setup_output.py
 
@@ -159,16 +160,14 @@ protocol, not to the fold.
 | item read model       | `Item` (or `…Item`, plain on wire)                                    | `conversation/item_reads.py` — private to the conversation read tools |                                                     | **"entry" leaves the vocabulary** (C6); the `item_entries.py` module name is already gone                                                                                                                                                                                                                                |
 | session (runner life) | `Session`                                                             | `SessionRecord` (MCP) · `SessionView` (REST)                          | `Session` / `sessions`                              | three representations, one concept-name + role suffix; fix the "…agent conversation" table docstring                                                                                                                                                                                                                     |
 | channel copy          | `ChannelAttachment`                                                   | `ChannelAttachment`                                                   | `ChannelAttachment` / `channel_attachment`          | landed (C4b)                                                                                                                                                                                                                                                                                                             |
-| harness wire frame    | `SessionFrame`                                                        | `HarnessFrameRecord` / `…View`                                        | `SessionFrame` / `session_frames`                   | `x/session_events.py` → `session/session_frames.py` (the inversion fix — it holds `conversation_event` bodies today, not frames)                                                                                                                                                                                         |
+| harness wire frame    | `SessionFrame`                                                        | `HarnessFrameRecord` / `…View`                                        | `SessionFrame` / `session_frames`                   | `session/session_frames.py` is the one forthcoming session module; `x/session_events.py` (which held `conversation_event` bodies, not frames) dissolved into `conversation/conversation_event.py` (C5)                                                                                                                   |
 | front-end kind        | `ChannelSurface` (not `ChatSurface`)                                  |                                                                       | text col + CHECK                                    | landed (C4b)                                                                                                                                                                                                                                                                                                             |
 | harness (backend)     | `harness` — retire "runtime" for the backend                          | —                                                                     | —                                                   | Claude Code / Codex. Native client + frame projection move **runner-ward** into `haku/runtime/x/bridge` (#4667); the console residue is `harnesses/` (selection/registration). "runtime" survives only for a running incarnation (session/conversation), never the backend                                               |
 | harness kind (wire)   | `harness_kind` / `HarnessKind` (was `runtime_kind` / `RuntimeKind`)   | `HarnessKind` enum                                                    | `harness_kind` col + published `HarnessKind` schema | **rename, not free** — #4431 made `runtime_kind` a closed, read-only, **published** wire discriminator (`claude_code`\|`codex_app_server`) with a schema contract test; the rename is a coordinated stored + wire + OpenAPI change (expand/contract; published-schema consumers move in lockstep), not a mechanical swap |
 
-**The module-name inversion** (#4772 core): `x/session_events.py` holds `conversation_event` _row
-bodies_, not session frames — the actual session wire is `session_frames`/`SessionFrame`. Its own
-first line calls itself "the stream's two categories as `conversation_event` rows". The fix moves the
-conversation bodies into `conversation/conversation_event.py` and frees `session/session_frames.py`
-to mean what it says.
+**The module-name inversion** (#4772 core) is fixed: the `conversation_event` row bodies that
+`x/session_events.py` held live in `conversation/conversation_event.py` (C5), and
+`session/session_frames.py` is free to mean the actual session wire — `session_frames`/`SessionFrame`.
 
 **"Entry" and "chat" leave the vocabulary.** Nothing is a _chat_ — the layers are sessions,
 conversations, channels, frames, items. The code side is done (`ChannelSurface`,
@@ -381,8 +380,6 @@ quiet gap.
   **deleted** rather than renamed. Its survival _is_ the tracked cleanup item — the #4772 reorg
   is not done until it is gone, each enum scattered to its true home:
   - `SessionStatus`, `LeaseExpiryReason` (+ the session-status frozensets) → `session/` (C7-adjacent)
-  - `ConversationEventKind`, `AuthoredEventKind`, `EventProvenance`, `TurnOutcome`, `ReasoningDisclosure`
-    → `conversation/conversation_event.py` (C5)
   - `ItemType`, `ItemStatus`, `ToolOutcome` → `conversation/item_reads.py` (C6)
   - `RuntimeKind` → `harnesses/kind.py` as `HarnessKind` (C4d)
   - `BridgeFrameKind`, `FrameDirection` → the session-frames home (`session/session_frames.py`)
@@ -400,11 +397,8 @@ quiet gap.
   the small `harnesses/` selection residue.
 - **C4e · `allowed_chat_runtimes` → `allowed_harnesses`** _(semantic — per-profile config field,
   deploy-coordinated expand/contract, same recipe as the `chat_runtimes` → `harnesses` key flip)_.
-- **C5 · One Pydantic conversation-event vocabulary** _(semantic — the contested one)_ — merge the
-  fold + `*Body` into `conversation/conversation_event.py`, aligned to neutral-op names, dataclasses
-  gone, `UnknownEventBody` arm preserved. Everything above lands independently of it.
 - **C6 · "entry" → item read model** _(semantic)_ — `*Entry` → `Item…`, into `conversation/item_reads.py`
-  (private to the conversation read surface, beside the store that produces it — not `mcp/`); rides or follows C5.
+  (private to the conversation read surface, beside the store that produces it — not `mcp/`).
 - **C7 · Session-trio dedup** _(semantic)_ — after the conversation quiet window
   (`ConversationTurnView` is already gone).
 
@@ -446,11 +440,11 @@ Needs operator go **and** the `<auth-context>` name pick.
 now ─┬─ C13               ← staged severing; ConversationItem home is the gate   [indexer lane, independent]
      ├─ C8 → C9 → C10     ← after operator go + <auth-context>  [identity lane]
      ├─ C11 → C12         ← after egress lands + #4889          [grants lane]
-     └─ C4e, C5 → C6 → C7                       ← packages landed              [conversation lane]
-                    │
-                    C14 (de-Haku) ──────────────→ after lanes settle names
-                    C15 (final packaging) ──────→ last
+     └─ C4e → C6 → C7                            ← packages + C5 landed         [conversation lane]
+                  │
+                  C14 (de-Haku) ────────────────→ after lanes settle names
+                  C15 (final packaging) ────────→ last
 ```
 
-The three contested reshapes (C5, C8, C14) each have uncontested siblings that land ahead of them, so
-no ready work ever queues behind a rename argument.
+The two remaining contested reshapes (C8, C14) each have uncontested siblings that land ahead of
+them, so no ready work ever queues behind a rename argument.

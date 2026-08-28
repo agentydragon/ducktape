@@ -35,11 +35,10 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.conversation import log
+from haku.console.conversation import conversation_event, log
 from haku.console.conversation.log import LogWriter, UnknownItemError
 from haku.console.database_schema import ConversationItem, ConversationTurn, Session, SubmittedPrompt
 from haku.console.notifications.conversation_wakes import notify_update
-from haku.console.x import session_events
 from haku.runtime.x.bridge import neutral_operations
 from haku.runtime.x.bridge.neutral_operations import (
     GENERATION,
@@ -164,7 +163,7 @@ async def _apply(
             ending.last_frame_seq = operation.provenance.last_frame_seq if operation.provenance is not None else None
             ending.ended_at = writer.now
             ending.outcome = body.outcome
-            ending.failure = body.failure if isinstance(body, session_events.TurnFailedBody) else None
+            ending.failure = body.failure if isinstance(body, conversation_event.TurnFailed) else None
             writer.authored(body, turn_id=ending.turn_id)
         case neutral_operations.PromptAdmitted():
             # Dense in-order commits put the cursor at `batch_seq - 1` here, so the frontier is
@@ -236,14 +235,14 @@ async def _answered_by(
         raise JournalViolationError(f"a turn's cause claims a prompt another turn already answered: {prompt_id=}")
 
 
-def _ended(end: neutral_operations.TurnEnd) -> session_events.TurnEndedBody:
+def _ended(end: neutral_operations.TurnEnd) -> conversation_event.TurnEnd:
     match end:
         case neutral_operations.TurnAnswered():
-            return session_events.TurnAnsweredBody()
+            return conversation_event.TurnAnswered()
         case neutral_operations.TurnAborted():
-            return session_events.TurnAbortedBody()
+            return conversation_event.TurnAborted()
         case neutral_operations.TurnFailed():
-            return session_events.TurnFailedBody(failure=end.failure)
+            return conversation_event.TurnFailed(failure=end.failure)
 
 
 async def _open_turn(db: AsyncSession, conversation_id: UUID) -> ConversationTurn | None:

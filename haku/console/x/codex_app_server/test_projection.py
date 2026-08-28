@@ -2,13 +2,13 @@ from pathlib import Path
 
 import pytest_bazel
 
-from haku.console.chat_models import ItemType, ReasoningDisclosure, ToolOutcome
+from haku.console.chat_models import ItemType, ToolOutcome
+from haku.console.conversation.conversation_event import FrameRange, ReasoningDisclosure
 from haku.console.x.codex_app_server.projection import OpenItem, ProjectionState, RecordedFrame
 from haku.console.x.codex_app_server.protocol import read_trace, server_messages
 from haku.console.x.codex_app_server.testing.fold import in_batches, whole_capture
 from haku.console.x.conversation_events import (
     CallRef,
-    FrameRange,
     ItemSegment,
     MessageCompleted,
     MessageStarted,

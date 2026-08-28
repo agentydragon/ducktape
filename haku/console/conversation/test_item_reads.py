@@ -9,8 +9,9 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 
-from haku.console.chat_models import ItemStatus, ItemType, ReasoningDisclosure, ToolOutcome, TurnOutcome
+from haku.console.chat_models import ItemStatus, ItemType, ToolOutcome
 from haku.console.conversation import item_reads
+from haku.console.conversation.conversation_event import ReasoningDisclosure, TurnFailed, TurnOutcome
 from haku.console.conversation.item_reads import ConversationPageRow
 from haku.console.conversation.reads import (
     ConsoleAuthored,
@@ -19,7 +20,6 @@ from haku.console.conversation.reads import (
     PromptEntry,
     ReasoningEntry,
     ToolCallEntry,
-    TurnFailedEnd,
 )
 from haku.console.database_schema import ConversationItem, ConversationTurn
 
@@ -170,7 +170,7 @@ def test_an_ended_turn_reports_the_runtimes_own_words() -> None:
         failure="upstream is at capacity",
     )
 
-    assert item_reads.turn_end_of(turn) == TurnFailedEnd(failure="upstream is at capacity")
+    assert item_reads.turn_end_of(turn) == TurnFailed(failure="upstream is at capacity")
 
 
 def test_a_running_turn_has_no_end() -> None:

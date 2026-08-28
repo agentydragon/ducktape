@@ -14,15 +14,15 @@ import pytest_bazel
 from more_itertools import one
 from sqlalchemy import delete, update
 
-from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, ConversationEventKind, FrameDirection, ItemType
+from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, FrameDirection, ItemType
 from haku.console.conversation import reprojection
+from haku.console.conversation.conversation_event import ConversationEventKind, TurnAborted
 from haku.console.database_schema import ConversationEventRow, ConversationItem, Session
 from haku.console.session.store import BridgeAuthentication
 from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
 from haku.console.x.claude_code.testing.wire import content_block_stop, input_json_delta, tool_use_start
 from haku.console.x.runtime import Checkpoint
 from haku.console.x.runtime_catalog import projection_registry
-from haku.console.x.session_events import TurnAbortedBody
 from haku.runtime.x.bridge.protocol import HarnessFrame
 
 RUNTIMES = projection_registry()
@@ -120,7 +120,7 @@ async def test_an_aborted_turn_still_agrees_with_its_frames(session_store, migra
     session_id, turn_id = await _turn_through_the_write_path(
         session_store, operator_id, [_assistant({"type": "text", "text": "one file"})]
     )
-    await session_store.end_turn(turn_id, TurnAbortedBody())
+    await session_store.end_turn(turn_id, TurnAborted())
 
     async with migrated_sessions() as db:
         report = await reprojection.check_session(db, session_id, runtimes=RUNTIMES)
@@ -142,7 +142,7 @@ async def test_a_row_whose_body_was_edited_is_reported_against_its_frame(
             update(ConversationEventRow)
             .where(
                 ConversationEventRow.session_id == session_id,
-                ConversationEventRow.kind == ConversationEventKind.ITEM_STARTED,
+                ConversationEventRow.kind == ConversationEventKind.ITEM_OPENED,
                 ConversationEventRow.body["item_type"].astext == "tool_call",
             )
             .values(body={"item_type": "tool_call", "call_id": "toolu_1", "tool_name": "Write", "arguments": {}})
@@ -176,7 +176,7 @@ async def test_a_row_that_is_gone_is_a_count_mismatch_rather_than_a_silent_pass(
         await db.execute(
             delete(ConversationEventRow).where(
                 ConversationEventRow.session_id == session_id,
-                ConversationEventRow.kind == ConversationEventKind.ITEM_STARTED,
+                ConversationEventRow.kind == ConversationEventKind.ITEM_OPENED,
                 ConversationEventRow.body["item_type"].astext == "tool_call",
             )
         )
@@ -188,11 +188,11 @@ async def test_a_row_that_is_gone_is_a_count_mismatch_rather_than_a_silent_pass(
     finding = one(outcome.findings)
     assert isinstance(finding, reprojection.RowCountMismatch)
     assert finding.projected == (
-        ConversationEventKind.ITEM_STARTED,
-        ConversationEventKind.ITEM_STARTED,
+        ConversationEventKind.ITEM_OPENED,
+        ConversationEventKind.ITEM_OPENED,
         ConversationEventKind.ITEM_SEGMENT,
     )
-    assert finding.stored == (ConversationEventKind.ITEM_STARTED, ConversationEventKind.ITEM_SEGMENT)
+    assert finding.stored == (ConversationEventKind.ITEM_OPENED, ConversationEventKind.ITEM_SEGMENT)
 
 
 async def test_a_turn_with_frames_and_no_rows_is_drift(session_store, migrated_sessions, operator_id) -> None:
@@ -211,7 +211,7 @@ async def test_a_turn_with_frames_and_no_rows_is_drift(session_store, migrated_s
     finding = one(outcome.findings)
     assert isinstance(finding, reprojection.RowCountMismatch)
     assert (finding.projected, finding.stored) == (
-        (ConversationEventKind.ITEM_STARTED, ConversationEventKind.ITEM_SEGMENT),
+        (ConversationEventKind.ITEM_OPENED, ConversationEventKind.ITEM_SEGMENT),
         (),
     )
 
