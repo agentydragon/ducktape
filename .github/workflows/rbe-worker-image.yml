@@ -1,0 +1,153 @@
+# Build and pin the RBE worker image -- the execution platform for every remote
+# action.
+#
+# Deviation from container-images.yml, which builds every other image: this one
+# is its own workflow purely so its `paths` filter can be narrow. The worker's
+# digest is an exec property of //:rbe_linux_x64, so it is inside every action's
+# cache key and inside the key for BuildBuddy's warm Firecracker snapshot pool.
+# Rebuilding it orphans the remote action cache and dumps every warm snapshot:
+# measured over 25-27 Aug 2026, a PR CI run starting within an hour of a repin
+# executed ~12x the actions of an identical run later in the epoch, and the 11%
+# of runs that landed in that window pulled 83% of all CAS bytes. The image was
+# repinned 8.2 times a day, and not one of those 22 rebuilds changed anything a
+# Bazel action uses -- they were all `nix/artifact-pins.json` bumps reaching the
+# devtools layer, which now lives in devinfra/bbr_runner/Dockerfile instead.
+#
+# So: add a path here only for something an action executes *inside* and Bazel
+# cannot supply from the repo it is building. Developer and agent tooling goes
+# to the runner image.
+name: RBE Worker Image
+
+on:
+  push:
+    branches: [main, devel]
+    paths:
+      - "devinfra/rbe_image/**"
+      - ".github/workflows/rbe-worker-image.yml"
+  pull_request:
+    paths:
+      - "devinfra/rbe_image/**"
+      - ".github/workflows/rbe-worker-image.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: rbe-worker-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  RBE_IMAGE: ghcr.io/${{ github.repository_owner }}/rbe-worker
+
+jobs:
+  build-only:
+    name: RBE Worker (build only)
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v3
+      # With no output or tags, Buildx evaluates the complete Dockerfile and
+      # leaves the result only in its ephemeral build cache.
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: devinfra/rbe_image/Dockerfile
+          push: false
+          cache-from: type=registry,ref=${{ env.RBE_IMAGE }}:buildcache
+
+  build:
+    name: RBE Worker
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      pin_tag: ${{ steps.build.outputs.pin_tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
+      - uses: ./.github/actions/ghcr-build-push
+        id: build
+        with:
+          image: ${{ env.RBE_IMAGE }}
+          context: .
+          file: devinfra/rbe_image/Dockerfile
+          cache_from: type=registry,ref=${{ env.RBE_IMAGE }}:buildcache
+          cache_to: type=registry,ref=${{ env.RBE_IMAGE }}:buildcache,mode=max
+
+  # Pushes via the ducktape-automation GitHub App so the commit bypasses the
+  # main-protection ruleset -- see container-images.yml's pin-digests for why.
+  #
+  # This commit deliberately carries no `[skip ci]`, unlike every other pin
+  # commit. A new execution platform invalidates the whole action cache, so it
+  # earns a devel sweep of its own rather than having the next unlucky PR
+  # discover it; and the push is what cascades into container-images.yml, which
+  # rebuilds the runner on the new base. Nothing else in image_pins.json may
+  # drop `[skip ci]`, or the two workflows will pin each other in a loop.
+  pin:
+    name: Pin Digest
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: ./.github/actions/mint-automation-token
+        id: app
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          package: prettier
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Pin rbe_worker
+        run: |
+          DIGEST=$(docker manifest inspect "$RBE_IMAGE:${{ needs.build.outputs.pin_tag }}" --verbose | \
+            python3 -c "import json,sys; d=json.load(sys.stdin); d=d[0] if isinstance(d,list) else d; print(d['Descriptor']['digest'])")
+          python3 devinfra/update_image_pin.py rbe_worker --digest "$DIGEST"
+
+      - name: Commit and push
+        env:
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app_slug }}
+          APP_USER_ID: ${{ steps.app.outputs.user_id }}
+        run: |
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${APP_USER_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
+
+          git add devinfra/image_pins.json
+
+          if git diff --cached --quiet; then
+            echo "rbe_worker pin already up to date"
+            exit 0
+          fi
+
+          git commit -m "chore: pin rbe_worker image digest"
+
+          BRANCH="${GITHUB_REF_NAME}"
+          if ! git pull --rebase origin "$BRANCH"; then
+            echo "::error::Rebase failed"
+            git status
+            exit 1
+          fi
+
+          set +x
+          for key in $(git config --local --name-only --get-regexp '^includeif\.gitdir:.*\.path$' || true); do
+            git config --local --unset-all "$key"
+          done
+          git push "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${BRANCH}"

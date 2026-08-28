@@ -3,6 +3,10 @@
     "image": "ghcr.io/agentydragon/rbe-worker",
     "digest": "sha256:1ff0d0a925ed19264bc94a3ca958321764b411052c0b62ce9ad662f030158ace"
   },
+  "bbr_runner": {
+    "image": "ghcr.io/agentydragon/rbe-worker",
+    "digest": "sha256:1ff0d0a925ed19264bc94a3ca958321764b411052c0b62ce9ad662f030158ace"
+  },
   "freecad_test": {
     "image": "ghcr.io/agentydragon/freecad-test",
     "digest": "sha256:8ea8126de727ae546fed6a0a5aa567940b5cf2e129bf55e76932f031e61abdf0",

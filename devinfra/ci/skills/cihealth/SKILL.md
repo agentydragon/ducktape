@@ -97,9 +97,12 @@ External pins (e.g. `bb` from buildbuddy-io) have semantic version tags
 instead — just report the version.
 
 Also read `devinfra/image_pins.json` for Dockerfile-based image digests
-(rbe-worker, freecad-test). These are updated by `container-images.yml` only
-when the relevant Dockerfiles change, so staleness is expected unless those
-paths were recently touched.
+(bbr-runner, freecad-test from `container-images.yml`; rbe-worker from
+`rbe-worker-image.yml`). These move only when the relevant Dockerfiles change,
+so staleness is expected unless those paths were recently touched — and for
+`rbe_worker` staleness is the goal, not a fault: its digest is in every Bazel
+action's cache key, so report a _frequently_ moving rbe_worker pin, never a
+still one.
 
 ### 2c. Scheduled Workflow Health
 

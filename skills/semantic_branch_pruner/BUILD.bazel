@@ -1,0 +1,10 @@
+load("//skills:defs.bzl", "skill_package")
+
+skill_package(
+    name = "semantic_branch_pruner",
+    srcs = [
+        "SKILL.md",
+        "agents/openai.yaml",
+        "references/cockpit_contract.md",
+    ],
+)

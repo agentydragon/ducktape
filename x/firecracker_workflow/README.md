@@ -91,7 +91,7 @@ bb ssh mybox hostname          # single command
 `bbr` wraps `bb remote` and is the recommended way to run Bazel from Claude Code web. It:
 
 - Auto-syncs local git diffs as patches (no `git push` needed for uncommitted changes)
-- Uses the custom `rbe-worker` Ubuntu 22.04 image (configured in `devinfra/bbr.json`)
+- Uses the custom `bbr-runner` Ubuntu image (configured in `devinfra/bbr.json`)
 - Mints and prints the Bazel invocation ID (`--invocation-id-file=PATH` records it)
 - Supports **Firecracker snapshot recycling** — the running Bazel server (JVM, analysis
   cache, output base) survives across builds

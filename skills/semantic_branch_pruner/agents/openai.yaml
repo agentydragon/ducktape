@@ -1,0 +1,4 @@
+interface:
+  display_name: "Semantic Branch Pruner"
+  short_description: "Evidence-backed GitHub branch cleanup"
+  default_prompt: "Use $semantic_branch_pruner to audit remote branches and prepare a safe semantic deletion review."
