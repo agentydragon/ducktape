@@ -1,24 +1,31 @@
-"""Which agent CLI the sandbox runs, and how one process of it is assembled.
+"""The per-harness seam, and the stdio machinery a subprocess harness runs on.
 
-Almost nothing below the envelope is Claude-specific: the console sends argv, a working directory
-and an environment, and the runner pumps the process's newline-delimited JSON across console rolls.
-What is harness-specific sits at opposite ends of the wire — the provider's Console adapter chooses
-its native launch and protocol, while a backend resolves the matching binary inside the sandbox.
-Claude and Codex each name those once, so adding either remains an implementation rather than a
-branch inside the runner; see <docs/second_backend.md>.
+Each harness owns its whole run-loop behind `Harness.run(launch, session)`: it starts its binary,
+speaks its native protocol end to end — handshake and all — and emits neutral operations through
+the <session_api.py> `SessionApi` the runner hands it. The runner (<runner.py>) owns only the
+harness-invariant lifecycle around that seam; it never inspects a native payload or drives a turn.
+
+Both harnesses this bridge ships happen to speak newline-delimited JSON over subprocess stdio, so
+the launch primitives (`ProcessLaunch`, `child_environment`) and the stdio pump (`start_process`,
+`read_json_frames`, `forward_stderr`, `shutdown`, `StdinWriter`) live here for both to share. A
+harness that spoke something else would implement `run` without them; that is the point of putting
+the whole loop behind the seam rather than a fixed set of hooks the runner calls.
 """
 
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+import subprocess
+import sys
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
-from uuid import UUID
 
-from haku.runtime.x.bridge.claude_projection import Projected
-from haku.runtime.x.bridge.protocol import HarnessLaunch
+import anyio
+
+from haku.runtime.x.bridge.protocol import HarnessLaunch, decode_object, encode_object
+from haku.runtime.x.bridge.session_api import SessionApi
 
 # The exact-session credential used by the runner bridge and by the Agent at Console MCP. The
 # runner keeps the claim-owned value out of launch overlays, and the console's deploy config
@@ -32,7 +39,7 @@ class ProcessLaunch:
 
     The console's `HarnessLaunch` carries every part of this except the binary, because the
     binary is the one part the console cannot know — it is a path inside a sandbox image whose
-    tag the SandboxTemplate chose. Resolving the two into this is the backend's whole job.
+    tag the SandboxTemplate chose. Resolving the two into this is the harness's whole job.
     """
 
     executable: Path
@@ -53,48 +60,105 @@ def child_environment(launch: HarnessLaunch) -> dict[str, str]:
     }
 
 
-class HarnessDriver(Protocol):
-    """One CLI process's native-protocol companion under the neutral-operation generation.
+class Harness(Protocol):
+    """One agent CLI this bridge knows how to run, at the neutral-operation generation.
 
-    The runner owns the native protocol from the cut on (#4667): what a dispatched prompt is
-    written as, how the handshake and interrupt are said, what an inbound control request is
-    answered with, and — through `observe`/`admit` — what the stream means as neutral operations.
-    One driver per CLI process, stateful, dead with it.
+    The runner selects one by `--harness`, hands it the launch and the session toolkit, and starts
+    it once. From there the harness owns everything native: starting its binary, its handshake,
+    what a dispatched prompt and an interrupt are written as, and what its stream means as neutral
+    operations. One `run` per session, across as many console connections as that session takes;
+    it returns when its process exits, and raises to fail the session.
     """
-
-    def initialize(self) -> dict[str, Any] | None:
-        """The native frame to write before anything else, or None for a harness without one."""
-        ...
-
-    def compose_prompt(self, text: str) -> dict[str, Any]: ...
-
-    def compose_interrupt(self) -> dict[str, Any] | None: ...
-
-    def answer_control_request(self, payload: dict[str, Any]) -> dict[str, Any] | None:
-        """The reply to write back for a CLI-initiated request, or None for any other frame."""
-        ...
-
-    def observe(self, frame_seq: int, payload: dict[str, Any]) -> Projected: ...
-
-    def admit(self, prompt_id: UUID, *, after_batch_seq: int | None, frame_seq: int | None) -> Projected: ...
-
-
-class CliBackend(Protocol):
-    """One agent CLI this bridge knows how to run."""
 
     @property
     def name(self) -> str:
-        """How this CLI is named to an operator: `--harness`, and the exit-status error."""
+        """How this harness is named to an operator: `--harness`, and the exit-status error."""
 
-    def resolve(self, launch: HarnessLaunch) -> ProcessLaunch:
-        """The process to start for *launch*."""
+    async def run(self, launch: HarnessLaunch, session: SessionApi) -> None:
+        """Serve one session: start the binary, speak its protocol, emit neutral operations."""
         ...
 
-    def driver(self) -> HarnessDriver:
-        """A fresh native-protocol driver for one CLI process.
 
-        Raises `NotImplementedError` for a harness not yet ported to the neutral-operation
-        generation, which fails the runner at start with the reason in the pod log — the sandbox
-        never launches a CLI whose stream nothing can interpret.
-        """
-        ...
+class StdinWriter:
+    """Line writes into the CLI, serialized: a harness's command loop and its stream loop both
+    write native input, and interleaving two halves of two lines would hand the CLI garbage."""
+
+    def __init__(self, stdin: anyio.abc.ByteSendStream):
+        self._stdin = stdin
+        self._lock = anyio.Lock()
+
+    async def write_object(self, payload: dict[str, Any]) -> None:
+        async with self._lock:
+            await self._stdin.send((encode_object(payload) + "\n").encode())
+
+    async def aclose(self) -> None:
+        async with self._lock:
+            await self._stdin.aclose()
+
+
+async def start_process(resolved: ProcessLaunch) -> anyio.abc.Process:
+    """Start one harness binary with its resolved argv, working directory and environment."""
+    return await anyio.open_process(
+        resolved.command,
+        cwd=resolved.cwd,
+        env=resolved.environment,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
+async def read_json_frames(stdout: anyio.abc.ByteReceiveStream) -> AsyncIterator[dict[str, Any]]:
+    """Yield each newline-delimited JSON object the harness writes to stdout, until stdout ends.
+
+    Non-JSON lines (a CLI that logs plain text before its protocol starts) are skipped, as the v3
+    pump did: only a line that begins with `{` is a frame.
+    """
+    pending = b""
+
+    def parse(line: bytes) -> dict[str, Any] | None:
+        stripped = line.strip()
+        return decode_object(stripped.decode()) if stripped.startswith(b"{") else None
+
+    async for chunk in stdout:
+        pending += chunk
+        while b"\n" in pending:
+            line, pending = pending.split(b"\n", 1)
+            if (frame := parse(line)) is not None:
+                yield frame
+    if (frame := parse(pending)) is not None:
+        yield frame
+
+
+async def forward_stderr(stderr: anyio.abc.ByteReceiveStream, session: SessionApi) -> None:
+    """Forward what the CLI wrote to stderr, to this log and to the console.
+
+    stderr is the one place a failure to start is explained; without it the console sees only the
+    selected harness exiting with status 1 for a rejected credential or a bad flag. Sent as
+    `SetupOutput`, which is already "bytes the sandbox wrote".
+    """
+    async for chunk in stderr:
+        sys.stdout.buffer.write(chunk)
+        sys.stdout.buffer.flush()
+        await session.stderr_output(chunk)
+
+
+async def shutdown(process: anyio.abc.Process) -> int | None:
+    """Stop the CLI, reporting the status it chose for itself — or None if we chose for it.
+
+    A process we signalled reports the signal, so treating that as an exit status would file every
+    clean shutdown as `claude exited with status -15`.
+    """
+    # A CLI that has already exited is reaped here, so its own status is the one reported.
+    with anyio.move_on_after(1):
+        await process.wait()
+    exited_with = process.returncode
+
+    if process.returncode is None:
+        process.terminate()
+    with anyio.move_on_after(5, shield=True):
+        await process.wait()
+    if process.returncode is None:
+        process.kill()
+        await process.wait()
+    return exited_with

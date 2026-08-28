@@ -73,9 +73,9 @@ understand to stay correct arrives as a new kind, fail-closed. A cost falls due 
 
 ## The runner seam: `main` lifecycle, shared library, per-harness `run()`
 
-The seam over-abstracts on two axes at once. **Transport** — subprocess plus newline-delimited
-JSON stdio — is hardcoded in the runner's stdout pump and process launch, so a harness that speaks
-anything else has nowhere to say so. **Interaction shape** — the six `HarnessDriver` hooks
+The seam over-abstracted on two axes at once. **Transport** — subprocess plus newline-delimited
+JSON stdio — was hardcoded in the runner's stdout pump and process launch, so a harness that spoke
+anything else had nowhere to say so. **Interaction shape** — the six `HarnessDriver` hooks
 (`initialize`, `compose_prompt`, `compose_interrupt`, `answer_control_request`, `observe`,
 `admit`) — pins one call vocabulary every harness must fit, even where its native protocol brackets
 a turn or streams a result differently.
@@ -84,14 +84,16 @@ a turn or streams a result differently.
 reconnect/roll, selecting the harness implementation, wiring it, starting it, and the shared
 teardown. What does not vary by harness is a library — the <../communicator.py> `Communicator` (the
 console side: WebSocket client, `Hello`/launch and `RunnerHello`/`ConsoleResume` handshakes,
-tenacity reconnect, roll replay), the <../session_api.py> `SessionPump` (one sequence, retention,
+tenacity reconnect, roll replay), the <../session_api.py> `SessionApi` (one sequence, retention,
 the `OperationJournal` fold, the abort rewrite, admission idempotency), and the neutral-operation
 vocabulary (<../neutral_operations.py>). Each harness owns its run-loop behind a narrow
-`async def run(self, launch, session) -> None`: it starts its binary, speaks its native protocol,
-and emits neutral operations through the `SessionPump` the lifecycle handed it. Both axes move
-inside that seam, where a harness that is neither subprocess-stdio nor six-hooks-shaped is
-expressible instead of excluded. The `Communicator` and `SessionPump` are extracted first, with
-Claude driven through them unchanged; the per-harness `run()` and the second harness follow.
+`async def run(self, launch, session) -> None` (<../backend.py> `Harness`): it starts its binary,
+speaks its native protocol, projects it, and emits neutral operations through the `SessionApi` the
+lifecycle handed it. The shared subprocess-stdio pump lives beside the seam in <../backend.py>, used
+by both harnesses but reached through `run()`, so a harness that is neither subprocess-stdio nor
+six-hooks-shaped is expressible instead of excluded. The `Communicator` and `SessionApi` were
+extracted first (#5056), Claude driven through them unchanged; the per-harness `run()`, Claude's
+port onto it, and the Codex harness landed on top (#4667 stage 5).
 
 ### Rejected: extend the six `HarnessDriver` hooks
 

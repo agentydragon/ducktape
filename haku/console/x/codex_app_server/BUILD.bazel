@@ -126,21 +126,6 @@ py_test(
 )
 
 py_test(
-    name = "test_bridge",
-    srcs = ["test_bridge.py"],
-    deps = [
-        "//:conftest",
-        "//haku/console:conftest",
-        "//haku/console/x:conftest",
-        "//haku/runtime/x/bridge:codex_options",
-        "//haku/runtime/x/bridge:runner",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_runtime",
     srcs = ["test_runtime.py"],
     deps = [

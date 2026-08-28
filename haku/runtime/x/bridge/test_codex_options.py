@@ -6,13 +6,13 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from haku.runtime.x.bridge.backend_registry import runner_backends
+from haku.runtime.x.bridge.backend_registry import runner_harnesses
+from haku.runtime.x.bridge.codex_harness import codex_harness
 from haku.runtime.x.bridge.codex_options import (
     CodexAppServerSession,
     CodexModelProvider,
     HttpMcpServer,
     build_codex_launch,
-    codex_app_server_backend,
 )
 
 
@@ -85,7 +85,7 @@ def test_the_backend_preserves_the_claim_owned_session_bearer(monkeypatch: pytes
         )
     )
 
-    resolved = codex_app_server_backend(Path("/usr/local/bin/codex")).resolve(launch)
+    resolved = codex_harness(Path("/usr/local/bin/codex")).resolve(launch)
 
     assert resolved.command == [
         "/usr/local/bin/codex",
@@ -102,14 +102,14 @@ def test_the_backend_preserves_the_claim_owned_session_bearer(monkeypatch: pytes
 
 def test_the_backend_only_resolves_the_binary_without_mcp() -> None:
     launch = build_codex_launch(CodexAppServerSession())
-    resolved = codex_app_server_backend(Path("/usr/local/bin/codex")).resolve(launch)
+    resolved = codex_harness(Path("/usr/local/bin/codex")).resolve(launch)
 
     assert resolved.command == ["/usr/local/bin/codex", "app-server", "--listen", "stdio://"]
     assert resolved.cwd == "."
 
 
 def test_the_shared_runner_links_the_codex_backend_without_a_provider_branch() -> None:
-    assert "codex-app-server" in runner_backends()
+    assert "codex-app-server" in runner_harnesses()
 
 
 def test_structured_overrides_round_trip_toml_edge_case_values() -> None:

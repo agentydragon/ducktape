@@ -1,42 +1,54 @@
-# bridge — Haku's harness-opaque process bridge
+# bridge — Haku's harness runner
 
-The runner is deliberately thin. It launches the immutable harness selected by `--harness`, copies
-native newline-delimited JSON between the harness stdio and the Console WebSocket, and retains an
-ordered replay window. Claude and Codex share this runner OCI; harness selection remains explicit
-and provider-specific behavior stays behind the backend seam.
+The runner launches the immutable harness selected by `--harness` and serves it to whichever Console
+is up, across as many reconnections as a session takes. The harness speaks its native protocol and
+projects it to the backend-neutral conversation operations of `neutral_operations.py`; the runner
+owns only the harness-invariant lifecycle — dial, the two handshakes, the roll replay — and never
+interprets a native payload or drives a turn. Claude and Codex share this runner OCI; harness
+selection is explicit and each harness's whole run-loop lives behind the `run()` seam.
 
-| file                  | role                                              |
-| --------------------- | ------------------------------------------------- |
-| `protocol.py`         | incompatible v3 Pydantic envelope and negotiation |
-| `transport.py`        | provider-neutral Console-side WebSocket transport |
-| `client.py`           | provider-neutral client/sink value types          |
-| `backend.py`          | process-launch seam                               |
-| `backend_registry.py` | harnesses linked into the shared runner binary    |
-| `claude_options.py`   | Claude launch material and executable             |
-| `codex_options.py`    | Codex app-server launch material and executable   |
-| `runner.py`           | sandbox process bridge                            |
+| file                                        | role                                                        |
+| ------------------------------------------- | ----------------------------------------------------------- |
+| `protocol.py`                               | incompatible v4 Pydantic envelope and negotiation           |
+| `neutral_operations.py`                     | the backend-neutral conversation-operation vocabulary       |
+| `operation_journal.py`                      | the runner's ACK-gated batch journal                        |
+| `session_api.py`                            | one session's numbering, retention, journal, and admission  |
+| `communicator.py`                           | the Console-facing transport: dial, handshakes, roll replay |
+| `backend.py`                                | the `Harness` seam and the shared subprocess-stdio pump     |
+| `backend_registry.py`                       | harnesses linked into the shared runner binary              |
+| `projection.py`                             | the neutral projection yield and shared fold helpers        |
+| `claude_harness.py` / `claude_options.py`   | Claude's run-loop and its launch material                   |
+| `claude_projection.py`                      | Claude native frames → neutral operations                   |
+| `codex_harness.py` / `codex_options.py`     | Codex's run-loop and its launch material                    |
+| `codex_projection.py` / `codex_protocol.py` | Codex notifications → neutral operations, and JSONL parsing |
+| `runner.py`                                 | the harness-invariant lifecycle and process entry           |
 
-Provider protocol clients live behind their Console adapters in `haku/console/x/claude_code/` and
-`haku/console/x/codex_app_server/`.
+Each harness interprets its own native frames runner-side. The Console keeps its provider adapters
+(`haku/console/x/claude_code/`, `haku/console/x/codex_app_server/`) for launch selection and the
+durable frame record; the runner-side projection is what the neutral generation commits. `client.py`
+and `transport.py` are the Console-side client value types and WebSocket transport of the v3 path,
+retained while that cutover completes.
 
-## v3 framing
+## v4 framing
 
-Every bridge frame is discriminated by the outer `kind`. Native harness JSON is opaque:
+Every bridge frame is discriminated by the outer `kind`. A native harness frame stays opaque on the
+wire, and the conversation itself crosses as the acknowledged neutral-operation journal:
 
-- `hello` — runner → Console negotiation
-- `start` — Console → runner launch material and resume cursor
-- `harness_frame` — the exact native harness JSON object in `frame`, either direction
-- `end_input` — Console → runner stdin close
+- `hello` / `start` — runner → Console version negotiation, then the launch and resume cursor
+- `harness_frame` — the exact native harness JSON object in `frame`, either direction — the durable
+  record beside the journal, no longer a projection input
+- `journal` — the neutral-operation journal, both directions: the runner's `RunnerHello` then
+  `OperationBatch`es, the Console's `ConsoleResume` then `BatchAck`s
+- `prompt` / `interrupt` — Console → runner: dispatch a pending prompt by durable id, or stop the turn
 - `setup_output` — runner bootstrap/stderr bytes
 
 The native frame's Claude `type`, Codex `method`, and other fields are never copied into the outer
-kind or `session_frames.kind`. For example, the wire carries either
-`{"kind":"harness_frame","seq":...,"frame":{"type":"assistant",...}}` or
-`{"kind":"harness_frame","seq":...,"frame":{"method":"turn/completed",...}}`.
-The database stores that exact native object in `session_frames.payload` for inspection/export.
+kind or `session_frames.kind`. The database stores that exact native object in `session_frames.payload`
+for inspection/export.
 
-Protocol v3 is intentionally incompatible. A runner that only advertises v2 has no common version,
-so the Console refuses it and the runner exits/cleans up rather than guessing a framing contract.
+Protocol v4 is intentionally incompatible with v3. A v3 peer shares no common version, so the Console
+refuses it and the runner exits/cleans up rather than guessing a framing contract; the `journal`
+handshake doubles that gate on the migration-set generation.
 
 ## Position-based replay
 

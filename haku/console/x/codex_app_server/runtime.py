@@ -101,6 +101,11 @@ class CodexRuntimeAdapter:
                     environment=launch.environment,
                     mcp_servers=native_servers,
                     model_provider=self.model_provider,
+                    # The runner owns `thread/start` at the neutral generation, so the thread params
+                    # the `CodexThread` below still carries for the v3 client also ride the launch.
+                    model=self.model,
+                    reasoning_effort=self.reasoning_effort,
+                    developer_instructions=launch.appended_system_prompt,
                 ),
                 resume_from=launch.resume_from,
             ),

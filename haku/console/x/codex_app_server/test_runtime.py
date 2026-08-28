@@ -81,7 +81,14 @@ def test_codex_builds_process_and_thread_configuration_from_the_same_neutral_lau
     )
     assert factory.launch.cwd == "/workspace"
     assert factory.launch.resume_from == 29
-    assert factory.launch.environment == {"CODEX_HOME": "/codex-home"}
+    # The thread params the runner now owns `thread/start` for ride the launch environment beside
+    # the console's own, and match the v3 `CodexThread` below.
+    assert factory.launch.environment == {
+        "CODEX_HOME": "/codex-home",
+        "HAKU_CODEX_MODEL": "codex-gpt-5.6-sol",
+        "HAKU_CODEX_REASONING_EFFORT": "low",
+        "HAKU_CODEX_DEVELOPER_INSTRUCTIONS": "you are Haku",
+    }
     assert factory.thread == CodexThread(
         cwd=Path("/workspace"),
         model="codex-gpt-5.6-sol",

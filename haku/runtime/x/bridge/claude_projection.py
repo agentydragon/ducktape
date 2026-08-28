@@ -44,7 +44,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -55,7 +55,6 @@ from haku.runtime.x.bridge.neutral_operations import (
     ItemSegment,
     MessageCompletion,
     MessageOpen,
-    Operation,
     PromptAdmitted,
     PromptsCause,
     ReasoningCompletion,
@@ -70,6 +69,7 @@ from haku.runtime.x.bridge.neutral_operations import (
     TurnOpened,
     WakeCause,
 )
+from haku.runtime.x.bridge.projection import Projected, Yield, at, undelivered
 
 # Frame classes that say nothing about the conversation, listed rather than discovered so that a
 # class the CLI adds lands in the default branch instead of here: `command_lifecycle` is not a
@@ -80,18 +80,6 @@ _IGNORED_KINDS = frozenset({"command_lifecycle", "control_request", "control_res
 # The bulk of the log by volume, and none of it conversation: `thinking_tokens` is budget
 # accounting, `status` a heartbeat, `init` session identity.
 _IGNORED_SYSTEM_SUBTYPES = frozenset({"thinking_tokens", "status", "init"})
-
-
-@dataclass(frozen=True, slots=True)
-class Projected:
-    """One observation's neutral yield: operations in order, and what could not be said.
-
-    `unprojected` counts by frame class, in this projector's own vocabulary; deliberately ignored
-    classes are not in it. The journal accumulates both into batches.
-    """
-
-    operations: tuple[Operation, ...]
-    unprojected: Mapping[str, int]
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,24 +108,6 @@ class _OpenToolComposition:
     last_frame_seq: int
     initial_arguments: dict[str, Any]
     partial_json: str
-
-
-@dataclass(slots=True)
-class _Yield:
-    """One `observe`/`admit` call's accumulating output."""
-
-    operations: list[Operation] = field(default_factory=list)
-    unprojected: dict[str, int] = field(default_factory=dict)
-
-    def miss(self, key: str) -> None:
-        self.unprojected[key] = self.unprojected.get(key, 0) + 1
-
-    def projected(self) -> Projected:
-        return Projected(operations=tuple(self.operations), unprojected=self.unprojected)
-
-
-def _at(frame_seq: int) -> FrameRange:
-    return FrameRange(first_frame_seq=frame_seq, last_frame_seq=frame_seq)
 
 
 def _frame_kind(payload: Mapping[str, Any]) -> str:
@@ -177,20 +147,6 @@ def _text_delta(event: Mapping[str, Any]) -> str:
         return ""
     text = delta.get("text")
     return text if isinstance(text, str) else ""
-
-
-def undelivered(text: str, delivered: str) -> str:
-    """The part of a completed block nobody has been shown yet.
-
-    A block's deltas deliver its prose as it is written and the completed block repeats all of it,
-    so emitting the block whole would say the answer twice. The overlap is subtracted rather than
-    a prefix length assumed: the full watermark mid-stream, nothing where a block streamed no
-    deltas, and no double print where the two texts disagree in a way a prefix test would miss.
-    """
-    overlap = min(len(text), len(delivered))
-    while overlap and not delivered.endswith(text[:overlap]):
-        overlap -= 1
-    return text[overlap:]
 
 
 def _result_content(content: Any) -> str:
@@ -260,8 +216,8 @@ class ClaudeProjector:
         the CLI folds a queued prompt into the active exchange at a tool boundary, and a second
         bracket would claim an exchange that is not happening.
         """
-        provenance = _at(frame_seq) if frame_seq is not None else None
-        result = _Yield()
+        provenance = at(frame_seq) if frame_seq is not None else None
+        result = Yield()
         result.operations.append(
             PromptAdmitted(prompt_id=prompt_id, after_batch_seq=after_batch_seq, provenance=provenance)
         )
@@ -276,13 +232,13 @@ class ClaudeProjector:
 
     def observe(self, frame_seq: int, payload: Mapping[str, Any]) -> Projected:
         """Fold one CLI stdout frame, numbered *frame_seq* by the runner."""
-        result = _Yield()
+        result = Yield()
         kind = _frame_kind(payload)
         if self._open_turn is None and _begins_exchange(kind, payload):
             turn_id = self._mint_id()
             self._open_turn = turn_id
             self._completed_message_in_turn = False
-            result.operations.append(TurnOpened(turn_id=turn_id, cause=WakeCause(), provenance=_at(frame_seq)))
+            result.operations.append(TurnOpened(turn_id=turn_id, cause=WakeCause(), provenance=at(frame_seq)))
         if kind == "stream_event":
             self._stream_event(result, frame_seq, payload)
         elif kind in _IGNORED_KINDS:
@@ -301,7 +257,7 @@ class ClaudeProjector:
             result.miss(kind)
         return result.projected()
 
-    def _stream_event(self, result: _Yield, frame_seq: int, payload: Mapping[str, Any]) -> None:
+    def _stream_event(self, result: Yield, frame_seq: int, payload: Mapping[str, Any]) -> None:
         """One increment of prose or tool arguments still being written.
 
         Claude Code 2.1.220 can execute a tool and return its result before emitting the completed
@@ -360,7 +316,7 @@ class ClaudeProjector:
                 if (composing := self._composition) is not None and event.get("index") == composing.block_index:
                     self._finish_composition(result, last_frame_seq=frame_seq)
 
-    def _stream_text(self, result: _Yield, frame_seq: int, event: Mapping[str, Any]) -> None:
+    def _stream_text(self, result: Yield, frame_seq: int, event: Mapping[str, Any]) -> None:
         """One increment of an answer still being written.
 
         **It attaches to the open message rather than keying itself.** A delta carries no
@@ -381,13 +337,13 @@ class ClaudeProjector:
             )
             result.operations.append(
                 ItemOpened(
-                    item_id=message.item_id, turn_id=self._open_turn, item=MessageOpen(), provenance=_at(frame_seq)
+                    item_id=message.item_id, turn_id=self._open_turn, item=MessageOpen(), provenance=at(frame_seq)
                 )
             )
         self._open_message = replace(message, last_prose_frame_seq=frame_seq, delivered=message.delivered + text)
-        result.operations.append(ItemSegment(item_id=message.item_id, text=text, provenance=_at(frame_seq)))
+        result.operations.append(ItemSegment(item_id=message.item_id, text=text, provenance=at(frame_seq)))
 
-    def _finish_composition(self, result: _Yield, *, last_frame_seq: int) -> None:
+    def _finish_composition(self, result: Yield, *, last_frame_seq: int) -> None:
         """Open the complete call being composed, or count a malformed composition."""
         composing = self._composition
         if composing is None:
@@ -412,7 +368,7 @@ class ClaudeProjector:
         )
 
     def _declare_call(
-        self, result: _Yield, *, call_id: str, tool_name: str, arguments: dict[str, Any], provenance: FrameRange
+        self, result: Yield, *, call_id: str, tool_name: str, arguments: dict[str, Any], provenance: FrameRange
     ) -> None:
         """Open one call once, whichever of the stream or the completed block declared it first."""
         if call_id in self._open_calls or call_id in self._settled_call_ids:
@@ -429,8 +385,8 @@ class ClaudeProjector:
             )
         )
 
-    def _assistant(self, result: _Yield, frame_seq: int, payload: Mapping[str, Any]) -> None:
-        where = _at(frame_seq)
+    def _assistant(self, result: Yield, frame_seq: int, payload: Mapping[str, Any]) -> None:
+        where = at(frame_seq)
         message = payload.get("message")
         backend_item_id = str(agent_id) if isinstance(message, dict) and (agent_id := message.get("id")) else None
         # **A different `message.id` ends the message before it, whatever this frame carries.** The
@@ -500,7 +456,7 @@ class ClaudeProjector:
                 case block_type:
                     result.miss(f"assistant/{block_type}")
 
-    def _message_for(self, result: _Yield, frame_seq: int, backend_item_id: str | None) -> _OpenMessage:
+    def _message_for(self, result: Yield, frame_seq: int, backend_item_id: str | None) -> _OpenMessage:
         """The message this frame continues, or a new one.
 
         The run is defined by `message.id` and closed by a different one — not by the next
@@ -536,12 +492,12 @@ class ClaudeProjector:
                 turn_id=self._open_turn,
                 item=MessageOpen(),
                 backend_item_id=backend_item_id,
-                provenance=_at(frame_seq),
+                provenance=at(frame_seq),
             )
         )
         return started
 
-    def _close_message(self, result: _Yield) -> None:
+    def _close_message(self, result: Yield) -> None:
         """End the open message, if there is one. Called where wire semantics say a message ends —
         a different `message.id`, or a `result` — and nowhere else: running out of frames is not
         one of those, and nothing may declare the stream over."""
@@ -561,7 +517,7 @@ class ClaudeProjector:
             )
         )
 
-    def _user(self, result: _Yield, frame_seq: int, payload: Mapping[str, Any]) -> None:
+    def _user(self, result: Yield, frame_seq: int, payload: Mapping[str, Any]) -> None:
         """A tool result coming back, or an injected command the CLI chose to echo.
 
         The content type gives the direction: text content is the harness speaking (already
@@ -577,7 +533,7 @@ class ClaudeProjector:
             return
         # Top-level and undocumented, and the channel the tool's real output arrives on.
         structured = payload.get("tool_use_result")
-        where = _at(frame_seq)
+        where = at(frame_seq)
         for block in content:
             match block.get("type") if isinstance(block, dict) else None:
                 case "tool_result" if isinstance(call_id := block.get("tool_use_id"), str):
@@ -607,7 +563,7 @@ class ClaudeProjector:
                 case block_type:
                     result.miss(f"user/{block_type}")
 
-    def _result(self, result: _Yield, frame_seq: int, payload: Mapping[str, Any]) -> None:
+    def _result(self, result: Yield, frame_seq: int, payload: Mapping[str, Any]) -> None:
         """The frame that ends a turn: close the open message, then the bracket.
 
         The outcome comes from `subtype` alone — `is_error` is false on every production result,
@@ -638,11 +594,11 @@ class ClaudeProjector:
             # nothing, and a turn that already completed a message said it all — the terminal
             # `result` repeats it.
             item_id = self._mint_id()
-            where = _at(frame_seq)
+            where = at(frame_seq)
             result.operations.append(ItemOpened(item_id=item_id, turn_id=turn_id, item=MessageOpen(), provenance=where))
             result.operations.append(ItemSegment(item_id=item_id, text=final_text, provenance=where))
             result.operations.append(ItemCompleted(item_id=item_id, completion=MessageCompletion(), provenance=where))
         stop_reason = payload.get("stop_reason")
         stated = stop_reason if isinstance(stop_reason, str) and stop_reason else "unknown error"
         end = TurnAnswered() if subtype == "success" else TurnFailed(failure=f"{subtype}: {stated}")
-        result.operations.append(TurnEnded(turn_id=turn_id, end=end, provenance=_at(frame_seq)))
+        result.operations.append(TurnEnded(turn_id=turn_id, end=end, provenance=at(frame_seq)))

@@ -1,25 +1,21 @@
-"""Claude Code as a bridge backend: the launch the console asks for, and the binary that answers.
+"""Claude Code launch material: the argv, cwd and environment the console asks the runner to run.
 
-Both halves of what `backend.CliBackend` calls a backend, in one module because they have to agree:
-the flags below only mean anything to the executable `ClaudeBackend` starts. Everything generic
-about running *an* agent CLI is <backend.py>.
+The harness that starts and drives this process is <claude_harness.py> `ClaudeHarness`; this module
+owns only what configures it. They live apart but agree: the flags below only mean anything to the
+executable the harness starts.
 
-`build_claude_launch` is the one place a session's argv is decided, and `test_claude_options.py` pins it
-exactly. The flag spellings and their order match what the Agent SDK emitted for these options at
+`build_claude_launch` is the one place a session's argv is decided, and `test_claude_options.py` pins
+it exactly. The flag spellings and their order match what the Agent SDK emitted for these options at
 0.2.128. The CLI's own protocol reference is <../../../cli_protocol/README.md>.
 """
 
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import ClassVar
 
-from haku.runtime.x.bridge.backend import ProcessLaunch, child_environment
-from haku.runtime.x.bridge.claude_driver import ClaudeDriver
 from haku.runtime.x.bridge.protocol import FINE_GRAINED_TOOL_STREAMING_ENV, HarnessLaunch
 
 # What the CLI reports itself as. A label: the CLI does not switch behaviour on it.
@@ -90,30 +86,4 @@ def build_claude_launch(session: ClaudeSession, *, resume_from: int | None = Non
         cwd=str(session.cwd) if session.cwd is not None else ".",
         environment={"CLAUDE_CODE_ENTRYPOINT": ENTRYPOINT, FINE_GRAINED_TOOL_STREAMING_ENV: "1", **session.environment},
         resume_from=resume_from,
-    )
-
-
-@dataclass(frozen=True, slots=True)
-class ClaudeBackend:
-    """Claude Code, as the sandbox runner starts it and reads it back."""
-
-    name: ClassVar[str] = "claude"
-    executable: Path
-
-    def resolve(self, launch: HarnessLaunch) -> ProcessLaunch:
-        return ProcessLaunch(
-            executable=self.executable,
-            arguments=launch.arguments,
-            cwd=launch.cwd,
-            environment=child_environment(launch),
-        )
-
-    def driver(self) -> ClaudeDriver:
-        return ClaudeDriver()
-
-
-def claude_backend(executable: Path | None = None) -> ClaudeBackend:
-    """Claude Code at the path the sandbox image chose, or at *executable* when one is given."""
-    return ClaudeBackend(
-        executable=executable if executable is not None else Path(os.environ.get(EXECUTABLE_VARIABLE, "claude"))
     )

@@ -12,13 +12,8 @@ from pathlib import Path
 
 import pytest_bazel
 
-from haku.runtime.x.bridge.claude_options import (
-    ENTRYPOINT,
-    ClaudeSession,
-    HttpMcpServer,
-    build_claude_launch,
-    claude_backend,
-)
+from haku.runtime.x.bridge.claude_harness import claude_harness
+from haku.runtime.x.bridge.claude_options import ENTRYPOINT, ClaudeSession, HttpMcpServer, build_claude_launch
 from haku.runtime.x.bridge.protocol import FINE_GRAINED_TOOL_STREAMING_ENV
 
 CONSOLE_SESSION = ClaudeSession(
@@ -103,11 +98,11 @@ def test_no_mcp_config_is_sent_when_there_are_no_servers() -> None:
     assert "--mcp-config" not in build_claude_launch(ClaudeSession()).arguments
 
 
-def test_backend_does_not_classify_native_replay_frames() -> None:
+def test_harness_does_not_classify_native_replay_frames() -> None:
     """Replay retention is position-based and never asks Claude to classify native payloads."""
-    backend = claude_backend(Path("/usr/local/bin/claude"))
+    harness = claude_harness(Path("/usr/local/bin/claude"))
 
-    assert not hasattr(backend, "replayable")
+    assert not hasattr(harness, "replayable")
 
 
 if __name__ == "__main__":

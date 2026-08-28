@@ -5,7 +5,7 @@ speaks — the versions/launch negotiation (`Hello` then `HarnessLaunch`) and th
 journal handshake (`RunnerHello` then `ConsoleResume`) — the tenacity reconnect that waits out a
 rolling console, and the roll replay that hands a re-adopting console the frames and journal
 batches it is missing. The run-loop drives it connection by connection and owns the CLI process
-those connections serve; what it pumps through each connection is the <session_api.py> `SessionPump`.
+those connections serve; what it pumps through each connection is the <session_api.py> `SessionApi`.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from haku.runtime.x.bridge.protocol import (
     RunnerJournal,
     TextWebSocket,
 )
-from haku.runtime.x.bridge.session_api import SessionPump
+from haku.runtime.x.bridge.session_api import SessionApi
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +136,7 @@ class Communicator:
         )(dial_once)
         return ClientWebSocketAdapter(connection)
 
-    async def handshake(self, websocket: TextWebSocket, pump: SessionPump) -> HarnessLaunch:
+    async def handshake(self, websocket: TextWebSocket, session: SessionApi) -> HarnessLaunch:
         """Both handshakes on one connection, then the roll replay; returns the launch.
 
         A later connection brings a freshly built `start` frame whose process fields the caller
@@ -147,13 +147,13 @@ class Communicator:
         launch = await _receive_launch(websocket)
         # Before the bootstrap, not with the replay: narration is numbered too, and a console that
         # already holds frames must not be sent one below its cursor.
-        pump.seed(launch.resume_from)
+        session.seed(launch.resume_from)
         resume = await _handshake_journal(websocket)
         # Replays go before live traffic on this socket. Duplicates with what the buffer still
         # holds are expected and dropped by the console — frames by runner position, batches by
         # idempotent commit.
-        for text in pump.missed(launch.resume_from):
+        for text in session.missed(launch.resume_from):
             await websocket.send_text(text)
-        for text in pump.resumed(resume):
+        for text in session.resumed(resume):
             await websocket.send_text(text)
         return launch
