@@ -9,9 +9,9 @@ import pytest_bazel
 
 from haku.console.database_schema import McpOperatorOAuthAssociation, OperatorAuthentikToken, ProviderConnection
 from haku.console.mcp_config import McpServerEntry, NoCredential, RemoteMcpBackend
-from haku.console.oauth_association_maintenance import OAuthAssociationMaintenance
-from haku.console.oauth_token_state import new_oauth_token_state
-from haku.console.provider_connection_registry import ProviderConnectionKind
+from haku.console.oauth.association_maintenance import AssociationMaintenance
+from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
+from haku.console.oauth.token_state import new_token_state
 
 
 async def test_refreshes_every_expiring_association_and_isolates_failures(
@@ -30,7 +30,7 @@ async def test_refreshes_every_expiring_association_and_isolates_failures(
                     created_at=now,
                     client_id="client",
                     token_endpoint="https://auth.test/token",
-                    token_state=new_oauth_token_state(
+                    token_state=new_token_state(
                         operator_id=operator_id,
                         access_token="remote-old",
                         refresh_token="remote-refresh",
@@ -46,7 +46,7 @@ async def test_refreshes_every_expiring_association_and_isolates_failures(
                     provider_name="google_mail",
                     provider=ProviderConnectionKind.GOOGLE,
                     created_at=now,
-                    token_state=new_oauth_token_state(
+                    token_state=new_token_state(
                         operator_id=operator_id,
                         access_token="provider-old",
                         refresh_token="provider-refresh",
@@ -59,7 +59,7 @@ async def test_refreshes_every_expiring_association_and_isolates_failures(
                 OperatorAuthentikToken(
                     operator_id=operator_id,
                     created_at=now,
-                    token_state=new_oauth_token_state(
+                    token_state=new_token_state(
                         operator_id=operator_id,
                         access_token="authentik-old",
                         refresh_token="authentik-refresh",
@@ -78,7 +78,7 @@ async def test_refreshes_every_expiring_association_and_isolates_failures(
     provider_store.access_token_for = AsyncMock(return_value="provider-new")
     authentik_store = Mock()
     authentik_store.access_token_for = AsyncMock(return_value="authentik-new")
-    maintenance = OAuthAssociationMaintenance(
+    maintenance = AssociationMaintenance(
         engine,
         sessions,
         servers=[

@@ -3,14 +3,14 @@
 from enum import StrEnum
 
 
-class NodeDaemonExecutionStatus(StrEnum):
+class ExecutionStatus(StrEnum):
     PENDING = "pending"
     CLAIMED = "claimed"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
 
 
-class NodeDaemonPresenceStatus(StrEnum):
+class PresenceStatus(StrEnum):
     CONNECTED = "connected"
     BUSY = "busy"
     STALE = "stale"

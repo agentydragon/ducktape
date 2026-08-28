@@ -64,6 +64,10 @@ class SessionRecord(BaseModel):
     status: str
     created_at: datetime.datetime
     error: str | None = None
+    # CLEANUP(added 2026-08-28): expand step of runtime_kind→harness_kind (naming_and_layout.md
+    #   §3.1, #4772). A read-only mirror of `runtime_kind`, so a consumer can move to `harness_kind`
+    #   before the contract step renames the field and drops `runtime_kind`.
+    harness_kind: RuntimeKind = Field(description="The immutable runner implementation pinned by that conversation.")
 
 
 class SessionCursor(BaseModel):

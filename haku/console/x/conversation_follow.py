@@ -61,7 +61,7 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from haku.console import operator_auth
 from haku.console.chat_models import SessionStatus
-from haku.console.console_events import OPERATOR_SESSION_EXPIRED_CLOSE_CODE
+from haku.console.notifications.console_events import OPERATOR_SESSION_EXPIRED_CLOSE_CODE
 from haku.console.x.conversation_views import (
     UPDATE_ROW_LIMIT,
     ConversationFollowMessage,

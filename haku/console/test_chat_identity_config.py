@@ -103,18 +103,12 @@ def test_configured_runtime_requires_a_launchable_default_and_runtime_enabled_pr
         )
 
 
-def test_chat_runtimes_is_a_deprecated_alias_of_harnesses() -> None:
-    """#4772 C4c expand: the deployed ConfigMap key parses onto the canonical field until the
-    contract step flips it, and a config carrying both keys is rejected rather than one silently
-    winning."""
-    canonical = ConsoleConfigFile.model_validate(_config(harnesses={"claude_code": _runtime()}))
-    aliased = ConsoleConfigFile.model_validate(_config(chat_runtimes={"claude_code": _runtime()}))
-    assert canonical.harnesses is not None
-    assert aliased.harnesses == canonical.harnesses
-    with pytest.raises(ValidationError, match="deprecated alias chat_runtimes"):
-        ConsoleConfigFile.model_validate(
-            _config(harnesses={"claude_code": _runtime()}, chat_runtimes={"claude_code": _runtime()})
-        )
+def test_chat_runtimes_key_is_rejected() -> None:
+    """The loader ignores unknown keys (the shared YAML's `settings` section), so a config still
+    spelling the retired `chat_runtimes` key must fail loudly rather than silently losing every
+    harness."""
+    with pytest.raises(ValidationError, match="chat_runtimes was renamed to harnesses"):
+        ConsoleConfigFile.model_validate(_config(chat_runtimes={"claude_code": _runtime()}))
 
 
 def test_launchable_agent_requires_its_own_runtime_registration() -> None:

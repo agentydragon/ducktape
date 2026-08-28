@@ -16,8 +16,8 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from http_ece import decrypt
 
 from haku.console.conftest import TEST_WEB_PUSH, console_sessions, operator_identity_store
+from haku.console.notifications.push import Notifier, PostgresPushSubscriptionStore, PushIdentity
 from haku.console.tool_calls import AgentToolCallCaller, ToolCallRecord, ToolCallStatus
-from haku.console.web_push import PostgresPushSubscriptionStore, WebPushApprovalNotifier, WebPushIdentity
 
 
 def _record(tool_call_id: str = "tc_0123456789abcdef01234567", **overrides: Any) -> ToolCallRecord:
@@ -71,9 +71,9 @@ async def operator_id(migrated_db_url: str) -> UUID:
     return await operator_identity_store(migrated_db_url).resolve_configured_external_user_key("push-operator")
 
 
-def _notifier(subscriptions: PostgresPushSubscriptionStore, handler: httpx.MockTransport) -> WebPushApprovalNotifier:
-    return WebPushApprovalNotifier(
-        identity=WebPushIdentity(TEST_WEB_PUSH),
+def _notifier(subscriptions: PostgresPushSubscriptionStore, handler: httpx.MockTransport) -> Notifier:
+    return Notifier(
+        identity=PushIdentity(TEST_WEB_PUSH),
         subscriptions=subscriptions,
         console_base_url="https://haku.test",
         client=httpx.AsyncClient(transport=handler),
@@ -81,7 +81,7 @@ def _notifier(subscriptions: PostgresPushSubscriptionStore, handler: httpx.MockT
 
 
 def test_application_server_key_is_the_uncompressed_point_browsers_expect() -> None:
-    key = WebPushIdentity(TEST_WEB_PUSH).application_server_key
+    key = PushIdentity(TEST_WEB_PUSH).application_server_key
 
     raw = base64.urlsafe_b64decode(key + "=" * (-len(key) % 4))
     # 0x04 || X || Y — what PushManager.subscribe takes as applicationServerKey.
@@ -91,7 +91,7 @@ def test_application_server_key_is_the_uncompressed_point_browsers_expect() -> N
 
 
 def test_vapid_authorization_is_audienced_to_the_push_service_origin() -> None:
-    identity = WebPushIdentity(TEST_WEB_PUSH)
+    identity = PushIdentity(TEST_WEB_PUSH)
 
     header = identity.authorization("https://fcm.googleapis.com/fcm/send/abc123?x=1")["Authorization"]
 

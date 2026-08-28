@@ -819,7 +819,11 @@ class SessionService:
 
         The scaffolding — runtime resolution, the retryable-denial handshake, the lease, claim
         cleanup — is shared with the v3 `handle_runner` (deletion-scheduled at stage 5). What differs
-        is the generation gate and that the serve loop is a journal pump, not a turn loop.
+        is that the serve loop is a journal pump, not a turn loop, plus the belt-and-braces
+        generation read at admission below — the peering itself is image-carried (a v3 peer fails
+        the protocol-version intersection, a v4 peer of another generation fails
+        `JournalConsumer.resume`'s check of its journal hello), and the read only refuses ahead of
+        the switch's migration.
         """
         try:
             configured = await self._configured(session_id)

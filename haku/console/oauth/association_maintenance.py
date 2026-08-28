@@ -24,9 +24,9 @@ from haku.console.database_schema import (
 )
 from haku.console.mcp_config import McpServerEntry
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
-from haku.console.oauth_token_support import REFRESH_SKEW
+from haku.console.oauth.provider_connection import PostgresProviderConnectionStore
+from haku.console.oauth.token_support import REFRESH_SKEW
 from haku.console.operator_identity import OperatorStatus
-from haku.console.provider_connection import PostgresProviderConnectionStore
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ DEFAULT_REFRESH_INTERVAL = datetime.timedelta(seconds=30)
 _REFRESH_ADVISORY_LOCK = 0x48414B554F415554
 
 
-class OAuthAssociationKind(StrEnum):
+class AssociationKind(StrEnum):
     REMOTE_MCP = "remote_mcp"
     PROVIDER = "provider"
     OPERATOR_LOGIN = "operator_login"
@@ -42,12 +42,12 @@ class OAuthAssociationKind(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class _RefreshTarget:
-    kind: OAuthAssociationKind
+    kind: AssociationKind
     name: str | None
     operator_id: UUID
 
 
-class OAuthAssociationMaintenance:
+class AssociationMaintenance:
     """Refresh expiring OAuth rows without requiring foreground tool traffic."""
 
     def __init__(
@@ -89,7 +89,7 @@ class OAuthAssociationMaintenance:
         )
         candidates = [
             select(
-                literal(OAuthAssociationKind.REMOTE_MCP).label("kind"),
+                literal(AssociationKind.REMOTE_MCP).label("kind"),
                 McpOperatorOAuthAssociation.server_id.label("name"),
                 OAuthTokenState.operator_id,
             )
@@ -97,7 +97,7 @@ class OAuthAssociationMaintenance:
             .join(Operator, OAuthTokenState.operator_id == Operator.operator_id)
             .where(*refreshable),
             select(
-                literal(OAuthAssociationKind.PROVIDER).label("kind"),
+                literal(AssociationKind.PROVIDER).label("kind"),
                 ProviderConnection.connection_name.label("name"),
                 OAuthTokenState.operator_id,
             )
@@ -108,7 +108,7 @@ class OAuthAssociationMaintenance:
         if self._refresh_authentik_tokens:
             candidates.append(
                 select(
-                    literal(OAuthAssociationKind.OPERATOR_LOGIN).label("kind"),
+                    literal(AssociationKind.OPERATOR_LOGIN).label("kind"),
                     sql_cast(literal(None), Text).label("name"),
                     OAuthTokenState.operator_id,
                 )
@@ -119,14 +119,14 @@ class OAuthAssociationMaintenance:
         async with self._sessions.begin() as session:
             rows = (await session.execute(union_all(*candidates))).tuples()
             return [
-                _RefreshTarget(kind=OAuthAssociationKind(kind), name=name, operator_id=operator_id)
+                _RefreshTarget(kind=AssociationKind(kind), name=name, operator_id=operator_id)
                 for kind, name, operator_id in rows
             ]
 
     async def _refresh(self, target: _RefreshTarget) -> None:
         try:
             match target.kind:
-                case OAuthAssociationKind.REMOTE_MCP:
+                case AssociationKind.REMOTE_MCP:
                     assert target.name is not None
                     if (server := self._servers.get(target.name)) is None:
                         logger.warning(
@@ -136,10 +136,10 @@ class OAuthAssociationMaintenance:
                         )
                         return
                     await self._oauth_store.access_token_for(server=server, operator_id=target.operator_id)
-                case OAuthAssociationKind.PROVIDER:
+                case AssociationKind.PROVIDER:
                     assert target.name is not None
                     await self._provider_store.access_token_for(connection=target.name, operator_id=target.operator_id)
-                case OAuthAssociationKind.OPERATOR_LOGIN:
+                case AssociationKind.OPERATOR_LOGIN:
                     await self._authentik_store.access_token_for(operator_id=target.operator_id)
         except Exception:
             logger.exception(

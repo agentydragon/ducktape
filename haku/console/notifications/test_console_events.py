@@ -11,8 +11,8 @@ import pytest_bazel
 from fastapi import WebSocket
 from pydantic import ValidationError
 
-from haku.console import console_events
-from haku.console.console_events import (
+from haku.console.notifications import console_events
+from haku.console.notifications.console_events import (
     ConnectionStatus,
     ConsoleEventHub,
     ConsoleHelloEvent,

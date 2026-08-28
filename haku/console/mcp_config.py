@@ -33,7 +33,7 @@ from haku.console.config import (
     Settings,
 )
 from haku.console.http_decide_config import EgressDecideConfig
-from haku.console.provider_connection_registry import ProviderConnectionKind
+from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_actor import RuntimeActor
 from haku.recall_index.config import ConfiguredRecallIndex, GitRecallIndexDefinition
 from haku.sandbox.config import SandboxEnvironmentConfig
@@ -423,25 +423,15 @@ class ConsoleConfigFile(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _accept_chat_runtimes_alias(cls, value: object) -> object:
-        # CLEANUP(added 2026-08-27): remove the chat_runtimes alias once the deployed
-        #   haku-console-config ConfigMap carries `harnesses` and no older image that reads only
-        #   `chat_runtimes` is deployable (contract step of #4772 C4c).
-        if isinstance(value, dict) and "chat_runtimes" in value:
-            if "harnesses" in value:
-                raise ValueError("harnesses and its deprecated alias chat_runtimes are both set; keep only harnesses")
-            value = dict(value)
-            value["harnesses"] = value.pop("chat_runtimes")
-        return value
-
-    @model_validator(mode="before")
-    @classmethod
     def _reject_retired_runtime_shape(cls, value: object) -> object:
         # This model intentionally ignores the independent top-level `settings` section in the
-        # shared YAML, so it cannot globally forbid extras. Reject this retired sibling explicitly
+        # shared YAML, so it cannot globally forbid extras. Reject retired siblings explicitly
         # rather than silently accepting stale deployment wiring.
-        if isinstance(value, dict) and "claude_runtime" in value:
-            raise ValueError("claude_runtime was replaced by harnesses.claude_code")
+        if isinstance(value, dict):
+            if "claude_runtime" in value:
+                raise ValueError("claude_runtime was replaced by harnesses.claude_code")
+            if "chat_runtimes" in value:
+                raise ValueError("chat_runtimes was renamed to harnesses")
         return value
 
     @model_validator(mode="after")

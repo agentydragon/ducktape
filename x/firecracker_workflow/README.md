@@ -92,7 +92,7 @@ bb ssh mybox hostname          # single command
 
 - Auto-syncs local git diffs as patches (no `git push` needed for uncommitted changes)
 - Uses the custom `rbe-worker` Ubuntu 22.04 image (configured in `devinfra/bbr.json`)
-- Saves the invocation ID to `~/.cache/bbr/last_invocation_id`
+- Mints and prints the Bazel invocation ID (`--invocation-id-file=PATH` records it)
 - Supports **Firecracker snapshot recycling** — the running Bazel server (JVM, analysis
   cache, output base) survives across builds
 
@@ -253,19 +253,22 @@ export BUILDBUDDY_API_KEY=$(sops -d --extract '["stringData"]["api-key"]' \
 
 ## Invocation IDs
 
-`bbr` produces two invocation IDs:
+`bbr` produces two invocation IDs
+([details](../../devinfra/docs/bb_remote_internals.md)):
 
 ```bash
-# Outer (bb remote / runner invocation) — auto-saved by bbr
-OUTER=$(cat ~/.cache/bbr/last_invocation_id)
-bbapi invocation $OUTER
-# Invocation:  7fcd9e0c-...
-# Duration:    8s   Host: 192.168.241.2   Role: HOSTED_BAZEL
-# Child:       aa59a4e0-...   ← inner Bazel RBE invocation
-
-# Inner (Bazel RBE build) — use for action cache stats, test results
-bbapi invocation aa59a4e0-...
+# Inner (Bazel RBE build) — minted and printed by bbr ("bbr: invocation <id>");
+# use for targets, test results, artifacts, action cache stats. For scripts,
+# have bbr record it (or pass your own --invocation_id=<uuid> after the verb):
+bbr --invocation-id-file=/tmp/bbr-inv test //foo:bar
+bbapi invocation $(cat /tmp/bbr-inv)
 # Actions: 271   Duration: 6s   AC Hits: 865
+
+# Outer (bb remote / runner invocation) — printed by bb remote itself as
+# "Streaming remote runner logs to: .../invocation/<outer>"
+bbapi invocation <outer>
+# Duration:    8s   Host: 192.168.241.2   Role: HOSTED_BAZEL
+# Child:       <inner>   ← the Bazel invocation above
 
 # Browse: https://app.buildbuddy.io/invocation/<id>
 ```

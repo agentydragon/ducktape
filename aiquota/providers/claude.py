@@ -173,7 +173,10 @@ class ClaudeProvider(Provider):
         if self.management_client:
             try:
                 body = await self.management_client.fetch_usage(
-                    self.name, USAGE_URL, {"Authorization": "Bearer $TOKEN$", "anthropic-beta": "oauth-2025-04-20"}
+                    self.name,
+                    USAGE_URL,
+                    {"Authorization": "Bearer $TOKEN$", "anthropic-beta": "oauth-2025-04-20"},
+                    capture_key=self.name,
                 )
                 usage = UsageResponse.model_validate_json(body)
             except Exception as e:
