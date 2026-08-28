@@ -8,14 +8,26 @@ taken on trust.
 
 - **Source:** <https://artificialanalysis.ai/leaderboards/models>
 - **Fetched:** 2026-08-23
+- **Attribution:** all index scores, prices and eval results here are Artificial
+  Analysis's, and their use requires crediting <https://artificialanalysis.ai/>.
 - **Index:** Artificial Analysis Intelligence Index, nine evals — `gdpval-aa`,
   `tau3-banking`, `terminalbench-v2-1`, `scicode`, `humanitys-last-exam`,
   `gpqa-diamond`, `critpt`, `omniscience`,
   `artificial-analysis-long-context-reasoning`. Methodology:
   <https://artificialanalysis.ai/evaluations/artificial-analysis-intelligence-index>
 
-The leaderboard has no data API; the records ship inside the page's Next.js flight
-payload. To refresh, fetch the HTML and pull the model objects out of it:
+**Why this is scraped rather than pulled from the data API.** AA does publish one
+(<https://artificialanalysis.ai/data-api/docs>), but it cannot produce this table. It
+aggregates by model, so the per-reasoning-effort rows that carry most of the variance
+here do not exist in it. It decomposes cost as `input_cost` / `reasoning_cost` /
+`answer_cost` rather than into the four cache legs the derived columns invert. Its
+per-task token counts are a paid tier. And the free tier is explicitly
+"for exploration and internal workflows only", with redistribution reserved to a
+commercial licence — which is a live consideration for this file, since a public
+snapshot of 169 rows is close to the thing AA sells.
+
+The records ship inside the leaderboard page's Next.js flight payload. To refresh,
+fetch the HTML and pull the model objects out of it:
 
 ```python
 import json, re
