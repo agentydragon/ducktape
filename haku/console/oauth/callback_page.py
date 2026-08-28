@@ -17,10 +17,10 @@ _CALLBACK_TEMPLATE = Environment(
     loader=FileSystemLoader(Path(__file__).parent),
     autoescape=select_autoescape(enabled_extensions=("html", "j2")),
     undefined=StrictUndefined,
-).get_template("oauth_callback.html.j2")
+).get_template("callback.html.j2")
 
 
-def render_oauth_callback_page(
+def render_callback_page(
     title: str, message: str, *, status_code: int = 200, action_url: str | None = None, action_label: str | None = None
 ) -> HTMLResponse:
     csp_nonce = secrets.token_urlsafe(32)

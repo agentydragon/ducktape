@@ -1,7 +1,18 @@
-"""Thin sandbox bridge between a WebSocket and a local agent CLI.
+"""Sandbox bridge between a WebSocket and a local agent CLI, at the neutral-operation generation.
 
-Which CLI it is stays behind the backend seam (<backend.py>); this module only launches what it
-was told to and pumps its stdio.
+Which CLI it is stays behind the backend seam (<backend.py>); this module launches what it was
+told to, pumps its stdio, and — since the #4667 generation cut — owns the native protocol's
+meaning: every stdout frame is numbered once, recorded on the wire as an opaque `HarnessFrame`,
+and folded by the backend's `HarnessDriver` into the neutral-operation journal
+(<neutral_operations.py>) that the Console commits and ACKs. The Console writes no native input
+any more: it dispatches prompts by durable id (`PromptDispatch`) and asks for interrupts
+(`Interrupt`); the runner composes the native frames, injects them, and echoes each injection as a
+numbered `injected` frame so the durable record keeps both directions.
+
+**One sequence numbers everything this end sends** — stdout frames, setup narration, injected
+input — minted where the event happens rather than where the socket is, so the seq the projector
+stamps into provenance is the seq the recorded frame carries, and both survive the socket that
+happens to be up.
 """
 
 from __future__ import annotations
@@ -14,8 +25,9 @@ import subprocess
 import sys
 from collections import deque
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+from uuid import UUID
 
 import anyio
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
@@ -23,16 +35,34 @@ from tenacity import AsyncRetrying, before_sleep_log, retry_if_exception, stop_a
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus
 
-from haku.runtime.x.bridge.backend import BRIDGE_CREDENTIAL_VARIABLE, CliBackend
+from haku.runtime.x.bridge.backend import BRIDGE_CREDENTIAL_VARIABLE, CliBackend, HarnessDriver
 from haku.runtime.x.bridge.backend_registry import BackendFactory, runner_backends
+from haku.runtime.x.bridge.claude_projection import Projected
+from haku.runtime.x.bridge.neutral_operations import (
+    GENERATION,
+    BatchAck,
+    ConsoleResume,
+    Operation,
+    OperationBatch,
+    RunnerHello,
+    TurnAborted,
+    TurnEnded,
+    TurnOpened,
+)
+from haku.runtime.x.bridge.operation_journal import OperationJournal
 from haku.runtime.x.bridge.protocol import (
     CONSOLE_TO_RUNNER,
     KUBERNETES_PROXY_URL_ENV,
+    NOT_ADMITTED_CODE,
     RUNNER_SETUP_ENV,
+    ConsoleJournal,
     EndInput,
     HarnessFrame,
     HarnessLaunch,
     Hello,
+    Interrupt,
+    PromptDispatch,
+    RunnerJournal,
     SetupOutput,
     TextWebSocket,
     decode_object,
@@ -42,25 +72,12 @@ from haku.runtime.x.bridge.protocol import (
 logger = logging.getLogger(__name__)
 
 # Where one line of bootstrap output goes. A callable rather than the websocket, so the frame still
-# passes through `OutboundLog` to be numbered: an unnumbered frame is a hole in the console's
-# sequence.
+# passes through the pump to be numbered: an unnumbered frame is a hole in the console's sequence.
 SetupNarration = Callable[[SetupOutput], Awaitable[None]]
-
-
-@dataclass(frozen=True)
-class Outbound:
-    """One frame on its way to the console.
-
-    v3 retention is position-based. The runner retains every wire frame rather than trying to
-    understand a harness's native delta or JSON-RPC vocabulary.
-    """
-
-    frame: HarnessFrame | SetupOutput
-
 
 # What the CLI may say before its pipes fill and it pauses for want of a listener. Sized for a whole
 # turn, since every streaming delta is forwarded and a long answer runs to thousands. Still a buffer
-# rather than a store — what makes a reconnect lossless is the resume cursor, not this number.
+# rather than a store — what makes a reconnect lossless is the two resume cursors, not this number.
 OUTBOUND_BUFFER = 10_000
 
 RECONNECT_BASE_DELAY = 1.0
@@ -70,61 +87,208 @@ MAX_DISCONNECTED_SECONDS = 900.0
 
 # How many already-sent frames are kept to hand a console that adopts this session: a window over
 # what a dying console may not have recorded, not a second copy of the rollout. Sized for a turn's
-# assistant messages and tool results, which is what a roll mid-turn can strand.
+# assistant messages and tool results, which is what a roll mid-turn can strand. Journal batches
+# are retained separately and unbounded, by the ACK contract (<operation_journal.py>).
 REPLAY_WINDOW = 500
 
 
-class OutboundLog:
-    """The runner's numbering of what it has sent, and the window it can still re-send.
+class ConsoleRefusedError(RuntimeError):
+    """The console refused this runner for good — a generation mismatch, a consumed credential, a
+    session already over. No redial can change it, so the sandbox exits and releases its claim."""
+
+
+class StdinWriter:
+    """Line writes into the CLI, serialized: the console handler and the control-refusal path both
+    write, and interleaving two halves of two lines would hand the CLI garbage."""
+
+    def __init__(self, stdin: anyio.abc.ByteSendStream):
+        self._stdin = stdin
+        self._lock = anyio.Lock()
+
+    async def write_object(self, payload: dict[str, Any]) -> None:
+        async with self._lock:
+            await self._stdin.send((encode_object(payload) + "\n").encode())
+
+    async def aclose(self) -> None:
+        async with self._lock:
+            await self._stdin.aclose()
+
+
+def _journal_text(message: RunnerHello | OperationBatch) -> str:
+    return RunnerJournal(message=message).model_dump_json()
+
+
+class SessionPump:
+    """One session's numbering, retention, projection and journaling, across every socket.
 
     **The number is this end's to mint**, because this end survives: the console is replaced on
-    every roll while this process holds the CLI across as many sockets as that takes. A cursor a
-    reconnecting console hands back has to name a number its peer assigned, which makes catch-up a
-    filter over this deque rather than a reconciliation against the console's database.
-
-    Dense and monotonic over everything sent. Native harness frames are retained for reconnect;
-    setup narration is not, because Console renders one byte chunk into zero or more lines and does
-    not retain the runner sequence needed to identify a replay.
+    every roll while this process holds the CLI across as many sockets as that takes. Everything
+    stamped goes out through one buffer under one lock, so the wire order is the stamp order; a
+    reconnect replays retained frames above the console's frame cursor and retained journal
+    batches above its batch cursor, and the console deduplicates both — frames by `runner_seq`,
+    batches by idempotent commit.
     """
 
-    def __init__(self, window: int = REPLAY_WINDOW):
+    def __init__(self, driver: HarnessDriver, outbound: MemoryObjectSendStream[str], *, window: int = REPLAY_WINDOW):
+        self._driver = driver
+        self._journal = OperationJournal()
+        self._outbound = outbound
+        self._lock = anyio.Lock()
         self._next_seq = 1
         self._retained: deque[tuple[int, str]] = deque(maxlen=window)
+        # An interrupt was asked and no turn end has answered it yet. Cleared by the end it
+        # rewrites, or by a turn opening — a fresh exchange means the abort's target already ended.
+        self._abort_pending = False
+        # Dispatch is idempotent by prompt id: the console re-dispatches unadmitted prompts after
+        # a reconnect, and an id already taken is the same prompt, not a second one.
+        self._taken_prompts: set[UUID] = set()
 
     def seed(self, resume_from: int | None) -> None:
         """Lift the counter above what the console already holds, if it holds anything.
 
-        `max` rather than assignment: a cursor is a floor, so a runner whose counter is already past
-        it keeps going, and a restarted one is lifted clear instead of colliding from 1.
-
-        Called earlier than `missed`, because bootstrap narration goes out before a console is
-        served and must not be numbered below what that console already recorded.
+        `max` rather than assignment: a cursor is a floor, so a counter already past it keeps
+        going. Called before any narration, which is numbered too and must not land below what
+        the console already recorded.
         """
         if resume_from is not None:
             self._next_seq = max(self._next_seq, resume_from + 1)
 
     def missed(self, resume_from: int | None) -> list[str]:
-        """What a console holding *resume_from* has not been given, from the window still here.
+        """The retained frames a console holding *resume_from* has not been given.
 
-        None is a console that does not number, or one with nothing recorded; it gets the whole
-        window.
+        None is a console with nothing recorded; it gets the whole window. Journal replay is the
+        journal's own (`resumed`); the two cursors are independent by design.
         """
         if resume_from is None:
             return [text for _, text in self._retained]
         return [text for seq, text in self._retained if seq > resume_from]
 
-    def stamp(self, outbound: Outbound) -> str:
-        """Number one frame and serialize it, retaining native harness traffic for replay.
+    def resumed(self, resume: ConsoleResume) -> list[str]:
+        """Everything the journal owes a (re)connected console, from its durable batch cursor.
 
-        Numbered at send rather than at build, so the buffer's order is the wire's order and a
-        replayed frame keeps the number it first went out under — two consoles therefore agree on
-        the integer naming one frame.
+        Deliberately lock-free (as `missed`): both run between connections, where the one other
+        stamper may be parked mid-`send` on a full buffer holding the lock — its already-stamped
+        text is either inside the replay window (sent here, deduplicated later) or still in the
+        buffer (sent once when the serve loop drains it), so nothing is lost or doubled durably.
         """
+        return [_journal_text(batch) for batch in self._journal.resume(resume.acked_batch_seq)]
+
+    async def narration(self, websocket: TextWebSocket, output: SetupOutput) -> None:
+        """Number one bootstrap chunk and send it directly — the serve loop is not running yet."""
+        async with self._lock:
+            text, _ = self._stamp(output, retain=False)
+            await websocket.send_text(text)
+
+    async def stderr_output(self, chunk: bytes) -> None:
+        """Number one CLI stderr chunk into the buffer; not retained, because the console renders
+        chunks into lines and cannot identify a replayed chunk by position."""
+        async with self._lock:
+            text, _ = self._stamp(SetupOutput(data=chunk), retain=False)
+            await self._outbound.send(text)
+
+    async def initialized(self, stdin: StdinWriter) -> None:
+        """Write the harness handshake, if this harness has one, echoing it into the record."""
+        payload = self._driver.initialize()
+        if payload is None:
+            return
+        await self._inject(payload)
+        await stdin.write_object(payload)
+
+    async def observed(self, payload: dict[str, Any]) -> dict[str, Any] | None:
+        """One CLI stdout frame: number it, send it, journal its meaning; returns the native reply
+        to write back for a CLI-initiated control request, already echoed into the record."""
+        async with self._lock:
+            wire, seq = self._stamp(HarnessFrame(frame=payload), retain=True)
+            await self._outbound.send(wire)
+            for text in self._journalled(self._driver.observe(seq, payload)):
+                await self._outbound.send(text)
+            reply = self._driver.answer_control_request(payload)
+            if reply is not None:
+                echo, _ = self._stamp(HarnessFrame(frame=reply, injected=True), retain=True)
+                await self._outbound.send(echo)
+            return reply
+
+    async def admit(self, dispatch: PromptDispatch) -> dict[str, Any] | None:
+        """One dispatched prompt: the native frame to write to the CLI, or None for a duplicate.
+
+        The admission is journalled at the injection fence with the journal's own frontier, and
+        the injected frame is echoed under the seq the provenance names — all before the caller
+        writes the CLI, so the record can never show output of a prompt it has no injection for.
+        """
+        if dispatch.prompt_id in self._taken_prompts:
+            return None
+        self._taken_prompts.add(dispatch.prompt_id)
+        payload = self._driver.compose_prompt(dispatch.text)
+        async with self._lock:
+            echo, seq = self._stamp(HarnessFrame(frame=payload, injected=True), retain=True)
+            await self._outbound.send(echo)
+            projected = self._driver.admit(
+                dispatch.prompt_id, after_batch_seq=self._journal.admission_frontier, frame_seq=seq
+            )
+            for text in self._journalled(projected):
+                await self._outbound.send(text)
+        return payload
+
+    async def interrupt(self) -> dict[str, Any] | None:
+        """The operator's stop: the native interrupt to write, or None for a harness without one.
+
+        The next turn end this pump journals is rewritten `aborted` — the side that asked records
+        the abort, and under this generation the runner is the side that asks the harness.
+        """
+        payload = self._driver.compose_interrupt()
+        if payload is None:
+            return None
+        await self._inject(payload)
+        self._abort_pending = True
+        return payload
+
+    async def flushed(self) -> None:
+        """The diagnostics-only tail a CLI may end on, released through the journal's own gate."""
+        async with self._lock:
+            for batch in self._journal.flush():
+                await self._outbound.send(_journal_text(batch))
+
+    async def acked(self, ack: BatchAck) -> None:
+        """The console's cumulative ACK: drop covered retention, send whatever it released."""
+        async with self._lock:
+            for batch in self._journal.acked(ack.acked_batch_seq):
+                await self._outbound.send(_journal_text(batch))
+
+    async def _inject(self, payload: dict[str, Any]) -> int:
+        async with self._lock:
+            echo, seq = self._stamp(HarnessFrame(frame=payload, injected=True), retain=True)
+            await self._outbound.send(echo)
+            return seq
+
+    def _stamp(self, frame: HarnessFrame | SetupOutput, *, retain: bool) -> tuple[str, int]:
         seq, self._next_seq = self._next_seq, self._next_seq + 1
-        text = outbound.frame.model_copy(update={"seq": seq}).model_dump_json()
-        if isinstance(outbound.frame, HarnessFrame):
+        text = frame.model_copy(update={"seq": seq}).model_dump_json()
+        if retain:
             self._retained.append((seq, text))
-        return text
+        return text, seq
+
+    def _journalled(self, projected: Projected) -> list[str]:
+        batches = self._journal.record(self._abort_rewritten(projected.operations), projected.unprojected)
+        return [_journal_text(batch) for batch in batches]
+
+    def _abort_rewritten(self, operations: tuple[Operation, ...]) -> tuple[Operation, ...]:
+        if not self._abort_pending:
+            return operations
+        rewritten: list[Operation] = []
+        for operation in operations:
+            match operation:
+                case TurnOpened():
+                    # A fresh exchange: whatever the interrupt was for has already ended.
+                    self._abort_pending = False
+                    rewritten.append(operation)
+                case TurnEnded() if self._abort_pending:
+                    self._abort_pending = False
+                    rewritten.append(
+                        TurnEnded(turn_id=operation.turn_id, end=TurnAborted(), provenance=operation.provenance)
+                    )
+                case _:
+                    rewritten.append(operation)
+        return tuple(rewritten)
 
 
 class ClientWebSocketAdapter(TextWebSocket):
@@ -146,56 +310,36 @@ class ClientWebSocketAdapter(TextWebSocket):
         await self._connection.close()
 
 
-async def _queue_cli_line(outbound: MemoryObjectSendStream[Outbound], line: bytes) -> None:
-    """Wrap one native CLI JSON object in Haku's envelope, skipping anything that is not one."""
-    if not (stripped := line.strip()).startswith(b"{"):
-        return
-    payload = decode_object(stripped.decode())
-    await outbound.send(Outbound(frame=HarnessFrame(frame=payload)))
-
-
-async def _forward_cli_frames(outbound: MemoryObjectSendStream[Outbound], stdout: anyio.abc.ByteReceiveStream) -> None:
+async def _forward_cli_frames(pump: SessionPump, stdin: StdinWriter, stdout: anyio.abc.ByteReceiveStream) -> None:
+    """Read the CLI's stdout for as long as it speaks, numbering and journalling every frame."""
     pending = b""
+
+    async def take(line: bytes) -> None:
+        if not (stripped := line.strip()).startswith(b"{"):
+            return
+        reply = await pump.observed(decode_object(stripped.decode()))
+        if reply is not None:
+            await stdin.write_object(reply)
+
     async for chunk in stdout:
         pending += chunk
         while b"\n" in pending:
             line, pending = pending.split(b"\n", 1)
-            await _queue_cli_line(outbound, line)
-
-    await _queue_cli_line(outbound, pending)
-
-
-async def _send_websocket_input(websocket: TextWebSocket, stdin: anyio.abc.ByteSendStream) -> None:
-    while True:
-        match CONSOLE_TO_RUNNER.validate_json(await websocket.receive_text()):
-            case EndInput():
-                await stdin.aclose()
-                return
-            case HarnessFrame(frame=frame):
-                await stdin.send((encode_object(frame) + "\n").encode())
-            case HarnessLaunch():
-                # A sequencing error the types cannot express: `start` opens a connection, so a
-                # second one mid-conversation means the console thinks this runner never launched.
-                raise ValueError("console sent a second launch frame mid-conversation")
+            await take(line)
+    await take(pending)
 
 
-async def _forward_cli_errors(outbound: MemoryObjectSendStream[Outbound], stderr: anyio.abc.ByteReceiveStream) -> None:
+async def _forward_cli_errors(pump: SessionPump, stderr: anyio.abc.ByteReceiveStream) -> None:
     """Forward what the CLI wrote to stderr, to this log and to the console.
 
     stderr is the one place a failure to start is explained; without it the console sees only the
-    selected harness exiting with status 1 for a rejected credential or a bad flag.
-
-    Sent as `SetupOutput`, which is already "bytes the sandbox wrote", because a kind of its own
-    would be a `PROTOCOL_VERSION` bump — and `SUPPORTED_VERSIONS` holds one element, so a bump
-    refuses peers on the old version rather than degrading to it. Worth a frame kind of its own once
-    the supported range is wide enough to afford one.
+    selected harness exiting with status 1 for a rejected credential or a bad flag. Sent as
+    `SetupOutput`, which is already "bytes the sandbox wrote".
     """
     async for chunk in stderr:
         sys.stdout.buffer.write(chunk)
         sys.stdout.buffer.flush()
-        # `OutboundLog` numbers but does not retain narration: the console renders a byte chunk to
-        # lines and therefore cannot identify a repeated chunk by its runner sequence.
-        await outbound.send(Outbound(frame=SetupOutput(data=chunk)))
+        await pump.stderr_output(chunk)
 
 
 async def _start_cli(backend: CliBackend, launch: HarnessLaunch) -> anyio.abc.Process:
@@ -307,13 +451,13 @@ async def _shutdown(process: anyio.abc.Process) -> int | None:
 
 
 async def _drain_cli(
-    process: anyio.abc.Process, outbound: MemoryObjectSendStream[Outbound], scope: anyio.CancelScope
+    process: anyio.abc.Process, pump: SessionPump, stdin: StdinWriter, scope: anyio.CancelScope
 ) -> None:
     """Read the CLI for as long as it lives, whether or not a console is listening.
 
     Long-lived rather than per-connection, which is what lets the process outlive a socket: the
-    pipes keep draining into `outbound`, and when that buffer fills the reads stop and the CLI
-    waits rather than losing what it said.
+    pipes keep draining into the pump's buffer, and when that buffer fills the reads stop and the
+    CLI waits rather than losing what it said.
 
     Cancels *scope* when stdout ends, since that is the CLI exiting and there is then nothing left
     to serve any console with.
@@ -323,40 +467,52 @@ async def _drain_cli(
     assert stderr is not None
     async with anyio.create_task_group() as readers:
         # stderr ending says nothing about the conversation; stdout ending is the CLI's exit.
-        readers.start_soon(_forward_cli_errors, outbound, stderr)
-        await _forward_cli_frames(outbound, stdout)
+        readers.start_soon(_forward_cli_errors, pump, stderr)
+        await _forward_cli_frames(pump, stdin, stdout)
+        await pump.flushed()
         readers.cancel_scope.cancel()
     scope.cancel()
 
 
 async def _serve_console(
-    websocket: TextWebSocket,
-    process: anyio.abc.Process,
-    outbound: MemoryObjectReceiveStream[Outbound],
-    log: OutboundLog,
-    resume_from: int | None = None,
+    websocket: TextWebSocket, stdin: StdinWriter, outbound: MemoryObjectReceiveStream[str], pump: SessionPump
 ) -> None:
-    """Copy frames both ways for one console connection, returning when that connection ends.
+    """Copy both directions for one console connection, returning when that connection ends.
 
-    **The replay window is what makes a lost socket lossless.** Nothing here can tell whether a
-    frame handed to a dying socket was recorded, so every retained frame is offered again to
-    whichever console adopts the session next, and the console drops duplicates by the runner
-    position carried in the bridge envelope.
-
-    Re-sending a frame the console already holds costs one `ON CONFLICT DO NOTHING`; *omitting* one
-    is the real failure, which is why frames are retained as they are sent rather than as they are
-    acknowledged — there is no acknowledgement.
-
-    *resume_from* is the console's own cursor, off its `start` frame, narrowing the offer to what it
-    has not recorded.
+    The console's messages are commands now, not native input: journal ACKs release coalesced
+    batches, prompt dispatches and interrupts are composed natively by the pump and written to the
+    CLI here. Everything outbound was numbered where it happened and flows through one buffer, so
+    this loop is a drain, not an author.
     """
-    stdin = process.stdin
-    assert stdin is not None
     async with anyio.create_task_group() as tasks:
 
         async def console_to_cli() -> None:
             try:
-                await _send_websocket_input(websocket, stdin)
+                while True:
+                    match CONSOLE_TO_RUNNER.validate_json(await websocket.receive_text()):
+                        case EndInput():
+                            await stdin.aclose()
+                        case HarnessFrame(frame=frame):
+                            # The legacy console fold's native input. The journal console never
+                            # sends one; accepting it keeps this end honest about what it was told.
+                            await stdin.write_object(frame)
+                        case ConsoleJournal(message=BatchAck() as ack):
+                            await pump.acked(ack)
+                        case ConsoleJournal(message=ConsoleResume()):
+                            raise ValueError("console re-sent a journal resume mid-conversation")
+                        case PromptDispatch() as dispatch:
+                            payload = await pump.admit(dispatch)
+                            if payload is not None:
+                                await stdin.write_object(payload)
+                        case Interrupt():
+                            payload = await pump.interrupt()
+                            if payload is not None:
+                                await stdin.write_object(payload)
+                        case HarnessLaunch():
+                            # A sequencing error the types cannot express: `start` opens a
+                            # connection, so a second one mid-conversation means the console
+                            # thinks this runner never launched.
+                            raise ValueError("console sent a second launch frame mid-conversation")
             except (EOFError, anyio.EndOfStream, ConnectionClosed):
                 pass
             finally:
@@ -364,13 +520,8 @@ async def _serve_console(
 
         async def cli_to_console() -> None:
             try:
-                log.seed(resume_from)
-                if missed := log.missed(resume_from):
-                    logger.info("Re-sending %d frame(s) the previous console may not have", len(missed))
-                    for retained in missed:
-                        await websocket.send_text(retained)
-                async for frame in outbound:
-                    await websocket.send_text(log.stamp(frame))
+                async for text in outbound:
+                    await websocket.send_text(text)
             except (ConnectionClosed, anyio.BrokenResourceError):
                 pass
             finally:
@@ -378,28 +529,6 @@ async def _serve_console(
 
         tasks.start_soon(console_to_cli)
         tasks.start_soon(cli_to_console)
-
-
-async def bridge_websocket_to_cli(websocket: TextWebSocket, *, backend: CliBackend, launch: HarnessLaunch) -> None:
-    """Run one CLI and serve exactly one console connection with it.
-
-    `run` composes the same pieces with a process that outlives the socket.
-    """
-    launch = _materialize_proxy_kubeconfig(launch, os.environ.get(BRIDGE_CREDENTIAL_VARIABLE))
-    outbound_sender, outbound_receiver = anyio.create_memory_object_stream[Outbound](OUTBOUND_BUFFER)
-    process = await _start_cli(backend, launch)
-    try:
-        async with anyio.create_task_group() as tasks:
-            tasks.start_soon(_drain_cli, process, outbound_sender, tasks.cancel_scope)
-            # No window, since there is no second connection to hand one to; still numbered, because
-            # the console's log takes its ordering from that number either way.
-            await _serve_console(websocket, process, outbound_receiver, OutboundLog(window=0), launch.resume_from)
-            tasks.cancel_scope.cancel()
-    finally:
-        exited_with = await _shutdown(process)
-        await websocket.close()
-    if exited_with not in (0, None):
-        raise RuntimeError(f"{backend.name} exited with status {exited_with}")
 
 
 async def prepare_workspace(setup_path: Path, *, cwd: str, narrate: SetupNarration | None = None) -> None:
@@ -434,11 +563,12 @@ async def prepare_workspace(setup_path: Path, *, cwd: str, narrate: SetupNarrati
         raise RuntimeError(f"workspace setup {setup_path} exited with status {status}")
 
 
-def _narrator(websocket: TextWebSocket, log: OutboundLog) -> SetupNarration:
-    """Send bootstrap output down *websocket*, numbered by *log* like everything else this end sends."""
+def _narrator(websocket: TextWebSocket, pump: SessionPump) -> SetupNarration:
+    """Send bootstrap output down *websocket*, numbered by *pump* like everything else this end
+    sends. Direct rather than buffered: narration happens before the serve loop drains anything."""
 
     async def narrate(frame: SetupOutput) -> None:
-        await websocket.send_text(log.stamp(Outbound(frame=frame)))
+        await pump.narration(websocket, frame)
 
     return narrate
 
@@ -447,13 +577,32 @@ async def _receive_launch(websocket: TextWebSocket) -> HarnessLaunch:
     """Say which versions this image speaks, then read the launch the console chose.
 
     The hello goes first on **every** connection, not only the first: a console adopting a session
-    after a roll is a different process and has to be told the same thing. A console too old to
-    expect it never reads before it writes, so the frame simply goes unread.
+    after a roll is a different process and has to be told the same thing.
     """
     await websocket.send_text(Hello().model_dump_json())
     if not isinstance(launch := CONSOLE_TO_RUNNER.validate_json(await websocket.receive_text()), HarnessLaunch):
         raise ValueError(f"first bridge frame must be a launch, got {type(launch).__name__}")
     return launch
+
+
+async def _handshake_journal(websocket: TextWebSocket) -> ConsoleResume:
+    """Offer this image's generation and versions; read the console's resume — on every
+    connection, because the durable batch cursor is exactly what a reconnect needs.
+
+    A generation the console did not echo back is a console this runner must not serve: the
+    maintenance-gated cut promises no old runner and new console (or the reverse) ever share a
+    conversation, and this refusal is the runner's half of that promise.
+    """
+    await websocket.send_text(_journal_text(RunnerHello()))
+    match CONSOLE_TO_RUNNER.validate_json(await websocket.receive_text()):
+        case ConsoleJournal(message=ConsoleResume() as resume):
+            if resume.generation != GENERATION:
+                raise ConsoleRefusedError(
+                    f"transport generation mismatch: console={resume.generation!r} runner={GENERATION!r}"
+                )
+            return resume
+        case other:
+            raise ValueError(f"console answered the journal hello with {other.kind}")
 
 
 def _worth_redialling(error: BaseException) -> bool:
@@ -493,6 +642,41 @@ async def _dial(websocket_url: str, headers: dict[str, str] | None) -> ClientCon
     )(dial_once)
 
 
+def _process_stdin(process: anyio.abc.Process) -> anyio.abc.ByteSendStream:
+    stdin = process.stdin
+    assert stdin is not None
+    return stdin
+
+
+async def bridge_websocket_to_cli(websocket: TextWebSocket, *, backend: CliBackend, launch: HarnessLaunch) -> None:
+    """Run one CLI and serve exactly one console connection with it.
+
+    `run` composes the same pieces with a process that outlives the socket. No handshakes: the
+    caller already owns both ends of this socket and hands the launch in directly; journal traffic
+    still flows — batches out, ACKs in.
+    """
+    driver = backend.driver()
+    launch = _materialize_proxy_kubeconfig(launch, os.environ.get(BRIDGE_CREDENTIAL_VARIABLE))
+    outbound_sender, outbound_receiver = anyio.create_memory_object_stream[str](OUTBOUND_BUFFER)
+    # No window, since there is no second connection to hand one to; still numbered, because the
+    # console's log takes its ordering from that number either way.
+    pump = SessionPump(driver, outbound_sender, window=0)
+    pump.seed(launch.resume_from)
+    process = await _start_cli(backend, launch)
+    stdin = StdinWriter(_process_stdin(process))
+    try:
+        async with anyio.create_task_group() as tasks:
+            tasks.start_soon(_drain_cli, process, pump, stdin, tasks.cancel_scope)
+            await pump.initialized(stdin)
+            await _serve_console(websocket, stdin, outbound_receiver, pump)
+            tasks.cancel_scope.cancel()
+    finally:
+        exited_with = await _shutdown(process)
+        await websocket.close()
+    if exited_with not in (0, None):
+        raise RuntimeError(f"{backend.name} exited with status {exited_with}")
+
+
 async def run(
     websocket_url: str, backend: CliBackend, bearer_token: str | None, setup_path: Path | None = None
 ) -> None:
@@ -501,23 +685,27 @@ async def run(
     **The CLI outlives the connection**, which is what keeps a console roll from ending the
     conversation. A later connection brings a freshly built `start` frame whose process fields are
     **ignored**: argv, system prompt and MCP wiring belong to a process already running and cannot
-    be re-applied to it.
+    be re-applied to it. What each connection genuinely brings is the two resume cursors — the
+    console's frame cursor on `start`, its journal cursor on the `ConsoleResume` — and the replay
+    each narrows.
 
-    The exception is `resume_from`, which describes the **console** — how much of this session's log
-    it holds — and narrows the replay window to exactly what it is missing.
-
-    After `MAX_DISCONNECTED_SECONDS` with no console this exits and lets the claim be reclaimed.
+    After `MAX_DISCONNECTED_SECONDS` with no console this exits and lets the claim be reclaimed;
+    a console that refuses this runner outright (wrong generation, consumed credential, terminal
+    session, journal violation) ends it at once.
     """
+    # Before any dial: a harness without a neutral-operation driver cannot serve at this
+    # generation, and the pod log should say so rather than a console see half a handshake.
+    driver = backend.driver()
     headers: dict[str, str] | None = None
     if bearer_token:
         headers = {"Authorization": f"Bearer {bearer_token}"}
 
-    outbound_sender, outbound_receiver = anyio.create_memory_object_stream[Outbound](OUTBOUND_BUFFER)
+    outbound_sender, outbound_receiver = anyio.create_memory_object_stream[str](OUTBOUND_BUFFER)
+    # Retained across connections: numbering, frame retention and journal retention are the
+    # session's, however many consoles serve it.
+    pump = SessionPump(driver, outbound_sender)
     process: anyio.abc.Process | None = None
-    # Retained across connections: it is what a console adopting this session mid-turn is handed
-    # before it hears live frames, and it keeps one session's frames on one sequence however many
-    # consoles serve it.
-    log = OutboundLog()
+    stdin: StdinWriter | None = None
 
     try:
         async with anyio.create_task_group() as session:
@@ -534,24 +722,44 @@ async def run(
                     launch = await _receive_launch(websocket)
                     # Before the bootstrap, not with the replay: narration is numbered too, and a
                     # console that already holds frames must not be sent one below its cursor.
-                    log.seed(launch.resume_from)
+                    pump.seed(launch.resume_from)
+                    resume = await _handshake_journal(websocket)
+                    # Replays go before live traffic on this socket. Duplicates with what the
+                    # buffer still holds are expected and dropped by the console — frames by
+                    # runner position, batches by idempotent commit.
+                    for text in pump.missed(launch.resume_from):
+                        await websocket.send_text(text)
+                    for text in pump.resumed(resume):
+                        await websocket.send_text(text)
                     if process is None:
                         # Materialize launch-owned Kubernetes configuration exactly once, before
                         # any bootstrap or harness code has had an opportunity to modify HOME.
                         launch = _materialize_proxy_kubeconfig(launch, bearer_token)
                         selected_setup = _launch_setup_path(launch, setup_path)
                         if selected_setup is not None:
-                            await prepare_workspace(selected_setup, cwd=launch.cwd, narrate=_narrator(websocket, log))
+                            await prepare_workspace(selected_setup, cwd=launch.cwd, narrate=_narrator(websocket, pump))
                         process = await _start_cli(backend, launch)
+                        stdin = StdinWriter(_process_stdin(process))
                         # Long-lived, so nothing the CLI writes is lost to a closed socket: the
                         # pipes drain into the buffer either way, whose backpressure pauses the CLI
                         # rather than dropping what it said.
-                        session.start_soon(_drain_cli, process, outbound_sender, session.cancel_scope)
-                    await _serve_console(websocket, process, outbound_receiver, log, launch.resume_from)
-                except ConnectionClosed:
+                        session.start_soon(_drain_cli, process, pump, stdin, session.cancel_scope)
+                        await pump.initialized(stdin)
+                    assert stdin is not None
+                    await _serve_console(websocket, stdin, outbound_receiver, pump)
+                except ConsoleRefusedError as refusal:
+                    logger.warning("The console refused this runner (%s); releasing this sandbox", refusal)
+                    break
+                except ConnectionClosed as closed:
+                    if (rcvd := closed.rcvd) is not None and rcvd.code == NOT_ADMITTED_CODE:
+                        logger.warning(
+                            "The console closed with policy code %s (%s); releasing this sandbox",
+                            rcvd.code,
+                            rcvd.reason,
+                        )
+                        break
                     # This connection ending says nothing about the session; `_dial` decides
                     # whether there is still a console worth waiting for.
-                    pass
                 finally:
                     await connection.close()
                 # Not a backoff — `_dial` owns that — but a floor, so a console that admits this

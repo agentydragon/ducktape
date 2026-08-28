@@ -4,8 +4,8 @@ import httpx
 import pytest
 import pytest_bazel
 
-from haku.console.oauth_token_support import (
-    OAuthTokenResponseError,
+from haku.console.oauth.token_support import (
+    TokenResponseError,
     parse_token_response,
     token_request_error_message,
     token_request_headers,
@@ -54,7 +54,7 @@ async def test_token_error_preserves_standard_oauth_details_without_tokens() -> 
         },
     )
 
-    with pytest.raises(OAuthTokenResponseError) as exc_info:
+    with pytest.raises(TokenResponseError) as exc_info:
         await parse_token_response(response, label="MCP OAuth token refresh")
 
     message = str(exc_info.value)
@@ -72,7 +72,7 @@ async def test_token_error_preserves_standard_oauth_details_without_tokens() -> 
 async def test_token_error_preserves_bounded_plain_text_detail() -> None:
     response = httpx.Response(502, text="  upstream\nproxy timed out  " + "x" * 600)
 
-    with pytest.raises(OAuthTokenResponseError) as exc_info:
+    with pytest.raises(TokenResponseError) as exc_info:
         await parse_token_response(response, label="MCP OAuth token refresh")
 
     message = str(exc_info.value)
@@ -83,7 +83,7 @@ async def test_token_error_preserves_bounded_plain_text_detail() -> None:
 async def test_token_error_does_not_dump_unknown_json_fields() -> None:
     response = httpx.Response(400, json={"detail": "contains internal data", "refresh_token": "secret"})
 
-    with pytest.raises(OAuthTokenResponseError) as exc_info:
+    with pytest.raises(TokenResponseError) as exc_info:
         await parse_token_response(response, label="MCP OAuth token refresh")
 
     assert str(exc_info.value) == (

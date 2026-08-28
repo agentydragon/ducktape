@@ -38,10 +38,10 @@ spec:
             capabilities:
               drop: ["ALL"]
           env:
-            # LiteLLM virtual key (alias agent-workspaces-codex, `*-chatgpt` oai
-            # models, no budget cap) minted by tf/gitops/litellm-keys and
-            # reflected into this namespace; deleting that TF resource is the
-            # lane's kill switch.
+            # LiteLLM virtual key (alias agent-workspaces-codex,
+            # `chatgpt/oai-responses/*` models, no budget cap) minted by
+            # tf/gitops/litellm-keys and reflected into this namespace; deleting
+            # that TF resource is the lane's kill switch.
             - name: LITELLM_API_KEY
               valueFrom:
                 secretKeyRef:

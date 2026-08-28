@@ -35,8 +35,6 @@ from starlette.middleware.sessions import SessionMiddleware
 from haku.console import (
     agent_bearer_authority,
     capabilities,
-    connection_metrics,
-    console_events,
     http_decide_routes,
     http_grant_routes,
     kube_proxy_authorization,
@@ -47,16 +45,9 @@ from haku.console import (
     mcp_mount,
     mcp_operator_oauth,
     mcp_server,
-    node_daemons,
-    oauth_association_maintenance,
-    oauth_connection_result,
-    oauth_token_state,
     operator_auth,
     operator_login_flow,
-    provider_connection,
-    push_routes,
     tool_call_service,
-    web_push,
 )
 from haku.console.agents import enrollment_routes
 from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
@@ -66,6 +57,7 @@ from haku.console.chat_models import RuntimeKind
 from haku.console.config import MCP_PATH, Settings
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
+from haku.console.hostexecd import service
 from haku.console.http_decide_config import load_egress_decide
 from haku.console.http_decide_service import HttpDecideService
 from haku.console.http_grant_repository import PostgresHttpGrantRepository
@@ -91,6 +83,8 @@ from haku.console.mcp_config import (
     validate_in_process_server_bindings,
 )
 from haku.console.models import ChatLaunchOption, ConfigResponse
+from haku.console.notifications import connection_metrics, console_events, push, push_routes
+from haku.console.oauth import association_maintenance, connection_result, provider_connection, token_state
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.recall_index_reader import PostgresIndexSearcher
@@ -215,7 +209,7 @@ def create_app(
     db_sessions = async_sessionmaker(db_engine, expire_on_commit=False)
     operator_identity_store = PostgresOperatorIdentityStore(db_sessions, _operator_identity_trust(settings))
     operator_login_flows = operator_login_flow.PostgresOperatorLoginFlowStore(db_sessions)
-    oauth_token_states = oauth_token_state.PostgresOAuthTokenStateStore(
+    oauth_token_states = token_state.PostgresTokenStateStore(
         db_sessions, operator_identity_store=operator_identity_store
     )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
@@ -254,19 +248,19 @@ def create_app(
         provider_clients=provider_clients,
         operator_connections=console_config.operator_connections,
     )
-    oauth_connection_result_store = oauth_connection_result.PostgresOAuthConnectionResultStore(
+    oauth_connection_result_store = connection_result.PostgresConnectionResultStore(
         db_sessions, operator_identity_store=operator_identity_store
     )
     # Web Push reaches the operator's browsers when none of them has the console open. Without a
     # VAPID identity there is nothing to sign with, so the console simply never notifies.
-    push_subscription_store = web_push.PostgresPushSubscriptionStore(db_sessions)
-    web_push_identity = web_push.WebPushIdentity(settings.web_push) if settings.web_push else None
-    approval_notifier: web_push.WebPushApprovalNotifier | web_push.NullApprovalNotifier = (
-        web_push.WebPushApprovalNotifier(
-            identity=web_push_identity, subscriptions=push_subscription_store, console_base_url=settings.public_base_url
+    push_subscription_store = push.PostgresPushSubscriptionStore(db_sessions)
+    push_identity = push.PushIdentity(settings.web_push) if settings.web_push else None
+    approval_notifier: push.Notifier | push.NullNotifier = (
+        push.Notifier(
+            identity=push_identity, subscriptions=push_subscription_store, console_base_url=settings.public_base_url
         )
-        if web_push_identity is not None
-        else web_push.NullApprovalNotifier()
+        if push_identity is not None
+        else push.NullNotifier()
     )
     # The operator's own Authentik token (captured at login via offline_access), self-refreshed with
     # the operator-OIDC client — hostexec exchanges it for a per-host token. The store derives the
@@ -280,7 +274,7 @@ def create_app(
         client_secret=settings.operator_oidc.client_secret.get_secret_value(),
         issuer=settings.operator_oidc.issuer,
     )
-    oauth_maintenance = oauth_association_maintenance.OAuthAssociationMaintenance(
+    oauth_maintenance = association_maintenance.AssociationMaintenance(
         db_engine,
         db_sessions,
         servers=console_config.mcp.servers,
@@ -289,10 +283,8 @@ def create_app(
         authentik_store=authentik_operator_token_store,
         refresh_authentik_tokens=hostexec_config is not None,
     )
-    node_daemon_service = (
-        node_daemons.NodeDaemonService(db_sessions, console_config.node_daemons)
-        if console_config.node_daemons is not None
-        else None
+    hostexecd_service = (
+        service.Service(db_sessions, console_config.node_daemons) if console_config.node_daemons is not None else None
     )
     agent_authority = PostgresAgentAuthority(
         db_sessions,
@@ -552,11 +544,11 @@ def create_app(
         # endpoint here (only in this branch) is safe.
         hostexec_server = None
         if hostexec_config is not None:
-            assert node_daemon_service is not None
+            assert hostexecd_service is not None
             hostexec_server = HostexecServerConfig(
                 config=hostexec_config,
                 token_endpoint=authentik_token_endpoint_for_issuer(settings.operator_oidc.issuer),
-                broker=node_daemon_service,
+                broker=hostexecd_service,
             )
         # Configured rather than switched on separately: `config.yaml` is where the server is
         # listed and where the policy that lets an agent call it lives, and a boolean elsewhere
@@ -659,7 +651,7 @@ def create_app(
         provider_store=provider_connection_store,
         dispatcher=dispatcher,
         catalogs=catalogs,
-        node_daemons=node_daemon_service,
+        node_daemons=hostexecd_service,
     )
 
     console_mcp = mcp_server.build_console_mcp(
@@ -749,9 +741,9 @@ def create_app(
     app.state.in_process_servers = in_process_servers
     app.state.mcp_dispatcher = dispatcher
     app.state.mcp_catalogs = catalogs
-    app.state.node_daemon_service = node_daemon_service
+    app.state.hostexecd_service = hostexecd_service
     app.state.push_subscription_store = push_subscription_store
-    app.state.web_push_identity = web_push_identity
+    app.state.push_identity = push_identity
     app.state.kubernetes_authorization = kubernetes_authorization
     app.state.kubernetes_grants = kubernetes_grants
     app.state.http_grants = http_grants
@@ -802,13 +794,13 @@ def create_app(
     app.include_router(http_grant_routes.router, dependencies=operator_only)
     app.include_router(mcp_operator_oauth.router, dependencies=operator_only)
     app.include_router(provider_connection.router, dependencies=operator_only)
-    app.include_router(oauth_connection_result.router, dependencies=operator_only)
+    app.include_router(connection_result.router, dependencies=operator_only)
     app.include_router(enrollment_routes.operator_router, dependencies=operator_only)
-    app.include_router(node_daemons.operator_router, dependencies=operator_only)
+    app.include_router(service.operator_router, dependencies=operator_only)
     app.include_router(push_routes.router, dependencies=operator_only)
     # Machine endpoints use their own per-daemon bearer and deliberately do not accept an Operator
     # browser session.
-    app.include_router(node_daemons.machine_router)
+    app.include_router(service.machine_router)
     app.include_router(enrollment_routes.entry_router)
     app.include_router(session_runtime.internal_router)
     # Machine-to-machine, bearer-forwarding contract for the separate Kubernetes proxy. The

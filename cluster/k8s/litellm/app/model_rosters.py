@@ -64,31 +64,6 @@ def exposed_name(provider: Provider, shape: ApiShape, model: str) -> str:
     return f"{provider}/{shape}/{model}"
 
 
-# CLEANUP(added 2026-08-27): pre-#4823 names, still what every deployed consumer calls
-# (haku-console config.yaml, the baked workspace/codex-pod images, openclaw.json,
-# props config.toml, laptop wrappers). Consumers move one by one under #4823; when a
-# legacy derivation's last consumer moves, drop it together with its
-# proxy-config.yaml entries and tf/gitops/litellm-keys allowlist rows.
-def legacy_messages_name(model: str) -> str:
-    """Pre-#4823 Messages-wire name — the #4822 trap: says Codex, serves Claude Code."""
-    return f"codex-{model}"
-
-
-def legacy_responses_name(model: str) -> str:
-    """Pre-#4823 Responses-wire name — the suffix names the account, not the wire."""
-    return f"{model}-chatgpt"
-
-
-def legacy_google_name(model: str) -> str:
-    """Pre-#4823 Google-key name — the bare upstream id, no provider or shape."""
-    return model
-
-
-def legacy_tana_name(model: str) -> str:
-    """Pre-#4823 Tana name — provider prefix only, no shape segment."""
-    return f"tana-{model}"
-
-
 # ChatGPT/Codex-subscription models behind CLIProxyAPI, each exposed on both wire
 # surfaces (Provider.CHATGPT with ApiShape.ANT_MESSAGES and ApiShape.OAI_RESPONSES).
 CLIPROXY_MODELS: list[str] = [

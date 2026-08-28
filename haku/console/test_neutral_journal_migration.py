@@ -1,8 +1,9 @@
 """0106's neutral-journal state lands expand-only on a database with live sessions.
 
-Seeds a session at 0105, upgrades to head, and pins what the consumer relies on: the cursor
-arriving at its zero, the per-session uniqueness of runner-minted identities, and the inbox's
-state-machine checks.
+Seeds a session at 0105, upgrades through 0106 — capped at the migration under test, since the
+0109 generation cut deliberately refuses a live session — and pins what the consumer relies on:
+the cursor arriving at its zero, the per-session uniqueness of runner-minted identities, and the
+inbox's state-machine checks (the latter two against head, where they are current-schema facts).
 
 Temporary per `AGENTS.md` § "Do not keep tests for old migrations": delete once the chain is
 roughly five revisions past 0106 (~0111).
@@ -84,7 +85,7 @@ def test_0106_defaults_the_cursor_on_preexisting_sessions(db_url: str) -> None:
         with engine.begin() as conn:
             _conversation_id, session_id = _session(conn)
 
-        apply_migrations(db_url)
+        apply_migrations(db_url, "0106")
 
         with engine.begin() as conn:
             cursor = conn.execute(

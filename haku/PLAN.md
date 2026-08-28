@@ -114,7 +114,7 @@ approval gate, and the Matrix credential held by the channel's own `haku-matrix-
 worker. What the channel guarantees:
 <console/channels/matrix/SPEC.md>; what is still owed:
 <console/plans/conversation_layers.md>. The notification half was answered separately and differently:
-Web Push from the console's own origin (`console/web_push.py`), with Approve/Deny rendered by
+Web Push from the console's own origin (`console/notifications/push.py`), with Approve/Deny rendered by
 the OS from console-authored content, because a third-party service with action buttons would
 have to carry a deciding credential outside the trust boundary (`docs/security.md` invariant #4).
 

@@ -32,7 +32,7 @@ from starlette.requests import HTTPConnection
 
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.config import OperatorOidcConfig, Settings
-from haku.console.oauth_callback_page import render_oauth_callback_page
+from haku.console.oauth.callback_page import render_callback_page
 from haku.console.operator_identity import OperatorIdentityError, VerifiedExternalIdentity
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.operator_login_flow import (
@@ -332,7 +332,7 @@ def _login_failed(request: Request, message: str, *, retry: bool, return_to: str
             secure=_secure_cookies(request),
         )
         return restarted
-    failed = render_oauth_callback_page(
+    failed = render_callback_page(
         "Operator login failed", message, status_code=401, action_url="/auth/login", action_label="Retry login"
     )
     failed.delete_cookie(LOGIN_RETRY_COOKIE_NAME, path=LOGIN_COOKIE_PATH)

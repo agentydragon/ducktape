@@ -43,7 +43,6 @@ py_test(
     data = [
         "proxy-config.yaml",
         "//cluster/k8s:openclaw_model_config",
-        "//tf/gitops/litellm-keys:main.tf",
     ],
     deps = [
         ":model_rosters",

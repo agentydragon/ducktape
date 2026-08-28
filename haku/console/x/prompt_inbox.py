@@ -13,9 +13,11 @@ what it accepted.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.console.chat_models import PromptOrigin
@@ -51,6 +53,25 @@ async def submit(
     db.add(row)
     await db.flush()
     return row
+
+
+async def pending(db: AsyncSession, conversation_id: UUID) -> Sequence[SubmittedPrompt]:
+    """This conversation's still-owed prompts — neither admitted nor withdrawn — oldest first.
+
+    What the journal bridge dispatches to the runner on connect and after each new submission.
+    Dispatch is idempotent by `prompt_id` (the runner ignores an id it has taken), so re-listing an
+    already-dispatched-but-unadmitted prompt after a reconnect is correct, not a double-send.
+    """
+    rows = await db.scalars(
+        select(SubmittedPrompt)
+        .where(
+            SubmittedPrompt.conversation_id == conversation_id,
+            SubmittedPrompt.admitted_at.is_(None),
+            SubmittedPrompt.withdrawn_at.is_(None),
+        )
+        .order_by(SubmittedPrompt.submitted_at, SubmittedPrompt.prompt_id)
+    )
+    return rows.all()
 
 
 async def withdraw(db: AsyncSession, prompt_id: UUID, *, now: datetime) -> SubmittedPrompt:

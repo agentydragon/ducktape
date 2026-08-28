@@ -110,7 +110,7 @@ spec:
               drop: ["ALL"]
       containers:
         - name: server
-          image: ghcr.io/agentydragon/haku-console:devel-20260828000559-964d71d # {"$imagepolicy": "flux-system:haku-console"}
+          image: ghcr.io/agentydragon/haku-console:devel-20260828021330-a6ff4a0 # {"$imagepolicy": "flux-system:haku-console"}
           imagePullPolicy: Always
           ports:
             - name: api
@@ -120,7 +120,7 @@ spec:
             # policies as the images, preserving reproducible image contents while exposing the
             # commits selected by this pod manifest.
             - name: HAKU_CONSOLE_IMAGE_TAG
-              value: devel-20260828000559-964d71d # {"$imagepolicy": "flux-system:haku-console:tag"}
+              value: devel-20260828021330-a6ff4a0 # {"$imagepolicy": "flux-system:haku-console:tag"}
             # Capability tier: the launch-routine action. The console builds both the
             # (public) fire URL and the claude.ai/code page deep-link from this routine
             # (trigger) id; the bearer comes from the haku-console-only secret so Haku
@@ -136,7 +136,7 @@ spec:
             # public half is derived at startup and handed to each browser at subscribe
             # time, so rotating this key makes every enrolled device re-subscribe from
             # Settings -> Notifications. Unset would simply disable notifications.
-            # See haku/console/web_push.py.
+            # See haku/console/notifications/push.py.
             - name: HAKU_CONSOLE_WEB_PUSH__PRIVATE_KEY_PEM
               valueFrom:
                 secretKeyRef:
@@ -262,7 +262,7 @@ spec:
             # label CRUD — haku/console/tools/gmail.py) and `google_calendar` (recurrence-aware
             # event reads + approval-gated creation — google_calendar.py). Each call resolves that
             # Operator's per-Operator Google token from the console's own connection store
-            # (haku/console/provider_connection.py), self-refreshed in-process.
+            # (haku/console/oauth/provider_connection.py), self-refreshed in-process.
             #
             # Each integration has its own Google OAuth application/client so Calendar can complete
             # sensitive-scope verification independently of restricted Gmail. The console runs both
@@ -413,6 +413,13 @@ spec:
                   name: haku-egress-github-token
                   key: token
                   optional: true
+            #   - the substitution-smoke registry credential: a committed EXAMPLE- literal rather
+            #     than a Secret, deliberately — both sides of that swap are inert so the fence's
+            #     substitution path is drivable end to end against a public echo host with no real
+            #     credential anywhere (haku/egress/docs/test_substitution.md). Identity secrets
+            #     above stay Secret-backed and fail-loud.
+            - name: HAKU_EGRESS_CREDENTIAL_SUBSTITUTION_SMOKE
+              value: EXAMPLE-EGRESS-SMOKE-SUBSTITUTED
           resources:
             requests:
               cpu: 50m

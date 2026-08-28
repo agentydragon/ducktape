@@ -1,0 +1,21 @@
+{
+  "available_count": 1,
+  "credits": [
+    {
+      "id": "credit_a",
+      "reset_type": "five_hour",
+      "status": "consumed",
+      "granted_at": "2026-08-20T09:00:00Z",
+      "expires_at": "2026-09-20T09:00:00Z",
+      "title": "Rate limit reset",
+      "description": "Clears the current five-hour window once."
+    },
+    {
+      "id": "credit_b",
+      "reset_type": "five_hour",
+      "status": "available",
+      "granted_at": "2026-08-27T09:00:00Z",
+      "expires_at": null
+    }
+  ]
+}

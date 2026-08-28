@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import ItemType, SessionStatus
 from haku.console.conversation_read_access import UnrestrictedReads
-from haku.console.database_schema import ConversationItem, MatrixSyncWatermark
+from haku.console.database_schema import ConversationItem, MatrixSyncWatermark, Session, SubmittedPrompt
 from haku.console.x.session_store import SessionStore
 from haku.console.x.testing.waiting import BUDGET_SECONDS, WedgedError, wait_until
 from util.bazel.runfiles import get_required_path
@@ -157,18 +157,24 @@ class Deployment:
         return [json.loads(line) for line in recorded.read_text().splitlines()] if recorded.exists() else []
 
     async def wait_until_queued(self, session_id: UUID, body: str) -> None:
-        """Wait until *body* is a prompt item on *session_id*.
+        """Wait until *body* is a pending inbox prompt of *session_id*'s conversation.
 
         The premise of the test that kills a sandbox: a message merely refused and held by the
         homeserver would be answered by the replacement whatever the watermark did, and the test
-        would pass without exercising anything.
+        would pass without exercising anything. Acceptance leaves a durable `submitted_prompt`
+        (#4667) — there is no transcript item until some session admits it, and the doomed one
+        never will.
         """
 
         async def queued() -> bool:
             async with self._db() as db:
                 prompts = await db.scalars(
-                    select(ConversationItem.item_text).where(
-                        ConversationItem.session_id == session_id, ConversationItem.item_type == ItemType.PROMPT
+                    select(SubmittedPrompt.text)
+                    .join(Session, Session.conversation_id == SubmittedPrompt.conversation_id)
+                    .where(
+                        Session.session_id == session_id,
+                        SubmittedPrompt.admitted_at.is_(None),
+                        SubmittedPrompt.withdrawn_at.is_(None),
                     )
                 )
             return any(body in prompt for prompt in prompts)

@@ -7,7 +7,7 @@
 // fetch. The buttons are defined here in reviewed console code and the authority behind them is the
 // operator's own Authentik session cookie, not anything carried in the message.
 //
-// Payload shapes mirror `PushShow`/`PushRetract` in ../web_push.py as a versioned wire contract,
+// Payload shapes mirror `PushShow`/`PushRetract` in ../notifications/push.py as a versioned wire contract,
 // not as two views of one type. This file updates on the browser's schedule — a navigation to the
 // console, or a push handled once the registration has gone stale (>24h since its last check) —
 // while the backend deploys atomically, so a worker running this code can be a day or more behind

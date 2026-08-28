@@ -118,7 +118,7 @@ reads mirroring the REST API, draft creation, thread-label changes, label CRUD) 
 `google_calendar` (`haku/console/tools/google_calendar.py` — recurrence-aware event reads and
 creation), both behind the ordinary operator-approval queue — execute as the **acting
 Operator's own Google account**: each call resolves that Operator's per-Operator Google access
-token from the console's own connection store (`haku/console/provider_connection.py`),
+token from the console's own connection store (`haku/console/oauth/provider_connection.py`),
 self-refreshed in-process. This replaces Airlock's brokered `haku_console_google` token — the
 console holds the Google OAuth clients and each Operator's refresh token itself. The console pod
 starts fine before anything is connected; until an Operator connects, both servers are
@@ -304,7 +304,9 @@ enumerate every Console destination; deferred until that set is pinned.
 
 The traffic **cutover** — repointing the Kyverno `inject-haku-egress-proxy` `HTTP_PROXY` from the
 port-8080 iron fence to `haku-egress-proxy.haku-console.svc:8888` — is the adoption step, gated on the
-first spike (#4943). Iron-fence retirement (which carries the shared CA out of
+first spike (#4943). The spike targets the public-coder-agent OpenClaw pod, which carries the
+fence wiring itself (`../../agents/public-coder-agent/app/deployment.yaml`); the operator
+procedure is <../../../../haku/egress/docs/github_spike.md>. Iron-fence retirement (which carries the shared CA out of
 `cluster/k8s/agents/haku-egress-proxy/`), minted per-claim fence credentials (one shared bearer today),
 and the embedded runner's `stream_large_bodies` + h2/gRPC handling for broad adoption (dind layer pulls
 OOM-killed the iron fence without the former; the sidecar is sized `1Gi` for the small-body spike until

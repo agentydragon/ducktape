@@ -105,7 +105,7 @@ Source of truth: `haku-state` `SOUL.md` → _Hard boundaries_.
 Privileged Gmail reads/writes and Calendar event reads/creation reach Google only
 through haku-console, executing as the acting Operator's own Google account through
 separate `google_mail` and `google_calendar` grants, each with explicit least-privilege
-scopes and self-refresh in <../console/provider_connection.py>. Agent calls default to
+scopes and self-refresh in <../console/oauth/provider_connection.py>. Agent calls default to
 operator approval; the reviewed `haku_v1` policy auto-approves authenticated Agents for
 exposed read tools and bounded Gmail label mutations, while Calendar creation remains
 manual. Arguments are validated against the registered FastMCP schema, decision errors

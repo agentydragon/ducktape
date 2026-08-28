@@ -107,7 +107,11 @@ py_test(
 py_test(
     name = "test_codex",
     srcs = ["test_codex.py"],
-    data = ["fixtures/codex_weekly_primary.json"],
+    data = [
+        "fixtures/codex_profile.json",
+        "fixtures/codex_reset_credits.json",
+        "fixtures/codex_weekly_primary.json",
+    ],
     imports = ["../.."],
     deps = [
         ":client",
@@ -115,6 +119,7 @@ py_test(
         "//:conftest",
         "//aiquota:models",
         "@pypi//httpx",
+        "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//respx",

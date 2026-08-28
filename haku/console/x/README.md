@@ -43,7 +43,7 @@ the SPA chat surface's own HTTP routes. Around them:
 | `conversation_reads.py`        | What a conversation read hands back, and the cursors that page them (see below).                                                                                                                                                                                                 |
 | `item_entries.py`              | The one place a materialised item row folds onto `conversation_reads.py`'s entry union — one entry per row, identical for the MCP reader and the SPA views.                                                                                                                      |
 | `reprojection.py`              | Re-project a recorded session's frames and report where the stored log disagrees.                                                                                                                                                                                                |
-| `pg_wake.py`                   | The layer-neutral `LISTEN`/`NOTIFY` transport: `notify_raw`/`libpq_dsn` and the `WakeListener` connection, reconnect loop, parse and reconnect-gap dispatch, instantiated once per layer. The console's other LISTEN consumer is <../console_events.py>.                         |
+| `pg_wake.py`                   | The layer-neutral `LISTEN`/`NOTIFY` transport: `notify_raw`/`libpq_dsn` and the `WakeListener` connection, reconnect loop, parse and reconnect-gap dispatch, instantiated once per layer. The console's other LISTEN consumer is <../notifications/console_events.py>.           |
 | `session_wakes.py`             | The session layer's wake channel (`session_events`) and its surface: `SessionWakes` (`wait`/`watch_session`/`watch`) over its own `WakeListener`; consumed by `SessionService` and the allocator, and nothing conversation-shaped reaches it.                                    |
 | `conversation_wakes.py`        | The conversation layer's wake channel (`conversation_wakes`) and its surface: `ConversationWakes.watch` over its own `WakeListener`, plus the cross-layer `notify_update`; a channel imports this and so names a conversation surface, never a session type (roll gotcha below). |
 | `conversation_runtime.py`      | Elected reconciler (`CRUN`): conversation-owned prompt demand into sessions, plus global lease/claim maintenance.                                                                                                                                                                |
@@ -163,8 +163,8 @@ so a stand-in cannot outlive the thing it fakes and a `py_binary` can reach it
 (<testing/recording_claims.py> for the rationale). The e2e tiers, each with a module docstring
 saying what only it can answer:
 
-- <test_bridge_e2e.py> — the Claude bridge end to end: a real runner process on a real
-  websocket.
+- <test_generation_cutover_e2e.py> — the post-cut stack end to end: a real runner process on a
+  real websocket journaling to a real Console handler — the generation window's health gate.
 - <../channels/matrix/test_homeserver_e2e.py> — the Matrix client against a real Synapse, for
   the properties of Synapse a canned response could only agree with.
 - <../channels/matrix/test_fullstack_e2e.py> — that Synapse, console replicas as processes, a

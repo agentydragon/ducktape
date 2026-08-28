@@ -57,11 +57,11 @@ from haku.console.chat_models import (
     TurnOutcome,
 )
 from haku.console.grant_principal import GrantPrincipalKind
+from haku.console.hostexecd.models import ExecutionStatus
 from haku.console.http_grant_models import HttpMethod, HttpMethods, HttpScheme
 from haku.console.kubernetes_grant_models import KubernetesGrantScope, KubernetesGrantStatus, KubernetesRule
-from haku.console.node_daemon_models import NodeDaemonExecutionStatus
+from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
 from haku.console.operator_identity import OperatorStatus
-from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.pydantic_column import PydanticColumn
 from haku.console.tool_calls import ToolCallStatus
 from util.enum_vocab import UnknownValue
@@ -749,8 +749,8 @@ class NodeDaemonExecution(Base):
     execution_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     daemon_id: Mapped[str] = mapped_column(Text, nullable=False)
     backend: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[NodeDaemonExecutionStatus] = mapped_column(
-        StrEnumColumn(NodeDaemonExecutionStatus, name="node_daemon_execution_status"), nullable=False
+    status: Mapped[ExecutionStatus] = mapped_column(
+        StrEnumColumn(ExecutionStatus, name="node_daemon_execution_status"), nullable=False
     )
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     result_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
@@ -949,7 +949,7 @@ class ProviderConnectionFlow(Base):
     scope: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
-class OAuthConnectionResult(Base):
+class OAuthConnectionResultRow(Base):
     """A short-lived, single-use browser handoff after an account-link callback.
 
     The browser receives only the opaque ``result_id``. The outcome stays server-side, is
@@ -1759,11 +1759,10 @@ class SessionFrame(Base):
     __table_args__ = (
         CheckConstraint("direction IN ('to_agent','from_agent')", name="ck_session_frames_direction"),
         CheckConstraint("kind IN ('harness_frame','setup_output')", name="ck_session_frames_kind"),
-        # The runner numbers what *it* puts on the wire, so a number on a frame this console sent
-        # would be one nobody assigned.
-        CheckConstraint(
-            "runner_seq IS NULL OR direction = 'from_agent'", name="ck_session_frames_runner_seq_direction"
-        ),
+        # No runner_seq-by-direction constraint: under the neutral-operation generation the runner
+        # numbers the native input it injects itself (the dispatched prompt, the interrupt) and
+        # echoes it back as a `to_agent` frame carrying its own seq, so a runner number now rides
+        # both directions and the dense sequence spans them. Uniqueness is `uq_session_frames_runner_seq`.
         Index("idx_session_frames_session", "session_id", "frame_seq"),
         # Reading a session by kind is otherwise a filter over its whole log, and the log holds
         # deltas — so the frame inspector, the narration read, and the MCP transcript fold would
@@ -2008,15 +2007,15 @@ class MatrixIngressEvent(Base):
     The dedupe key for ingress, and the Matrix channel's own table: an `event_id` is this
     channel's address for a message and nothing above the channel boundary reads it.
 
-    **A row is written in the prompt's own transaction** (`session_store.enqueue_prompt`'s
-    `records` hook), which is the whole point of the table. The watermark commits separately and
-    afterwards, so a crash between the two re-delivers a batch the session already holds; a row
-    written beside the watermark instead would be missing in exactly that case.
+    **A row is written in the prompt's own transaction** (`session_store.submit_prompt`'s `records`
+    hook), which is the whole point of the table. The watermark commits separately and afterwards,
+    so a crash between the two re-delivers a batch the session already holds; a row written beside
+    the watermark instead would be missing in exactly that case.
 
     **Presence therefore means the record carries the event, not that the loop saw it.** That is
-    what makes suppressing a re-delivered event safe: the prompt is in the transcript, queued on the
-    conversation rather than on the session that accepted it, so whichever session runs next claims
-    it.
+    what makes suppressing a re-delivered event safe: the prompt is in the durable inbox, queued on
+    the conversation rather than on the session that accepted it, so whichever session runs next
+    dispatches it.
 
     Rejected and unreadable events are deliberately absent: both are recorded in the transaction
     that advances the watermark, so a crash before it leaves neither the acknowledgement nor the
@@ -2026,10 +2025,11 @@ class MatrixIngressEvent(Base):
     __tablename__ = "matrix_ingress_event"
 
     event_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    # The `prompt` item this event became. A prompt is an item like any other now, so this points
-    # at the transcript rather than at a separate message table.
-    item_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("conversation_item.item_id", ondelete="CASCADE"), nullable=False
+    # The inbox prompt this event became (#4667). Under the neutral-operation generation a prompt is
+    # a durable `submitted_prompt` command before it is any transcript item, so ingress dedup points
+    # at the inbox row it created rather than at an item that does not exist until admission.
+    prompt_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("submitted_prompt.prompt_id", ondelete="CASCADE"), nullable=False
     )
 
-    __table_args__ = (Index("idx_matrix_ingress_event_item", "item_id"),)
+    __table_args__ = (Index("idx_matrix_ingress_event_prompt", "prompt_id"),)

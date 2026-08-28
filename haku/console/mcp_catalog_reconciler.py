@@ -9,7 +9,6 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from uuid import UUID
 
-from haku.console.console_events import ConsoleEvent, McpOperatorAuthChangedEvent, OperatorConnectionChangedEvent
 from haku.console.mcp_approval import (
     DegradedReflection,
     McpServerDispatcher,
@@ -20,6 +19,11 @@ from haku.console.mcp_approval import (
 from haku.console.mcp_config import McpServerEntry
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp_reflection_cache import ReflectedCatalog
+from haku.console.notifications.console_events import (
+    ConsoleEvent,
+    McpOperatorAuthChangedEvent,
+    OperatorConnectionChangedEvent,
+)
 from haku.console.tool_call_service import ProviderConnectionTokenStore
 
 logger = logging.getLogger(__name__)

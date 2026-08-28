@@ -19,7 +19,9 @@ spec:
           description: Trust bundle for haku-egress-proxy-inspected sandbox HTTPS traffic
     # Written into Haku trust domains. The CLIProxyAPI-backed aiquota path
     # connects directly to the in-cluster management service and does not
-    # trust or use this inspected egress listener.
+    # trust or use this inspected egress listener. public-coder-agent receives
+    # it for the #4943 spike: its OpenClaw pod mounts this bundle to verify TLS
+    # through the colocated Console egress fence (haku-console:8888).
     namespaceSelector:
       matchExpressions:
         - key: kubernetes.io/metadata.name
@@ -29,3 +31,4 @@ spec:
             - haku-runtime-sandbox
             - haku-openclaw-spike
             - haku-ci
+            - public-coder-agent

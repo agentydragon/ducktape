@@ -271,7 +271,7 @@ async def test_exports_console_native_status_result_schemas() -> None:
         "ProviderUnprovisioned",
     ):
         assert "status" in schemas_by_title[title]["required"]
-    refresh_failure_schema = schemas_by_title["OAuthRefreshFailureEpisode"]
+    refresh_failure_schema = schemas_by_title["RefreshFailureEpisode"]
     assert {"resolution", "next_retry_at"} <= set(refresh_failure_schema["required"])
     assert "action" not in refresh_failure_schema["properties"]
 

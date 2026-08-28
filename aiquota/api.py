@@ -31,8 +31,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from aiquota.cache import _assemble, _instantiate
 from aiquota.clickhouse import ClickHouseSnapshotSink
 from aiquota.config import Config, load as load_config
-from aiquota.models import AllQuotas, FetchSuccess
-from aiquota.providers.client import ProviderClientFactory
+from aiquota.models import AllQuotas, FetchSuccess, HistoryObservation
+from aiquota.providers.base import SupportsHistory
 
 _CACHE_CONTROL = {"Cache-Control": "no-store"}
 _MAX_CAPTURE_BYTES = 1024 * 1024
@@ -62,12 +62,27 @@ class QuotaSnapshot:
     raw_responses: dict[str, RawUpstreamResponse]
 
 
+@dataclass(frozen=True)
+class HistorySnapshot:
+    observations: list[HistoryObservation]
+    fetched_at: datetime
+    raw_responses: dict[str, RawUpstreamResponse]
+
+
 class SnapshotFetcher(Protocol):
     async def fetch(self, force_refresh: bool = False) -> QuotaSnapshot: ...
 
 
 class SnapshotSink(Protocol):
     async def write(self, snapshot: QuotaSnapshot) -> int: ...
+
+
+class HistoryFetcher(Protocol):
+    async def fetch_history(self) -> HistorySnapshot: ...
+
+
+class HistorySink(Protocol):
+    async def write_history(self, snapshot: HistorySnapshot) -> int: ...
 
 
 class CollectorMetrics:
@@ -92,6 +107,12 @@ class CollectorMetrics:
         )
         self.clickhouse_rows = Counter(
             "aiquota_clickhouse_rows_total", "Rows appended to ClickHouse", registry=self.registry
+        )
+        self.history_polls = Counter(
+            "aiquota_history_poll_total", "Provider history collection attempts", ["result"], registry=self.registry
+        )
+        self.history_rows = Counter(
+            "aiquota_history_rows_total", "History observations appended to ClickHouse", registry=self.registry
         )
         self.ready = Gauge(
             "aiquota_collector_ready",
@@ -140,8 +161,42 @@ class BackgroundCollector:
         self.has_persisted = True
 
 
+class HistoryCollector:
+    """Poll the provider history endpoints on their own, slower schedule.
+
+    Kept apart from the quota collector because these endpoints restate months
+    of unchanged history on every call: polling them at the quota cadence would
+    rewrite a whole year every five minutes for no new information.
+    """
+
+    def __init__(
+        self, fetcher: HistoryFetcher, sink: HistorySink, *, interval: timedelta, metrics: CollectorMetrics
+    ) -> None:
+        self._fetcher = fetcher
+        self._sink = sink
+        self._interval = interval
+        self.metrics = metrics
+
+    async def run(self) -> None:
+        while True:
+            await self.poll_once()
+            await asyncio.sleep(self._interval.total_seconds())
+
+    async def poll_once(self) -> None:
+        try:
+            rows = await self._sink.write_history(await self._fetcher.fetch_history())
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            self.metrics.history_polls.labels(result="error").inc()
+            logger.exception("aiquota history collection failed")
+            return
+        self.metrics.history_polls.labels(result="success").inc()
+        self.metrics.history_rows.inc(rows)
+
+
 class _CapturingClientFactory:
-    """Provider HTTP client factory which captures only quota endpoint bodies."""
+    """Provider HTTP client factory which captures only the declared endpoint bodies."""
 
     def __init__(
         self,
@@ -155,7 +210,7 @@ class _CapturingClientFactory:
         self._transport = transport
         self.responses: dict[str, RawUpstreamResponse] = {}
 
-    def __call__(self, provider: str, response_urls: set[str], timeout: float) -> httpx.AsyncClient:
+    def __call__(self, capture_key: str, response_urls: set[str], timeout: float) -> httpx.AsyncClient:
         async def capture(response: httpx.Response) -> None:
             if str(response.request.url) not in response_urls:
                 return
@@ -185,7 +240,7 @@ class _CapturingClientFactory:
                 body: object = json.loads(captured)
             except (json.JSONDecodeError, UnicodeDecodeError):
                 body = captured.decode("utf-8", errors="replace")
-            self.responses[provider] = RawUpstreamResponse(
+            self.responses[capture_key] = RawUpstreamResponse(
                 status_code=status_code,
                 content_type=content_type,
                 body=body,
@@ -206,7 +261,9 @@ class _CapturingClientFactory:
         }
         if self._transport is not None:
             kwargs["transport"] = self._transport
-        if provider == "claude" and self._claude_proxy:
+        # Only Claude's own quota endpoint sits behind the credential-substitution
+        # proxy; a per-endpoint capture key never matches this provider name.
+        if capture_key == "claude" and self._claude_proxy:
             kwargs["proxy"] = self._claude_proxy
             if self._claude_proxy_ca is not None:
                 kwargs["verify"] = str(self._claude_proxy_ca)
@@ -241,10 +298,7 @@ class QuotaAPIService:
             if not force_refresh and self._is_fresh(self._snapshot):
                 assert self._snapshot is not None
                 return self._snapshot
-            factory: ProviderClientFactory = _CapturingClientFactory(
-                claude_proxy=(self._claude_proxy if not self._config.cli_proxy_api.url else None),
-                claude_proxy_ca=(self._claude_proxy_ca if not self._config.cli_proxy_api.url else None),
-            )
+            factory = self._client_factory()
             providers = _instantiate(self._config, client_factory=factory, cli_proxy_api_key=self._cli_proxy_api_key)
             outputs = await asyncio.gather(*(provider.fetch() for provider in providers))
             prior = {quota.provider: quota for quota in self._snapshot.quotas.providers} if self._snapshot else {}
@@ -255,10 +309,32 @@ class QuotaAPIService:
                 ],
                 fetched_at=datetime.now(UTC),
             )
-            self._snapshot = QuotaSnapshot(
-                quotas=quotas, raw_responses=cast(_CapturingClientFactory, factory).responses
-            )
+            self._snapshot = QuotaSnapshot(quotas=quotas, raw_responses=factory.responses)
             return self._snapshot
+
+    async def fetch_history(self) -> HistorySnapshot:
+        """Read every enabled provider's history endpoints once.
+
+        Deliberately outside the quota cache and its lock: history collection
+        runs on its own schedule and must not make a `/v1/quotas` caller wait.
+        """
+
+        factory = self._client_factory()
+        providers = _instantiate(self._config, client_factory=factory, cli_proxy_api_key=self._cli_proxy_api_key)
+        batches = await asyncio.gather(
+            *(provider.fetch_history() for provider in providers if isinstance(provider, SupportsHistory))
+        )
+        return HistorySnapshot(
+            observations=[observation for batch in batches for observation in batch],
+            fetched_at=datetime.now(UTC),
+            raw_responses=factory.responses,
+        )
+
+    def _client_factory(self) -> _CapturingClientFactory:
+        return _CapturingClientFactory(
+            claude_proxy=(self._claude_proxy if not self._config.cli_proxy_api.url else None),
+            claude_proxy_ca=(self._claude_proxy_ca if not self._config.cli_proxy_api.url else None),
+        )
 
     def _is_fresh(self, snapshot: QuotaSnapshot | None) -> bool:
         return snapshot is not None and datetime.now(UTC) - snapshot.quotas.fetched_at < self._cache_ttl
@@ -282,6 +358,7 @@ class Settings(BaseSettings):
     clickhouse_raw_table: str = "raw_http_observations"
     clickhouse_windows_table: str = "aiquota_windows"
     poll_interval_seconds: int = Field(default=300, gt=0)
+    history_interval_seconds: int = Field(default=3600, gt=0)
 
     @model_validator(mode="after")
     def validate_clickhouse(self) -> "Settings":
@@ -343,17 +420,19 @@ def create_app(
     bearer_token: str,
     fetcher: SnapshotFetcher,
     collector: BackgroundCollector | None = None,
+    history_collector: HistoryCollector | None = None,
     metrics: CollectorMetrics | None = None,
 ) -> FastAPI:
     app_metrics = metrics or (collector.metrics if collector else CollectorMetrics())
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        task = asyncio.create_task(collector.run(), name="aiquota-clickhouse-collector") if collector else None
+        runners = {"aiquota-clickhouse-collector": collector, "aiquota-history-collector": history_collector}
+        tasks = [asyncio.create_task(runner.run(), name=name) for name, runner in runners.items() if runner is not None]
         try:
             yield
         finally:
-            if task:
+            for task in tasks:
                 task.cancel()
                 with suppress(asyncio.CancelledError):
                     await task
@@ -411,6 +490,7 @@ def main() -> None:
     )
     metrics = CollectorMetrics()
     collector: BackgroundCollector | None = None
+    history_collector: HistoryCollector | None = None
     if settings.clickhouse_url:
         assert settings.clickhouse_password is not None
         sink = ClickHouseSnapshotSink(
@@ -424,8 +504,17 @@ def main() -> None:
         collector = BackgroundCollector(
             service, sink, interval=timedelta(seconds=settings.poll_interval_seconds), metrics=metrics
         )
+        history_collector = HistoryCollector(
+            service, sink, interval=timedelta(seconds=settings.history_interval_seconds), metrics=metrics
+        )
     uvicorn.run(
-        create_app(bearer_token=settings.api_bearer_token, fetcher=service, collector=collector, metrics=metrics),
+        create_app(
+            bearer_token=settings.api_bearer_token,
+            fetcher=service,
+            collector=collector,
+            history_collector=history_collector,
+            metrics=metrics,
+        ),
         host="0.0.0.0",
         port=8080,
     )

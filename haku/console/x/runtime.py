@@ -187,6 +187,15 @@ class RuntimeAdapter(Protocol):
     @property
     def display_name(self) -> str: ...
 
+    def build_launch(self, launch: RuntimeLaunch) -> HarnessLaunch:
+        """The native `HarnessLaunch` for these generic launch facts.
+
+        The journal bridge (#4667) sends this to the runner directly: under the neutral-operation
+        generation the Console composes no native protocol itself, so it needs the launch the
+        runner obeys without the `client` that used to wrap it.
+        """
+        ...
+
     def client(
         self, websocket: TextWebSocket, launch: RuntimeLaunch, progress: ProgressSink | None, frames_to: FrameSink
     ) -> RuntimeClient: ...

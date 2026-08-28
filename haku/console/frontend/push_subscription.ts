@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api, errorDetail } from "./client";
 
-// Browser-side half of Web Push (server half: ../web_push.py). Registers the console's service
+// Browser-side half of Web Push (server half: ../notifications/push.py). Registers the console's service
 // worker, asks for notification permission, and hands the resulting subscription to the backend
 // so it can reach this browser when no console tab is open.
 

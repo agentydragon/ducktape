@@ -40,17 +40,18 @@ class IngressLedger:
             return frozenset(found.all())
 
     def carrying(self, event_ids: Sequence[str]) -> PromptRecords:
-        """Record *event_ids* against the prompt being written, in that prompt's own transaction.
+        """Record *event_ids* against the inbox prompt being written, in that prompt's transaction.
 
         Upserted rather than inserted: two passes can race on one event, and the row is a pointer to
-        whichever prompt answers for it rather than a claim about which was first.
+        whichever prompt answers for it rather than a claim about which was first. The pointer is the
+        `submitted_prompt` id (#4667) — a prompt is a durable inbox command before it is any item.
         """
 
-        async def record(db: AsyncSession, item_id: UUID) -> None:
+        async def record(db: AsyncSession, prompt_id: UUID) -> None:
             await db.execute(
                 insert(MatrixIngressEvent)
-                .values([{"event_id": event_id, "item_id": item_id} for event_id in event_ids])
-                .on_conflict_do_update(index_elements=["event_id"], set_={"item_id": item_id})
+                .values([{"event_id": event_id, "prompt_id": prompt_id} for event_id in event_ids])
+                .on_conflict_do_update(index_elements=["event_id"], set_={"prompt_id": prompt_id})
             )
 
         return record

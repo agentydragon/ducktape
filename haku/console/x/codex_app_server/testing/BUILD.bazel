@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_library")
 
 package(
     default_testonly = True,
@@ -12,10 +12,4 @@ py_library(
         "//haku/console/x:conversation_events",
         "//haku/console/x/codex_app_server:projection",
     ],
-)
-
-py_binary(
-    name = "stub_codex_bin",
-    srcs = ["stub_codex.py"],
-    main = "stub_codex.py",
 )

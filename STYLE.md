@@ -300,6 +300,43 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
     config pattern). Exact
     wire-format pins are valid only when an external contract or still-live consumer
     requires that value; name that contract in the test.
+- **Test value: what must break for this to fail?** Judge every test by that
+  question. If the answer is bread-and-butter behavior of a standard library —
+  pydantic parsing a plain `foo: int`, a StrEnum equalling its string, a
+  yaml-load echo — or the test restates the declarations it exercises (field
+  aliases, a default compared against the same imported constant), delete it:
+  libraries' documented basics get no tests here; our choices and edges do.
+  - **Bulk is the multiplier**: a short trivial test is a minor sin; a file
+    full of them, or 150 lines of JSON `model_validate`d onto a plain model, is
+    the real cost. A cheap one-liner may stay on judgment.
+  - **Library spikes are not trivia**: where a library's usage had to be
+    figured out (sharp edges, non-obvious wiring), a test pinning the working
+    pattern is executable documentation CI keeps honest — keep it, and say so
+    in the test or file docstring, unless local context (a README, an `x/`
+    folder) already does. The axis is triviality of the usage, not the
+    presence of a library.
+  - **Change-detector guarding a real constraint → comment at the
+    declaration**: when a test's only enforcement is "the editor must update a
+    mirrored literal in a second file" _and_ the guarded thing can only break
+    by editing that one declaration, move the constraint onto the declaration
+    itself (append-only, values persisted, edits need a migration) and delete
+    the test. A relation against a second live artifact (the running
+    database's enum, a generated config) stays a test.
+  - **Multi-site constraints**: when several places must agree (the same rule
+    in JS and Python, a value mirrored across configs), prefer in order: an
+    integration/e2e test of the shared behavior; a test tying the sites
+    together (parse both files, assert the values agree); and only where both
+    are impractical or degenerate into pure change detectors, a concise sync
+    comment at _every_ site naming what must stay in sync and why — a long
+    why lives in one central place the other comments point to.
+  - **Pin defaults where they act**: best is asserting the behavior the value
+    produces; else assert the boundary artifact carries the value, as literals
+    (the token request asks for the full scope list) — not
+    `field default == the same imported constant`, which passes even when the
+    constant changes.
+  - **Anchors and guards inherit their unit's value**: a positive anchor keeps
+    its negatives from passing vacuously; an anti-vacuity assert keeps an
+    invariant honest. Judge the unit, not the line.
 - **No lint silencing without approval**: no ignore rules or per-line silencing unless
   explicitly approved.
 - **Use pre-commit**: `pre-commit run --all-files` over invoking individual tools.
