@@ -188,6 +188,8 @@ def _why_not(reason: PromptRejection) -> str:
             return "Haku is still working on the previous message"
         case PromptRejection.PROMPT_QUEUED:
             return "a message is already waiting to be answered"
+        case PromptRejection.ADMISSION_CLOSED:
+            return "the operator has closed message admission for a maintenance window"
 
 
 def _arrived_here(origin: PromptOrigin, room_id: str) -> bool:

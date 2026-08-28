@@ -1156,6 +1156,41 @@ class ChannelCursor(Base):
     __table_args__ = (CheckConstraint("event_seq >= 0", name="ck_channel_cursor_event_seq"),)
 
 
+class RuntimeControl(Base):
+    """The operator's admission switch, plus the active-generation read (#4667).
+
+    A single row — `ck_runtime_control_singleton` pins `id` to 1 — created by its own migration
+    and read on every prompt admission and journal-runner admission. Two facts:
+
+    - `generation`: the active runtime transport generation, e.g. ``runner_projection_v1``. A
+      runner presents its own build's generation on the journal hello
+      (`neutral_operations.RunnerHello.generation`); the peering itself is image-carried, and this
+      read is its belt and braces: no row, or another generation, refuses to serve — the fail-safe
+      against an image that rolled ahead of its migration.
+    - `admission_closed`: the operator's drain switch. Closed refuses new prompt admission
+      (channels, SPA, inbox) so a maintenance window drains without stopping each surface by hand.
+      It lands open, and the operator flips it through the API.
+
+    Deliberately not a config value: the flip must be transactional with the admissions it refuses
+    and readable by every replica the same way, which a per-pod ConfigMap is not.
+    """
+
+    __tablename__ = "runtime_control"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, server_default=text("1"))
+    # NOT NULL: the row exists only post-cut, and it always names the generation it cut to. A
+    # Console reading no row is pre-cut; a Console reading a generation other than its build's is
+    # mismatched — both refuse rather than guess.
+    generation: Mapped[str] = mapped_column(Text, nullable=False)
+    admission_closed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_runtime_control_singleton"),
+        CheckConstraint("btrim(generation) <> ''", name="ck_runtime_control_generation_nonempty"),
+    )
+
+
 class Session(Base):
     """One Operator-owned agent conversation and its Agent Sandbox rendezvous.
 
