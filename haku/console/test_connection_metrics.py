@@ -13,8 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.connection_metrics import refresh_connection_metrics
 from haku.console.database_schema import OAuthTokenState, ProviderConnection
+from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.provider_connection_registry import ProviderConnectionKind
 
 NOW = datetime.datetime(2026, 8, 5, 21, 0, tzinfo=datetime.UTC)
 
@@ -48,10 +48,10 @@ async def _connection(
                     token_type="Bearer",
                     refresh_failure_started_at=started_at,
                     refresh_failure_initial_kind="internal" if started_at else None,
-                    refresh_failure_initial_message="OAuthTokenResponseError" if started_at else None,
+                    refresh_failure_initial_message="TokenResponseError" if started_at else None,
                     refresh_failure_latest_at=NOW if started_at else None,
                     refresh_failure_latest_kind="internal" if started_at else None,
-                    refresh_failure_latest_message="OAuthTokenResponseError" if started_at else None,
+                    refresh_failure_latest_message="TokenResponseError" if started_at else None,
                     refresh_failure_count=count,
                     refresh_failure_action="reconnect" if started_at else None,
                 ),

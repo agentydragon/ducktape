@@ -75,7 +75,7 @@ from haku.console.mcp_execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutio
 from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp_reflection_cache import ReflectedCatalog
 from haku.console.node_daemon_models import NodeDaemonExecutionStatus
-from haku.console.oauth_token_state import new_oauth_token_state
+from haku.console.oauth.token_state import new_token_state
 from haku.console.operator_identity import OperatorStatus
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_call_service import ToolCallApplicationService, backend_auth_for_operator
@@ -1275,7 +1275,7 @@ async def _seed_association(
                 created_at=now,
                 client_id="test-client",
                 token_endpoint="http://unused.test/token",
-                token_state=new_oauth_token_state(
+                token_state=new_token_state(
                     operator_id=resolved_operator_id,
                     access_token=access_token,
                     refresh_token=None,

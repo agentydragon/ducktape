@@ -1742,6 +1742,7 @@ class SessionStore:
                 agent_id=agent_id,
                 access_profile_id=access_profile_id,
                 runtime_kind=runtime_kind,
+                harness_kind=runtime_kind,
                 attachments=attachments[row.conversation_id],
                 status=row.status,
                 created_at=row.created_at,

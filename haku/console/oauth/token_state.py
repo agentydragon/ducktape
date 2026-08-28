@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from tenacity import RetryCallState, Retrying, wait_exponential
 
 from haku.console.database_schema import OAuthTokenState
-from haku.console.oauth_token_support import token_expires_at, token_is_fresh
+from haku.console.oauth.token_support import token_expires_at, token_is_fresh
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ _REFRESH_RETRY_WAIT = wait_exponential(multiplier=30, max=datetime.timedelta(min
 _FAILURE_MESSAGE_LIMIT = 1024
 
 
-class OAuthRefreshFailureKind(StrEnum):
+class RefreshFailureKind(StrEnum):
     CONNECT = "connect"
     OUTCOME_UNKNOWN = "outcome_unknown"
     UPSTREAM = "upstream"
@@ -38,39 +38,39 @@ class OAuthRefreshFailureKind(StrEnum):
     INTERNAL = "internal"
 
 
-class OAuthRefreshFailureAction(StrEnum):
+class RefreshFailureAction(StrEnum):
     RETRYING = "retrying"
     RECONNECT = "reconnect"
     OPERATOR_ACTION = "operator_action"
 
 
-class OAuthRefreshFailureDetail(BaseModel):
+class RefreshFailureDetail(BaseModel):
     at: datetime.datetime
-    kind: OAuthRefreshFailureKind
+    kind: RefreshFailureKind
     message: str
 
 
-class OAuthRefreshFailureEpisode(BaseModel):
+class RefreshFailureEpisode(BaseModel):
     model_config = ConfigDict(json_schema_serialization_defaults_required=True)
 
     started_at: datetime.datetime
-    initial: OAuthRefreshFailureDetail
-    latest: OAuthRefreshFailureDetail
+    initial: RefreshFailureDetail
+    latest: RefreshFailureDetail
     attempts: int
     resolution: str
     next_retry_at: datetime.datetime | None = None
 
 
-class OAuthRefreshError(RuntimeError):
+class RefreshError(RuntimeError):
     """A sanitized, classified refresh failure safe to persist and reflect."""
 
-    def __init__(self, message: str, *, kind: OAuthRefreshFailureKind, action: OAuthRefreshFailureAction) -> None:
+    def __init__(self, message: str, *, kind: RefreshFailureKind, action: RefreshFailureAction) -> None:
         super().__init__(message)
         self.kind = kind
         self.action = action
 
 
-class OAuthRefreshBlockedError(RuntimeError):
+class RefreshBlockedError(RuntimeError):
     """The durable failure state currently prevents another refresh attempt."""
 
 
@@ -90,7 +90,7 @@ def _refresh_retry_delay(failure_count: int) -> datetime.timedelta:
     return datetime.timedelta(seconds=_REFRESH_RETRY_WAIT(retry_state))
 
 
-def new_oauth_token_state(
+def new_token_state(
     *,
     operator_id: UUID,
     access_token: str,
@@ -116,7 +116,7 @@ def new_oauth_token_state(
     )
 
 
-def replace_oauth_token_state(
+def replace_token_state(
     state: OAuthTokenState,
     *,
     access_token: str,
@@ -146,7 +146,7 @@ def replace_oauth_token_state(
     state.refresh_retry_at = None
 
 
-def refresh_failure_episode(state: OAuthTokenState) -> OAuthRefreshFailureEpisode | None:
+def refresh_failure_episode(state: OAuthTokenState) -> RefreshFailureEpisode | None:
     if state.refresh_failure_count == 0:
         return None
     assert state.refresh_failure_started_at is not None
@@ -157,32 +157,32 @@ def refresh_failure_episode(state: OAuthTokenState) -> OAuthRefreshFailureEpisod
     assert state.refresh_failure_latest_message is not None
     action = refresh_failure_action(state)
     assert action is not None
-    return OAuthRefreshFailureEpisode(
+    return RefreshFailureEpisode(
         started_at=state.refresh_failure_started_at,
-        initial=OAuthRefreshFailureDetail(
+        initial=RefreshFailureDetail(
             at=state.refresh_failure_started_at,
-            kind=OAuthRefreshFailureKind(state.refresh_failure_initial_kind),
+            kind=RefreshFailureKind(state.refresh_failure_initial_kind),
             message=state.refresh_failure_initial_message,
         ),
-        latest=OAuthRefreshFailureDetail(
+        latest=RefreshFailureDetail(
             at=state.refresh_failure_latest_at,
-            kind=OAuthRefreshFailureKind(state.refresh_failure_latest_kind),
+            kind=RefreshFailureKind(state.refresh_failure_latest_kind),
             message=state.refresh_failure_latest_message,
         ),
         attempts=state.refresh_failure_count,
         resolution={
-            OAuthRefreshFailureAction.RETRYING: "Retry scheduled automatically.",
-            OAuthRefreshFailureAction.RECONNECT: "Reconnect the account before retrying.",
-            OAuthRefreshFailureAction.OPERATOR_ACTION: "Operator action is required before retrying.",
+            RefreshFailureAction.RETRYING: "Retry scheduled automatically.",
+            RefreshFailureAction.RECONNECT: "Reconnect the account before retrying.",
+            RefreshFailureAction.OPERATOR_ACTION: "Operator action is required before retrying.",
         }[action],
         next_retry_at=state.refresh_retry_at,
     )
 
 
-def refresh_failure_action(state: OAuthTokenState) -> OAuthRefreshFailureAction | None:
+def refresh_failure_action(state: OAuthTokenState) -> RefreshFailureAction | None:
     if state.refresh_failure_action is None:
         return None
-    return OAuthRefreshFailureAction(state.refresh_failure_action)
+    return RefreshFailureAction(state.refresh_failure_action)
 
 
 @dataclass(frozen=True, slots=True)
@@ -209,13 +209,13 @@ class _Claim:
 
 @dataclass(frozen=True, slots=True)
 class _Blocked:
-    failure: OAuthRefreshFailureEpisode
+    failure: RefreshFailureEpisode
 
 
 type _ClaimResult = _Fresh | _Missing | _Wait | _Claim | _Blocked
 
 
-class PostgresOAuthTokenStateStore:
+class PostgresTokenStateStore:
     """Own the single freshness/claim/refresh/write algorithm for every OAuth association."""
 
     def __init__(
@@ -236,7 +236,7 @@ class PostgresOAuthTokenStateStore:
             if not state.refresh_token:
                 return _Missing()
             if (failure := refresh_failure_episode(state)) is not None:
-                if refresh_failure_action(state) != OAuthRefreshFailureAction.RETRYING:
+                if refresh_failure_action(state) != RefreshFailureAction.RETRYING:
                     return _Blocked(failure)
                 if failure.next_retry_at is not None and failure.next_retry_at > now:
                     return _Blocked(failure)
@@ -260,13 +260,13 @@ class PostgresOAuthTokenStateStore:
             if state is None or state.refresh_claim_id != claim_id:
                 return
             now = _now()
-            if isinstance(error, OAuthRefreshError):
+            if isinstance(error, RefreshError):
                 kind = error.kind
                 action = error.action
                 message = str(error).strip()[:_FAILURE_MESSAGE_LIMIT] or type(error).__name__
             else:
-                kind = OAuthRefreshFailureKind.INTERNAL
-                action = OAuthRefreshFailureAction.RETRYING
+                kind = RefreshFailureKind.INTERNAL
+                action = RefreshFailureAction.RETRYING
                 message = f"OAuth token refresh failed: {type(error).__name__}"
             if state.refresh_failure_count == 0:
                 state.refresh_failure_started_at = now
@@ -277,7 +277,7 @@ class PostgresOAuthTokenStateStore:
             state.refresh_failure_latest_message = message
             state.refresh_failure_count += 1
             state.refresh_failure_action = action
-            if action == OAuthRefreshFailureAction.RETRYING:
+            if action == RefreshFailureAction.RETRYING:
                 state.refresh_retry_at = now + _refresh_retry_delay(state.refresh_failure_count)
             else:
                 state.refresh_retry_at = None
@@ -301,7 +301,7 @@ class PostgresOAuthTokenStateStore:
                 if token_is_fresh(state.token_expires_at, now):
                     return state.access_token
                 raise RuntimeError("OAuth token state changed during refresh; retry the tool call")
-            replace_oauth_token_state(
+            replace_token_state(
                 state,
                 access_token=refreshed.access_token,
                 refresh_token=refreshed.refresh_token,
@@ -322,7 +322,7 @@ class PostgresOAuthTokenStateStore:
                 case _Wait(seconds):
                     await asyncio.sleep(seconds)
                 case _Blocked(failure):
-                    raise OAuthRefreshBlockedError(failure.latest.message)
+                    raise RefreshBlockedError(failure.latest.message)
                 case _Claim() as claim:
                     break
         try:

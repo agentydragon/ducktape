@@ -48,12 +48,8 @@ from haku.console import (
     mcp_operator_oauth,
     mcp_server,
     node_daemons,
-    oauth_association_maintenance,
-    oauth_connection_result,
-    oauth_token_state,
     operator_auth,
     operator_login_flow,
-    provider_connection,
     push_routes,
     tool_call_service,
     web_push,
@@ -91,6 +87,7 @@ from haku.console.mcp_config import (
     validate_in_process_server_bindings,
 )
 from haku.console.models import ChatLaunchOption, ConfigResponse
+from haku.console.oauth import association_maintenance, connection_result, provider_connection, token_state
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.recall_index_reader import PostgresIndexSearcher
@@ -228,7 +225,7 @@ def create_app(
     db_sessions = async_sessionmaker(db_engine, expire_on_commit=False)
     operator_identity_store = PostgresOperatorIdentityStore(db_sessions, _operator_identity_trust(settings))
     operator_login_flows = operator_login_flow.PostgresOperatorLoginFlowStore(db_sessions)
-    oauth_token_states = oauth_token_state.PostgresOAuthTokenStateStore(
+    oauth_token_states = token_state.PostgresTokenStateStore(
         db_sessions, operator_identity_store=operator_identity_store
     )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
@@ -267,7 +264,7 @@ def create_app(
         provider_clients=provider_clients,
         operator_connections=console_config.operator_connections,
     )
-    oauth_connection_result_store = oauth_connection_result.PostgresOAuthConnectionResultStore(
+    oauth_connection_result_store = connection_result.PostgresConnectionResultStore(
         db_sessions, operator_identity_store=operator_identity_store
     )
     # Web Push reaches the operator's browsers when none of them has the console open. Without a
@@ -293,7 +290,7 @@ def create_app(
         client_secret=settings.operator_oidc.client_secret.get_secret_value(),
         issuer=settings.operator_oidc.issuer,
     )
-    oauth_maintenance = oauth_association_maintenance.OAuthAssociationMaintenance(
+    oauth_maintenance = association_maintenance.AssociationMaintenance(
         db_engine,
         db_sessions,
         servers=console_config.mcp.servers,
@@ -849,7 +846,7 @@ def create_app(
     app.include_router(http_grant_routes.router, dependencies=operator_only)
     app.include_router(mcp_operator_oauth.router, dependencies=operator_only)
     app.include_router(provider_connection.router, dependencies=operator_only)
-    app.include_router(oauth_connection_result.router, dependencies=operator_only)
+    app.include_router(connection_result.router, dependencies=operator_only)
     app.include_router(enrollment_routes.operator_router, dependencies=operator_only)
     app.include_router(node_daemons.operator_router, dependencies=operator_only)
     app.include_router(push_routes.router, dependencies=operator_only)

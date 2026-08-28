@@ -259,10 +259,10 @@ def test_terraform_key_allowlists_only_name_models_the_proxy_serves() -> None:
 # hardcodes wire_api="responses" (haku/runtime/x/bridge/codex_options.py), so the model
 # must be a Responses-wire entry; a Messages-wire name fails every turn at /v1/responses
 # (haku/console/x/codex_app_server/testdata/real_provider_failure.sanitized.jsonl).
-def test_console_codex_chat_runtimes_use_oai_responses_wire_models() -> None:
+def test_console_codex_harnesses_use_oai_responses_wire_models() -> None:
     config = yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/config.yaml").read_text())
     responses_wire_names = {exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, model) for model in CLIPROXY_MODELS}
-    for name, runtime in config["chat_runtimes"].items():
+    for name, runtime in config["harnesses"].items():
         implementation = runtime["implementation"]
         if implementation["kind"] == "codex_app_server":
             assert implementation["model"] in responses_wire_names, name

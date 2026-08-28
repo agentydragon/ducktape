@@ -1,0 +1,183 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//haku/console:__subpackages__"])
+
+py_library(
+    name = "association_maintenance",
+    srcs = ["association_maintenance.py"],
+    deps = [
+        ":provider_connection",
+        ":token_support",
+        "//haku/console:authentik_operator_token",
+        "//haku/console:database_schema",
+        "//haku/console:mcp_config",
+        "//haku/console:mcp_operator_oauth",
+        "//haku/console:operator_identity",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "callback_page",
+    srcs = ["callback_page.py"],
+    data = ["callback.html.j2"],
+    deps = [
+        "@pypi//fastapi",
+        "@pypi//jinja2",
+    ],
+)
+
+py_library(
+    name = "connection_result",
+    srcs = ["connection_result.py"],
+    deps = [
+        "//haku/console:database_schema",
+        "//haku/console:operator_auth",
+        "//haku/console:operator_identity_store",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "provider_connection",
+    srcs = ["provider_connection.py"],
+    deps = [
+        ":connection_result",
+        ":provider_connection_registry",
+        ":token_state",
+        ":token_support",
+        "//haku/console:config",
+        "//haku/console:console_events",
+        "//haku/console:database_schema",
+        "//haku/console:deps",
+        "//haku/console:mcp_config",
+        "//haku/console:operator_auth",
+        "//haku/console:operator_identity_store",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "provider_connection_registry",
+    srcs = ["provider_connection_registry.py"],
+)
+
+py_library(
+    name = "token_state",
+    srcs = ["token_state.py"],
+    deps = [
+        ":token_support",
+        "//haku/console:database_schema",
+        "//haku/console:operator_identity_store",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "token_support",
+    srcs = ["token_support.py"],
+    deps = [
+        "//haku/console:config",
+        "@pypi//httpx",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_association_maintenance",
+    size = "medium",
+    srcs = ["test_association_maintenance.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":association_maintenance",
+        ":provider_connection_registry",
+        ":token_state",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "//haku/console:mcp_config",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+        # pytest-asyncio auto mode (root conftest) needs the plugin importable at runtime.
+        "@pypi//pytest_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_connection_result",
+    size = "medium",
+    srcs = ["test_connection_result.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":connection_result",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # pytest-asyncio auto mode (async test functions)
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_provider_connection",
+    size = "medium",
+    srcs = ["test_provider_connection.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":provider_connection",
+        ":provider_connection_registry",
+        ":token_state",
+        "//:conftest",
+        "//haku/console:config",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "//haku/console:mcp_config",
+        "//haku/console:operator_identity",
+        "//haku/console:operator_identity_store",
+        "//haku/console:tool_call_service",
+        "@pypi//fastapi",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_token_support",
+    srcs = ["test_token_support.py"],
+    deps = [
+        ":token_support",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)

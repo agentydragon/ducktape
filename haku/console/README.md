@@ -65,7 +65,7 @@ WebSocket is only a lossy invalidation channel: REST remains authoritative. `lis
 reflects persisted heartbeat/lease state; the separately authenticated `/api/node-daemons/v1/*`
 machine API owns heartbeat, durable work claims, lease renewal, and idempotent results. Operator
 OAuth and provider associations are managed by `mcp_operator_oauth.py` and
-`provider_connection.py`; browser rendering and callback-result handling are specified in
+`oauth/provider_connection.py`; browser rendering and callback-result handling are specified in
 <docs/oauth_browser_surfaces.md>.
 
 ### MCP server (`/mcp`)

@@ -60,8 +60,8 @@ from haku.console.grant_principal import GrantPrincipalKind
 from haku.console.http_grant_models import HttpMethod, HttpMethods, HttpScheme
 from haku.console.kubernetes_grant_models import KubernetesGrantScope, KubernetesGrantStatus, KubernetesRule
 from haku.console.node_daemon_models import NodeDaemonExecutionStatus
+from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
 from haku.console.operator_identity import OperatorStatus
-from haku.console.provider_connection_registry import ProviderConnectionKind
 from haku.console.pydantic_column import PydanticColumn
 from haku.console.tool_calls import ToolCallStatus
 from util.enum_vocab import UnknownValue
@@ -949,7 +949,7 @@ class ProviderConnectionFlow(Base):
     scope: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
-class OAuthConnectionResult(Base):
+class OAuthConnectionResultRow(Base):
     """A short-lived, single-use browser handoff after an account-link callback.
 
     The browser receives only the opaque ``result_id``. The outcome stays server-side, is

@@ -43,8 +43,8 @@ from haku.console.mcp_operator_oauth import (
     McpOperatorAuthUnconnected,
 )
 from haku.console.mcp_reflection_cache import ReflectedCatalog
+from haku.console.oauth.provider_connection import ProviderConnected, ProviderConnectionStatusResponse
 from haku.console.operator_identity import ResolvedOperatorIdentity
-from haku.console.provider_connection import ProviderConnected, ProviderConnectionStatusResponse
 from haku.console.tool_call_actor import AgentActor, RuntimeActor
 from haku.console.tool_call_service import ToolCallApplicationService, ToolCallNotFoundError
 from haku.console.tool_calls import (
