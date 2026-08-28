@@ -17,23 +17,23 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from haku.console.conftest import default_agent_binding, insert_approved_tool_call, insert_live_session
 from haku.console.database_schema import HttpGrantRow
 from haku.console.grants.envelope import GrantSourceError, GrantStatus
-from haku.console.grants.http.models import HttpGrantSpec, HttpMethod, HttpOrigin, HttpRequestCoverage, HttpScheme
-from haku.console.grants.http.repository import PostgresHttpGrantRepository
+from haku.console.grants.http.models import GrantSpec, HttpMethod, HttpOrigin, HttpRequestCoverage, HttpScheme
+from haku.console.grants.http.repository import PostgresGrantRepository
 from haku.console.grants.principal import AgentGrantPrincipal, RequestPrincipal, SessionGrantPrincipal
 
-# Relative: HttpGrant.status is computed against the live clock, so windows anchor to it.
+# Relative: Grant.status is computed against the live clock, so windows anchor to it.
 _NOW = datetime.now(UTC)
-_SPEC = HttpGrantSpec(
+_SPEC = GrantSpec(
     origin=HttpOrigin(scheme=HttpScheme.HTTPS, host="grocy.example", port=443),
     coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})),
 )
-_OTHER_SPEC = HttpGrantSpec(
+_OTHER_SPEC = GrantSpec(
     origin=HttpOrigin(scheme=HttpScheme.HTTPS, host="api.example", port=8443),
     coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET, HttpMethod.POST}), path_regex="/v1/.*"),
     credential_handle="github-bot",
 )
 
-_insert_http_source = partial(insert_approved_tool_call, server_id="http_grants")
+_insert_http_source = partial(insert_approved_tool_call, server_id="grants")
 
 
 def test_repository_enforces_source_provenance_and_lifecycle(make_client: Any) -> None:
@@ -45,7 +45,7 @@ def test_repository_enforces_source_provenance_and_lifecycle(make_client: Any) -
         source_tool_call_id = client.portal.call(
             partial(_insert_http_source, sessions, binding_id=binding_id, now=_NOW)
         )
-        repository = PostgresHttpGrantRepository(sessions)
+        repository = PostgresGrantRepository(sessions)
 
         async def exercise() -> None:
             (grant,) = await repository.create_many(
@@ -94,8 +94,8 @@ def test_repository_persists_the_allow_prohibited_address_flag(make_client: Any)
         source_tool_call_id = client.portal.call(
             partial(_insert_http_source, sessions, binding_id=binding_id, now=_NOW)
         )
-        repository = PostgresHttpGrantRepository(sessions)
-        flagged = HttpGrantSpec(
+        repository = PostgresGrantRepository(sessions)
+        flagged = GrantSpec(
             origin=HttpOrigin(scheme=HttpScheme.HTTP, host="gateway.internal.example", port=4000),
             coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.POST})),
             allow_prohibited_address=True,
@@ -126,7 +126,7 @@ def test_expiry_is_derived_and_ending_an_expired_grant_records_nothing(make_clie
         source_tool_call_id = client.portal.call(
             partial(_insert_http_source, sessions, binding_id=binding_id, now=_NOW)
         )
-        repository = PostgresHttpGrantRepository(sessions)
+        repository = PostgresGrantRepository(sessions)
 
         async def exercise() -> None:
             # A lease whose whole window is behind the clock: written directly at this layer,
@@ -173,7 +173,7 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
         source_tool_call_id = client.portal.call(
             partial(_insert_http_source, sessions, binding_id=binding_id, now=_NOW)
         )
-        repository = PostgresHttpGrantRepository(sessions)
+        repository = PostgresGrantRepository(sessions)
 
         async def exercise() -> None:
             grants = await repository.create_many(
@@ -235,7 +235,7 @@ def test_repository_matches_agent_and_exact_session_principals(make_client: Any)
         session_source = client.portal.call(
             partial(_insert_http_source, sessions, binding_id=binding_id, now=_NOW, session_id=session_id)
         )
-        repository = PostgresHttpGrantRepository(sessions)
+        repository = PostgresGrantRepository(sessions)
 
         async def exercise() -> None:
             (agent_grant,) = await repository.create_many(
@@ -321,7 +321,7 @@ def test_repository_rejects_auto_approved_and_foreign_sources(make_client: Any) 
                 _insert_http_source, sessions, binding_id=binding_id, now=_NOW, approval_policy_id="unsafe-test-policy"
             )
         )
-        repository = PostgresHttpGrantRepository(sessions)
+        repository = PostgresGrantRepository(sessions)
 
         async def exercise() -> None:
             for source_tool_call_id in [auto_approved, "tc_never_recorded"]:
@@ -349,7 +349,7 @@ def test_database_holds_the_end_fact_shape(make_client: Any) -> None:
         source_tool_call_id = client.portal.call(
             partial(_insert_http_source, sessions, binding_id=binding_id, now=_NOW)
         )
-        repository = PostgresHttpGrantRepository(sessions)
+        repository = PostgresGrantRepository(sessions)
 
         async def exercise() -> None:
             (grant,) = await repository.create_many(

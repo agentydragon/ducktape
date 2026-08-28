@@ -8,7 +8,7 @@ still impose stricter cross-field rules. Two catalogs are emitted, selected by `
 ``--results`` flag: ``McpToolArguments`` and ``McpToolResults``.
 
 Beyond the console's own in-process servers (gmail, google_calendar, haku_routine, hostexec,
-kubernetes), the
+grants), the
 result catalog includes the console-native reflection tools directly from their Python response
 models, which keeps the trusted frontend's runtime validators identical to the MCP output contract
 without a database-backed console application or an HTTP status endpoint.
@@ -40,7 +40,7 @@ from haku.console.config import HostexecConfig
 from haku.console.hostexecd.service import DaemonStatusResponse
 from haku.console.in_process_servers import HostexecServerConfig, InProcessServerDependencies, build_in_process_servers
 from haku.console.mcp_server import SERVER_NAME, McpServerConnectionStatusResponse, McpServerProbeResponse
-from haku.console.tools.http_grants import HttpToolsService
+from haku.console.tools.grants import GrantsToolsService
 from haku.console.tools.kubernetes import KubernetesToolsService
 from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 
@@ -142,9 +142,9 @@ def build_schema_servers() -> dict[str, FastMCP]:
     # touched until a tool executes, and `_InertCollaborator` makes that invariant fail
     # loudly if FastMCP ever changes its registration behavior. gmail/google_calendar builders
     # build their own inert client from a None token; routine and hostexec need an inert
-    # launcher/broker respectively, haku_index needs an inert searcher, and kubernetes/http_grants need inert
-    # grant/authorization/enrollment services. hostexec's `hosts` map is empty — registration only needs the
-    # tool's own schema, never a real host to route to.
+    # launcher/broker respectively, haku_index needs an inert searcher, and grants needs inert per-domain
+    # grant/enrollment services plus an inert kubernetes authorization for its `kubernetes_can_i` tool.
+    # hostexec's `hosts` map is empty — registration only needs the tool's own schema, never a real host.
     dependency: Any = inert
     servers = {
         server_id: registration.builder(None)
@@ -153,8 +153,12 @@ def build_schema_servers() -> dict[str, FastMCP]:
                 routine_launcher=dependency,
                 hostexec=HostexecServerConfig(config=HostexecConfig(hosts={}), token_endpoint="", broker=dependency),
                 index=dependency,
-                kubernetes=KubernetesToolsService(grants=dependency, authorization=dependency),
-                http_grants=HttpToolsService(grants=dependency, agents=dependency),
+                grants=GrantsToolsService(
+                    kubernetes=dependency,
+                    http=dependency,
+                    agents=dependency,
+                    can_i=KubernetesToolsService(authorization=dependency),
+                ),
             )
         ).items()
     }

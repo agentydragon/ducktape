@@ -52,8 +52,12 @@ export type ConversationUpdate = components["schemas"]["ConversationUpdate"];
 export type SessionFrame = components["schemas"]["SessionFrameView"];
 export type SessionFramePage = components["schemas"]["SessionFramePage"];
 export type AgentListResponse = components["schemas"]["AgentListResponse"];
-export type OperatorKubernetesGrant = components["schemas"]["OperatorKubernetesGrant"];
-export type KubernetesGrantListResponse = components["schemas"]["KubernetesGrantListResponse"];
+// The #4918 entity-prefix drop renamed these route models to `OperatorGrant`/`GrantListResponse`,
+// which collide with the http domain's in the flat OpenAPI component namespace; pydantic emits
+// module-path-qualified component keys, which the generated types carry (naming_and_layout §4.1 seam 3).
+export type OperatorKubernetesGrant = components["schemas"]["haku__console__grants__kubernetes__routes__OperatorGrant"];
+export type KubernetesGrantListResponse =
+  components["schemas"]["haku__console__grants__kubernetes__routes__GrantListResponse"];
 export type EnrollmentView = components["schemas"]["EnrollmentView"];
 export type EnrollmentDecisionRequest =
   | components["schemas"]["CreateEnrollmentRequest"]

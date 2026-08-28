@@ -62,15 +62,18 @@ from haku.console.deployment import DeploymentInfo, build_deployment_info
 from haku.console.grants.http import decide_routes, routes as http_grant_routes
 from haku.console.grants.http.decide_config import load_egress_decide
 from haku.console.grants.http.decide_service import HttpDecideService
-from haku.console.grants.http.repository import PostgresHttpGrantRepository
-from haku.console.grants.http.service import HttpGrantService
+
+# Both grant domains now define `GrantService`/`PostgresGrantRepository` (§4.1 entity-prefix drop);
+# alias per domain at this one import seam to keep the two straight (STYLE permits collision aliases).
+from haku.console.grants.http.repository import PostgresGrantRepository as PostgresHttpGrantRepository
+from haku.console.grants.http.service import GrantService as HttpGrantService
 from haku.console.grants.kubernetes import proxy_authorization, routes as kubernetes_grant_routes
 from haku.console.grants.kubernetes.authorization import (
     KubernetesAuthorizationService,
     KubernetesSubjectAccessReviewClient,
 )
-from haku.console.grants.kubernetes.repository import PostgresKubernetesGrantRepository
-from haku.console.grants.kubernetes.service import KubernetesGrantService
+from haku.console.grants.kubernetes.repository import PostgresGrantRepository as PostgresKubernetesGrantRepository
+from haku.console.grants.kubernetes.service import GrantService as KubernetesGrantService
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.hostexecd import service
 from haku.console.in_process_servers import (
@@ -104,7 +107,7 @@ from haku.console.session.store import Store
 from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.tools import (
     gmail as gmail_tools,
-    http_grants as http_grants_tools,
+    grants as grants_tools,
     kubernetes as kubernetes_tools,
     routine as routine_tools,
     sandbox as sandbox_tools,
@@ -595,17 +598,17 @@ def create_app(
                 # tools would reflect an always-empty corpus.
                 conversations=(reader.ConversationReads(session_store) if runtime_registry.configured_kinds else None),
                 sandbox=sandbox_server,
-                kubernetes=(
-                    kubernetes_tools.KubernetesToolsService(
-                        grants=kubernetes_grants, authorization=kubernetes_authorization
+                # One `grants` server fronts both grant domains plus the kubernetes SAR check
+                # (`kubernetes_can_i`, #4918), so it needs the kubernetes authorization service; it
+                # registers only when that is configured (as it always is in the deployed config).
+                grants=(
+                    grants_tools.GrantsToolsService(
+                        kubernetes=kubernetes_grants,
+                        http=http_grants,
+                        agents=agent_authority,
+                        can_i=kubernetes_tools.KubernetesToolsService(authorization=kubernetes_authorization),
                     )
-                    if kubernetes_authorization is not None
-                    and kubernetes_tools.KUBERNETES_SERVER_ID in configured_server_ids
-                    else None
-                ),
-                http_grants=(
-                    http_grants_tools.HttpToolsService(grants=http_grants, agents=agent_authority)
-                    if http_grants_tools.HTTP_GRANTS_SERVER_ID in configured_server_ids
+                    if kubernetes_authorization is not None and grants_tools.GRANTS_SERVER_ID in configured_server_ids
                     else None
                 ),
             )

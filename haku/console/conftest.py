@@ -220,7 +220,9 @@ async def insert_approved_tool_call(
     *,
     binding_id: UUID,
     now: datetime,
-    server_id: str = "kubernetes",
+    # The default models a grant-creation source ToolCall on the shared `grants` server (#4918),
+    # matching the provenance pin in the grant repositories.
+    server_id: str = "grants",
     tool_name: str = "create_grant",
     approval_policy_id: str | None = None,
     session_id: UUID | None = None,

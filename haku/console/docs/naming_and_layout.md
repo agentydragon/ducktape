@@ -205,13 +205,13 @@ names graduate into <agent_authority.md>'s boundary section, not a separate doc.
 
 ### 3.3 Grant vocabulary (#4838)
 
-| Concept              | Canonical name                                                                               | Notes                                                                                                                                                                                              |
-| -------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Grant (domain / row) | `KubernetesGrant` / `KubernetesGrantRow` (`kubernetes_grants`); `HttpGrant` / `HttpGrantRow` | the `…Row`-at-definition pattern holds in both domains; rows stay at their central `database_schema.py` definitions. The in-package drop to `Grant`/`GrantSpec` waits on §4.1 seam 3 and rides C12 |
-| Principal axis       | `GrantPrincipalKind` {`AGENT`, `SESSION`, future `PROFILE`}                                  | the Agent-facing `applies_to` stays `{agent, session}` **permanently**; profile principals are operator-initiated only, never Agent-requestable (#4838's load-bearing asymmetry)                   |
-| Lifetime axis        | temporary \| permanent                                                                       | reject `permanent × session` and click-approved `permanent × profile` by construction                                                                                                              |
-| Lifecycle vocabulary | `GrantStatus` {`ACTIVE`, `RELEASED`, `REVOKED`, `EXPIRED`} + `derive_status`                 | one envelope enum (was per-domain `KubernetesGrantStatus`/`HttpGrantStatus`); status is derived from the end facts in both domains via `derive_status`, never stored                               |
-| Shared envelope      | `grants/envelope.py` + `grants/provenance.py` (#4889, landed)                                | principal columns, validity window, lifecycle owner, manual-approval source-ToolCall provenance, and the end facts (with their shared fact-shape CHECK, #4883) consolidated across both domains    |
+| Concept              | Canonical name                                                                                       | Notes                                                                                                                                                                                                                                                     |
+| -------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Grant (domain / row) | in-package `Grant` / `KubernetesGrantRow` (`kubernetes_grants`); in-package `Grant` / `HttpGrantRow` | the in-package entity dropped to `Grant`/`GrantSpec` in both domains (C12, module-qualified where they coexist — `kubernetes.Grant` vs `http.Grant`); the `…Row` classes keep the concept-name and stay at their central `database_schema.py` definitions |
+| Principal axis       | `GrantPrincipalKind` {`AGENT`, `SESSION`, future `PROFILE`}                                          | the Agent-facing `applies_to` stays `{agent, session}` **permanently**; profile principals are operator-initiated only, never Agent-requestable (#4838's load-bearing asymmetry)                                                                          |
+| Lifetime axis        | temporary \| permanent                                                                               | reject `permanent × session` and click-approved `permanent × profile` by construction                                                                                                                                                                     |
+| Lifecycle vocabulary | `GrantStatus` {`ACTIVE`, `RELEASED`, `REVOKED`, `EXPIRED`} + `derive_status`                         | one envelope enum (was per-domain `KubernetesGrantStatus`/`HttpGrantStatus`); status is derived from the end facts in both domains via `derive_status`, never stored                                                                                      |
+| Shared envelope      | `grants/envelope.py` + `grants/provenance.py` (#4889, landed)                                        | principal columns, validity window, lifecycle owner, manual-approval source-ToolCall provenance, and the end facts (with their shared fact-shape CHECK, #4883) consolidated across both domains                                                           |
 
 ### 3.4 De-Haku (#4865) — `Haku` → `<platform>`
 
@@ -224,13 +224,17 @@ docs. **"Haku" survives only as one configured agent/tenant.** Tool-server ids t
 
 ### 3.5 Tool-server names (#4918)
 
-**Decided 2026-08-28:** consolidate to one `grants` server with a domain discriminator
-(`kubernetes` | `http`), now that #4889's shared grants envelope landed (#5018); `can_i` splits into
-its own `kubernetes` server. The grants entity-prefix drop (`KubernetesGrant` → `Grant`,
-`HttpGrantSpec` → `GrantSpec`) rides this cutover. Remaining: the roster audit of
-`gmail`/`google_calendar`/`hostexec`/`sandbox`/`http_grants` for under/over-promise, then the
-coordinated cutover — config + auto-approval policies + frontend catalogs + docs in one release;
-stored ToolCall `server_id` audit history is left as-is.
+**Landed (C12):** one `grants` server exposes the shared grant verbs
+(`create_grant`/`list_grants`/`get_grant`/`release_grants`/`revoke_grants`) over #4889's envelope
+with a `domain` discriminator (`kubernetes` | `http`) on each per-domain capability payload; the
+kubernetes SAR check rides the same server as `kubernetes_can_i`, not a separate `kubernetes`
+server. The grants entity-prefix drop (`KubernetesGrant` → `Grant`, `HttpGrantSpec` → `GrantSpec`,
+the route wrapper/response models — §4.1 seam 3) landed with it. The old `http_grants` and
+`kubernetes` server ids are gone from config, auto-approval policies, frontend catalogs, and docs in
+one release; stored ToolCall `server_id` audit history keeps the old names (append-only, never
+rewritten). **Remaining:** the accuracy audit of the non-grant in-process server names
+(`gmail`/`google_calendar`/`hostexec`/`sandbox`) for under/over-promise; the `haku_*` tool-id
+de-prefix rides C14 (§3.4).
 
 ## 4. Naming conventions — the reviewer checklist
 
@@ -247,10 +251,10 @@ every package the split creates, not just `grants/`:
   `kubernetes_authorization.py` → `authorization.py`, `kube_proxy_authorization.py` →
   `proxy_authorization.py` (landed with C11; `kubectl_passthrough_policy.py` keeps its name —
   `kubectl` names the external kubectl-passthrough MCP server, not the package). The entity drop
-  (`KubernetesGrant` → `Grant`, `KubernetesGrantService` → `Service`, …) waits on seam 3 below.
+  (`KubernetesGrant` → `Grant`, `KubernetesGrantService` → `Service`, …) landed with C12 (seam 3).
 - **`grants/http/`**: symmetric — `http_grant_service.py` → `service.py`,
   `http_decide_config.py` → `decide_config.py`, etc. (landed with C11); `HttpGrantSpec` →
-  `GrantSpec` etc. wait on seam 3.
+  `GrantSpec` etc. landed with C12 (seam 3).
 - **`conversation/`** _(files landed, with `ConversationRuntime` → `Runtime`)_: C5 landed the
   vocabulary into the package; the remaining entity drops (`ConversationEvent` → `Event`,
   `ConversationItem` → `Item`, `ConversationTurn` → `Turn`) stay pending; the ORM rows stay
@@ -282,8 +286,12 @@ Three seams are handled deliberately — **do not reintroduce the prefix to dodg
    vocabulary's `GrantScope` all collide there, and pydantic degrades a collision to
    module-path-qualified component keys that the SPA's generated types then carry. So a model whose
    class name is a published component key renames with the C4d recipe — schema consumers in
-   lockstep — not as a package-extraction rider. C11 moved the files and left these class names;
-   the entity pass rides C12.
+   lockstep — not as a package-extraction rider. C11 moved the files and left these class names; the
+   entity pass **landed with C12**: `KubernetesGrant`/`HttpGrant` → `Grant`, `…GrantSpec` →
+   `GrantSpec`, `KubernetesGrantScope` → `GrantScope`, and the route wrapper/response models →
+   `OperatorGrant`/`GrantListResponse`/`RevokeGrantRequest`, whose OpenAPI collisions pydantic now
+   emits as module-path-qualified keys (e.g. `haku__console__grants__kubernetes__routes__OperatorGrant`)
+   that `frontend/client.ts` consumes.
 
 **Extension, gated on `<platform>` (#4865):** once the tree re-roots under `<platform>/console/`, the
 `Haku`/`haku_` prefix on internal entities and tool-server names is redundant by the identical logic.
@@ -439,14 +447,13 @@ Needs operator go **and** the `<auth-context>` name pick.
 
 ### Grants lane
 
-- **C12 · Tool-server naming (#4918)** _(semantic — coordinated cutover)_ — **Decided 2026-08-28:**
-  consolidate to one `grants` server with a domain discriminator (`kubernetes` | `http`), now that
-  #4889's shared grants envelope landed (#5018); `can_i` splits into its own `kubernetes` server.
-  The grants **entity**-prefix drop deferred by §4.1 seam 3 (`KubernetesGrant` → `Grant`,
-  `HttpGrantSpec` → `GrantSpec`, the wrapper/response models) rides this cutover — the same
-  published-surface recipe, one schema-consumer move. Remaining: the roster audit, then the
-  coordinated cutover — config + auto-approval policies + frontend catalogs + docs in one release;
-  stored ToolCall `server_id` audit history left as-is.
+- **#4918 roster audit** _(mechanical)_ — the tool-server consolidation landed (C12: one `grants`
+  server over #4889's envelope with a `domain` discriminator, `can_i` folded in as
+  `kubernetes_can_i`, and the grants entity-prefix drop — §3.5, §4.1 seam 3 — in one coordinated
+  release across config, auto-approval policies, frontend catalogs, and docs; stored ToolCall
+  `server_id` audit history left as-is). Remaining: audit the non-grant in-process server names
+  (`gmail`/`google_calendar`/`hostexec`/`sandbox`) for under/over-promise; the `haku_*` tool-id
+  de-prefix rides C14.
 
 ### De-Haku and final packaging — last
 
@@ -464,7 +471,7 @@ Needs operator go **and** the `<auth-context>` name pick.
 ```text
 now ─┬─ C13               ← staged severing; ConversationItem home is the gate   [indexer lane, independent]
      ├─ C8 → C10          ← after operator go + <auth-context>  [identity lane]
-     ├─ C12               ← C11 landed with #4889's envelope    [grants lane]
+     ├─ #4918 audit       ← C12 landed (one `grants` server)    [grants lane]
      └─ C4e → C6                            ← packages + C5 landed         [conversation lane]
                   │
                   C14 (de-Haku) ────────────────→ after lanes settle names

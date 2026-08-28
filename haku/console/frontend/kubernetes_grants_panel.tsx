@@ -24,7 +24,6 @@ import { formatTimestamp } from "./approval_state";
 import { ExternalLink } from "./link";
 import { toolCallPath } from "./routing";
 import { toastError, toastSuccess } from "./toast";
-import { principalText } from "./tool_rendering/kubernetes/responses";
 
 export type GrantHistoryFilter = "active" | "history" | "all";
 
@@ -77,6 +76,15 @@ function RuleLine({ rule }: { rule: OperatorKubernetesGrant["grant"]["rules"][nu
       </Text>
     </Text>
   );
+}
+
+function principalText(principal: OperatorKubernetesGrant["grant"]["principal"]): string {
+  switch (principal.kind) {
+    case "agent":
+      return `Agent ${principal.agent_id}`;
+    case "session":
+      return `Session ${principal.session_id}`;
+  }
 }
 
 function GrantSetCard({ item, onRevoke }: { item: KubernetesGrantSet; onRevoke: (item: KubernetesGrantSet) => void }) {

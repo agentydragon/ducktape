@@ -16,12 +16,7 @@ from haku.console.grants.envelope import (
     match_replayed_grant_set,
     request_principal_clause,
 )
-from haku.console.grants.kubernetes.models import (
-    KubernetesGrant,
-    KubernetesGrantScope,
-    KubernetesGrantSpec,
-    KubernetesRule,
-)
+from haku.console.grants.kubernetes.models import Grant, GrantScope, GrantSpec, Rule
 from haku.console.grants.principal import (
     GrantPrincipal,
     RequestPrincipal,
@@ -30,26 +25,29 @@ from haku.console.grants.principal import (
 )
 from haku.console.grants.provenance import SourceToolFilter, assert_owner_principal_and_source, lock_owned_source
 
-_CREATE_GRANT_TOOL = SourceToolFilter(server_id="kubernetes", tool_name="create_grant")
+# Grant creation moved to the shared `grants` server (#4918); the source ToolCall provenance is
+# pinned to it. Stored audit rows from before the cutover keep their old `server_id` and are never
+# re-created, so this only governs newly minted grants.
+_CREATE_GRANT_TOOL = SourceToolFilter(server_id="grants", tool_name="create_grant")
 
 
 def _row_spec(row: KubernetesGrantRow) -> str:
-    return KubernetesGrantSpec(scope=row.scope, rules=tuple(row.rules)).model_dump_json()
+    return GrantSpec(scope=row.scope, rules=tuple(row.rules)).model_dump_json()
 
 
 def _not_ended() -> ColumnElement[bool]:
     return and_(KubernetesGrantRow.released_at.is_(None), KubernetesGrantRow.revoked_at.is_(None))
 
 
-class PostgresKubernetesGrantRepository:
+class PostgresGrantRepository:
     """Small transactional repository with explicit lifecycle ownership and applicability."""
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
 
     @staticmethod
-    def _row_to_model(row: KubernetesGrantRow) -> KubernetesGrant:
-        return KubernetesGrant(
+    def _row_to_model(row: KubernetesGrantRow) -> Grant:
+        return Grant(
             grant_id=row.grant_id,
             owner_agent_id=row.owner_agent_id,
             principal=grant_principal_from_columns(
@@ -71,16 +69,16 @@ class PostgresKubernetesGrantRepository:
         owner_agent_id: UUID,
         grant_principal: GrantPrincipal,
         source_tool_call_id: str,
-        scope: KubernetesGrantScope,
-        rules: Sequence[KubernetesRule],
+        scope: GrantScope,
+        rules: Sequence[Rule],
         created_at: datetime.datetime,
         expires_at: datetime.datetime,
-    ) -> KubernetesGrant:
+    ) -> Grant:
         grants = await self.create_many(
             owner_agent_id=owner_agent_id,
             grant_principal=grant_principal,
             source_tool_call_id=source_tool_call_id,
-            grants=(KubernetesGrantSpec(scope=scope, rules=tuple(rules)),),
+            grants=(GrantSpec(scope=scope, rules=tuple(rules)),),
             created_at=created_at,
             expires_at=expires_at,
         )
@@ -92,10 +90,10 @@ class PostgresKubernetesGrantRepository:
         owner_agent_id: UUID,
         grant_principal: GrantPrincipal,
         source_tool_call_id: str,
-        grants: Sequence[KubernetesGrantSpec],
+        grants: Sequence[GrantSpec],
         created_at: datetime.datetime,
         expires_at: datetime.datetime,
-    ) -> tuple[KubernetesGrant, ...]:
+    ) -> tuple[Grant, ...]:
         grants = tuple(grants)
         if not grants:
             raise ValueError("grants must not be empty")
@@ -150,7 +148,7 @@ class PostgresKubernetesGrantRepository:
 
     async def list(
         self, *, owner_agent_id: UUID, now: datetime.datetime, include_terminal: bool = True
-    ) -> tuple[KubernetesGrant, ...]:
+    ) -> tuple[Grant, ...]:
         async with self._sessions() as session:
             statement = select(KubernetesGrantRow).where(KubernetesGrantRow.owner_agent_id == owner_agent_id)
             if not include_terminal:
@@ -162,7 +160,7 @@ class PostgresKubernetesGrantRepository:
             ).all()
             return tuple(self._row_to_model(row) for row in rows)
 
-    async def get(self, *, owner_agent_id: UUID, grant_id: UUID) -> KubernetesGrant:
+    async def get(self, *, owner_agent_id: UUID, grant_id: UUID) -> Grant:
         async with self._sessions() as session:
             row = await session.scalar(select(KubernetesGrantRow).where(KubernetesGrantRow.grant_id == grant_id))
             if row is None:
@@ -173,7 +171,7 @@ class PostgresKubernetesGrantRepository:
 
     async def _end(
         self, *, owner_agent_id: UUID, grant_id: UUID, release: bool, reason: str, now: datetime.datetime
-    ) -> KubernetesGrant:
+    ) -> Grant:
         reason = reason.strip()
         if not reason:
             raise ValueError("grant end reason must not be empty")
@@ -196,19 +194,15 @@ class PostgresKubernetesGrantRepository:
                 await session.flush()
             return self._row_to_model(row)
 
-    async def release(
-        self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime
-    ) -> KubernetesGrant:
+    async def release(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime) -> Grant:
         return await self._end(owner_agent_id=owner_agent_id, grant_id=grant_id, release=True, reason=reason, now=now)
 
-    async def revoke(
-        self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime
-    ) -> KubernetesGrant:
+    async def revoke(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime) -> Grant:
         return await self._end(owner_agent_id=owner_agent_id, grant_id=grant_id, release=False, reason=reason, now=now)
 
     async def revoke_source(
         self, *, owner_agent_id: UUID, source_tool_call_id: str, reason: str, now: datetime.datetime
-    ) -> tuple[KubernetesGrant, ...]:
+    ) -> tuple[Grant, ...]:
         """Revoke every still-active grant created by one reviewed source ToolCall."""
 
         reason = reason.strip()
@@ -242,7 +236,7 @@ class PostgresKubernetesGrantRepository:
 
     async def list_for_request_principal(
         self, *, request_principal: RequestPrincipal, now: datetime.datetime, include_terminal: bool = True
-    ) -> tuple[KubernetesGrant, ...]:
+    ) -> tuple[Grant, ...]:
         async with self._sessions() as session:
             statement = select(KubernetesGrantRow).where(
                 request_principal_clause(KubernetesGrantRow, request_principal)
@@ -258,7 +252,7 @@ class PostgresKubernetesGrantRepository:
 
     async def active_for_request_principal(
         self, *, request_principal: RequestPrincipal, now: datetime.datetime
-    ) -> tuple[KubernetesGrant, ...]:
+    ) -> tuple[Grant, ...]:
         async with self._sessions() as session:
             rows = (
                 await session.scalars(

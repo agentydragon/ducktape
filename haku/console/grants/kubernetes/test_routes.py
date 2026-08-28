@@ -15,7 +15,7 @@ from haku.console import operator_auth
 from haku.console.agents.enrollment import OperatorAgent
 from haku.console.agents.models import AgentStatus, CredentialBindingStatus, CredentialKind
 from haku.console.grants.envelope import GrantNotFoundError
-from haku.console.grants.kubernetes.models import KubernetesGrant, KubernetesNamespacesGrantScope, KubernetesRule
+from haku.console.grants.kubernetes.models import Grant, NamespacesGrantScope, Rule
 from haku.console.grants.kubernetes.routes import router
 from haku.console.grants.principal import AgentGrantPrincipal
 from haku.console.operator_auth import require_operator_mutation_origin
@@ -51,14 +51,14 @@ def _wire(instant: datetime.datetime) -> str:
     return instant.isoformat().replace("+00:00", "Z")
 
 
-def _grant(*, revoked: bool = False) -> KubernetesGrant:
-    return KubernetesGrant(
+def _grant(*, revoked: bool = False) -> Grant:
+    return Grant(
         grant_id=GRANT_ID,
         owner_agent_id=AGENT_ID,
         principal=AgentGrantPrincipal(agent_id=AGENT_ID),
         source_tool_call_id="tc_0123456789abcdef01234567",
-        scope=KubernetesNamespacesGrantScope(namespaces={"public-coder-agent"}),
-        rules=(KubernetesRule(api_groups={""}, resources={"pods/log"}, verbs={"get"}),),
+        scope=NamespacesGrantScope(namespaces={"public-coder-agent"}),
+        rules=(Rule(api_groups={""}, resources={"pods/log"}, verbs={"get"}),),
         created_at=NOW - datetime.timedelta(minutes=5),
         expires_at=NOW + datetime.timedelta(minutes=25),
         revoked_at=NOW if revoked else None,
@@ -77,16 +77,16 @@ class _FakeAgentService:
 
 @dataclass
 class _FakeGrantService:
-    current: KubernetesGrant = field(default_factory=_grant)
+    current: Grant = field(default_factory=_grant)
     listed: list[tuple[UUID, bool]] = field(default_factory=list)
     revoked: list[tuple[UUID, UUID, str]] = field(default_factory=list)
     revoked_sets: list[tuple[UUID, str, str]] = field(default_factory=list)
 
-    async def list_grants(self, *, owner_agent_id: UUID, include_terminal: bool = True) -> tuple[KubernetesGrant, ...]:
+    async def list_grants(self, *, owner_agent_id: UUID, include_terminal: bool = True) -> tuple[Grant, ...]:
         self.listed.append((owner_agent_id, include_terminal))
         return (self.current,) if owner_agent_id == AGENT_ID else ()
 
-    async def revoke_grant(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str) -> KubernetesGrant:
+    async def revoke_grant(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str) -> Grant:
         self.revoked.append((owner_agent_id, grant_id, reason))
         if owner_agent_id != AGENT_ID or grant_id != GRANT_ID:
             raise GrantNotFoundError(str(grant_id))
@@ -95,7 +95,7 @@ class _FakeGrantService:
 
     async def revoke_grant_set(
         self, *, owner_agent_id: UUID, source_tool_call_id: str, reason: str
-    ) -> tuple[KubernetesGrant, ...]:
+    ) -> tuple[Grant, ...]:
         if owner_agent_id != AGENT_ID or source_tool_call_id != self.current.source_tool_call_id:
             raise GrantNotFoundError(source_tool_call_id)
         self.revoked_sets.append((owner_agent_id, source_tool_call_id, reason))

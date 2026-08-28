@@ -10,25 +10,25 @@ import pytest_bazel
 from pydantic import TypeAdapter, ValidationError
 
 from haku.console.grants.kubernetes.models import (
-    KubernetesAllNamespacesGrantScope,
-    KubernetesClusterGrantScope,
-    KubernetesGrant,
-    KubernetesGrantScope,
-    KubernetesNamespacesGrantScope,
-    KubernetesNonResourceGrantScope,
-    KubernetesRule,
+    AllNamespacesGrantScope,
+    ClusterGrantScope,
+    Grant,
+    GrantScope,
+    NamespacesGrantScope,
+    NonResourceGrantScope,
+    Rule,
     validate_grant_scope_rules,
 )
 from haku.console.grants.kubernetes.service import rule_covers, rules_cover, scope_covers
 from haku.console.grants.principal import AgentGrantPrincipal
 
 
-def resource_rule(**kwargs: object) -> KubernetesRule:
-    return KubernetesRule(verbs=("get",), api_groups=("",), resources=("pods",), **kwargs)
+def resource_rule(**kwargs: object) -> Rule:
+    return Rule(verbs=("get",), api_groups=("",), resources=("pods",), **kwargs)
 
 
 def test_resource_rule_canonicalizes_values() -> None:
-    rule = KubernetesRule.model_validate(
+    rule = Rule.model_validate(
         {"api_groups": [""], "resources": ["pods"], "verbs": ["get"], "resource_names": ["pod-a"]}
     )
 
@@ -40,11 +40,11 @@ def test_resource_rule_canonicalizes_values() -> None:
 
 def test_rule_rejects_kubernetes_wire_names_inside_the_domain() -> None:
     with pytest.raises(ValidationError, match="apiGroups"):
-        KubernetesRule.model_validate({"apiGroups": [""], "resources": ["pods"], "verbs": ["get"]})
+        Rule.model_validate({"apiGroups": [""], "resources": ["pods"], "verbs": ["get"]})
 
 
 def test_rule_models_rbac_collections_as_sets_and_serializes_stably() -> None:
-    rule = KubernetesRule(api_groups=("apps", ""), resources=("pods", "deployments"), verbs=("list", "get"))
+    rule = Rule(api_groups=("apps", ""), resources=("pods", "deployments"), verbs=("list", "get"))
 
     assert rule.verbs == frozenset({"get", "list"})
     assert rule.model_dump(mode="json")["verbs"] == ["get", "list"]
@@ -53,30 +53,30 @@ def test_rule_models_rbac_collections_as_sets_and_serializes_stably() -> None:
 
 def test_rule_rejects_scalar_strings_for_collection_fields() -> None:
     with pytest.raises(ValidationError, match="valid frozenset"):
-        KubernetesRule(api_groups=("",), resources=("pods",), verbs="get")
+        Rule(api_groups=("",), resources=("pods",), verbs="get")
     with pytest.raises(ValidationError, match="valid frozenset"):
-        KubernetesRule(api_groups="", resources=("pods",), verbs=("get",))
+        Rule(api_groups="", resources=("pods",), verbs=("get",))
 
 
 def test_rule_rejects_mixed_or_empty_shape() -> None:
     with pytest.raises(ValidationError, match="must contain resources"):
-        KubernetesRule(verbs=("get",))
+        Rule(verbs=("get",))
     with pytest.raises(ValidationError, match="must contain resources"):
-        KubernetesRule(api_groups=("apps",), verbs=("get",))
+        Rule(api_groups=("apps",), verbs=("get",))
     with pytest.raises(ValidationError, match="must contain resources"):
-        KubernetesRule(resource_names=("pod-a",), verbs=("get",))
+        Rule(resource_names=("pod-a",), verbs=("get",))
     with pytest.raises(ValidationError, match="at least 1 item"):
-        KubernetesRule(api_groups=("",), resources=("pods",), verbs=())
+        Rule(api_groups=("",), resources=("pods",), verbs=())
     with pytest.raises(ValidationError, match="cannot mix"):
-        KubernetesRule(api_groups=("",), resources=("pods",), verbs=("get",), non_resource_urls=("/healthz",))
+        Rule(api_groups=("",), resources=("pods",), verbs=("get",), non_resource_urls=("/healthz",))
 
 
 def test_scope_supports_exact_or_all_namespaces_without_implying_cluster_scope() -> None:
-    exact = KubernetesNamespacesGrantScope(namespaces=("diagnostics", "public-coder-agent"))
-    requested = KubernetesNamespacesGrantScope(namespaces=("diagnostics",))
-    other = KubernetesNamespacesGrantScope(namespaces=("default",))
-    all_namespaces = KubernetesAllNamespacesGrantScope()
-    cluster = KubernetesClusterGrantScope()
+    exact = NamespacesGrantScope(namespaces=("diagnostics", "public-coder-agent"))
+    requested = NamespacesGrantScope(namespaces=("diagnostics",))
+    other = NamespacesGrantScope(namespaces=("default",))
+    all_namespaces = AllNamespacesGrantScope()
+    cluster = ClusterGrantScope()
 
     assert scope_covers(exact, requested)
     assert not scope_covers(exact, other)
@@ -85,25 +85,25 @@ def test_scope_supports_exact_or_all_namespaces_without_implying_cluster_scope()
 
 
 def test_scope_is_a_discriminated_union_consistent_with_rule_kind() -> None:
-    adapter: TypeAdapter[KubernetesGrantScope] = TypeAdapter(KubernetesGrantScope)
+    adapter: TypeAdapter[GrantScope] = TypeAdapter(GrantScope)
     with pytest.raises(ValidationError, match="at least 1 item"):
         adapter.validate_python({"kind": "namespaces", "namespaces": []})
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         adapter.validate_python({"kind": "cluster", "namespaces": ["default"]})
     with pytest.raises(ValidationError, match="use all_namespaces"):
-        KubernetesNamespacesGrantScope(namespaces=("*",))
+        NamespacesGrantScope(namespaces=("*",))
     with pytest.raises(ValueError, match="requires only non-resource"):
-        validate_grant_scope_rules(KubernetesNonResourceGrantScope(), (resource_rule(),))
+        validate_grant_scope_rules(NonResourceGrantScope(), (resource_rule(),))
 
 
 def test_agent_grant_principal_must_belong_to_lifecycle_owner() -> None:
     with pytest.raises(ValidationError, match="must belong to the lifecycle owner"):
-        KubernetesGrant(
+        Grant(
             grant_id=UUID(int=1),
             owner_agent_id=UUID(int=2),
             principal=AgentGrantPrincipal(agent_id=UUID(int=3)),
             source_tool_call_id="tc_source",
-            scope=KubernetesNamespacesGrantScope(namespaces=("demo",)),
+            scope=NamespacesGrantScope(namespaces=("demo",)),
             rules=(resource_rule(),),
             created_at=datetime.datetime(2026, 8, 21, tzinfo=datetime.UTC),
             expires_at=datetime.datetime(2026, 8, 21, 1, tzinfo=datetime.UTC),
@@ -121,25 +121,23 @@ def test_matching_is_conservative_about_resource_names() -> None:
 
 
 def test_matching_allows_only_explicit_wildcards() -> None:
-    granted = KubernetesRule(api_groups=("*",), resources=("*",), verbs=("*",))
-    requested = KubernetesRule(api_groups=("apps",), resources=("deployments/status",), verbs=("patch",))
+    granted = Rule(api_groups=("*",), resources=("*",), verbs=("*",))
+    requested = Rule(api_groups=("apps",), resources=("deployments/status",), verbs=("patch",))
 
     assert rule_covers(granted, requested)
-    assert not rule_covers(
-        KubernetesRule(api_groups=("apps",), resources=("deployments",), verbs=("patch",)), requested
-    )
+    assert not rule_covers(Rule(api_groups=("apps",), resources=("deployments",), verbs=("patch",)), requested)
 
 
 def test_non_resource_urls_use_exact_or_terminal_prefix_matching() -> None:
-    granted = KubernetesRule(verbs=("get",), non_resource_urls=("/version", "/api/*"))
+    granted = Rule(verbs=("get",), non_resource_urls=("/version", "/api/*"))
 
-    assert rule_covers(granted, KubernetesRule(verbs=("get",), non_resource_urls=("/version", "/api/v1")))
-    assert not rule_covers(granted, KubernetesRule(verbs=("get",), non_resource_urls=("/apis",)))
+    assert rule_covers(granted, Rule(verbs=("get",), non_resource_urls=("/version", "/api/v1")))
+    assert not rule_covers(granted, Rule(verbs=("get",), non_resource_urls=("/apis",)))
 
 
 def test_rules_cover_requires_every_request_rule() -> None:
     granted = (resource_rule(),)
-    requested = (resource_rule(), KubernetesRule(verbs=("list",), api_groups=("",), resources=("pods",)))
+    requested = (resource_rule(), Rule(verbs=("list",), api_groups=("",), resources=("pods",)))
 
     assert not rules_cover(granted, requested)
 

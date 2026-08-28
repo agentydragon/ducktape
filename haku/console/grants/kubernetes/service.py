@@ -15,30 +15,30 @@ from haku.console.grants.envelope import (
     validated_grant_set,
 )
 from haku.console.grants.kubernetes.models import (
-    KubernetesGrant,
-    KubernetesGrantDecision,
-    KubernetesGrantScope,
-    KubernetesGrantScopeKind,
-    KubernetesGrantSpec,
-    KubernetesNamespacesGrantScope,
-    KubernetesRule,
+    Grant,
+    GrantDecision,
+    GrantScope,
+    GrantScopeKind,
+    GrantSpec,
+    NamespacesGrantScope,
+    Rule,
     validate_grant_scope_rules,
 )
 from haku.console.grants.principal import GrantPrincipal, RequestPrincipal, grant_principal_applies_to
 
 
-class KubernetesGrantRepository(Protocol):
+class GrantRepository(Protocol):
     async def create(
         self,
         *,
         owner_agent_id: UUID,
         grant_principal: GrantPrincipal,
         source_tool_call_id: str,
-        scope: KubernetesGrantScope,
-        rules: Sequence[KubernetesRule],
+        scope: GrantScope,
+        rules: Sequence[Rule],
         created_at: datetime.datetime,
         expires_at: datetime.datetime,
-    ) -> KubernetesGrant: ...
+    ) -> Grant: ...
 
     async def create_many(
         self,
@@ -46,36 +46,32 @@ class KubernetesGrantRepository(Protocol):
         owner_agent_id: UUID,
         grant_principal: GrantPrincipal,
         source_tool_call_id: str,
-        grants: Sequence[KubernetesGrantSpec],
+        grants: Sequence[GrantSpec],
         created_at: datetime.datetime,
         expires_at: datetime.datetime,
-    ) -> tuple[KubernetesGrant, ...]: ...
+    ) -> tuple[Grant, ...]: ...
 
     async def list(
         self, *, owner_agent_id: UUID, now: datetime.datetime, include_terminal: bool = True
-    ) -> tuple[KubernetesGrant, ...]: ...
+    ) -> tuple[Grant, ...]: ...
 
-    async def get(self, *, owner_agent_id: UUID, grant_id: UUID) -> KubernetesGrant: ...
+    async def get(self, *, owner_agent_id: UUID, grant_id: UUID) -> Grant: ...
 
-    async def release(
-        self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime
-    ) -> KubernetesGrant: ...
+    async def release(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime) -> Grant: ...
 
-    async def revoke(
-        self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime
-    ) -> KubernetesGrant: ...
+    async def revoke(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime) -> Grant: ...
 
     async def revoke_source(
         self, *, owner_agent_id: UUID, source_tool_call_id: str, reason: str, now: datetime.datetime
-    ) -> tuple[KubernetesGrant, ...]: ...
+    ) -> tuple[Grant, ...]: ...
 
     async def list_for_request_principal(
         self, *, request_principal: RequestPrincipal, now: datetime.datetime, include_terminal: bool = True
-    ) -> tuple[KubernetesGrant, ...]: ...
+    ) -> tuple[Grant, ...]: ...
 
     async def active_for_request_principal(
         self, *, request_principal: RequestPrincipal, now: datetime.datetime
-    ) -> tuple[KubernetesGrant, ...]: ...
+    ) -> tuple[Grant, ...]: ...
 
 
 def _utcnow() -> datetime.datetime:
@@ -111,7 +107,7 @@ def _non_resource_url_covers(granted: str, requested: str) -> bool:
     return granted.endswith("/*") and requested.startswith(granted[:-1])
 
 
-def rule_covers(granted: KubernetesRule, requested: KubernetesRule) -> bool:
+def rule_covers(granted: Rule, requested: Rule) -> bool:
     """Return true only when one grant rule covers the entire required rule."""
 
     granted_is_non_resource = bool(granted.non_resource_urls)
@@ -132,27 +128,27 @@ def rule_covers(granted: KubernetesRule, requested: KubernetesRule) -> bool:
     )
 
 
-def rules_cover(granted: Sequence[KubernetesRule], required: Sequence[KubernetesRule]) -> bool:
+def rules_cover(granted: Sequence[Rule], required: Sequence[Rule]) -> bool:
     """Every required rule must be covered by one grant rule; no partial matches are accepted."""
 
     return bool(required) and all(any(rule_covers(candidate, needed) for candidate in granted) for needed in required)
 
 
-def scope_covers(granted: KubernetesGrantScope, required: KubernetesGrantScope) -> bool:
+def scope_covers(granted: GrantScope, required: GrantScope) -> bool:
     """Whether one grant scope covers the complete required request scope."""
 
-    if required.kind is KubernetesGrantScopeKind.NAMESPACES:
-        if granted.kind is KubernetesGrantScopeKind.ALL_NAMESPACES:
+    if required.kind is GrantScopeKind.NAMESPACES:
+        if granted.kind is GrantScopeKind.ALL_NAMESPACES:
             return True
         return (
-            isinstance(granted, KubernetesNamespacesGrantScope)
-            and isinstance(required, KubernetesNamespacesGrantScope)
+            isinstance(granted, NamespacesGrantScope)
+            and isinstance(required, NamespacesGrantScope)
             and required.namespaces <= granted.namespaces
         )
     return granted.kind is required.kind
 
 
-class KubernetesGrantService:
+class GrantService:
     """Own grant lifecycle separately from trusted applicability matching.
 
     No method reads a ContextVar, ambient request, global caller, or tool arguments to determine
@@ -162,7 +158,7 @@ class KubernetesGrantService:
 
     def __init__(
         self,
-        repository: KubernetesGrantRepository,
+        repository: GrantRepository,
         *,
         max_lifetime: datetime.timedelta,
         clock: Callable[[], datetime.datetime] = _utcnow,
@@ -182,10 +178,10 @@ class KubernetesGrantService:
         owner_agent_id: UUID,
         grant_principal: GrantPrincipal,
         source_tool_call_id: str,
-        scope: KubernetesGrantScope,
-        rules: Sequence[KubernetesRule],
+        scope: GrantScope,
+        rules: Sequence[Rule],
         expires_at: datetime.datetime,
-    ) -> KubernetesGrant:
+    ) -> Grant:
         """Create one owned, principal-scoped grant and retain source-call provenance."""
 
         rules = tuple(rules)
@@ -195,7 +191,7 @@ class KubernetesGrantService:
             owner_agent_id=owner_agent_id,
             grant_principal=grant_principal,
             source_tool_call_id=source_tool_call_id,
-            grants=(KubernetesGrantSpec(scope=scope, rules=rules),),
+            grants=(GrantSpec(scope=scope, rules=rules),),
             expires_at=expires_at,
         )
         return grants[0]
@@ -206,9 +202,9 @@ class KubernetesGrantService:
         owner_agent_id: UUID,
         grant_principal: GrantPrincipal,
         source_tool_call_id: str,
-        grants: Sequence[KubernetesGrantSpec],
+        grants: Sequence[GrantSpec],
         expires_at: datetime.datetime,
-    ) -> tuple[KubernetesGrant, ...]:
+    ) -> tuple[Grant, ...]:
         """Atomically create exact grants with one source call and shared timestamps."""
 
         now = self._now()
@@ -225,24 +221,24 @@ class KubernetesGrantService:
             expires_at=expires_at,
         )
 
-    async def list_grants(self, *, owner_agent_id: UUID, include_terminal: bool = True) -> tuple[KubernetesGrant, ...]:
+    async def list_grants(self, *, owner_agent_id: UUID, include_terminal: bool = True) -> tuple[Grant, ...]:
         return await self._repository.list(
             owner_agent_id=owner_agent_id, now=self._now(), include_terminal=include_terminal
         )
 
     async def list_applicable_grants(
         self, *, request_principal: RequestPrincipal, include_terminal: bool = True
-    ) -> tuple[KubernetesGrant, ...]:
+    ) -> tuple[Grant, ...]:
         """List only grants this authenticated request principal may exercise."""
 
         return await self._repository.list_for_request_principal(
             request_principal=request_principal, now=self._now(), include_terminal=include_terminal
         )
 
-    async def get_grant(self, *, owner_agent_id: UUID, grant_id: UUID) -> KubernetesGrant:
+    async def get_grant(self, *, owner_agent_id: UUID, grant_id: UUID) -> Grant:
         return await self._repository.get(owner_agent_id=owner_agent_id, grant_id=grant_id)
 
-    async def get_applicable_grant(self, *, request_principal: RequestPrincipal, grant_id: UUID) -> KubernetesGrant:
+    async def get_applicable_grant(self, *, request_principal: RequestPrincipal, grant_id: UUID) -> Grant:
         grant = await self.get_grant(owner_agent_id=request_principal.agent_id, grant_id=grant_id)
         if not grant_principal_applies_to(grant.principal, request_principal):
             raise GrantNotFoundError(str(grant_id))
@@ -250,7 +246,7 @@ class KubernetesGrantService:
 
     async def release_grants(
         self, *, owner_agent_id: UUID, grant_ids: Sequence[UUID], reason: str = "released"
-    ) -> tuple[KubernetesGrant, ...]:
+    ) -> tuple[Grant, ...]:
         """Release a bounded list sequentially, retaining every durable grant ID.
 
         This is deliberately not an atomic database operation. If a later release fails, earlier
@@ -267,19 +263,31 @@ class KubernetesGrantService:
 
     async def release_applicable_grants(
         self, *, request_principal: RequestPrincipal, grant_ids: Sequence[UUID], reason: str = "released"
-    ) -> tuple[KubernetesGrant, ...]:
+    ) -> tuple[Grant, ...]:
         for grant_id in grant_ids:
             await self.get_applicable_grant(request_principal=request_principal, grant_id=grant_id)
         return await self.release_grants(owner_agent_id=request_principal.agent_id, grant_ids=grant_ids, reason=reason)
 
-    async def revoke_grant(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str) -> KubernetesGrant:
+    async def revoke_grant(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str) -> Grant:
         return await self._repository.revoke(
             owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason, now=self._now()
         )
 
+    async def revoke_grants(self, *, owner_agent_id: UUID, grant_ids: Sequence[UUID], reason: str) -> tuple[Grant, ...]:
+        """Revoke a bounded list sequentially; same non-atomicity contract as ``release_grants``."""
+
+        grant_ids, reason = validated_end_batch(grant_ids, reason)
+        now = self._now()
+        return tuple(
+            [
+                await self._repository.revoke(owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason, now=now)
+                for grant_id in grant_ids
+            ]
+        )
+
     async def revoke_grant_set(
         self, *, owner_agent_id: UUID, source_tool_call_id: str, reason: str
-    ) -> tuple[KubernetesGrant, ...]:
+    ) -> tuple[Grant, ...]:
         """Revoke the durable grant set sharing one approval source ToolCall."""
 
         if not source_tool_call_id:
@@ -289,12 +297,8 @@ class KubernetesGrantService:
         )
 
     async def match_request(
-        self,
-        *,
-        request_principal: RequestPrincipal,
-        required_scope: KubernetesGrantScope,
-        required_rules: Sequence[KubernetesRule],
-    ) -> KubernetesGrantDecision:
+        self, *, request_principal: RequestPrincipal, required_scope: GrantScope, required_rules: Sequence[Rule]
+    ) -> GrantDecision:
         """Match one request against active grants and return the earliest expiry bound."""
 
         now = self._now()
@@ -311,10 +315,10 @@ class KubernetesGrantService:
         ]
         if matching:
             grant = min(matching, key=lambda item: item.expires_at)
-            return KubernetesGrantDecision(
+            return GrantDecision(
                 allowed=True,
                 grant_id=grant.grant_id,
                 expires_at=grant.expires_at,
                 reason="active Kubernetes grant covers the request",
             )
-        return KubernetesGrantDecision(allowed=False, reason="no active Kubernetes grant covers the request")
+        return GrantDecision(allowed=False, reason="no active Kubernetes grant covers the request")

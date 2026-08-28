@@ -12,3 +12,18 @@ rules:
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["rolebindings"]
     verbs: ["get", "list", "watch"]
+
+  # Keep the controller's permissions in step with the non-standard read-only
+  # resources granted by agent-readable-namespace-metadata. Kubernetes rejects
+  # a RoleBinding when the controller would grant permissions it does not hold.
+  - apiGroups: ["autoscaling.k8s.io"]
+    resources: ["verticalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources:
+      - gateways
+      - httproutes
+      - tlsroutes
+      - grpcroutes
+    verbs: ["get", "list", "watch"]

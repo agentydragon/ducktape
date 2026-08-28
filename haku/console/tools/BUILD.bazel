@@ -149,8 +149,8 @@ py_test(
 )
 
 py_library(
-    name = "http_grants",
-    srcs = ["http_grants.py"],
+    name = "grants",
+    srcs = ["grants.py"],
     visibility = ["//haku/console:__subpackages__"],
     deps = [
         "//haku/console:mcp_execution",
@@ -159,22 +159,24 @@ py_library(
         "//haku/console/grants:principal",
         "//haku/console/grants/http:models",
         "//haku/console/grants/http:service",
+        "//haku/console/grants/kubernetes:models",
+        "//haku/console/grants/kubernetes:service",
+        "//haku/console/tools:kubernetes",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],
 )
 
+# The kubernetes SAR check (`kubernetes_can_i`) exposed by the `grants` server — models + service
+# only, no standalone server (#4918).
 py_library(
     name = "kubernetes",
     srcs = ["kubernetes.py"],
     visibility = ["//haku/console:__subpackages__"],
     deps = [
         "//haku/console:mcp_execution",
-        "//haku/console/grants:envelope",
-        "//haku/console/grants:principal",
         "//haku/console/grants/kubernetes:authorization",
         "//haku/console/grants/kubernetes:models",
-        "//haku/console/grants/kubernetes:service",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],
@@ -210,17 +212,20 @@ py_test(
 )
 
 py_test(
-    name = "test_http_grants",
+    name = "test_grants",
     size = "medium",
-    srcs = ["test_http_grants.py"],
+    srcs = ["test_grants.py"],
     data = [
         "//third_party/containers:pgvector_pg18",
         "//third_party/containers:ryuk",
     ],
     requires_docker = True,
     deps = [
-        ":http_grants",
+        ":grants",
+        ":kubernetes",
         "//:conftest",
+        "//haku/console:agent_bearer_authority",
+        "//haku/console:config",
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "//haku/console:mcp_execution",
@@ -229,8 +234,13 @@ py_test(
         "//haku/console/grants:principal",
         "//haku/console/grants/http:models",
         "//haku/console/grants/http:service",
+        "//haku/console/grants/kubernetes:authorization",
+        "//haku/console/grants/kubernetes:models",
+        "//haku/console/grants/kubernetes:service",
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
+        "@pypi//httpx",
+        "@pypi//mcp",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -253,14 +263,13 @@ py_test(
         "//haku/console:config",
         "//haku/console:conftest",
         "//haku/console:mcp_execution",
-        "//haku/console/grants:envelope",
         "//haku/console/grants:principal",
         "//haku/console/grants/kubernetes:authorization",
         "//haku/console/grants/kubernetes:models",
         "//haku/console/grants/kubernetes:service",
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
-        "@pypi//mcp",
+        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

@@ -27,8 +27,6 @@ import { hakuRoutinePreviews } from "./haku_routine/requests";
 import { hostexecPreviews } from "./hostexec/requests";
 import { hostexecResultPreviews } from "./hostexec/responses";
 import { kubectlPreviews } from "./kubectl/requests";
-import { kubernetesPreviews } from "./kubernetes/requests";
-import { kubernetesResultPreviews } from "./kubernetes/responses";
 import { renderResultPreview, type ToolResultPreview } from "./result_entry";
 import {
   GMAIL_SERVER_ID,
@@ -37,7 +35,6 @@ import {
   HAKU_ROUTINE_SERVER_ID,
   HOSTEXEC_SERVER_ID,
   KUBECTL_SERVER_ID,
-  KUBERNETES_SERVER_ID,
   TANA_RW_SERVER_ID,
 } from "./server_ids";
 import { tanaPreviews } from "./tana/requests";
@@ -53,7 +50,6 @@ type PreviewRegistryShape = {
   [HAKU_ROUTINE_SERVER_ID]: typeof hakuRoutinePreviews;
   [HOSTEXEC_SERVER_ID]: typeof hostexecPreviews;
   [KUBECTL_SERVER_ID]: typeof kubectlPreviews;
-  [KUBERNETES_SERVER_ID]: typeof kubernetesPreviews;
   [TANA_RW_SERVER_ID]: typeof tanaPreviews;
 };
 
@@ -64,7 +60,6 @@ const REGISTRY: PreviewRegistryShape = {
   [HAKU_ROUTINE_SERVER_ID]: hakuRoutinePreviews,
   [HOSTEXEC_SERVER_ID]: hostexecPreviews,
   [KUBECTL_SERVER_ID]: kubectlPreviews,
-  [KUBERNETES_SERVER_ID]: kubernetesPreviews,
   [TANA_RW_SERVER_ID]: tanaPreviews,
 } satisfies Record<string, Record<string, ToolPreview>>;
 
@@ -78,7 +73,6 @@ type ResultRegistryShape = {
   [GOOGLE_CALENDAR_SERVER_ID]: typeof googleCalendarResultPreviews;
   [GROCY_SERVER_ID]: typeof grocyResultPreviews;
   [HOSTEXEC_SERVER_ID]: typeof hostexecResultPreviews;
-  [KUBERNETES_SERVER_ID]: typeof kubernetesResultPreviews;
 };
 
 const RESULT_REGISTRY: ResultRegistryShape = {
@@ -86,7 +80,6 @@ const RESULT_REGISTRY: ResultRegistryShape = {
   [GOOGLE_CALENDAR_SERVER_ID]: googleCalendarResultPreviews,
   [GROCY_SERVER_ID]: grocyResultPreviews,
   [HOSTEXEC_SERVER_ID]: hostexecResultPreviews,
-  [KUBERNETES_SERVER_ID]: kubernetesResultPreviews,
 } satisfies Record<string, Record<string, ToolResultPreview>>;
 type ResultRegistry = typeof RESULT_REGISTRY;
 const RUNTIME_RESULT_REGISTRY: Record<string, Record<string, ToolResultPreview>> = RESULT_REGISTRY;

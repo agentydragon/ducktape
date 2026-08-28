@@ -226,30 +226,42 @@ def push_to_daemon(oci_layout: Path, tag: str) -> None:
 
     docker_manifest = [{"Config": config_blob_rel, "RepoTags": [tag], "Layers": layer_rels}]
 
-    buf = io.BytesIO()
-    # dereference=True: Bazel runfiles are symlinks into the execroot. Without
-    # dereferencing, tar records them as symlink entries with absolute target
-    # paths. Docker extracts the tarball and tries to follow those symlinks,
-    # which fail when the daemon runs outside Bazel's sandbox.
-    with tracer.start_as_current_span("oci_build_tarball") as span:
-        with tarfile.open(fileobj=buf, mode="w", dereference=True) as tar:
-            # Add manifest.json
-            manifest_data = json.dumps(docker_manifest).encode()
-            info = tarfile.TarInfo(name="manifest.json")
-            info.size = len(manifest_data)
-            tar.addfile(info, io.BytesIO(manifest_data))
-            # Add config blob
-            tar.add(oci_layout / config_blob_rel, arcname=config_blob_rel)
-            # Add layer blobs
-            for layer_rel in layer_rels:
-                tar.add(oci_layout / layer_rel, arcname=layer_rel)
-        span.set_attribute("tarball_bytes", buf.tell())
-
     docker = shutil.which("docker") or shutil.which("podman")
     if not docker:
         raise RuntimeError("Neither docker nor podman CLI found")
-    buf.seek(0)
-    with tracer.start_as_current_span("docker_load"):
-        result = subprocess.run([docker, "load"], input=buf.read(), check=False, capture_output=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"docker load failed: {result.stderr.decode()}")
+
+    # Streamed into `docker load` rather than assembled first: the tarball is the whole image, so
+    # buffering it cost one copy to build and another to hand over, and the daemon sat idle until
+    # the last byte was written. Writing to the pipe lets the unpack overlap the build.
+    #
+    # dereference=True: Bazel runfiles are symlinks into the execroot. Without dereferencing, tar
+    # records them as symlink entries with absolute target paths. Docker extracts the tarball and
+    # tries to follow those symlinks, which fail when the daemon runs outside Bazel's sandbox.
+    with tracer.start_as_current_span("docker_load") as span:
+        loader = subprocess.Popen(
+            [docker, "load"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        assert loader.stdin is not None
+        written = 0
+        try:
+            # `w|` is tar's streaming mode: no seeking back to patch headers, which a pipe cannot do.
+            with tarfile.open(fileobj=loader.stdin, mode="w|", dereference=True) as tar:
+                manifest_data = json.dumps(docker_manifest).encode()
+                info = tarfile.TarInfo(name="manifest.json")
+                info.size = len(manifest_data)
+                tar.addfile(info, io.BytesIO(manifest_data))
+                tar.add(oci_layout / config_blob_rel, arcname=config_blob_rel)
+                for layer_rel in layer_rels:
+                    tar.add(oci_layout / layer_rel, arcname=layer_rel)
+                written = tar.offset
+        except BrokenPipeError as broken:
+            # `docker load` died mid-stream; its stderr says why and is worth more than the EPIPE.
+            _, stderr = loader.communicate()
+            raise RuntimeError(f"docker load failed: {stderr.decode()}") from broken
+        finally:
+            if not loader.stdin.closed:
+                loader.stdin.close()
+        _, stderr = loader.communicate()
+        span.set_attribute("tarball_bytes", written)
+    if loader.returncode != 0:
+        raise RuntimeError(f"docker load failed: {stderr.decode()}")

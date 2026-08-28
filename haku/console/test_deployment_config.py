@@ -36,7 +36,7 @@ def test_deployed_console_config_is_valid() -> None:
     assert "codex_runtime" not in raw["settings"]
 
     profiles = {profile.id: profile for profile in config.access_profiles}
-    assert profiles["haku"].in_process_server_ids == {"haku_conversations", "kubernetes", "sandbox", "http_grants"}
+    assert profiles["haku"].in_process_server_ids == {"haku_conversations", "grants", "sandbox"}
 
     assert config.kubernetes_authorization is not None
     subjects = config.kubernetes_authorization.subjects_by_access_profile
@@ -59,21 +59,29 @@ def test_deployed_console_config_is_valid() -> None:
         if (server := policy.get("server")) is not None:
             named.add(server)
         assert named <= server_ids, policy["id"]
-    assert policies["kubernetes_reads"]["tools"] == {"kubernetes": ["can_i", "list_grants", "get_grant"]}
-    assert "kubernetes_reads" in policies["haku_v1"]["policies"]
-    assert "kubernetes_reads" in policies["public_coder_safe_reads"]["policies"]
+    # The unconditional grant reads: kubernetes SAR inspection and own-scoped get_grant.
+    assert policies["kubernetes_reads"]["tools"] == {"grants": ["kubernetes_can_i", "get_grant"]}
+    # An Agent's own-grant list read is auto-approved only for the explicit `principal=self` scope.
+    assert policies["grants_own_list"] == {"id": "grants_own_list", "type": "grant_self_list", "server": "grants"}
+    for root in ("haku_v1", "public_coder_safe_reads"):
+        assert "kubernetes_reads" in policies[root]["policies"], root
+        assert "grants_own_list" in policies[root]["policies"], root
 
-    # Every Agent may ASK for egress: http_grants is exposed to every access profile (operator
-    # ruling on #4986). Safe only together with the pin below — nothing in it auto-approves.
+    # Every Agent may ASK for a grant: the unified `grants` server is exposed to every access profile
+    # (operator ruling on #4986). Safe only together with the pin below — nothing in it auto-approves.
     for profile in config.access_profiles:
-        assert "http_grants" in profile.in_process_server_ids, profile.id
+        assert "grants" in profile.in_process_server_ids, profile.id
 
     # An auto-approved source ToolCall cannot mint a grant (the repository's provenance check
-    # requires approval_policy_id absent), so auto-approving create_grant would make every HTTP
-    # grant creation fail after the fact instead of queueing for the Operator.
+    # requires approval_policy_id absent), so auto-approving create_grant would make every grant
+    # creation fail after the fact instead of queueing for the Operator. The mutating grant verbs
+    # (create/release/revoke) never auto-approve — only the reads above do.
     for policy in raw["auto_approval_policies"]:
         if policy["type"] == "exact_tools":
-            assert "create_grant" not in policy["tools"].get("http_grants", []), policy["id"]
+            grant_tools = policy["tools"].get("grants", [])
+            assert "create_grant" not in grant_tools, policy["id"]
+            assert "release_grants" not in grant_tools, policy["id"]
+            assert "revoke_grants" not in grant_tools, policy["id"]
 
     # A standing entry's named credential must actually redeem what the entry admits — the decide
     # service otherwise skips substitution with only a warning, and the fenced workload's inert

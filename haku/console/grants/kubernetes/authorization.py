@@ -29,16 +29,16 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from haku.console.agent_bearer_authority import AgentBearerAuthority
 from haku.console.config import KubernetesAuthorizationConfig, KubernetesAuthorizationSubject
 from haku.console.grants.kubernetes.models import (
-    KubernetesAllNamespacesGrantScope,
-    KubernetesClusterGrantScope,
-    KubernetesGrantScope,
-    KubernetesGrantScopeKind,
-    KubernetesNamespacesGrantScope,
-    KubernetesNonResourceGrantScope,
-    KubernetesRule,
+    AllNamespacesGrantScope,
+    ClusterGrantScope,
+    GrantScope,
+    GrantScopeKind,
+    NamespacesGrantScope,
+    NonResourceGrantScope,
+    Rule,
     validate_grant_scope_rules,
 )
-from haku.console.grants.kubernetes.service import KubernetesGrantService
+from haku.console.grants.kubernetes.service import GrantService
 from haku.console.grants.principal import RequestPrincipal
 
 logger = logging.getLogger(__name__)
@@ -93,8 +93,8 @@ class AuthorizationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     attributes: RequestAttributes
-    required_scope: KubernetesGrantScope
-    required_rules: list[KubernetesRule] = Field(default_factory=list, min_length=1)
+    required_scope: GrantScope
+    required_rules: list[Rule] = Field(default_factory=list, min_length=1)
 
     @model_validator(mode="after")
     def validate_canonical_projection(self) -> AuthorizationRequest:
@@ -104,13 +104,13 @@ class AuthorizationRequest(BaseModel):
         attributes = self.attributes
         scope = self.required_scope
         if not attributes.resource_request:
-            if scope.kind is not KubernetesGrantScopeKind.NON_RESOURCE:
+            if scope.kind is not GrantScopeKind.NON_RESOURCE:
                 raise ValueError("a non-resource request requires non_resource scope")
         elif attributes.namespace:
-            expected = KubernetesNamespacesGrantScope(namespaces=(attributes.namespace,))
+            expected = NamespacesGrantScope(namespaces=(attributes.namespace,))
             if scope != expected:
                 raise ValueError("a named-namespace request requires its exact namespace scope")
-        elif scope.kind not in {KubernetesGrantScopeKind.ALL_NAMESPACES, KubernetesGrantScopeKind.CLUSTER}:
+        elif scope.kind not in {GrantScopeKind.ALL_NAMESPACES, GrantScopeKind.CLUSTER}:
             raise ValueError("an unnamespaced resource request requires all_namespaces or cluster scope")
         return self
 
@@ -231,7 +231,7 @@ class KubernetesAuthorizationService:
         *,
         config: KubernetesAuthorizationConfig,
         agent_bearer_authority: AgentBearerAuthority,
-        grants: KubernetesGrantService,
+        grants: GrantService,
         sar_client: SubjectAccessReviewClient,
     ) -> None:
         self._config = config
@@ -354,15 +354,15 @@ def _bearer_token(value: str) -> str | None:
     return token.strip()
 
 
-def required_rule(attributes: RequestAttributes) -> KubernetesRule:
+def required_rule(attributes: RequestAttributes) -> Rule:
     """Build the minimal RBAC rule; Kubernetes spells subresources as ``resource/subresource``."""
 
     if not attributes.resource_request:
-        return KubernetesRule(verbs=(attributes.verb,), non_resource_urls=(attributes.path,))
+        return Rule(verbs=(attributes.verb,), non_resource_urls=(attributes.path,))
     resource = attributes.resource
     if attributes.subresource:
         resource = f"{resource}/{attributes.subresource}"
-    return KubernetesRule(
+    return Rule(
         api_groups=(attributes.api_group,),
         resources=(resource,),
         verbs=(attributes.verb,),
@@ -401,28 +401,28 @@ BUILTIN_CLUSTER_SCOPED_RESOURCES: frozenset[tuple[str, str]] = frozenset(
 
 
 def required_scope(
-    attributes: RequestAttributes, *, unnamespaced_resource_kind: KubernetesGrantScopeKind | None = None
-) -> KubernetesGrantScope:
+    attributes: RequestAttributes, *, unnamespaced_resource_kind: GrantScopeKind | None = None
+) -> GrantScope:
     """Derive scope from a named namespace, a declared unnamespaced kind, or a built-in cluster-scoped kind."""
 
     if not attributes.resource_request:
         if unnamespaced_resource_kind is not None:
             raise ValueError("non-resource requests cannot declare a resource scope kind")
-        return KubernetesNonResourceGrantScope()
+        return NonResourceGrantScope()
     if attributes.namespace:
         if unnamespaced_resource_kind is not None:
             raise ValueError("a named-namespace request cannot declare an unnamespaced resource scope kind")
-        return KubernetesNamespacesGrantScope(namespaces=(attributes.namespace,))
-    if unnamespaced_resource_kind is KubernetesGrantScopeKind.ALL_NAMESPACES:
-        return KubernetesAllNamespacesGrantScope()
-    if unnamespaced_resource_kind is KubernetesGrantScopeKind.CLUSTER:
-        return KubernetesClusterGrantScope()
+        return NamespacesGrantScope(namespaces=(attributes.namespace,))
+    if unnamespaced_resource_kind is GrantScopeKind.ALL_NAMESPACES:
+        return AllNamespacesGrantScope()
+    if unnamespaced_resource_kind is GrantScopeKind.CLUSTER:
+        return ClusterGrantScope()
     if unnamespaced_resource_kind is not None:
         raise ValueError(
             f"unnamespaced_resource_kind must be 'all_namespaces' or 'cluster', not {unnamespaced_resource_kind}"
         )
     if (attributes.api_group, attributes.resource) in BUILTIN_CLUSTER_SCOPED_RESOURCES:
-        return KubernetesClusterGrantScope()
+        return ClusterGrantScope()
     resource = f"{attributes.resource}.{attributes.api_group}" if attributes.api_group else attributes.resource
     raise ValueError(
         f"cannot infer the scope of unnamespaced resource {resource!r}: "

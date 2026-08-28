@@ -10,6 +10,5 @@ export const GOOGLE_CALENDAR_SERVER_ID = "google_calendar";
 export const GROCY_SERVER_ID = "grocy-sf";
 export const HAKU_ROUTINE_SERVER_ID = "haku_routine";
 export const HOSTEXEC_SERVER_ID = "hostexec";
-export const KUBERNETES_SERVER_ID = "kubernetes";
 export const KUBECTL_SERVER_ID = "kubectl-passthrough-mcp";
 export const TANA_RW_SERVER_ID = "tana-rw";

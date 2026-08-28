@@ -27,7 +27,7 @@ from pydantic import (
 from haku.console.grants.envelope import NON_EMPTY, GrantEnvelope, GrantStatus, derive_status
 
 
-class KubernetesGrantScopeKind(StrEnum):
+class GrantScopeKind(StrEnum):
     NAMESPACES = "namespaces"
     ALL_NAMESPACES = "all_namespaces"
     CLUSTER = "cluster"
@@ -41,7 +41,7 @@ def _clean_values(value: Iterable[str], field_name: str, *, allow_empty: bool = 
     return frozenset(values)
 
 
-class KubernetesRule(BaseModel):
+class Rule(BaseModel):
     """One conservative Kubernetes RBAC-like rule.
 
     Resource rules use ``api_groups``/``resources``/``verbs`` and optionally
@@ -74,7 +74,7 @@ class KubernetesRule(BaseModel):
         return sorted(value)
 
     @model_validator(mode="after")
-    def validate_kind(self) -> KubernetesRule:
+    def validate_kind(self) -> Rule:
         if self.non_resource_urls:
             if self.api_groups or self.resources or self.resource_names:
                 raise ValueError("a Kubernetes rule cannot mix resource and non-resource URL fields")
@@ -83,12 +83,12 @@ class KubernetesRule(BaseModel):
         return self
 
 
-class KubernetesNamespacesGrantScope(BaseModel):
+class NamespacesGrantScope(BaseModel):
     """One or more exact namespaces in which resource rules may apply."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    kind: Literal[KubernetesGrantScopeKind.NAMESPACES] = KubernetesGrantScopeKind.NAMESPACES
+    kind: Literal[GrantScopeKind.NAMESPACES] = GrantScopeKind.NAMESPACES
     namespaces: frozenset[NON_EMPTY] = Field(min_length=1)
 
     @field_validator("namespaces")
@@ -104,51 +104,48 @@ class KubernetesNamespacesGrantScope(BaseModel):
         return sorted(value)
 
 
-class KubernetesAllNamespacesGrantScope(BaseModel):
+class AllNamespacesGrantScope(BaseModel):
     """All namespaced resources, excluding cluster-scoped resources."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    kind: Literal[KubernetesGrantScopeKind.ALL_NAMESPACES] = KubernetesGrantScopeKind.ALL_NAMESPACES
+    kind: Literal[GrantScopeKind.ALL_NAMESPACES] = GrantScopeKind.ALL_NAMESPACES
 
 
-class KubernetesClusterGrantScope(BaseModel):
+class ClusterGrantScope(BaseModel):
     """Cluster-scoped resources only."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    kind: Literal[KubernetesGrantScopeKind.CLUSTER] = KubernetesGrantScopeKind.CLUSTER
+    kind: Literal[GrantScopeKind.CLUSTER] = GrantScopeKind.CLUSTER
 
 
-class KubernetesNonResourceGrantScope(BaseModel):
+class NonResourceGrantScope(BaseModel):
     """Kubernetes non-resource URLs only."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    kind: Literal[KubernetesGrantScopeKind.NON_RESOURCE] = KubernetesGrantScopeKind.NON_RESOURCE
+    kind: Literal[GrantScopeKind.NON_RESOURCE] = GrantScopeKind.NON_RESOURCE
 
 
-KubernetesGrantScope = Annotated[
-    KubernetesNamespacesGrantScope
-    | KubernetesAllNamespacesGrantScope
-    | KubernetesClusterGrantScope
-    | KubernetesNonResourceGrantScope,
+GrantScope = Annotated[
+    NamespacesGrantScope | AllNamespacesGrantScope | ClusterGrantScope | NonResourceGrantScope,
     Field(discriminator="kind"),
 ]
 
 
-def validate_grant_scope_rules(scope: KubernetesGrantScope, rules: Iterable[KubernetesRule]) -> None:
+def validate_grant_scope_rules(scope: GrantScope, rules: Iterable[Rule]) -> None:
     """Reject scope/rule combinations that Kubernetes cannot interpret consistently."""
 
     non_resource = tuple(bool(rule.non_resource_urls) for rule in rules)
-    if scope.kind is KubernetesGrantScopeKind.NON_RESOURCE:
+    if scope.kind is GrantScopeKind.NON_RESOURCE:
         if not non_resource or not all(non_resource):
             raise ValueError("non_resource scope requires only non-resource URL rules")
     elif any(non_resource):
         raise ValueError(f"{scope.kind.value} scope requires only resource rules")
 
 
-class KubernetesGrant(GrantEnvelope):
+class Grant(GrantEnvelope):
     """Durable grant returned by the service: the shared envelope plus scope/rules coverage.
 
     ``status`` is computed from the envelope's recorded end facts and the clock at access
@@ -156,16 +153,16 @@ class KubernetesGrant(GrantEnvelope):
     it cannot disagree with the facts.
     """
 
-    scope: KubernetesGrantScope
-    rules: tuple[KubernetesRule, ...] = Field(min_length=1)
+    scope: GrantScope
+    rules: tuple[Rule, ...] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def validate_scope_rules(self) -> KubernetesGrant:
+    def validate_scope_rules(self) -> Grant:
         validate_grant_scope_rules(self.scope, self.rules)
         return self
 
     @model_validator(mode="after")
-    def validate_end_reason(self) -> KubernetesGrant:
+    def validate_end_reason(self) -> Grant:
         ended = self.released_at is not None or self.revoked_at is not None
         if ended != (self.end_reason is not None and bool(self.end_reason.strip())):
             raise ValueError("end_reason travels exactly with a recorded end action")
@@ -184,21 +181,21 @@ class KubernetesGrant(GrantEnvelope):
         )
 
 
-class KubernetesGrantSpec(BaseModel):
+class GrantSpec(BaseModel):
     """One exact scope/rule item requested by a grant-creation ToolCall."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    scope: KubernetesGrantScope
-    rules: tuple[KubernetesRule, ...] = Field(min_length=1, max_length=32)
+    scope: GrantScope
+    rules: tuple[Rule, ...] = Field(min_length=1, max_length=32)
 
     @model_validator(mode="after")
-    def validate_scope_rules(self) -> KubernetesGrantSpec:
+    def validate_scope_rules(self) -> GrantSpec:
         validate_grant_scope_rules(self.scope, self.rules)
         return self
 
 
-class KubernetesGrantDecision(BaseModel):
+class GrantDecision(BaseModel):
     """Result of matching a request against one Agent's currently active grants."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)

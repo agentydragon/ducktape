@@ -19,14 +19,14 @@ from haku.console.conftest import default_agent_binding, insert_approved_tool_ca
 from haku.console.database_schema import KubernetesGrantRow
 from haku.console.grants.envelope import GrantNotFoundError, GrantSourceError, GrantStatus
 from haku.console.grants.kubernetes.models import (
-    KubernetesAllNamespacesGrantScope,
-    KubernetesClusterGrantScope,
-    KubernetesGrantSpec,
-    KubernetesNamespacesGrantScope,
-    KubernetesNonResourceGrantScope,
-    KubernetesRule,
+    AllNamespacesGrantScope,
+    ClusterGrantScope,
+    GrantSpec,
+    NamespacesGrantScope,
+    NonResourceGrantScope,
+    Rule,
 )
-from haku.console.grants.kubernetes.repository import PostgresKubernetesGrantRepository
+from haku.console.grants.kubernetes.repository import PostgresGrantRepository
 from haku.console.grants.principal import (
     AgentGrantPrincipal,
     GrantPrincipalKind,
@@ -34,12 +34,12 @@ from haku.console.grants.principal import (
     SessionGrantPrincipal,
 )
 
-# Relative: KubernetesGrant.status is computed against the live clock, so windows anchor to it.
+# Relative: Grant.status is computed against the live clock, so windows anchor to it.
 _NOW = datetime.now(UTC)
-_RULE = KubernetesRule(api_groups=("",), resources=("pods",), verbs=("get",))
-_SCOPE = KubernetesNamespacesGrantScope(namespaces=("diagnostics", "public-coder-agent"))
-_CLUSTER_RULE = KubernetesRule(api_groups=("",), resources=("nodes",), verbs=("get",))
-_NON_RESOURCE_RULE = KubernetesRule(non_resource_urls=("/version",), verbs=("get",))
+_RULE = Rule(api_groups=("",), resources=("pods",), verbs=("get",))
+_SCOPE = NamespacesGrantScope(namespaces=("diagnostics", "public-coder-agent"))
+_CLUSTER_RULE = Rule(api_groups=("",), resources=("nodes",), verbs=("get",))
+_NON_RESOURCE_RULE = Rule(non_resource_urls=("/version",), verbs=("get",))
 _RAW_GRANT_INSERT = text(
     """
     INSERT INTO kubernetes_grants (
@@ -60,7 +60,7 @@ async def _insert_raw_grant(
     agent_id: UUID,
     source_tool_call_id: str,
     scope: dict[str, object],
-    rule: KubernetesRule,
+    rule: Rule,
     principal_kind: GrantPrincipalKind = GrantPrincipalKind.AGENT,
     principal_agent_id: UUID | None = None,
     principal_session_id: UUID | None = None,
@@ -96,7 +96,7 @@ def test_repository_enforces_source_provenance_and_lifecycle(make_client: Any) -
         source_tool_call_id = client.portal.call(
             partial(insert_approved_tool_call, sessions, binding_id=binding_id, now=_NOW)
         )
-        repository = PostgresKubernetesGrantRepository(sessions)
+        repository = PostgresGrantRepository(sessions)
 
         async def exercise() -> None:
             grant = await repository.create(
@@ -141,7 +141,7 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
         source_tool_call_id = client.portal.call(
             partial(insert_approved_tool_call, sessions, binding_id=binding_id, now=_NOW)
         )
-        repository = PostgresKubernetesGrantRepository(sessions)
+        repository = PostgresGrantRepository(sessions)
 
         async def exercise() -> None:
             grants = await repository.create_many(
@@ -149,8 +149,8 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
                 grant_principal=AgentGrantPrincipal(agent_id=agent_id),
                 source_tool_call_id=source_tool_call_id,
                 grants=(
-                    KubernetesGrantSpec(scope=_SCOPE, rules=(_RULE,)),
-                    KubernetesGrantSpec(scope=KubernetesClusterGrantScope(), rules=(_CLUSTER_RULE,)),
+                    GrantSpec(scope=_SCOPE, rules=(_RULE,)),
+                    GrantSpec(scope=ClusterGrantScope(), rules=(_CLUSTER_RULE,)),
                 ),
                 created_at=_NOW,
                 expires_at=_NOW + timedelta(minutes=5),
@@ -166,8 +166,8 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
                 grant_principal=AgentGrantPrincipal(agent_id=agent_id),
                 source_tool_call_id=source_tool_call_id,
                 grants=(
-                    KubernetesGrantSpec(scope=_SCOPE, rules=(_RULE,)),
-                    KubernetesGrantSpec(scope=KubernetesClusterGrantScope(), rules=(_CLUSTER_RULE,)),
+                    GrantSpec(scope=_SCOPE, rules=(_RULE,)),
+                    GrantSpec(scope=ClusterGrantScope(), rules=(_CLUSTER_RULE,)),
                 ),
                 created_at=_NOW + timedelta(seconds=10),
                 expires_at=_NOW + timedelta(minutes=10),
@@ -228,7 +228,7 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
                     owner_agent_id=agent_id,
                     grant_principal=AgentGrantPrincipal(agent_id=agent_id),
                     source_tool_call_id=source_tool_call_id,
-                    grants=(KubernetesGrantSpec(scope=_SCOPE, rules=(_RULE,)),),
+                    grants=(GrantSpec(scope=_SCOPE, rules=(_RULE,)),),
                     created_at=_NOW + timedelta(seconds=10),
                     expires_at=_NOW + timedelta(minutes=10),
                 )
@@ -255,7 +255,7 @@ def test_repository_matches_agent_and_exact_session_principals(make_client: Any)
         session_source = client.portal.call(
             partial(insert_approved_tool_call, sessions, binding_id=binding_id, now=_NOW, session_id=session_id)
         )
-        repository = PostgresKubernetesGrantRepository(sessions)
+        repository = PostgresGrantRepository(sessions)
 
         async def exercise() -> None:
             agent_grant = await repository.create(
@@ -335,15 +335,13 @@ def test_repository_matches_agent_and_exact_session_principals(make_client: Any)
 @pytest.mark.parametrize(
     ("scope", "rule"),
     [
-        (KubernetesAllNamespacesGrantScope(), _RULE),
-        (KubernetesClusterGrantScope(), _CLUSTER_RULE),
-        (KubernetesNonResourceGrantScope(), _NON_RESOURCE_RULE),
+        (AllNamespacesGrantScope(), _RULE),
+        (ClusterGrantScope(), _CLUSTER_RULE),
+        (NonResourceGrantScope(), _NON_RESOURCE_RULE),
     ],
 )
 def test_repository_persists_canonical_non_exact_scope_shapes(
-    make_client: Any,
-    scope: KubernetesAllNamespacesGrantScope | KubernetesClusterGrantScope | KubernetesNonResourceGrantScope,
-    rule: KubernetesRule,
+    make_client: Any, scope: AllNamespacesGrantScope | ClusterGrantScope | NonResourceGrantScope, rule: Rule
 ) -> None:
     with make_client() as client:
         app = cast(FastAPI, client.app)
@@ -353,7 +351,7 @@ def test_repository_persists_canonical_non_exact_scope_shapes(
         source_tool_call_id = client.portal.call(
             partial(insert_approved_tool_call, sessions, binding_id=binding_id, now=_NOW)
         )
-        repository = PostgresKubernetesGrantRepository(sessions)
+        repository = PostgresGrantRepository(sessions)
 
         async def exercise() -> None:
             grant = await repository.create(
@@ -388,7 +386,7 @@ def test_repository_rejects_wrong_or_auto_approved_source(make_client: Any) -> N
                 approval_policy_id="unsafe-test-policy",
             )
         )
-        repository = PostgresKubernetesGrantRepository(sessions)
+        repository = PostgresGrantRepository(sessions)
 
         async def rejected(source_tool_call_id: str) -> None:
             with pytest.raises(GrantSourceError):
@@ -447,7 +445,7 @@ def test_database_rejects_grants_with_invalid_source_provenance(make_client: Any
     ],
 )
 def test_database_accepts_canonical_non_exact_scope_shape(
-    make_client: Any, scope: dict[str, object], rule: KubernetesRule
+    make_client: Any, scope: dict[str, object], rule: Rule
 ) -> None:
     with make_client() as client:
         app = cast(FastAPI, client.app)

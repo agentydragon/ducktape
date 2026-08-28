@@ -6,11 +6,7 @@ import logging
 from typing import Any
 
 from haku.console.grants.kubernetes.authorization import AuthorizationRequest, RequestAttributes, required_rule
-from haku.console.grants.kubernetes.models import (
-    KubernetesAllNamespacesGrantScope,
-    KubernetesClusterGrantScope,
-    KubernetesNamespacesGrantScope,
-)
+from haku.console.grants.kubernetes.models import AllNamespacesGrantScope, ClusterGrantScope, NamespacesGrantScope
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +22,9 @@ def _make_req(
     subresource: str | None = None,
 ) -> AuthorizationRequest:
     scope = (
-        KubernetesClusterGrantScope()
+        ClusterGrantScope()
         if cluster_scoped
-        else (
-            KubernetesNamespacesGrantScope(namespaces=(namespace,))
-            if namespace
-            else KubernetesAllNamespacesGrantScope()
-        )
+        else (NamespacesGrantScope(namespaces=(namespace,)) if namespace else AllNamespacesGrantScope())
     )
     attributes = RequestAttributes(
         resource_request=True,
