@@ -95,9 +95,9 @@ py_library(
         ":chat_models",
         ":config",
         ":http_decide_config",
-        ":provider_connection_registry",
         ":tool_call_actor",
         "//haku/console/agents:naming",
+        "//haku/console/oauth:provider_connection_registry",
         "//haku/recall_index:config",
         "//haku/sandbox:config",
         "//mcp_infra:prefix",
@@ -328,9 +328,9 @@ py_library(
         ":kubernetes_grant_models",
         ":node_daemon_models",
         ":operator_identity",
-        ":provider_connection_registry",
         ":pydantic_column",
         "//haku/console/agents:models",
+        "//haku/console/oauth:provider_connection_registry",
         "//util:enum_vocab",
         "//util:sqlalchemy_types",
         "@ducktape_haku//haku/console:tool_calls",
@@ -635,88 +635,6 @@ py_library(
 )
 
 py_library(
-    name = "oauth_callback_page",
-    srcs = ["oauth_callback_page.py"],
-    data = ["oauth_callback.html.j2"],
-    deps = [
-        "@pypi//fastapi",
-        "@pypi//jinja2",
-    ],
-)
-
-py_library(
-    name = "oauth_connection_result",
-    srcs = ["oauth_connection_result.py"],
-    deps = [
-        ":database_schema",
-        ":operator_auth",
-        ":operator_identity_store",
-        "@pypi//fastapi",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_oauth_connection_result",
-    size = "medium",
-    srcs = ["test_oauth_connection_result.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":database_schema",
-        ":oauth_connection_result",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # pytest-asyncio auto mode (async test functions)
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "oauth_token_support",
-    srcs = ["oauth_token_support.py"],
-    deps = [
-        ":config",
-        "@pypi//httpx",
-        "@pypi//mcp",
-        "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_oauth_token_support",
-    srcs = ["test_oauth_token_support.py"],
-    deps = [
-        ":oauth_token_support",
-        "//:conftest",
-        "@pypi//httpx",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "oauth_token_state",
-    srcs = ["oauth_token_state.py"],
-    deps = [
-        ":database_schema",
-        ":oauth_token_support",
-        ":operator_identity_store",
-        "@pypi//mcp",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-        "@pypi//tenacity",
-    ],
-)
-
-py_library(
     name = "mcp_operator_oauth",
     srcs = ["mcp_operator_oauth.py"],
     deps = [
@@ -726,44 +644,16 @@ py_library(
         ":database_schema",
         ":deps",
         ":mcp_config",
-        ":oauth_connection_result",
-        ":oauth_token_state",
-        ":oauth_token_support",
         ":operator_auth",
         ":operator_identity",
         ":operator_identity_store",
+        "//haku/console/oauth:connection_result",
+        "//haku/console/oauth:token_state",
+        "//haku/console/oauth:token_support",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//mcp",
         "@pypi//prometheus_client",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "provider_connection_registry",
-    srcs = ["provider_connection_registry.py"],
-)
-
-py_library(
-    name = "provider_connection",
-    srcs = ["provider_connection.py"],
-    deps = [
-        ":config",
-        ":console_events",
-        ":database_schema",
-        ":deps",
-        ":mcp_config",
-        ":oauth_connection_result",
-        ":oauth_token_state",
-        ":oauth_token_support",
-        ":operator_auth",
-        ":operator_identity_store",
-        ":provider_connection_registry",
-        "@pypi//fastapi",
-        "@pypi//httpx",
-        "@pypi//mcp",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
@@ -801,9 +691,9 @@ py_library(
     srcs = ["authentik_operator_token.py"],
     deps = [
         ":database_schema",
-        ":oauth_token_state",
-        ":oauth_token_support",
         ":operator_identity_store",
+        "//haku/console/oauth:token_state",
+        "//haku/console/oauth:token_support",
         "//mcp_infra/authentik_auth:config",
         "@pypi//httpx",
         "@pypi//mcp",
@@ -836,49 +726,10 @@ py_test(
         ":connection_metrics",
         ":database_schema",
         ":operator_identity_store",
-        ":provider_connection_registry",
+        "//haku/console/oauth:provider_connection_registry",
         "//:conftest",
         "@pypi//prometheus_client",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-        # pytest-asyncio auto mode (root conftest) needs the plugin importable at runtime.
-        "@pypi//pytest_asyncio",
-    ],
-)
-
-py_library(
-    name = "oauth_association_maintenance",
-    srcs = ["oauth_association_maintenance.py"],
-    deps = [
-        ":authentik_operator_token",
-        ":database_schema",
-        ":mcp_config",
-        ":mcp_operator_oauth",
-        ":oauth_token_support",
-        ":operator_identity",
-        ":provider_connection",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_oauth_association_maintenance",
-    size = "medium",
-    srcs = ["test_oauth_association_maintenance.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":database_schema",
-        ":mcp_config",
-        ":oauth_association_maintenance",
-        ":oauth_token_state",
-        ":provider_connection_registry",
-        "//:conftest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         # pytest-asyncio auto mode (root conftest) needs the plugin importable at runtime.
@@ -898,7 +749,7 @@ py_test(
     deps = [
         ":authentik_operator_token",
         ":conftest",
-        ":oauth_token_state",
+        "//haku/console/oauth:token_state",
         "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
@@ -906,37 +757,6 @@ py_test(
         "@pypi//respx",
         # pytest-asyncio auto-mode plugin autoload (see test_gmail); Gazelle drops it on regen.
         "@pypi//pytest_asyncio",
-    ],
-)
-
-py_test(
-    name = "test_provider_connection",
-    size = "medium",
-    srcs = ["test_provider_connection.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
-    requires_docker = True,
-    deps = [
-        ":config",
-        ":conftest",
-        ":database_schema",
-        ":mcp_config",
-        ":oauth_token_state",
-        ":operator_identity",
-        ":operator_identity_store",
-        ":provider_connection",
-        ":provider_connection_registry",
-        ":tool_call_service",
-        "//:conftest",
-        "@pypi//fastapi",
-        "@pypi//mcp",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -975,10 +795,10 @@ py_library(
         ":kubernetes_authorization",
         ":mcp_config",
         ":mcp_execution",
-        ":provider_connection_registry",
         ":tool_call_actor",
         "//haku/console/auto_approval:github",
         "//haku/console/auto_approval:registry",
+        "//haku/console/oauth:provider_connection_registry",
         "//haku/console/tools:gmail",
         "//haku/console/tools:gmail_client",
         "@ducktape_haku//haku/console:tool_calls",
@@ -1034,9 +854,9 @@ py_library(
         ":mcp_reflection_cache",
         ":operator_auth",
         ":operator_identity",
-        ":provider_connection",
         ":tool_call_actor",
         ":tool_call_service",
+        "//haku/console/oauth:provider_connection",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
@@ -1088,11 +908,11 @@ py_library(
         ":mcp_guidance",
         ":mcp_operator_oauth",
         ":node_daemons",
-        ":provider_connection",
         ":tool_call_actor",
         ":tool_call_service",
         "//haku/console/auto_approval:registry",
         "//haku/console/mcp_auth:fastmcp_adapter",
+        "//haku/console/oauth:provider_connection",
         "//mcp_infra:naming",
         "//mcp_infra:prefix",
         "@ducktape_haku//haku/console:tool_calls",
@@ -1119,11 +939,11 @@ py_library(
     deps = [
         ":authentik_operator_token",
         ":config",
-        ":oauth_callback_page",
         ":operator_identity",
         ":operator_identity_store",
         ":operator_login_flow",
         ":tool_call_actor",
+        "//haku/console/oauth:callback_page",
         "@pypi//authlib",
         "@pypi//fastapi",
         "@pypi//httpx",
@@ -1189,7 +1009,7 @@ py_library(
         ":config",
         ":operator_auth",
         ":operator_identity_store",
-        ":provider_connection_registry",
+        "//haku/console/oauth:provider_connection_registry",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//asyncpg",
         "@pypi//fastapi",
@@ -1265,7 +1085,7 @@ py_test(
         ":database_schema",
         ":mcp_config",
         ":mcp_operator_oauth",
-        ":oauth_token_state",
+        "//haku/console/oauth:token_state",
         ":operator_identity",
         ":operator_identity_store",
         "//:conftest",
@@ -1375,14 +1195,14 @@ py_library(
         ":mcp_server",
         ":models",
         ":node_daemons",
-        ":oauth_association_maintenance",
-        ":oauth_connection_result",
-        ":oauth_token_state",
+        "//haku/console/oauth:association_maintenance",
+        "//haku/console/oauth:connection_result",
+        "//haku/console/oauth:token_state",
         ":operator_auth",
         ":operator_identity",
         ":operator_identity_store",
-        ":provider_connection",
-        ":provider_connection_registry",
+        "//haku/console/oauth:provider_connection",
+        "//haku/console/oauth:provider_connection_registry",
         ":push_routes",
         ":recall_index_reader",
         ":tool_call_service",
@@ -1700,7 +1520,6 @@ py_test(
         ":grant_principal",
         ":mcp_approval",
         ":mcp_config",
-        ":oauth_token_state",
         ":operator_identity",
         ":operator_identity_store",
         ":recall_index_access",
@@ -1709,6 +1528,7 @@ py_test(
         "//:conftest",
         "//haku/console/agents:authorization",
         "//haku/console/agents:models",
+        "//haku/console/oauth:token_state",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -1738,7 +1558,7 @@ py_test(
         ":mcp_config",
         ":mcp_operator_oauth",
         ":node_daemon_models",
-        ":oauth_token_state",
+        "//haku/console/oauth:token_state",
         ":operator_auth",
         ":operator_identity",
         ":operator_identity_store",

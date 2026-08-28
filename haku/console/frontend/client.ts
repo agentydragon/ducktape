@@ -32,8 +32,8 @@ export type McpOperatorAuthStatus = components["schemas"]["McpOperatorAuthStatus
 export type ProviderConnectionConnectResponse = components["schemas"]["ProviderConnectionConnectResponse"];
 export type OperatorConnectionName = ProviderConnectionConnectResponse["connection"];
 export type OAuthConnectionResult =
-  | components["schemas"]["OAuthConnectionSucceeded"]
-  | components["schemas"]["OAuthConnectionFailed"];
+  | components["schemas"]["ConnectionSucceeded"]
+  | components["schemas"]["ConnectionFailed"];
 export type AgentView = components["schemas"]["AgentView"];
 // The one conversation-entry vocabulary, shared with the MCP conversation reads: one entry per
 // item row, keyed by the position it opened at, its lifecycle carried as `status`.

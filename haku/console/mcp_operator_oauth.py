@@ -68,24 +68,24 @@ from haku.console.mcp_config import (
     _operator_oauth_enabled,
     _server_entry,
 )
-from haku.console.oauth_connection_result import (
-    OAuthConnectionFailed,
-    OAuthConnectionResultStoreDep,
-    OAuthConnectionSucceeded,
+from haku.console.oauth.connection_result import (
+    ConnectionFailed,
+    ConnectionResultStoreDep,
+    ConnectionSucceeded,
     bounded_result_message,
     result_redirect,
 )
-from haku.console.oauth_token_state import (
-    OAuthRefreshError,
-    OAuthRefreshFailureAction,
-    OAuthRefreshFailureEpisode,
-    OAuthRefreshFailureKind,
-    PostgresOAuthTokenStateStore,
-    new_oauth_token_state,
+from haku.console.oauth.token_state import (
+    PostgresTokenStateStore,
+    RefreshError,
+    RefreshFailureAction,
+    RefreshFailureEpisode,
+    RefreshFailureKind,
+    new_token_state,
     refresh_failure_episode,
 )
-from haku.console.oauth_token_support import (
-    OAuthTokenResponseError,
+from haku.console.oauth.token_support import (
+    TokenResponseError,
     parse_token_response,
     public_base_url,
     token_expires_at,
@@ -132,7 +132,7 @@ class McpOperatorAuthDegraded(McpOperatorAuthStateBase):
     connected_at: datetime.datetime
     token_expires_at: datetime.datetime | None = None
     scope: str | None = None
-    refresh_failure: OAuthRefreshFailureEpisode
+    refresh_failure: RefreshFailureEpisode
 
 
 class McpOperatorAuthUnconnected(McpOperatorAuthStateBase):
@@ -239,7 +239,7 @@ class PostgresMcpOperatorOAuthStore:
         sessions: async_sessionmaker[AsyncSession],
         *,
         operator_identity_store: PostgresOperatorIdentityStore,
-        token_states: PostgresOAuthTokenStateStore,
+        token_states: PostgresTokenStateStore,
         token_timeout_seconds: float,
     ) -> None:
         # Migrations run in the image-coupled release Job (haku.console.database_migrate.apply_migrations), not
@@ -378,7 +378,7 @@ class PostgresMcpOperatorOAuthStore:
                 token_endpoint_auth_method=flow.token_endpoint_auth_method,
                 token_endpoint=flow.token_endpoint,
                 resource=flow.resource,
-                token_state=new_oauth_token_state(
+                token_state=new_token_state(
                     operator_id=flow.operator_id,
                     access_token=token.access_token,
                     refresh_token=token.refresh_token,
@@ -712,7 +712,7 @@ async def _exchange_operator_oauth_code(
         ) from e
     try:
         token = await parse_token_response(response, label="MCP OAuth token exchange")
-    except OAuthTokenResponseError as error:
+    except TokenResponseError as error:
         _observe_token_request("exchange", "rejected", started)
         raise HTTPException(status_code=502, detail=str(error)) from error
     _observe_token_request("exchange", "success", started)
@@ -734,12 +734,12 @@ async def _refresh_operator_oauth_token(token_client: _OperatorOAuthTokenClient,
             response = await http.post(token_client.token_endpoint, data=data, headers=headers)
     except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as e:
         _observe_token_request("refresh", "connect", started)
-        raise OAuthRefreshError(
+        raise RefreshError(
             token_request_error_message(
                 label="MCP OAuth token refresh", request_error=e, timeout_seconds=token_client.timeout_seconds
             ),
-            kind=OAuthRefreshFailureKind.CONNECT,
-            action=OAuthRefreshFailureAction.RETRYING,
+            kind=RefreshFailureKind.CONNECT,
+            action=RefreshFailureAction.RETRYING,
         ) from e
     except httpx.RequestError as e:
         # The request was sent but no response arrived, so whether the server rotated the token is
@@ -758,35 +758,33 @@ async def _refresh_operator_oauth_token(token_client: _OperatorOAuthTokenClient,
         #
         # Retries are bounded by the shared backoff in `oauth_token_state._store_failure`
         # (30s doubling to a 15min cap) and end the moment any attempt returns a definitive answer.
-        raise OAuthRefreshError(
+        raise RefreshError(
             token_request_error_message(
                 label="MCP OAuth token refresh", request_error=e, timeout_seconds=token_client.timeout_seconds
             ),
-            kind=OAuthRefreshFailureKind.OUTCOME_UNKNOWN,
-            action=OAuthRefreshFailureAction.RETRYING,
+            kind=RefreshFailureKind.OUTCOME_UNKNOWN,
+            action=RefreshFailureAction.RETRYING,
         ) from e
     if response.status_code >= 500:
         _observe_token_request("refresh", "upstream", started)
-        raise OAuthRefreshError(
+        raise RefreshError(
             f"MCP OAuth token refresh failed: {response.status_code}",
-            kind=OAuthRefreshFailureKind.UPSTREAM,
-            action=OAuthRefreshFailureAction.RETRYING,
+            kind=RefreshFailureKind.UPSTREAM,
+            action=RefreshFailureAction.RETRYING,
         )
     try:
         token = await parse_token_response(response, label="MCP OAuth token refresh")
-    except OAuthTokenResponseError as error:
+    except TokenResponseError as error:
         _observe_token_request("refresh", "rejected", started)
-        raise OAuthRefreshError(
+        raise RefreshError(
             str(error),
             kind=(
-                OAuthRefreshFailureKind.OAUTH_REJECTED
-                if not error.invalid_response
-                else OAuthRefreshFailureKind.INVALID_RESPONSE
+                RefreshFailureKind.OAUTH_REJECTED if not error.invalid_response else RefreshFailureKind.INVALID_RESPONSE
             ),
             action=(
-                OAuthRefreshFailureAction.RECONNECT
+                RefreshFailureAction.RECONNECT
                 if error.oauth_error == "invalid_grant"
-                else OAuthRefreshFailureAction.OPERATOR_ACTION
+                else RefreshFailureAction.OPERATOR_ACTION
             ),
         ) from error
     _observe_token_request("refresh", "success", started)
@@ -825,7 +823,7 @@ async def mcp_operator_auth_callback(
     *,
     request: Request,
     oauth_store: OAuthStoreDep,
-    result_store: OAuthConnectionResultStoreDep,
+    result_store: ConnectionResultStoreDep,
     event_hub: ConsoleEventHubDep,
     actor: OperatorActorDep,
     state: str | None = None,
@@ -837,7 +835,7 @@ async def mcp_operator_auth_callback(
         return await result_redirect(
             result_store,
             operator_id=operator_id,
-            result=OAuthConnectionFailed(
+            result=ConnectionFailed(
                 title="Couldn't connect the MCP account",
                 message=bounded_result_message(
                     f"MCP authorization failed: {error}", fallback="MCP authorization failed."
@@ -849,7 +847,7 @@ async def mcp_operator_auth_callback(
         return await result_redirect(
             result_store,
             operator_id=operator_id,
-            result=OAuthConnectionFailed(
+            result=ConnectionFailed(
                 title="Couldn't connect the MCP account", message="The authorization response was incomplete."
             ),
             destination="settings",
@@ -863,7 +861,7 @@ async def mcp_operator_auth_callback(
         return await result_redirect(
             result_store,
             operator_id=operator_id,
-            result=OAuthConnectionFailed(
+            result=ConnectionFailed(
                 title="Couldn't connect the MCP account",
                 message=bounded_result_message(detail, fallback="MCP OAuth callback failed."),
             ),
@@ -875,7 +873,7 @@ async def mcp_operator_auth_callback(
     return await result_redirect(
         result_store,
         operator_id=operator_id,
-        result=OAuthConnectionSucceeded(
+        result=ConnectionSucceeded(
             title=f"Connected to {status.server_id}", message="The MCP account is now available in Haku Console."
         ),
         destination="settings",

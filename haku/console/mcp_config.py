@@ -33,7 +33,7 @@ from haku.console.config import (
     Settings,
 )
 from haku.console.http_decide_config import EgressDecideConfig
-from haku.console.provider_connection_registry import ProviderConnectionKind
+from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
 from haku.console.tool_call_actor import RuntimeActor
 from haku.recall_index.config import ConfiguredRecallIndex, GitRecallIndexDefinition
 from haku.sandbox.config import SandboxEnvironmentConfig

@@ -83,7 +83,8 @@ tree shows the packages, §3 and §4 settle what the files and classes inside th
     auto_approval/
 
   oauth/               # provider account-linking + operator OAuth token machinery
-    provider_connection*.py  oauth_token_state.py  oauth_connection_result.py  oauth_*.py
+    provider_connection.py  provider_connection_registry.py  token_state.py  token_support.py
+    connection_result.py  association_maintenance.py  callback_page.py
 
   notifications/       # Web Push pending-approval domain (README Notifications section as a package)
     web_push.py  push_routes.py  console_events.py  connection_metrics.py  pg_wake.py  session_wakes.py  conversation_wakes.py
@@ -252,7 +253,7 @@ every package the split creates, not just `grants/`:
   `haku/runtime/x/bridge/` (#4667), where the backend-prefix drop applies (`claude_code_projection.py`
   → `projection.py`). Console keeps no `runtimes/`; the residual harness _selection_ is `harnesses/`
   (`RuntimeAdapter` → `Adapter`, `RuntimeRegistry` → `Registry`).
-- **`notifications/`, `oauth/`, `hostexecd/`**: same — e.g. `web_push.py` → `push.py`,
+- **`notifications/`, `hostexecd/`**: same — e.g. `web_push.py` → `push.py`,
   `PendingApprovalNotifier` → `Notifier`.
 
 Two seams are handled deliberately — **do not reintroduce the prefix to dodge either**:
@@ -345,19 +346,10 @@ change-unit, split by change and dispatched in parallel where the domains do not
 = a quiet-window rename/move needing no design review; **semantic** = a reshape that needs review. The
 scarce resource is operator review, so ready mechanical work never queues behind a contested reshape.
 
-**Four lanes** run in parallel — indexer, identity, grants, conversation — plus the immediate docs
-chunks and the trailing de-Haku/packaging sweep. The only real waits are **content** dependencies (a
+**Four lanes** run in parallel — indexer, identity, grants, conversation — plus the trailing
+de-Haku/packaging sweep. The only real waits are **content** dependencies (a
 blessed `<platform>` name, the `<auth-context>` pick, #4889's envelope shape, #4667's deletion). "It
 will conflict" / "touches the same file" is not a wait — whoever lands second rebases.
-
-### Land immediately — no domain collision
-
-- **C0 · STYLE addendum** _(mechanical, docs)_ — add the directory-as-namespace / no-redundant-prefix
-  rule and the "suffix on the definition, never re-minted per import" clause to <../../../STYLE.md>.
-  Unblocks citations. Depends on nothing.
-- **C0b · This design doc** _(mechanical, docs)_ — the citable target. Every later PR cites it.
-
-C0 and C0b are this PR — the first no-collision chunks.
 
 ### Indexer lane — independent of all naming work
 
@@ -446,14 +438,13 @@ Needs operator go **and** the `<auth-context>` name pick.
   namespaces + connector + docs in a coordinated cutover; "Haku" kept as agent config; redirect/compat
   for external refs. The tool-id de-Haku rides C12.
 - **C15 · Remainder packaging (#4924)** _(mechanical)_ — once #4772 has settled what everything is
-  called (rename-before-move), the leftover flat modules package into `oauth/`, `notifications/`,
+  called (rename-before-move), the leftover flat modules package into `notifications/`,
   `hostexecd/`, and the app shell in a final quiet-window sweep.
 
 ### Dependency-ordered picture
 
 ```text
-now ─┬─ C0, C0b            (docs, immediate — this PR)
-     ├─ C13               ← staged severing; ConversationItem home is the gate   [indexer lane, independent]
+now ─┬─ C13               ← staged severing; ConversationItem home is the gate   [indexer lane, independent]
      ├─ C8 → C9 → C10     ← after operator go + <auth-context>  [identity lane]
      ├─ C11 → C12         ← after egress lands + #4889          [grants lane]
      └─ (#4667 settles) → C1, C2, C4a  then  C4b, C4c, C5 → C6 → C7   [conversation lane]

@@ -282,7 +282,7 @@ spec:
             # label CRUD — haku/console/tools/gmail.py) and `google_calendar` (recurrence-aware
             # event reads + approval-gated creation — google_calendar.py). Each call resolves that
             # Operator's per-Operator Google token from the console's own connection store
-            # (haku/console/provider_connection.py), self-refreshed in-process.
+            # (haku/console/oauth/provider_connection.py), self-refreshed in-process.
             #
             # Each integration has its own Google OAuth application/client so Calendar can complete
             # sensitive-scope verification independently of restricted Gmail. The console runs both
