@@ -1,13 +1,10 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//skills:defs.bzl", "skill_package")
 
-skill_package(
-    name = "forgejo",
-    srcs = [
-        "SKILL.md",
-        "scripts/forgejo.py",
-    ],
-)
+# skill_package(preserve_paths = True) requires same-package files, so scripts/
+# must stay part of this package rather than getting a generated BUILD.
+# gazelle:exclude scripts
+# gazelle:resolve py skills.forgejo.scripts.forgejo //skills/forgejo:forgejo_lib
 
 py_library(
     name = "forgejo_lib",
@@ -16,6 +13,14 @@ py_library(
     deps = [
         "@pypi//httpx",
         "@pypi//pydantic",
+    ],
+)
+
+skill_package(
+    name = "forgejo",
+    srcs = [
+        "SKILL.md",
+        "scripts/forgejo.py",
     ],
 )
 
