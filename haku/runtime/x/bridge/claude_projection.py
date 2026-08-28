@@ -14,6 +14,7 @@ that fold was, against what the wire does rather than what it documents:
 | A result can precede the completed `assistant` block (2.1.220+)| The composed stream call is finished and answered first; the later block copy is deduplicated by `call_id` |
 | The CLI folds a queued prompt into the active turn             | `admit` inside an open turn emits only `prompt.admitted` — the fence, not a second bracket |
 | `stop_reason` is never set on `assistant`; `is_error` lies     | A message closes on a different id or `result`; outcomes come from `subtype` and the tri-state `tool_result.is_error` |
+| A turn's only prose can sit on its `result` frame              | A successful turn that completed no message mints the result text as one whole message — the v3 fold's `close_answer` fallback |
 | Most of the wire is `system`, and frame classes keep appearing | Ignored by name where deliberate; everything else counts into `Projected.unprojected` — neither a crash nor a silent drop |
 
 **Identity is minted here.** Every turn and item travels under a runner-minted `UUID` that every
@@ -237,6 +238,9 @@ class ClaudeProjector:
         self._mint_id = mint_id
         self._open_turn: UUID | None = None
         self._open_message: _OpenMessage | None = None
+        # Whether the open turn has completed a message — what decides if the terminal frame's
+        # `result` text is the turn's only prose and must be minted (`_result`).
+        self._completed_message_in_turn = False
         self._composition: _OpenToolComposition | None = None
         # Runner item ids for calls declared but unanswered, keyed by Claude's `call_id`; settled
         # ids stay known so the completed block's compatibility copy and a repeated result are
@@ -264,6 +268,7 @@ class ClaudeProjector:
         if self._open_turn is None:
             turn_id = self._mint_id()
             self._open_turn = turn_id
+            self._completed_message_in_turn = False
             result.operations.append(
                 TurnOpened(turn_id=turn_id, cause=PromptsCause(prompt_ids=(prompt_id,)), provenance=provenance)
             )
@@ -276,6 +281,7 @@ class ClaudeProjector:
         if self._open_turn is None and _begins_exchange(kind, payload):
             turn_id = self._mint_id()
             self._open_turn = turn_id
+            self._completed_message_in_turn = False
             result.operations.append(TurnOpened(turn_id=turn_id, cause=WakeCause(), provenance=_at(frame_seq)))
         if kind == "stream_event":
             self._stream_event(result, frame_seq, payload)
@@ -543,6 +549,7 @@ class ClaudeProjector:
         if open_message is None:
             return
         self._open_message = None
+        self._completed_message_in_turn = True
         result.operations.append(
             ItemCompleted(
                 item_id=open_message.item_id,
@@ -618,6 +625,23 @@ class ClaudeProjector:
             return
         self._open_turn = None
         subtype = payload.get("subtype")
+        final_text = payload.get("result")
+        if (
+            subtype == "success"
+            and not self._completed_message_in_turn
+            and isinstance(final_text, str)
+            and final_text.strip()
+        ):
+            # A turn whose prose arrives only with the terminal frame — no stream, no completed
+            # block — gets that text as one whole message on this frame, the v3 fold's
+            # `close_answer` fallback. Empty prose mints nothing: a turn that only ran tools said
+            # nothing, and a turn that already completed a message said it all — the terminal
+            # `result` repeats it.
+            item_id = self._mint_id()
+            where = _at(frame_seq)
+            result.operations.append(ItemOpened(item_id=item_id, turn_id=turn_id, item=MessageOpen(), provenance=where))
+            result.operations.append(ItemSegment(item_id=item_id, text=final_text, provenance=where))
+            result.operations.append(ItemCompleted(item_id=item_id, completion=MessageCompletion(), provenance=where))
         stop_reason = payload.get("stop_reason")
         stated = stop_reason if isinstance(stop_reason, str) and stop_reason else "unknown error"
         end = TurnAnswered() if subtype == "success" else TurnFailed(failure=f"{subtype}: {stated}")

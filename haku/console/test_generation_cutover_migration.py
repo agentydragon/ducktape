@@ -64,12 +64,10 @@ def _session(conn: Connection, *, live: bool) -> None:
 
 
 def _frames_direction_constraint(conn: Connection) -> bool:
-    return (
-        conn.execute(
-            text("SELECT count(*) FROM pg_constraint WHERE conname = 'ck_session_frames_runner_seq_direction'")
-        ).scalar_one()
-        == 1
-    )
+    count: int = conn.execute(
+        text("SELECT count(*) FROM pg_constraint WHERE conname = 'ck_session_frames_runner_seq_direction'")
+    ).scalar_one()
+    return count == 1
 
 
 def test_0109_cuts_a_drained_database(db_url: str) -> None:
