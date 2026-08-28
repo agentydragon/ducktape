@@ -1,8 +1,4 @@
-"""Merge the 0112 migration fork and add ``http_grants.allow_prohibited_address``.
-
-Two children of 0112 both reached devel — 0114 (#5067) and 0115 (#5069) — leaving alembic with two
-heads. This revision merges them so ``upgrade head`` is single-headed again, and in the same step
-adds the egress-grant capability column.
+"""Add ``http_grants.allow_prohibited_address``.
 
 ``allow_prohibited_address`` is the reusable, destination-scoped primitive letting a temporary HTTP
 grant reach one exact origin that resolves entirely into otherwise-prohibited (cluster-internal)
@@ -11,8 +7,8 @@ check and the scoping; the column only records which grants carry the capability
 false``, so every existing grant — and any inserted without the column during a roll — stays
 default-deny.
 
-Revision ID: 0116
-Revises: 0114, 0115
+Revision ID: 0117
+Revises: 0116
 """
 
 from __future__ import annotations
@@ -20,8 +16,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0116"
-down_revision: tuple[str, str] = ("0114", "0115")
+revision: str = "0117"
+down_revision: str | None = "0116"
 branch_labels: str | None = None
 depends_on: str | None = None
 
