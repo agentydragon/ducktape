@@ -41,12 +41,21 @@ class Runtime:
     """Create or replace sessions for durable conversation demand and maintain them globally."""
 
     def __init__(
-        self, service: SessionService, store: Store, notifications: ConversationWakes, engine: AsyncEngine
+        self,
+        service: SessionService,
+        store: Store,
+        notifications: ConversationWakes,
+        engine: AsyncEngine,
+        *,
+        sweep_interval: timedelta = SWEEP_INTERVAL,
     ) -> None:
         self._service = service
         self._store = store
         self._notifications = notifications
         self._engine = engine
+        # Paired with the store's adoption grace: a shortened grace only shows up sooner if the
+        # sweep that acts on it also runs sooner.
+        self._sweep_interval = sweep_interval
         self._demanded = asyncio.Event()
 
     async def reconcile_once(self) -> None:
@@ -92,7 +101,7 @@ class Runtime:
                 await asyncio.sleep(FAILURE_BACKOFF.total_seconds())
                 continue
             with contextlib.suppress(TimeoutError):
-                async with asyncio.timeout(SWEEP_INTERVAL.total_seconds()):
+                async with asyncio.timeout(self._sweep_interval.total_seconds()):
                     await self._demanded.wait()
 
     async def _run(self) -> None:

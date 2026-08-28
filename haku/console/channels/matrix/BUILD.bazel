@@ -417,7 +417,7 @@ py_test(
 
 py_test(
     name = "test_fullstack_e2e",
-    size = "large",  # a Synapse, a Postgres, a console process and a runner process per test
+    size = "large",  # a console process and a runner process per test; the Synapse and the Postgres are shared
     srcs = ["test_fullstack_e2e.py"],
     data = [
         "//third_party/containers:pgvector_pg18",
