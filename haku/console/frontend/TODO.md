@@ -34,3 +34,19 @@
     the widgets, are already unwrapped and transcript rows are not.
 
   `call_mcp_tool` is the easy half: `server_id` is one of its arguments.
+
+- Break the serial `ts_project` chain with **`isolated_typecheck`**. The frontend's Bazel critical
+  path is twelve `ts_library` links in series — `client → mcp_client → gmail_client →
+tool_rendering/gmail:{requests,responses,calls} → tool_rendering → tool_result_field →
+tool_call_card → shell_chrome → haku_ui_embed{,_test} → vitest_test` — because `ts_library`
+  emits each target's `.d.ts` from the same action that type-checks it, so a consumer cannot start
+  until its dependency's whole program has been checked. `aspect_rules_ts` 3.8.7 (the pinned
+  version) takes `isolated_typecheck`, which splits declaration emit from checking: emit needs only
+  the target's own sources, so the chain collapses to one link deep and checking fans out in
+  parallel. Type checking is fully preserved — that is the point, and why the faster-transpiler
+  route <../../../devinfra/js/ts_library.bzl> rejects is still rejected.
+
+  The price is `isolatedDeclarations`: every exported symbol needs an explicit type annotation.
+  `tsc` names each site, so the diff is mechanical but wide. The gotcha is the one `ts_library`'s
+  docstring already anticipates — splitting the actions means the generated `<name>_typecheck`
+  target must be in what CI builds, or the build goes green on code `tsc` rejects.

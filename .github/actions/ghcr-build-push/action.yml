@@ -12,6 +12,10 @@ inputs:
     description: Path to Dockerfile (optional; defaults to {context}/Dockerfile)
     required: false
     default: ""
+  build_args:
+    description: Newline-separated Docker build args (e.g. BASE_DIGEST=sha256:...)
+    required: false
+    default: ""
   cache_from:
     description: Docker build cache source (e.g. type=registry,ref=image:buildcache)
     required: false
@@ -61,6 +65,7 @@ runs:
       with:
         context: ${{ inputs.context }}
         file: ${{ inputs.file }}
+        build-args: ${{ inputs.build_args }}
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         cache-from: ${{ inputs.cache_from }}
