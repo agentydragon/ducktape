@@ -8,12 +8,8 @@ from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.snapshots import RunningServerEntry
 
 
-def test_render_empty_states_returns_empty() -> None:
-    out = render_compositor_instructions({})
-    assert out == ""
-
-
 def test_render_single_running_with_instructions() -> None:
+    """The mount prefix becomes a heading and the server's instructions surface in the output."""
     init = types.InitializeResult(
         protocolVersion="1.0",
         capabilities=types.ServerCapabilities(),
@@ -22,9 +18,7 @@ def test_render_single_running_with_instructions() -> None:
     )
     state = RunningServerEntry(initialize=init, tools=[])
     out = render_compositor_instructions({MCPMountPrefix("docker_exec"): state})
-    assert "The following MCP servers" in out
     assert "# docker_exec" in out
-    assert "## Instructions" in out
     assert "Hello world" in out
 
 

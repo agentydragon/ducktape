@@ -187,7 +187,12 @@ class RetryableRefreshOIDCProxy(OIDCProxy):
 
 
 class DownstreamClientIdentityOIDCProxy(RetryableRefreshOIDCProxy):
-    """Restore the downstream DCR client identity after FastMCP's token swap."""
+    """Restore the downstream DCR client identity after FastMCP's token swap.
+
+    Must subclass RetryableRefreshOIDCProxy (not OIDCProxy directly): the
+    production proxy is this class alone, so losing the base would silently
+    drop refresh/JWKS retry behavior.
+    """
 
     async def load_access_token(self, token: str) -> AccessToken | None:
         """Reattach the identity from the signed FastMCP reference token.
