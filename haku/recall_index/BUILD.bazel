@@ -227,6 +227,7 @@ py_test(
         "//haku/console:chat_models",
         "//haku/console:database_schema",
         "//haku/console:operator_identity",
+        "//haku/console/harnesses:kind",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

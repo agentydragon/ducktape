@@ -12,8 +12,9 @@ import pytest_bazel
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.chat_models import ItemStatus, ItemType, RuntimeKind
+from haku.console.chat_models import ItemStatus, ItemType
 from haku.console.database_schema import Base as ConsoleBase, Conversation, ConversationItem, Operator, Session
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.operator_identity import OperatorStatus
 from haku.recall_index.chat_sync import ChatSyncReport, sync_chat
 from haku.recall_index.embedding_sync import embed_pending
@@ -73,7 +74,8 @@ async def new_session(source: AsyncSession, operator_id: UUID, *, access_profile
             operator_id=operator_id,
             agent_id=agent_id,
             access_profile_id=access_profile_id,
-            runtime_kind=RuntimeKind.CLAUDE_CODE,
+            harness_kind=HarnessKind.CLAUDE_CODE,
+            runtime_kind=HarnessKind.CLAUDE_CODE,
             created_at=_NOW,
         )
     )
