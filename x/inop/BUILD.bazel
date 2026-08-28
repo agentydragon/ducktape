@@ -94,18 +94,6 @@ py_library(
 )
 
 py_test(
-    name = "test_config",
-    srcs = ["test_config.py"],
-    requires_docker = True,
-    deps = [
-        ":config",
-        ":conftest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
     name = "test_exclusion_patterns",
     srcs = ["test_exclusion_patterns.py"],
     requires_docker = True,

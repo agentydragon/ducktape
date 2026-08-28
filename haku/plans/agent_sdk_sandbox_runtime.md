@@ -8,7 +8,7 @@ TLS-intercepting forced proxy — and the runtime that answer unblocked is runni
 (<../../cluster/k8s/haku/workspaces/app/sandboxtemplate-haku-claude.yaml>), the in-sandbox bridge
 (<../runtime/x/bridge/>), the console's session runtime and its chat surface
 (<../console/x/session_runtime.py>, `frontend/x/`), and a Matrix room in front of all of it
-(<../console/x/channels/matrix/SPEC.md>). One decision below was reversed by the build: no Python imports the
+(<../console/channels/matrix/SPEC.md>). One decision below was reversed by the build: no Python imports the
 Agent SDK any more — the console drives Claude Code's wire itself
 (<cli_protocol_ownership.md>) — so the SDK survives only as the wheel the CLI binary is
 extracted from.

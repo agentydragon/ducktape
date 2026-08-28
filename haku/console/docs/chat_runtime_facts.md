@@ -15,7 +15,7 @@ works because of two properties of Synapse's `synapse/rest/client/transactions.p
 `master` on 2026-08-15:
 
 - `_get_transaction_key` returns `(path, "user", user_id, device_id)` for a regular user — keyed on
-  the **device**, not the access token. `MatrixClient` pins `device_id` at construction and reuses
+  the **device**, not the access token. `Client` pins `device_id` at construction and reuses
   it across logins, so a replacement replica is the same device. Had it keyed on the token, the
   derivation would buy nothing.
 - `CLEANUP_PERIOD` is 30 minutes, and the comment there notes entries live "at _LEAST_ 30 mins and
@@ -25,19 +25,19 @@ Outside that window the derivation degrades to what a random `txn_id` did, which
 second line of defence and not the first. The first is the unique runner position: a replayed native
 frame is dropped before any send happens, whether or not its payload carries an id.
 
-Pinned by `//haku/console/x/channels/matrix:test_homeserver_e2e`, which sends one transaction twice against a
+Pinned by `//haku/console/channels/matrix:test_homeserver_e2e`, which sends one transaction twice against a
 real Synapse and requires a single event back. It asks for the behaviour rather than the source, so
 a Synapse that rekeys its cache fails the test instead of quietly invalidating this note.
 
 ## A `/sync` watermark is a valid `/messages` pagination token, at both ends
 
-`MatrixClient._backfill` closes a truncated timeline by paginating from the sync response's
+`Client._backfill` closes a truncated timeline by paginating from the sync response's
 `prev_batch` back to the stored watermark — passing an `s…` sync token at both ends, where the
 client-server API talks about pagination tokens. Synapse accepts it, and the backfilled span meets
 the truncated timeline exactly: nothing is delivered twice and nothing falls in the join. (Gap
 recovery is now the only caller; re-awakening used to be the other, and reads the console's own
 transcript instead.) Checked against Synapse v1.158.0 on 2026-08-15 by
-`//haku/console/x/channels/matrix:test_homeserver_e2e`, which fills a room past `TIMELINE_LIMIT` with the
+`//haku/console/channels/matrix:test_homeserver_e2e`, which fills a room past `TIMELINE_LIMIT` with the
 loop stopped — the only way to reach the case at all (R1.7).
 
 ## nio's 429 retry is unlimited by default, not off

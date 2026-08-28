@@ -13,8 +13,6 @@ py_test(
     deps = [
         ":tool_input_models",
         "//devinfra/claude:conftest",
-        "@pypi//pydantic",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

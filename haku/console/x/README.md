@@ -3,9 +3,9 @@
 In-flux work that the console runs but does not yet promise. Nothing here has a stable API,
 and the console must keep serving with any of it switched off.
 
-Two chat surfaces live here, deliberately. They are separate experiments over one piece of
-session machinery, not a migration in progress: Matrix is not replacing the SPA view. Both are
-headed for one subscription off one record (<../plans/conversation_layers.md>).
+The chat surfaces are separate experiments over one piece of session machinery, not a
+migration in progress: Matrix is not replacing the SPA view. Both are headed for one
+subscription off one record (<../plans/conversation_layers.md>).
 
 This README is the map. The contracts live on the code: each module's docstring states what it
 owns and the invariants it keeps, and the map does not restate them.
@@ -17,7 +17,7 @@ Three things vary independently here:
 | Where                                   | What it is                                                                                   |
 | --------------------------------------- | -------------------------------------------------------------------------------------------- |
 | `x/*.py`                                | **The runtime.** Sessions, turns, frames, notifications, sandboxes — no channel, no harness. |
-| `x/channels/<name>/`                    | **One channel.** Matrix today; the SPA is served by the runtime's own routes.                |
+| `../channels/<name>/`                   | **One channel.** Matrix today; the SPA is served by the runtime's own routes.                |
 | `x/claude_code/`, `x/codex_app_server/` | **One CLI harness each.** Named for the product whose binary they launch, not for the model. |
 
 How to place a module — the replace-the-other-axis test and the boundary cases — is
@@ -61,7 +61,7 @@ hold independent advisory locks and can land on different replicas, so a stalled
 wedge ingress or make one channel the only surface able to recover durable demand. The Matrix
 leader also sweeps one reconciler per live attachment (subscriber, drain, send budget), which is
 what makes each of those singular cluster-wide without an election of its own
-(<channels/matrix/attachment_reconciler.py>).
+(<../channels/matrix/attachment_reconciler.py>).
 
 **Gotcha:** both chat surfaces run at once as ordinary separate sessions — separate rows,
 separate sandboxes — so a browser conversation and the Matrix conversation coexist rather than
@@ -131,35 +131,10 @@ fixture, how-to in <claude_code/frame_export_main.py>.
 client/frames/projection/runtime split, plus `capture.py` for recording sanitized fixtures off
 a real Codex.
 
-## Matrix chat surface — `channels/matrix/`
+## Matrix chat surface
 
-- `client.py` — the client-API calls the loop makes, over `matrix-nio`.
-- `sync.py` — logs in as `@haku`, long-polls `/sync` (one owner for the user-wide token), binds
-  each room the operator invites Haku into, and dispatches inbound events by room to their
-  attached conversations. Holds the only Matrix credential, so everything that speaks into a
-  room speaks through it; hosts the per-attachment reconcilers on the sync leader.
-- `conversation.py` — each room's attachment to a conversation and ingress (`MatrixTurns`).
-- `attachment_reconciler.py` — one owner per live attachment: its conversation cursor, reply
-  outbox, span revisions and send budget; the sync leader sweeps the set per pass.
-- `pacer.py` — one paced outbound queue per room, over Synapse's `rc_message` budget, addressed
-  by the attachment (`RoomPacers`).
-- `outbox.py` — the rooms' outbox: replies as `matrix_outbox` rows, and one drain per
-  attachment that says them.
-- `outbox_wake.py` — the outbox's own wake wire: the enqueue's transaction waking the drains.
-- `revisions.py` — which homeserver event the channel is currently editing for a revisable
-  subject.
-- `spans.py` — the editable lines as spans of the conversation: the pure fold from the stream
-  to each span's bounded body, its close, and the reconcile latches over a `RoomFrontend`.
-- `conversation_subscriber.py` — the Matrix channel's subscriber to the conversation record,
-  one per attachment: its durable position (`channel_cursor`), the replies it queues, the
-  notices it seals, the span lines it reconciles.
-- `room_copy.py` — the room's durable copy of projected events, read off their `/sync` echoes.
-- `ingress_ledger.py` — which inbound events a prompt in the record carries.
-- `formatted_body.py` — Haku's Markdown into the HTML subset Matrix clients render.
-
-**The room reads the record; the turn loop never pushes at it.** The subscriber's module
-docstring (<channels/matrix/conversation_subscriber.py>) is that contract; what the channel
-guarantees the operator is <channels/matrix/SPEC.md>.
+Graduated out of `x/`: the module map is <../channels/matrix/README.md>, and what the channel
+guarantees the operator is <../channels/matrix/SPEC.md>.
 
 ## Tests run against a real database
 
@@ -173,12 +148,12 @@ existed, a scenario the schema's foreign key refuses.
 
 ### The runtime's conftest names no channel
 
-`conftest.py` is inherited downwards, so a runtime-level fixture that reached into
-`channels/matrix/` would make every runtime test depend on a homeserver's vocabulary and a
-second channel unaddable without dragging Matrix along. <conftest.py> holds the stores, the
-service, the claim stand-in and the operator's identity — nothing a room knows; the homeserver
-identities, the config they compose into and the room binding live in
-<channels/matrix/conftest.py>. Each file's docstring carries its own half.
+A runtime-level fixture that reached into `../channels/matrix/` would make every runtime test
+depend on a homeserver's vocabulary and a second channel unaddable without dragging Matrix
+along. <conftest.py> holds the stores, the service, the claim stand-in and the operator's
+identity — nothing a room knows; the homeserver identities, the config they compose into and
+the room binding live in <../channels/matrix/conftest.py>. Each file's docstring carries its
+own half.
 
 ### The stand-ins live in `testing/`
 
@@ -190,9 +165,9 @@ saying what only it can answer:
 
 - <test_generation_cutover_e2e.py> — the post-cut stack end to end: a real runner process on a
   real websocket journaling to a real Console handler — the generation window's health gate.
-- <channels/matrix/test_homeserver_e2e.py> — `MatrixClient` against a real Synapse, for the
-  properties of Synapse a canned response could only agree with.
-- <channels/matrix/test_fullstack_e2e.py> — that Synapse, console replicas as processes, a
+- <../channels/matrix/test_homeserver_e2e.py> — the Matrix client against a real Synapse, for
+  the properties of Synapse a canned response could only agree with.
+- <../channels/matrix/test_fullstack_e2e.py> — that Synapse, console replicas as processes, a
   runner per sandbox behind the stub `claude` (<claude_code/testing/stub_claude.py>), and a
   real Postgres: every message the operator sent has exactly one reply in the final room.
 
@@ -201,12 +176,8 @@ saying what only it can answer:
 The stable modules own these, so moving them here is not possible without inverting the
 dependency:
 
-- `MatrixConfig` and `Settings.matrix` in <../config.py>. Absent config, or a config whose
-  reflected bot password has not landed yet, means the surface does not start and the console
-  does.
-- `Session`, `Conversation`, `ChannelAttachmentRow`, `MatrixAccessToken` and `MatrixSyncWatermark`
-  in <../database_schema.py>, plus their Alembic revisions — migrations are one lineage for
-  the whole database.
+- `Session`, `Conversation` and `ChannelAttachmentRow` in <../database_schema.py>, plus their
+  Alembic revisions — migrations are one lineage for the whole database.
 
 ## Where the reasoning lives
 
@@ -219,4 +190,4 @@ The code keeps the invariant; the evidence behind it is linked rather than resta
   surface depends on, with where each was checked. Read it before changing anything that looks
   like belt and braces.
 - <../plans/conversation_layers.md> — what is still wrong and the order to fix it, and
-  <channels/matrix/SPEC.md> — what the Matrix channel already guarantees.
+  <../channels/matrix/SPEC.md> — what the Matrix channel already guarantees.

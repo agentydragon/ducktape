@@ -1,3 +1,6 @@
+"""Pins the figured-out dbus_fast usage pattern (signal dispatch, name-ownership across a
+service restart) so CI enforces the demonstrated integration keeps working."""
+
 from __future__ import annotations
 
 import asyncio

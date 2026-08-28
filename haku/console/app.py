@@ -53,6 +53,18 @@ from haku.console.agents import enrollment_routes
 from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
+
+# Aliased: bare `conversation`, `sync` and `outbox` would each collide with something this module
+# already talks about (the console's own conversation record, the index sweeps, the push queue).
+from haku.console.channels.matrix import (
+    conversation as matrix_conversation,
+    ingress_ledger as matrix_ingress_ledger,
+    outbox as matrix_outbox,
+    outbox_wake as matrix_outbox_wake,
+    revisions as matrix_revisions,
+    sync as matrix_sync,
+)
+from haku.console.channels.matrix.room_copy import RoomCopy
 from haku.console.chat_models import RuntimeKind
 from haku.console.config import MCP_PATH, Settings
 from haku.console.database_migrate import main as migration_main, verify_schema
@@ -107,18 +119,6 @@ from haku.console.x import (
     session_runtime,
     subscription,
 )
-
-# Aliased: bare `conversation`, `sync` and `outbox` would each collide with something this module
-# already talks about (the console's own conversation record, the index sweeps, the push queue).
-from haku.console.x.channels.matrix import (
-    conversation as matrix_conversation,
-    ingress_ledger as matrix_ingress_ledger,
-    outbox as matrix_outbox,
-    outbox_wake as matrix_outbox_wake,
-    revisions as matrix_revisions,
-    sync as matrix_sync,
-)
-from haku.console.x.channels.matrix.room_copy import RoomCopy
 from haku.console.x.conversation_history import ConversationHistory
 from haku.console.x.conversation_live_updates import ConversationLiveUpdates
 from haku.console.x.conversation_wakes import ConversationWakes
@@ -425,22 +425,22 @@ def create_app(
     # Matrix chat surface, absent when unconfigured: the console serves its approval queue
     # without it and simply does not run the sync loop. Neutral runtime supervision is composed
     # after the configured runtime catalog because it provisions sessions through that service.
-    matrix_sync_service: matrix_sync.MatrixSyncService | None = None
-    matrix_conversation_store: matrix_conversation.MatrixConversationStore | None = None
+    matrix_sync_service: matrix_sync.SyncService | None = None
+    matrix_conversation_store: matrix_conversation.ConversationStore | None = None
     if (matrix_config := settings.matrix) is not None and matrix_config.password is not None:
-        matrix_conversation_store = matrix_conversation.MatrixConversationStore(db_sessions)
+        matrix_conversation_store = matrix_conversation.ConversationStore(db_sessions)
         matrix_ledger = matrix_ingress_ledger.IngressLedger(db_sessions)
         # The sync service hosts one reconciler per live attachment — each room's subscriber to the
         # conversation record and the drain of its reply outbox — so the record readers, the
         # correspondence store and the outbox are all composed into it.
-        matrix_sync_service = matrix_sync.MatrixSyncService(
+        matrix_sync_service = matrix_sync.SyncService(
             matrix_config,
             matrix_config.password,
             db_engine,
-            matrix_sync.MatrixSyncStore(db_sessions),
+            matrix_sync.SyncStore(db_sessions),
             matrix_conversation_store,
             operator_identity_store,
-            matrix_conversation.MatrixTurns(matrix_config, session_store, operator_identity_store, matrix_ledger),
+            matrix_conversation.Turns(matrix_config, session_store, operator_identity_store, matrix_ledger),
             matrix_outbox.RoomOutbox(db_sessions),
             matrix_revisions.RevisionLog(db_sessions),
             matrix_ledger,

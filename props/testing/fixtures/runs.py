@@ -7,13 +7,11 @@ helpers — they don't exercise the real OCI registry flow.
 from uuid import UUID, uuid4
 
 import pytest
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from props.core.agent_types import AgentType, CriticTypeConfig, GraderTypeConfig
 from props.core.ids import SnapshotSlug
 from props.core.models.examples import ExampleKind, ExampleSpec
-from props.core.models.types import Rationale
 from props.db.database import Database
 from props.db.examples import Example
 from props.db.models import (
@@ -318,16 +316,6 @@ def _make_example_with_runs(slug: SnapshotSlug, credit: float, db: Database) -> 
         session.commit()
 
         return (example_spec, critic_run, grader_run)
-
-
-@pytest.fixture
-def rationale_model() -> type[BaseModel]:
-    """Fixture providing a Pydantic model with Rationale field."""
-
-    class Model(BaseModel):
-        rationale: Rationale
-
-    return Model
 
 
 @pytest.fixture

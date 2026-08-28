@@ -100,7 +100,7 @@ inadvertent detail actually lives — out of mixed rooms by construction.
 
 Operator, 2026-08-15: an agent reads only the transcripts and conversations its tier gives it
 access to. That **settles a deferral that has been open on purpose** — the Matrix channel leaves
-reads unscoped and says so explicitly (<../console/x/channels/matrix/SPEC.md> § The agent's own
+reads unscoped and says so explicitly (<../console/channels/matrix/SPEC.md> § The agent's own
 view), on the grounds that with one operator, one Haku and one room a fence would separate Haku
 from its own history and nothing else. Several agents at several tiers is exactly the condition that premise was waiting on.
 
@@ -521,7 +521,7 @@ only calibration signal the classifier will ever get.
 - **A withheld message has to be visible as withheld.** Silently dropping one leaves the operator
   unable to tell whether the agent answered, and leaves the other agents waiting on a reply that
   is never coming. It wants its own `RoomEventKind` in the tag vocabulary
-  (<../console/x/channels/matrix/client.py>) so the room shows that something was said and held.
+  (<../console/channels/matrix/client.py>) so the room shows that something was said and held.
 - **Loop protection stops being optional.** matrix_chat_runtime puts mention gating, sender
   allowlists and multi-bot loop protection out of scope explicitly **because it is a DM** (R3.5).
   Several bots in a room reinstates all three, and R1.5's "ignore my own sender" is no longer
