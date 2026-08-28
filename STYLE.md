@@ -38,6 +38,21 @@ instead, so they load on demand.
 matters to pin down, comment what reading alone won't yield, and spend no tokens or
 attention past that.
 
+**Claim only what you have observed — and observe the behavior itself, not a proxy for
+it.** Never call a change a "fix" — in a commit message, PR, doc, `debug/` note, comment,
+or status update — unless you have watched the specific failure the user described stop
+happening, **end to end, under the conditions where it was reported**. Verifying a
+_precondition_ is not verifying the fix: that the harness now reports the right context
+window, that the config renders, that a component initializes, that a green check
+passed — each can hold while the reported problem persists. "My car runs weird" is not
+answered by "the tank has gas, the oil's clean, the lights come on" — you have to drive
+it. A change whose preconditions check out but whose end-to-end behavior you have not
+exercised is a **candidate fix**: state exactly what you observed, and state that the real
+behavior was not run. The distinction is load-bearing across "works", "resolved",
+"passing" too — "it builds" and "the unit test passes" are not "the reported problem is
+gone." Underclaiming costs a sentence; overclaiming sends the next person past the live
+bug.
+
 - **Enter async early**: a single `asyncio.run(async_main(...))` at the top of `main()`;
   never scattered or nested deeper in the call stack.
 - **`main()` returns `None`**: an entry point raises on failure and lets the traceback
