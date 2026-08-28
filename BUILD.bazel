@@ -235,6 +235,37 @@ py_wheel(
     deps = [":bbr_pkg"],
 )
 
+# hakuctl wheel — the haku-console MCP client CLI. Its own package (not bundled
+# into the ducktape umbrella wheel), so it can ship on its own into the agent
+# dev-tools closure alongside bbr. `util.typer` arrives via the ducktape-util
+# wheel (requires), not bundled here.
+py_package(
+    name = "hakuctl_pkg",
+    packages = ["haku.hakuctl"],
+    deps = ["//haku/hakuctl:cli"],
+)
+
+py_wheel(
+    name = "hakuctl_wheel",
+    distribution = "hakuctl",
+    entry_points = {
+        "console_scripts": ["hakuctl = haku.hakuctl.cli:main"],
+    },
+    python_requires = ">=3.13",
+    # SYNC: This list must match propagatedBuildInputs in nix/packages/default.nix
+    # (hakuctl). When adding a dependency, update BOTH places.
+    requires = [
+        "ducktape-util",
+        "fastmcp>=3.4.4,<3.5",
+        "mcp",
+        "rich",
+        "typer",
+    ],
+    version = "0.1.0",
+    visibility = ["//visibility:public"],
+    deps = [":hakuctl_pkg"],
+)
+
 # Git hooks wheel — ducktape-* console scripts, precommit runners, cluster validation.
 # Installed in devtools so the ducktape-* git hooks are available alongside
 # the Rust claude-hook binary.

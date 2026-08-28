@@ -126,6 +126,31 @@ let
       ++ [ ducktape-util ];
   };
 
+  # haku-console MCP client CLI (`hakuctl`). Its own wheel so it ships into the
+  # agent dev-tools closure alongside bbr. Exposed through the guarded
+  # `optionalAttrs (artifacts ? hakuctl)` at the bottom of this file: the pin
+  # only exists after the wheel's first CI release + sync-pins, so eval must not
+  # force `artifacts.hakuctl` before then. flake.nix adds it to devToolsCommon
+  # with the matching `lib.optionals (ducktapePkgs ? hakuctl)` guard, so it joins
+  # the closure automatically once the pin lands.
+  hakuctl = mkWheel {
+    pname = "hakuctl";
+    description = "MCP client CLI for the Haku console (/mcp)";
+    mainProgram = "hakuctl";
+    importsCheck = [ "haku.hakuctl.cli" ];
+    # SYNC: This list must match `requires` in //:hakuctl_wheel (BUILD.bazel).
+    # When adding a dependency, update BOTH places.
+    propagatedBuildInputs = [
+      ducktape-util
+    ]
+    ++ (with python3Packages; [
+      fastmcp
+      mcp
+      rich
+      typer
+    ]);
+  };
+
   # Combined CLI + GNOME Shell extension package.
   aiquota = pkgs.callPackage ./gnome-shell-aiquota.nix { inherit artifacts lib; };
 
@@ -389,4 +414,7 @@ rec {
 }
 // lib.optionalAttrs (artifacts ? aw-importer) {
   inherit aw-importer;
+}
+// lib.optionalAttrs (artifacts ? hakuctl) {
+  inherit hakuctl;
 }

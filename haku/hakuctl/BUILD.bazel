@@ -1,0 +1,34 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//util:typer",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//rich",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "cli_bin",
+    main_module = "haku.hakuctl.cli",
+    visibility = ["//visibility:public"],
+    deps = [":cli"],
+)
+
+py_test(
+    name = "test_cli",
+    srcs = ["test_cli.py"],
+    deps = [
+        ":cli",
+        "//:conftest",
+        "@pypi//fastmcp_slim",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//typer",
+    ],
+)

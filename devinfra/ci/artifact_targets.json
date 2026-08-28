@@ -10,6 +10,11 @@
       "output": "bb-out/bazel-out/k8-fastbuild/bin/bbr-0.1.0-py3-none-any.whl",
       "release": "bbr"
     },
+    "hakuctl": {
+      "target": "//:hakuctl_wheel",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/hakuctl-0.1.0-py3-none-any.whl",
+      "release": "hakuctl"
+    },
     "claude-hooks": {
       "target": "//:claude_hooks_wheel",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/claude_hooks-0.1.0-py3-none-any.whl",
@@ -79,6 +84,10 @@
     "bbr": {
       "tests": "//devinfra:test_bbr",
       "nixPackage": true
+    },
+    "hakuctl": {
+      "tests": "//haku/hakuctl/...",
+      "nixPackage": false
     },
     "claude-hooks": {
       "tests": "//devinfra/claude/...",
