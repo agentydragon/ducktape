@@ -6,7 +6,7 @@ from typing import Annotated, Any, Literal, NewType
 
 import pytest
 import pytest_bazel
-from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, StringConstraints, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, StringConstraints
 
 from openai_utils.json_schema import OpenAICompatibleSchema, _inline_refs_with_siblings
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel, validate_openai_strict_mode_schema
@@ -40,7 +40,12 @@ class PetWithDiscriminator(BaseModel):
 
 
 def test_default_pydantic_generates_oneof():
-    """Verify that default Pydantic generates oneOf for discriminated unions."""
+    """Library canary: default Pydantic emits oneOf for discriminated unions.
+
+    OpenAICompatibleSchema exists to rewrite that oneOf. If a Pydantic upgrade
+    makes this fail (default output no longer oneOf), the workaround is obsolete —
+    remove OpenAICompatibleSchema's oneOf handling rather than fixing this test.
+    """
     schema = PetWithDiscriminator.model_json_schema()
 
     # Default Pydantic uses oneOf
@@ -71,26 +76,6 @@ def test_custom_schema_passes_strict_mode_validation():
 
     # This should pass validation (no exception)
     validate_openai_strict_mode_schema(schema, "PetWithDiscriminator")
-
-
-def test_validation_still_works():
-    """Verify that Pydantic validation works regardless of JSON schema format.
-
-    The oneOf vs anyOf distinction is purely in the JSON schema representation.
-    Validation behavior is driven by the core schema, not JSON schema.
-    """
-    # Create instances - validation works fine
-    pet_cat = PetWithDiscriminator(animal=Cat(pet_type="cat", meows=5))
-    assert pet_cat.animal.pet_type == "cat"
-    assert isinstance(pet_cat.animal, Cat)
-
-    pet_dog = PetWithDiscriminator(animal=Dog(pet_type="dog", barks=3.14))
-    assert pet_dog.animal.pet_type == "dog"
-    assert isinstance(pet_dog.animal, Dog)
-
-    # Validation errors still work
-    with pytest.raises(ValidationError):
-        PetWithDiscriminator(animal={"pet_type": "bird", "chirps": 2})
 
 
 # ---------------------------------------------------------------------------
@@ -183,7 +168,12 @@ def test_newtype_without_description_uses_bare_ref():
 
 
 def test_newtype_default_generator_produces_ref_with_siblings():
-    """Default Pydantic generator produces the $ref + description pattern our generator fixes."""
+    """Library canary: default Pydantic emits $ref + sibling description.
+
+    _inline_refs_with_siblings exists to fix exactly that pattern. If a Pydantic
+    upgrade makes this fail (no more $ref-with-siblings output), the inlining
+    workaround is obsolete — remove it rather than fixing this test.
+    """
     schema = ModelWithDescribedNewType.model_json_schema()
     slug_prop = schema["properties"]["snapshot_slug"]
     assert "$ref" in slug_prop

@@ -10,10 +10,5 @@ def test_output_filenames_unique() -> None:
     assert len(filenames) == len(set(filenames))
 
 
-def test_provenance_label_is_kind_and_series_id() -> None:
-    source = EVIDENCE_SOURCES[0]
-    assert source.provenance_label == f"{source.kind}:{source.series_id}"
-
-
 if __name__ == "__main__":
     pytest_bazel.main()

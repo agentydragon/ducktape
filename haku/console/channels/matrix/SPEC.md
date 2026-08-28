@@ -1,10 +1,11 @@
 # The Matrix channel — what it guarantees
 
 Matrix is one channel onto the chat runtime: a transport for prose, plus the notices that make a
-run legible from a phone. The console remains the session owner, the credential holder and the
-approval authority; nothing here is a store of record. Delivery is reconciled per attachment — one
-owner per bound room for its cursor, outbox, revisions and send budget; the redesign work still
-open lives in <../../plans/conversation_layers.md>.
+run legible from a phone. The channel runs as its own worker (`worker.py`, the
+`haku-matrix-adapter` Deployment), which holds the Matrix credential; the console remains the
+session owner and the approval authority, and nothing here is a store of record. Delivery is
+reconciled per attachment — one owner per bound room for its cursor, outbox, revisions and send
+budget; the redesign work still open lives in <../../plans/conversation_layers.md>.
 
 Out of scope by decision, so it is not re-litigated: end-to-end encryption, federation, approvals
 over Matrix, and any write surface for the agent beyond its own replies.
@@ -193,18 +194,18 @@ over Matrix, and any write surface for the agent beyond its own replies.
 
 ## Credentials and identity
 
-- **No Matrix access token is present in the sandbox.** The console holds the single Matrix
-  credential. That constrains the Matrix credential specifically; it is not a rule that the sandbox
-  may hold none.
-- **The console mints its own access token**, logging in with a provisioned password rather than
+- **No Matrix access token is present in the sandbox, and none on the console API pod either.**
+  The adapter worker holds the single Matrix credential. That constrains the Matrix credential
+  specifically; it is not a rule that the sandbox may hold none.
+- **The adapter mints its own access token**, logging in with a provisioned password rather than
   being handed a token, so it can replace the token itself the moment Synapse stops accepting one —
   which Synapse does whenever the account's password is set again. It pins a `device_id` so repeated
   logins reuse one device and caches the token rather than logging in per request, because Synapse
   rate-limits `/login`.
-- **The password Secret is a soft dependency.** The console starts, serves and stays up without it;
-  the Matrix loop reports itself unconfigured rather than crash-looping. It is genuinely absent
-  between first deploy and the reflector copying it, and a crash-loop there would take the approval
-  queue down with it.
+- **The password Secret gates only this worker.** The adapter requires it and does not start
+  without it — running the loop is its whole job — while the console starts, serves and stays up
+  regardless. The Secret is genuinely absent between first deploy and the reflector copying it;
+  that window holds only this pod back, never the approval queue.
 - **A Matrix sender maps to a console operator identity** via the Authentik OIDC subject. An
   unmapped sender gains no authority, message bodies are untrusted input, and **a Matrix message is
   never consent for a tool call**.
@@ -245,11 +246,16 @@ over Matrix, and any write surface for the agent beyond its own replies.
 ## Deployment
 
 - Rooms are unencrypted and federation stays off.
+- The channel runs as the `haku-matrix-adapter` Deployment in `haku-console` — its own image, its
+  own narrow `haku_matrix_adapter` database role, no ServiceAccount token — so a homeserver
+  outage, a `matrix-nio` upgrade, or an adapter bug never rolls or disrupts the console API. The
+  sync loop is elected under the cluster-wide `MXSY` advisory lock, so adapter replicas — and
+  console replicas of a release that still carried the loop — cannot double-process a batch.
 - Haku's Matrix account and its credential are GitOps-managed, never hand-minted outside incident
   diagnostics: `cluster/provisioners/matrix_user_provisioner` registers `@haku` from a SOPS
-  password, reflected into `haku-console`.
-- All console-to-homeserver traffic is cluster-internal and outbound, so it needs neither an
-  egress-proxy exception nor any inbound NetworkPolicy: nothing in `matrix` connects to the console.
+  password, reflected into `haku-console` and mounted only by the adapter Deployment.
+- All adapter-to-homeserver traffic is cluster-internal and outbound, so it needs neither an
+  egress-proxy exception nor any inbound NetworkPolicy: nothing in `matrix` connects back.
 - Matrix lives in OVH (`zone: hil-ovh`), with the media store on `seaweedfs-ovh` and the database on
   the OVH-HA CNPG profile. The SeaweedFS CSI node plugin runs only on the OVH nodes, so this is a
   placement constraint rather than a preference.

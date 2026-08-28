@@ -2,7 +2,7 @@
 which room they are in, and the room/session binding.
 
 Everything neutral — the stores, the service, the claim stand-in, the operator's identity — comes
-from the runtime's own <../../x/conftest.py>, which is deliberately free of anything a homeserver
+from the runtime's own <../../session/conftest.py>, which is deliberately free of anything a homeserver
 knows about.
 
 `OPERATOR_SUBJECT` is imported rather than restated because both levels have to agree on it:
@@ -14,11 +14,12 @@ bind a room to an operator no session belongs to.
 from __future__ import annotations
 
 import pytest
+from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from haku.console.channels.matrix.config import Config
 from haku.console.channels.matrix.conversation import ConversationStore
 from haku.console.channels.matrix.ingress_ledger import IngressLedger
-from haku.console.config import MatrixConfig
 
 # The runtime-level fixtures the channel tests compose with. `channels/` is not under `x/`, so
 # pytest's conftest walk does not reach `x/conftest.py`; the fixtures are imported here instead.
@@ -28,11 +29,12 @@ MATRIX_USER = "@haku:allegedly.works"
 MATRIX_OPERATOR = "@rai:allegedly.works"
 MATRIX_ROOM = "!room:allegedly.works"
 
-MATRIX_CONFIG = MatrixConfig(
+MATRIX_CONFIG = Config(
     homeserver="https://matrix.allegedly.works",
     user_id=MATRIX_USER,
     operator_user_id=MATRIX_OPERATOR,
     operator_subject=OPERATOR_SUBJECT,
+    password=SecretStr("test-bot-password"),
 )
 
 

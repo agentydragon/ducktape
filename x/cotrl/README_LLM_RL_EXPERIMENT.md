@@ -17,13 +17,7 @@ This experiment tests language models' ability to learn from raw numerical feedb
    export OPENAI_API_KEY=your_key_here
    ```
 
-2. **Test setup** (quick validation):
-
-   ```bash
-   python oneoff__test_llm_rl_minimal.py
-   ```
-
-3. **Quick test** (verify all models work):
+2. **Quick test** (verify all models work):
 
    ```bash
    python oneoff__llm_rl_quick_test.py
@@ -31,7 +25,7 @@ This experiment tests language models' ability to learn from raw numerical feedb
 
    - Tests all 3 models on 2 environments with minimal runs
 
-4. **Run full experiment**:
+3. **Run full experiment**:
 
    ```bash
    python oneoff__llm_rl_experiment.py

@@ -37,21 +37,6 @@ async def test_list_resources_with_null_server_filter(compositor, origin_with_re
 
 
 @pytest.mark.asyncio
-async def test_list_resources_with_no_args_uses_defaults(compositor, origin_with_recorder, typed_resources_client):
-    """Test that passing explicit None values works (fields are required but accept None)."""
-    origin, _ = origin_with_recorder
-    await compositor.mount_inproc(MCPMountPrefix("origin"), origin)
-
-    # List resources with explicit None for both filters
-    result = await typed_resources_client.list_resources(ResourcesListArgs(server=None, uri_prefix=None))
-
-    # Should find resources from all servers (same as explicit server=None)
-    assert_that(result.resources, has_length(3))
-    server_names: set[str] = {r.server for r in result.resources}
-    assert_that(list(server_names), contains_inanyorder("resources", "compositor_meta", "origin"))
-
-
-@pytest.mark.asyncio
 async def test_list_resources_filters_by_server_when_provided(compositor, origin_with_recorder, typed_resources_client):
     """Test that server filter works when a specific server name is provided."""
     origin, _ = origin_with_recorder

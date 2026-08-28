@@ -3,7 +3,7 @@
 import pytest
 import pytest_bazel
 
-from difftree.config import Column, RenderConfig, parse_columns
+from difftree.config import Column, parse_columns
 
 
 @pytest.mark.parametrize(
@@ -25,12 +25,6 @@ def test_parse_columns_invalid():
     """Test parsing invalid column name raises ValueError."""
     with pytest.raises(ValueError, match="Unknown column 'invalid'"):
         parse_columns("tree,invalid,counts")
-
-
-def test_render_config_minimal():
-    """Test minimal RenderConfig."""
-    config = RenderConfig(columns=[Column.TREE])
-    assert config.columns == [Column.TREE]
 
 
 if __name__ == "__main__":

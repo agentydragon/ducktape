@@ -97,11 +97,13 @@ filegroup(
         "analytics/cluster/agent-diagnostics-rbac.yaml",
         "analytics/cluster/kustomization.yaml",
         "ducktape-flux/ducktape-flux-reader.yaml",
+        "flux-image-automation-forgejo/haku-matrix-adapter-image-repository.yaml",
         "flux-image-automation-ghcr/haku-harness-runner-image-policy.yaml",
         "flux-image-automation-ghcr/haku-harness-runner-image-repository.yaml",
         "flux-image-automation-ghcr/kustomization.yaml",
         "flux-system/kustomization.yaml",
         "flux-webhook/github-webhook-receiver.yaml",
+        "forgejo-images/registry-creds.sops.yaml",
         "grocy/sf/app/namespace.yaml",
         "grocy/vallejo/app/namespace.yaml",
         "haku-ci/namespace.yaml",
@@ -110,6 +112,7 @@ filegroup(
         "haku/console/chat_prompt_fragment.md.j2",
         "haku/console/config.yaml",
         "haku/console/db/indexer-role-secret.yaml",
+        "haku/console/db/matrix-adapter-role-secret.yaml",
         "haku/console/db/postgres-cluster.yaml",
         "haku/console/deployment.yaml",
         "haku/console/egress-proxy-service.yaml",
@@ -123,6 +126,8 @@ filegroup(
         "haku/console/kube-api-proxy.yaml",
         "haku/console/kubernetes-authorization-rbac.yaml",
         "haku/console/kustomization.yaml",
+        "haku/console/matrix-adapter-deployment.yaml",
+        "haku/console/matrix-adapter-role.sql",
         "haku/console/migration/flux-kustomization.yaml",
         "haku/console/migration/job.yaml",
         "haku/console/migration/kustomization.yaml",
@@ -150,6 +155,7 @@ filegroup(
         "kustomization.yaml",
         "kyverno/policies/inject-haku-egress-proxy.yaml",
         "matrix/namespace/namespace.yaml",
+        "matrix/secrets/haku-matrix-bot-password.sops.yaml",
         "monitoring/loki/namespace.yaml",
         "monitoring/namespace/namespace.yaml",
         "nix-cache/namespace/namespace.yaml",
@@ -255,6 +261,12 @@ filegroup(
         "haku/console/indexer-deployment.yaml",
         "haku/console/indexer-embed-deployment.yaml",
     ],
+    visibility = ["//haku/console:__pkg__"],
+)
+
+filegroup(
+    name = "haku_matrix_adapter_deployment",
+    srcs = ["haku/console/matrix-adapter-deployment.yaml"],
     visibility = ["//haku/console:__pkg__"],
 )
 

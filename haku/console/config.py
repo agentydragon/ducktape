@@ -243,40 +243,6 @@ class ProviderOAuthClientConfig(BaseModel):
     client_secret: SecretStr
 
 
-class MatrixConfig(BaseModel):
-    """Wiring for the Matrix chat surface (<channels/matrix/SPEC.md>).
-
-    Optional on Settings: the console must start and serve without it, because the bot
-    password is reflected in from another namespace and is legitimately absent on a first
-    deploy. Absent config means no sync loop, not a failed startup.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    homeserver: str
-    user_id: str
-    operator_user_id: str = Field(description="The only MXID whose room invitations are joined.")
-    operator_subject: str = Field(
-        description=(
-            "The Authentik `sub_mode=user_id` value for `operator_user_id`, resolved once to a "
-            "canonical Operator UUID. Matrix has no OIDC identity of its own, so this deploy-time "
-            "pair is the whole sender-to-Operator mapping; the MXID never carries authority "
-            "on its own."
-        )
-    )
-    device_id: str = Field(
-        default="haku-console",
-        description="Pinned so repeated logins reuse one device instead of leaving a new one per restart.",
-    )
-    password: SecretStr | None = Field(
-        default=None,
-        description=(
-            "Absent until the reflected Secret lands in this namespace — an intentional state, not a "
-            "misconfiguration. The sync loop does not start without it; the console does."
-        ),
-    )
-
-
 class RuntimeExecutionConfig(BaseModel):
     """Provider-neutral placement, session, and network wiring.
 
@@ -495,10 +461,6 @@ class Settings(BaseSettings):
     # Capability tier. launch_routine enables POST /api/capabilities/launch-routine
     # (None → the capability returns 503).
     launch_routine: LaunchRoutineConfig | None = None
-
-    matrix: MatrixConfig | None = Field(
-        default=None, description="Matrix chat surface. None → the sync loop does not run."
-    )
 
     # The Authentik-gated origin of Haku's own UI service (runs in haku-sandbox), which the
     # console frames full-page as a sandboxed cross-origin iframe; the CSP allows framing it

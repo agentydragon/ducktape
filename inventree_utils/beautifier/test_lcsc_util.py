@@ -17,10 +17,7 @@ from inventree_utils.beautifier.lcsc_util import parse_url_for_lcsc_id
     ],
 )
 def test_parse_url_for_lcsc_id_valid_forms(url: str):
-    parsed_id = parse_url_for_lcsc_id(url)
-    expected_id = "C123456"
-    if parsed_id != expected_id:
-        assert parsed_id == expected_id
+    assert parse_url_for_lcsc_id(url) == "C123456"
 
 
 if __name__ == "__main__":

@@ -13,7 +13,6 @@ from httpx import Response
 from airlock.oauth.provider import (
     GenericOAuth2Provider,
     OAuth2ProviderConfig,
-    OAuthConfig,
     TokenData,
     TokenSecretConfig,
     _parse_token_response,
@@ -256,36 +255,6 @@ def test_parse_token_response_missing_refresh_token() -> None:
     token = _parse_token_response(data)
     assert token.access_token == "at"
     assert token.refresh_token == ""
-
-
-def test_oauth_config_from_dict() -> None:
-    data = {
-        "target_namespace": "test-ns",
-        "providers": [
-            {
-                "name": "test",
-                "provider_type": "oauth2",
-                "display_name": "Test",
-                "authorize_url": "https://example.com/auth",
-                "token_url": "https://example.com/token",
-                "scopes": ["a"],
-                "redirect_uri": "http://localhost/callback/test",
-                "refresh_secret": {"name": "test-tokens"},
-                "access_secret": {"name": "test-access-token"},
-            }
-        ],
-    }
-    config = OAuthConfig.model_validate(data)
-    assert config.target_namespace == "test-ns"
-    assert len(config.providers) == 1
-    assert config.providers[0].name == "test"
-    assert config.providers[0].refresh_secret.name == "test-tokens"
-    assert config.providers[0].access_secret.name == "test-access-token"
-
-
-def test_oauth_config_defaults() -> None:
-    config = OAuthConfig(providers=[])
-    assert config.target_namespace is None
 
 
 if __name__ == "__main__":

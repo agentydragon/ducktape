@@ -66,6 +66,7 @@ py_library(
         "//haku/console:operator_identity",
         "//haku/console:operator_identity_store",
         "//haku/console/channels/matrix:client",
+        "//haku/console/channels/matrix:config",
         "//haku/console/channels/matrix:conversation",
         "//haku/console/channels/matrix:ingress_ledger",
         "//haku/console/channels/matrix:outbox",

@@ -21,9 +21,11 @@ HTTP routes. Around them:
 | `launch_identity.py`    | Neutral launch-identity types shared by channel and runtime stores.                                                       |
 | `setup_output.py`       | The bridge envelope's `kind`; the setup-narration compatibility frame.                                                    |
 
-The elected loops — Matrix sync (`MXSY`), runtime supervision (`CRUN`), allocation (`SBOX`) —
-hold independent advisory locks and can land on different replicas, so a stalled claim cannot
-wedge ingress or make one channel the only surface able to recover durable demand.
+The elected loops here — runtime supervision (`CRUN`) and allocation (`SBOX`) — hold
+independent advisory locks and can land on different replicas, so a stalled claim cannot wedge
+ingress or make one channel the only surface able to recover durable demand. The Matrix sync
+loop (`MXSY`) is a third such election, held by the separately deployed `haku-matrix-adapter`
+worker (<../channels/matrix/worker.py>).
 
 **Cross-replica state, and the trap it sets:** `replicas: 2` means any given HTTP request
 reaches an arbitrary pod, while a session's live objects — the runner's bridge websocket, its

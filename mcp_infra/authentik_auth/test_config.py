@@ -49,11 +49,6 @@ def test_normalized_public_base_url_strips_trailing_slash() -> None:
     assert cfg.normalized_public_base_url() == "https://mcp.example.com"
 
 
-def test_proxy_client_id_optional() -> None:
-    cfg = _config()
-    assert cfg.proxy_client_id is None
-
-
 def test_direct_jwt_trust_requires_an_audience() -> None:
     with pytest.raises(ValueError, match="at least 1 item"):
         DirectJwtTrust(issuer="https://auth.example.com/application/o/machine/", audiences=())

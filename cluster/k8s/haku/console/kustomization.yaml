@@ -15,6 +15,8 @@ resources:
   - indexer-deployment.yaml
   - indexer-embed-deployment.yaml
   - indexer-role-provisioner-job.yaml
+  - matrix-adapter-deployment.yaml
+  - matrix-adapter-role-provisioner-job.yaml
   - kube-api-proxy.yaml
   - kubernetes-authorization-rbac.yaml
   - routine-launch-token.sops.yaml
@@ -39,3 +41,6 @@ configMapGenerator:
   - name: haku-console-db-indexer-sql
     files:
       - indexer-role.sql
+  - name: haku-console-db-matrix-adapter-sql
+    files:
+      - matrix-adapter-role.sql

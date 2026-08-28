@@ -6,6 +6,8 @@ import yaml
 from more_itertools import one
 from pydantic import SecretStr
 
+from haku.console.channels.matrix.config import load_adapter_config
+from haku.console.channels.matrix.worker import AdapterSettings
 from haku.console.config import ClaudeCodeImplementationConfig, OperatorIdentityConfig, OperatorOidcConfig, Settings
 from haku.console.indexer import ChunkSettings, EmbedSettings, IndexerRole
 from haku.console.indexer_config import load_indexer_config
@@ -194,6 +196,56 @@ def test_deployed_embed_role_env_satisfies_its_settings(monkeypatch: pytest.Monk
     monkeypatch.setenv("HAKU_INDEXER_DATABASE_URL", "postgresql+asyncpg://haku_indexer@db.test/approval_store")
     settings = EmbedSettings()
     assert settings.embedder.base_url.startswith("http")
+
+
+def test_deployed_matrix_adapter_env_satisfies_its_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The adapter pod starts from exactly its manifest env — no console settings required."""
+    deployment = yaml.safe_load(
+        get_required_path("ducktape/cluster/k8s/haku/console/matrix-adapter-deployment.yaml").read_text()
+    )
+    container = one(deployment["spec"]["template"]["spec"]["containers"])
+    for item in container["env"]:
+        if "value" in item:
+            monkeypatch.setenv(item["name"], item["value"])
+    # The three secret envs the manifest binds by reference rather than value.
+    monkeypatch.setenv(
+        "HAKU_MATRIX_ADAPTER_DATABASE_URL", "postgresql+asyncpg://haku_matrix_adapter@db.test/approval_store"
+    )
+    monkeypatch.setenv("HAKU_MATRIX_ADAPTER_MATRIX__OPERATOR_SUBJECT", "authentik-user-id")
+    monkeypatch.setenv("HAKU_MATRIX_ADAPTER_MATRIX__PASSWORD", "bot-password")
+    settings = AdapterSettings()
+    assert settings.config_file.name == "config.yaml"
+    # The anchor namespace the operator subject resolves through is written at console login,
+    # so the two Deployments must name the same trust domain.
+    console = yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/deployment.yaml").read_text())
+    server = one(c for c in console["spec"]["template"]["spec"]["containers"] if c["name"] == "server")
+    server_env = {item["name"]: item.get("value") for item in server["env"]}
+    assert settings.operator_identity_trust_domain == server_env["HAKU_CONSOLE_OPERATOR_IDENTITY__TRUST_DOMAIN"]
+
+
+def test_deployed_config_reads_identically_for_console_and_matrix_adapter() -> None:
+    """Two parsers, one mounted file: the adapter's launch-identity slice must agree with the console's read."""
+    config_path = get_required_path("ducktape/cluster/k8s/haku/console/config.yaml")
+    console = ConsoleConfigFile.model_validate(yaml.safe_load(config_path.read_text()))
+    adapter = load_adapter_config(config_path)
+    assert {entry.agent_id for entry in adapter.launchable_agents} == {
+        entry.agent_id for entry in console.launchable_agents
+    }
+    assert {profile.id: profile.allowed_chat_runtimes for profile in adapter.access_profiles} == {
+        profile.id: profile.allowed_chat_runtimes for profile in console.access_profiles
+    }
+    assert {agent.agent_id: agent.access_profile_id for agent in adapter.static_agents} == {
+        agent.agent_id: agent.access_profile_id for agent in console.static_agents
+    }
+    assert adapter.default_chat_agent_id == console.default_chat_agent_id
+    assert console.harnesses is not None
+    assert adapter.harnesses is not None
+    assert adapter.harnesses.claude_code is not None
+    assert adapter.harnesses.claude_code.agent_id == console.harnesses.claude_code.agent_id
+    assert (adapter.harnesses.codex_app_server is None) == (console.harnesses.codex_app_server is None)
+    if console.harnesses.codex_app_server is not None:
+        assert adapter.harnesses.codex_app_server is not None
+        assert adapter.harnesses.codex_app_server.agent_id == console.harnesses.codex_app_server.agent_id
 
 
 if __name__ == "__main__":
