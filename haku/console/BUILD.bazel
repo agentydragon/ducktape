@@ -375,7 +375,6 @@ py_library(
 py_library(
     name = "chat_models",
     srcs = ["chat_models.py"],
-    deps = ["@pypi//pydantic"],
 )
 
 py_library(
@@ -565,7 +564,6 @@ py_library(
     name = "mcp_approval",
     srcs = ["mcp_approval.py"],
     deps = [
-        ":chat_models",
         ":database_schema",
         ":mcp_config",
         ":mcp_execution",
@@ -576,7 +574,6 @@ py_library(
         ":tool_call_actor",
         ":tool_call_service",
         "//haku/console/agents:models",
-        "//haku/console/oauth:provider_connection",
         "//haku/console/session:status",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
@@ -1399,7 +1396,6 @@ py_test(
         "//:conftest",
         "//haku/console/session:conversation_views",
         "//haku/console/session:status",
-        "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
