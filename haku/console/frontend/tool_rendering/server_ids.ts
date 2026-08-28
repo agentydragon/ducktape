@@ -7,6 +7,7 @@
 
 export const GMAIL_SERVER_ID = "gmail";
 export const GOOGLE_CALENDAR_SERVER_ID = "google_calendar";
+export const GRANTS_SERVER_ID = "grants";
 export const GROCY_SERVER_ID = "grocy-sf";
 export const HAKU_ROUTINE_SERVER_ID = "haku_routine";
 export const HOSTEXEC_SERVER_ID = "hostexec";

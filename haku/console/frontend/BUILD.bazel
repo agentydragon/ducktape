@@ -688,6 +688,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//haku/console/frontend/tool_rendering/grants:responses",
     ],
 )
 
@@ -1370,6 +1371,8 @@ vitest_bin.vitest_test(
         "//haku/console/frontend/tool_rendering/google_calendar:calls_test",
         "//haku/console/frontend/tool_rendering/google_calendar:requests_test",
         "//haku/console/frontend/tool_rendering/google_calendar:responses_test",
+        "//haku/console/frontend/tool_rendering/grants:requests_test",
+        "//haku/console/frontend/tool_rendering/grants:responses_test",
         "//haku/console/frontend/tool_rendering/grocy:requests_test",
         "//haku/console/frontend/tool_rendering/grocy:responses_test",
         "//haku/console/frontend/tool_rendering/haku_routine:requests_test",
