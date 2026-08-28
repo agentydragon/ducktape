@@ -14,8 +14,8 @@ import pytest_bazel
 
 from haku.console.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.chat_models import MatrixOrigin
+from haku.console.session.store import BridgeAuthentication, PromptRefusedError, Store
 from haku.console.x.session_events import TurnAnsweredBody
-from haku.console.x.session_store import BridgeAuthentication, PromptRefusedError, SessionStore
 
 ROOM = "!room:allegedly.works"
 
@@ -25,7 +25,7 @@ def _from_room(*event_ids: str) -> MatrixOrigin:
     return MatrixOrigin(address=ROOM, refs=event_ids)
 
 
-async def ready_session(session_store: SessionStore, operator_id: UUID, *, conversation_id: UUID | None = None) -> UUID:
+async def ready_session(session_store: Store, operator_id: UUID, *, conversation_id: UUID | None = None) -> UUID:
     """A Matrix session that will take a prompt, made the way the supervisor and a runner make one."""
     view, token = await session_store.create(operator_id, conversation_id=conversation_id)
     assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
@@ -33,12 +33,12 @@ async def ready_session(session_store: SessionStore, operator_id: UUID, *, conve
 
 
 @pytest.fixture
-async def session_id(session_store: SessionStore, operator_id: UUID) -> UUID:
+async def session_id(session_store: Store, operator_id: UUID) -> UUID:
     return await ready_session(session_store, operator_id)
 
 
 async def test_an_event_is_carried_from_the_moment_its_prompt_commits(
-    ledger: IngressLedger, session_store: SessionStore, operator_id: UUID, session_id: UUID
+    ledger: IngressLedger, session_store: Store, operator_id: UUID, session_id: UUID
 ) -> None:
     conversation_id = await session_store.conversation_of(session_id)
     await session_store.submit_prompt(operator_id, conversation_id, "hi", _from_room("$a"), ledger.carrying(("$a",)))
@@ -47,7 +47,7 @@ async def test_an_event_is_carried_from_the_moment_its_prompt_commits(
 
 
 async def test_a_refused_prompt_carries_nothing(
-    ledger: IngressLedger, session_store: SessionStore, operator_id: UUID, session_id: UUID
+    ledger: IngressLedger, session_store: Store, operator_id: UUID, session_id: UUID
 ) -> None:
     """The rows and the prompt are one transaction, so a refused submission records nothing —
     which is what leaves the homeserver free to offer the batch again."""
@@ -64,7 +64,7 @@ async def test_a_refused_prompt_carries_nothing(
 
 
 async def test_a_prompt_its_session_never_claimed_is_taken_by_the_replacement(
-    ledger: IngressLedger, session_store: SessionStore, operator_id: UUID
+    ledger: IngressLedger, session_store: Store, operator_id: UUID
 ) -> None:
     """Why suppressing a re-delivered event is safe, and why nothing re-offers.
 
@@ -93,7 +93,7 @@ async def test_a_prompt_its_session_never_claimed_is_taken_by_the_replacement(
 
 
 async def test_re_recording_an_event_moves_it_to_the_prompt_now_answering_for_it(
-    ledger: IngressLedger, session_store: SessionStore, operator_id: UUID, session_id: UUID
+    ledger: IngressLedger, session_store: Store, operator_id: UUID, session_id: UUID
 ) -> None:
     """Two passes can race on one event, and the row is a pointer to whichever prompt answers for it
     rather than a claim about which was first."""

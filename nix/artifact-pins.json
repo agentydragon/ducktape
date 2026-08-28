@@ -1,8 +1,8 @@
 {
   "pins": {
     "bbr": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/bbr-b4d67e3a82d8/bbr-0.1.0-py3-none-any.whl",
-      "sha256": "tNZ+OoLYkrZyJCZky9reQPZQ8JovsxabguVJFK6VjKc="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/bbr-1f73a5dacd98/bbr-0.1.0-py3-none-any.whl",
+      "sha256": "H3Ol2s2Yt9BA1RoJCXr6Dt5QtR1FJbIWaX3Nm+Wij0w="
     },
     "bb": {
       "url": "https://github.com/buildbuddy-io/bazel/releases/download/5.0.445/bazel-5.0.445-linux-x86_64",
@@ -41,12 +41,12 @@
       "sha256": "ggIkuj22XjGNEgaTcRmrqGlKa32voJjTqzXgdvmAAak="
     },
     "aiquota-extension": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-3e15215c6533/aiquota.zip",
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-0c852ce93970/aiquota.zip",
       "sha256": "7OQE5STHqJ1JPVU/EQ5mc5fH2r4nDBaKf60+FM2lPfU="
     },
     "aiquota": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-3e15215c6533/aiquota-0.1.0-py3-none-any.whl",
-      "sha256": "f7j3VHhmbIS661Ug7YMvVFovR5RJvvhlUaaYkoiIXcU="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-0c852ce93970/aiquota-0.1.0-py3-none-any.whl",
+      "sha256": "7N7Jq4YzxGNFp2ShQvGqy4Bj7CN7i4DCFDjDblBbWkc="
     },
     "debundle": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-5d1eedc70973/debundle",
@@ -207,6 +207,10 @@
     "aw-importer": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/aw-importer-025a929a1353/aw_importer_bin",
       "sha256": "AlqSmhNTYRMiDMvJfp6gW4TVYRAhY4+hINs8WrmxTrQ="
+    },
+    "skill-semantic_branch_pruner": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-semantic_branch_pruner-cdc68e38255f/semantic_branch_pruner.skill",
+      "sha256": "zcaOOCVfx/GJzszicLGTJAe5K/Y4bZBdOGcq4soigII="
     }
   }
 }

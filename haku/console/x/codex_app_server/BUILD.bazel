@@ -19,6 +19,7 @@ py_library(
     srcs = ["config.py"],
     visibility = [
         "//haku/console:__pkg__",
+        "//haku/console/session:__pkg__",
         "//haku/console/x:__pkg__",
     ],
     deps = [

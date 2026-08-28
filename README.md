@@ -30,7 +30,11 @@ Add deps to root `Cargo.toml`, regenerate `Cargo.Bazel.lock` via
 
 BuildBuddy provides remote caching and remote build execution (RBE). Build actions run on BuildBuddy runner VMs; results are cached so unchanged targets are instant on repeat runs. `bbr` (a wrapper around `bb remote`) runs the whole invocation on a runner; `bb run` keeps Bazel local and dispatches only build actions — which to reach for is in <AGENTS.md> § Bazel Commands.
 
-RBE worker image: `ghcr.io/agentydragon/rbe-worker` from <devinfra/rbe_image/Dockerfile>. Setup: <devinfra/setup_buildbuddy.sh>.
+Two images, deliberately separate. `ghcr.io/agentydragon/rbe-worker`
+(<devinfra/rbe_image/Dockerfile>) is the execution platform actions run inside; its digest is in
+every action's cache key, so it carries only what Bazel cannot supply from the repo it is building.
+`ghcr.io/agentydragon/bbr-runner` (<devinfra/bbr_runner/Dockerfile>) adds the Nix devtools for the
+`bb remote` runner and is pinned only in <devinfra/bbr.json>. Setup: <devinfra/setup_buildbuddy.sh>.
 
 ## Dotfiles
 

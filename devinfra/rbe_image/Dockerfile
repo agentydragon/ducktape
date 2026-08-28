@@ -1,8 +1,20 @@
-# BuildBuddy RBE worker image with extra tooling for this repo.
+# BuildBuddy RBE worker image: the execution platform for every remote action.
+#
+# Its digest is an exec property of //:rbe_linux_x64, so it is part of every
+# action's cache key AND of the key for BuildBuddy's Firecracker snapshot pool.
+# Moving it orphans the remote action cache and dumps every warm snapshot: a
+# measured repin costs the next hour of PR CI ~12x the executed actions for the
+# same affected-target set. So this image carries only what Bazel cannot supply
+# from the repo it is building -- the OS userland an action executes inside:
+# glibc, apt system libraries, the Docker daemon, /bin/bash.
+#
+# Anything Bazel already provides through a toolchain or runfiles does NOT
+# belong here, and neither does developer or agent tooling. Those live in
+# devinfra/bbr_runner/Dockerfile, whose digest is in no action's cache key.
 #
 # Based on BuildBuddy's rbe-ubuntu24-04 image which provides: build-essential,
 # python3, git, curl, file, zip, Docker CE, iptables-legacy (required for
-# Firecracker init-dockerd — the guest kernel lacks nftables support), and a
+# Firecracker init-dockerd -- the guest kernel lacks nftables support), and a
 # non-root "buildbuddy" user with passwordless sudo.
 #
 # We layer on: libssl-dev + pkg-config (Rust toolchain), libtinfo5 (GHC
@@ -27,9 +39,10 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
         # dbus-daemon: needed by tests that spawn a private D-Bus session
         # (e.g. experimental/dbus_fast_example)
         dbus-daemon \
-        # git-lfs: bb remote re-fetches the repo on the runner via plain
-        # git fetch (no LFS smudge), so consumer scripts call `git lfs pull`
-        # before bazel runs to materialize LFS-tracked test data.
+        # git-lfs: needed by the runner, which inherits this layer — bb remote
+        # re-fetches the repo there via plain git fetch (no LFS smudge), so
+        # consumer scripts call `git lfs pull` before bazel runs to materialize
+        # LFS-tracked test data. Kept here so there is one apt list, not two.
         git-lfs \
         # Native dev headers for pip wheel builds (pygobject, pycairo, dbus-python)
         libgirepository-2.0-dev \
@@ -56,61 +69,23 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
     && rm -rf /var/lib/apt/lists/* \
     # libtinfo5: dropped from noble (24.04), fetch from jammy (22.04) archive.
     # GHC 9.0.2 bindist requires libtinfo.so.5 for ghc-pkg during toolchain setup.
-    && curl -fsSL -o /tmp/libtinfo5.deb \
-        http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_amd64.deb \
+    #
+    # Resolved from the pool index rather than pinned to a filename. Ubuntu
+    # rotates superseded point releases out of pool/, so a pinned name 404s the
+    # first time this layer is not a cache hit -- and with the buildx registry
+    # cache that is long after the rot, on whatever unrelated change finally
+    # invalidates the layer. The previous `6.3-2ubuntu0.1` pin died exactly that
+    # way: every rebuild since was triggered by a later layer, so the fetch never
+    # re-ran and the breakage stayed invisible. Prefer an `ubuntu` revision (a
+    # security update of the Debian version) and take the highest.
+    && LIBTINFO5_POOL=http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/ \
+    && LIBTINFO5_DEBS="$(curl -fsSL "$LIBTINFO5_POOL" | grep -o 'libtinfo5_[^"]*_amd64\.deb' | sort -u)" \
+    && LIBTINFO5_DEB="$(printf '%s\n' "$LIBTINFO5_DEBS" | grep ubuntu | sort -V | tail -1)" \
+    && [ -n "$LIBTINFO5_DEB" ] || LIBTINFO5_DEB="$(printf '%s\n' "$LIBTINFO5_DEBS" | sort -V | tail -1)" \
+    && [ -n "$LIBTINFO5_DEB" ] \
+    && curl -fsSL -o /tmp/libtinfo5.deb "${LIBTINFO5_POOL}${LIBTINFO5_DEB}" \
     && dpkg -i /tmp/libtinfo5.deb \
     && rm /tmp/libtinfo5.deb
-
-# --- Nix + devtools ---
-# Install Nix (single-user, no daemon) and the flake devtools package.
-# This gives the RBE image the same tools as the local devshell (pre-commit,
-# bazelisk, ruff, buildifier, bb, bbapi, gh, kubectl, etc.) without
-# maintaining a separate apt/pip install list.
-#
-# The devtools closure is fetched from cache.nixos.org (and attic when
-# available). Only the symlinkJoin derivation itself needs a local build.
-
-# Copy only the repo files needed to evaluate and build `.#rbetools`. Keep
-# this list in sync with the rbe-worker path filters in
-# .github/workflows/container-images.yml. Pull requests build this image
-# without publishing it, so missing evaluation inputs fail before merge.
-COPY flake.nix flake.lock /tmp/flake/
-COPY nix/artifact-pins.json /tmp/flake/nix/artifact-pins.json
-COPY nix/packages /tmp/flake/nix/packages
-# nix/packages/gaffer.nix reads ../gaffer-pins.json during package-set
-# evaluation, even though rbetools does not include the private artifacts.
-COPY nix/gaffer-pins.json /tmp/flake/nix/gaffer-pins.json
-COPY skills/skills_registry.json /tmp/flake/skills/skills_registry.json
-SHELL ["/bin/bash", "-c"]
-RUN mkdir -p ~/.config/nix \
-    # nix.conf MUST be written BEFORE the installer runs — the installer
-    # internally runs nix-env which reads this config. Without build-users-group=,
-    # it defaults to 'nixbld' which doesn't exist in the container.
-    && printf '%s\n' \
-         'build-users-group =' \
-         'experimental-features = nix-command flakes' \
-         'sandbox = false' \
-         'max-jobs = auto' \
-       > ~/.config/nix/nix.conf \
-    && curl -fsSL https://nixos.org/nix/install -o /tmp/nix-install.sh \
-    && sh /tmp/nix-install.sh --no-daemon \
-    && rm /tmp/nix-install.sh \
-    && export PATH="$HOME/.nix-profile/bin:$PATH" \
-    && cd /tmp/flake \
-    # Use nix build (not nix profile install) to avoid the profile manifest
-    # keeping a reference to the nixpkgs source tree (~457MB).
-    && RBETOOLS=$(nix build .#rbetools \
-         --no-link --print-out-paths) \
-    # Register as GC root so nix-collect-garbage keeps the closure.
-    && nix-store --add-root /nix/var/nix/gcroots/rbetools -r "$RBETOOLS" \
-    # Symlink binaries into /usr/local/bin (goinit PATH).
-    && for bin in "$RBETOOLS"/bin/*; do \
-         ln -sfn "$bin" /usr/local/bin/"$(basename "$bin")"; \
-       done \
-    # Remove profile, flake source, and anything not in the rbetools closure.
-    # Run GC before removing nix-profile (which has nix binaries on PATH).
-    && nix-collect-garbage -d \
-    && rm -rf ~/.nix-profile ~/.nix-defexpr /tmp/flake
 
 # dockerd wrapper: Firecracker's guest kernel lacks CONFIG_IP_NF_RAW, so
 # Docker 28's raw table rules for published ports (-p) fail. The wrapper sets

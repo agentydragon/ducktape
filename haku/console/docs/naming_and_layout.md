@@ -90,25 +90,26 @@ tree shows the packages, §3 and §4 settle what the files and classes inside th
     provider_connection.py  provider_connection_registry.py  token_state.py  token_support.py
     connection_result.py  association_maintenance.py  callback_page.py
 
-  notifications/       # Web Push pending-approval domain (README Notifications section as a package)
+  notifications/       # Web Push pending-approval domain + the wake wires
     push.py  push_routes.py  console_events.py  connection_metrics.py
-    pg_wake.py  session_wakes.py  conversation_wakes.py    # still x/-side; graduate with the x/ dissolution
+    pg_wake.py  session_wakes.py  conversation_wakes.py
 
   hostexecd/           # console-side registry / machine-API for the hostexecd fleet — NOT node_daemons (§3)
     service.py  models.py
 
-  conversation/        # the durable, provider-neutral record (graduates from x/)
-    conversation_event.py          # ONE Pydantic vocabulary: row body + MCP/SPA wire
-                                    #   (merges x/conversation_events.py + x/session_events.py)  [#4772 core]
-    conversation_reads.py  conversation_reader.py  conversation_log.py  conversation_follow.py
-    item_reads.py                  # folded item read models (was x/item_entries.py; "entry" gone) — private to the
+  conversation/        # the durable, provider-neutral record (landed except conversation_event.py)
+    conversation_event.py          # ONE Pydantic vocabulary: row body + MCP/SPA wire — still x/-side
+                                    #   (merges x/conversation_events.py + x/session_events.py)  [#4772 core, C5]
+    reads.py  reader.py  log.py  follow.py  history.py  live_updates.py  runtime.py  reprojection.py
+    item_reads.py                  # folded item read models ("entry" leaves with C6) — private to the
                                    #   conversation read surface (the store/reader that produce them + the
                                    #   haku_conversations tool that serves them); NOT a generic mcp/ file (§4.2)
-    conversation_history.py  conversation_live_updates.py  conversation_runtime.py  reprojection.py
+    prompt_inbox.py  journal_consumer.py    # the durable prompt inbox + the #4667 journal commit
 
-  session/             # one runner incarnation + its wire log (graduates from x/)
-    session_store.py  session_runtime.py
-    session_frames.py              # was x/session_events.py — the inversion fix (§3): frees the name for the wire log
+  session/             # one runner incarnation + its wire log (landed except session_frames.py)
+    store.py  runtime.py
+    session_frames.py              # forthcoming with the inversion fix (§3): C5 moving the conversation
+                                    #   bodies out of x/session_events.py frees the name for the wire log
     conversation_views.py  sandbox_allocation.py  sandbox_claims.py
     subscription.py  system_prompt.py  launch_identity.py  setup_output.py
 
@@ -156,13 +157,13 @@ protocol, not to the fold.
 | item segment          | `ItemSegment`                                                         | `ItemSegment`                                                         | —                                                   | unchanged                                                                                                                                                                                                                                                                                                                |
 | item completed        | `…Completed`                                                          | `ToolCallCompleted`, `MessageCompleted`, `ReasoningCompleted`         | —                                                   |                                                                                                                                                                                                                                                                                                                          |
 | turn end              | `TurnEnded` + `TurnEnd` = `TurnAnswered \| TurnAborted \| TurnFailed` | one family, discriminator `outcome`                                   | `ConversationTurn` / `conversation_turn`            | drop `TurnCompleted`; drop the 3× redeclared `TurnEnd`                                                                                                                                                                                                                                                                   |
-| failure reason        | field **`failure`**                                                   | `TurnFailed.failure`                                                  |                                                     | never `reason`; unify the one-string-three-hops (`reason`/`failure`/`failure`)                                                                                                                                                                                                                                           |
+| failure reason        | field **`failure`**                                                   | `TurnFailed.failure`                                                  |                                                     | never `reason` (the one-string-three-hops unified with the #4667 cutover)                                                                                                                                                                                                                                                |
 | tool outcome          | `ToolOutcome`                                                         | `ToolOutcome`                                                         |                                                     | delete the duplicate `conversation_reads.Outcome`                                                                                                                                                                                                                                                                        |
-| item read model       | `Item` (or `…Item`, plain on wire)                                    | `conversation/item_reads.py` — private to the conversation read tools |                                                     | **"entry" leaves the vocabulary**; the `item_entries.py` name goes with it                                                                                                                                                                                                                                               |
-| session (runner life) | `Session`                                                             | `SessionRecord` (MCP) · `SessionView` (REST)                          | `Session` / `sessions`                              | three representations, one concept-name + role suffix; fix the "…agent conversation" table docstring; delete `ConversationTurnView` (plan §13)                                                                                                                                                                           |
-| channel copy          | `ChannelAttachment`                                                   | `ChannelAttachment`                                                   | `ChannelAttachment` / `channel_attachment`          | pick the channel prefix; retire `ChatAttachment`/`chat_attachment`                                                                                                                                                                                                                                                       |
+| item read model       | `Item` (or `…Item`, plain on wire)                                    | `conversation/item_reads.py` — private to the conversation read tools |                                                     | **"entry" leaves the vocabulary** (C6); the `item_entries.py` module name is already gone                                                                                                                                                                                                                                |
+| session (runner life) | `Session`                                                             | `SessionRecord` (MCP) · `SessionView` (REST)                          | `Session` / `sessions`                              | three representations, one concept-name + role suffix; fix the "…agent conversation" table docstring                                                                                                                                                                                                                     |
+| channel copy          | `ChannelAttachment`                                                   | `ChannelAttachment`                                                   | `ChannelAttachment` / `channel_attachment`          | landed (C4b)                                                                                                                                                                                                                                                                                                             |
 | harness wire frame    | `SessionFrame`                                                        | `HarnessFrameRecord` / `…View`                                        | `SessionFrame` / `session_frames`                   | `x/session_events.py` → `session/session_frames.py` (the inversion fix — it holds `conversation_event` bodies today, not frames)                                                                                                                                                                                         |
-| front-end kind        | `ChannelSurface` (not `ChatSurface`)                                  |                                                                       | text col + CHECK                                    | drop the forbidden `SPA` member (the `ck_chat_attachment_surface` CHECK already rejects it) while renaming                                                                                                                                                                                                               |
+| front-end kind        | `ChannelSurface` (not `ChatSurface`)                                  |                                                                       | text col + CHECK                                    | landed (C4b)                                                                                                                                                                                                                                                                                                             |
 | harness (backend)     | `harness` — retire "runtime" for the backend                          | —                                                                     | —                                                   | Claude Code / Codex. Native client + frame projection move **runner-ward** into `haku/runtime/x/bridge` (#4667); the console residue is `harnesses/` (selection/registration). "runtime" survives only for a running incarnation (session/conversation), never the backend                                               |
 | harness kind (wire)   | `harness_kind` / `HarnessKind` (was `runtime_kind` / `RuntimeKind`)   | `HarnessKind` enum                                                    | `harness_kind` col + published `HarnessKind` schema | **rename, not free** — #4431 made `runtime_kind` a closed, read-only, **published** wire discriminator (`claude_code`\|`codex_app_server`) with a schema contract test; the rename is a coordinated stored + wire + OpenAPI change (expand/contract; published-schema consumers move in lockstep), not a mechanical swap |
 
@@ -173,15 +174,14 @@ conversation bodies into `conversation/conversation_event.py` and frees `session
 to mean what it says.
 
 **"Entry" and "chat" leave the vocabulary.** Nothing is a _chat_ — the layers are sessions,
-conversations, channels, frames, items. `ChatSurface`, `chat_attachment`, `ChatAttachment`,
-`SessionStore.chat_store` (param), and the
-`chat_layers.md`/`chat_runtime_facts.md` docs each rename to the layer word they mean;
-`chat_models.py` has none — a grab-bag spanning every layer, it is scattered enum-by-enum and
-deleted rather than renamed (§6). An _entry_
-(`*Entry` in `conversation_reads.py`, built by `item_entries.py`) is a third name for the item
-concept beside the row and the neutral op; it becomes the item read model in
-`conversation/item_reads.py` — private to the conversation read surface (beside the store/reader that
-produce it), not a generic `mcp/` file.
+conversations, channels, frames, items. The code side is done (`ChannelSurface`,
+`channel_attachment`, the `session_store` param); the `chat_layers.md`/`chat_runtime_facts.md`
+docs still rename to the layer word they mean, and `chat_models.py` has none — a grab-bag
+spanning every layer, it is scattered enum-by-enum and deleted rather than renamed (§6). An
+_entry_ (`*Entry` in `conversation/reads.py`, folded by `conversation/item_reads.py`) is a third
+name for the item concept beside the row and the neutral op; C6 renames it to the item read
+model, staying private to the conversation read surface (beside the store/reader that produce
+it), never a generic `mcp/` file.
 
 ### 3.2 Identity — the five roles (#4836, plan of record)
 
@@ -250,11 +250,12 @@ every package the split creates, not just `grants/`:
 - **`grants/http/`**: symmetric — `http_grant_service.py` → `service.py`,
   `http_decide_config.py` → `decide_config.py`, etc. (landed with C11); `HttpGrantSpec` →
   `GrantSpec` etc. wait on seam 3.
-- **`conversation/`**: `conversation_log.py` → `log.py`, `conversation_reads.py` → `reads.py`;
-  `ConversationItem` → `Item`, `ConversationEvent` → `Event`, `ConversationTurn` → `Turn`,
-  `ConversationRuntime` → `Runtime`.
-- **`session/`**: `session_store.py` → `store.py`, `session_runtime.py` → `runtime.py`;
-  `SessionStore` → `Store`, `SessionRecord` → `Record`.
+- **`conversation/`** _(files landed, with `ConversationRuntime` → `Runtime`)_: the remaining
+  entity drops (`ConversationEvent` → `Event`, `ConversationItem` → `Item`, `ConversationTurn` →
+  `Turn`) ride the C5 vocabulary merge that brings those definitions into the package; the ORM
+  rows stay concept-named in the central `database_schema.py`.
+- **`session/`** _(files landed, with `SessionStore` → `Store`)_: the `Session`-trio
+  representations (`SessionRecord`/`SessionView`, §3.1) are C7's to settle.
 - **`mcp/`**: `mcp_server.py` → `server.py`, `mcp_approval.py` → `approval.py`, `mcp_execution.py` →
   `execution.py`; `McpExecutionContext` → `ExecutionContext`, `McpExecutionCaller` → `ExecutionCaller`.
 - **harness adapters**: the native client + `*_projection.py` move **runner-ward** into
@@ -322,14 +323,15 @@ narrow database role or a network-only boundary that the code layout does not en
 import from being violated silently; domain packages make the exclusion a build-time fact. Every
 package split below keeps these exclusions structurally enforceable.
 
-| Binary                  | Tree                                                             | May import                                              | MUST NOT import                                                                                                                                          | Reaches console via                        |
-| ----------------------- | ---------------------------------------------------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| **runner**              | `haku/runtime/x/bridge`                                          | its own bridge + shared wire                            | **console (any package)** — the import arrow is console→runner, never the reverse                                                                        | the neutral-operation socket (#4667)       |
-| **haku-console server** | `<platform>/console/*`                                           | its own domain packages; the runner's shared wire vocab | —                                                                                                                                                        | in-process                                 |
-| **egress proxy**        | `haku/egress` (forthcoming; egress-grant work #4941/#4957/#4942) | the shared decision wire vocabulary only                | console `identity/`, `grants/`, `mcp/` — anything beyond the shared decision vocab                                                                       | HTTP to console (not a Python import)      |
-| **indexer**             | `haku/indexer/` (forthcoming, #4887)                             | the shared `haku/recall_index/` schema only             | any console package — `identity/`, `grants/`, `mcp/` (incl. the `mcp/tools/recall/` read path), approval; its DB role is narrow, the deps must mirror it | its narrow DB role                         |
-| **kube-api-proxy**      | `haku/kube_api_proxy` (Go)                                       | —                                                       | zero console Python (it is Go)                                                                                                                           | —                                          |
-| **hostexecd**           | `haku/hostexec/hostexecd` (Rust, host-side)                      | —                                                       | zero console Python (it is Rust)                                                                                                                         | HTTP to console's `hostexecd/` coordinator |
+| Binary                  | Tree                                                             | May import                                                                                                                                                         | MUST NOT import                                                                                                                                          | Reaches console via                        |
+| ----------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| **runner**              | `haku/runtime/x/bridge`                                          | its own bridge + shared wire                                                                                                                                       | **console (any package)** — the import arrow is console→runner, never the reverse                                                                        | the neutral-operation socket (#4667)       |
+| **haku-console server** | `<platform>/console/*`                                           | its own domain packages; the runner's shared wire vocab                                                                                                            | —                                                                                                                                                        | in-process                                 |
+| **egress proxy**        | `haku/egress` (forthcoming; egress-grant work #4941/#4957/#4942) | the shared decision wire vocabulary only                                                                                                                           | console `identity/`, `grants/`, `mcp/` — anything beyond the shared decision vocab                                                                       | HTTP to console (not a Python import)      |
+| **indexer**             | `haku/indexer/` (forthcoming, #4887)                             | the shared `haku/recall_index/` schema only                                                                                                                        | any console package — `identity/`, `grants/`, `mcp/` (incl. the `mcp/tools/recall/` read path), approval; its DB role is narrow, the deps must mirror it | its narrow DB role                         |
+| **matrix adapter**      | `channels/matrix/` (worker.py, #4864)                            | its channel package; the conversation seam (the one pub/sub, positional read, offer-input); the schema; the narrow launch authority (`agents/launch_authority.py`) | `mcp/` and the auth stack (`mcp_auth/`, enrollment, bearer machinery), approval, oauth, push; its DB role is narrow, the deps must mirror it             | its narrow DB role                         |
+| **kube-api-proxy**      | `haku/kube_api_proxy` (Go)                                       | —                                                                                                                                                                  | zero console Python (it is Go)                                                                                                                           | —                                          |
+| **hostexecd**           | `haku/hostexec/hostexecd` (Rust, host-side)                      | —                                                                                                                                                                  | zero console Python (it is Rust)                                                                                                                         | HTTP to console's `hostexecd/` coordinator |
 
 Directionality notes, verified against `devel`:
 
@@ -381,27 +383,23 @@ will conflict" / "touches the same file" is not a wait — whoever lands second 
   2. the mechanical move, retargeting `devinfra/ci/image_targets.json` and BUILD — the GHCR name
      `haku-indexer` keys off the JSON key, not the Bazel path, so Flux image automation is untouched.
 
-### Conversation / session lane — the #4772 core, behind the #4667 cutover
+### Conversation / session lane — the #4772 core
 
-Sequenced strictly after the #4667 stage cutover settles (it deletes the console-side native
-projector, removing `x/conversation_events.py` from rename scope on its own) and in a
-conversation-domain quiet gap.
+The #4667 stage-4 cutover landed (#4984), and the package materialization rode it: the runtime
+graduated out of `x/` into `conversation/`, `session/`, and the wakes into `notifications/`,
+with the §4.1 file de-prefix and the `SessionStore` → `Store` / `ConversationRuntime` →
+`Runtime` entity drops. What remains is the vocabulary work below, in a conversation-domain
+quiet gap.
 
-- **C1 · `reason` → `failure`** _(mechanical)_ — folds into the #4667 cutover.
-- **C2 · `ConversationEventRow` at definition** _(mechanical)_ — one class rename in
-  `database_schema.py` + delete 5 import aliases and their duplicated comments.
-- **C4 · de-"chat" sweep** _(mixed)_: **C4a** `chat_store` → `session_store` param
-  rename _(mechanical)_ — the param holds a `SessionStore`, so it takes the session layer's word;
-  **C4b** `ChatSurface` → `ChannelSurface` member-drop + `chat_attachment` → `channel_attachment`
-  table/ORM _(semantic — CHECK + table migration)_. The `chat_models.py` **module** is deliberately
-  **not** renamed by C4a: a transitional grab-bag whose ~20 enums span every layer, it has no single
-  layer word, so it is **deleted** rather than renamed. Its survival _is_ the tracked cleanup item —
-  the #4772 reorg is not done until it is gone, each enum scattered to its true home:
+- **C4 · `chat_models.py` dissolution** — the de-"chat" renames around it (C4a `chat_store` →
+  `session_store`, C4b `ChannelSurface` + `channel_attachment`) have landed. The module itself is
+  a transitional grab-bag whose enums span every layer, so it has no single layer word and is
+  **deleted** rather than renamed. Its survival _is_ the tracked cleanup item — the #4772 reorg
+  is not done until it is gone, each enum scattered to its true home:
   - `SessionStatus`, `LeaseExpiryReason` (+ the session-status frozensets) → `session/` (C7-adjacent)
   - `ConversationEventKind`, `AuthoredEventKind`, `EventProvenance`, `TurnOutcome`, `ReasoningDisclosure`
-    → `conversation/conversation_event.py` (C5, gated on the #4667 cutover)
+    → `conversation/conversation_event.py` (C5)
   - `ItemType`, `ItemStatus`, `ToolOutcome` → `conversation/item_reads.py` (C6)
-  - `ChatSurface` → `ChannelSurface` (C4b)
   - `RuntimeKind` → `harnesses/kind.py` as `HarnessKind` (C4d)
   - `BridgeFrameKind`, `FrameDirection` → the session-frames home (`session/session_frames.py`)
   - the prompt-origin models (`SpaOrigin`/`MatrixOrigin`/`HarnessOrigin`/`PromptOriginKind`) and
@@ -423,8 +421,8 @@ conversation-domain quiet gap.
   gone, `UnknownEventBody` arm preserved. Everything above lands independently of it.
 - **C6 · "entry" → item read model** _(semantic)_ — `*Entry` → `Item…`, into `conversation/item_reads.py`
   (private to the conversation read surface, beside the store that produces it — not `mcp/`); rides or follows C5.
-- **C7 · Session-trio dedup + `ConversationTurnView` delete** _(semantic)_ — after the conversation
-  quiet window.
+- **C7 · Session-trio dedup** _(semantic)_ — after the conversation quiet window
+  (`ConversationTurnView` is already gone).
 
 ### Identity lane — rides the #4836 compose PR
 
@@ -463,10 +461,10 @@ Needs operator go **and** the `<auth-context>` name pick.
 now ─┬─ C13               ← staged severing; ConversationItem home is the gate   [indexer lane, independent]
      ├─ C8 → C9 → C10     ← after operator go + <auth-context>  [identity lane]
      ├─ C12               ← C11 landed with #4889's envelope    [grants lane]
-     └─ (#4667 settles) → C1, C2, C4a  then  C4b, C4e, C5 → C6 → C7   [conversation lane]
-                                                    │
-                     C14 (de-Haku) ─────────────────┴────→ after lanes settle names
-                     C15 (final packaging) ──────────────→ last
+     └─ C4e, C5 → C6 → C7                       ← packages landed              [conversation lane]
+                    │
+                    C14 (de-Haku) ──────────────→ after lanes settle names
+                    C15 (final packaging) ──────→ last
 ```
 
 The three contested reshapes (C5, C8, C14) each have uncontested siblings that land ahead of them, so

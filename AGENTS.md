@@ -93,10 +93,17 @@ by a PR that makes the controller own the state.
 ## CI Configuration
 
 All CI runs through GitHub Actions → `bbr` (BuildBuddy RBE); no `buildbuddy.yaml`.
-`.github/workflows/ci.yml` orchestrates rbe-image → bazel-ci →
-release/push-images/props-images; pre-commit, ansible-lint, nix-attic-push, and
+`.github/workflows/ci.yml` orchestrates bazel-ci → release/push-images/props-images;
+pre-commit, ansible-lint, nix-attic-push, container-images, rbe-worker-image, and
 openclaw-image trigger independently. Adding or publishing a container image:
 <cluster/docs/container-images.md>.
+
+**Never widen `rbe-worker-image.yml`'s trigger, and put nothing in
+<devinfra/rbe_image/Dockerfile> that Bazel could supply from the repo it is building.** That
+image's digest is an exec property of `//:rbe_linux_x64`, so it is inside every action's cache key
+and inside the key for BuildBuddy's warm Firecracker snapshot pool; moving it orphans the action
+cache and dumps every snapshot. Developer and agent tooling belongs in
+<devinfra/bbr_runner/Dockerfile>, whose digest no action hashes.
 
 ## Refactoring
 

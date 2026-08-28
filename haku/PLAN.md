@@ -109,8 +109,9 @@ credentials scoped or proxied rather than trusted to Haku's restraint.
 The ask was a chat-like surface instead of only the console's fire-and-forget launch dialog:
 quick dispatch, follow-ups without re-stating context, and separate threads per topic. Matrix
 answers all three — a message in Element drives a real turn and the answer comes back into the
-room, one long-running session per room, with the console still owning the session, the
-credentials and the approval gate. What the channel guarantees:
+room, one long-running session per room, with the console still owning the session and the
+approval gate, and the Matrix credential held by the channel's own `haku-matrix-adapter`
+worker. What the channel guarantees:
 <console/channels/matrix/SPEC.md>; what is still owed:
 <console/plans/conversation_layers.md>. The notification half was answered separately and differently:
 Web Push from the console's own origin (`console/notifications/push.py`), with Approve/Deny rendered by

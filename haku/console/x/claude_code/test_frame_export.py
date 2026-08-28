@@ -15,13 +15,13 @@ import pytest_bazel
 from more_itertools import one
 
 from haku.console.chat_models import SPA_ORIGIN, BridgeFrameKind, FrameDirection
+from haku.console.session.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
+from haku.console.session.store import BridgeAuthentication
 from haku.console.x.claude_code import frame_export, frames
 from haku.console.x.claude_code.projection import RecordedFrame
 from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
 from haku.console.x.claude_code.testing.fold import whole_capture
 from haku.console.x.conversation_events import ToolCallCompleted, ToolCallStarted
-from haku.console.x.session_store import BridgeAuthentication
-from haku.console.x.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
 from haku.runtime.x.bridge.protocol import HarnessFrame
 
 # A bearer smuggled into the log the only realistic way one gets there: an operator ran a command

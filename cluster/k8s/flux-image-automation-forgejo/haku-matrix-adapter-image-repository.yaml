@@ -1,0 +1,12 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: haku-matrix-adapter
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/haku-matrix-adapter
+  interval: 5m
+  # Private Forgejo package — authenticate the scan with the ducktape-ci
+  # credential (reflected here from cluster/k8s/forgejo-images/).
+  secretRef:
+    name: forgejo-images-creds

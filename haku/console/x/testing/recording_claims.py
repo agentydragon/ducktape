@@ -24,7 +24,7 @@ import asyncio
 from datetime import datetime
 from uuid import UUID
 
-from haku.console.x.sandbox_claims import ProvisioningStep, SandboxProvisioningView, provisioning_view
+from haku.console.session.sandbox_claims import ProvisioningStep, SandboxProvisioningView, provisioning_view
 
 
 def fixed_provisioning_view(session_id: UUID) -> SandboxProvisioningView:

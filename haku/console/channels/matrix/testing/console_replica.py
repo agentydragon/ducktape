@@ -2,9 +2,11 @@
 
 <../test_fullstack_e2e.py> is about what the room ends up containing across a console going away,
 so the console has to be something that can *go away* — a process the test starts, stops and starts
-again, on one port, against one database. Everything it composes is the production wiring from
-`haku.console.app`. What is replaced is what would otherwise be Kubernetes, plus one deliberate
-fault:
+again, on one port, against one database. Everything it composes is production wiring: the runtime
+half from `haku.console.app`, the channel half from the adapter worker's composition (<../worker.py>)
+— one process where production runs two, which is itself the production roll state, since the
+adapter and a loop-carrying console only ever contend for the sync election. What is replaced is
+what would otherwise be Kubernetes, plus one deliberate fault:
 
 - **`FileSandboxClaims`** writes the claim a `SandboxClaim` controller would have acted on. The
   sandbox must outlive this process — that is the whole subject of the adoption case — so the
@@ -39,6 +41,7 @@ from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.console.channels.matrix.client import Error
+from haku.console.channels.matrix.config import Config
 from haku.console.channels.matrix.conversation import ConversationStore, Turns
 from haku.console.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.channels.matrix.outbox import PendingReply, RoomOutbox
@@ -46,20 +49,20 @@ from haku.console.channels.matrix.outbox_wake import OutboxWakes
 from haku.console.channels.matrix.revisions import RevisionLog
 from haku.console.channels.matrix.room_copy import RoomCopy
 from haku.console.channels.matrix.sync import SyncService, SyncStore
-from haku.console.config import MatrixConfig, RuntimeRegistrationConfig
+from haku.console.config import RuntimeRegistrationConfig
+from haku.console.conversation.history import ConversationHistory
+from haku.console.conversation.runtime import Runtime
+from haku.console.notifications.conversation_wakes import ConversationWakes
+from haku.console.notifications.session_wakes import SessionWakes
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.x.conversation_history import ConversationHistory
-from haku.console.x.conversation_runtime import ConversationRuntime
-from haku.console.x.conversation_wakes import ConversationWakes
+from haku.console.session.runtime import SessionService, internal_router
+from haku.console.session.sandbox_allocation import SandboxAllocator
+from haku.console.session.sandbox_claims import SandboxProvisioningView
+from haku.console.session.store import Store
+from haku.console.session.subscription import ConversationStream
+from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.x.runtime_catalog import execution_registry, runtime_registration
-from haku.console.x.sandbox_allocation import SandboxAllocator
-from haku.console.x.sandbox_claims import SandboxProvisioningView
-from haku.console.x.session_runtime import SessionService, internal_router
-from haku.console.x.session_store import SessionStore
-from haku.console.x.session_wakes import SessionWakes
-from haku.console.x.subscription import ConversationStream
-from haku.console.x.system_prompt import SystemPromptTemplate
 from haku.console.x.testing.recording_claims import fixed_provisioning_view
 
 logger = logging.getLogger("haku.console.channels.matrix.testing.console_replica")
@@ -135,7 +138,7 @@ def _environment(name: str) -> str:
 async def _serve() -> None:
     database_url = _environment("HAKU_E2E_DATABASE_URL")
     password = SecretStr(_environment("HAKU_E2E_BOT_PASSWORD"))
-    matrix = MatrixConfig(
+    matrix = Config(
         homeserver=_environment("HAKU_E2E_HOMESERVER"),
         user_id=_environment("HAKU_E2E_BOT_USER_ID"),
         operator_user_id=_environment("HAKU_E2E_OPERATOR_USER_ID"),
@@ -171,7 +174,7 @@ async def _serve() -> None:
             system_prompt=SystemPromptTemplate.from_path(Path(_environment("HAKU_E2E_SYSTEM_PROMPT_TEMPLATE"))),
         )
     )
-    store = SessionStore(sessions, runtimes)
+    store = Store(sessions, runtimes)
     conversations = ConversationStore(sessions)
     ledger = IngressLedger(sessions)
     identities = PostgresOperatorIdentityStore(
@@ -179,7 +182,6 @@ async def _serve() -> None:
     )
     sync = RefusingSyncService(
         matrix,
-        password,
         engine,
         SyncStore(sessions),
         conversations,
@@ -196,7 +198,7 @@ async def _serve() -> None:
         armed=Path(_environment("HAKU_E2E_REFUSE_NEXT_REPLY")),
     )
     service = SessionService(runtimes, store, session_wakes, conversation_history=ConversationHistory(sessions))
-    supervisor = ConversationRuntime(service, store, conversation_wakes, engine)
+    supervisor = Runtime(service, store, conversation_wakes, engine)
     allocator = SandboxAllocator(service, store, session_wakes, engine)
 
     @asynccontextmanager

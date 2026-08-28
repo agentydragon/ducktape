@@ -47,6 +47,9 @@ isn't released or deployed — a valid state, not an error.
 4. After CI publishes the `skill-<name>` release, `sync-pins` seeds the pin in
    `nix/artifact-pins.json`; then run `home-manager switch`.
 
+Nix assembly skips registered skills without an artifact pin. This lets the
+first merged release publish a new skill before `sync-pins` seeds its pin.
+
 Skills tied to one component may live next to it instead of under `skills/`
 (e.g. `cpap/skill/`, `cluster/skills/`, the debundle skills) — same
 `skill_package` macro; register them the same way.

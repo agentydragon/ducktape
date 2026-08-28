@@ -30,7 +30,7 @@ from typing import Any
 import asyncpg
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.x.pg_wake import libpq_dsn, notify_raw
+from haku.console.notifications.pg_wake import libpq_dsn, notify_raw
 
 logger = logging.getLogger(__name__)
 

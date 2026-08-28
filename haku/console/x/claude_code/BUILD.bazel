@@ -4,7 +4,11 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # Only the runtime folds a harness's wire, so a channel that came to know Claude's frames fails to
 # build rather than being caught in review.
-package(default_visibility = ["//haku/console/x:__pkg__"])
+package(default_visibility = [
+    "//haku/console/conversation:__pkg__",
+    "//haku/console/session:__pkg__",
+    "//haku/console/x:__pkg__",
+])
 
 py_library(
     name = "frames",
@@ -13,6 +17,8 @@ py_library(
     # has to know the wire: it asserts against the frames the stub produced.
     visibility = [
         "//haku/console/channels/matrix/testing:__pkg__",
+        "//haku/console/conversation:__pkg__",
+        "//haku/console/session:__pkg__",
         "//haku/console/x:__pkg__",
         "//haku/console/x/claude_code/testing:__pkg__",
     ],
@@ -35,6 +41,7 @@ py_library(
     name = "projection",
     srcs = ["projection.py"],
     visibility = [
+        "//haku/console/session:__pkg__",
         "//haku/console/x:__pkg__",
         "//haku/console/x/claude_code/testing:__pkg__",
     ],
@@ -97,8 +104,8 @@ py_library(
     deps = [
         ":redaction",
         "//haku/console:database_schema",
+        "//haku/console/conversation:reprojection",
         "//haku/console/x:conversation_events",
-        "//haku/console/x:reprojection",
         "@pypi//sqlalchemy",
     ],
 )
@@ -131,10 +138,10 @@ py_test(
         "//:conftest",
         "//haku/console:chat_models",
         "//haku/console:conftest",
+        "//haku/console/session:setup_output",
+        "//haku/console/session:store",
         "//haku/console/x:conftest",
         "//haku/console/x:conversation_events",
-        "//haku/console/x:session_store",
-        "//haku/console/x:setup_output",
         "//haku/console/x/claude_code/testing:fold",
         "//haku/runtime/x/bridge:protocol",
         "@pypi//more_itertools",

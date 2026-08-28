@@ -1,8 +1,13 @@
 # The Matrix channel
 
-Matrix as one channel: everything that knows a homeserver exists. What the channel guarantees
-the operator is <SPEC.md>; this README is the module map.
+Matrix as one channel: everything that knows a homeserver exists, deployed as its own
+`haku-matrix-adapter` worker. What the channel guarantees the operator is <SPEC.md>; this README
+is the module map.
 
+- `worker.py` — the worker binary: settings-as-contract, the narrow-role schema probe, and the
+  composition of everything below against the conversation seam.
+- `config.py` — the channel's own wiring (`Config`) and the worker's narrow slice of the shared
+  console config file (`AdapterConfigFile`, the launch-identity registry).
 - `client.py` — the client-API calls the loop makes, over `matrix-nio`.
 - `sync.py` — logs in as `@haku`, long-polls `/sync` (one owner for the user-wide token), binds
   each room the operator invites Haku into, and dispatches inbound events by room to their
@@ -32,10 +37,8 @@ docstring (<conversation_subscriber.py>) is that contract.
 
 ## What necessarily lives outside this directory
 
-- `MatrixConfig` and `Settings.matrix` in <../../config.py>. Absent config, or a config whose
-  reflected bot password has not landed yet, means the surface does not start and the console
-  does.
 - The `Matrix*` rows (`MatrixAccessToken`, `MatrixSyncWatermark`, `MatrixOutbox`,
   `MatrixRevision`, `MatrixRoomCopy`, `MatrixIngressEvent`) in <../../database_schema.py>, plus
-  their Alembic revisions — migrations are one lineage for the whole database. The rows keep
-  the `Matrix` prefix there: the central schema namespace is where it disambiguates.
+  their Alembic revisions — migrations are one lineage for the whole database, and DDL stays the
+  console's image-coupled release Job. The rows keep the `Matrix` prefix there: the central
+  schema namespace is where it disambiguates.

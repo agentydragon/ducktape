@@ -49,20 +49,13 @@ from haku.console.agents import enrollment_routes
 from haku.console.agents.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
-
-# Aliased: bare `conversation`, `sync` and `outbox` would each collide with something this module
-# already talks about (the console's own conversation record, the index sweeps, the push queue).
-from haku.console.channels.matrix import (
-    conversation as matrix_conversation,
-    ingress_ledger as matrix_ingress_ledger,
-    outbox as matrix_outbox,
-    outbox_wake as matrix_outbox_wake,
-    revisions as matrix_revisions,
-    sync as matrix_sync,
-)
-from haku.console.channels.matrix.room_copy import RoomCopy
 from haku.console.chat_models import RuntimeKind
 from haku.console.config import MCP_PATH, Settings
+
+# Aliased: bare `runtime` exists in three sibling packages, and `create_app` has a local `follow`.
+from haku.console.conversation import follow as conversation_follow, reader, runtime as conversation_runtime
+from haku.console.conversation.history import ConversationHistory
+from haku.console.conversation.live_updates import ConversationLiveUpdates
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
 
@@ -99,10 +92,16 @@ from haku.console.mcp_config import (
 )
 from haku.console.models import ChatLaunchOption, ConfigResponse
 from haku.console.notifications import connection_metrics, console_events, push, push_routes
+from haku.console.notifications.conversation_wakes import ConversationWakes
+from haku.console.notifications.session_wakes import SessionWakes
 from haku.console.oauth import association_maintenance, connection_result, provider_connection, token_state
 from haku.console.operator_identity import OperatorIdentityTrust
 from haku.console.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.recall_index_reader import PostgresIndexSearcher
+from haku.console.session import runtime as session_runtime, sandbox_allocation, sandbox_claims
+from haku.console.session.launch_identity import ChatLaunchAuthorizer
+from haku.console.session.store import Store
+from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.tools import (
     gmail as gmail_tools,
     http_grants as http_grants_tools,
@@ -111,24 +110,7 @@ from haku.console.tools import (
     sandbox as sandbox_tools,
 )
 from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
-from haku.console.x import (
-    conversation_follow,
-    conversation_reader,
-    conversation_runtime,
-    runtime as console_runtime,
-    runtime_catalog,
-    sandbox_allocation,
-    sandbox_claims,
-    session_runtime,
-    subscription,
-)
-from haku.console.x.conversation_history import ConversationHistory
-from haku.console.x.conversation_live_updates import ConversationLiveUpdates
-from haku.console.x.conversation_wakes import ConversationWakes
-from haku.console.x.launch_identity import ChatLaunchAuthorizer
-from haku.console.x.session_store import SessionStore
-from haku.console.x.session_wakes import SessionWakes
-from haku.console.x.system_prompt import SystemPromptTemplate
+from haku.console.x import runtime as console_runtime, runtime_catalog
 from haku.recall_index.config import EmbedderConfig
 from haku.recall_index.openai_embedder import OpenAIEmbedder
 from haku.runtime.x.bridge.protocol import KUBERNETES_PROXY_URL_ENV, RUNNER_SETUP_ENV
@@ -406,7 +388,7 @@ def create_app(
     # All read and write paths share one registry. Projection-only composition may link dormant
     # adapters, while launch-capable production composition includes only deliberately supported
     # adapters and resources; no hidden Claude fallback can reinterpret another runtime's rows.
-    session_store = SessionStore(db_sessions, runtime_registry)
+    session_store = Store(db_sessions, runtime_registry)
 
     async def _resolve_static_agent_definitions() -> tuple[StaticAgentDefinition, ...]:
         assert loaded_static_agents is not None
@@ -425,35 +407,6 @@ def create_app(
 
         return tuple([await resolve_agent(agent) for agent in loaded_static_agents])
 
-    # Matrix chat surface, absent when unconfigured: the console serves its approval queue
-    # without it and simply does not run the sync loop. Neutral runtime supervision is composed
-    # after the configured runtime catalog because it provisions sessions through that service.
-    matrix_sync_service: matrix_sync.SyncService | None = None
-    matrix_conversation_store: matrix_conversation.ConversationStore | None = None
-    if (matrix_config := settings.matrix) is not None and matrix_config.password is not None:
-        matrix_conversation_store = matrix_conversation.ConversationStore(db_sessions)
-        matrix_ledger = matrix_ingress_ledger.IngressLedger(db_sessions)
-        # The sync service hosts one reconciler per live attachment — each room's subscriber to the
-        # conversation record and the drain of its reply outbox — so the record readers, the
-        # correspondence store and the outbox are all composed into it.
-        matrix_sync_service = matrix_sync.SyncService(
-            matrix_config,
-            matrix_config.password,
-            db_engine,
-            matrix_sync.SyncStore(db_sessions),
-            matrix_conversation_store,
-            operator_identity_store,
-            matrix_conversation.Turns(matrix_config, session_store, operator_identity_store, matrix_ledger),
-            matrix_outbox.RoomOutbox(db_sessions),
-            matrix_revisions.RevisionLog(db_sessions),
-            matrix_ledger,
-            RoomCopy(db_sessions),
-            # The channel's own wake wire; the sync leader starts and stops it with its reconcilers.
-            matrix_outbox_wake.OutboxWakes(database_url),
-            db_sessions,
-            subscription.ConversationStream(db_sessions),
-            conversation_wakes,
-        )
     # Execution exists only when a launch-capable adapter was configured. Read-only replicas keep
     # the same registry in their store above but expose no session-creation runtime service.
     default_runtime_kind: RuntimeKind | None = None
@@ -491,10 +444,6 @@ def create_app(
             default_agent_id=default_chat_agent_id,
             default_runtime_kind=default_runtime_kind,
         )
-        if matrix_conversation_store is not None:
-            matrix_conversation_store.configure_launch_identity(
-                authorize_chat_launch, default_agent_id=default_chat_agent_id, default_runtime_kind=default_runtime_kind
-            )
     else:
         session_service = None
     sandbox_allocator = (
@@ -503,7 +452,7 @@ def create_app(
         else None
     )
     runtime_supervisor = (
-        conversation_runtime.ConversationRuntime(session_service, session_store, conversation_wakes, db_engine)
+        conversation_runtime.Runtime(session_service, session_store, conversation_wakes, db_engine)
         if session_service is not None
         else None
     )
@@ -640,9 +589,7 @@ def create_app(
                 configured_recall_index_ids=tuple(index.index_id for index in console_config.recall_indexes),
                 # Only with an executable runtime: otherwise nothing writes sessions, so the read
                 # tools would reflect an always-empty corpus.
-                conversations=(
-                    conversation_reader.ConversationReads(session_store) if runtime_registry.configured_kinds else None
-                ),
+                conversations=(reader.ConversationReads(session_store) if runtime_registry.configured_kinds else None),
                 sandbox=sandbox_server,
                 kubernetes=(
                     kubernetes_tools.KubernetesToolsService(
@@ -724,7 +671,6 @@ def create_app(
         await mcp_operator_oauth_store.forget_unconfigured_servers(console_config.mcp.servers)
         if session_service is not None:
             await session_service.reconcile_terminal_claims()
-        matrix_running = matrix_sync_service.run() if matrix_sync_service is not None else contextlib.nullcontext()
         # Conversation demand owns session creation and replacement. It is a sibling of every
         # channel and of sandbox allocation, so browser-only and unattached conversations receive
         # the same maintenance as Matrix-bound ones.
@@ -732,7 +678,7 @@ def create_app(
         # Prompt demand is channel-neutral and durable. Start its elected reconciler only after
         # the notification listener is live; the first sweep is also the restart backstop.
         allocating = sandbox_allocator.run() if sandbox_allocator is not None else contextlib.nullcontext()
-        async with agent_authority.expiry_maintenance(), oauth_maintenance.run(), catalogs.run(), matrix_running:
+        async with agent_authority.expiry_maintenance(), oauth_maintenance.run(), catalogs.run():
             await console_event_hub.start()
             await session_wakes.start()
             await conversation_wakes.start()

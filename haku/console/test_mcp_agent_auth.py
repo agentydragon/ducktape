@@ -22,11 +22,11 @@ from haku.console.agent_bearer_authority import (
 )
 from haku.console.agents.authorization import (
     PostgresAgentAuthority,
-    StaticAgentAuthorization,
     StaticAgentDefinition,
     StaticAgentRejectedError,
     fingerprint_static_token,
 )
+from haku.console.agents.launch_authority import StaticAgentAuthorization
 from haku.console.chat_models import RuntimeKind
 from haku.console.config import McpOAuthConfig, OperatorIdentityConfig, OperatorOidcConfig, Settings
 from haku.console.conftest import console_sessions, operator_id

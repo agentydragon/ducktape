@@ -28,8 +28,8 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from haku.console.conversation import reprojection
 from haku.console.database_schema import SessionFrame
-from haku.console.x import reprojection
 from haku.console.x.claude_code.redaction import Pseudonyms, redact
 from haku.console.x.conversation_events import Json
 

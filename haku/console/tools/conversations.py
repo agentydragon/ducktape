@@ -45,7 +45,7 @@ worth reading, without the frames themselves being reshaped around it.
 
 **The read models are the store's; the pages are this server's.** What a read produced — a
 session, a frame, a turn, a conversation entry, and the cursors that walk them — is defined
-beside the store that produces it (`haku/console/x/conversation_reads.py`). What is here is how
+beside the store that produces it (`haku/console/conversation/reads.py`). What is here is how
 those reads are handed out: the `Page` envelope.
 
 **Reads require the configured in-process-server grant, and rows require the profile-DAG scope.**
@@ -67,14 +67,7 @@ from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, Field
 
 from haku.console.chat_models import BridgeFrameKind
-from haku.console.conversation_read_access import (
-    ConversationAccessDeniedError,
-    ConversationReadAccessPolicy,
-    ConversationReadScope,
-)
-from haku.console.in_process_server_access import InProcessServerAccessPolicy
-from haku.console.mcp_execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext
-from haku.console.x.conversation_reads import (
+from haku.console.conversation.reads import (
     ConversationEntry,
     FrameRecord,
     SessionCursor,
@@ -82,6 +75,13 @@ from haku.console.x.conversation_reads import (
     TurnCursor,
     TurnRecord,
 )
+from haku.console.conversation_read_access import (
+    ConversationAccessDeniedError,
+    ConversationReadAccessPolicy,
+    ConversationReadScope,
+)
+from haku.console.in_process_server_access import InProcessServerAccessPolicy
+from haku.console.mcp_execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext
 
 # Wire-frozen id: named by cluster/k8s/haku/console/config.yaml and persisted in
 # ledger `server_id` rows — renaming is a config + data migration.
@@ -134,7 +134,7 @@ class ConversationReader(Protocol):
 
     A port rather than an import: the store lives in the experimental chat runtime, and this
     server should not depend on that package's shape. The *records* it exchanges do come from
-    there (<../x/conversation_reads.py>), because the store is what produces them — but that
+    there (<../conversation/reads.py>), because the store is what produces them — but that
     module is a leaf of models, so naming it pulls in no runtime.
 
     Every method answers "up to `limit` rows from `cursor`" and leaves the page to the caller.

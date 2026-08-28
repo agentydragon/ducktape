@@ -7,7 +7,7 @@ TLS-intercepting forced proxy — and the runtime that answer unblocked is runni
 `haku-claude` `SandboxTemplate` and its warm pool
 (<../../cluster/k8s/haku/workspaces/app/sandboxtemplate-haku-claude.yaml>), the in-sandbox bridge
 (<../runtime/x/bridge/>), the console's session runtime and its chat surface
-(<../console/x/session_runtime.py>, `frontend/x/`), and a Matrix room in front of all of it
+(<../console/session/runtime.py>, `frontend/x/`), and a Matrix room in front of all of it
 (<../console/channels/matrix/SPEC.md>). One decision below was reversed by the build: no Python imports the
 Agent SDK any more — the console drives Claude Code's wire itself
 (<cli_protocol_ownership.md>) — so the SDK survives only as the wheel the CLI binary is
@@ -274,7 +274,7 @@ MCP path) and the behavioral gotchas recorded in <../TODO.md> § haku-traces.
   second queue.
 - **Answered:** the session record is a table in the console DB — `sessions` and the
   `session_{messages,frames,turns,prompts,events,outbox}` around it — with the Sandbox CR held
-  beside it as a claim (`x/sandbox_claims.py`).
+  beside it as a claim (`session/sandbox_claims.py`).
 - Whether an idle session should dispose its sandbox automatically, and what the operator sees
   when it does. **Still open, and now designed rather than merely asked:**
   <../console/plans/conversation_layers.md> § 9's conversation-owned prompt queue is the answer
