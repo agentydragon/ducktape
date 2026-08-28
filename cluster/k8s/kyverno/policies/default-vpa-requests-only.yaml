@@ -30,9 +30,10 @@
 # controller-versus-webhook rewrite loop.
 #
 # The +() anchor adds the annotation only when absent, so it never fights a
-# namespace that sets its own policy — see langfuse, which pins clickhouse to
-# RequestsAndLimits because its limit comes from a chart preset this repo does
-# not own.
+# namespace that sets its own policy. No namespace currently sets one: a
+# workload whose limit comes from a chart preset should declare an explicit
+# resources block instead of opting back in to RequestsAndLimits, which only
+# defers the collapse to whichever dimension the preset is loosest on.
 #
 # Admission-only (background: false), matching default-revision-history-limit:
 # matching UPDATE means existing namespaces pick this up on their next Flux
