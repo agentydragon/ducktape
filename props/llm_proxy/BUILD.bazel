@@ -63,6 +63,9 @@ py_test(
 
 py_test(
     name = "test_budget",
+    # Bounded ~55s of real work (53-58s wall across CI history); small's 60s
+    # limit killed a run mid-teardown with all four tests already passed.
+    size = "medium",
     srcs = ["test_budget.py"],
     requires_docker = True,
     deps = [
