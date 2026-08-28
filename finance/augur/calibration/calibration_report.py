@@ -2,7 +2,7 @@
 
 Usage:
 
-    bb run //finance/augur/calibration:calibration_report -- \\
+    bb run //finance/augur/calibration:calibration_report_bin -- \\
         /path/to/augur/config.yaml \\
         [--preset bayesian_mint_streams] [--rollouts 5000] [--horizon 120]
 

@@ -1,29 +1,29 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 py_library(
-    name = "allocation_sweep_lib",
+    name = "allocation_sweep",
     srcs = ["allocation_sweep.py"],
     deps = [
         "//finance/augur/model:exogenous",
         "//finance/augur/model:series",
         "//finance/augur/model:structural_macro",
-        "//finance/augur/sim:codec",
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim:simulate",
+        "//finance/augur/sim/codec:plan",
         "@pypi//numpy",
         "@pypi//polars",
     ],
 )
 
 py_binary(
-    name = "allocation_sweep",
+    name = "allocation_sweep_bin",
     main_module = "finance.augur.x.allocation_sweep",
-    deps = [":allocation_sweep_lib"],
+    deps = [":allocation_sweep"],
 )
 
 py_library(
-    name = "replay_vs_fitted_lib",
+    name = "replay_vs_fitted",
     srcs = ["replay_vs_fitted.py"],
     deps = [
         "//finance/augur/model:exogenous",
@@ -37,7 +37,7 @@ py_library(
 )
 
 py_binary(
-    name = "replay_vs_fitted",
+    name = "replay_vs_fitted_bin",
     main_module = "finance.augur.x.replay_vs_fitted",
-    deps = [":replay_vs_fitted_lib"],
+    deps = [":replay_vs_fitted"],
 )

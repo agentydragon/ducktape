@@ -192,7 +192,7 @@ py_library(
 )
 
 py_library(
-    name = "sandbox_smoke_lib",
+    name = "sandbox_smoke",
     srcs = ["sandbox_smoke.py"],
     deps = [
         ":client",
@@ -202,7 +202,7 @@ py_library(
 )
 
 py_binary(
-    name = "sandbox_smoke",
+    name = "sandbox_smoke_bin",
     main_module = "finance.plaid.db.sandbox_smoke",
-    deps = [":sandbox_smoke_lib"],
+    deps = [":sandbox_smoke"],
 )

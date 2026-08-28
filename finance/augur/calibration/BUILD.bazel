@@ -109,7 +109,7 @@ py_binary(
     deps = [":ipo_prior"],
 )
 
-py_binary(
+py_library(
     name = "calibration_report",
     srcs = ["calibration_report.py"],
     deps = [
@@ -123,6 +123,12 @@ py_binary(
         "//finance/augur/model:series",
         "@pypi//tabulate",
     ],
+)
+
+py_binary(
+    name = "calibration_report_bin",
+    main_module = "finance.augur.calibration.calibration_report",
+    deps = [":calibration_report"],
 )
 
 py_test(

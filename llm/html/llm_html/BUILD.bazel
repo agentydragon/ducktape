@@ -4,6 +4,7 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 py_library(
     name = "server",
     srcs = ["server.py"],
+    data = ["//llm/html:content_files"],
     deps = [
         ":token_counter",
         ":token_scheme",

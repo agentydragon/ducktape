@@ -1,0 +1,227 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "__init__",
+    srcs = ["__init__.py"],
+    deps = [
+        "//finance/augur:frames",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/sim:enums",
+        "//finance/augur/sim:events",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:output",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "assets",
+    srcs = ["assets.py"],
+    deps = [
+        ":helpers",
+        "//finance/augur:frames",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/sim:enums",
+        "//finance/augur/sim:events",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:output",
+        "//finance/augur/sim/compiler:plan",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "helpers",
+    srcs = ["helpers.py"],
+    deps = [
+        "//finance/augur:frames",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/sim:enums",
+        "//finance/augur/sim:events",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:output",
+        "//finance/augur/sim/compiler:plan",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "liabilities",
+    srcs = ["liabilities.py"],
+    deps = [
+        ":helpers",
+        "//finance/augur:frames",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/sim:enums",
+        "//finance/augur/sim:events",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:output",
+        "//finance/augur/sim/compiler:plan",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "lifecycle",
+    srcs = ["lifecycle.py"],
+    deps = [
+        ":helpers",
+        "//finance/augur:frames",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/sim:enums",
+        "//finance/augur/sim:events",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:output",
+        "//finance/augur/sim/compiler:plan",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "obligations",
+    srcs = ["obligations.py"],
+    deps = [
+        ":helpers",
+        "//finance/augur:frames",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/sim:enums",
+        "//finance/augur/sim:events",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:output",
+        "//finance/augur/sim/compiler:plan",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "plan",
+    srcs = ["plan.py"],
+    deps = [
+        ":assets",
+        ":liabilities",
+        ":lifecycle",
+        ":obligations",
+        ":primary_residence",
+        ":properties",
+        ":tax",
+        ":transfers",
+        "//finance/augur:frames",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/sim:enums",
+        "//finance/augur/sim:events",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:output",
+        "//finance/augur/sim/compiler:plan",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "primary_residence",
+    srcs = ["primary_residence.py"],
+    deps = [
+        ":helpers",
+        "//finance/augur:frames",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/sim:enums",
+        "//finance/augur/sim:events",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:output",
+        "//finance/augur/sim/compiler:plan",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "properties",
+    srcs = ["properties.py"],
+    deps = [
+        ":helpers",
+        "//finance/augur:frames",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/sim:enums",
+        "//finance/augur/sim:events",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:output",
+        "//finance/augur/sim/compiler:plan",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "tax",
+    srcs = ["tax.py"],
+    deps = [
+        ":helpers",
+        "//finance/augur:frames",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/sim:enums",
+        "//finance/augur/sim:events",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:output",
+        "//finance/augur/sim/compiler:plan",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "transfers",
+    srcs = ["transfers.py"],
+    deps = [
+        ":helpers",
+        "//finance/augur:frames",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
+        "//finance/augur/sim:enums",
+        "//finance/augur/sim:events",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:output",
+        "//finance/augur/sim/compiler:plan",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)

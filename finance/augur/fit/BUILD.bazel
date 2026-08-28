@@ -94,10 +94,9 @@ py_library(
     ],
 )
 
-py_binary(
+py_library(
     name = "metrics_report",
     srcs = ["metrics_report.py"],
-    data = ["//finance/augur/api:public_fixture_config"],
     deps = [
         ":data",
         ":metrics",
@@ -108,6 +107,13 @@ py_binary(
         "//finance/augur/model:vecm",
         "//util/bazel:runfiles",
     ],
+)
+
+py_binary(
+    name = "metrics_report_bin",
+    data = ["//finance/augur/api:public_fixture_config"],
+    main_module = "finance.augur.fit.metrics_report",
+    deps = [":metrics_report"],
 )
 
 py_library(
@@ -275,13 +281,19 @@ py_library(
     ],
 )
 
-py_binary(
+py_library(
     name = "fit_mint_streams_report",
     srcs = ["fit_mint_streams_report.py"],
     deps = [
         ":bayes_mint_streams",
         ":private_equity",
     ],
+)
+
+py_binary(
+    name = "fit_mint_streams_report_bin",
+    main_module = "finance.augur.fit.fit_mint_streams_report",
+    deps = [":fit_mint_streams_report"],
 )
 
 py_test(

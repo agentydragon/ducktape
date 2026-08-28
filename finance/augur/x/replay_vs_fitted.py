@@ -12,7 +12,7 @@ out isolates what actually differs — the economy each model believes in.
 
 Runs on a BuildBuddy runner, which has the network this repo's sandboxes do not:
 
-    bbr run //finance/augur/x:replay_vs_fitted
+    bbr run //finance/augur/x:replay_vs_fitted_bin
 """
 
 from __future__ import annotations
