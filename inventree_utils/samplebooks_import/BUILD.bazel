@@ -1,0 +1,24 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+py_library(
+    name = "samplebooks_parts_data",
+    srcs = ["samplebooks_parts_data.py"],
+    # import_samplebooks2 imports its sibling bare (script-style), so the
+    # package directory itself goes on sys.path.
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pint"],
+)
+
+py_library(
+    name = "import_samplebooks2",
+    srcs = ["import_samplebooks2.py"],
+    imports = ["."],
+    visibility = ["//inventree_utils:__pkg__"],
+    deps = [
+        ":samplebooks_parts_data",
+        "@pypi//inventree",
+        "@pypi//pint",
+        "@pypi//tqdm",
+    ],
+)

@@ -1,13 +1,13 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 py_library(
-    name = "generate_test_docs_lib",
+    name = "generate_test_docs",
     srcs = ["generate_test_docs.py"],
     deps = ["//laser/lightburn:lbrn2_writer"],
 )
 
 py_binary(
-    name = "generate_test_docs",
+    name = "generate_test_docs_bin",
     main_module = "laser.lightburn.ground_truth.generate_test_docs",
-    deps = [":generate_test_docs_lib"],
+    deps = [":generate_test_docs"],
 )

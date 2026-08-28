@@ -49,7 +49,7 @@
 # gazelle:resolve py TechDrawGui @pypi//freecad_stubs
 #
 # Non-standard import paths (import name doesn't match directory structure)
-# gazelle:resolve py samplebooks_parts_data //inventree_utils:samplebooks_parts_data
+# gazelle:resolve py samplebooks_parts_data //inventree_utils/samplebooks_import:samplebooks_parts_data
 # haku/shared is a nested Bazel module (bazelignored), so Gazelle cannot index the library
 # that provides this namespace-package import; pin it to the module's label.
 # gazelle:resolve py haku.console.tool_calls @ducktape_haku//haku/console:tool_calls

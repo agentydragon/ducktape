@@ -1,39 +1,76 @@
 """Standalone codebase scanning scripts (stdlib only)."""
 
+load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/python:defs.bzl", "py_binary")
 
-py_binary(
+py_library(
     name = "scan_comments",
     srcs = ["scan_comments.py"],
-    visibility = ["//:__subpackages__"],
 )
 
 py_binary(
+    name = "scan_comments_bin",
+    main_module = "prompts.scans.scan_comments",
+    visibility = ["//:__subpackages__"],
+    deps = [":scan_comments"],
+)
+
+py_library(
     name = "scan_dataclass_candidates",
     srcs = ["scan_dataclass_candidates.py"],
-    visibility = ["//:__subpackages__"],
 )
 
 py_binary(
+    name = "scan_dataclass_candidates_bin",
+    main_module = "prompts.scans.scan_dataclass_candidates",
+    visibility = ["//:__subpackages__"],
+    deps = [":scan_dataclass_candidates"],
+)
+
+py_library(
     name = "scan_error_handling",
     srcs = ["scan_error_handling.py"],
-    visibility = ["//:__subpackages__"],
 )
 
 py_binary(
+    name = "scan_error_handling_bin",
+    main_module = "prompts.scans.scan_error_handling",
+    visibility = ["//:__subpackages__"],
+    deps = [":scan_error_handling"],
+)
+
+py_library(
     name = "scan_manual_serde",
     srcs = ["scan_manual_serde.py"],
-    visibility = ["//:__subpackages__"],
 )
 
 py_binary(
+    name = "scan_manual_serde_bin",
+    main_module = "prompts.scans.scan_manual_serde",
+    visibility = ["//:__subpackages__"],
+    deps = [":scan_manual_serde"],
+)
+
+py_library(
     name = "scan_single_line_functions",
     srcs = ["scan_single_line_functions.py"],
-    visibility = ["//:__subpackages__"],
 )
 
 py_binary(
+    name = "scan_single_line_functions_bin",
+    main_module = "prompts.scans.scan_single_line_functions",
+    visibility = ["//:__subpackages__"],
+    deps = [":scan_single_line_functions"],
+)
+
+py_library(
     name = "scan_string_literals",
     srcs = ["scan_string_literals.py"],
+)
+
+py_binary(
+    name = "scan_string_literals_bin",
+    main_module = "prompts.scans.scan_string_literals",
     visibility = ["//:__subpackages__"],
+    deps = [":scan_string_literals"],
 )

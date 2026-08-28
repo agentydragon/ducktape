@@ -7,7 +7,7 @@ SVG QR codes for places around the house.
 Requires Bebas Neue installed as a system font (via home-manager on wyrm2).
 
 ```bash
-bazel run //qr_codes:gen -- \
+bazel run //qr_codes:gen_bin -- \
   --text 'TEXT_TO_ENCODE' \
   --caption 'Caption below code' \
   --output path/to/output.svg

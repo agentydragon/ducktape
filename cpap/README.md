@@ -66,7 +66,7 @@ a `cpap-data-reader` read-only collaborator, and two Secrets in the
 
 ```bash
 kubectl -n cpap-sync get secret cpap-data-git-write -o jsonpath='{.data.username}' | base64 -d  # etc.
-GIT_USERNAME=cpap-data GIT_PASSWORD=... bazelisk run //cpap:sync -- \
+GIT_USERNAME=cpap-data GIT_PASSWORD=... bazelisk run //cpap:sync_bin -- \
   --git-url https://git.allegedly.works/cpap-data/cpap-data.git \
   --wifi-interface ''   # '' = already on the card's WiFi; otherwise CPAP_WIFI_PASSWORD is required
 ```

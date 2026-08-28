@@ -1,7 +1,7 @@
 """Dev tool: dump all MCP tool definitions to stdout as JSON.
 
 Usage:
-    bb run //grocy_mcp:dump_tools
+    bb run //grocy_mcp:dump_tools_bin
 """
 
 from __future__ import annotations

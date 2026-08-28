@@ -48,14 +48,19 @@ py_library(
     ],
 )
 
-py_binary(
+py_library(
     name = "cli",
     srcs = ["cli.py"],
-    main_module = "grocy_mcp.eval.cli",
     deps = [
         ":cases",
         ":result_types",
         ":run",
         "//grocy_mcp:grocy_container",
     ],
+)
+
+py_binary(
+    name = "cli_bin",
+    main_module = "grocy_mcp.eval.cli",
+    deps = [":cli"],
 )

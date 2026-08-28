@@ -1,7 +1,7 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 py_library(
-    name = "gen_lib",
+    name = "gen",
     srcs = ["gen.py"],
     deps = [
         "@pypi//fonttools",
@@ -11,7 +11,7 @@ py_library(
 )
 
 py_binary(
-    name = "gen",
+    name = "gen_bin",
     main_module = "qr_codes.gen",
-    deps = [":gen_lib"],
+    deps = [":gen"],
 )
