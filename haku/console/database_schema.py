@@ -31,7 +31,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from haku.console.chat_models import ChannelSurface, ItemStatus, ItemType, ToolOutcome
+from haku.console.chat_models import ChannelSurface
 from haku.console.conversation.conversation_event import (
     AuthoredEventKind,
     ConversationEventKind,
@@ -40,6 +40,7 @@ from haku.console.conversation.conversation_event import (
     StoredEventKind,
     TurnOutcome,
 )
+from haku.console.conversation.item_vocabulary import ItemStatus, ItemType, ToolOutcome
 from haku.console.conversation.prompt_origin import PromptOrigin
 from haku.console.grants.envelope import GrantEnvelopeColumns, grant_envelope_table_args
 from haku.console.grants.http.models import HttpMethod, HttpMethods, HttpScheme

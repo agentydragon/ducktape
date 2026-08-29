@@ -8,9 +8,9 @@ from uuid import uuid4
 
 import pytest_bazel
 
-from haku.console.chat_models import ToolOutcome
 from haku.console.conversation.conversation_event import FrameRange
 from haku.console.conversation.item_reads import ToolCallItem
+from haku.console.conversation.item_vocabulary import ToolOutcome
 from haku.console.conversation.prompt_origin import SPA_ORIGIN
 from haku.console.database_schema import SessionFrame
 from haku.console.harnesses.kind import HarnessKind

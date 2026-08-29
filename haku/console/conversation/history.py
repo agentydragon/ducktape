@@ -13,7 +13,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import ItemStatus, ItemType
+from haku.console.conversation.item_vocabulary import ItemStatus, ItemType
 from haku.console.database_schema import ConversationItem, Session
 
 

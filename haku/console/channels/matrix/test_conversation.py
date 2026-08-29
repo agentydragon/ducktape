@@ -27,11 +27,11 @@ from haku.console.channels.matrix.conversation import (
     Turns,
 )
 from haku.console.channels.matrix.ingress_ledger import IngressLedger
-from haku.console.chat_models import ItemType
 from haku.console.conftest import console_sessions
 from haku.console.conversation import conversation_event
 from haku.console.conversation.conversation_event import ConversationEventKind, FrameRange, PromptRejection
 from haku.console.conversation.history import ConversationHistory
+from haku.console.conversation.item_vocabulary import ItemType
 from haku.console.conversation.prompt_origin import SPA_ORIGIN, MatrixOrigin
 from haku.console.database_schema import Conversation, ConversationEventRow, ConversationItem, Session, SubmittedPrompt
 from haku.console.harnesses.kind import HarnessKind

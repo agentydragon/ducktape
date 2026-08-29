@@ -46,7 +46,7 @@ from haku.console.channels.matrix.client import EventTag, RoomEventKind
 from haku.console.channels.matrix.conversation import RoomAttachment
 from haku.console.channels.matrix.outbox_wake import OutboxWakes, notify_outbox
 from haku.console.channels.matrix.pacer import MAX_QUEUED_SENDS, SENDS_PER_SECOND, RoomPacer
-from haku.console.chat_models import ItemStatus, ItemType
+from haku.console.conversation.item_vocabulary import ItemStatus, ItemType
 from haku.console.database_schema import ConversationItem, MatrixOutbox
 
 logger = logging.getLogger(__name__)

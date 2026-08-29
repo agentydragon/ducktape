@@ -22,7 +22,6 @@ from sqlalchemy import select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from haku.console.chat_models import ItemStatus, ItemType, ToolOutcome
 from haku.console.conversation.conversation_event import (
     AuthoredEventKind,
     ConversationEventKind,
@@ -36,6 +35,7 @@ from haku.console.conversation.conversation_event import (
     TurnOutcome,
 )
 from haku.console.conversation.item_reads import FromFrames, MessageItem, PromptItem, ToolCallItem, item_of
+from haku.console.conversation.item_vocabulary import ItemStatus, ItemType, ToolOutcome
 from haku.console.conversation.prompt_origin import SPA_ORIGIN, MatrixOrigin, PromptOriginKind, SpaOrigin
 from haku.console.conversation.reads import FrameRecord, HarnessFrameRecord, SessionCursor, TurnCursor
 from haku.console.conversation_read_access import ConversationAccessDeniedError, ProfileScopedReads, UnrestrictedReads

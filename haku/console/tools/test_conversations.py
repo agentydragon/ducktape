@@ -12,9 +12,9 @@ from fastmcp import Client
 from fastmcp.client.client import CallToolResult
 from more_itertools import one
 
-from haku.console.chat_models import ItemStatus
 from haku.console.conversation.conversation_event import TurnAnswered
 from haku.console.conversation.item_reads import FromFrames, Item, MessageItem
+from haku.console.conversation.item_vocabulary import ItemStatus
 from haku.console.conversation.reads import (
     ChannelAttachment,
     FrameRecord,

@@ -129,7 +129,6 @@ py_test(
     deps = [
         ":conversations",
         "//:conftest",
-        "//haku/console:chat_models",
         "//haku/console:conftest",
         "//haku/console:conversation_read_access",
         "//haku/console:in_process_server_access",
@@ -138,6 +137,7 @@ py_test(
         "//haku/console:tool_call_actor",
         "//haku/console/conversation:conversation_event",
         "//haku/console/conversation:item_reads",
+        "//haku/console/conversation:item_vocabulary",
         "//haku/console/conversation:reads",
         "//haku/console/grants:principal",
         "//haku/console/harnesses:kind",

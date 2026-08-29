@@ -49,8 +49,8 @@ py_library(
     name = "conversation_events",
     srcs = ["conversation_events.py"],
     deps = [
-        "//haku/console:chat_models",
         "//haku/console/conversation:conversation_event",
+        "//haku/console/conversation:item_vocabulary",
         "@pypi//pydantic",
     ],
 )

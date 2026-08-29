@@ -25,8 +25,8 @@ from haku.console.channels.matrix.conversation import ConversationStore, RoomAtt
 from haku.console.channels.matrix.outbox import MAX_SEND_ATTEMPTS, PendingReply, RoomOutbox, RoomOutboxDrain
 from haku.console.channels.matrix.outbox_wake import OutboxWakes
 from haku.console.channels.matrix.pacer import RoomPacer
-from haku.console.chat_models import ItemStatus, ItemType
 from haku.console.conversation.conversation_event import FrameRange
+from haku.console.conversation.item_vocabulary import ItemStatus, ItemType
 from haku.console.conversation.prompt_origin import SPA_ORIGIN
 from haku.console.database_schema import ConversationItem, MatrixOutbox
 from haku.console.session.store import BridgeAuthentication, Store

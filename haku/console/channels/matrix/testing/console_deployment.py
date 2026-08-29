@@ -22,7 +22,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import ItemType
+from haku.console.conversation.item_vocabulary import ItemType
 from haku.console.conversation_read_access import UnrestrictedReads
 from haku.console.database_schema import ConversationItem, MatrixSyncWatermark, Session, SubmittedPrompt
 from haku.console.session.status import SessionStatus

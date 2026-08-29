@@ -29,7 +29,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, TypeAdapter
 
-from haku.console.chat_models import ItemStatus, ItemType, ToolOutcome
 from haku.console.conversation.conversation_event import (
     ReasoningDisclosure,
     TurnAborted,
@@ -38,6 +37,7 @@ from haku.console.conversation.conversation_event import (
     TurnFailed,
     TurnOutcome,
 )
+from haku.console.conversation.item_vocabulary import ItemStatus, ItemType, ToolOutcome
 from haku.console.conversation.prompt_origin import PromptOrigin, PromptOriginKind
 from haku.console.database_schema import ConversationItem, ConversationTurn
 
