@@ -7,7 +7,7 @@ from more_itertools import one
 from pydantic import SecretStr
 
 from haku.console.channels.matrix.config import load_adapter_config
-from haku.console.channels.matrix.worker import AdapterSettings
+from haku.console.channels.matrix.worker import AdapterSettings, _launch_wiring
 from haku.console.config import ClaudeCodeImplementationConfig, OperatorIdentityConfig, OperatorOidcConfig, Settings
 from haku.console.indexer import ChunkSettings, EmbedSettings, IndexerRole
 from haku.console.indexer_config import IndexerConfigFile, load_indexer_config
@@ -290,6 +290,10 @@ def test_deployed_config_reads_identically_for_console_and_matrix_adapter() -> N
         agent.agent_id: agent.access_profile_id for agent in console.static_agents
     }
     assert adapter.default_chat_agent_id == console.default_chat_agent_id
+    assert adapter.matrix is not None
+    launch = _launch_wiring(adapter)
+    assert launch is not None
+    assert launch.harness_kind is adapter.matrix.default_harness_kind
     assert console.harnesses is not None
     assert adapter.harnesses is not None
     assert adapter.harnesses.claude_code is not None
@@ -298,6 +302,14 @@ def test_deployed_config_reads_identically_for_console_and_matrix_adapter() -> N
     if console.harnesses.codex_app_server is not None:
         assert adapter.harnesses.codex_app_server is not None
         assert adapter.harnesses.codex_app_server.agent_id == console.harnesses.codex_app_server.agent_id
+
+
+def test_matrix_creation_route_does_not_fall_back_when_unconfigured() -> None:
+    config_path = get_required_path("ducktape/cluster/k8s/haku/console/config.yaml")
+    adapter = load_adapter_config(config_path)
+
+    with pytest.raises(ValueError, match=r"matrix\.default_harness_kind"):
+        _launch_wiring(adapter.model_copy(update={"matrix": None}))
 
 
 if __name__ == "__main__":

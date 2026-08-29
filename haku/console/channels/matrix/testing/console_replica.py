@@ -191,7 +191,7 @@ async def _serve() -> None:
         )
     )
     store = Store(sessions, adoption_grace=_seconds("HAKU_E2E_ADOPTION_GRACE_SECONDS"))
-    conversations = ConversationStore(sessions, harness_kind=runtime.kind)
+    conversations = ConversationStore(sessions)
     ledger = IngressLedger(sessions)
     identities = PostgresOperatorIdentityStore(
         sessions, OperatorIdentityTrust(trust_domain=TRUST_DOMAIN, trusted_issuers=frozenset({TRUSTED_ISSUER}))
@@ -211,6 +211,7 @@ async def _serve() -> None:
         sessions,
         ConversationStream(sessions),
         conversation_wakes,
+        new_conversation_harness_kind=runtime.kind,
         armed=Path(_environment("HAKU_E2E_REFUSE_NEXT_REPLY")),
     )
     service = SessionService(runtimes, store, session_wakes, conversation_history=ConversationHistory(sessions))

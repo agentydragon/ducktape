@@ -880,6 +880,10 @@ launchable_agents:
   - agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e
     system_prompt_template: /etc/haku-console/config/public_coder_system_prompt.md.j2
 default_chat_agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
+# Matrix invites/messages have no harness selector. This explicit route applies only when the
+# adapter creates a conversation for a new room; existing conversations retain their own kind.
+matrix:
+  default_harness_kind: claude_code
 operator_connection_providers:
   google_mail:
     kind: google

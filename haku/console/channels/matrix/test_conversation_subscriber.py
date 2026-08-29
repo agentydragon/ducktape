@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.channels.matrix.client import ConversationEventSource, ProjectedEvent, RoomEventKind
-from haku.console.channels.matrix.conftest import MATRIX_ROOM
+from haku.console.channels.matrix.conftest import MATRIX_ROOM, MATRIX_TEST_HARNESS_KIND
 from haku.console.channels.matrix.conversation import ConversationStore, RoomAttachment
 from haku.console.channels.matrix.conversation_subscriber import (
     ABORTED_BY_OPERATOR,
@@ -130,7 +130,7 @@ def clock() -> Clock:
 @pytest.fixture
 async def binding(conversations: ConversationStore, operator_id: UUID) -> RoomAttachment:
     """The room's live binding, which is what a subscriber is constructed for."""
-    return await conversations.bind_room(MATRIX_ROOM, operator_id)
+    return await conversations.bind_room(MATRIX_ROOM, operator_id, harness_kind=MATRIX_TEST_HARNESS_KIND)
 
 
 @pytest.fixture
@@ -600,7 +600,9 @@ async def test_a_sibling_rooms_subscriber_reads_only_its_own_conversation(
 ) -> None:
     """Attachment-scoped reconciliation: each room's subscriber folds its own conversation off its
     own cursor, so a fact recorded on one thread reaches only that thread's room."""
-    sibling_binding = await conversations.bind_room("!second:allegedly.works", operator_id)
+    sibling_binding = await conversations.bind_room(
+        "!second:allegedly.works", operator_id, harness_kind=MATRIX_TEST_HARNESS_KIND
+    )
     sibling_room = Room("!second:allegedly.works")
     sibling = ConversationSubscriber(
         migrated_sessions,

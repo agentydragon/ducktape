@@ -17,7 +17,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.console.channels.matrix.client import InboundMessage, UnmappableEvent
-from haku.console.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM
+from haku.console.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_TEST_HARNESS_KIND
 from haku.console.channels.matrix.conversation import (
     ConversationFacts,
     ConversationStore,
@@ -91,10 +91,8 @@ async def test_first_matrix_bind_pins_complete_identity_with_production_authoriz
         calls.append(db.in_transaction())
         return await production(db, operator_id, agent_id, harness_kind, expected_profile_id=expected_profile_id)
 
-    conversations = ConversationStore(
-        migrated_sessions, launch_authorizer=authorize, default_agent_id=agent_id, harness_kind=HarnessKind.CLAUDE_CODE
-    )
-    bound = await conversations.bind_room(MATRIX_ROOM, operator_id)
+    conversations = ConversationStore(migrated_sessions, launch_authorizer=authorize, default_agent_id=agent_id)
+    bound = await conversations.bind_room(MATRIX_ROOM, operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
 
     async with migrated_sessions() as db:
         conversation = await db.get(Conversation, bound.conversation_id)
@@ -108,6 +106,13 @@ async def test_first_matrix_bind_pins_complete_identity_with_production_authoriz
     assert calls == [True]
 
 
+async def test_new_matrix_bind_requires_an_explicit_harness_kind(migrated_sessions, operator_id) -> None:
+    conversations = ConversationStore(migrated_sessions)
+
+    with pytest.raises(RuntimeError, match="Matrix harness kind is not configured"):
+        await conversations.bind_room(MATRIX_ROOM, operator_id, harness_kind=None)
+
+
 @pytest.fixture
 def transcript(migrated_sessions) -> ConversationHistory:
     return ConversationHistory(migrated_sessions)
@@ -116,7 +121,7 @@ def transcript(migrated_sessions) -> ConversationHistory:
 @pytest.fixture
 async def binding(conversations: ConversationStore, operator_id: UUID) -> RoomAttachment:
     """The room's live binding, made the way an invite makes it."""
-    return await conversations.bind_room(MATRIX_ROOM, operator_id)
+    return await conversations.bind_room(MATRIX_ROOM, operator_id, harness_kind=MATRIX_TEST_HARNESS_KIND)
 
 
 @pytest.fixture
@@ -127,7 +132,9 @@ def thread(binding: RoomAttachment) -> UUID:
 
 async def another_thread(conversations: ConversationStore, operator_id: UUID) -> UUID:
     """A second conversation, bound the way a second invited room binds one."""
-    return (await conversations.bind_room("!second:allegedly.works", operator_id)).conversation_id
+    return (
+        await conversations.bind_room("!second:allegedly.works", operator_id, harness_kind=MATRIX_TEST_HARNESS_KIND)
+    ).conversation_id
 
 
 async def serving_session(session_store: Store, operator_id: UUID, conversation_id: UUID) -> UUID:
@@ -301,15 +308,26 @@ def turns(session_store: Store, migrated_identity_store, ledger: IngressLedger) 
 
 
 async def test_each_room_binds_its_own_conversation(
-    conversations: ConversationStore, operator_id: UUID, binding: RoomAttachment
+    conversations: ConversationStore, operator_id: UUID, binding: RoomAttachment, migrated_sessions
 ) -> None:
     """One bot serves many rooms: a second room binds beside the first, and re-binding a room is
-    idempotent rather than a refusal."""
-    second = await conversations.bind_room("!second:allegedly.works", operator_id)
+    idempotent rather than a refusal. The store does not impose one harness on both conversations.
+    """
+    second = await conversations.bind_room(
+        "!second:allegedly.works", operator_id, harness_kind=HarnessKind.CODEX_APP_SERVER
+    )
 
     assert second.conversation_id != binding.conversation_id
-    assert await conversations.bind_room(MATRIX_ROOM, operator_id) == binding
+    assert await conversations.bind_room(MATRIX_ROOM, operator_id, harness_kind=MATRIX_TEST_HARNESS_KIND) == binding
     assert await conversations.live_attachments() == (binding, second)
+
+    async with migrated_sessions() as db:
+        first_row = await db.get(Conversation, binding.conversation_id)
+        second_row = await db.get(Conversation, second.conversation_id)
+    assert first_row is not None
+    assert first_row.harness_kind is HarnessKind.CLAUDE_CODE
+    assert second_row is not None
+    assert second_row.harness_kind is HarnessKind.CODEX_APP_SERVER
 
 
 def operator_message(body: str, *, event_id: str, at: int) -> InboundMessage:

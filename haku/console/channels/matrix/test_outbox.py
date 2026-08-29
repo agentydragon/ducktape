@@ -20,7 +20,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.channels.matrix.client import Error
-from haku.console.channels.matrix.conftest import MATRIX_ROOM
+from haku.console.channels.matrix.conftest import MATRIX_ROOM, MATRIX_TEST_HARNESS_KIND
 from haku.console.channels.matrix.conversation import ConversationStore, RoomAttachment
 from haku.console.channels.matrix.outbox import MAX_SEND_ATTEMPTS, PendingReply, RoomOutbox, RoomOutboxDrain
 from haku.console.channels.matrix.outbox_wake import OutboxWakes
@@ -41,7 +41,7 @@ def outbox(migrated_sessions: async_sessionmaker[AsyncSession]) -> RoomOutbox:
 @pytest.fixture
 async def binding(conversations: ConversationStore, operator_id: UUID) -> RoomAttachment:
     """The room's live binding, whose attachment is what a sent reply is recorded against."""
-    return await conversations.bind_room(MATRIX_ROOM, operator_id)
+    return await conversations.bind_room(MATRIX_ROOM, operator_id, harness_kind=MATRIX_TEST_HARNESS_KIND)
 
 
 @pytest.fixture

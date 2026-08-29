@@ -161,12 +161,13 @@ def _launch_wiring(config: AdapterConfigFile) -> LaunchWiring | None:
     """The launch-identity wiring a first bind stamps, from the shared registry.
 
     Mirrors the console's own composition (`app.create_app`): the registered Agent/harness pairs
-    come from the configured harnesses, the profile gates from `access_profiles`, and the default
-    selection is valid only when the default Agent has exactly one admitted harness. None where no
-    harness is configured — a bind then fails closed because the final conversation schema requires
-    an explicit harness identity.
+    come from the configured harnesses, the profile gates from `access_profiles`, and the Matrix
+    creation route from `matrix.default_harness_kind`. None where no harness is configured — a bind
+    then fails closed because the final conversation schema requires an explicit harness identity.
     """
     if config.harnesses is None:
+        if config.matrix is not None:
+            raise ValueError("matrix.default_harness_kind requires configured harnesses")
         return None
     registered = {
         HarnessKey(entry.agent_id, kind)
@@ -177,9 +178,13 @@ def _launch_wiring(config: AdapterConfigFile) -> LaunchWiring | None:
         if entry is not None
     }
     if not registered:
+        if config.matrix is not None:
+            raise ValueError("matrix.default_harness_kind requires configured harnesses")
         return None
     if config.default_chat_agent_id is None:
         raise ValueError("harnesses are configured but default_chat_agent_id is not")
+    if config.matrix is None:
+        raise ValueError("harnesses are configured but matrix.default_harness_kind is not")
     static_by_id = {agent.agent_id: agent for agent in config.static_agents}
     profile_harness_kinds = {profile.id: profile.allowed_harnesses for profile in config.access_profiles}
     authorizer = ChatLaunchAuthorizer(
@@ -189,15 +194,12 @@ def _launch_wiring(config: AdapterConfigFile) -> LaunchWiring | None:
         profile_harness_kinds=profile_harness_kinds,
     )
     default_profile_id = static_by_id[config.default_chat_agent_id].access_profile_id
-    selected_harnesses = {
-        identity.harness_kind
-        for identity in registered
-        if identity.agent_id == config.default_chat_agent_id
-        and identity.harness_kind in profile_harness_kinds[default_profile_id]
-    }
-    if len(selected_harnesses) != 1:
-        raise ValueError("default chat Agent must select exactly one configured harness")
-    return LaunchWiring(authorizer, config.default_chat_agent_id, next(iter(selected_harnesses)))
+    selected_harness_kind = config.matrix.default_harness_kind
+    if HarnessKey(config.default_chat_agent_id, selected_harness_kind) not in registered:
+        raise ValueError("matrix.default_harness_kind is not registered for default_chat_agent_id")
+    if selected_harness_kind not in profile_harness_kinds[default_profile_id]:
+        raise ValueError("matrix.default_harness_kind is not allowed by the default Agent profile")
+    return LaunchWiring(authorizer, config.default_chat_agent_id, selected_harness_kind)
 
 
 async def async_main(settings: AdapterSettings) -> None:
@@ -209,9 +211,7 @@ async def async_main(settings: AdapterSettings) -> None:
         launch = _launch_wiring(load_adapter_config(settings.config_file))
         conversations = ConversationStore(sessions)
         if launch is not None:
-            conversations.configure_launch_identity(
-                launch.authorizer, default_agent_id=launch.default_agent_id, harness_kind=launch.harness_kind
-            )
+            conversations.configure_launch_identity(launch.authorizer, default_agent_id=launch.default_agent_id)
         identities = PostgresOperatorIdentityStore(
             sessions,
             # The worker never verifies OIDC principals, so it trusts no issuer; it only resolves
@@ -235,6 +235,7 @@ async def async_main(settings: AdapterSettings) -> None:
             sessions,
             ConversationStream(sessions),
             conversation_wakes,
+            new_conversation_harness_kind=None if launch is None else launch.harness_kind,
         )
         await conversation_wakes.start()
         stopping = asyncio.Event()

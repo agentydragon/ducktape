@@ -29,7 +29,13 @@ from haku.console.channels.matrix.client import (
     SyncResult,
     UnmappableEvent,
 )
-from haku.console.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
+from haku.console.channels.matrix.conftest import (
+    MATRIX_CONFIG,
+    MATRIX_OPERATOR,
+    MATRIX_ROOM,
+    MATRIX_TEST_HARNESS_KIND,
+    MATRIX_USER,
+)
 from haku.console.channels.matrix.conversation import (
     Admission,
     ConversationFacts,
@@ -187,6 +193,7 @@ def _replica(sync_store, conversations, identities, turns, matrix, migrated_sess
         stream=ConversationStream(migrated_sessions),
         # Consumed only by the reconcilers' subscribers, which these single-pass tests never start.
         notifications=cast(Any, None),
+        new_conversation_harness_kind=MATRIX_TEST_HARNESS_KIND,
     )
     service._client = cast(Any, matrix)
     service.pacers = RoomPacers(sends_per_second=1e6, burst=1_000)
@@ -212,7 +219,7 @@ async def bound_room(conversations: ConversationStore, operator_id: UUID) -> str
 
     Binding is what attaches it, so this is also the row the status line's own event id hangs off.
     """
-    return (await conversations.bind_room(MATRIX_ROOM, operator_id)).room_id
+    return (await conversations.bind_room(MATRIX_ROOM, operator_id, harness_kind=MATRIX_TEST_HARNESS_KIND)).room_id
 
 
 async def watermark(store: SyncStore) -> str | None:
@@ -559,7 +566,9 @@ async def test_each_rooms_messages_are_offered_to_its_own_conversation(
 ):
     """The dispatch itself: one batch carrying two rooms' messages becomes one offer per room, each
     against the conversation its attachment names, in the order the rooms appear in the batch."""
-    other = (await conversations.bind_room("!other:allegedly.works", operator_id)).room_id
+    other = (
+        await conversations.bind_room("!other:allegedly.works", operator_id, harness_kind=MATRIX_TEST_HARNESS_KIND)
+    ).room_id
     matrix.result = SyncResult(
         "s2",
         (
@@ -897,7 +906,7 @@ def _projected(
 @pytest.fixture
 async def attached(conversations: ConversationStore, operator_id: UUID, bound_room: str) -> tuple[UUID, UUID]:
     """The bound room's conversation and attachment, which its own events' tags name."""
-    binding = await conversations.bind_room(bound_room, operator_id)
+    binding = await conversations.bind_room(bound_room, operator_id, harness_kind=MATRIX_TEST_HARNESS_KIND)
     return binding.conversation_id, binding.attachment_id
 
 

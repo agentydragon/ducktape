@@ -29,6 +29,7 @@ from haku.console.session.conftest import OPERATOR_SUBJECT, conversation_wakes, 
 MATRIX_USER = "@haku:allegedly.works"
 MATRIX_OPERATOR = "@rai:allegedly.works"
 MATRIX_ROOM = "!room:allegedly.works"
+MATRIX_TEST_HARNESS_KIND = HarnessKind.CLAUDE_CODE
 
 MATRIX_CONFIG = Config(
     homeserver="https://matrix.allegedly.works",
@@ -41,7 +42,7 @@ MATRIX_CONFIG = Config(
 
 @pytest.fixture
 def conversations(migrated_sessions: async_sessionmaker[AsyncSession]) -> ConversationStore:
-    return ConversationStore(migrated_sessions, harness_kind=HarnessKind.CLAUDE_CODE)
+    return ConversationStore(migrated_sessions)
 
 
 @pytest.fixture

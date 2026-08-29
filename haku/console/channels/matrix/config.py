@@ -2,7 +2,8 @@
 
 Two halves, one binary. `Config` is the channel's own env-driven wiring (homeserver, identities,
 the bot credential). `AdapterConfigFile` is the worker's narrow read of the deploy-owned console
-config file — only the launch-identity registry a room bind consults. The console-only siblings
+config file — the launch-identity registry and explicit Matrix room-creation route a room bind
+consults. The console-only siblings
 (MCP catalog, policies, recall indexes) are deliberately unmodeled and unvalidated here: the worker
 must start without them and must not fail when their vocabularies move ahead of this image (one
 binary, one config — <../../docs/naming_and_layout.md> §5).
@@ -80,12 +81,21 @@ class Harnesses(BaseModel):
     codex_app_server: HarnessEntry | None = None
 
 
+class MatrixLaunchConfig(BaseModel):
+    """The Matrix-only launch route for rooms that do not carry a harness selector."""
+
+    default_harness_kind: HarnessKind
+
+
 class AdapterConfigFile(BaseModel):
     harnesses: Harnesses | None = None
     access_profiles: tuple[ConfiguredProfile, ...] = ()
     static_agents: tuple[ConfiguredAgent, ...] = ()
     launchable_agents: tuple[LaunchableEntry, ...] = ()
     default_chat_agent_id: UUID | None = None
+    # Matrix invites and messages carry no harness selector. This is the explicit harness route
+    # for a *new* Matrix conversation only; an existing room follows its conversation's own row.
+    matrix: MatrixLaunchConfig | None = None
 
     @model_validator(mode="before")
     @classmethod

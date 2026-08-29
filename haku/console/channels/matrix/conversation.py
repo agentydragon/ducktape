@@ -104,20 +104,15 @@ class ConversationStore:
         *,
         launch_authorizer: LaunchAuthorizer | None = None,
         default_agent_id: UUID | None = None,
-        harness_kind: HarnessKind | None = None,
     ):
         self._sessions = sessions
         self._launch_authorizer = launch_authorizer
         self._default_agent_id = default_agent_id
-        self._harness_kind = harness_kind
 
-    def configure_launch_identity(
-        self, authorizer: LaunchAuthorizer, *, default_agent_id: UUID, harness_kind: HarnessKind
-    ) -> None:
+    def configure_launch_identity(self, authorizer: LaunchAuthorizer, *, default_agent_id: UUID) -> None:
         """Configure production first-bind identity selection after app composition."""
         self._launch_authorizer = authorizer
         self._default_agent_id = default_agent_id
-        self._harness_kind = harness_kind
 
     async def attachment(self, room_id: str) -> UUID | None:
         async with self._sessions() as db:
@@ -147,8 +142,12 @@ class ConversationStore:
                 for row in rows
             )
 
-    async def bind_room(self, room_id: str, operator_id: UUID) -> RoomAttachment:
+    async def bind_room(self, room_id: str, operator_id: UUID, *, harness_kind: HarnessKind | None) -> RoomAttachment:
         """Attach `room_id`, opening the conversation it holds a copy of; idempotent per room.
+
+        Matrix has no harness selector on an invite or message, so callers must supply the
+        creation-time route explicitly. The value is ignored for an already-bound room and is
+        never retained on this store.
 
         A room already live keeps its binding; a new room binds beside the existing ones, because
         one bot serves many rooms and each room is its own conversation. Binding opens the
@@ -170,16 +169,14 @@ class ConversationStore:
                 return live
             now = datetime.datetime.now(datetime.UTC)
             identity: LaunchIdentity | None = None
+            if harness_kind is None:
+                raise RuntimeError("Matrix harness kind is not configured")
             if self._launch_authorizer is not None:
                 if self._default_agent_id is None:
                     raise RuntimeError("Matrix launch identity is not configured")
-                if self._harness_kind is None:
-                    raise RuntimeError("Matrix harness kind is not configured")
-                identity = await self._launch_authorizer(db, operator_id, self._default_agent_id, self._harness_kind)
-            if identity is None and self._harness_kind is None:
-                raise RuntimeError("Matrix harness kind is not configured")
+                identity = await self._launch_authorizer(db, operator_id, self._default_agent_id, harness_kind)
             conversation_id = uuid4()
-            selected_harness_kind = self._harness_kind if identity is None else identity.harness_kind
+            selected_harness_kind = harness_kind if identity is None else identity.harness_kind
             db.add(
                 Conversation(
                     conversation_id=conversation_id,
