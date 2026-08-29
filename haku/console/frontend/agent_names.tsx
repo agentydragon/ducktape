@@ -4,8 +4,14 @@ import { listAgents } from "./client";
 
 export type AgentNames = ReadonlyMap<string, string>;
 
+export type AgentIdentity = Readonly<{
+  agentId: string;
+  displayName: string;
+}>;
+
 const EMPTY_AGENT_NAMES: AgentNames = new Map();
 const AgentNamesContext = createContext<AgentNames>(EMPTY_AGENT_NAMES);
+const ToolCallAgentContext = createContext<AgentIdentity | null>(null);
 
 /** Load the operator's Agent names once for tool-call argument previews. */
 export function AgentNamesProvider({
@@ -44,4 +50,22 @@ export function AgentName({ agentId, displayName }: { agentId: string; displayNa
   const names = useContext(AgentNamesContext);
   const name = displayName ?? names.get(agentId) ?? "Unknown";
   return <span title={`Agent UUID: ${agentId}`}>{name}</span>;
+}
+
+/** Make the trusted Agent caller available to tool result widgets without changing their wire data. */
+export function ToolCallAgentProvider({
+  agentId,
+  displayName,
+  children,
+}: {
+  agentId: string | null;
+  displayName: string;
+  children: ReactNode;
+}): JSX.Element {
+  const identity = agentId === null ? null : { agentId, displayName };
+  return <ToolCallAgentContext.Provider value={identity}>{children}</ToolCallAgentContext.Provider>;
+}
+
+export function useToolCallAgent(): AgentIdentity | null {
+  return useContext(ToolCallAgentContext);
 }

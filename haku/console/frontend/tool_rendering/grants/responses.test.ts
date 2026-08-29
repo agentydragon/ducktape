@@ -37,11 +37,19 @@ const HTTP_VIEW = {
   },
 };
 
+const SESSION_VIEW = {
+  domain: "kubernetes" as const,
+  grant: {
+    ...KUBERNETES_VIEW.grant,
+    principal: { kind: "session" as const, session_id: "30000000-0000-4000-8000-000000000006" },
+  },
+};
+
 describe("grantsResultPreviews", () => {
   it("renders kubernetes and http domain results in both variants", () => {
     for (const variant of ["compact", "detailed"] as const) {
       expect(
-        renderResultPreview(grantsResultPreviews.create_grant, [KUBERNETES_VIEW, HTTP_VIEW], variant)
+        renderResultPreview(grantsResultPreviews.create_grant, [KUBERNETES_VIEW, HTTP_VIEW, SESSION_VIEW], variant)
       ).not.toBeNull();
       expect(renderResultPreview(grantsResultPreviews.revoke_grants, [KUBERNETES_VIEW], variant)).not.toBeNull();
     }

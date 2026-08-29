@@ -2,8 +2,8 @@ import { Group, Stack } from "@mantine/core";
 import type { z } from "zod";
 
 import { formatTimestamp } from "../../approval_state";
-import { AgentName } from "../../agent_names";
 import { Field } from "../../field";
+import { GrantPrincipalLabel } from "../../grant_principal";
 import { mcpToolResultSchema, type McpToolResultFor } from "../../mcp_tool_result_schema";
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry";
 import { GRANTS_SERVER_ID } from "../server_ids";
@@ -28,7 +28,6 @@ const zRevokeGrantsResult: z.ZodType<McpToolResultFor<typeof GRANTS_SERVER_ID, "
 );
 
 type GrantView = McpToolResultFor<typeof GRANTS_SERVER_ID, "revoke_grants">[number];
-type GrantPrincipal = GrantView["grant"]["principal"];
 
 function statusColor(status: string): string {
   switch (status) {
@@ -50,25 +49,6 @@ function Timestamp({ label, value }: { label: string; value: string }) {
       <span title={timestamp.title}>{timestamp.text}</span>
     </Field>
   );
-}
-
-export function PrincipalLabel({
-  principal,
-  agentDisplayName,
-}: {
-  principal: GrantPrincipal;
-  agentDisplayName?: string;
-}): JSX.Element {
-  switch (principal.kind) {
-    case "agent":
-      return (
-        <>
-          Agent <AgentName agentId={principal.agent_id} displayName={agentDisplayName} />
-        </>
-      );
-    case "session":
-      return <>Session {principal.session_id}</>;
-  }
 }
 
 function GrantCoverage({ view, variant }: { view: GrantView; variant: PreviewVariant }): JSX.Element {
@@ -96,7 +76,7 @@ function GrantResult({ view, variant }: { view: GrantView; variant: PreviewVaria
       {variant === "detailed" && (
         <Stack gap={2}>
           <Field label="Applies to">
-            <PrincipalLabel principal={grant.principal} />
+            <GrantPrincipalLabel principal={grant.principal} />
           </Field>
           <Timestamp label="Created" value={grant.created_at} />
           <Timestamp label="Expires" value={grant.expires_at} />

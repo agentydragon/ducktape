@@ -46,6 +46,21 @@ const KUBERNETES_VIEW: GrantView = {
   },
 };
 
+const SESSION_KUBERNETES_VIEW: GrantView = {
+  ...KUBERNETES_VIEW,
+  grant: {
+    ...KUBERNETES_VIEW.grant,
+    grant_id: "20000000-0000-4000-8000-000000000005",
+    // The grant owner is deliberately different from the tool-call caller: ownership is not the
+    // session's Agent identity.
+    owner_agent_id: "90000000-0000-4000-8000-000000000009",
+    principal: { kind: "session" as const, session_id: "30000000-0000-4000-8000-000000000006" },
+    status: "released" as const,
+    released_at: "2025-01-27T10:15:00Z",
+    end_reason: "probe complete",
+  },
+};
+
 const PREVIEW_FIXTURES = [
   {
     title: "Create temporary Kubernetes grants",
@@ -98,6 +113,7 @@ const PREVIEW_FIXTURES = [
           end_reason: "probe complete",
         },
       },
+      SESSION_KUBERNETES_VIEW,
     ],
   },
   {

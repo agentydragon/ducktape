@@ -24,7 +24,6 @@ import { formatTimestamp } from "./approval_state";
 import { ExternalLink } from "./link";
 import { toolCallPath } from "./routing";
 import { toastError, toastSuccess } from "./toast";
-import { PrincipalLabel } from "./tool_rendering/grants/responses";
 
 export type GrantHistoryFilter = "active" | "history" | "all";
 
@@ -92,9 +91,6 @@ function GrantSetCard({ item, onRevoke }: { item: KubernetesGrantSet; onRevoke: 
           <Text fw={600}>{item.agentDisplayName}</Text>
           <Text size="xs" c="dimmed" ff="monospace">
             {item.grants.length} grant{item.grants.length === 1 ? "" : "s"} from one approval
-          </Text>
-          <Text size="xs" c="dimmed">
-            Applies to <PrincipalLabel principal={first.grant.principal} agentDisplayName={item.agentDisplayName} />
           </Text>
         </Stack>
         <Badge color={activeCount > 0 ? "teal" : "gray"} variant="light" style={{ flexShrink: 0 }}>
