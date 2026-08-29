@@ -448,7 +448,7 @@ auto_approval_policies:
 access_profiles:
   - id: haku
     auto_approval_policy: haku_v1
-    allowed_chat_runtimes:
+    allowed_harnesses:
       - claude_code
     can_read_profiles:
       - public-coder
@@ -464,7 +464,7 @@ access_profiles:
       - sandbox
   - id: public-coder
     auto_approval_policy: public_coder_safe_reads
-    allowed_chat_runtimes:
+    allowed_harnesses:
       - codex_app_server
     can_read_profiles: []
     recall_index_ids:
@@ -474,7 +474,7 @@ access_profiles:
       - haku_index
   - id: manual-review
     auto_approval_policy: manual_review
-    allowed_chat_runtimes: []
+    allowed_harnesses: []
     can_read_profiles: []
     # Even the fallback profile may ASK for a grant: every `grants` call queues for the operator,
     # and create_grant is never auto-approvable (operator ruling on #4986; pinned in
