@@ -1,4 +1,4 @@
-"""PostgreSQL persistence for the temporary HTTP egress grant domain."""
+"""PostgreSQL persistence for the HTTP egress grant domain."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import datetime
 from collections.abc import Sequence
 from uuid import UUID, uuid4
 
-from sqlalchemy import ColumnElement, select
+from sqlalchemy import ColumnElement, and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.database_schema import HttpGrantRow
@@ -59,6 +59,10 @@ def _not_ended() -> ColumnElement[bool]:
     return HttpGrantRow.ended_at.is_(None)
 
 
+def _active(now: datetime.datetime) -> ColumnElement[bool]:
+    return and_(_not_ended(), or_(HttpGrantRow.expires_at.is_(None), HttpGrantRow.expires_at > now))
+
+
 class PostgresGrantRepository:
     """Small transactional repository with explicit lifecycle ownership and applicability."""
 
@@ -73,7 +77,7 @@ class PostgresGrantRepository:
         source_tool_call_id: str,
         grants: Sequence[GrantSpec],
         created_at: datetime.datetime,
-        expires_at: datetime.datetime,
+        expires_at: datetime.datetime | None,
     ) -> tuple[Grant, ...]:
         grants = tuple(grants)
         if not grants:
@@ -142,7 +146,7 @@ class PostgresGrantRepository:
             if principal is not None:
                 statement = statement.where(grant_principal_clause(HttpGrantRow, principal))
             if not include_inactive:
-                statement = statement.where(_not_ended(), HttpGrantRow.expires_at > now)
+                statement = statement.where(_active(now))
             rows = (
                 await session.scalars(statement.order_by(HttpGrantRow.created_at.desc(), HttpGrantRow.grant_id))
             ).all()
@@ -168,7 +172,7 @@ class PostgresGrantRepository:
                 raise GrantOwnershipError(str(grant_id))
             # Only a still-active grant records an end action: an already-ended one keeps its
             # facts, and an expired one stays expired by derivation rather than being relabeled.
-            if row.ended_at is None and row.expires_at > now:
+            if row.ended_at is None and (row.expires_at is None or row.expires_at > now):
                 row.ended_at = now
                 row.end_reason = reason
                 await session.flush()
@@ -180,7 +184,7 @@ class PostgresGrantRepository:
         async with self._sessions() as session:
             statement = select(HttpGrantRow).where(request_principal_clause(HttpGrantRow, request_principal))
             if not include_inactive:
-                statement = statement.where(_not_ended(), HttpGrantRow.expires_at > now)
+                statement = statement.where(_active(now))
             rows = (
                 await session.scalars(statement.order_by(HttpGrantRow.created_at.desc(), HttpGrantRow.grant_id))
             ).all()
@@ -195,10 +199,9 @@ class PostgresGrantRepository:
                     select(HttpGrantRow)
                     .where(
                         request_principal_clause(HttpGrantRow, request_principal),
-                        _not_ended(),
-                        HttpGrantRow.expires_at > now,
+                        _active(now),
                     )
-                    .order_by(HttpGrantRow.expires_at, HttpGrantRow.created_at)
+                    .order_by(HttpGrantRow.expires_at.asc().nulls_last(), HttpGrantRow.created_at)
                 )
             ).all()
             return tuple(_row_to_model(row) for row in rows)

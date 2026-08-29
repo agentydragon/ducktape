@@ -142,6 +142,32 @@ async def test_create_and_match_require_the_explicit_agent_id() -> None:
 
 
 @pytest.mark.asyncio
+async def test_permanent_grant_has_no_expiry_and_can_be_ended() -> None:
+    repo = FakeRepository()
+    service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    grant = await service.create_grant(
+        owner_agent_id=_AGENT,
+        grant_principal=_GRANT_PRINCIPAL,
+        source_tool_call_id="tool-call-permanent",
+        scope=_SCOPE,
+        rules=(_rule(),),
+        expires_at=None,
+    )
+
+    assert grant.expires_at is None
+    decision = await service.match_request(
+        request_principal=RequestPrincipal(agent_id=_AGENT, session_id=None, access_profile_id=None),
+        required_scope=_DEFAULT_SCOPE,
+        required_rules=(_rule(),),
+    )
+    assert decision.allowed is True
+    assert decision.expires_at is None
+
+    (ended,) = await service.end_grants(owner_agent_id=_AGENT, grant_ids=(grant.grant_id,))
+    assert ended.status is GrantStatus.ENDED
+
+
+@pytest.mark.asyncio
 async def test_principal_lifecycle_inherits_agent_grants_without_crossing_sessions() -> None:
     repo = FakeRepository()
     service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)

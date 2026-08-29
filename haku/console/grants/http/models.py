@@ -207,7 +207,7 @@ class HttpRequestAllowed(BaseModel):
 
     allowed: Literal[True] = True
     grant_id: UUID
-    expires_at: AwareDatetime
+    expires_at: AwareDatetime | None = None
     credential_handles: Annotated[frozenset[str], PlainSerializer(sorted, when_used="json")] = Field(
         default_factory=frozenset,
         description="Credential handles named by every matching grant; empty for pure reachability.",

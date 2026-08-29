@@ -14,6 +14,7 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import (
+    AwareDatetime,
     BaseModel,
     ConfigDict,
     Field,
@@ -192,5 +193,5 @@ class GrantDecision(BaseModel):
 
     allowed: bool
     grant_id: UUID | None = None
-    expires_at: datetime.datetime | None = None
+    expires_at: AwareDatetime | None = None
     reason: str | None = None

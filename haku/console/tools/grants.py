@@ -121,7 +121,7 @@ class GrantsToolsService:
         *,
         context: McpExecutionContext,
         requests: list[GrantRequest],
-        duration_seconds: int,
+        duration_seconds: int | None,
         principal: GrantPrincipal,
     ) -> list[GrantView]:
         if context.tool_call_id is None:
@@ -135,7 +135,11 @@ class GrantsToolsService:
 
         request_principal = context.request_principal
         principal = require_applicable_grant_principal(principal, request_principal)
-        expires_at = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=duration_seconds)
+        expires_at = (
+            datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=duration_seconds)
+            if duration_seconds is not None
+            else None
+        )
         if kubernetes_specs:
             kubernetes_grants = await self._kubernetes.create_grants(
                 owner_agent_id=request_principal.agent_id,
@@ -221,10 +225,10 @@ def build_mcp(service: GrantsToolsService) -> FastMCP:
     mcp = FastMCP(
         name=GRANTS_SERVER_ID,
         instructions=(
-            "Create/list/get/end explicit Agent- or session-scoped temporary grants across grant "
+            "Create/list/get/end explicit Agent- or session-scoped database grants across grant "
             "domains. Each create item carries a 'domain' tag: 'kubernetes' for RBAC-like scope/rule coverage, "
             "'http' for one exact canonical public origin narrowed by method set and optional path regex. One "
-            "create_grant call creates grants in a single domain, atomically, with one shared expiry. get_grant "
+            "create_grant call creates grants in a single domain, atomically, with one shared optional expiry. get_grant "
             "and revoke_grants take the 'domain' of the grant IDs (as returned by create/list). "
             "list_grants returns active database grants by default; include_inactive also returns expired and ended "
             "database history, while configuration-file grants are always listed. One revoke_grants "
@@ -275,14 +279,6 @@ def build_mcp(service: GrantsToolsService) -> FastMCP:
                 description="Exact grants to create atomically with one shared start and expiry, all in one domain.",
             ),
         ],
-        duration_seconds: Annotated[
-            int,
-            Field(
-                ge=1,
-                le=86_400,
-                description="Requested duration in seconds; the deployment may enforce a lower maximum.",
-            ),
-        ],
         principal: Annotated[
             GrantPrincipal,
             Field(
@@ -292,6 +288,17 @@ def build_mcp(service: GrantsToolsService) -> FastMCP:
                 )
             ),
         ],
+        duration_seconds: Annotated[
+            int | None,
+            Field(
+                ge=1,
+                le=86_400,
+                description=(
+                    "Optional requested duration in seconds; omit for a grant without an expiry. "
+                    "The deployment may enforce a lower maximum for expiring grants."
+                ),
+            ),
+        ] = None,
         context: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
     ) -> list[GrantView]:
         return await service.create_grants(

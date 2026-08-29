@@ -145,6 +145,28 @@ async def test_create_and_match_require_the_explicit_agent_id() -> None:
     ).allowed
 
 
+async def test_permanent_grant_has_no_expiry_and_can_be_ended() -> None:
+    repo = FakeRepository()
+    service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    (grant,) = await service.create_grants(
+        owner_agent_id=_AGENT,
+        grant_principal=_GRANT_PRINCIPAL,
+        source_tool_call_id="tool-call-permanent",
+        grants=(_SPEC,),
+        expires_at=None,
+    )
+
+    assert grant.expires_at is None
+    decision = await service.match_request(
+        request_principal=_request_principal(), method=HttpMethod.GET, origin=_ORIGIN, path="/"
+    )
+    assert decision.allowed is True
+    assert decision.expires_at is None
+
+    (ended,) = await service.end_grants(owner_agent_id=_AGENT, grant_ids=(grant.grant_id,))
+    assert ended.status is GrantStatus.ENDED
+
+
 async def test_match_covers_only_the_exact_origin_method_and_path() -> None:
     service = GrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
     await service.create_grants(

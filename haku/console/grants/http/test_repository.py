@@ -117,6 +117,33 @@ def test_repository_enforces_source_provenance_and_lifecycle(repository_client: 
     repository_client.call(exercise)
 
 
+def test_repository_persists_permanent_grants(repository_client: _RepositoryClient) -> None:
+    source_tool_call_id = repository_client.call(
+        partial(_insert_http_source, repository_client.sessions, binding_id=repository_client.binding_id, now=_NOW)
+    )
+    repository = PostgresGrantRepository(repository_client.sessions)
+
+    async def exercise() -> None:
+        (grant,) = await repository.create_many(
+            owner_agent_id=repository_client.agent_id,
+            grant_principal=AgentGrantPrincipal(agent_id=repository_client.agent_id),
+            source_tool_call_id=source_tool_call_id,
+            grants=(_SPEC,),
+            created_at=_NOW,
+            expires_at=None,
+        )
+        principal = RequestPrincipal(agent_id=repository_client.agent_id, session_id=None, access_profile_id=None)
+        assert grant.expires_at is None
+        assert await repository.active_for_request_principal(
+            request_principal=principal, now=_NOW + timedelta(days=365)
+        ) == (grant,)
+        assert (await repository.end(
+            owner_agent_ids=frozenset({repository_client.agent_id}), grant_id=grant.grant_id, reason=None, now=_NOW
+        )).status is GrantStatus.ENDED
+
+    repository_client.call(exercise)
+
+
 def test_repository_persists_an_access_profile_principal(repository_client: _RepositoryClient) -> None:
     source_tool_call_id = repository_client.call(
         partial(_insert_http_source, repository_client.sessions, binding_id=repository_client.binding_id, now=_NOW)

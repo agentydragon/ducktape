@@ -35,7 +35,7 @@ class GrantRepository(Protocol):
         source_tool_call_id: str,
         grants: Sequence[GrantSpec],
         created_at: datetime.datetime,
-        expires_at: datetime.datetime,
+        expires_at: datetime.datetime | None,
     ) -> tuple[Grant, ...]: ...
 
     async def list(
@@ -95,7 +95,7 @@ class GrantService:
         grant_principal: GrantPrincipal,
         source_tool_call_id: str,
         grants: Sequence[GrantSpec],
-        expires_at: datetime.datetime,
+        expires_at: datetime.datetime | None,
     ) -> tuple[Grant, ...]:
         """Atomically create coverage grants with one source call and shared timestamps."""
 
@@ -173,7 +173,7 @@ class GrantService:
     @staticmethod
     def _allowed(matching: Sequence[Grant]) -> HttpRequestAllowed:
         """Bound the admission by the earliest matching expiry; report every named credential."""
-        grant = min(matching, key=lambda item: item.expires_at)
+        grant = min(matching, key=lambda item: (item.expires_at is None, item.expires_at))
         return HttpRequestAllowed(
             grant_id=grant.grant_id,
             expires_at=grant.expires_at,

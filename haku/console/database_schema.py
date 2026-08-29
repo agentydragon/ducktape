@@ -505,7 +505,7 @@ class AuthorizationGrant(Base):
 
 
 class KubernetesGrantRow(GrantEnvelopeColumns, Base):
-    """One Agent-owned, principal-scoped, time-bounded Kubernetes capability lease.
+    """One Agent-owned, principal-scoped Kubernetes capability grant.
 
     The envelope half of the row (`GrantEnvelopeColumns`) is shared with every grant domain,
     end fact included: status is derived from ``ended_at`` and the clock
@@ -543,7 +543,7 @@ class KubernetesGrantRow(GrantEnvelopeColumns, Base):
 
 
 class HttpGrantRow(GrantEnvelopeColumns, Base):
-    """One Agent-owned, principal-scoped, time-bounded HTTP egress lease.
+    """One Agent-owned, principal-scoped HTTP egress grant.
 
     The envelope half of the row (`GrantEnvelopeColumns`) is shared with every grant domain.
     The origin is three relational columns because a grant pins exactly ``(scheme, host, port)``;

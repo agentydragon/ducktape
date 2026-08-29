@@ -60,7 +60,7 @@ class GrantStatus(StrEnum):
 
 
 def derive_status(
-    *, ended_at: datetime.datetime | None, expires_at: datetime.datetime, now: datetime.datetime
+    *, ended_at: datetime.datetime | None, expires_at: datetime.datetime | None, now: datetime.datetime
 ) -> GrantStatus:
     """Compute the lifecycle vocabulary from the end facts and the clock.
 
@@ -68,9 +68,9 @@ def derive_status(
     revive or relabel a lease that had already reached its time bound.
     """
 
-    if ended_at is not None and ended_at < expires_at:
+    if ended_at is not None and (expires_at is None or ended_at < expires_at):
         return GrantStatus.ENDED
-    return GrantStatus.EXPIRED if now >= expires_at else GrantStatus.ACTIVE
+    return GrantStatus.EXPIRED if expires_at is not None and now >= expires_at else GrantStatus.ACTIVE
 
 
 class GrantError(Exception):
@@ -106,7 +106,7 @@ class GrantEnvelope(BaseModel):
     principal: GrantPrincipal
     source_tool_call_id: NON_EMPTY
     created_at: AwareDatetime
-    expires_at: AwareDatetime
+    expires_at: AwareDatetime | None = None
     ended_at: AwareDatetime | None = None
     end_reason: str | None = None
 
@@ -120,7 +120,7 @@ class GrantEnvelope(BaseModel):
 
     @model_validator(mode="after")
     def validate_window(self) -> GrantEnvelope:
-        if self.expires_at <= self.created_at:
+        if self.expires_at is not None and self.expires_at <= self.created_at:
             raise ValueError("expires_at must be after created_at")
         return self
 
@@ -161,7 +161,7 @@ class GrantEnvelopeColumns:
         Text, ForeignKey("mcp_tool_calls.tool_call_id", ondelete="RESTRICT"), nullable=False
     )
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # The end fact derive_status reads. Expiry deliberately records no fact — it derives from
     # ``expires_at`` and the clock alone.
     ended_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -183,7 +183,7 @@ def grant_envelope_table_args(table: str) -> tuple[CheckConstraint | Index, ...]
             "AND principal_session_id IS NULL AND principal_access_profile_id IS NOT NULL)",
             name=f"ck_{table}_principal_shape",
         ),
-        CheckConstraint("expires_at > created_at", name=f"ck_{table}_expiration_after_creation"),
+        CheckConstraint("expires_at IS NULL OR expires_at > created_at", name=f"ck_{table}_expiration_after_creation"),
         # A reason is optional, but never exists without an end. Expiry records no fact.
         CheckConstraint(
             "(ended_at IS NOT NULL OR end_reason IS NULL) AND (end_reason IS NULL OR btrim(end_reason) <> '')",
@@ -279,8 +279,10 @@ def aware_now(clock: Callable[[], datetime.datetime]) -> datetime.datetime:
 
 
 def validate_grant_window(
-    *, now: datetime.datetime, expires_at: datetime.datetime, max_lifetime: datetime.timedelta
+    *, now: datetime.datetime, expires_at: datetime.datetime | None, max_lifetime: datetime.timedelta
 ) -> None:
+    if expires_at is None:
+        return
     if expires_at.tzinfo is None or expires_at.utcoffset() is None:
         raise ValueError("expires_at must be timezone-aware")
     if expires_at <= now:

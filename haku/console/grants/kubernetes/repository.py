@@ -1,4 +1,4 @@
-"""PostgreSQL persistence for the temporary Kubernetes grant domain."""
+"""PostgreSQL persistence for the Kubernetes grant domain."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import datetime
 from collections.abc import Sequence
 from uuid import UUID, uuid4
 
-from sqlalchemy import ColumnElement, select
+from sqlalchemy import ColumnElement, and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.database_schema import KubernetesGrantRow
@@ -38,6 +38,10 @@ def _row_spec(row: KubernetesGrantRow) -> str:
 
 def _not_ended() -> ColumnElement[bool]:
     return KubernetesGrantRow.ended_at.is_(None)
+
+
+def _active(now: datetime.datetime) -> ColumnElement[bool]:
+    return and_(_not_ended(), or_(KubernetesGrantRow.expires_at.is_(None), KubernetesGrantRow.expires_at > now))
 
 
 class PostgresGrantRepository:
@@ -75,7 +79,7 @@ class PostgresGrantRepository:
         scope: GrantScope,
         rules: Sequence[Rule],
         created_at: datetime.datetime,
-        expires_at: datetime.datetime,
+        expires_at: datetime.datetime | None,
     ) -> Grant:
         grants = await self.create_many(
             owner_agent_id=owner_agent_id,
@@ -95,7 +99,7 @@ class PostgresGrantRepository:
         source_tool_call_id: str,
         grants: Sequence[GrantSpec],
         created_at: datetime.datetime,
-        expires_at: datetime.datetime,
+        expires_at: datetime.datetime | None,
     ) -> tuple[Grant, ...]:
         grants = tuple(grants)
         if not grants:
@@ -159,7 +163,7 @@ class PostgresGrantRepository:
             if principal is not None:
                 statement = statement.where(grant_principal_clause(KubernetesGrantRow, principal))
             if not include_inactive:
-                statement = statement.where(_not_ended(), KubernetesGrantRow.expires_at > now)
+                statement = statement.where(_active(now))
             rows = (
                 await session.scalars(
                     statement.order_by(KubernetesGrantRow.created_at.desc(), KubernetesGrantRow.grant_id)
@@ -189,7 +193,7 @@ class PostgresGrantRepository:
                 raise GrantOwnershipError(str(grant_id))
             # Only a still-active grant records an end action: an already-ended one keeps its
             # facts, and an expired one stays expired by derivation rather than being relabeled.
-            if row.ended_at is None and row.expires_at > now:
+            if row.ended_at is None and (row.expires_at is None or row.expires_at > now):
                 row.ended_at = now
                 row.end_reason = reason
                 await session.flush()
@@ -203,7 +207,7 @@ class PostgresGrantRepository:
                 request_principal_clause(KubernetesGrantRow, request_principal)
             )
             if not include_inactive:
-                statement = statement.where(_not_ended(), KubernetesGrantRow.expires_at > now)
+                statement = statement.where(_active(now))
             rows = (
                 await session.scalars(
                     statement.order_by(KubernetesGrantRow.created_at.desc(), KubernetesGrantRow.grant_id)
@@ -220,10 +224,9 @@ class PostgresGrantRepository:
                     select(KubernetesGrantRow)
                     .where(
                         request_principal_clause(KubernetesGrantRow, request_principal),
-                        _not_ended(),
-                        KubernetesGrantRow.expires_at > now,
+                        _active(now),
                     )
-                    .order_by(KubernetesGrantRow.expires_at, KubernetesGrantRow.created_at)
+                    .order_by(KubernetesGrantRow.expires_at.asc().nulls_last(), KubernetesGrantRow.created_at)
                 )
             ).all()
             return tuple(self._row_to_model(row) for row in rows)
