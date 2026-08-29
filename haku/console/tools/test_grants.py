@@ -226,9 +226,11 @@ def test_server_exposes_exact_stable_tool_set_without_context_argument(console: 
             return list(await client.list_tools())
 
     tools = {tool.name: tool for tool in console.call(list_tools)}
-    assert set(tools) == {"create_grant", "list_grants", "get_grant", "revoke_grants", "kubernetes_can_i"}
+    assert set(tools) == {"create_grant", "list_grants", "get_grant", "revoke_grants", "kubernetes_can_i", "whoami"}
     for tool in tools.values():
         assert "context" not in tool.inputSchema.get("properties", {})
+    # whoami is a pure identity read: no arguments beyond the hidden execution context.
+    assert tools["whoami"].inputSchema.get("properties", {}) == {}
     assert set(tools["create_grant"].inputSchema["properties"]) == {"grants", "duration_seconds", "applies_to"}
     assert tools["create_grant"].inputSchema["properties"]["applies_to"]["default"] == "agent"
     # `list_grants` carries only the optional own-scope declaration; `self` is the sole value.
@@ -289,6 +291,32 @@ def test_kubernetes_can_i_rides_the_grants_server(console: _Console) -> None:
             assert isinstance(block, TextContent)
             assert "\n" not in block.text
             assert "requests[0]" in block.text
+
+    console.call(exercise)
+
+
+def test_whoami_returns_the_callers_resolved_console_identity(console: _Console) -> None:
+    """whoami echoes the trusted execution caller Console resolved: an Agent's request principal
+    (agent_id + the live session_id + access profile) or a direct Operator's operator_id. It takes no
+    arguments and reads identity only from trusted request metadata, so the value round-trips through
+    the MCP wire back to exactly the caller the execution context carried."""
+    session_id = console.live_session()
+    agent_context = console.agent_context(session_id=session_id)
+    operator_context = console.operator_context()
+
+    async def exercise() -> None:
+        async with Client(build_mcp(console.service)) as client:
+            for context, variant in (
+                (agent_context, AgentMcpExecutionCaller),
+                (operator_context, OperatorMcpExecutionCaller),
+            ):
+                result = await client.call_tool("whoami", {}, meta=mcp_execution_request_meta(context))
+                payload = result.structured_content
+                assert isinstance(payload, dict)
+                # FastMCP wraps a non-object (here discriminated-union) return in {"result": …};
+                # unwrap that envelope when present, then reparse into the concrete caller variant.
+                inner = payload["result"] if set(payload) == {"result"} else payload
+                assert variant.model_validate(inner) == context.caller
 
     console.call(exercise)
 

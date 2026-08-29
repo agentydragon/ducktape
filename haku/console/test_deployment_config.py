@@ -63,9 +63,13 @@ def test_deployed_console_config_is_valid() -> None:
     assert policies["kubernetes_reads"]["tools"] == {"grants": ["kubernetes_can_i", "get_grant"]}
     # An Agent's own-grant list read is auto-approved only for the explicit `principal=self` scope.
     assert policies["grants_own_list"] == {"id": "grants_own_list", "type": "grant_self_list", "server": "grants"}
+    # whoami is an argument-free, side-effect-free identity read (the caller's own resolved
+    # console/MCP principal), so it is unconditionally auto-approvable — its own exact-tools atom.
+    assert policies["grants_whoami"]["tools"] == {"grants": ["whoami"]}
     for root in ("haku_v1", "public_coder_safe_reads"):
         assert "kubernetes_reads" in policies[root]["policies"], root
         assert "grants_own_list" in policies[root]["policies"], root
+        assert "grants_whoami" in policies[root]["policies"], root
 
     # Every Agent may ASK for a grant: the unified `grants` server is exposed to every access profile
     # (operator ruling on #4986). Safe only together with the pin below — nothing in it auto-approves.

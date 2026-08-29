@@ -31,6 +31,7 @@ from haku.console.identity.enrollment import AgentEnrollmentService
 from haku.console.mcp.execution import (
     EXECUTION_CONTEXT_DEPENDENCY,
     AgentMcpExecutionCaller,
+    McpExecutionCaller,
     McpExecutionContext,
     OperatorMcpExecutionCaller,
 )
@@ -234,10 +235,25 @@ def build_mcp(service: GrantsToolsService) -> FastMCP:
             "call ends up to 32 durable grant IDs sequentially, dispatching on the caller: an Agent relinquishes "
             "its own grants (released), an Operator ends an owned Agent's grants (revoked) by naming "
             "owner_agent_id. Agent identity and tool-call provenance are trusted request metadata, never tool "
-            "arguments; grant creation is checked before any temporary authority is issued. "
-            + kubernetes_tools.CAN_I_INSTRUCTIONS
+            "arguments; grant creation is checked before any temporary authority is issued. whoami takes no "
+            "arguments and returns the trusted console/MCP identity Console resolved for the caller (durable "
+            "Agent id + live session id + access profile, or Operator id) — distinct from the egress-fence "
+            "attribution. " + kubernetes_tools.CAN_I_INSTRUCTIONS
         ),
     )
+
+    @mcp.tool
+    async def whoami(context: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY) -> McpExecutionCaller:
+        """Return the trusted identity Console resolved for this caller — its console/MCP principal.
+
+        Takes no arguments and has no side effects. For an Agent it is the durable ``agent_id`` plus
+        the live ``session_id`` (present only under a session bearer) and the ``access_profile_id``;
+        for a direct Operator it is the ``operator_id``. This is authority Console authenticated the
+        caller as; it is distinct from the egress-fence attribution (a separate ``fence_credential``)
+        and carries no approval provenance.
+        """
+
+        return context.caller
 
     @mcp.tool
     async def kubernetes_can_i(
