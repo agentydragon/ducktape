@@ -199,7 +199,7 @@ class RaisingDecideClient(DecideClient):
         *,
         resolved_ips: frozenset[IPv4Address | IPv6Address],
         upstream_ip: IPv4Address | IPv6Address,
-        proxy_client_credential: str | None = None,
+        proxy_client_credential: str,
     ) -> DecideResponse:
         del resolved_ips, upstream_ip, proxy_client_credential
         raise RuntimeError("decide transport exploded")
@@ -212,7 +212,7 @@ class HangingDecideClient(DecideClient):
         *,
         resolved_ips: frozenset[IPv4Address | IPv6Address],
         upstream_ip: IPv4Address | IPv6Address,
-        proxy_client_credential: str | None = None,
+        proxy_client_credential: str,
     ) -> DecideResponse:
         del resolved_ips, upstream_ip, proxy_client_credential
         await asyncio.Event().wait()
@@ -226,7 +226,7 @@ class MalformedDecideClient(DecideClient):
         *,
         resolved_ips: frozenset[IPv4Address | IPv6Address],
         upstream_ip: IPv4Address | IPv6Address,
-        proxy_client_credential: str | None = None,
+        proxy_client_credential: str,
     ) -> DecideResponse:
         del request, resolved_ips, upstream_ip, proxy_client_credential
         return cast(DecideResponse, {"allowed": True, "substitutions": []})

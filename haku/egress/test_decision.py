@@ -50,6 +50,17 @@ def test_wire_round_trip_preserves_the_request() -> None:
     assert parsed.proxy_client_credential.get_secret_value() == _BRIDGE
 
 
+def test_proxy_client_credential_is_required() -> None:
+    payload = json.loads(_request().model_dump_json())
+    payload.pop("proxy_client_credential")
+    with pytest.raises(ValidationError, match="proxy_client_credential"):
+        DecideRequest.model_validate(payload)
+
+    payload["proxy_client_credential"] = None
+    with pytest.raises(ValidationError, match="proxy_client_credential"):
+        DecideRequest.model_validate(payload)
+
+
 def test_resolved_ips_serialize_deterministically() -> None:
     ips = frozenset({IPv4Address("192.0.2.10"), IPv4Address("192.0.2.2"), IPv6Address("2001:db8::10")})
 

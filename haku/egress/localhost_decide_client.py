@@ -46,12 +46,10 @@ class LocalhostDecideClient(DecideClient):
         *,
         resolved_ips: frozenset[IPv4Address | IPv6Address],
         upstream_ip: IPv4Address | IPv6Address,
-        # None is transportable so the Console can return a fail-closed denial for a missing
-        # credential; normal runner launches always supply the bridge bearer.
-        proxy_client_credential: str | None = None,
+        proxy_client_credential: str,
     ) -> DecideResponse:
         decide_request = DecideRequest(
-            proxy_client_credential=(None if proxy_client_credential is None else SecretStr(proxy_client_credential)),
+            proxy_client_credential=SecretStr(proxy_client_credential),
             request=request,
             resolved_ips=resolved_ips,
             upstream_ip=upstream_ip,

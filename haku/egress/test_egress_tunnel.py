@@ -47,7 +47,7 @@ class MethodGatingDecideClient(DecideClient):
         *,
         resolved_ips: frozenset[IPv4Address | IPv6Address],
         upstream_ip: IPv4Address | IPv6Address,
-        proxy_client_credential: str | None = None,
+        proxy_client_credential: str,
     ) -> DecideResponse:
         del resolved_ips, upstream_ip, proxy_client_credential
         self.requests.append(request)
