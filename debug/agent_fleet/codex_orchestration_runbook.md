@@ -31,11 +31,11 @@ is published. The consequences are load-bearing for a fleet:
 - **Dies for sure:** every running process — a long-lived `codex app-server` broker, backgrounded
   `codex exec` workers, and the in-memory thread/turn ids they hold. A fresh VM has no live
   processes, full stop.
-- **Uncertain — do not rely on it:** filesystem state (uncommitted files, a scratchpad). The docs say
-  a fresh VM is provisioned, which points to disk being re-cloned from git, but whether some paths
-  persist is **not verified here** (the operator suspects some might). Treat in-container files as not
-  reliably durable and **push anything that matters to git**; if some survive, that's a bonus, not a
-  guarantee to build on.
+- **Observed wiped:** filesystem state (uncommitted files, a scratchpad). Operator-reported
+  2026-08-29: another cloud agent's environment was wiped after a container restart — consistent with
+  the docs' "fresh VM" (disk re-cloned from git). So treat in-container files as **lost** across a
+  restart/reclaim; **push anything that matters to git**. (This was earlier hedged as "maybe some
+  paths persist"; the observation says don't count on it.)
 
 Two ways to cope, and a fleet usually needs both:
 
