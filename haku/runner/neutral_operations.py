@@ -97,7 +97,8 @@ class _Message(BaseModel):
 class ItemType(StrEnum):
     """What kind of runner-observed item an operation opens or completes.
 
-    The wire half of the durable vocabulary (`haku/console/chat_models.py` `ItemType`), member for
+    The wire half of the durable vocabulary (`haku/console/conversation/item_vocabulary.py`
+    `ItemType`), member for
     member — minus `prompt`, deliberately: a prompt item is authored by the Console from its own
     row when `prompt.admitted` names it, so a runner opening one is not expressible.
     """

@@ -17,6 +17,8 @@
     ../modules/talosconfig.nix
   ];
 
+  ducktape.hakuApprovals.enable = true;
+
   ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/iguana-forgejo.sops.key;
   ducktape.githubSsh.sopsFile = ../../../ssh_keys/iguana-github.sops.key;
 

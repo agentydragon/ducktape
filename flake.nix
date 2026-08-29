@@ -374,7 +374,13 @@
         pkgs.sops
         pkgs.ssh-to-age
         ducktapePkgs.bazel-diff
-      ];
+      ]
+      # hakuctl (haku-console MCP client) joins once its wheel's pin lands. It is
+      # guarded because the pin only exists after the wheel's first CI release +
+      # sync-pins: `ducktapePkgs ? hakuctl` is false until then (nix/packages
+      # exposes it under the same `artifacts ? hakuctl` guard), keeping eval green
+      # in the window between this merge and that release, then self-healing.
+      ++ lib.optionals (ducktapePkgs ? hakuctl) [ ducktapePkgs.hakuctl ];
       # Rust claude-hook is the active hook/shim implementation. The statusline
       # remains Python, exposed through a package that does not put the legacy
       # Python `claude-hook` on PATH.

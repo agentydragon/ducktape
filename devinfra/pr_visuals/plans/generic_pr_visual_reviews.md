@@ -30,7 +30,7 @@ exact default.
 
 The generic path carries real traffic. Producers publishing at HEAD:
 `haku/console/frontend` (two renderers), `aiquota/gnome:test_render`,
-`x/study_casino`, `finance/augur`, and `props/frontend` — all through the shared
+`study_casino`, `finance/augur`, and `props/frontend` — all through the shared
 writers `util/visual_review.py` and
 `util/testing/frontend_visual/visual-review-manifest.mjs`, with no
 publisher-side configuration per producer.

@@ -158,7 +158,7 @@ export default [
   // no-undef doesn't misfire on browser builtins; the two react/jsx-uses-* rules stop
   // no-unused-vars from flagging `React` and components that are only referenced in JSX.
   {
-    files: ["x/study_casino/frontend/**/*.{js,jsx}"],
+    files: ["study_casino/frontend/**/*.{js,jsx}"],
     languageOptions: {
       parserOptions: { ecmaVersion: "latest", sourceType: "module", ecmaFeatures: { jsx: true } },
       globals: browserGlobals,

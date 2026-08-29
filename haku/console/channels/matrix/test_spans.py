@@ -22,7 +22,6 @@ from haku.console.channels.matrix.spans import (
     Span,
     SpanKind,
 )
-from haku.console.chat_models import ToolOutcome
 from haku.console.conversation.conversation_event import (
     LeaseExpired,
     MessageCompleted,
@@ -36,6 +35,7 @@ from haku.console.conversation.conversation_event import (
     TurnAnswered,
     TurnOpened,
 )
+from haku.console.conversation.item_vocabulary import ToolOutcome
 from haku.console.session.status import LeaseExpiryReason, SessionStatus
 from haku.console.session.subscription import StreamedEvent, StreamPosition
 

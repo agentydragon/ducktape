@@ -482,7 +482,7 @@ function RecentToolCallCard({
   );
 }
 
-function ApprovalsTab({
+export function ApprovalsTab({
   pendingApprovals,
   geolocationApprovals,
   screenshotApprovals,
@@ -510,7 +510,7 @@ function ApprovalsTab({
   | "onApproveScreenshot"
   | "onDenyScreenshot"
   | "onDismissRecentToolCall"
-> & { focusedToolCallId?: string | null }) {
+> & { focusedToolCallId?: string | null }): JSX.Element {
   const items = useMemo(
     () => approvalQueueItems(pendingApprovals, geolocationApprovals, screenshotApprovals),
     [geolocationApprovals, pendingApprovals, screenshotApprovals]

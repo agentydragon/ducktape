@@ -9,7 +9,6 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 
-from haku.console.chat_models import ItemStatus, ItemType, ToolOutcome
 from haku.console.conversation import item_reads
 from haku.console.conversation.conversation_event import ReasoningDisclosure, TurnFailed, TurnOutcome
 from haku.console.conversation.item_reads import (
@@ -21,6 +20,7 @@ from haku.console.conversation.item_reads import (
     ReasoningItem,
     ToolCallItem,
 )
+from haku.console.conversation.item_vocabulary import ItemStatus, ItemType, ToolOutcome
 from haku.console.database_schema import ConversationItem, ConversationTurn
 
 CONVERSATION = UUID("44444444-4444-4444-4444-444444444444")

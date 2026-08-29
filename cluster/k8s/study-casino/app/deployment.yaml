@@ -25,7 +25,7 @@ spec:
         topology.kubernetes.io/region: hil
       containers:
         - name: app
-          image: git.allegedly.works/ducktape-ci/study-casino:devel-20260828095801-42e77b8 # {"$imagepolicy": "flux-system:study-casino"}
+          image: git.allegedly.works/ducktape-ci/study-casino:devel-20260829000854-36bd53e # {"$imagepolicy": "flux-system:study-casino"}
           imagePullPolicy: Always
           ports:
             - name: http
@@ -33,7 +33,7 @@ spec:
               protocol: TCP
           env:
             - name: STUDY_CASINO_IMAGE_TAG
-              value: devel-20260828095801-42e77b8 # {"$imagepolicy": "flux-system:study-casino:tag"}
+              value: devel-20260829000854-36bd53e # {"$imagepolicy": "flux-system:study-casino:tag"}
             # Compose the SQLAlchemy URL from the CNPG-generated secret. The
             # `$(VAR)` syntax in env values is resolved by the kubelet from
             # earlier-defined env vars in the same container. `+psycopg`

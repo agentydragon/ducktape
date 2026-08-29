@@ -13,7 +13,7 @@ import pytest_bazel
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import ItemStatus, ItemType
+from haku.console.conversation.item_vocabulary import ItemStatus, ItemType
 from haku.console.conversation_read_access import UnrestrictedReads
 from haku.console.database_schema import Conversation, ConversationItem, Operator, Session
 from haku.console.harnesses.kind import HarnessKind

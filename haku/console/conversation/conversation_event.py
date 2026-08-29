@@ -29,7 +29,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from haku.console.chat_models import ItemType, ToolOutcome
+from haku.console.conversation.item_vocabulary import ItemType, ToolOutcome
 from haku.console.conversation.prompt_origin import PromptOrigin
 from haku.console.session.status import LeaseExpiryReason, SessionStatus
 

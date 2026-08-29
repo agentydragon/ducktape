@@ -10,6 +10,11 @@
       "output": "bb-out/bazel-out/k8-fastbuild/bin/bbr-0.1.0-py3-none-any.whl",
       "release": "bbr"
     },
+    "hakuctl": {
+      "target": "//haku/hakuctl:wheel",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/haku/hakuctl/hakuctl-0.1.0-py3-none-any.whl",
+      "release": "hakuctl"
+    },
     "claude-hooks": {
       "target": "//:claude_hooks_wheel",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/claude_hooks-0.1.0-py3-none-any.whl",
@@ -39,6 +44,11 @@
       "target": "//aiquota/gnome:aiquota_zip",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/aiquota/gnome/aiquota.zip",
       "release": "aiquota"
+    },
+    "haku-approvals": {
+      "target": "//haku/console/gnome:haku_approvals_zip",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/haku/console/gnome/haku-approvals.zip",
+      "release": "haku-approvals"
     },
     "bbapi": {
       "target": "//devinfra/buildbuddy_cli:bbapi",
@@ -80,6 +90,10 @@
       "tests": "//devinfra:test_bbr",
       "nixPackage": true
     },
+    "hakuctl": {
+      "tests": "//haku/hakuctl/...",
+      "nixPackage": false
+    },
     "claude-hooks": {
       "tests": "//devinfra/claude/...",
       "nixPackage": true
@@ -98,6 +112,10 @@
     },
     "aiquota": {
       "tests": "//aiquota/...",
+      "nixPackage": true
+    },
+    "haku-approvals": {
+      "tests": "//haku/console/frontend/...",
       "nixPackage": true
     },
     "bbapi": {

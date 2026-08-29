@@ -1,5 +1,5 @@
 packages:
-  - "x/study_casino/frontend"
+  - "study_casino/frontend"
   - "airlock/frontend"
   - "x/rspcache/admin_ui"
   - "props/frontend"

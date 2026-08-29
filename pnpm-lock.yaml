@@ -348,15 +348,7 @@ importers:
         specifier: ^5.7.0
         version: 5.8.3
 
-  util/testing/frontend_visual:
-    devDependencies:
-      puppeteer:
-        specifier: ^23.11.1
-        version: 23.11.1(typescript@5.8.3)
-
-  x/rspcache/admin_ui: {}
-
-  x/study_casino/frontend:
+  study_casino/frontend:
     dependencies:
       react:
         specifier: ^18.3.1
@@ -368,6 +360,14 @@ importers:
       esbuild:
         specifier: '>=0.21.0'
         version: 0.25.12
+
+  util/testing/frontend_visual:
+    devDependencies:
+      puppeteer:
+        specifier: ^23.11.1
+        version: 23.11.1(typescript@5.8.3)
+
+  x/rspcache/admin_ui: {}
 
 packages:
 

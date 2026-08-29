@@ -9,6 +9,7 @@ import { useEffect } from "react";
 import { createRoot } from "react-dom/client";
 
 import { HakuUiEmbed } from "../haku_ui_embed";
+import { ApprovalsEmbedPage } from "../approvals_embed_page";
 import { OAuthResultView } from "../oauth_result_page";
 import type { ConsoleNavigationView, ConsoleView } from "../routing";
 import { ShellChrome, type ShellChromeProps } from "../shell_chrome";
@@ -116,6 +117,8 @@ function OAuthSettingsResultScene({ status }: { status: "success" | "error" }) {
 
 function sceneElement(scene: string) {
   switch (scene) {
+    case "approvals-embed":
+      return <ApprovalsEmbedPage />;
     case "settings":
     case "settings-mobile":
     case "settings-agents":

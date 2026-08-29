@@ -23,7 +23,7 @@ STREAM = b"""[
   "completed":{"success":true,"outputGroup":[{"name":"default","fileSets":[{"id":"outer"}]}]}},
  {"id":{"targetCompleted":{"label":"//util/testing:clock"}},
   "completed":{"success":true,"outputGroup":[{"name":"default","fileSets":[{"id":"clock"}]}]}},
- {"id":{"testSummary":{"label":"//x/study_casino:test_app"}},"testSummary":{"overallStatus":"TIMEOUT"}},
+ {"id":{"testSummary":{"label":"//study_casino:test_app"}},"testSummary":{"overallStatus":"TIMEOUT"}},
  {"id":{"testSummary":{"label":"//devinfra/ci:test_bes"}},"testSummary":{"overallStatus":"PASSED"}}
 ]"""
 
@@ -75,7 +75,7 @@ def test_size_survives_being_a_json_string() -> None:
 
 def test_test_verdicts_come_from_the_same_stream() -> None:
     """This is what lets a publish gate consult the build instead of re-running it."""
-    assert parse(STREAM).test_status == {"//x/study_casino:test_app": "TIMEOUT", "//devinfra/ci:test_bes": "PASSED"}
+    assert parse(STREAM).test_status == {"//study_casino:test_app": "TIMEOUT", "//devinfra/ci:test_bes": "PASSED"}
 
 
 def test_an_unusable_stream_raises_rather_than_reading_as_empty() -> None:

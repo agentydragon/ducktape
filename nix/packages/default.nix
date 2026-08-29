@@ -126,8 +126,41 @@ let
       ++ [ ducktape-util ];
   };
 
+  # haku-console MCP client CLI (`hakuctl`). Its own wheel so it ships into the
+  # agent dev-tools closure alongside bbr. Exposed through the guarded
+  # `optionalAttrs (artifacts ? hakuctl)` at the bottom of this file: the pin
+  # only exists after the wheel's first CI release + sync-pins, so eval must not
+  # force `artifacts.hakuctl` before then. flake.nix adds it to devToolsCommon
+  # with the matching `lib.optionals (ducktapePkgs ? hakuctl)` guard, so it joins
+  # the closure automatically once the pin lands.
+  hakuctl = mkWheel {
+    pname = "hakuctl";
+    description = "MCP client CLI for the Haku console (/mcp)";
+    mainProgram = "hakuctl";
+    importsCheck = [ "haku.hakuctl.cli" ];
+    # SYNC: This list must match `requires` in //haku/hakuctl:wheel (BUILD.bazel).
+    # When adding a dependency, update BOTH places.
+    propagatedBuildInputs = [
+      ducktape-util
+    ]
+    ++ (with python3Packages; [
+      fastmcp
+      mcp
+      rich
+      typer
+    ]);
+  };
+
   # Combined CLI + GNOME Shell extension package.
   aiquota = pkgs.callPackage ./gnome-shell-aiquota.nix { inherit artifacts lib; };
+
+  # Chrome-free GTK/WebKit approval window plus the GNOME Shell launcher.
+  hakuApprovals = pkgs.callPackage ./gnome-shell-haku-approvals.nix {
+    inherit
+      artifacts
+      lib
+      ;
+  };
 
   mkBinaryArtifact =
     {
@@ -321,7 +354,13 @@ rec {
   aw-watcher-tmux = pkgs.callPackage ./aw-watcher-tmux.nix { };
 
   # Alias for programs.gnome-shell.extensions compatibility.
+  inherit hakuApprovals;
+  # Kebab release-name attribute the CI nix-package gate builds (release key
+  # `haku-approvals` in devinfra/ci/artifact_targets.json); `hakuApprovals` is
+  # the home-manager-facing name. Keep both — deduping either breaks a consumer.
+  haku-approvals = hakuApprovals;
   gnome-shell-aiquota = aiquota;
+  gnome-shell-haku-approvals = hakuApprovals;
   tana-outliner = pkgs.callPackage ./tana-outliner.nix { };
   gmail-mcp = pkgs.callPackage ./gmail-mcp.nix { };
   foxflss = pkgs.callPackage ./foxflss.nix { };
@@ -399,4 +438,7 @@ rec {
 }
 // lib.optionalAttrs (artifacts ? aw-importer) {
   inherit aw-importer;
+}
+// lib.optionalAttrs (artifacts ? hakuctl) {
+  inherit hakuctl;
 }

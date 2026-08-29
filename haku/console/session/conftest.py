@@ -20,8 +20,9 @@ import pytest
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import ChannelSurface, ItemStatus, ItemType
+from haku.console.chat_models import ChannelSurface
 from haku.console.config import RuntimeRegistrationConfig
+from haku.console.conversation.item_vocabulary import ItemStatus, ItemType
 from haku.console.database_schema import ChannelAttachmentRow, ConversationItem, Session
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore

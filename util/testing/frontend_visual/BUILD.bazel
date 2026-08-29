@@ -42,7 +42,7 @@ js_library(
         "//airlock/frontend:__pkg__",
         "//props/frontend:__pkg__",
         "//props/frontend/src:__subpackages__",
-        "//x/study_casino/frontend:__pkg__",
+        "//study_casino/frontend:__pkg__",
     ],
     deps = [
         ":capture",

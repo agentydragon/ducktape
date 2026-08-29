@@ -1,0 +1,64 @@
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//util:typer",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//rich",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "cli_bin",
+    main_module = "haku.hakuctl.cli",
+    visibility = ["//visibility:public"],
+    deps = [":cli"],
+)
+
+py_test(
+    name = "test_cli",
+    srcs = ["test_cli.py"],
+    deps = [
+        ":cli",
+        "//:conftest",
+        "@pypi//fastmcp_slim",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//typer",
+    ],
+)
+
+# Own wheel (not bundled into the ducktape umbrella wheel) so hakuctl ships on
+# its own into the agent dev-tools closure alongside bbr. `util.typer` arrives
+# via the ducktape-util wheel (requires), not bundled here.
+py_package(
+    name = "hakuctl_pkg",
+    packages = ["haku.hakuctl"],
+    deps = [":cli"],
+)
+
+py_wheel(
+    name = "wheel",
+    distribution = "hakuctl",
+    entry_points = {
+        "console_scripts": ["hakuctl = haku.hakuctl.cli:main"],
+    },
+    python_requires = ">=3.13",
+    # SYNC: This list must match propagatedBuildInputs in nix/packages/default.nix
+    # (hakuctl). When adding a dependency, update BOTH places.
+    requires = [
+        "ducktape-util",
+        "fastmcp>=3.4.4,<3.5",
+        "mcp",
+        "rich",
+        "typer",
+    ],
+    version = "0.1.0",
+    deps = [":hakuctl_pkg"],
+)

@@ -1,0 +1,23 @@
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:zip.bzl", "pkg_zip")
+
+package(default_visibility = ["//visibility:public"])
+
+pkg_files(
+    name = "haku_approvals_files",
+    srcs = [
+        "extension.js",
+        "haku-approvals.desktop",
+        "haku-approvals-window.js",
+        "metadata.json",
+        "stylesheet.css",
+        "//haku/console:logo.svg",
+    ],
+    strip_prefix = strip_prefix.from_pkg(),
+)
+
+pkg_zip(
+    name = "haku_approvals_zip",
+    srcs = [":haku_approvals_files"],
+    out = "haku-approvals.zip",
+)

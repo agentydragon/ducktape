@@ -35,8 +35,8 @@ fix with mutable `baselines/<slug>.json` pointers bridging cache-hit gaps in
 devel bundles, the `PR visual diffs` check-run, retention decision), study
 casino piloted the conversion (#3289), and the fleet followed. Verified at HEAD:
 every golden directory the plan inventoried is gone
-(`x/study_casino/frontend/__screenshots__`, `finance/augur/frontend/__screenshots__`,
-`aiquota/gnome/__snapshots__`, `x/study_casino/frontend/tests/baselines`,
+(`study_casino/frontend/__screenshots__`, `finance/augur/frontend/__screenshots__`,
+`aiquota/gnome/__snapshots__`, `study_casino/frontend/tests/baselines`,
 `props/frontend/src/**/baselines`, `airlock/frontend/baselines`), and both
 comparators — `util/testing/png_diff.py::assert_png_matches_golden` and
 `visual-test-lib.mjs::compareBaseline` — no longer exist anywhere in the tree.

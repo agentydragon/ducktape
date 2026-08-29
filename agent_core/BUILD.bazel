@@ -46,7 +46,6 @@ py_library(
         ":events",
         ":loop_control",
         "//openai_utils:model",
-        "@pypi//pydantic",
     ],
 )
 

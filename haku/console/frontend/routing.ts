@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 // cross-origin Haku UI frame.
 export const CONSOLE_ROOT_PATH = "/_console";
 export const SETTINGS_PATH: string = `${CONSOLE_ROOT_PATH}/settings`;
+export const APPROVALS_EMBED_PATH: string = `${CONSOLE_ROOT_PATH}/approvals-embed`;
 export const TOOL_CALLS_PATH: string = `${CONSOLE_ROOT_PATH}/tool-calls`;
 export const CONVERSATIONS_PATH: string = `${CONSOLE_ROOT_PATH}/conversations`;
 export const OAUTH_RESULT_PATH_PREFIX: string = `${CONSOLE_ROOT_PATH}/oauth-result`;
@@ -12,7 +13,13 @@ export const HOME_PATH = "/";
 const LAST_EMBED_PATH_KEY = "haku-console:last-embed-path";
 
 export type ConsoleNavigationView = "embed" | "settings" | "toolCalls" | "conversations";
-export type ConsoleView = ConsoleNavigationView | "agentEnrollment" | "oauthResult" | "sessionFrames" | "notFound";
+export type ConsoleView =
+  | ConsoleNavigationView
+  | "agentEnrollment"
+  | "approvalsEmbed"
+  | "oauthResult"
+  | "sessionFrames"
+  | "notFound";
 
 // Every id-bearing console route carries a canonical UUIDv4.
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
@@ -73,6 +80,7 @@ export function sessionFramesIdForPathname(pathname: string): string | null {
 
 export function viewForPathname(pathname: string): ConsoleView {
   if (pathname === CONSOLE_ROOT_PATH || pathname === `${CONSOLE_ROOT_PATH}/`) return "embed";
+  if (pathname === APPROVALS_EMBED_PATH) return "approvalsEmbed";
   if (pathname === SETTINGS_PATH) return "settings";
   if (agentEnrollmentIdForPathname(pathname) !== null) return "agentEnrollment";
   if (pathname === TOOL_CALLS_PATH) return "toolCalls";

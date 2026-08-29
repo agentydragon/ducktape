@@ -28,7 +28,7 @@ py_library(
     name = "history",
     srcs = ["history.py"],
     deps = [
-        "//haku/console:chat_models",
+        ":item_vocabulary",
         "//haku/console:database_schema",
         "@pypi//sqlalchemy",
     ],
@@ -39,8 +39,8 @@ py_library(
     srcs = ["item_reads.py"],
     deps = [
         ":conversation_event",
+        ":item_vocabulary",
         ":prompt_origin",
-        "//haku/console:chat_models",
         "//haku/console:database_schema",
         "@pypi//pydantic",
     ],
@@ -75,8 +75,8 @@ py_library(
     srcs = ["log.py"],
     deps = [
         ":conversation_event",
+        ":item_vocabulary",
         ":prompt_origin",
-        "//haku/console:chat_models",
         "//haku/console:database_schema",
         "//haku/console/x:conversation_events",
         "//haku/runner:neutral_operations",
@@ -145,9 +145,9 @@ py_test(
         ":conversation_event",
         ":follow",
         ":item_reads",
+        ":item_vocabulary",
         ":prompt_origin",
         "//:conftest",
-        "//haku/console:chat_models",
         "//haku/console:conftest",
         "//haku/console/notifications:conversation_wakes",
         "//haku/console/session:conftest",
@@ -173,8 +173,8 @@ py_test(
         ":conftest",
         ":conversation_event",
         ":item_reads",
+        ":item_vocabulary",
         "//:conftest",
-        "//haku/console:chat_models",
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "@pypi//pytest",
@@ -190,11 +190,11 @@ py_test(
     deps = [
         ":conftest",
         ":conversation_event",
+        ":item_vocabulary",
         ":journal_consumer",
         ":prompt_inbox",
         ":prompt_origin",
         "//:conftest",
-        "//haku/console:chat_models",
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "//haku/console/session:conftest",
@@ -258,8 +258,8 @@ py_library(
     name = "conversation_event",
     srcs = ["conversation_event.py"],
     deps = [
+        ":item_vocabulary",
         ":prompt_origin",
-        "//haku/console:chat_models",
         "//haku/console/session:status",
         "@pypi//pydantic",
     ],
@@ -271,10 +271,10 @@ py_test(
     deps = [
         ":conftest",
         ":conversation_event",
+        ":item_vocabulary",
         ":log",
         ":prompt_origin",
         "//:conftest",
-        "//haku/console:chat_models",
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "//haku/console/session:status",
@@ -284,4 +284,10 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "item_vocabulary",
+    srcs = ["item_vocabulary.py"],
+    visibility = ["//visibility:public"],
 )

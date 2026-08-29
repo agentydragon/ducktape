@@ -26,10 +26,10 @@ from sqlalchemy import CursorResult, Select, Subquery, func, literal, select, te
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.chat_models import ItemStatus, ItemType
 from haku.console.conversation import conversation_event, log, prompt_inbox
 from haku.console.conversation.conversation_event import FrameRange, PromptRejection
 from haku.console.conversation.item_reads import ConversationPageRow, item_of, turn_end_of
+from haku.console.conversation.item_vocabulary import ItemStatus, ItemType
 from haku.console.conversation.prompt_origin import HARNESS_ORIGIN, PromptOrigin
 from haku.console.conversation.reads import (
     ChannelAttachment,

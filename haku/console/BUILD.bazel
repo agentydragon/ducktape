@@ -12,7 +12,10 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files(
     ["logo.svg"],
-    visibility = ["//haku/console/frontend:__pkg__"],
+    visibility = [
+        "//haku/console/frontend:__pkg__",
+        "//haku/console/gnome:__pkg__",
+    ],
 )
 
 py_library(
@@ -339,6 +342,7 @@ py_library(
         ":chat_models",
         ":pydantic_column",
         "//haku/console/conversation:conversation_event",
+        "//haku/console/conversation:item_vocabulary",
         "//haku/console/conversation:prompt_origin",
         "//haku/console/grants:envelope",
         "//haku/console/grants/http:models",
@@ -1125,7 +1129,6 @@ py_test(
     ],
     requires_docker = True,
     deps = [
-        ":chat_models",
         ":conftest",
         ":conversation_read_access",
         ":database_schema",
@@ -1133,6 +1136,7 @@ py_test(
         ":recall_index_reader",
         ":recall_index_sync",
         "//:conftest",
+        "//haku/console/conversation:item_vocabulary",
         "//haku/console/harnesses:kind",
         "//haku/console/identity:operator_identity",
         "//haku/console/tools:recall_index",

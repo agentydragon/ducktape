@@ -46,9 +46,9 @@ py_library(
         "//haku/runner:runner_bin",
     ],
     deps = [
-        "//haku/console:chat_models",
         "//haku/console:conversation_read_access",
         "//haku/console:database_schema",
+        "//haku/console/conversation:item_vocabulary",
         "//haku/console/session:status",
         "//haku/console/session:store",
         "//haku/console/x/testing:waiting",

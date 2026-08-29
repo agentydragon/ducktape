@@ -411,10 +411,11 @@ quiet gap.
   (`SpaOrigin`/`MatrixOrigin`/`HarnessOrigin`/`PromptOriginKind`) in `conversation/prompt_origin.py`,
   and `PromptRejection` in `conversation/conversation_event.py` (the `PromptRejected` body's
   discriminant; `prompt_inbox.py` reads `database_schema`, which reads the event vocabulary, so the
-  refusal enum lands with the event rather than the inbox). Remaining:
-  - `ItemType`, `ItemStatus`, `ToolOutcome` → `conversation/item_reads.py` (C6) — blocked until then:
-    `database_schema.py` reads them for its columns while `item_reads.py` imports the ORM rows, so
-    moving them today would import-cycle; C6 owes them a leaf home
+  refusal enum lands with the event rather than the inbox), and `ItemType`/`ItemStatus`/`ToolOutcome`
+  in `conversation/item_vocabulary.py` — a pure leaf rather than `item_reads.py` as C6 nominally
+  planned: `item_reads.py` imports the ORM rows from `database_schema.py`, which reads these enums for
+  its columns, so hosting them there would close a `database_schema` ↔ `item_reads` cycle; the leaf
+  both layers import avoids it. Remaining:
   - `ChannelSurface` → `channels/` with the channel packaging
 - **C4d · `runtime_kind` → `harness_kind`** _(semantic — coordinated stored + wire + OpenAPI)_ — the
   harness-kind discriminator (§3.1). Landed: the wire-field drop (#5050); the `RuntimeKind` enum →

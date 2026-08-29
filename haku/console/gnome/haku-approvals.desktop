@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Haku Approvals
+Comment=Review pending Haku tool calls in a dedicated window
+Exec=haku-approvals
+Icon=haku-approvals
+Terminal=false
+Categories=Utility;Development;
+StartupNotify=true
+StartupWMClass=works.allegedly.HakuApprovals

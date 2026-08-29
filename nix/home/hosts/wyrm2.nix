@@ -62,6 +62,7 @@
   };
 
   ducktape.aiquota.enable = true;
+  ducktape.hakuApprovals.enable = true;
   ducktape.aiquota.remoteApi.enable = true;
 
   # Keep GNOME's cursor selection declarative. Unmanaged dconf values can

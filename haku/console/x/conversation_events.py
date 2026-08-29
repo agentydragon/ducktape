@@ -36,7 +36,6 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel
 
-from haku.console.chat_models import ItemType, ToolOutcome
 from haku.console.conversation import conversation_event
 from haku.console.conversation.conversation_event import (
     ConversationEventKind,
@@ -45,6 +44,7 @@ from haku.console.conversation.conversation_event import (
     ReasoningDisclosure,
     TurnOutcome,
 )
+from haku.console.conversation.item_vocabulary import ItemType, ToolOutcome
 
 
 @dataclass(frozen=True, slots=True)

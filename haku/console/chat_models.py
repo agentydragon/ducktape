@@ -1,13 +1,12 @@
-"""Value domains for the session tables — a dissolving grab-bag.
+"""`ChannelSurface` — the last resident of a dissolving grab-bag.
 
-Stable-side because <database_schema.py> reads these for its columns while their target read/event
-modules sit above the schema — moving one there today would import-cycle through
-`database_schema.py`; each waits for the reshape that gives it a leaf home.
+Stable-side because <database_schema.py> reads it for the `channel_attachment.surface` column while
+its target home under `channels/` sits above the schema — moving it there today would import-cycle
+through `database_schema.py`. It waits for the channels/ packaging that gives it a leaf home.
 """
 
-# CLEANUP(added 2026-08-28): transitional grab-bag, dissolved enum-by-enum
-#   (docs/naming_and_layout.md §6 C4). Delete the module once the last vocabulary leaves:
-#   the item enums with C6, `ChannelSurface` with the channels/ packaging.
+# CLEANUP(added 2026-08-28): last transitional resident of this grab-bag; delete the module once
+#   `ChannelSurface` moves to `channels/` with the channel packaging (docs/naming_and_layout.md §6 C4).
 
 from enum import StrEnum
 
@@ -21,41 +20,3 @@ class ChannelSurface(StrEnum):
     """
 
     MATRIX = "matrix"
-
-
-class ItemType(StrEnum):
-    """What kind of thing an item is.
-
-    A **decision** vocabulary (<README.md> § Vocabularies across a roll): every reader branches on
-    it to know which of the per-type columns mean anything, so no reader-side answer is correct for
-    a member it does not have and a new one ships a release behind its reader.
-    """
-
-    PROMPT = "prompt"
-    MESSAGE = "message"
-    REASONING = "reasoning"
-    TOOL_CALL = "tool_call"
-
-
-class ToolOutcome(StrEnum):
-    """How a tool call went, in the harness vocabulary rather than any one tool's.
-
-    `UNKNOWN` is a real outcome and not a missing one: a call whose answer the backend reported
-    without saying whether it succeeded, which every harness protocol permits.
-    """
-
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    UNKNOWN = "unknown"
-
-
-class ItemStatus(StrEnum):
-    """An item's lifecycle, and nothing else.
-
-    What it replaces put a prompt's queue state and an answer's completeness in one enum, told
-    apart only by `role`. The queue state is `conversation_prompt`'s now, where a queue belongs.
-    """
-
-    OPEN = "open"
-    COMPLETE = "complete"
-    FAILED = "failed"

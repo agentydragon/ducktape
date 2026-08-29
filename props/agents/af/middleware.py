@@ -1,8 +1,8 @@
 """MAF middleware shims for props agents.
 
 The only cross-cutting control behavior props needs at the middleware layer is
-"end the run as soon as a terminal tool fires" — the faithful port of agent_core's
-`AbortIf(lambda: exit_state.should_exit)` driven by the `submit` / `report_failure` /
+"end the run as soon as a terminal tool fires" — the faithful port of the old
+agent_core terminal-handler behavior driven by the `submit` / `report_failure` /
 `report_success` tools. Budget is enforced server-side by props-llm-proxy, and tool
 output size is bounded at the `exec` tool (`max_bytes`), so neither needs a middleware.
 """

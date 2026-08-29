@@ -78,9 +78,6 @@ class ResponsesFactory(ItemFactory):
             output=list(items),
         )
 
-    def make_final_assistant(self, text: str) -> ResponsesResult:
-        return self.make(self.assistant_text(text))
-
 
 # Type for generator that yields responses and receives requests
 MockScriptGen = Generator[ResponsesResult | ResponseOutItem | list[ResponseOutItem] | None, ResponsesRequest]

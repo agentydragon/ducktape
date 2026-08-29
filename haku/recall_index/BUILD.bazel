@@ -51,8 +51,8 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":chat_corpus",
-        "//haku/console:chat_models",
         "//haku/console:database_schema",
+        "//haku/console/conversation:item_vocabulary",
         "@pypi//sqlalchemy",
     ],
 )
@@ -224,8 +224,8 @@ py_test(
         ":schema",
         ":store",
         "//:conftest",
-        "//haku/console:chat_models",
         "//haku/console:database_schema",
+        "//haku/console/conversation:item_vocabulary",
         "//haku/console/harnesses:kind",
         "//haku/console/identity:operator_identity",
         "@pypi//pytest",

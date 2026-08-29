@@ -314,7 +314,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
             # Write PE transcripts into the main optimization output directory
             run_dir = args.base_dir
             run_dir.mkdir(parents=True, exist_ok=True)
-            # TODO(mpokorny): AbortIf(max_iters) and current ProposePromptNTimes can be exceeded under
+            # TODO(mpokorny): A max-iterations abort handler and current ProposePromptNTimes can be exceeded under
             # parallel_tool_calls if multiple calls are in flight when the budget flips. Centralize budget
             # accounting at the server boundary or serialize within 1 of the limit to enforce a hard cap.
             pe = await Agent.create(

@@ -763,11 +763,29 @@ ts_library(
 )
 
 ts_library(
+    name = "approvals_embed_page",
+    srcs = ["approvals_embed_page.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":approval_state",
+        ":client",
+        ":console_events",
+        ":shell_chrome",
+        ":tool_call_decision",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "app",
     srcs = ["app.tsx"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
+        ":approvals_embed_page",
         ":client",
         ":haku_ui_embed",
         ":oauth_result_announcement",
@@ -833,6 +851,7 @@ filegroup(
         "agent_enrollment_panel.tsx",
         "app.tsx",
         "approval_state.ts",
+        "approvals_embed_page.tsx",
         "calendar_client.ts",
         "client.ts",
         "confirm_dialog.tsx",
@@ -939,6 +958,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":approval_state",
+        ":approvals_embed_page",
         ":client",
         ":haku_ui_embed",
         ":oauth_result_page",
