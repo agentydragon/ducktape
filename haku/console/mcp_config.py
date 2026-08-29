@@ -444,6 +444,8 @@ class ConsoleConfigFile(BaseModel):
                 raise ValueError("claude_runtime was replaced by harnesses.claude_code")
             if "chat_runtimes" in value:
                 raise ValueError("chat_runtimes was renamed to harnesses")
+            if "default_chat_agent_id" in value:
+                raise ValueError("default_chat_agent_id was renamed to default_agent_id")
         return value
 
     @model_validator(mode="after")

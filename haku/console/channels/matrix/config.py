@@ -15,7 +15,7 @@ from pathlib import Path
 from uuid import UUID
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from haku.console.harnesses.kind import HarnessKind
 
@@ -104,19 +104,6 @@ class AdapterConfigFile(BaseModel):
             "carry no selector. Existing rooms follow their conversation row."
         ),
     )
-
-    @model_validator(mode="before")
-    @classmethod
-    def _accept_chat_runtimes_alias(cls, value: object) -> object:
-        # CLEANUP(added 2026-08-28): remove with ConsoleConfigFile's twin alias once the deployed
-        #   haku-console-config ConfigMap carries `harnesses` (contract step of #4772 C4c).
-        if isinstance(value, dict) and "chat_runtimes" in value:
-            if "harnesses" in value:
-                raise ValueError("harnesses and its deprecated alias chat_runtimes are both set; keep only harnesses")
-            value = dict(value)
-            value["harnesses"] = value.pop("chat_runtimes")
-        return value
-
 
 def load_adapter_config(path: Path) -> AdapterConfigFile:
     if not path.is_file():

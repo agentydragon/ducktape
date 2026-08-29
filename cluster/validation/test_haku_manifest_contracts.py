@@ -30,7 +30,7 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     assert runtime["namespace"] == template_namespace == "haku-runtime-sandbox"
     assert runtime["agent_id"] == "8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2"
     assert runtime["claim_prefix"] == "claude"
-    assert runtime["runtime_label"] == "claude-chat"
+    assert runtime["harness_label"] == "claude"
     # Claude Code's inference runs against the in-cluster LiteLLM gateway (-> CLIProxyAPI), never
     # api.anthropic.com. Tie the runner's gateway origin and auth placeholder to the fence entries
     # that admit and substitute them — the whole of #4670 — rather than restating the model roster
@@ -886,8 +886,9 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
     codex = shared_config["harnesses"]["codex_app_server"]
     assert codex["namespace"] == namespace
     assert codex["claim_prefix"] == "codex"
-    assert codex["runtime_label"] == "codex-chat"
+    assert codex["harness_label"] == "codex"
     assert codex["agent_id"] in {entry["agent_id"] for entry in shared_config["launchable_agents"]}
+    assert shared_config["matrix"]["default_agent_id"] == "8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2"
     implementation = codex["implementation"]
     assert implementation["kind"] == "codex_app_server"
     assert implementation["provider_id"] == "haku"

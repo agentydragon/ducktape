@@ -311,7 +311,7 @@ def _codex_harness_config(**overrides: Any) -> HarnessRegistrationConfig:
         "namespace": "haku-harness-sandbox",
         "warm_pool": "haku-public-coder-codex",
         "claim_prefix": "codex",
-        "harness_label": "codex-chat",
+        "harness_label": "codex",
         "cwd": "/workspace",
         "session_ttl_seconds": 7200,
         "https_proxy": "http://public-coder-codex-runner-proxy:8080",
@@ -397,7 +397,7 @@ def test_claude_registration_uses_the_shared_discriminated_model() -> None:
     assert (config.agent_id, config.claim_prefix, config.harness_label) == (
         UUID("00000000-0000-4000-8000-000000000001"),
         "claude",
-        "claude-chat",
+        "claude",
     )
 
 

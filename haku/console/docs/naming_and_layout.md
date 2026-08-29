@@ -312,18 +312,17 @@ canonical terms above.
   and must not be. Keep `claude_agent_sdk` only where it is literally the build source for the
   bundled Claude executable; SDK design/provenance documents stay historical rather than current
   runtime guidance.
-- **Harness/backend family:** the `Runtime*` → `Harness*` entity mapping and the
-  `LaunchOption.harness_kind`/`harness_display_name` wire fields are landed (C16d); the tracked
-  residue is the deployed-config contract for `runtime_label` → `harness_label` (the expand aliases
-  carry the old spelling until the ConfigMap flips) and the `runtime_kind` attribute spellings that
+- **Harness/backend family:** the `Runtime*` → `Harness*` entity mapping, the
+  `LaunchOption.harness_kind`/`harness_display_name` wire fields, and the `harness_label` config
+  contract are landed (C16d); the tracked residue is the `runtime_kind` attribute spellings that
   ride C4d's stored-column contract. `session/runtime.py` and
   `conversation/runtime.py` may retain `runtime` where they name live lifecycle/reconciliation, not
   a backend implementation.
 - **Chat family:** the named artifacts are landed (C16d): `LaunchOption`/`launch_options` with
-  `harness` fields, `HarnessLaunchAuthorizer`, `HarnessesConfig`, the `conversation_layers.md`/
+  `harness` fields, `HarnessLaunchAuthorizer`, `HarnessesConfig`, the `default_agent_id` config
+  contract, the harness labels without `-chat`, the `conversation_layers.md`/
   `conversation_runtime_facts.md`/`conversation_prompt_fragment.md.j2` renames, and the
-  `haku-conversation-*` CSS names. Tracked residue: the deployed `default_chat_agent_id` key and the
-  `claude-chat`/`codex-chat` label values (flipped by the C16d config contract); `chat_models.py`
+  `haku-conversation-*` CSS names. Tracked residue: `chat_models.py`
   (deleted once `ChannelSurface` moves with the C4 channels packaging); the derived audit id
   `haku-chat-session:` (session-token family, C16a); and remaining “chat runtime”/“chat surface”/
   “chat session”/“chat records” prose, swept by the C16f gate. Rename current concepts to their
@@ -571,10 +570,9 @@ quiet gap.
     `LaunchOption.harness_kind`/`harness_display_name` wire shape (`launch_options` on
     `ConfigResponse`, `harness_kind` on the create request); and the presentation renames
     (`conversation_layers.md`, `conversation_runtime_facts.md`, `conversation_prompt_fragment.md.j2`,
-    `haku-conversation-*` CSS). Remaining, in order: the deployed-config **contract** — after the
-    expand image (accepting both spellings) has converged, flip the ConfigMap's `runtime_label` →
-    `harness_label` and `default_chat_agent_id` → `default_agent_id`, drop `-chat` from the harness
-    label values, and remove both aliases; `chat_models.py` deletion stays gated on `ChannelSurface`
+    `haku-conversation-*` CSS); and the deployed-config **contract** — the ConfigMap's
+    `harness_label` (values `claude`/`codex`) and `default_agent_id` are the only spellings, and the
+    expand aliases are gone. Remaining: `chat_models.py` deletion stays gated on `ChannelSurface`
     moving out with the C4 channels packaging; the `runtime_kind` attribute spellings ride C4d's
     stored-column contract. Keep `runtime` for live session/conversation lifecycle only.
   - **C16e · HTTP decision endpoint token:** adopt the existing `haku/sandbox/TODO.md` direction:

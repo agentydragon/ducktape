@@ -21,7 +21,7 @@ def _runtime() -> dict[str, object]:
         "namespace": "sandbox",
         "warm_pool": "pool",
         "claim_prefix": "claude",
-        "harness_label": "claude-chat",
+        "harness_label": "claude",
         "cwd": "/workspace",
         "session_ttl_seconds": 300,
         "https_proxy": "https://proxy.example",
@@ -119,18 +119,20 @@ def test_configured_runtime_requires_launchable_agents_and_runtime_enabled_profi
         )
 
 
-def test_runtime_label_is_a_deprecated_alias_of_harness_label() -> None:
-    registration = _runtime()
+def test_runtime_label_is_rejected_after_contract() -> None:
+    registration = dict(_runtime())
     registration["runtime_label"] = registration.pop("harness_label")
-    aliased = ConsoleConfigFile.model_validate(_config(harnesses={"claude_code": registration}))
-    assert aliased.harnesses is not None
-    assert aliased.harnesses.claude_code is not None
-    assert aliased.harnesses.claude_code.harness_label == "claude-chat"
+    with pytest.raises(ValidationError, match="runtime_label"):
+        ConsoleConfigFile.model_validate(_config(harnesses={"claude_code": registration}))
 
-    with pytest.raises(ValidationError, match="deprecated alias runtime_label"):
-        ConsoleConfigFile.model_validate(
-            _config(harnesses={"claude_code": {**_runtime(), "runtime_label": "claude-chat"}})
-        )
+
+def test_default_chat_agent_id_is_rejected_after_contract() -> None:
+    """The loader ignores unknown keys (the shared YAML's `settings` section), so a config still
+    spelling the retired `default_chat_agent_id` key must fail loudly rather than silently launching
+    without a default Agent."""
+    stale = _config(default_chat_agent_id=str(_AGENT))
+    with pytest.raises(ValidationError, match="default_chat_agent_id was renamed"):
+        ConsoleConfigFile.model_validate(stale)
 
 
 def test_chat_runtimes_key_is_rejected() -> None:

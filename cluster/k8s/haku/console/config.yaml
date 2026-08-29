@@ -41,7 +41,7 @@ harnesses:
     namespace: haku-runtime-sandbox
     warm_pool: haku-claude
     claim_prefix: claude
-    runtime_label: claude-chat
+    harness_label: claude
     cwd: /workspace
     session_ttl_seconds: 7200
     # Colocated Console egress fence (#4670): replaces the dedicated haku-claude-oauth-proxy iron
@@ -93,7 +93,7 @@ harnesses:
     namespace: haku-runtime-sandbox
     warm_pool: haku-public-coder-codex
     claim_prefix: codex
-    runtime_label: codex-chat
+    harness_label: codex
     cwd: /workspace
     session_ttl_seconds: 7200
     # Colocated Console egress fence (#4670): replaces the dedicated public-coder-codex-runner-proxy

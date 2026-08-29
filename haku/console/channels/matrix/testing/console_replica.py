@@ -176,7 +176,7 @@ async def _serve() -> None:
         namespace="haku-claude-sandbox",
         warm_pool="haku-claude",
         claim_prefix="claude",
-        harness_label="claude-chat",
+        harness_label="claude",
         cwd=_environment("HAKU_E2E_WORKSPACE"),
         session_ttl_seconds=7200,
         https_proxy="http://proxy.test:8180",
