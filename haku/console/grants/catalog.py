@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+from collections.abc import Sequence
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -456,7 +457,7 @@ class GrantCatalog:
         method: HttpMethod | None,
         path: str | None,
         require_prohibited_address_allowance: bool,
-    ) -> list[EgressConfigGrantEntry]:
+    ) -> Sequence[EgressConfigGrantEntry]:
         return [
             grant
             for grant in self._http_config_grants
