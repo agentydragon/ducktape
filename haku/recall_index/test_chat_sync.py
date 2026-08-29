@@ -75,7 +75,6 @@ async def new_session(source: AsyncSession, operator_id: UUID, *, access_profile
             agent_id=agent_id,
             access_profile_id=access_profile_id,
             harness_kind=HarnessKind.CLAUDE_CODE,
-            legacy_harness_kind=HarnessKind.CLAUDE_CODE,
             created_at=_NOW,
         )
     )

@@ -22,6 +22,7 @@ from sqlalchemy.exc import IntegrityError, ProgrammingError
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import (
     UNMAPPED_COLUMNS_PENDING_DROP,
+    UNMAPPED_CONSTRAINTS_PENDING_DROP,
     UNMAPPED_INDEXES_PENDING_DROP,
     UNMAPPED_TABLES_PENDING_DROP,
     metadata,
@@ -577,6 +578,8 @@ def _not_awaiting_its_drop(name: str | None, type_: str, parent_names: dict[str,
             return name not in UNMAPPED_TABLES_PENDING_DROP
         case "column":
             return (parent_names["table_name"], name) not in UNMAPPED_COLUMNS_PENDING_DROP
+        case "check_constraint":
+            return name not in UNMAPPED_CONSTRAINTS_PENDING_DROP
         case "index":
             return name not in UNMAPPED_INDEXES_PENDING_DROP
         case _:

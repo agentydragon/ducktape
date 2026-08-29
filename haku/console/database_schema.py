@@ -1764,6 +1764,10 @@ UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset(
     }
 )
 
+# The legacy conversation discriminator's constraint remains physical through the release that
+# stops writing the column. The following release drops it with the column.
+UNMAPPED_CONSTRAINTS_PENDING_DROP: frozenset[str] = frozenset({"ck_conversation_runtime_kind"})
+
 # Indexes the database has and no ORM class declares. Reachable only through a column above: an
 # index over columns that are all still mapped would be drift rather than an unfinished drop.
 UNMAPPED_INDEXES_PENDING_DROP: frozenset[str] = frozenset()
