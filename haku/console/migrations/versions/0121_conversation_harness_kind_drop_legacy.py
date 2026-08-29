@@ -5,8 +5,8 @@ the compatibility window has elapsed, so remove the old column and CHECK. Rebuil
 identity guard to protect only the canonical ``harness_kind`` column before the first post-drop
 update can occur.
 
-Revision ID: 0120
-Revises: 0119
+Revision ID: 0121
+Revises: 0120
 """
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0120"
-down_revision: str | None = "0119"
+revision: str = "0121"
+down_revision: str | None = "0120"
 branch_labels: str | None = None
 depends_on: str | None = None
 
