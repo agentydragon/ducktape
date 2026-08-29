@@ -71,9 +71,9 @@ checks. It is deliberately its own signal on a plain runner:
 and a red drift check neither blocks nor delays bazel-ci.
 
 The binary is the ordinary artifact pipeline: `//devinfra:gazelle_python_binary`
-is a row in <../ci/artifact*targets.json>, released from devel pushes and pinned
+is a row in <../ci/artifact_targets.json>, released from devel pushes and pinned
 into `nix/artifact-pins.json` by sync-pins. A PR that changes the binary itself
-(plugin version, patch, binary composition) is still checked with the \_released*
+(plugin version, patch, binary composition) is still checked with the released
 binary, which may disagree with that PR's tree — the devel run after merge is
 the authoritative one.
 
