@@ -151,7 +151,7 @@ class PostgresGrantRepository:
             await session.flush()
             return tuple(self._row_to_model(row) for row in rows)
 
-    async def list(
+    async def list_for_owner(
         self, *, owner_agent_id: UUID, now: datetime.datetime, include_terminal: bool = True
     ) -> tuple[Grant, ...]:
         async with self._sessions() as session:
@@ -165,9 +165,13 @@ class PostgresGrantRepository:
             ).all()
             return tuple(self._row_to_model(row) for row in rows)
 
-    async def list_all(self, *, now: datetime.datetime, include_terminal: bool = True) -> tuple[Grant, ...]:
+    async def list(
+        self, *, principal: GrantPrincipal | None, now: datetime.datetime, include_terminal: bool = True
+    ) -> tuple[Grant, ...]:
         async with self._sessions() as session:
             statement = select(KubernetesGrantRow)
+            if principal is not None:
+                statement = statement.where(grant_principal_clause(KubernetesGrantRow, principal))
             if not include_terminal:
                 statement = statement.where(_not_ended(), KubernetesGrantRow.expires_at > now)
             rows = (
@@ -212,20 +216,6 @@ class PostgresGrantRepository:
             statement = select(KubernetesGrantRow).where(
                 request_principal_clause(KubernetesGrantRow, request_principal)
             )
-            if not include_terminal:
-                statement = statement.where(_not_ended(), KubernetesGrantRow.expires_at > now)
-            rows = (
-                await session.scalars(
-                    statement.order_by(KubernetesGrantRow.created_at.desc(), KubernetesGrantRow.grant_id)
-                )
-            ).all()
-            return tuple(self._row_to_model(row) for row in rows)
-
-    async def list_for_principal(
-        self, *, principal: GrantPrincipal, now: datetime.datetime, include_terminal: bool = True
-    ) -> tuple[Grant, ...]:
-        async with self._sessions() as session:
-            statement = select(KubernetesGrantRow).where(grant_principal_clause(KubernetesGrantRow, principal))
             if not include_terminal:
                 statement = statement.where(_not_ended(), KubernetesGrantRow.expires_at > now)
             rows = (

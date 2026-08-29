@@ -74,15 +74,19 @@ class FakeRepository:
         self.grants.update((grant.grant_id, grant) for grant in created)
         return created
 
-    async def list(self, *, owner_agent_id, now, include_terminal=True):
+    async def list_for_owner(self, *, owner_agent_id, now, include_terminal=True):
         return tuple(
             grant
             for grant in self.grants.values()
             if grant.owner_agent_id == owner_agent_id and (include_terminal or self._active(grant, now))
         )
 
-    async def list_all(self, *, now, include_terminal=True):
-        return tuple(grant for grant in self.grants.values() if include_terminal or self._active(grant, now))
+    async def list(self, *, principal: GrantPrincipal | None = None, now, include_terminal=True):
+        return tuple(
+            grant
+            for grant in self.grants.values()
+            if (principal is None or grant.principal == principal) and (include_terminal or self._active(grant, now))
+        )
 
     async def list_for_request_principal(self, *, request_principal, now, include_terminal=True):
         return tuple(
@@ -90,13 +94,6 @@ class FakeRepository:
             for grant in self.grants.values()
             if grant_principal_applies_to(grant.principal, request_principal)
             and (include_terminal or self._active(grant, now))
-        )
-
-    async def list_for_principal(self, *, principal: GrantPrincipal, now, include_terminal=True):
-        return tuple(
-            grant
-            for grant in self.grants.values()
-            if grant.principal == principal and (include_terminal or self._active(grant, now))
         )
 
     async def get(self, *, owner_agent_id, grant_id):

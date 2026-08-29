@@ -171,25 +171,18 @@ class GrantCatalog:
         entries.extend(self._config_grants(request_principal=request_principal))
         return tuple(entries)
 
-    async def list_all(self) -> tuple[Grant, ...]:
-        """List every declared authority across every source and subject."""
-
-        kubernetes, http = await asyncio.gather(self._kubernetes_grants.list_all(), self._http_grants.list_all())
-        return (
-            *self._all_config_grants(),
-            *(self._database_kubernetes_grant(grant) for grant in kubernetes),
-            *(self._database_http_grant(grant) for grant in http),
-        )
-
-    async def list_for_principal(self, *, principal: GrantPrincipal) -> tuple[Grant, ...]:
-        """List authority whose declared subject is exactly ``principal`` across every source."""
+    async def list(self, *, principal: GrantPrincipal | None = None) -> tuple[Grant, ...]:
+        """List every declared authority, optionally limited to one exact subject."""
 
         kubernetes, http = await asyncio.gather(
-            self._kubernetes_grants.list_for_principal(principal=principal),
-            self._http_grants.list_for_principal(principal=principal),
+            self._kubernetes_grants.list(principal=principal), self._http_grants.list(principal=principal)
         )
         return (
-            *self._config_grants_for_principal(principal=principal),
+            *(
+                self._all_config_grants()
+                if principal is None
+                else self._config_grants_for_principal(principal=principal)
+            ),
             *(self._database_kubernetes_grant(grant) for grant in kubernetes),
             *(self._database_http_grant(grant) for grant in http),
         )
@@ -199,8 +192,8 @@ class GrantCatalog:
 
         request_principal = RequestPrincipal(agent_id=agent_id, session_id=None, access_profile_id=access_profile_id)
         kubernetes, http = await asyncio.gather(
-            self._kubernetes_grants.list_grants(owner_agent_id=agent_id, include_terminal=True),
-            self._http_grants.list_grants(owner_agent_id=agent_id, include_terminal=True),
+            self._kubernetes_grants.list_for_owner(owner_agent_id=agent_id, include_terminal=True),
+            self._http_grants.list_for_owner(owner_agent_id=agent_id, include_terminal=True),
         )
         return (
             *self._config_grants(request_principal=request_principal),

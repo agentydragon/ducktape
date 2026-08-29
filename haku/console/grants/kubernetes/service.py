@@ -51,11 +51,13 @@ class GrantRepository(Protocol):
         expires_at: datetime.datetime,
     ) -> tuple[Grant, ...]: ...
 
-    async def list(
+    async def list_for_owner(
         self, *, owner_agent_id: UUID, now: datetime.datetime, include_terminal: bool = True
     ) -> tuple[Grant, ...]: ...
 
-    async def list_all(self, *, now: datetime.datetime, include_terminal: bool = True) -> tuple[Grant, ...]: ...
+    async def list(
+        self, *, principal: GrantPrincipal | None, now: datetime.datetime, include_terminal: bool = True
+    ) -> tuple[Grant, ...]: ...
 
     async def get(self, *, owner_agent_id: UUID, grant_id: UUID) -> Grant: ...
 
@@ -65,10 +67,6 @@ class GrantRepository(Protocol):
 
     async def list_for_request_principal(
         self, *, request_principal: RequestPrincipal, now: datetime.datetime, include_terminal: bool = True
-    ) -> tuple[Grant, ...]: ...
-
-    async def list_for_principal(
-        self, *, principal: GrantPrincipal, now: datetime.datetime, include_terminal: bool = True
     ) -> tuple[Grant, ...]: ...
 
     async def active_for_request_principal(
@@ -223,15 +221,19 @@ class GrantService:
             expires_at=expires_at,
         )
 
-    async def list_grants(self, *, owner_agent_id: UUID, include_terminal: bool = True) -> tuple[Grant, ...]:
-        return await self._repository.list(
+    async def list_for_owner(self, *, owner_agent_id: UUID, include_terminal: bool = True) -> tuple[Grant, ...]:
+        """List lifecycle-owned grants, including every subject they may target."""
+
+        return await self._repository.list_for_owner(
             owner_agent_id=owner_agent_id, now=self._now(), include_terminal=include_terminal
         )
 
-    async def list_all(self, *, include_terminal: bool = True) -> tuple[Grant, ...]:
-        """List every stored grant, irrespective of owner or subject."""
+    async def list(
+        self, *, principal: GrantPrincipal | None = None, include_terminal: bool = True
+    ) -> tuple[Grant, ...]:
+        """List all grants, or the grants declared for one exact principal."""
 
-        return await self._repository.list_all(now=self._now(), include_terminal=include_terminal)
+        return await self._repository.list(principal=principal, now=self._now(), include_terminal=include_terminal)
 
     async def list_applicable_grants(
         self, *, request_principal: RequestPrincipal, include_terminal: bool = True
@@ -240,15 +242,6 @@ class GrantService:
 
         return await self._repository.list_for_request_principal(
             request_principal=request_principal, now=self._now(), include_terminal=include_terminal
-        )
-
-    async def list_for_principal(
-        self, *, principal: GrantPrincipal, include_terminal: bool = True
-    ) -> tuple[Grant, ...]:
-        """List grants whose declared subject is exactly ``principal``."""
-
-        return await self._repository.list_for_principal(
-            principal=principal, now=self._now(), include_terminal=include_terminal
         )
 
     async def get_grant(self, *, owner_agent_id: UUID, grant_id: UUID) -> Grant:

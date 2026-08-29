@@ -160,9 +160,7 @@ class GrantsToolsService:
         request_principal = context.request_principal
         if principal == "self":
             return list(await self._catalog.list_applicable(request_principal=request_principal))
-        if principal is None:
-            return list(await self._catalog.list_all())
-        return list(await self._catalog.list_for_principal(principal=principal))
+        return list(await self._catalog.list(principal=principal))
 
     async def get_grant(self, *, context: McpExecutionContext, domain: GrantDomain, grant_id: UUID) -> Grant:
         if domain is GrantDomain.KUBERNETES:
