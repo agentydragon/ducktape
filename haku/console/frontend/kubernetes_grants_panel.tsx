@@ -30,34 +30,14 @@ import { principalText } from "./tool_rendering/grants/responses";
 export type GrantHistoryFilter = "active" | "history" | "all";
 
 type KubernetesGrant = OperatorKubernetesGrant["grant"];
-type DatabaseGrantSource = Extract<KubernetesGrant["source"], { kind: "database" }>;
-type ConfigFileGrantSource = Extract<KubernetesGrant["source"], { kind: "config_file" }>;
 type KubernetesRulesCoverage = Extract<KubernetesGrant["coverage"], { kind: "kubernetes_rules" }>;
-type KubernetesSarCoverage = Extract<KubernetesGrant["coverage"], { kind: "kubernetes_sar" }>;
 type KubernetesGrantScope = KubernetesRulesCoverage["scope"];
 type KubernetesRule = KubernetesRulesCoverage["rules"][number];
-type GrantPrincipalSubject = Extract<KubernetesGrant["subject"], { kind: "grant_principal" }>;
-type AccessProfileSubject = Extract<KubernetesGrant["subject"], { kind: "access_profile" }>;
-type ExpiringGrantValidity = KubernetesGrant["validity"] & { ends_at: string };
-type PrettyDatabaseKubernetesGrant = KubernetesGrant & {
-  source: DatabaseGrantSource;
-  coverage: KubernetesRulesCoverage;
-  subject: GrantPrincipalSubject;
-  validity: ExpiringGrantValidity;
-};
-type PrettyConfigKubernetesGrant = KubernetesGrant & {
-  source: ConfigFileGrantSource;
-  coverage: KubernetesSarCoverage;
-  subject: AccessProfileSubject;
-};
-type PrettyDatabaseOperatorGrant = Omit<OperatorKubernetesGrant, "grant"> & { grant: PrettyDatabaseKubernetesGrant };
-type PrettyConfigOperatorGrant = Omit<OperatorKubernetesGrant, "grant"> & { grant: PrettyConfigKubernetesGrant };
-
-type KubernetesGrantSet = {
+type RevokeTarget = {
   agentId: string;
   agentDisplayName: string;
   sourceToolCallId: string;
-  grants: [PrettyDatabaseOperatorGrant, ...PrettyDatabaseOperatorGrant[]];
+  activeCount: number;
 };
 
 const STATUS_DISPLAY: Record<KubernetesGrant["validity"]["status"], { label: string; color: string }> = {
@@ -104,147 +84,136 @@ function RuleLine({ rule }: { rule: KubernetesRule }) {
   );
 }
 
-function isPrettyDatabaseGrant(item: OperatorKubernetesGrant): item is PrettyDatabaseOperatorGrant {
-  const { grant } = item;
-  return (
-    grant.source.kind === "database" &&
-    grant.coverage.kind === "kubernetes_rules" &&
-    grant.subject.kind === "grant_principal" &&
-    grant.validity.ends_at !== null
-  );
+function GrantFallback({ grant }: { grant: KubernetesGrant }) {
+  return <CodeBlock language="json" value={JSON.stringify(grant, null, 2)} />;
 }
 
-function isPrettyConfigGrant(item: OperatorKubernetesGrant): item is PrettyConfigOperatorGrant {
-  const { grant } = item;
-  return (
-    grant.source.kind === "config_file" &&
-    grant.coverage.kind === "kubernetes_sar" &&
-    grant.subject.kind === "access_profile"
-  );
-}
-
-function GrantFallbackCard({ item }: { item: OperatorKubernetesGrant }) {
-  return (
-    <section className="haku-shell-card">
-      <Stack gap="xs">
-        <Group justify="space-between" gap="sm" wrap="nowrap">
-          <Text fw={600}>{item.agent_display_name}</Text>
-          <Badge color="gray" variant="light">
-            Unformatted grant
+function GrantSource({ grant }: { grant: KubernetesGrant }) {
+  switch (grant.source.kind) {
+    case "database": {
+      const created = formatTimestamp(grant.source.created_at);
+      return (
+        <>
+          <Badge color="violet" variant="light">
+            Database
           </Badge>
-        </Group>
-        <Text size="xs" c="dimmed">
-          This grant has no dedicated rendering yet. Its full authority record is shown below.
-        </Text>
-        <CodeBlock language="json" value={JSON.stringify(item, null, 2)} />
-      </Stack>
-    </section>
-  );
-}
-
-function GrantSetCard({ item, onRevoke }: { item: KubernetesGrantSet; onRevoke: (item: KubernetesGrantSet) => void }) {
-  const first = item.grants[0];
-  const activeCount = item.grants.filter(({ grant }) => grant.validity.status === "active").length;
-  const created = formatTimestamp(first.grant.source.created_at);
-  const expires = formatTimestamp(first.grant.validity.ends_at);
-  return (
-    <section className="haku-shell-card">
-      <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
-        <Stack gap={2} style={{ minWidth: 0 }}>
-          <Text fw={600}>{item.agentDisplayName}</Text>
-          <Text size="xs" c="dimmed" ff="monospace">
-            {item.grants.length} grant{item.grants.length === 1 ? "" : "s"} from one approval
+          <Text size="xs" c="dimmed" ff="monospace" style={{ overflowWrap: "anywhere" }}>
+            {grant.source.id}
           </Text>
-          <Text size="xs" c="dimmed">
-            Applies to {principalText(first.grant.subject.principal)}
+          <Text size="xs" c="dimmed" title={created.title}>
+            Created {created.text}
           </Text>
-        </Stack>
-        <Badge color={activeCount > 0 ? "teal" : "gray"} variant="light" style={{ flexShrink: 0 }}>
-          {activeCount > 0 ? `${activeCount} active` : "Ended"}
-        </Badge>
-      </Group>
-
-      <Stack gap="xs" mt="sm">
-        {item.grants.map(({ grant }) => {
-          const status = STATUS_DISPLAY[grant.validity.status];
-          const ended = grant.validity.ended_at ? formatTimestamp(grant.validity.ended_at) : null;
-          return (
-            <Stack
-              key={grant.source.id}
-              gap={4}
-              p="xs"
-              style={{ border: "1px solid var(--mantine-color-default-border)", borderRadius: 6 }}
-            >
-              <Group justify="space-between" gap="sm" wrap="nowrap">
-                <Text size="xs" c="dimmed" ff="monospace" style={{ overflowWrap: "anywhere" }}>
-                  {grant.source.id}
-                </Text>
-                <Badge size="xs" color={status.color} variant="light" style={{ flexShrink: 0 }}>
-                  {status.label}
-                </Badge>
-              </Group>
-              <Text size="sm">{scopeLabel(grant.coverage.scope)}</Text>
-              <Stack gap={4}>
-                {grant.coverage.rules.map((rule, index) => (
-                  <RuleLine key={index} rule={rule} />
-                ))}
-              </Stack>
-              {ended && (
-                <Text size="xs" c="dimmed" title={ended.title}>
-                  Ended {ended.text}
-                  {grant.validity.end_reason ? ` · ${grant.validity.end_reason}` : ""}
-                </Text>
-              )}
-            </Stack>
-          );
-        })}
-        <Group gap="md" wrap="wrap">
-          <Text size="xs" title={created.title}>
-            <Text span c="dimmed">
-              Created{" "}
-            </Text>
-            {created.text}
-          </Text>
-          <Text size="xs" title={expires.title}>
-            <Text span c="dimmed">
-              Expires{" "}
-            </Text>
-            {expires.text}
-          </Text>
-        </Group>
-        <Group justify="space-between" align="center" gap="sm" wrap="wrap">
-          <ExternalLink href={toolCallPath(item.sourceToolCallId)} size="xs" ff="monospace">
-            Source tool call {item.sourceToolCallId}
+          <ExternalLink href={toolCallPath(grant.source.tool_call_id)} size="xs" ff="monospace">
+            Source tool call {grant.source.tool_call_id}
           </ExternalLink>
-          {activeCount > 0 && (
-            <Button size="compact-sm" color="red" variant="light" onClick={() => onRevoke(item)}>
-              Revoke active set…
-            </Button>
-          )}
-        </Group>
-      </Stack>
-    </section>
-  );
-}
-
-function ConfigGrantCard({ item }: { item: PrettyConfigOperatorGrant }) {
-  const { grant } = item;
-  return (
-    <section className="haku-shell-card">
-      <Stack gap={4}>
-        <Group justify="space-between" gap="sm" wrap="nowrap">
-          <Text fw={600}>{item.agent_display_name}</Text>
+        </>
+      );
+    }
+    case "config_file":
+      return (
+        <>
           <Badge color="blue" variant="light">
             Configuration file
           </Badge>
+          <Text size="xs" c="dimmed" ff="monospace">
+            {grant.source.entry_id}
+          </Text>
+        </>
+      );
+  }
+  return <GrantFallback grant={grant} />;
+}
+
+function GrantSubject({ grant }: { grant: KubernetesGrant }) {
+  switch (grant.subject.kind) {
+    case "grant_principal":
+      return <Text size="xs">Applies to {principalText(grant.subject.principal)}</Text>;
+    case "access_profile":
+      return <Text size="xs">Access profile {grant.subject.access_profile_id}</Text>;
+  }
+  return <GrantFallback grant={grant} />;
+}
+
+function GrantCoverage({ grant }: { grant: KubernetesGrant }) {
+  switch (grant.coverage.kind) {
+    case "kubernetes_rules":
+      return (
+        <>
+          <Text size="sm">{scopeLabel(grant.coverage.scope)}</Text>
+          <Stack gap={4}>
+            {grant.coverage.rules.map((rule, index) => (
+              <RuleLine key={index} rule={rule} />
+            ))}
+          </Stack>
+        </>
+      );
+    case "kubernetes_sar":
+      return <Text size="sm">Kubernetes SubjectAccessReview identity: {grant.coverage.subject.username}</Text>;
+  }
+  return <GrantFallback grant={grant} />;
+}
+
+function GrantValidity({ grant }: { grant: KubernetesGrant }) {
+  const status = STATUS_DISPLAY[grant.validity.status];
+  const endsAt = grant.validity.ends_at ? formatTimestamp(grant.validity.ends_at) : null;
+  const endedAt = grant.validity.ended_at ? formatTimestamp(grant.validity.ended_at) : null;
+  return (
+    <Stack gap={2}>
+      <Badge size="xs" color={status.color} variant="light" style={{ alignSelf: "flex-start" }}>
+        {status.label}
+      </Badge>
+      {endsAt && (
+        <Text size="xs" c="dimmed" title={endsAt.title}>
+          Expires {endsAt.text}
+        </Text>
+      )}
+      {endedAt && (
+        <Text size="xs" c="dimmed" title={endedAt.title}>
+          Ended {endedAt.text}
+          {grant.validity.end_reason ? ` · ${grant.validity.end_reason}` : ""}
+        </Text>
+      )}
+    </Stack>
+  );
+}
+
+function GrantCard({
+  item,
+  activeSetCount,
+  onRevoke,
+}: {
+  item: OperatorKubernetesGrant;
+  activeSetCount: number;
+  onRevoke: (target: RevokeTarget) => void;
+}) {
+  const { grant } = item;
+  return (
+    <section className="haku-shell-card">
+      <Stack gap="xs">
+        <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
+          <Text fw={600}>{item.agent_display_name}</Text>
+          <GrantValidity grant={grant} />
         </Group>
-        <Text size="sm">Kubernetes access through configured SubjectAccessReview identity.</Text>
-        <Text size="xs" c="dimmed" ff="monospace">
-          {grant.source.entry_id}
-        </Text>
-        <Text size="xs" c="dimmed">
-          Access profile {grant.subject.access_profile_id} · {grant.coverage.subject.username}
-        </Text>
+        <GrantSource grant={grant} />
+        <GrantSubject grant={grant} />
+        <GrantCoverage grant={grant} />
+        {grant.source.kind === "database" && activeSetCount > 0 && (
+          <Button
+            size="compact-sm"
+            color="red"
+            variant="light"
+            onClick={() =>
+              onRevoke({
+                agentId: item.agent_id,
+                agentDisplayName: item.agent_display_name,
+                sourceToolCallId: grant.source.tool_call_id,
+                activeCount: activeSetCount,
+              })
+            }
+          >
+            Revoke {activeSetCount} active grant{activeSetCount === 1 ? "" : "s"} from this approval…
+          </Button>
+        )}
       </Stack>
     </section>
   );
@@ -256,14 +225,14 @@ function RevokeDialog({
   onClose,
   onConfirm,
 }: {
-  item: KubernetesGrantSet | null;
+  item: RevokeTarget | null;
   busy: boolean;
   onClose: () => void;
   onConfirm: (reason: string) => void;
 }) {
   const [reason, setReason] = useState("");
   useEffect(() => setReason(""), [item?.sourceToolCallId]);
-  const activeCount = item?.grants.filter(({ grant }) => grant.validity.status === "active").length ?? 0;
+  const activeCount = item?.activeCount ?? 0;
   return (
     <Modal
       opened={item !== null}
@@ -313,7 +282,7 @@ export function KubernetesGrantsPanel(): JSX.Element {
   const [loading, setLoading] = useState(false);
   const [historyFilter, setHistoryFilter] = useState<GrantHistoryFilter>("active");
   const [agentId, setAgentId] = useState<string | null>(null);
-  const [revoking, setRevoking] = useState<KubernetesGrantSet | null>(null);
+  const [revoking, setRevoking] = useState<RevokeTarget | null>(null);
   const [revokeBusy, setRevokeBusy] = useState(false);
 
   const load = useCallback(() => {
@@ -340,40 +309,20 @@ export function KubernetesGrantsPanel(): JSX.Element {
     return [...names].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
   }, [grants]);
 
-  const grantSets = useMemo(() => {
-    const sets = new Map<string, KubernetesGrantSet>();
+  const activeGrantsByApproval = useMemo(() => {
+    const counts = new Map<string, number>();
     for (const item of grants ?? []) {
-      if (!isPrettyDatabaseGrant(item)) continue;
+      if (item.grant.source.kind !== "database" || item.grant.validity.status !== "active") continue;
       const key = `${item.agent_id}:${item.grant.source.tool_call_id}`;
-      const current = sets.get(key);
-      if (current) {
-        current.grants.push(item);
-      } else {
-        sets.set(key, {
-          agentId: item.agent_id,
-          agentDisplayName: item.agent_display_name,
-          sourceToolCallId: item.grant.source.tool_call_id,
-          grants: [item],
-        });
-      }
+      counts.set(key, (counts.get(key) ?? 0) + 1);
     }
-    return [...sets.values()].map((set) => {
-      set.grants.sort((left, right) => left.grant.source.id.localeCompare(right.grant.source.id));
-      return set;
-    });
+    return counts;
   }, [grants]);
 
-  const configGrants = useMemo(
-    () => (grants ?? []).filter(isPrettyConfigGrant).filter((item) => agentId === null || item.agent_id === agentId),
-    [agentId, grants]
-  );
-
-  const fallbackGrants = useMemo(
+  const visible = useMemo(
     () =>
       (grants ?? []).filter(
         (item) =>
-          !isPrettyDatabaseGrant(item) &&
-          !isPrettyConfigGrant(item) &&
           (agentId === null || item.agent_id === agentId) &&
           (historyFilter === "all" ||
             (historyFilter === "active"
@@ -381,18 +330,6 @@ export function KubernetesGrantsPanel(): JSX.Element {
               : item.grant.validity.status !== "active"))
       ),
     [agentId, grants, historyFilter]
-  );
-
-  const visible = useMemo(
-    () =>
-      grantSets.filter((item) => {
-        if (agentId !== null && item.agentId !== agentId) return false;
-        const active = item.grants.some(({ grant }) => grant.validity.status === "active");
-        if (historyFilter === "active") return active;
-        if (historyFilter === "history") return !active;
-        return true;
-      }),
-    [agentId, grantSets, historyFilter]
   );
 
   function confirmRevoke(reason: string) {
@@ -481,22 +418,29 @@ export function KubernetesGrantsPanel(): JSX.Element {
           <Loader aria-label="Loading Kubernetes grants" />
         </Group>
       )}
-      {grants && visible.length === 0 && configGrants.length === 0 && fallbackGrants.length === 0 && (
+      {grants && visible.length === 0 && (
         <section className="haku-shell-card">
           <Text size="sm" c="dimmed">
             No {historyFilter === "all" ? "" : `${historyFilter} `}Kubernetes grants match these filters.
           </Text>
         </section>
       )}
-      {configGrants.map((item) => (
-        <ConfigGrantCard key={`${item.agent_id}:${item.grant.source.entry_id}`} item={item} />
-      ))}
-      {visible.map((item) => (
-        <GrantSetCard key={`${item.agentId}:${item.sourceToolCallId}`} item={item} onRevoke={setRevoking} />
-      ))}
-      {fallbackGrants.map((item, index) => (
-        <GrantFallbackCard key={`${item.agent_id}:unformatted:${index}`} item={item} />
-      ))}
+      {visible.map((item) => {
+        const { grant } = item;
+        const sourceId = grant.source.kind === "database" ? grant.source.id : grant.source.entry_id;
+        const activeSetCount =
+          grant.source.kind === "database"
+            ? (activeGrantsByApproval.get(`${item.agent_id}:${grant.source.tool_call_id}`) ?? 0)
+            : 0;
+        return (
+          <GrantCard
+            key={`${item.agent_id}:${sourceId}`}
+            item={item}
+            activeSetCount={activeSetCount}
+            onRevoke={setRevoking}
+          />
+        );
+      })}
       <RevokeDialog item={revoking} busy={revokeBusy} onClose={() => setRevoking(null)} onConfirm={confirmRevoke} />
     </Stack>
   );
