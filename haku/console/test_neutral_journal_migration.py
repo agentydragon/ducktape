@@ -33,8 +33,8 @@ def _session(conn: Connection, *, head_schema: bool = False) -> tuple[UUID, UUID
     if head_schema:
         conn.execute(
             text(
-                "INSERT INTO conversation (conversation_id, operator_id, harness_kind, runtime_kind, created_at)"
-                " VALUES (:id, :operator_id, 'claude_code', 'claude_code', :n)"
+                "INSERT INTO conversation (conversation_id, operator_id, harness_kind, created_at)"
+                " VALUES (:id, :operator_id, 'claude_code', :n)"
             ),
             {"id": conversation_id, "operator_id": operator_id, "n": _NOW},
         )
