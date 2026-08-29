@@ -10,6 +10,7 @@ pkgs.stdenvNoCC.mkDerivation {
   dontUnpack = true;
 
   nativeBuildInputs = [
+    pkgs.gobject-introspection
     pkgs.makeWrapper
     pkgs.unzip
     pkgs.wrapGAppsHook3
