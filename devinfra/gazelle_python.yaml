@@ -6,6 +6,7 @@
 ---
 manifest:
   modules_mapping:
+    30fcd23745efe32ce681__mypyc: black
     4c842c94c09923bae9e4__mypyc: mypy
     955cd85d9c9a4f4b30d3__mypyc: tomli
     Crypto: pycryptodome
@@ -42,6 +43,7 @@ manifest:
     appdirs: appdirs
     apscheduler: apscheduler
     arch: arch
+    argcomplete: argcomplete
     argon2: argon2_cffi
     arrow: arrow
     asgiref: asgiref
@@ -56,7 +58,10 @@ manifest:
     bcrypt: bcrypt
     beancount: beancount
     beartype: beartype
+    black: black
+    blackd: black
     bleach: bleach
+    blib2to3: black
     blinker: blinker
     boto3: boto3
     botocore: botocore
@@ -85,6 +90,7 @@ manifest:
     cryptography: cryptography
     cycler: cycler
     cyclopts: cyclopts
+    datamodel_code_generator: datamodel_code_generator
     dateutil: python_dateutil
     dbus_fast: dbus_fast
     debugpy: debugpy
@@ -111,6 +117,7 @@ manifest:
     fastjsonschema: fastjsonschema
     fastmcp: fastmcp_slim
     fastuuid: fastuuid
+    fd7dcdb10166ebd4db98__mypyc: pytokens
     filelock: filelock
     flask: flask
     flatbuffers: flatbuffers
@@ -121,6 +128,7 @@ manifest:
     frozenlist: frozenlist
     fsspec: fsspec
     genai_prices: genai_prices
+    genson: genson
     github: pygithub
     glide: valkey_glide
     glide_shared: valkey_glide
@@ -226,6 +234,7 @@ manifest:
     ijson: ijson
     importlib_metadata: importlib_metadata
     importlib_resources: importlib_resources
+    inflect: inflect
     iniconfig: iniconfig
     inspect_ai: inspect_ai
     instructor: instructor
@@ -235,6 +244,7 @@ manifest:
     ipykernel_launcher: ipykernel
     ipython_pygments_lexers: ipython_pygments_lexers
     isoduration: isoduration
+    isort: isort
     itsdangerous: itsdangerous
     jaraco.classes: jaraco.classes
     jaraco.context: jaraco_context
@@ -479,6 +489,7 @@ manifest:
     python_multipart: python_multipart
     python_socks: python_socks
     pythonjsonlogger: python_json_logger
+    pytokens: pytokens
     pytz: pytz
     pywebpush: pywebpush
     qrcode: qrcode
@@ -602,6 +613,7 @@ manifest:
     traitlets: traitlets
     trio: trio
     truststore: truststore
+    typeguard: typeguard
     typer: typer
     typer_di: typer_di
     typesafety.test_container: punq
@@ -646,4 +658,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 7191ff595718897becc71a6d151d068d9224d1e17fa1100cd5b4bd46019cbc3b
+integrity: 059f33b2dee955a5fa44146a7b74547d2e10f4be0c8fcebd291739c195a940c8

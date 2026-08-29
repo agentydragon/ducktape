@@ -733,6 +733,12 @@ filegroup(
     ]) + ["codex-package.json"],
     visibility = ["//visibility:public"],
 )
+
+filegroup(
+    name = "binary",
+    srcs = ["bin/codex"],
+    visibility = ["//visibility:public"],
+)
 """,
     sha256 = "e2a64d421c10aaf0b7e3c0e8bd71b71e497d75823003318b674a278d71add0c7",
     strip_prefix = "package/vendor/x86_64-unknown-linux-musl",

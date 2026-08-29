@@ -37,6 +37,22 @@ def _sequential_ids() -> Any:
 
 
 def _notification(method: str, params: dict[str, Any]) -> dict[str, Any]:
+    params = dict(params)
+    if method in {"item/started", "item/completed"}:
+        params.setdefault("threadId", "thread")
+        params.setdefault("turnId", "turn")
+        params.setdefault("startedAtMs" if method == "item/started" else "completedAtMs", 1)
+    elif method in {"item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/commandExecution/outputDelta"}:
+        params.setdefault("threadId", "thread")
+        params.setdefault("turnId", "turn")
+    elif method == "turn/completed":
+        params.setdefault("threadId", "thread")
+        turn = params.get("turn")
+        if isinstance(turn, dict):
+            turn = dict(turn)
+            turn.setdefault("id", "turn")
+            turn.setdefault("items", [])
+            params["turn"] = turn
     return {"method": method, "params": params}
 
 
@@ -72,7 +88,7 @@ def test_an_agent_message_streams_open_segment_and_completion_under_the_open_tur
     operations = _observe(
         projector,
         [
-            (2, _notification("item/started", {"item": {"type": "agentMessage", "id": "m1"}})),
+            (2, _notification("item/started", {"item": {"type": "agentMessage", "id": "m1", "text": ""}})),
             (3, _notification("item/agentMessage/delta", {"itemId": "m1", "delta": "hel"})),
             (4, _notification("item/agentMessage/delta", {"itemId": "m1", "delta": "lo"})),
             (5, _notification("item/completed", {"item": {"type": "agentMessage", "id": "m1", "text": "hello"}})),
@@ -99,14 +115,34 @@ def test_a_command_execution_opens_and_completes_a_tool_call() -> None:
             (
                 2,
                 _notification(
-                    "item/started", {"item": {"type": "commandExecution", "id": "c1", "command": "ls", "cwd": "/w"}}
+                    "item/started",
+                    {
+                        "item": {
+                            "type": "commandExecution",
+                            "id": "c1",
+                            "command": "ls",
+                            "commandActions": [],
+                            "cwd": "/w",
+                            "status": "inProgress",
+                        }
+                    },
                 ),
             ),
             (
                 3,
                 _notification(
                     "item/completed",
-                    {"item": {"type": "commandExecution", "id": "c1", "status": "completed", "exitCode": 0}},
+                    {
+                        "item": {
+                            "type": "commandExecution",
+                            "id": "c1",
+                            "command": "ls",
+                            "commandActions": [],
+                            "cwd": "/w",
+                            "status": "completed",
+                            "exitCode": 0,
+                        }
+                    },
                 ),
             ),
         ],
@@ -120,7 +156,13 @@ def test_a_command_execution_opens_and_completes_a_tool_call() -> None:
     assert isinstance(completed, ItemCompleted)
     assert isinstance(completed.completion, ToolCallCompletion)
     assert completed.completion.outcome is ToolOutcome.SUCCEEDED
-    assert completed.completion.structured == {"status": "completed", "exitCode": 0}
+    assert completed.completion.structured == {
+        "command": "ls",
+        "commandActions": [],
+        "cwd": "/w",
+        "status": "completed",
+        "exitCode": 0,
+    }
 
 
 def test_a_failed_turn_carries_the_error_message() -> None:
@@ -137,7 +179,9 @@ def test_a_failed_turn_carries_the_error_message() -> None:
 
 def test_an_unmapped_notification_is_counted_not_dropped() -> None:
     projector = CodexProjector(mint_id=_sequential_ids())
-    projected = projector.observe(2, _notification("item/started", {"item": {"type": "webSearch", "id": "w1"}}))
+    projected = projector.observe(
+        2, _notification("item/started", {"item": {"type": "webSearch", "id": "w1", "query": "q"}})
+    )
     assert projected.operations == ()
     assert projected.unprojected == {"item/started/webSearch": 1}
 
