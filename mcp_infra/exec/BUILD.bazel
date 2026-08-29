@@ -233,6 +233,7 @@ py_test(
 
 py_test(
     name = "test_exec_input_schema",
+    size = "medium",
     srcs = ["test_exec_input_schema.py"],
     deps = [
         ":conftest",

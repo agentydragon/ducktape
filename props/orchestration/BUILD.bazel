@@ -104,6 +104,7 @@ py_library(
 
 py_test(
     name = "test_k8s_executor",
+    size = "medium",
     srcs = ["test_k8s_executor.py"],
     deps = [
         ":conftest",
