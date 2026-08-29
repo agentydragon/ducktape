@@ -1,0 +1,34 @@
+# Large binary files - download these with setup scripts
+manual/talos-amd64.iso
+manual/talosctl
+manual/_out/
+
+# Build output directories
+_out/
+_out_final/
+_out_test/
+
+# VM runtime files
+manual/*.qcow2
+manual/*.log
+manual/*.pid
+*.qcow2
+vm-*.log
+vm-*.pid
+
+# Generated at runtime
+manual/kubeconfig-talos
+
+# Sensitive configuration (contains certificates and keys)
+manual/talosconfig
+manual/controlplane.yaml
+manual/worker.yaml
+
+# Terraform-generated sensitive files
+terraform/kubeconfig
+terraform/talosconfig
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/.terraform.tfstate.lock.info
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
