@@ -23,7 +23,7 @@ from haku.console.grants.principal import (
     grant_principal_column_values,
     grant_principal_from_columns,
 )
-from haku.console.grants.provenance import SourceToolFilter, assert_owner_principal_and_source, lock_owned_source
+from haku.console.grants.provenance import SourceToolFilter, assert_owner_principal_and_source
 
 # Grant creation moved to the shared `grants` server (#4918); the source ToolCall provenance is
 # pinned to it. Stored audit rows from before the cutover keep their old `server_id` and are never
@@ -199,40 +199,6 @@ class PostgresGrantRepository:
 
     async def revoke(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime) -> Grant:
         return await self._end(owner_agent_id=owner_agent_id, grant_id=grant_id, release=False, reason=reason, now=now)
-
-    async def revoke_source(
-        self, *, owner_agent_id: UUID, source_tool_call_id: str, reason: str, now: datetime.datetime
-    ) -> tuple[Grant, ...]:
-        """Revoke every still-active grant created by one reviewed source ToolCall."""
-
-        reason = reason.strip()
-        if not reason:
-            raise ValueError("grant end reason must not be empty")
-        async with self._sessions.begin() as session:
-            # Serialize source-set lifecycle with create_many(), which locks this same durable
-            # ToolCall before reading or inserting the immutable grant set.
-            await lock_owned_source(session, owner_agent_id=owner_agent_id, source_tool_call_id=source_tool_call_id)
-            rows = (
-                await session.scalars(
-                    select(KubernetesGrantRow)
-                    .where(
-                        KubernetesGrantRow.owner_agent_id == owner_agent_id,
-                        KubernetesGrantRow.source_tool_call_id == source_tool_call_id,
-                    )
-                    .order_by(KubernetesGrantRow.grant_id)
-                    .with_for_update()
-                )
-            ).all()
-            if not rows:
-                raise GrantNotFoundError(source_tool_call_id)
-            for row in rows:
-                # As in _end: only a still-active grant records the revocation fact; an
-                # already-ended or already-expired row keeps its derived status.
-                if row.released_at is None and row.revoked_at is None and row.expires_at > now:
-                    row.revoked_at = now
-                    row.end_reason = reason
-            await session.flush()
-            return tuple(self._row_to_model(row) for row in rows)
 
     async def list_for_request_principal(
         self, *, request_principal: RequestPrincipal, now: datetime.datetime, include_terminal: bool = True

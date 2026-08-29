@@ -81,7 +81,7 @@ class KubernetesToolsService:
             )
         return await asyncio.gather(
             *(
-                self.authorization.authorize_agent(request_principal=context.request_principal, request=request)
+                self.authorization.evaluate(request_principal=context.request_principal, request=request)
                 for request in authorization_requests
             )
         )

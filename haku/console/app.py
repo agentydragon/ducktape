@@ -42,6 +42,7 @@ from haku.console.conversation.history import ConversationHistory
 from haku.console.conversation.live_updates import ConversationLiveUpdates
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
+from haku.console.grants import routes as grant_routes
 from haku.console.grants.catalog import GrantCatalog
 
 # The two grant domains both name their router module `routes`; alias at this one seam.
@@ -790,6 +791,7 @@ def create_app(
     app.include_router(conversation_follow.router, dependencies=operator_only)
     app.include_router(console_events.router, dependencies=operator_only)
     app.include_router(approval.router, dependencies=operator_only)
+    app.include_router(grant_routes.router, dependencies=operator_only)
     app.include_router(kubernetes_grant_routes.router, dependencies=operator_only)
     app.include_router(http_grant_routes.router, dependencies=operator_only)
     app.include_router(operator_oauth.router, dependencies=operator_only)

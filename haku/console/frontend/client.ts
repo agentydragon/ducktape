@@ -58,6 +58,7 @@ export type AgentListResponse = components["schemas"]["AgentListResponse"];
 export type OperatorKubernetesGrant = components["schemas"]["haku__console__grants__kubernetes__routes__OperatorGrant"];
 export type KubernetesGrantListResponse =
   components["schemas"]["haku__console__grants__kubernetes__routes__GrantListResponse"];
+export type RevokeGrantListResponse = components["schemas"]["haku__console__grants__routes__GrantListResponse"];
 export type EnrollmentView = components["schemas"]["EnrollmentView"];
 export type EnrollmentDecisionRequest =
   | components["schemas"]["CreateEnrollmentRequest"]
@@ -218,16 +219,12 @@ export async function fetchKubernetesGrants(): Promise<KubernetesGrantListRespon
   return data;
 }
 
-export async function revokeKubernetesGrantSet(
-  agentId: string,
-  sourceToolCallId: string,
-  reason: string
-): Promise<KubernetesGrantListResponse> {
-  const { data, error } = await api.POST("/api/kubernetes-grants/{agent_id}/source/{source_tool_call_id}/revoke", {
-    params: { path: { agent_id: agentId, source_tool_call_id: sourceToolCallId } },
-    body: { reason },
+export async function revokeGrant(agentId: string, grantId: string, reason: string): Promise<RevokeGrantListResponse> {
+  const { data, error } = await api.POST("/api/grants/{agent_id}/revoke", {
+    params: { path: { agent_id: agentId } },
+    body: { grant_ids: [grantId], reason },
   });
-  if (error || !data) throw new Error(errorDetail(error, "Failed to revoke Kubernetes grant set"));
+  if (error || !data) throw new Error(errorDetail(error, "Failed to revoke grant"));
   return data;
 }
 

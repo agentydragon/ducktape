@@ -36,7 +36,6 @@ class FakeRepository:
     def __init__(self) -> None:
         self.grants: dict[UUID, Grant] = {}
         self.release_calls: list[tuple[UUID, UUID, str, datetime]] = []
-        self.revoke_source_calls: list[tuple[UUID, str, str, datetime]] = []
 
     @staticmethod
     def _active(grant: Grant, now: datetime) -> bool:
@@ -112,14 +111,6 @@ class FakeRepository:
 
     async def revoke(self, **kwargs):
         raise AssertionError("not used by this test")
-
-    async def revoke_source(self, *, owner_agent_id, source_tool_call_id, reason, now):
-        self.revoke_source_calls.append((owner_agent_id, source_tool_call_id, reason, now))
-        return tuple(
-            grant
-            for grant in self.grants.values()
-            if grant.owner_agent_id == owner_agent_id and grant.source_tool_call_id == source_tool_call_id
-        )
 
 
 @pytest.mark.asyncio
@@ -296,18 +287,6 @@ async def test_release_many_keeps_earlier_releases_when_a_later_item_fails() -> 
         await service.release_grants(owner_agent_id=_AGENT, grant_ids=[grant.grant_id, UUID(int=9)])
 
     assert repo.grants[grant.grant_id].status is GrantStatus.RELEASED
-
-
-@pytest.mark.asyncio
-async def test_revoke_grant_set_uses_source_tool_call_as_lifecycle_unit() -> None:
-    repo = FakeRepository()
-    service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
-
-    await service.revoke_grant_set(
-        owner_agent_id=_AGENT, source_tool_call_id="tool-call-1", reason="operator ended probe"
-    )
-
-    assert repo.revoke_source_calls == [(_AGENT, "tool-call-1", "operator ended probe", _NOW)]
 
 
 @pytest.mark.asyncio

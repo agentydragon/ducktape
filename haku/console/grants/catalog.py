@@ -16,7 +16,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from haku.console.config import KubernetesAuthorizationConfig, KubernetesAuthorizationSubject
-from haku.console.grants.envelope import GrantStatus
+from haku.console.grants.envelope import GrantNotFoundError, GrantStatus, validated_end_batch
 from haku.console.grants.http.decide_config import EgressStandingPolicyEntry
 from haku.console.grants.http.models import (
     Grant as HttpGrant,
@@ -224,6 +224,33 @@ class GrantCatalog:
         """Project one database HTTP grant after a mutation."""
 
         return self._database_http_grant(grant)
+
+    async def revoke_database_grant(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str) -> Grant:
+        """Revoke one database grant without exposing which domain stores it."""
+
+        try:
+            return self._database_kubernetes_grant(
+                await self._kubernetes_grants.revoke_grant(
+                    owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason
+                )
+            )
+        except GrantNotFoundError:
+            return self._database_http_grant(
+                await self._http_grants.revoke_grant(owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason)
+            )
+
+    async def revoke_database_grants(
+        self, *, owner_agent_id: UUID, grant_ids: tuple[UUID, ...], reason: str
+    ) -> tuple[Grant, ...]:
+        """Revoke database grants by durable ID without exposing their storage domains."""
+
+        grant_ids, reason = validated_end_batch(grant_ids, reason)
+        return tuple(
+            [
+                await self.revoke_database_grant(owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason)
+                for grant_id in grant_ids
+            ]
+        )
 
     def _config_grants(self, *, request_principal: RequestPrincipal) -> tuple[Grant, ...]:
         return (

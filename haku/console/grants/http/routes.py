@@ -1,9 +1,4 @@
-"""Operator browser API for inspecting temporary HTTP egress grants.
-
-Inspection only: revocation is the shared ``grants`` MCP server's ``revoke_grants`` tool (domain
-``http``), which the trusted frontend calls through Operator-direct MCP execution rather than a
-bespoke route.
-"""
+"""Operator browser API for inspecting HTTP egress grants."""
 
 from __future__ import annotations
 
@@ -14,7 +9,6 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict
 
 from haku.console.grants.catalog import DatabaseGrantSource, Grant, GrantCatalog
-from haku.console.grants.http.service import GrantService
 from haku.console.identity.operator_agents import AgentEnrollmentServiceDep, owned_agents
 from haku.console.identity.operator_auth import OperatorActorDep
 
@@ -35,13 +29,6 @@ class GrantListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     grants: tuple[OperatorGrant, ...]
-
-
-def _grant_service(request: Request) -> GrantService:
-    return cast(GrantService, request.app.state.http_grants)
-
-
-GrantServiceDep = Annotated[GrantService, Depends(_grant_service)]
 
 
 def _grant_catalog(request: Request) -> GrantCatalog:

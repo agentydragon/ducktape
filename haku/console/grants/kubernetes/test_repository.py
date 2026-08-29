@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.conftest import default_agent_binding, insert_approved_tool_call, insert_live_session
 from haku.console.database_schema import KubernetesGrantRow
-from haku.console.grants.envelope import GrantNotFoundError, GrantSourceError, GrantStatus
+from haku.console.grants.envelope import GrantOwnershipError, GrantSourceError, GrantStatus
 from haku.console.grants.kubernetes.models import (
     AllNamespacesGrantScope,
     ClusterGrantScope,
@@ -176,10 +176,10 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
             assert {grant.created_at for grant in retried} == {_NOW}
             assert {grant.expires_at for grant in retried} == {_NOW + timedelta(minutes=5)}
 
-            with pytest.raises(GrantNotFoundError):
-                await repository.revoke_source(
+            with pytest.raises(GrantOwnershipError):
+                await repository.revoke(
                     owner_agent_id=uuid4(),
-                    source_tool_call_id=source_tool_call_id,
+                    grant_id=grants[0].grant_id,
                     reason="must not cross Agent ownership",
                     now=_NOW + timedelta(seconds=20),
                 )
@@ -201,23 +201,20 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
             )
             assert released_first.status is GrantStatus.RELEASED
 
-            revoked = await repository.revoke_source(
+            revoked = await repository.revoke(
                 owner_agent_id=agent_id,
-                source_tool_call_id=source_tool_call_id,
+                grant_id=grants[1].grant_id,
                 reason="operator ended probe",
                 now=_NOW + timedelta(minutes=1),
             )
-            assert {grant.grant_id for grant in revoked} == {grant.grant_id for grant in grants}
-            by_id = {grant.grant_id: grant for grant in revoked}
-            assert by_id[grants[0].grant_id].status is GrantStatus.RELEASED
-            assert by_id[grants[0].grant_id].end_reason == "first scope no longer needed"
-            assert by_id[grants[1].grant_id].status is GrantStatus.REVOKED
-            assert by_id[grants[1].grant_id].revoked_at == _NOW + timedelta(minutes=1)
-            assert by_id[grants[1].grant_id].end_reason == "operator ended probe"
+            assert revoked.grant_id == grants[1].grant_id
+            assert revoked.status is GrantStatus.REVOKED
+            assert revoked.revoked_at == _NOW + timedelta(minutes=1)
+            assert revoked.end_reason == "operator ended probe"
 
-            repeated = await repository.revoke_source(
+            repeated = await repository.revoke(
                 owner_agent_id=agent_id,
-                source_tool_call_id=source_tool_call_id,
+                grant_id=grants[1].grant_id,
                 reason="different retry reason",
                 now=_NOW + timedelta(minutes=2),
             )

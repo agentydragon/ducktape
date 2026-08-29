@@ -14,12 +14,7 @@ import {
 } from "@mantine/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import {
-  displayableError,
-  fetchKubernetesGrants,
-  revokeKubernetesGrantSet,
-  type OperatorKubernetesGrant,
-} from "./client";
+import { displayableError, fetchKubernetesGrants, revokeGrant, type OperatorKubernetesGrant } from "./client";
 import { formatTimestamp } from "./approval_state";
 import { CodeBlock } from "./code_block";
 import { ExternalLink } from "./link";
@@ -36,8 +31,7 @@ type KubernetesRule = KubernetesRulesCoverage["rules"][number];
 type RevokeTarget = {
   agentId: string;
   agentDisplayName: string;
-  sourceToolCallId: string;
-  activeCount: number;
+  grantId: string;
 };
 
 const STATUS_DISPLAY: Record<KubernetesGrant["validity"]["status"], { label: string; color: string }> = {
@@ -177,15 +171,7 @@ function GrantValidity({ grant }: { grant: KubernetesGrant }) {
   );
 }
 
-function GrantCard({
-  item,
-  activeSetCount,
-  onRevoke,
-}: {
-  item: OperatorKubernetesGrant;
-  activeSetCount: number;
-  onRevoke: (target: RevokeTarget) => void;
-}) {
+function GrantCard({ item, onRevoke }: { item: OperatorKubernetesGrant; onRevoke: (target: RevokeTarget) => void }) {
   const { grant } = item;
   return (
     <section className="haku-shell-card">
@@ -197,7 +183,7 @@ function GrantCard({
         <GrantSource grant={grant} />
         <GrantSubject grant={grant} />
         <GrantCoverage grant={grant} />
-        {grant.source.kind === "database" && activeSetCount > 0 && (
+        {grant.source.kind === "database" && grant.validity.status === "active" && (
           <Button
             size="compact-sm"
             color="red"
@@ -206,12 +192,11 @@ function GrantCard({
               onRevoke({
                 agentId: item.agent_id,
                 agentDisplayName: item.agent_display_name,
-                sourceToolCallId: grant.source.tool_call_id,
-                activeCount: activeSetCount,
+                grantId: grant.source.id,
               })
             }
           >
-            Revoke {activeSetCount} active grant{activeSetCount === 1 ? "" : "s"} from this approval…
+            Revoke grant…
           </Button>
         )}
       </Stack>
@@ -231,24 +216,22 @@ function RevokeDialog({
   onConfirm: (reason: string) => void;
 }) {
   const [reason, setReason] = useState("");
-  useEffect(() => setReason(""), [item?.sourceToolCallId]);
-  const activeCount = item?.activeCount ?? 0;
+  useEffect(() => setReason(""), [item?.grantId]);
   return (
     <Modal
       opened={item !== null}
       onClose={busy ? () => undefined : onClose}
-      title="Revoke Kubernetes grant set"
+      title="Revoke Kubernetes grant"
       centered
       returnFocus
     >
       <Stack gap="sm">
         <Text size="sm">
-          End all {activeCount} active grants created by this approval for <strong>{item?.agentDisplayName}</strong>
-          immediately.
+          End this active grant for <strong>{item?.agentDisplayName}</strong> immediately.
         </Text>
         {item && (
           <Text size="xs" c="dimmed" ff="monospace">
-            {item.sourceToolCallId}
+            {item.grantId}
           </Text>
         )}
         <Textarea
@@ -268,7 +251,7 @@ function RevokeDialog({
             Cancel
           </Button>
           <Button color="red" onClick={() => onConfirm(reason.trim())} disabled={!reason.trim()} loading={busy}>
-            Revoke grant set
+            Revoke grant
           </Button>
         </Group>
       </Stack>
@@ -309,16 +292,6 @@ export function KubernetesGrantsPanel(): JSX.Element {
     return [...names].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
   }, [grants]);
 
-  const activeGrantsByApproval = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const item of grants ?? []) {
-      if (item.grant.source.kind !== "database" || item.grant.validity.status !== "active") continue;
-      const key = `${item.agent_id}:${item.grant.source.tool_call_id}`;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-    return counts;
-  }, [grants]);
-
   const visible = useMemo(
     () =>
       (grants ?? []).filter(
@@ -336,29 +309,28 @@ export function KubernetesGrantsPanel(): JSX.Element {
     if (!revoking || !reason) return;
     const target = revoking;
     setRevokeBusy(true);
-    void revokeKubernetesGrantSet(target.agentId, target.sourceToolCallId, reason).then(
+    void revokeGrant(target.agentId, target.grantId, reason).then(
       (response) => {
         const updates = new Map(
           response.grants.flatMap((item) =>
-            item.grant.source.kind === "database" ? [[item.grant.source.id, item] as const] : []
+            item.grant.source.kind === "database" ? [[item.grant.source.id, item.grant.validity] as const] : []
           )
         );
         setGrants(
           (current) =>
             current?.map((item) =>
-              item.grant.source.kind === "database" ? (updates.get(item.grant.source.id) ?? item) : item
+              item.grant.source.kind === "database" && updates.has(item.grant.source.id)
+                ? { ...item, grant: { ...item.grant, validity: updates.get(item.grant.source.id)! } }
+                : item
             ) ?? null
         );
         setRevokeBusy(false);
         setRevoking(null);
-        toastSuccess(
-          "Kubernetes grant set revoked",
-          `${target.agentDisplayName} no longer has the active grants from this approval.`
-        );
+        toastSuccess("Kubernetes grant revoked", `${target.agentDisplayName} no longer has this active grant.`);
       },
       (e: unknown) => {
         setRevokeBusy(false);
-        toastError("Couldn't revoke Kubernetes grant set", e);
+        toastError("Couldn't revoke Kubernetes grant", e);
       }
     );
   }
@@ -428,18 +400,7 @@ export function KubernetesGrantsPanel(): JSX.Element {
       {visible.map((item) => {
         const { grant } = item;
         const sourceId = grant.source.kind === "database" ? grant.source.id : grant.source.entry_id;
-        const activeSetCount =
-          grant.source.kind === "database"
-            ? (activeGrantsByApproval.get(`${item.agent_id}:${grant.source.tool_call_id}`) ?? 0)
-            : 0;
-        return (
-          <GrantCard
-            key={`${item.agent_id}:${sourceId}`}
-            item={item}
-            activeSetCount={activeSetCount}
-            onRevoke={setRevoking}
-          />
-        );
+        return <GrantCard key={`${item.agent_id}:${sourceId}`} item={item} onRevoke={setRevoking} />;
       })}
       <RevokeDialog item={revoking} busy={revokeBusy} onClose={() => setRevoking(null)} onConfirm={confirmRevoke} />
     </Stack>

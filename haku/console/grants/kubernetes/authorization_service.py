@@ -28,11 +28,6 @@ class KubernetesAuthorizationService:
             raise KubernetesBearerRejectedError("Haku rejected the caller credential")
         return await self.evaluate(request_principal=RequestPrincipal.from_source(actor), request=request)
 
-    async def authorize_agent(
-        self, *, request_principal: RequestPrincipal, request: AuthorizationRequest
-    ) -> AuthorizationDecision:
-        return await self.evaluate(request_principal=request_principal, request=request)
-
     async def evaluate(
         self, *, request_principal: RequestPrincipal, request: AuthorizationRequest
     ) -> AuthorizationDecision:

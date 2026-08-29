@@ -39,7 +39,6 @@ py_library(
     name = "routes",
     srcs = ["routes.py"],
     deps = [
-        ":service",
         "//haku/console/grants:catalog",
         "//haku/console/identity:operator_agents",
         "//haku/console/identity:operator_auth",

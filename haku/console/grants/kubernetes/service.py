@@ -61,10 +61,6 @@ class GrantRepository(Protocol):
 
     async def revoke(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime) -> Grant: ...
 
-    async def revoke_source(
-        self, *, owner_agent_id: UUID, source_tool_call_id: str, reason: str, now: datetime.datetime
-    ) -> tuple[Grant, ...]: ...
-
     async def list_for_request_principal(
         self, *, request_principal: RequestPrincipal, now: datetime.datetime, include_terminal: bool = True
     ) -> tuple[Grant, ...]: ...
@@ -283,17 +279,6 @@ class GrantService:
                 await self._repository.revoke(owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason, now=now)
                 for grant_id in grant_ids
             ]
-        )
-
-    async def revoke_grant_set(
-        self, *, owner_agent_id: UUID, source_tool_call_id: str, reason: str
-    ) -> tuple[Grant, ...]:
-        """Revoke the durable grant set sharing one approval source ToolCall."""
-
-        if not source_tool_call_id:
-            raise ValueError("source_tool_call_id must not be empty")
-        return await self._repository.revoke_source(
-            owner_agent_id=owner_agent_id, source_tool_call_id=source_tool_call_id, reason=reason, now=self._now()
         )
 
     async def match_request(

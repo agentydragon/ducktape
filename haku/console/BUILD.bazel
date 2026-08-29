@@ -418,6 +418,7 @@ py_library(
         "//haku/console/conversation:reader",
         "//haku/console/conversation:runtime",
         "//haku/console/grants:catalog",
+        "//haku/console/grants:routes",
         "//haku/console/grants/http:decide_config",
         "//haku/console/grants/http:decide_routes",
         "//haku/console/grants/http:decide_service",

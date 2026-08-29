@@ -1,4 +1,4 @@
-"""HTTP contract for Operator inspection and revocation of Kubernetes grants."""
+"""HTTP contract for Kubernetes-grant inspection and generic grant revocation."""
 
 from __future__ import annotations
 
@@ -145,60 +145,85 @@ def test_lists_only_the_authenticated_operators_agents_with_provenance(console: 
 
 def test_revoke_requires_a_non_blank_reason_and_owned_agent(console: _Console) -> None:
     grant = _seed_grant(console)
-    path = f"/api/kubernetes-grants/{console.agent_id}/{grant.grant_id}/revoke"
+    path = f"/api/grants/{console.agent_id}/revoke"
 
     assert (
-        console.client.post(path, json={"reason": "risk"}, headers={"Origin": "https://untrusted.test"}).status_code
+        console.client.post(
+            path,
+            json={"grant_ids": [str(grant.grant_id)], "reason": "risk"},
+            headers={"Origin": "https://untrusted.test"},
+        ).status_code
         == 403
     )
     headers = {"Origin": "https://haku.test"}
-    assert console.client.post(path, json={"reason": "   "}, headers=headers).status_code == 422
     assert (
         console.client.post(
-            f"/api/kubernetes-grants/{uuid4()}/{grant.grant_id}/revoke", json={"reason": "risk"}, headers=headers
+            path, json={"grant_ids": [str(grant.grant_id)], "reason": "   "}, headers=headers
         ).status_code
-        == 404
-    )
-
-    response = console.client.post(path, json={"reason": "  pilot complete  "}, headers=headers)
-
-    assert response.status_code == 200
-    assert response.json()["grant"]["validity"]["status"] == "revoked"
-    assert response.json()["grant"]["validity"]["end_reason"] == "pilot complete"
-
-
-def test_revoke_source_set_requires_reason_and_owned_agent(console: _Console) -> None:
-    grant = _seed_grant(console)
-    path = f"/api/kubernetes-grants/{console.agent_id}/source/{grant.source_tool_call_id}/revoke"
-    headers = {"Origin": "https://haku.test"}
-
-    assert (
-        console.client.post(path, json={"reason": "risk"}, headers={"Origin": "https://untrusted.test"}).status_code
-        == 403
-    )
-    assert console.client.post(path, json={"reason": "   "}, headers=headers).status_code == 422
-    assert (
-        console.client.post(
-            f"/api/kubernetes-grants/{uuid4()}/source/{grant.source_tool_call_id}/revoke",
-            json={"reason": "risk"},
-            headers=headers,
-        ).status_code
-        == 404
+        == 422
     )
     assert (
         console.client.post(
-            f"/api/kubernetes-grants/{console.agent_id}/source/tc_unknown/revoke",
-            json={"reason": "risk"},
+            f"/api/grants/{uuid4()}/revoke",
+            json={"grant_ids": [str(grant.grant_id)], "reason": "risk"},
             headers=headers,
         ).status_code
         == 404
     )
 
-    response = console.client.post(path, json={"reason": "  pilot complete  "}, headers=headers)
+    response = console.client.post(
+        path, json={"grant_ids": [str(grant.grant_id)], "reason": "  pilot complete  "}, headers=headers
+    )
 
     assert response.status_code == 200
-    assert [item["grant"]["validity"]["status"] for item in response.json()["grants"]] == ["revoked"]
-    assert [item["grant"]["validity"]["end_reason"] for item in response.json()["grants"]] == ["pilot complete"]
+    assert response.json()["grants"][0]["grant"]["validity"]["status"] == "revoked"
+    assert response.json()["grants"][0]["grant"]["validity"]["end_reason"] == "pilot complete"
+
+
+def test_revoke_grants_uses_durable_grant_ids(console: _Console) -> None:
+    first = _seed_grant(console)
+    second = _seed_grant(console)
+    path = f"/api/grants/{console.agent_id}/revoke"
+    headers = {"Origin": "https://haku.test"}
+
+    assert (
+        console.client.post(
+            path,
+            json={"grant_ids": [str(first.grant_id), str(second.grant_id)], "reason": "risk"},
+            headers={"Origin": "https://untrusted.test"},
+        ).status_code
+        == 403
+    )
+    assert console.client.post(path, json={"grant_ids": [], "reason": "risk"}, headers=headers).status_code == 422
+    assert (
+        console.client.post(
+            f"/api/grants/{uuid4()}/revoke",
+            json={"grant_ids": [str(first.grant_id)], "reason": "risk"},
+            headers=headers,
+        ).status_code
+        == 404
+    )
+    assert (
+        console.client.post(path, json={"grant_ids": [str(uuid4())], "reason": "risk"}, headers=headers).status_code
+        == 404
+    )
+
+    response = console.client.post(
+        path,
+        json={"grant_ids": [str(first.grant_id), str(second.grant_id)], "reason": "  pilot complete  "},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert {item["grant"]["source"]["id"] for item in response.json()["grants"]} == {
+        str(first.grant_id),
+        str(second.grant_id),
+    }
+    assert [item["grant"]["validity"]["status"] for item in response.json()["grants"]] == ["revoked", "revoked"]
+    assert [item["grant"]["validity"]["end_reason"] for item in response.json()["grants"]] == [
+        "pilot complete",
+        "pilot complete",
+    ]
 
 
 if __name__ == "__main__":
