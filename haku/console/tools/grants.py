@@ -249,8 +249,8 @@ def build_mcp(service: GrantsToolsService) -> FastMCP:
         Takes no arguments and has no side effects. For an Agent it is the durable ``agent_id`` plus
         the live ``session_id`` (present only under a session bearer) and the ``access_profile_id``;
         for a direct Operator it is the ``operator_id``. This is authority Console authenticated the
-        caller as; it is distinct from the egress-fence attribution (a separate ``fence_credential``)
-        and carries no approval provenance.
+        caller as; HTTP egress has its own shared-fence ``Authorization`` credential and derives
+        Agent/session identity from the live bridge bearer. This tool carries no approval provenance.
         """
 
         return context.caller

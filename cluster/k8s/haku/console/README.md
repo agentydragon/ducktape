@@ -266,13 +266,12 @@ The fenced-workload-facing listener is `:8888` (`egress-proxy-service.yaml`,
 `config.yaml`'s `egress_decide` section names env vars the server resolves at startup
 (`load_egress_decide`); absent, the endpoint stays `503` and the proxy fails closed.
 
-- **`haku-egress-proxy-identity`** (`haku-egress-proxy-identity-eso.yaml`, two ESO Password generators
-  into one Secret) — `proxy-token` and `fence-credential`, opaque bearers **shared** by server and
-  sidecar (the sidecar presents them; the server authenticates both, while only the live bridge bearer
-  identifies the sandbox Agent). Both are compared in-memory and registered nowhere DB-side, so ESO regenerating them is
-  safe — the Secret's Reloader annotation restarts the pod so both containers reload together. Generated
-  once (`refreshInterval: 8760h`); the two keys must differ (`load_egress_decide` rejects equal identity
-  secrets), hence one generator each.
+- **`haku-egress-proxy-identity`** (`haku-egress-proxy-identity-eso.yaml`, one ESO Password generator
+  into one Secret) — `fence-credential`, an opaque bearer **shared** by server and sidecar. The
+  sidecar presents it in the `Authorization` header; the server authenticates only the shared fence,
+  while the live bridge bearer identifies the sandbox Agent. It is compared in-memory and registered
+  nowhere DB-side, so ESO regenerating it is safe — the Secret's Reloader annotation restarts the pod
+  so both containers reload together. It is generated once (`refreshInterval: 8760h`).
 - **Per-session bridge bearer** — the Console writes `HAKU_RUNNER_TOKEN` into each runtime
   `SandboxClaim.spec.env`. The runner uses that one bearer for its bridge, Console MCP, and any HTTP
   proxy selected in its launch environment, so HTTP egress and MCP resolve to the same live session

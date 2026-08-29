@@ -1,30 +1,12 @@
-# Internal bearers shared by the Console API and its colocated egress proxy sidecar (#4942),
-# ESO-generated once (the plaid-mcp readonly-secret pattern; symbols disabled so the bearers travel
-# cleanly in Authorization headers).
+# The shared fence bearer used by the Console API and its colocated egress proxy sidecar (#4942).
+# ESO generates it once (the plaid-mcp readonly-secret pattern; symbols disabled so it travels
+# cleanly in the Authorization header). It authenticates the shared fence only and carries no
+# Agent identity; a live sandbox bridge bearer is required separately.
 #
-# proxy-token: the static proxy-identity bearer the sidecar presents on every localhost decide call;
-#   the Console's egress_decide.proxy_token_env_var resolves the same value to authenticate it.
-# fence-credential: the shared-fence credential the sidecar presents; it authenticates the shared
-#   fence only and carries no Agent identity. A live sandbox bridge bearer is required separately.
-#
-# Both are endpoint-scoped opaque bearers compared in-memory by load_egress_decide / HttpDecideService
-# (secrets.compare_digest) — registered nowhere DB-side, never valid for MCP/session/operator APIs — so
-# regeneration is safe: the deployment's Reloader annotation on this Secret restarts the pod and both
-# containers read the identical new values. They MUST differ: load_egress_decide rejects two equal
-# endpoint secrets ("duplicate egress decide credential values"). Hence two independent Password
-# generators, each rewriting its own `password` output onto a distinct key in this one Secret.
-apiVersion: generators.external-secrets.io/v1alpha1
-kind: Password
-metadata:
-  name: haku-egress-proxy-token-generator
-  namespace: haku-console
-spec:
-  length: 48
-  digits: 10
-  symbols: 0
-  noUpper: false
-  allowRepeat: true
----
+# The endpoint-scoped opaque bearer is compared in-memory by load_egress_decide /
+# HttpDecideService (secrets.compare_digest), registered nowhere DB-side, and never valid for
+# MCP/session/operator APIs. Regeneration is safe: the deployment's Reloader annotation on this
+# Secret restarts the pod and both containers read the identical new value.
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:
@@ -51,15 +33,6 @@ spec:
     creationPolicy: Owner
     deletionPolicy: Retain
   dataFrom:
-    - sourceRef:
-        generatorRef:
-          apiVersion: generators.external-secrets.io/v1alpha1
-          kind: Password
-          name: haku-egress-proxy-token-generator
-      rewrite:
-        - regexp:
-            source: "^password$"
-            target: "proxy-token"
     - sourceRef:
         generatorRef:
           apiVersion: generators.external-secrets.io/v1alpha1

@@ -184,11 +184,10 @@ def test_public_coder_pod_joins_the_colocated_egress_fence(k8s_dir: Path) -> Non
     values. This pins the relations that make the spike sound: the carried wiring really is the
     policy's own, the trust Bundle actually delivers that ConfigMap to the pod's namespace (else
     the pod wedges in ContainerCreating), the pod's egress NetworkPolicy admits the listener the
-    Service publishes, the Deployment does NOT cut its default proxy env over to that listener
-    (the fence cannot substitute this agent's own credentials until #4670's per-agent fence
-    identity, so a cutover today breaks every iron-mediated flow), and a standing entry admits +
-    redeems the placeholder the pod holds — under the identity fenced traffic actually presents
-    (the haku fence credential, not public-coder's agent id).
+    Service publishes, and the Deployment does NOT cut its default proxy env over to that listener.
+    This legacy pod has no live Console bridge bearer, so it remains on its iron proxy; only a
+    Console-launched sandbox with a live bridge can use the colocated listener. The migrated Haku
+    runner's standing entries remain coherent with the shared GitHub placeholder.
     """
     deployment = yaml.safe_load((k8s_dir / "agents/public-coder-agent/app/deployment.yaml").read_text())
     pod = deployment["spec"]["template"]["spec"]
@@ -236,16 +235,17 @@ def test_public_coder_pod_joins_the_colocated_egress_fence(k8s_dir: Path) -> Non
     assert peer["podSelector"]["matchLabels"] == service["spec"]["selector"]
     assert one(fence_rule["ports"]) == {"port": port["port"], "protocol": "TCP"}
 
-    # The positive spike path is admitted end to end: a standing entry for the fence credential's
-    # Agent covers both GitHub origins and names a credential whose placeholder the pod holds.
+    # The positive migrated-runner path remains coherent: the Haku Agent's standing entries cover
+    # both GitHub origins and name a credential whose placeholder this spike pod holds. This checks
+    # the shared config/placeholder contract without treating the shared fence as Agent identity.
     config = yaml.safe_load((k8s_dir / "haku/console/config.yaml").read_text())
     egress = config["egress_decide"]
-    fence_agent = one(egress["fence_credentials"])["agent_id"]
+    haku_agent = config["harnesses"]["claude_code"]["agent_id"]
     registry = {entry["handle"]: entry for entry in egress["credentials"]}
     covered = {
         (origin["host"], origin["port"])
         for entry in egress["standing_policies"]
-        if fence_agent in entry["agent_ids"]
+        if haku_agent in entry["agent_ids"]
         and (handle := entry.get("credential_handle")) is not None
         and registry[handle]["placeholder"] == env["HAKU_GITHUB_TOKEN"]
         for origin in entry["origins"]

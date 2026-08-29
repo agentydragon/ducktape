@@ -540,13 +540,11 @@ kubernetes_grant_max_lifetime_seconds: 3600
 # env references (haku/console/deployment.yaml); handles, placeholders, match headers and
 # prohibited CIDRs are inert and committable by design.
 egress_decide:
-  # The static proxy-identity bearer the colocated sidecar presents on every localhost decide call.
-  proxy_token_env_var: HAKU_EGRESS_PROXY_TOKEN
-  # Shared-fence credentials authenticate the colocated sidecar only; they carry no Agent identity.
-  # Every data-plane request must also present a live per-session bridge bearer, which is the sole
-  # source of Agent/session attribution.
-  fence_credentials:
-    - token_env_var: HAKU_EGRESS_FENCE_CREDENTIAL
+  # The shared-fence bearer the colocated sidecar presents in Authorization on every localhost
+  # decide call. It authenticates the sidecar only and carries no Agent identity. Every data-plane
+  # request must also present a live per-session bridge bearer, which is the sole source of
+  # Agent/session attribution.
+  fence_credential_env_var: HAKU_EGRESS_FENCE_CREDENTIAL
   # Console-owned egress credential registry (#4951): a grant redeems a credential by naming its
   # handle, and the endpoint returns the placeholder->value substitution only for an Agent in
   # `agent_ids` at an origin in `origins`. First entry: the bot GitHub token (mirrors the retiring

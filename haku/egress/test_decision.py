@@ -12,13 +12,11 @@ from pydantic import SecretStr, TypeAdapter, ValidationError
 
 from haku.egress.decision import DecideAllowed, DecideDenied, DecideRequest, DecideResponse, DecisionSource, RequestMeta
 
-_FENCE = "agent-fence-credential"
 _BRIDGE = "bridge-session-bearer"
 
 
 def _request(**overrides: object) -> DecideRequest:
     fields: dict[str, object] = {
-        "fence_credential": SecretStr(_FENCE),
         "proxy_client_credential": SecretStr(_BRIDGE),
         "request": RequestMeta(method="GET", scheme="https", host="api.example", port=443, path="/api/items?x=1"),
         "resolved_ips": frozenset({IPv4Address("192.0.2.10"), IPv6Address("2001:db8::10")}),
@@ -28,19 +26,16 @@ def _request(**overrides: object) -> DecideRequest:
     return DecideRequest.model_validate(fields)
 
 
-def test_fence_credential_travels_on_the_wire_but_masks_everywhere_else() -> None:
+def test_bridge_credential_travels_on_the_wire_but_masks_everywhere_else() -> None:
     request = _request()
 
     wire = request.model_dump_json()
 
-    assert json.loads(wire)["fence_credential"] == _FENCE
     assert json.loads(wire)["proxy_client_credential"] == _BRIDGE
-    assert _FENCE not in repr(request)
-    assert _FENCE not in str(request)
     assert _BRIDGE not in repr(request)
     assert _BRIDGE not in str(request)
     # The parsed form on the Console side masks identically.
-    assert _FENCE not in repr(DecideRequest.model_validate_json(wire))
+    assert _BRIDGE not in repr(DecideRequest.model_validate_json(wire))
 
 
 def test_wire_round_trip_preserves_the_request() -> None:
@@ -51,7 +46,6 @@ def test_wire_round_trip_preserves_the_request() -> None:
     assert parsed.request == request.request
     assert parsed.resolved_ips == request.resolved_ips
     assert parsed.upstream_ip == request.upstream_ip
-    assert parsed.fence_credential.get_secret_value() == _FENCE
     assert parsed.proxy_client_credential is not None
     assert parsed.proxy_client_credential.get_secret_value() == _BRIDGE
 

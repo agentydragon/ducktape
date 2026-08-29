@@ -45,7 +45,6 @@ from haku.egress.proxy_test_harness import (
     BRIDGE_BEARER,
     FENCE_CREDENTIAL,
     PLACEHOLDER,
-    PROXY_BEARER,
     REAL_CREDENTIAL,
     GarbageBody,
     Hang,
@@ -196,7 +195,6 @@ async def test_localhost_decide_allow_flows_end_to_end(upstream: RecordingUpstre
     assert one(upstream.requests).headers["authorization"] == f"Bearer {REAL_CREDENTIAL}"
     sent = one(stub.requests)
     assert sent.request == RequestMeta(method="GET", scheme="http", host="127.0.0.1", port=upstream.port, path="/hello")
-    assert sent.fence_credential.get_secret_value() == FENCE_CREDENTIAL
     assert sent.proxy_client_credential is not None
     assert sent.proxy_client_credential.get_secret_value() == BRIDGE_BEARER
     assert "proxy-authorization" not in one(upstream.requests).headers
@@ -259,14 +257,14 @@ class EndpointFailure:
     """One way the decide hop fails; each must refuse with zero upstream contact."""
 
     behavior: StubBehavior
-    proxy_bearer: str = PROXY_BEARER
+    fence_credential: str = FENCE_CREDENTIAL
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
 
 
 ENDPOINT_FAILURES = [
     pytest.param(
-        EndpointFailure(behavior=allow_with_substitution(), proxy_bearer="not-the-proxy-bearer"),
-        id="rejected-bearer-401",
+        EndpointFailure(behavior=allow_with_substitution(), fence_credential="not-the-fence-credential"),
+        id="rejected-fence-credential-401",
     ),
     pytest.param(EndpointFailure(behavior=Unconfigured()), id="unconfigured-503"),
     pytest.param(EndpointFailure(behavior=Hang(), timeout_seconds=0.2), id="endpoint-timeout"),
@@ -281,7 +279,7 @@ async def test_localhost_decide_endpoint_failure_fails_closed(
     async with (
         stub_console(failure.behavior) as stub,
         aclosing(
-            stub_client(stub, proxy_bearer=failure.proxy_bearer, timeout_seconds=failure.timeout_seconds)
+            stub_client(stub, fence_credential=failure.fence_credential, timeout_seconds=failure.timeout_seconds)
         ) as decide,
         make_proxy(decide, tmp_path) as proxy,
     ):

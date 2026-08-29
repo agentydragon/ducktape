@@ -14,7 +14,7 @@ anywhere:
   (`HAKU_EGRESS_CREDENTIAL_SUBSTITUTION_SMOKE` in `cluster/k8s/haku/console/deployment.yaml`).
   Deviation from the Secret-backed registry slots, deliberately: both sides of this swap are inert,
   which is the point — the swap is observable in cleartext at the echo host. Identity secrets
-  (proxy token, fence credentials) stay Secret-backed and fail-loud.
+  (the shared fence credential) stays Secret-backed and fail-loud.
 
 `postman-echo.com/headers` reflects request headers back as JSON, anonymously and statelessly.
 Chosen over `httpbin.org` (same API shape) for uptime: Postman operates it as a documented product

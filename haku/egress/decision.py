@@ -106,13 +106,6 @@ class DecideRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    fence_credential: Annotated[SecretStr, PlainSerializer(SecretStr.get_secret_value, when_used="json")] = Field(
-        description=(
-            "The shared-fence credential the proxy presents to Console. It authenticates the shared "
-            "fence but does not identify an Agent. Serialized in full on the wire, masked everywhere "
-            "else — never log it."
-        )
-    )
     request: RequestMeta
     resolved_ips: ResolvedAddresses = Field(
         description="Complete validated DNS answer for the request host, as the proxy resolved it."

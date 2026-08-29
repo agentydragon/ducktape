@@ -383,16 +383,9 @@ spec:
               value: auth.allegedly.works/authentik-user-id/v1
             # Colocated egress fence (#4942, #4670). config.yaml's `egress_decide` section names
             # these env vars; `load_egress_decide` reads them at startup and the decide endpoint
-            # (loopback :8079, served by app._serve) resolves them per request. Values are shared
-            # with the egress-proxy sidecar below where the sidecar must present the same bearer:
-            #   - proxy identity bearer the sidecar presents (proxy_token_env_var)
-            - name: HAKU_EGRESS_PROXY_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: haku-egress-proxy-identity
-                  key: proxy-token
-            #   - the shared-fence credential; it authenticates the sidecar only and carries no
-            #     Agent identity (egress_decide.fence_credentials[].token_env_var)
+            # (loopback :8079, served by app._serve) resolves requests using the shared-fence
+            # credential the sidecar presents in Authorization. It authenticates the sidecar only
+            # and carries no Agent identity (egress_decide.fence_credential_env_var).
             - name: HAKU_EGRESS_FENCE_CREDENTIAL
               valueFrom:
                 secretKeyRef:
@@ -406,8 +399,8 @@ spec:
             #     load_egress_decide, so a not-yet-synced ESO Secret degrades the github-bot handle
             #     rather than crash-looping the console (the endpoint still serves reachability
             #     verdicts). optional: true keeps a missing Secret from blocking pod startup, so the
-            #     skip path is actually reached; the proxy-token and fence credentials below stay
-            #     required (load_egress_decide fails loud on those).
+            #     skip path is actually reached; the fence credential below stays required
+            #     (load_egress_decide fails loud on it).
             - name: HAKU_EGRESS_CREDENTIAL_GITHUB_BOT
               valueFrom:
                 secretKeyRef:
@@ -507,13 +500,8 @@ spec:
               value: "8888"
             - name: HAKU_EGRESS_CONFDIR
               value: /egress-proxy-confdir
-            # The proxy-identity bearer Console authenticates, and the shared-fence credential
-            # authenticates the sidecar only — the same two values the server container reads above.
-            - name: HAKU_EGRESS_PROXY_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: haku-egress-proxy-identity
-                  key: proxy-token
+            # The shared-fence credential the sidecar presents in Authorization; the server
+            # container reads the same value above.
             - name: HAKU_EGRESS_FENCE_CREDENTIAL
               valueFrom:
                 secretKeyRef:

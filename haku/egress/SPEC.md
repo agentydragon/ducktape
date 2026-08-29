@@ -23,13 +23,12 @@ does not cache dynamic decisions.
 
 ## Authentication split
 
-The three credentials in this path have different principals and must not be
+The two credentials in this path have different principals and must not be
 combined:
 
 | Credential                     | Direction                               | Meaning                                                                                                                           |
 | ------------------------------ | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `HAKU_EGRESS_PROXY_TOKEN`      | proxy → Console, `Authorization` header | Authenticates the colocated proxy process to the internal endpoint. It is not an Agent identity.                                  |
-| `HAKU_EGRESS_FENCE_CREDENTIAL` | proxy → Console, decision body          | Authenticates the shared egress fence to the decision endpoint. It is endpoint-scoped and does not identify an Agent.             |
+| `HAKU_EGRESS_FENCE_CREDENTIAL` | proxy → Console, `Authorization` header | Authenticates the shared egress fence to the decision endpoint. It is endpoint-scoped and does not identify an Agent.             |
 | `HAKU_RUNNER_TOKEN`            | Sandbox runner → proxy and Console      | Exact-session bridge bearer. It is the sole source of Agent and session identity for HTTP egress and is also used by Console MCP. |
 
 The decision service resolves `HAKU_RUNNER_TOKEN` through the live
@@ -77,8 +76,9 @@ service and are denied there.
 For every admission, the proxy:
 
 1. resolves the complete bounded address set for the connection target;
-2. sends the shared fence credential, bridge bearer, pinned address, and
-   connection/request metadata to Console;
+2. sends the shared fence credential in the `Authorization` header, plus the
+   bridge bearer, pinned address, and connection/request metadata in the
+   decision body to Console;
 3. refuses denied, malformed, unavailable, or otherwise unclassifiable
    decisions;
 4. pins the upstream dial to the address validated by that decision; and

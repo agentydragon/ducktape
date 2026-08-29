@@ -23,12 +23,7 @@ from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from haku.console.conftest import default_agent_binding, insert_approved_tool_call
-from haku.console.grants.http.decide_config import (
-    EgressStandingPolicyEntry,
-    LoadedEgressCredential,
-    LoadedEgressDecide,
-    LoadedFenceCredential,
-)
+from haku.console.grants.http.decide_config import EgressStandingPolicyEntry, LoadedEgressCredential, LoadedEgressDecide
 from haku.console.grants.http.decide_service import HttpDecideService, HttpDecideUnavailableError
 from haku.console.grants.http.models import GrantSpec, HttpMethod, HttpOrigin, HttpRequestCoverage, HttpScheme
 from haku.console.grants.http.repository import PostgresGrantRepository
@@ -47,9 +42,7 @@ from haku.egress.decision import (
 
 _NOW = datetime(2026, 8, 27, 12, 0, tzinfo=UTC)
 _ORIGIN = HttpOrigin(scheme=HttpScheme.HTTPS, host="api.example", port=443)
-_PROXY_TOKEN = "proxy-identity-token"
 _FENCE = "shared-fence-credential"
-_OTHER_FENCE = "other-shared-fence-credential"
 _BRIDGE = "bridge-session-bearer"
 # Configured shared-fence credential whose holder has no Agent identity: isolation must come from
 # live bridge-bearer principal filtering.
@@ -138,11 +131,7 @@ def _harness(
     decide = HttpDecideService(
         grants=grants,
         credentials=LoadedEgressDecide(
-            proxy_token=SecretStr(_PROXY_TOKEN),
-            fence_credentials=[
-                LoadedFenceCredential(token=SecretStr(_FENCE)),
-                LoadedFenceCredential(token=SecretStr(_OTHER_FENCE)),
-            ],
+            fence_credential=SecretStr(_FENCE),
             credentials=credentials(agent_id) if credentials is not None else [],
             standing_policies=standing(agent_id) if standing is not None else [],
         ),
@@ -173,7 +162,6 @@ def _create_grants(client: Any, harness: _Harness, *specs: GrantSpec, expires_at
 
 def _request(
     *,
-    fence_credential: str = _FENCE,
     proxy_client_credential: str | None = _BRIDGE,
     method: str = "GET",
     scheme: str | None = "https",
@@ -184,7 +172,6 @@ def _request(
     upstream_ip: IPv4Address | IPv6Address = _PUBLIC_V4,
 ) -> DecideRequest:
     return DecideRequest(
-        fence_credential=SecretStr(fence_credential),
         proxy_client_credential=(None if proxy_client_credential is None else SecretStr(proxy_client_credential)),
         request=RequestMeta(method=method, scheme=scheme, host=host, port=port, path=path),
         resolved_ips=resolved_ips,
@@ -192,20 +179,15 @@ def _request(
     )
 
 
-def test_proxy_bearer_and_fence_identity_gate_evaluation(make_client: Any) -> None:
+def test_fence_bearer_gates_evaluation(make_client: Any) -> None:
     with make_client() as client:
         harness = _harness(client)
         service = harness.decide
 
-        assert service.authenticate_proxy(f"Bearer {_PROXY_TOKEN}")
-        assert service.authenticate_proxy(f"bearer {_PROXY_TOKEN}")
-        for rejected in ("", _PROXY_TOKEN, "Bearer", f"Bearer {_PROXY_TOKEN}x", f"Basic {_PROXY_TOKEN}"):
+        assert service.authenticate_proxy(f"Bearer {_FENCE}")
+        assert service.authenticate_proxy(f"bearer {_FENCE}")
+        for rejected in ("", _FENCE, "Bearer", f"Bearer {_FENCE}x", f"Basic {_FENCE}"):
             assert not service.authenticate_proxy(rejected)
-        # The shared-fence credential is not the proxy's endpoint bearer.
-        assert not service.authenticate_proxy(f"Bearer {_FENCE}")
-
-        decision = client.portal.call(partial(service.decide, _request(fence_credential="not-configured")))
-        assert decision == DecideDenied(reason="unknown fence credential", grant_scope=None)
 
 
 def test_grant_scoped_verdicts_against_stored_grants(make_client: Any) -> None:
@@ -248,8 +230,6 @@ def test_grant_scoped_verdicts_against_stored_grants(make_client: Any) -> None:
             decision = decide(miss)
             assert isinstance(decision, DecideDenied), miss.request
             assert decision.reason == "no active HTTP grant covers the request"
-        # Either shared-fence bearer authenticates the colocated sidecar; neither selects an Agent.
-        assert decide(_request(fence_credential=_OTHER_FENCE, path="/api/items")).allowed
         denied = decide(_request(path="/elsewhere"))
         assert isinstance(denied, DecideDenied)
         assert denied.grant_scope is not None
@@ -271,7 +251,8 @@ def test_live_bridge_bearer_is_required_for_attribution(make_client: Any) -> Non
         assert denied == DecideDenied(reason="unknown proxy client credential")
 
         # The test authority maps the bridge bearer to the configured Agent/session. Shared-fence
-        # auth remains required, but the live session is the sole principal used for evaluation.
+        # auth is carried separately in the HTTP Authorization header, but the live session is the
+        # sole principal used for evaluation.
         assert client.portal.call(partial(harness.decide.decide, _request(proxy_client_credential=_BRIDGE))).allowed
 
 
@@ -333,8 +314,7 @@ def test_standing_allowance_admits_with_provenance_and_no_deadline(make_client: 
         assert isinstance(exact_miss, DecideDenied)
 
         # No standing match falls through to grants — none exist, so the grant evaluator's clean
-        # denial comes back unchanged. The other configured fence credential shares the origin and
-        # the live bridge bearer still selects the same Agent.
+        # denial comes back unchanged.
         for miss in (
             _request(method="POST", path="/api/items"),
             _request(path="/elsewhere"),
@@ -343,9 +323,6 @@ def test_standing_allowance_admits_with_provenance_and_no_deadline(make_client: 
             decision = decide(miss)
             assert isinstance(decision, DecideDenied), miss.request
             assert decision.reason == "no active HTTP grant covers the request"
-        # The second endpoint-authentication slot is still the same shared fence, so the live
-        # bridge bearer continues to select the Agent's standing allowance.
-        assert decide(_request(fence_credential=_OTHER_FENCE, path="/api/items")).allowed
 
 
 def test_standing_wins_over_a_matching_grant(make_client: Any) -> None:
@@ -827,9 +804,7 @@ async def test_grant_authority_failure_raises_unavailable() -> None:
     )
     service = HttpDecideService(
         grants=GrantService(PostgresGrantRepository(unreachable), max_lifetime=timedelta(hours=1), clock=lambda: _NOW),
-        credentials=LoadedEgressDecide(
-            proxy_token=SecretStr(_PROXY_TOKEN), fence_credentials=[LoadedFenceCredential(token=SecretStr(_FENCE))]
-        ),
+        credentials=LoadedEgressDecide(fence_credential=SecretStr(_FENCE)),
         prohibited_cidrs=frozenset(),
         agent_bearer_authority=cast(Any, _UnavailableBridgeBearerAuthority()),
     )

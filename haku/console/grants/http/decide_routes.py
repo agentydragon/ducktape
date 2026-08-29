@@ -20,10 +20,10 @@ async def decide_http_request(
 
     The endpoint is intentionally not operator-session protected: it is the machine-to-machine
     hop from the colocated proxy, bound on localhost and never sandbox-routable (#4670 § oracle
-    constraint). The ``Authorization`` bearer is the proxy's own identity; the shared-fence
-    credential authenticates the shared fence but does not identify an Agent; the required sandbox
-    bridge bearer selects the live session Agent inside the service. Any non-2xx makes the proxy
-    refuse the admission, so every error response here is fail-closed by construction.
+    constraint). The ``Authorization`` bearer is the shared-fence credential; it authenticates
+    the fence but does not identify an Agent. The required sandbox bridge bearer in the body
+    selects the live session Agent inside the service. Any non-2xx makes the proxy refuse the
+    admission, so every error response here is fail-closed by construction.
     """
     if authorization is None:
         raise HTTPException(status_code=401, detail="Bearer authorization is required")
@@ -32,7 +32,7 @@ async def decide_http_request(
         raise HTTPException(status_code=503, detail="HTTP egress decision is not configured")
     service = cast(HttpDecideService, service)
     if not service.authenticate_proxy(authorization):
-        raise HTTPException(status_code=401, detail="proxy identity bearer was rejected")
+        raise HTTPException(status_code=401, detail="fence credential was rejected")
     try:
         return await service.decide(body)
     except HttpDecideUnavailableError as error:

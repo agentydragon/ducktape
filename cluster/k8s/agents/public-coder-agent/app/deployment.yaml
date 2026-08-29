@@ -118,10 +118,10 @@ spec:
             # fence (haku-console:8888) carrying this value get the `github-bot` credential
             # substituted server-side under standing policy (cluster/k8s/haku/console/config.yaml
             # egress_decide). Inert on its own and on every other path — iron does not know it.
-            # Through the fence this pod acts as the haku bot, not agentydragon-agent: the fence
-            # presents one static fence credential, so the decide service resolves ALL fenced
-            # traffic to the haku Agent until per-agent fence credentials land (#4670). GH_PAT
-            # above stays the production GitHub path for the same reason. Not named GITHUB_TOKEN:
+            # Through the fence, the shared fence credential authenticates only the colocated
+            # proxy. The per-session bridge bearer selects the live sandbox Agent for each decide
+            # call, so this pod's identity is not inferred from the shared fence. GH_PAT above
+            # stays the production GitHub path for the same reason. Not named GITHUB_TOKEN:
             # OpenClaw strips that from exec env, and `gh` picking it up would send a
             # fence-only placeholder down the iron path.
             - name: HAKU_GITHUB_TOKEN

@@ -47,8 +47,7 @@ from haku.egress.runner import EgressProxy
 
 PLACEHOLDER = "proxy-github-placeholder"
 REAL_CREDENTIAL = "real-redeemed-credential"
-PROXY_BEARER = "proxy-identity-bearer"
-FENCE_CREDENTIAL = "agent-fence-credential"
+FENCE_CREDENTIAL = "shared-fence-credential"
 BRIDGE_BEARER = "bridge-session-bearer"
 
 
@@ -274,8 +273,8 @@ class StubConsole:
         behavior = self.behavior
         if isinstance(behavior, Unconfigured):
             return web.json_response({"detail": "HTTP egress decision is not configured"}, status=503)
-        if request.headers.get("Authorization") != f"Bearer {PROXY_BEARER}":
-            return web.json_response({"detail": "proxy identity bearer was rejected"}, status=401)
+        if request.headers.get("Authorization") != f"Bearer {FENCE_CREDENTIAL}":
+            return web.json_response({"detail": "fence credential was rejected"}, status=401)
         self.requests.append(DecideRequest.model_validate_json(await request.read()))
         match behavior:
             case DecideAllowed() | DecideDenied() as verdict:
@@ -312,12 +311,11 @@ async def stub_console(behavior: StubBehavior) -> AsyncIterator[StubConsole]:
 
 
 def stub_client(
-    stub: StubConsole, *, proxy_bearer: str = PROXY_BEARER, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
+    stub: StubConsole, *, fence_credential: str = FENCE_CREDENTIAL, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
 ) -> LocalhostDecideClient:
     return LocalhostDecideClient(
         base_url=f"http://127.0.0.1:{stub.port}",
-        proxy_bearer=SecretStr(proxy_bearer),
-        fence_credential=SecretStr(FENCE_CREDENTIAL),
+        fence_credential=SecretStr(fence_credential),
         timeout_seconds=timeout_seconds,
     )
 
@@ -335,7 +333,6 @@ def dead_decide_client(*, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS) -> L
     """A real decide client pointed at a closed port: every ``decide`` raises a connection error."""
     return LocalhostDecideClient(
         base_url=f"http://127.0.0.1:{closed_localhost_port()}",
-        proxy_bearer=SecretStr(PROXY_BEARER),
         fence_credential=SecretStr(FENCE_CREDENTIAL),
         timeout_seconds=timeout_seconds,
     )

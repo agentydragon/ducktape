@@ -2,14 +2,12 @@
 
 The decision endpoint is the oracle of the egress fence: it converts an authenticated caller
 identity plus concrete request metadata into a reachability verdict and the request-specific
-credential substitutions. The proxy identity and shared-fence credentials arrive with every call,
-and neither is a general Agent/Operator credential. A Console-launched sandbox also supplies its
-bridge bearer:
+credential substitutions. The shared-fence credential arrives in ``Authorization`` and is not a
+general Agent/Operator credential. A Console-launched sandbox also supplies its bridge bearer in
+the body:
 
-- the **proxy identity bearer** in ``Authorization`` — the console-side static bearer the
-  colocated proxy holds; rejected calls never reach evaluation;
-- the **shared-fence credential** in the body — endpoint-scoped by construction and resolved only
-  here; it authenticates the shared fence, but does not identify an Agent;
+- the **shared-fence credential** in ``Authorization`` — endpoint-scoped by construction and
+  resolved only here; it authenticates the shared fence, but does not identify an Agent;
 - the required **sandbox bridge bearer** in the body — resolved through ``AgentBearerAuthority``
   and accepted only for a live session, then used as the exact data-plane Agent identity. It is
   the same bearer used by the runner bridge and Console MCP. A missing or non-session bearer is
@@ -36,8 +34,6 @@ import logging
 import secrets
 from dataclasses import dataclass
 from ipaddress import IPv4Address, IPv4Network, IPv6Address, IPv6Network
-
-from pydantic import SecretStr
 
 from haku.console.grants.http.decide_config import LoadedEgressDecide
 from haku.console.grants.http.models import HttpMethod, HttpOrigin, HttpRequestAllowed, HttpScheme
@@ -160,16 +156,11 @@ class HttpDecideService:
         self._prohibited_cidrs = sorted(prohibited_cidrs, key=str)
 
     def authenticate_proxy(self, authorization: str) -> bool:
-        """Whether ``Authorization`` presents exactly the configured proxy identity bearer."""
+        """Whether ``Authorization`` presents exactly the shared fence bearer."""
         token = _bearer_token(authorization)
-        return token is not None and secrets.compare_digest(token, self._credentials.proxy_token.get_secret_value())
-
-    def _authenticate_fence_credential(self, fence_credential: SecretStr) -> bool:
-        presented = fence_credential.get_secret_value()
-        for credential in self._credentials.fence_credentials:
-            if secrets.compare_digest(presented, credential.token.get_secret_value()):
-                return True
-        return False
+        return token is not None and secrets.compare_digest(
+            token, self._credentials.fence_credential.get_secret_value()
+        )
 
     def _prohibited_label(self, address: IPv4Address | IPv6Address) -> str | None:
         """The always-on class or deploy-CIDR label prohibiting ``address``, or None if it is public."""
@@ -201,9 +192,6 @@ class HttpDecideService:
 
     async def decide(self, request: DecideRequest) -> DecideAllowed | DecideDenied:
         meta = request.request
-        if not self._authenticate_fence_credential(request.fence_credential):
-            logger.info("egress decision deny %s %s:%d: unknown fence credential", meta.method, meta.host, meta.port)
-            return DecideDenied(reason="unknown fence credential")
         if request.proxy_client_credential is None:
             logger.info(
                 "egress decision deny %s %s:%d: proxy client credential required", meta.method, meta.host, meta.port
