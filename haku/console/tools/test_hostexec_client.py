@@ -8,7 +8,7 @@ import pytest
 import pytest_bazel
 from fastmcp.exceptions import ToolError
 
-from haku.console.mcp.tools.hostexec_client import HostexecClient
+from haku.console.tools.hostexec_client import HostexecClient
 from mcp_infra.exec.models import BaseExecResult, Exited
 
 DAEMON_IDS = {"wyrm2": "wyrm2", "rugged": "rugged"}

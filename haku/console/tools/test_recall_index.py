@@ -23,7 +23,9 @@ from haku.console.mcp.execution import (
     OperatorMcpExecutionCaller,
     mcp_execution_request_meta,
 )
-from haku.console.mcp.tools.recall_index import (
+from haku.console.recall_index_access import RecallIndexAccessPolicy
+from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
+from haku.console.tools.recall_index import (
     HAKU_INDEX_SERVER_ID,
     ChatIndexStatus,
     ChatSource,
@@ -34,8 +36,6 @@ from haku.console.mcp.tools.recall_index import (
     SearchResults,
     build_mcp,
 )
-from haku.console.recall_index_access import RecallIndexAccessPolicy
-from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 
 NOW = datetime.datetime(2026, 8, 14, 9, 0, tzinfo=datetime.UTC)
 SESSION = UUID("11111111-1111-1111-1111-111111111111")

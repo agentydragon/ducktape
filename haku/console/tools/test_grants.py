@@ -60,7 +60,7 @@ from haku.console.mcp.execution import (
     OperatorMcpExecutionCaller,
     mcp_execution_request_meta,
 )
-from haku.console.mcp.tools.grants import (
+from haku.console.tools.grants import (
     GrantDomain,
     GrantsToolsService,
     HttpGrantRequest,
@@ -69,7 +69,7 @@ from haku.console.mcp.tools.grants import (
     KubernetesGrantView,
     build_mcp,
 )
-from haku.console.mcp.tools.kubernetes import KubernetesAccessCheck, KubernetesToolsService
+from haku.console.tools.kubernetes import KubernetesAccessCheck, KubernetesToolsService
 
 _NOW = datetime(2026, 8, 27, tzinfo=UTC)
 _K8S_SPEC = kubernetes_models.GrantSpec(

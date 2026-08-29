@@ -27,7 +27,7 @@ from typing import Any
 
 import httpx
 
-from haku.console.mcp.auto_approval.decision import AutoApprovalDecision, AutoApproved, NotAutoApproved
+from haku.console.auto_approval.decision import AutoApprovalDecision, AutoApproved, NotAutoApproved
 
 logger = logging.getLogger(__name__)
 

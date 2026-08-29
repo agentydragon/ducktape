@@ -1,5 +1,5 @@
 // Per-tool-type rendering for haku-console's in-process `google_calendar` MCP server (see
-// haku/console/mcp/tools/google_calendar.py). Falls back to the generic raw-JSON view
+// haku/console/tools/google_calendar.py). Falls back to the generic raw-JSON view
 // (approval_state.ts's argumentsJson) for anything that isn't shaped as expected. The zod
 // schema below is built from the FastMCP input schema advertised by tools/list. Execution-only
 // Pydantic cross-field validators may be stricter than that structural schema.

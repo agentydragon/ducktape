@@ -11,14 +11,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import haku.console.mcp.tools.conversations as conversations_tools
-import haku.console.mcp.tools.gmail as gmail_tools
-import haku.console.mcp.tools.google_calendar as google_calendar_tools
-import haku.console.mcp.tools.grants as grants_tools
-import haku.console.mcp.tools.hostexec as hostexec_tools
-import haku.console.mcp.tools.recall_index as recall_index_tools
-import haku.console.mcp.tools.routine as routine_tools
-import haku.console.mcp.tools.sandbox as sandbox_tools
+import haku.console.tools.conversations as conversations_tools
+import haku.console.tools.gmail as gmail_tools
+import haku.console.tools.google_calendar as google_calendar_tools
+import haku.console.tools.grants as grants_tools
+import haku.console.tools.hostexec as hostexec_tools
+import haku.console.tools.recall_index as recall_index_tools
+import haku.console.tools.routine as routine_tools
+import haku.console.tools.sandbox as sandbox_tools
 from haku.console.config import HostexecConfig
 from haku.console.conversation_read_access import ConversationReadAccessPolicy
 from haku.console.mcp.config import (
@@ -29,9 +29,9 @@ from haku.console.mcp.config import (
     const_in_process_server,
 )
 from haku.console.mcp.in_process_server_access import InProcessServerAccessPolicy
-from haku.console.mcp.tools.hostexec_client import HostexecClient, NodeDaemonBroker
-from haku.console.mcp.tools.hostexec_token import HostexecJwtBearerExchanger
 from haku.console.recall_index_access import RecallIndexAccessPolicy
+from haku.console.tools.hostexec_client import HostexecClient, NodeDaemonBroker
+from haku.console.tools.hostexec_token import HostexecJwtBearerExchanger
 from haku.sandbox.config import SandboxEnvironmentConfig
 
 

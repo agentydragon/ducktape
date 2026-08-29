@@ -19,9 +19,9 @@ from haku.console.database_schema import Conversation, ConversationItem, Operato
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.mcp.config import ConsoleConfigFile
-from haku.console.mcp.tools.recall_index import ChatIndexStatus, ChatSource, GitIndexStatus
 from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.recall_index_sync import RecallEmbeddingMaintenance, RecallIndexMaintenance, advisory_lock_for
+from haku.console.tools.recall_index import ChatIndexStatus, ChatSource, GitIndexStatus
 from haku.recall_index.config import ChatRecallIndexDefinition, GitRecallIndexDefinition
 from haku.recall_index.fake_embedder import ExplodingEmbedder, FakeEmbedder
 from haku.recall_index.schema import ContentEmbedding

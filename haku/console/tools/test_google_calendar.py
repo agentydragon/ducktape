@@ -5,8 +5,8 @@ from unittest.mock import Mock
 import pytest_bazel
 from fastmcp import Client
 
-from haku.console.mcp.tools.google_calendar import build_mcp
-from haku.console.mcp.tools.google_calendar_client import CalendarEvent, CalendarEventsPage
+from haku.console.tools.google_calendar import build_mcp
+from haku.console.tools.google_calendar_client import CalendarEvent, CalendarEventsPage
 
 
 def _mcp(calendar=None):

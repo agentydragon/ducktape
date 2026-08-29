@@ -17,11 +17,11 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import UUID
 
+from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
+from haku.console.auto_approval.registry import AutoApprovalPolicyRegistry, PolicyDenial, auto_approve_tool_call
 from haku.console.config import Settings
 from haku.console.grants.kubernetes.authorization import KubernetesAuthorizationService
 from haku.console.grants.principal import RequestPrincipal
-from haku.console.mcp.auto_approval.github import GitHubRepositoryVisibilityService
-from haku.console.mcp.auto_approval.registry import AutoApprovalPolicyRegistry, PolicyDenial, auto_approve_tool_call
 from haku.console.mcp.config import (
     InProcessBackend,
     InProcessServers,
@@ -41,7 +41,6 @@ from haku.console.mcp.execution import (
     McpExecutionContext,
     OperatorMcpExecutionCaller,
 )
-from haku.console.mcp.tools.gmail_client import GMAIL_SERVER_ID, GmailToolsClient
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_calls import (
     ApprovalDecision,
@@ -51,6 +50,7 @@ from haku.console.tool_calls import (
     ToolCallRecord,
     ToolCallStatus,
 )
+from haku.console.tools.gmail_client import GMAIL_SERVER_ID, GmailToolsClient
 
 logger = logging.getLogger(__name__)
 

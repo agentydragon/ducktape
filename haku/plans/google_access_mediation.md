@@ -117,7 +117,7 @@ When every scope above is covered (or dropped), remove the `google` grant, its E
 
 Don't hand-code the schemas. Google API **Discovery Documents** already carry every method's
 parameters, request/response schemas, and required scopes; the shipped factory
-(`haku/console/mcp/tools/google_discovery.py`, first used by the gmail reads) generates clean MCP
+(`haku/console/tools/google_discovery.py`, first used by the gmail reads) generates clean MCP
 `inputSchema`s for reads near-turnkey (writes balloon into deep recursive bodies, so they stay
 hand-written). Build the surface as **one hand-written spine plus three tiers of tool specs**.
 
@@ -165,7 +165,7 @@ wheel's snapshot lag ever matters, git-pin Google's `googleapis/discovery-artifa
 (versioned, fresher, still not vendored). Do **not** vendor the raw discovery JSON in-repo (~1.3 MB;
 rejected for bloat), and don't read the live Discovery endpoint (latest-not-immutable → not a
 reproducible build input). The same `schemas` generate response types, so typing shares the source.
-Implemented in `haku/console/mcp/tools/google_discovery.py`.
+Implemented in `haku/console/tools/google_discovery.py`.
 
 **Build vs. reuse.** Own the discovery→JSON-Schema converter — ~90 lines of stdlib, the mapping is
 small and frozen (classic Workspace APIs use no `variant`/`oneOf`), and the value-add (curation

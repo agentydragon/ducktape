@@ -40,9 +40,9 @@ from haku.console.mcp.execution import (
     mcp_execution_request_meta,
 )
 from haku.console.mcp.in_process_server_access import InProcessServerAccessPolicy
-from haku.console.mcp.tools.conversations import FramePage, ItemPage, SessionPage, build_mcp
 from haku.console.session.session_frames import BridgeFrameKind
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
+from haku.console.tools.conversations import FramePage, ItemPage, SessionPage, build_mcp
 
 SESSION = UUID("11111111-1111-1111-1111-111111111111")
 CONVERSATION = UUID("44444444-4444-4444-4444-444444444444")

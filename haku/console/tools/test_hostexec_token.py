@@ -9,7 +9,7 @@ import pytest_bazel
 import respx
 from fastmcp.exceptions import ToolError
 
-from haku.console.mcp.tools.hostexec_token import HostexecJwtBearerExchanger
+from haku.console.tools.hostexec_token import HostexecJwtBearerExchanger
 
 TOKEN_ENDPOINT = "https://auth.allegedly.works/application/o/token/"
 AUDIENCE_CLIENT_IDS = {"wyrm2": "hostexec-wyrm2-client", "rugged": "hostexec-rugged-client"}

@@ -2,7 +2,7 @@
 
 `can_i` is a kubernetes-specific check, not a grant verb, but it rides the same in-process `grants`
 server (#4918) as the `kubernetes_can_i` tool rather than a separate server. This module owns its
-request/result vocabulary and the service that answers it; `haku.console.mcp.tools.grants` composes it
+request/result vocabulary and the service that answers it; `haku.console.tools.grants` composes it
 onto the server.
 """
 

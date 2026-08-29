@@ -7,7 +7,7 @@ capability payload. The domains keep their own services, tables, and typed cover
 (`grants.kubernetes` scope/rules; `grants.http` exact origins); this module only routes a
 discriminated request to the right one and tags the returned envelope so the Agent can tell
 them apart. Kubernetes SAR inspection (`can_i`) is not a grant verb and lives on its own
-`kubernetes` server (`haku.console.mcp.tools.kubernetes`).
+`kubernetes` server (`haku.console.tools.kubernetes`).
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ import haku.console.grants.http.models as http_models
 import haku.console.grants.http.service as http_service
 import haku.console.grants.kubernetes.models as kubernetes_models
 import haku.console.grants.kubernetes.service as kubernetes_service
-import haku.console.mcp.tools.kubernetes as kubernetes_tools
+import haku.console.tools.kubernetes as kubernetes_tools
 from haku.console.grants.envelope import GRANT_SET_LIMIT, GrantNotFoundError
 from haku.console.grants.principal import GrantPrincipalKind, grant_principal_for
 from haku.console.identity.enrollment import AgentEnrollmentService

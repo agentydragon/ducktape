@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 import pytest_bazel
 
-from haku.console.mcp.tools.google_calendar_client import (
+from haku.console.tools.google_calendar_client import (
     CalendarReminder,
     CalendarToolsClient,
     CreateCalendarEventArgs,

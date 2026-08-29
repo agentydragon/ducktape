@@ -45,8 +45,6 @@ from haku.console.mcp.operator_oauth import (
 )
 from haku.console.mcp.reflection_cache import ReflectedCatalog
 from haku.console.mcp.tool_call_service import ToolCallApplicationService, ToolCallNotFoundError
-from haku.console.mcp.tools import gmail as gmail_tools, google_calendar as calendar_tools
-from haku.console.mcp.tools.google_calendar_client import CalendarEvent
 from haku.console.oauth.provider_connection import ProviderConnected, ProviderConnectionStatusResponse
 from haku.console.tool_call_actor import AgentActor, RuntimeActor
 from haku.console.tool_calls import (
@@ -58,6 +56,8 @@ from haku.console.tool_calls import (
     ToolCallRecord,
     ToolCallStatus,
 )
+from haku.console.tools import gmail as gmail_tools, google_calendar as calendar_tools
+from haku.console.tools.google_calendar_client import CalendarEvent
 from mcp_infra.persistence import PostgresPersistence
 from util.net import pick_free_port
 from util.testing.asgi import serve_app_sync, serve_fastmcp

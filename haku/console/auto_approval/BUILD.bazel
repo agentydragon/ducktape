@@ -39,7 +39,7 @@ py_library(
     srcs = ["gmail.py"],
     deps = [
         ":decision",
-        "//haku/console/mcp/tools:gmail_client",
+        "//haku/console/tools:gmail_client",
     ],
 )
 
@@ -66,7 +66,7 @@ py_library(
         "//haku/console:tool_call_actor",
         "//haku/console/grants/kubernetes:authorization",
         "//haku/console/mcp:config",
-        "//haku/console/mcp/tools:gmail_client",
+        "//haku/console/tools:gmail_client",
         "@pypi//fastmcp_slim",
         "@pypi//jsonschema",
         "@pypi//referencing",
@@ -84,8 +84,8 @@ py_test(
         "//haku/console:conftest",
         "//haku/console:tool_call_actor",
         "//haku/console/mcp:config",
-        "//haku/console/mcp/tools:gmail",
-        "//haku/console/mcp/tools:google_calendar",
+        "//haku/console/tools:gmail",
+        "//haku/console/tools:google_calendar",
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",

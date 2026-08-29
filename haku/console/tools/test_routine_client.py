@@ -12,7 +12,7 @@ import respx
 from pydantic import SecretStr
 
 from haku.console.config import LaunchRoutineConfig
-from haku.console.mcp.tools.routine import RoutineLauncher
+from haku.console.tools.routine import RoutineLauncher
 
 ROUTINE_ID = "trig_test"
 FIRE_URL = f"https://api.anthropic.com/v1/claude_code/routines/{ROUTINE_ID}/fire"

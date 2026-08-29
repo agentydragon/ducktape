@@ -36,7 +36,7 @@ from gmail_api.labels import (
     PatchLabelRequest,
 )
 from gmail_api.messages import Draft
-from haku.console.mcp.tools.gmail_client import (
+from haku.console.tools.gmail_client import (
     GMAIL_SERVER_ID,
     CreateGmailDraftArgs,
     GmailToolsClient,
@@ -44,8 +44,8 @@ from haku.console.mcp.tools.gmail_client import (
     ModifyGmailThreadLabelsResult,
     UpdateGmailDraftArgs,
 )
-from haku.console.mcp.tools.google_discovery import GenTool, build_generated_tools
-from haku.console.mcp.tools.google_service import build_google_api_service
+from haku.console.tools.google_discovery import GenTool, build_generated_tools
+from haku.console.tools.google_service import build_google_api_service
 
 # Module-level, not local to build_mcp(): `from __future__ import annotations` makes every
 # tool parameter annotation a string, resolved by pydantic against this module's globals at

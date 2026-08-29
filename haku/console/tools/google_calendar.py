@@ -18,7 +18,7 @@ from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from haku.console.mcp.tools.google_calendar_client import (
+from haku.console.tools.google_calendar_client import (
     CalendarEvent,
     CalendarEventsPage,
     CalendarReminder,
@@ -28,7 +28,7 @@ from haku.console.mcp.tools.google_calendar_client import (
     ListCalendarEventInstancesArgs,
     ListCalendarEventsArgs,
 )
-from haku.console.mcp.tools.google_service import build_google_api_service
+from haku.console.tools.google_service import build_google_api_service
 
 # Wire-frozen id: named by cluster/k8s/haku/console/config.yaml and persisted in
 # ledger `server_id` rows — renaming is a config + data migration.

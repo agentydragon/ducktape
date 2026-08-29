@@ -79,7 +79,6 @@ from haku.console.mcp.execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutio
 from haku.console.mcp.operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp.reflection_cache import ReflectedCatalog
 from haku.console.mcp.tool_call_service import ToolCallApplicationService, backend_auth_for_operator
-from haku.console.mcp.tools.gmail import build_mcp as build_gmail_mcp
 from haku.console.notifications import console_events
 from haku.console.oauth.token_state import new_token_state
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
@@ -90,6 +89,7 @@ from haku.console.tool_calls import (
     ToolCallPayloadField,
     ToolCallStatus,
 )
+from haku.console.tools.gmail import build_mcp as build_gmail_mcp
 from util.net import pick_free_port
 from util.testing.asgi import serve_app_sync
 

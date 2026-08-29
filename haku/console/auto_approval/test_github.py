@@ -6,7 +6,7 @@ import httpx
 import pytest
 import pytest_bazel
 
-from haku.console.mcp.auto_approval.github import (
+from haku.console.auto_approval.github import (
     GitHubRepositoryVisibilityService,
     GitHubRepositoryVisibilityUnavailableError,
 )

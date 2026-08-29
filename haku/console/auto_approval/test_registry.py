@@ -13,8 +13,8 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from gmail_api.labels import GmailLabel, LabelType
-from haku.console.mcp.auto_approval.github import GitHubRepositoryVisibilityService
-from haku.console.mcp.auto_approval.registry import (
+from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
+from haku.console.auto_approval.registry import (
     AGENT_AUTO_APPROVAL_ID,
     AutoApprovalPolicyRegistry,
     PolicyDenial,
@@ -22,9 +22,9 @@ from haku.console.mcp.auto_approval.registry import (
     auto_approve_tool_call,
 )
 from haku.console.mcp.config import AccessProfile, ConsoleConfigFile
-from haku.console.mcp.tools.gmail import build_mcp
-from haku.console.mcp.tools.google_calendar import build_mcp as build_calendar_mcp
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
+from haku.console.tools.gmail import build_mcp
+from haku.console.tools.google_calendar import build_mcp as build_calendar_mcp
 
 TEST_OPERATOR_ID = UUID("00000000-0000-0000-0000-000000000001")
 AGENT_ACTOR = AgentActor(

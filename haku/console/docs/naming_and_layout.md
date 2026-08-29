@@ -73,18 +73,23 @@ tree shows the packages, §3 and §4 settle what the files and classes inside th
                        #   proxy_authorization (file prefixes dropped; entity names wait on §4.1 seam 3)
     http/              # models, repository, service, routes, decide_{config,routes,service}
 
-  mcp/                 # the approval / audit / execution surface
+  mcp/                 # the MCP transport surface — approval / audit / execution machinery only
     server.py  approval.py  config.py  catalog_reconciler.py  guidance.py  mount.py  reflection_cache.py
     tool_call_service.py           # the actor-scoped lifecycle boundary
     execution.py                   # McpExecutionCaller/Context (was mcp_execution.py)  [#4836 parts 2-3]
     in_process_servers.py  in_process_server_access.py  operator_oauth.py  export_tool_schemas.py
-    tools/                         # in-process tool servers (gmail, google_calendar, kubernetes, hostexec, …)
-      recall/                      # the index-read tool server — reader.py + access.py + the tool module (was
-                                   #   recall_index_reader/recall_index_access + tools/recall_index.py). Console keeps
-                                   #   ONLY the query-time read path (#4887); its SOLE consumer is the haku_index MCP
-                                   #   server (nothing reads the index over SPA/HTTP), so it folds in with its peers
-                                   #   under tools/, not a standalone package (§4.2). Tool-id renamed under #4918/de-Haku.
-    auto_approval/
+
+  tools/                             # in-process tool servers (gmail, google_calendar, kubernetes, hostexec, …) —
+                                     #   console DOMAIN capabilities, not MCP transport, so console-level (a sibling
+                                     #   of mcp/), never under it. mcp/ mounts them; it does not own them.
+    recall/                          # the index-read tool server — reader.py + access.py + the tool module (was
+                                     #   recall_index_reader/recall_index_access + tools/recall_index.py). Console keeps
+                                     #   ONLY the query-time read path (#4887); its SOLE consumer is the haku_index MCP
+                                     #   server (nothing reads the index over SPA/HTTP), so it folds in with its peers
+                                     #   under tools/, not a standalone package (§4.2). Tool-id renamed under #4918/de-Haku.
+
+  auto_approval/                     # the auto-approval policy registry — a console domain capability, not MCP
+                                     #   transport; decides whether a call skips review. console-level, not under mcp/.
 
   oauth/               # provider account-linking + operator OAuth token machinery
     provider_connection.py  provider_connection_registry.py  token_state.py  token_support.py
@@ -338,7 +343,7 @@ package split below keeps these exclusions structurally enforceable.
 | **runner**              | `haku/runner`                                                    | its own bridge + shared wire                                                                                                                                         | **console (any package)** — the import arrow is console→runner, never the reverse                                                                                                                                                                                                                                | the neutral-operation socket (#4667)       |
 | **haku-console server** | `<platform>/console/*`                                           | its own domain packages; the runner's shared wire vocab                                                                                                              | —                                                                                                                                                                                                                                                                                                                | in-process                                 |
 | **egress proxy**        | `haku/egress` (forthcoming; egress-grant work #4941/#4957/#4942) | the shared decision wire vocabulary only                                                                                                                             | console `identity/`, `grants/`, `mcp/` — anything beyond the shared decision vocab                                                                                                                                                                                                                               | HTTP to console (not a Python import)      |
-| **indexer**             | `haku/indexer/` (forthcoming, #4887)                             | the shared `haku/recall_index/` schema only                                                                                                                          | any console package — `identity/`, `grants/`, `mcp/` (incl. the `mcp/tools/recall/` read path), approval; its DB role is narrow, the deps must mirror it                                                                                                                                                         | its narrow DB role                         |
+| **indexer**             | `haku/indexer/` (forthcoming, #4887)                             | the shared `haku/recall_index/` schema only                                                                                                                          | any console package — `identity/`, `grants/`, `mcp/` (incl. the `tools/recall/` read path), approval; its DB role is narrow, the deps must mirror it                                                                                                                                                             | its narrow DB role                         |
 | **matrix adapter**      | `channels/matrix/` (worker.py, #4864)                            | its channel package; the conversation seam (the one pub/sub, positional read, offer-input); the schema; the narrow launch authority (`identity/launch_authority.py`) | `mcp/` and the identity auth stack (`identity/`'s `fastmcp_adapter`, `enrollment`, `authorization`, `agent_bearer_authority`, `mcp_agent_auth` — everything under `identity/` beyond `launch_authority` and the operator-identity leaves), approval, oauth, push; its DB role is narrow, the deps must mirror it | its narrow DB role                         |
 | **kube-api-proxy**      | `haku/kube_api_proxy` (Go)                                       | —                                                                                                                                                                    | zero console Python (it is Go)                                                                                                                                                                                                                                                                                   | —                                          |
 | **hostexecd**           | `haku/hostexec/hostexecd` (Rust, host-side)                      | —                                                                                                                                                                    | zero console Python (it is Rust)                                                                                                                                                                                                                                                                                 | HTTP to console's `hostexecd/` coordinator |
@@ -352,7 +357,7 @@ Directionality notes, verified against `devel`:
   only over HTTP and shares a small decision wire vocabulary; console may depend on that shared vocab,
   the egress binary must not depend on console. Its BUILD deps cannot reach `identity/`/`grants/`/`mcp/`.
 - **the indexer's narrow DB role is mirrored in the dep graph.** Console keeps the query-time read
-  path (folded under `mcp/tools/recall/`, since its sole consumer is the `haku_index` MCP server); the
+  path (folded under `tools/recall/`, since its sole consumer is the `haku_index` MCP server); the
   worker (`recall_index_sync.py`) leaves to `haku/indexer/` and is entitled to the shared
   `haku/recall_index/` schema and its own code — not to any console package.
 - **the two host-side daemons carry zero console Python** by language (Go, Rust); their only coupling
@@ -382,7 +387,7 @@ will conflict" / "touches the same file" is not a wait — whoever lands second 
 
 - **C13 · `haku/indexer/` tree move (#4887)** _(staged; the directory move is the last step)_ — the
   worker (`indexer.py` + `recall_index_sync.py`) leaves console; console keeps the query-time read
-  path (`mcp/tools/recall/`). Not a bare rename: the §5 exclusion — worker deps physically unable to
+  path (`tools/recall/`). Not a bare rename: the §5 exclusion — worker deps physically unable to
   reach console — must already hold when the tree appears, so the console edges sever in place first,
   each step an atomic sweep with no shims, beside every other lane. The shared recall-index/embedder
   config lives in `haku/recall_index/config.py` and the worker reads only its own
@@ -476,12 +481,15 @@ Needs operator go **and** the `<auth-context>` name pick.
   namespaces + connector + docs in a coordinated cutover; "Haku" kept as agent config; redirect/compat
   for external refs. The tool-id de-Haku rides C12.
 - **C15 · Remainder packaging (#4924)** _(mechanical)_ — Landed: `oauth/` (#5000),
-  `notifications/` (#5001), `hostexecd/` (#5002), and `mcp/` — the approval/audit/execution surface
+  `notifications/` (#5001), `hostexecd/` (#5002); `mcp/` — the MCP transport surface
   (the `mcp_*` modules, `tool_call_service`, `in_process_servers`/`in_process_server_access`,
-  `export_tool_schemas`, `tools/`, `auto_approval/`), each a one-file `py_library` with the `mcp_`
-  file-prefix dropped per §4.1; the `McpExecution*` entity reshape stays with C8, so `execution.py`
-  keeps its class names for now. `tool_call_actor.py` (→ `identity/`, C8) and the recall read path
-  (`recall_index_{reader,access}.py` → `mcp/tools/recall/`, C13) deliberately stay put. Remaining:
+  `export_tool_schemas`); and, alongside it at console level, the domain-capability packages
+  `tools/` (in-process tool servers) and `auto_approval/` (the auto-approval policy registry) —
+  these are console capabilities, not MCP transport, so they sit beside `mcp/`, not under it. Each
+  a one-file `py_library` with the `mcp_` file-prefix dropped per §4.1; the `McpExecution*` entity
+  reshape stays with C8, so `execution.py` keeps its class names for now. `tool_call_actor.py`
+  (→ `identity/`, C8) and the recall read path (`recall_index_{reader,access}.py` → `tools/recall/`,
+  C13) deliberately stay put. Remaining:
   the rest settles around the app shell once #4772 has settled what everything is called
   (rename-before-move), in a final quiet-window sweep.
 

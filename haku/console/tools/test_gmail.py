@@ -15,8 +15,8 @@ from fastmcp import Client
 from gmail_api.filters import FilterAction, FilterCriteria, GmailFilter
 from gmail_api.labels import GmailLabel, LabelType
 from gmail_api.messages import Draft, Message
-from haku.console.mcp.tools.gmail import build_mcp
-from haku.console.mcp.tools.gmail_client import ModifyGmailThreadLabelsResult
+from haku.console.tools.gmail import build_mcp
+from haku.console.tools.gmail_client import ModifyGmailThreadLabelsResult
 
 
 @pytest.fixture

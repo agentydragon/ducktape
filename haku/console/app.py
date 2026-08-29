@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.middleware.sessions import SessionMiddleware
 
 from haku.console import capabilities
+from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
 from haku.console.config import MCP_PATH, Settings
 
 # Aliased: bare `runtime` exists in three sibling packages, and `create_app` has a local `follow`.
@@ -73,7 +74,6 @@ from haku.console.identity.fastmcp_adapter import HakuMcpActorResolver, install_
 from haku.console.identity.operator_identity import OperatorIdentityTrust
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.mcp import approval, catalog_reconciler, mount, operator_oauth, server, tool_call_service
-from haku.console.mcp.auto_approval.github import GitHubRepositoryVisibilityService
 from haku.console.mcp.config import (
     InProcessBackend,
     InProcessServers,
@@ -90,14 +90,6 @@ from haku.console.mcp.in_process_servers import (
     SandboxServerConfig,
     build_in_process_servers,
 )
-from haku.console.mcp.tools import (
-    gmail as gmail_tools,
-    grants as grants_tools,
-    kubernetes as kubernetes_tools,
-    routine as routine_tools,
-    sandbox as sandbox_tools,
-)
-from haku.console.mcp.tools.recall_index import HAKU_INDEX_SERVER_ID
 from haku.console.models import ChatLaunchOption, ConfigResponse
 from haku.console.notifications import connection_metrics, console_events, push, push_routes
 from haku.console.notifications.conversation_wakes import ConversationWakes
@@ -108,6 +100,14 @@ from haku.console.session import runtime as session_runtime, sandbox_allocation,
 from haku.console.session.launch_identity import ChatLaunchAuthorizer
 from haku.console.session.store import Store
 from haku.console.session.system_prompt import SystemPromptTemplate
+from haku.console.tools import (
+    gmail as gmail_tools,
+    grants as grants_tools,
+    kubernetes as kubernetes_tools,
+    routine as routine_tools,
+    sandbox as sandbox_tools,
+)
+from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
 from haku.console.x import runtime as console_runtime, runtime_catalog
 from haku.recall_index.config import EmbedderConfig
 from haku.recall_index.openai_embedder import OpenAIEmbedder

@@ -1,5 +1,5 @@
 // Per-tool-type rendering for haku-console's in-process `gmail` MCP server (see
-// haku/console/mcp/tools/gmail.py). Anything not shaped as expected falls back to the generic raw-JSON
+// haku/console/tools/gmail.py). Anything not shaped as expected falls back to the generic raw-JSON
 // view (approval_state.ts's argumentsJson): arguments are validated by the tool's own Pydantic model
 // at execution time, not at submission, so a pending approval's may be malformed. The remaining read
 // tools (`labels_list`, `filters_list`, `drafts_list`, …) have no widget — their args are empty or
@@ -58,7 +58,7 @@ type SearchGmailThreadsArgs = z.infer<typeof zSearchGmailThreadsArgs>;
 type GetGmailMessageArgs = z.infer<typeof zGetGmailMessageArgs>;
 
 // A Gmail API thread id resolves directly in the web UI's `#all/` view — the same link the
-// backend builds for thread previews (haku/console/mcp/tools/gmail.py `_THREAD_URL`).
+// backend builds for thread previews (haku/console/tools/gmail.py `_THREAD_URL`).
 export function gmailThreadUrl(threadId: string): string {
   return `https://mail.google.com/mail/u/0/#all/${threadId}`;
 }

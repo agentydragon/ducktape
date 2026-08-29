@@ -55,6 +55,7 @@ from pydantic import (
     model_serializer,
 )
 
+from haku.console.auto_approval.registry import AutoApprovalPolicyRegistry, ToolAutoApprovalMode
 from haku.console.config import Settings, tool_call_console_url
 from haku.console.hostexecd.service import DaemonStatusResponse, Service
 from haku.console.identity.fastmcp_adapter import HakuMcpActorResolver
@@ -68,7 +69,6 @@ from haku.console.mcp.approval import (
     metadata_for_operator,
     server_metadata_response,
 )
-from haku.console.mcp.auto_approval.registry import AutoApprovalPolicyRegistry, ToolAutoApprovalMode
 from haku.console.mcp.catalog_reconciler import OperatorCatalogReconciler
 from haku.console.mcp.config import (
     InProcessBackend,

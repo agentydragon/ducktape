@@ -44,8 +44,8 @@ from haku.console.mcp.in_process_servers import (
     build_in_process_servers,
 )
 from haku.console.mcp.server import SERVER_NAME, McpServerConnectionStatusResponse, McpServerProbeResponse
-from haku.console.mcp.tools.grants import GrantsToolsService
-from haku.console.mcp.tools.kubernetes import KubernetesToolsService
+from haku.console.tools.grants import GrantsToolsService
+from haku.console.tools.kubernetes import KubernetesToolsService
 from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 
 GROCY_SF_SERVER_ID = "grocy-sf"

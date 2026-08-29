@@ -6,8 +6,8 @@ import asyncio
 import logging
 from typing import Any
 
-from haku.console.mcp.auto_approval.decision import AutoApprovalDecision, AutoApproved, NotAutoApproved
-from haku.console.mcp.tools.gmail_client import GmailToolsClient
+from haku.console.auto_approval.decision import AutoApprovalDecision, AutoApproved, NotAutoApproved
+from haku.console.tools.gmail_client import GmailToolsClient
 
 logger = logging.getLogger(__name__)
 

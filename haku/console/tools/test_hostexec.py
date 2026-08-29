@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest_bazel
 from fastmcp import Client
 
-from haku.console.mcp.tools.hostexec import build_mcp
+from haku.console.tools.hostexec import build_mcp
 from mcp_infra.exec.models import BaseExecResult, Exited
 
 

@@ -20,7 +20,7 @@ from typing import Annotated
 from fastmcp import FastMCP
 from pydantic import Field
 
-from haku.console.mcp.tools.hostexec_client import HostexecClient
+from haku.console.tools.hostexec_client import HostexecClient
 from haku.hostexec.wire import RunAsUser
 from mcp_infra.exec.models import BaseExecResult, TimeoutMs
 

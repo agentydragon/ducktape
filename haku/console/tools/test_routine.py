@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest_bazel
 from fastmcp import Client
 
-from haku.console.mcp.tools.routine import LaunchRoutineResult, build_mcp
+from haku.console.tools.routine import LaunchRoutineResult, build_mcp
 
 
 def _mcp(launcher=None):

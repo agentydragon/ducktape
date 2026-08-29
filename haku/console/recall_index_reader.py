@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from haku.console.chat_models import ChannelSurface
 from haku.console.conversation_read_access import ConversationReadScope
 from haku.console.database_schema import ChannelAttachmentRow, Session
-from haku.console.mcp.tools.recall_index import (
+from haku.console.tools.recall_index import (
     ChatIndexStatus,
     ChatSource,
     GitIndexStatus,

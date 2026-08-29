@@ -1,5 +1,5 @@
 // Per-tool-type rendering for haku-console's in-process `haku_routine` MCP server (see
-// haku/console/mcp/tools/routine.py). `launch_routine` starts a new Haku claude-code-web run; its
+// haku/console/tools/routine.py). `launch_routine` starts a new Haku claude-code-web run; its
 // only argument is the optional per-run instruction text, which the operator wants to read
 // verbatim before approving. Its validator comes from the exact FastMCP input schema advertised
 // by tools/list, through the same generated catalog as the Gmail and Calendar previews.

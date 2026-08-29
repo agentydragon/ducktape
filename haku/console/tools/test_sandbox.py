@@ -7,7 +7,7 @@ import pytest_bazel
 from fastmcp import Client
 from mcp.types import Tool
 
-from haku.console.mcp.tools.sandbox import build_mcp
+from haku.console.tools.sandbox import build_mcp
 from haku.sandbox.config import SandboxEnvironmentConfig
 from haku.sandbox.models import DisposeSandboxResult, SandboxExecResult, SandboxInfo, SandboxListPage, SandboxWarning
 from mcp_infra.exec.models import Exited

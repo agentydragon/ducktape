@@ -10,15 +10,15 @@ from typing import Any
 import jsonschema
 from fastmcp import FastMCP
 
-from haku.console.grants.kubernetes.authorization import KubernetesAuthorizationService
-from haku.console.mcp.auto_approval.decision import AutoApprovalDecision, AutoApproved, AutoDenied, NotAutoApproved
-from haku.console.mcp.auto_approval.github import (
+from haku.console.auto_approval.decision import AutoApprovalDecision, AutoApproved, AutoDenied, NotAutoApproved
+from haku.console.auto_approval.github import (
     GitHubRepositoryVisibilityService,
     evaluate_fixed_repository,
     evaluate_public_repository,
 )
-from haku.console.mcp.auto_approval.gmail import LABEL_NAMESPACE_TOOLS, evaluate_label_namespace
-from haku.console.mcp.auto_approval.kubernetes import evaluate_passthrough_redundancy
+from haku.console.auto_approval.gmail import LABEL_NAMESPACE_TOOLS, evaluate_label_namespace
+from haku.console.auto_approval.kubernetes import evaluate_passthrough_redundancy
+from haku.console.grants.kubernetes.authorization import KubernetesAuthorizationService
 from haku.console.mcp.config import (
     AnyOfAutoApprovalPolicy,
     AutoApprovalPolicy,
@@ -31,8 +31,8 @@ from haku.console.mcp.config import (
     KubernetesPassthroughAutoApprovalPolicy,
     NeverAutoApprovalPolicy,
 )
-from haku.console.mcp.tools.gmail_client import GmailToolsClient
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
+from haku.console.tools.gmail_client import GmailToolsClient
 
 # The types-jsonschema stubs import referencing, so mypy needs the dist wherever
 # jsonschema is imported; gazelle cannot see the dependency.
@@ -44,7 +44,7 @@ AGENT_AUTO_APPROVAL_ID = "agent_policy_v1"
 SCHEMA_AUTO_DENIAL_EVALUATION = "denied: arguments failed the registered tool schema"
 
 # The `grants` server's own-grant list read and the scope value that makes it click-free. Mirrors
-# `haku.console.mcp.tools.grants` (`list_grants`, `GrantReadScope`) without importing the tool layer into
+# `haku.console.tools.grants` (`list_grants`, `GrantReadScope`) without importing the tool layer into
 # the policy engine.
 _LIST_GRANTS_TOOL = "list_grants"
 _OWN_GRANT_SCOPE = "self"
