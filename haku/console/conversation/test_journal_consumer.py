@@ -23,6 +23,7 @@ from haku.console.conversation.item_vocabulary import ItemStatus, ItemType, Tool
 from haku.console.conversation.journal_consumer import JournalConsumer, JournalViolationError
 from haku.console.conversation.prompt_origin import SPA_ORIGIN, MatrixOrigin
 from haku.console.database_schema import ConversationEventRow, ConversationTurn, Session, SessionFrame, SubmittedPrompt
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.conftest import session_items
 from haku.console.session.store import Store
 
@@ -88,7 +89,7 @@ def consumer(migrated_sessions: async_sessionmaker[AsyncSession]) -> JournalCons
 @pytest.fixture
 async def journal_session(session_store: Store, operator_id: UUID) -> tuple[UUID, UUID]:
     """One session and its conversation, as `(session_id, conversation_id)`."""
-    view, _token = await session_store.create(operator_id)
+    view, _token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     return view.session_id, await session_store.conversation_of(view.session_id)
 
 

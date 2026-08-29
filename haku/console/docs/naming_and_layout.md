@@ -428,18 +428,13 @@ quiet gap.
   both layers import avoids it. Remaining:
   - `ChannelSurface` → `channels/` with the channel packaging
 - **C4d · `runtime_kind` → `harness_kind`** _(semantic — coordinated stored + wire + OpenAPI)_ — the
-  harness-kind discriminator (§3.1). Landed: the wire-field drop (#5050); the `RuntimeKind` enum →
-  `harnesses/kind.py` as `HarnessKind` and its OpenAPI component (SPA consumers read the
-  `harness_kind` field and its unchanged `claude_code`/`codex_app_server` values, not the component
-  name, so the key flip stays compatible across the independent static/API rolls); and the **expand**
-  step of the stored `conversation.runtime_kind` → `harness_kind` column — `harness_kind` added,
-  backfilled and dual-written while reads stay on `runtime_kind`, so a post-#5050 replica never reads
-  a vanished column mid-roll. Remaining is the stored **contract**, each release only after the prior
-  has converged: switch reads to `harness_kind` (backfill the roll-window stragglers, add NOT NULL);
-  stop writing and mapping `runtime_kind` (make it nullable); drop `runtime_kind` and its CHECK. The
-  console harness adapters (`x/claude_code`, `x/codex_app_server`) are deleted by the #4667 cutover
-  (native projection moves runner-ward), so there is no console `runtimes/`→`harnesses/` move to
-  schedule — only this discriminator rename and the small `harnesses/` selection residue.
+  harness-kind discriminator (§3.1). The wire, enum/OpenAPI, and application API are complete, and
+  this PR performs the stored read-switch: `harness_kind` is authoritative for reads while a
+  storage-only legacy mapping keeps both physical columns in sync. Remaining, after this release
+  converges, are the two contract PRs: stop mapping/writing the legacy column and make it nullable,
+  then drop the legacy column/CHECK and leave the identity trigger protecting only `harness_kind`.
+  Launch selection is explicit too: no session service or resource registry supplies a default
+  harness, and ambiguous deployment configuration fails closed instead of choosing Claude.
 - **C4e · `allowed_chat_runtimes` → `allowed_harnesses`** _(semantic — per-profile config field,
   deploy-coordinated expand/contract, same recipe as the `chat_runtimes` → `harnesses` key flip)_.
   **Landed**: after the #5088 expand converged across the independently rolled Console and Matrix

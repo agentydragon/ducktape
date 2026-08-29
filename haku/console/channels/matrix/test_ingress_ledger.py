@@ -15,6 +15,7 @@ import pytest_bazel
 from haku.console.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.conversation.conversation_event import TurnAnswered
 from haku.console.conversation.prompt_origin import MatrixOrigin
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.store import BridgeAuthentication, PromptRefusedError, Store
 
 ROOM = "!room:allegedly.works"
@@ -74,7 +75,7 @@ async def test_a_prompt_its_session_never_claimed_is_taken_by_the_replacement(
     a channel that asked the live session the dead one's question — machinery for a window the
     schema no longer has.
     """
-    view, _ = await session_store.create(operator_id)
+    view, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     conversation_id = await session_store.conversation_of(view.session_id)
     first = await ready_session(session_store, operator_id, conversation_id=conversation_id)
     await session_store.submit_prompt(

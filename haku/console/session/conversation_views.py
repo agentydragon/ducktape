@@ -289,7 +289,7 @@ class SessionFramePage(BaseModel):
 
 
 def frame_page(
-    rows: Sequence[SessionFrame], *, limit: int, conversation_id: UUID, runtime_kind: HarnessKind
+    rows: Sequence[SessionFrame], *, limit: int, conversation_id: UUID, harness_kind: HarnessKind
 ) -> SessionFramePage:
     """One page of rollout rows in wire order, with the cursor for the page before it.
 
@@ -309,7 +309,7 @@ def frame_page(
     return SessionFramePage(
         frames=frames,
         conversation_id=conversation_id,
-        harness_kind=runtime_kind,
+        harness_kind=harness_kind,
         next_before_seq=frames[0].frame_seq if len(frames) == limit else None,
     )
 

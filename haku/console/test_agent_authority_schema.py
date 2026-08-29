@@ -599,6 +599,60 @@ def test_fresh_baseline_matches_sqlalchemy_metadata(db_url: str) -> None:
         engine.dispose()
 
 
+def test_conversation_harness_kind_read_switch_backfills_and_guards_new_column(db_url: str) -> None:
+    """The read-switch release backfills the canonical column and preserves both identity guards."""
+    apply_migrations(db_url, "0113")
+    engine = create_engine(db_url)
+    conversation_id = uuid4()
+    operator_id = uuid4()
+    try:
+        with engine.begin() as conn:
+            now = _now()
+            conn.execute(
+                text(
+                    "INSERT INTO operators (operator_id, status, created_at, updated_at) "
+                    "VALUES (:operator_id, 'active', :now, :now)"
+                ),
+                {"operator_id": operator_id, "now": now},
+            )
+            # Simulate a row inserted by the expand image before this release's read-switch.
+            conn.execute(
+                text(
+                    "INSERT INTO conversation (conversation_id, operator_id, runtime_kind, created_at) "
+                    "VALUES (:conversation_id, :operator_id, 'claude_code', :now)"
+                ),
+                {"conversation_id": conversation_id, "operator_id": operator_id, "now": now},
+            )
+
+        apply_migrations(db_url, "0118")
+
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT harness_kind, runtime_kind FROM conversation WHERE conversation_id = :conversation_id"),
+                {"conversation_id": conversation_id},
+            ).one()
+            assert row == ("claude_code", "claude_code")
+            assert (
+                conn.execute(
+                    text(
+                        "SELECT is_nullable FROM information_schema.columns "
+                        "WHERE table_name = 'conversation' AND column_name = 'harness_kind'"
+                    )
+                ).scalar_one()
+                == "NO"
+            )
+
+        with pytest.raises(ProgrammingError, match="identity is immutable"), engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE conversation SET harness_kind = 'codex_app_server' WHERE conversation_id = :conversation_id"
+                ),
+                {"conversation_id": conversation_id},
+            )
+    finally:
+        engine.dispose()
+
+
 def test_database_at_head_with_missing_orm_column_fails_validation(db_url: str) -> None:
     apply_migrations(db_url)
     engine = create_engine(db_url)
@@ -1392,8 +1446,9 @@ def test_a_chat_session_cannot_be_written_without_a_lease(db_url: str) -> None:
             conn.execute(
                 text(
                     """
-                    INSERT INTO conversation (conversation_id, operator_id, runtime_kind, created_at)
-                    VALUES (:conversation_id, :operator_id, 'claude_code', :now)
+                    INSERT INTO conversation (
+                        conversation_id, operator_id, harness_kind, runtime_kind, created_at
+                    ) VALUES (:conversation_id, :operator_id, 'claude_code', 'claude_code', :now)
                     """
                 ),
                 {"conversation_id": conversation_id, "operator_id": operator_id, "now": now},
@@ -1458,8 +1513,9 @@ def test_an_event_names_an_item_exactly_when_its_kind_is_about_one(db_url: str) 
             conn.execute(
                 text(
                     """
-                    INSERT INTO conversation (conversation_id, operator_id, runtime_kind, created_at)
-                    VALUES (:conversation_id, :operator_id, 'claude_code', :now)
+                    INSERT INTO conversation (
+                        conversation_id, operator_id, harness_kind, runtime_kind, created_at
+                    ) VALUES (:conversation_id, :operator_id, 'claude_code', 'claude_code', :now)
                     """
                 ),
                 {"conversation_id": conversation_id, "operator_id": operator_id, "now": now},

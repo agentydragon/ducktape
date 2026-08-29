@@ -21,6 +21,7 @@ from fastapi import WebSocket
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.conversation.live_updates import ConversationLiveUpdates
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.notifications.console_events import ConsoleEvent, ConsoleEventHub
 from haku.console.notifications.conversation_wakes import ConversationWakeKind, ConversationWakes, notify_conversation
@@ -100,7 +101,7 @@ async def test_a_write_that_changes_a_conversation_reaches_the_owning_operators_
 ) -> None:
     """Through an ordinary store write, not a hand-rolled notify: the publish belongs to the
     transaction that makes the change, so a change that rolled back announces nothing."""
-    view, _ = await session_store.create(operator_id)
+    view, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     conversation_id = await session_store.conversation_of(view.session_id)
     socket = await _tab(hub, operator_id)
 
@@ -120,7 +121,7 @@ async def test_the_event_says_only_which_conversation_changed(
 ) -> None:
     """The wire shape is the contract: an invalidation, never the record itself, which would make
     the socket a second source of truth for what a conversation holds."""
-    view, _ = await session_store.create(operator_id)
+    view, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     conversation_id = await session_store.conversation_of(view.session_id)
     socket = await _tab(hub, operator_id)
 
@@ -141,7 +142,7 @@ async def test_a_burst_of_changes_becomes_one_invalidation(
 ) -> None:
     """A streaming turn changes a conversation per delta, and each event costs a tab a refetch —
     so coalescing is what keeps the notification cheaper than what it triggers."""
-    view, _ = await session_store.create(operator_id)
+    view, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     conversation_id = await session_store.conversation_of(view.session_id)
     socket = await _tab(hub, operator_id)
 
@@ -160,8 +161,8 @@ async def test_two_conversations_changing_together_are_invalidated_separately(
     operator_id: UUID,
 ) -> None:
     """One window collapses a conversation's own changes, never two conversations into one event."""
-    first, _ = await session_store.create(operator_id)
-    second, _ = await session_store.create(operator_id)
+    first, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
+    second, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     first_conversation = await session_store.conversation_of(first.session_id)
     second_conversation = await session_store.conversation_of(second.session_id)
     socket = await _tab(hub, operator_id)
@@ -183,7 +184,7 @@ async def test_every_wake_kind_invalidates(
 ) -> None:
     """A prompt queued into a conversation with no open session emits only `runtime_demand`, and
     the queued prompt is a row the list shows — so filtering to `update` would go stale there."""
-    view, _ = await session_store.create(operator_id)
+    view, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     conversation_id = await session_store.conversation_of(view.session_id)
     socket = await _tab(hub, operator_id)
 
@@ -204,7 +205,7 @@ async def test_an_update_is_not_delivered_to_another_operators_tab(
     """`ConversationWakeEvent` carries no operator, so the routing rests entirely on the
     conversation's row."""
     other_operator = await migrated_identity_store.resolve_configured_external_user_key("another-authentik-user-id")
-    view, _ = await session_store.create(operator_id)
+    view, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     conversation_id = await session_store.conversation_of(view.session_id)
     mine = await _tab(hub, operator_id)
     theirs = await _tab(hub, other_operator)
@@ -243,7 +244,7 @@ async def test_a_failed_flush_does_not_stop_the_next_one(
     updates again, so the loop has to outlive what fails inside it."""
     flaky = FlakyHub(migrated_db_url, operator_identity_store=migrated_identity_store)
     await flaky.start()
-    view, _ = await session_store.create(operator_id)
+    view, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     conversation_id = await session_store.conversation_of(view.session_id)
     socket = await _tab(flaky, operator_id)
     try:

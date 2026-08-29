@@ -33,7 +33,14 @@ from haku.console.harnesses.kind import HarnessKind
 from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.notifications.session_wakes import SessionWakes
-from haku.console.session.conftest import age_lease, attach_channel, configured_runtimes, runtime_config
+from haku.console.session.conftest import (
+    TEST_ACCESS_PROFILE_ID,
+    TEST_AGENT_ID,
+    age_lease,
+    attach_channel,
+    configured_runtimes,
+    runtime_config,
+)
 from haku.console.session.launch_identity import ChatLaunchAuthorizer, LaunchAgentRejectedError, LaunchIdentity
 from haku.console.session.runtime import (
     ConversationCreateRequest,
@@ -46,7 +53,7 @@ from haku.console.session.status import OPEN_SESSION_STATUSES, SessionStatus
 from haku.console.session.store import ADOPTION_GRACE, BridgeAuthentication, Store
 from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
-from haku.console.x.runtime import RuntimeKey, RuntimeLaunch
+from haku.console.x.runtime import HarnessKey, RuntimeLaunch
 from haku.console.x.runtime_catalog import runtime_registration
 from haku.console.x.testing.recording_claims import RecordingClaims
 from haku.runner.codex.options import CODEX_MODEL_ENV, CODEX_REASONING_EFFORT_ENV
@@ -70,6 +77,13 @@ def test_new_conversation_request_rejects_client_supplied_access_profile() -> No
 def test_new_conversation_request_requires_the_complete_launch_pair(body: dict[str, object]) -> None:
     with pytest.raises(ValidationError, match="Field required"):
         ConversationCreateRequest.model_validate(body)
+
+
+async def test_direct_session_service_has_no_default_agent_or_harness(chat_service, operator_id) -> None:
+    with pytest.raises(RuntimeError, match="selected Agent"):
+        await chat_service.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
+    with pytest.raises(RuntimeError, match="selected harness"):
+        await chat_service.create(operator_id, agent_id=TEST_AGENT_ID)
 
 
 async def test_post_conversation_launch_rejection_is_generic_403() -> None:
@@ -100,13 +114,13 @@ class _RecordingLaunchAuthorizer:
         db: AsyncSession,
         operator_id: UUID,
         agent_id: UUID,
-        runtime_kind: HarnessKind,
+        harness_kind: HarnessKind,
         *,
         expected_profile_id: str | None = None,
     ) -> LaunchIdentity:
         assert db.in_transaction()
         self.calls.append((agent_id, expected_profile_id, db, db.in_transaction()))
-        return await self._delegate(db, operator_id, agent_id, runtime_kind, expected_profile_id=expected_profile_id)
+        return await self._delegate(db, operator_id, agent_id, harness_kind, expected_profile_id=expected_profile_id)
 
 
 async def test_replacement_pins_identity_after_agent_profile_change_and_shares_store_transaction(
@@ -141,15 +155,15 @@ async def test_replacement_pins_identity_after_agent_profile_change_and_shares_s
         ChatLaunchAuthorizer(
             authority,
             launchable_agent_ids={agent_id},
-            registered_runtime_identities={RuntimeKey(agent_id, HarnessKind.CLAUDE_CODE)},
-            profile_runtime_kinds={"pinned": {HarnessKind.CLAUDE_CODE}, "current": {HarnessKind.CLAUDE_CODE}},
+            registered_harness_identities={HarnessKey(agent_id, HarnessKind.CLAUDE_CODE)},
+            profile_harness_kinds={"pinned": {HarnessKind.CLAUDE_CODE}, "current": {HarnessKind.CLAUDE_CODE}},
         )
     )
     runtimes = configured_runtimes(recording_claims)
     store = Store(migrated_sessions)
     service = SessionService(runtimes, store, session_wakes, launch_authorizer=authorizer, default_agent_id=agent_id)
 
-    first = await service.create(operator_id)
+    first = await service.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     conversation_id = await store.conversation_of(first.session_id)
     async with migrated_sessions.begin() as db:
         agent = await db.get(Agent, agent_id)
@@ -164,11 +178,12 @@ async def test_replacement_pins_identity_after_agent_profile_change_and_shares_s
         replacement = await db.get(Session, second.session_id)
     assert conversation is not None
     assert replacement is not None
-    assert (conversation.agent_id, conversation.access_profile_id, conversation.runtime_kind) == (
-        agent_id,
-        "pinned",
-        HarnessKind.CLAUDE_CODE,
-    )
+    assert (
+        conversation.agent_id,
+        conversation.access_profile_id,
+        conversation.harness_kind,
+        conversation.legacy_harness_kind,
+    ) == (agent_id, "pinned", HarnessKind.CLAUDE_CODE, HarnessKind.CLAUDE_CODE)
     assert replacement.conversation_id == conversation_id
     assert (replacement.operator_id, replacement.session_id) == (operator_id, second.session_id)
     assert [profile for _agent, profile, _db, _active in authorizer.calls] == [None, "pinned"]
@@ -415,7 +430,12 @@ def test_runtime_registration_rejects_credentials_in_control_plane_urls(field: s
 
 async def _allocated_session(chat_service: SessionService, recording_claims: RecordingClaims, operator_id: UUID):
     """Seed a claim-backed session for tests whose subject starts after allocation."""
-    view, token = await chat_service._store._create_provisioning_for_test(operator_id)
+    view, token = await chat_service._store._create_provisioning_for_test(
+        operator_id,
+        agent_id=TEST_AGENT_ID,
+        access_profile_id=TEST_ACCESS_PROFILE_ID,
+        harness_kind=HarnessKind.CLAUDE_CODE,
+    )
     await recording_claims.create(
         session_id=view.session_id, bridge_token=token, expires_at=datetime.now(UTC) + timedelta(hours=1)
     )
@@ -425,7 +445,7 @@ async def _allocated_session(chat_service: SessionService, recording_claims: Rec
 async def test_the_first_idle_prompt_creates_the_claim_once(
     allocator, session_store, chat_service, recording_claims, operator_id
 ) -> None:
-    session = await chat_service.create(operator_id)
+    session = await chat_service.create(operator_id, agent_id=TEST_AGENT_ID, harness_kind=HarnessKind.CLAUDE_CODE)
     assert await session_store.status(session.session_id) == SessionStatus.IDLE
     assert recording_claims.created == []
 
@@ -444,7 +464,7 @@ async def test_the_first_idle_prompt_creates_the_claim_once(
 
 
 async def test_idle_provisioning_details_do_not_read_kubernetes(chat_service, recording_claims, operator_id) -> None:
-    session = await chat_service.create(operator_id)
+    session = await chat_service.create(operator_id, agent_id=TEST_AGENT_ID, harness_kind=HarnessKind.CLAUDE_CODE)
 
     view = await chat_service.sandbox_provisioning(operator_id, session.session_id)
 
@@ -504,8 +524,18 @@ async def test_only_an_attached_chat_conversation_gets_the_chat_prompt(
         session_wakes,
         conversation_history=ConversationHistory(migrated_sessions),
     )
-    spa, _ = await session_store.create(operator_id)
-    attached, _ = await session_store.create(operator_id)
+    spa, _ = await session_store.create(
+        operator_id,
+        agent_id=TEST_AGENT_ID,
+        access_profile_id=TEST_ACCESS_PROFILE_ID,
+        harness_kind=HarnessKind.CLAUDE_CODE,
+    )
+    attached, _ = await session_store.create(
+        operator_id,
+        agent_id=TEST_AGENT_ID,
+        access_profile_id=TEST_ACCESS_PROFILE_ID,
+        harness_kind=HarnessKind.CLAUDE_CODE,
+    )
     await attach_channel(migrated_sessions, attached.session_id, ROOM)
 
     assert await service._appended_prompt(spa.session_id) is None
@@ -538,7 +568,12 @@ async def test_the_lease_heartbeat_also_slides_the_sandbox_deadline(
     """The sandbox is a renewed lease, not a fixed timer: the heartbeat that renews the console
     lease also pushes the SandboxClaim's deadline out, so an active session is not reaped at
     `session_ttl_seconds`."""
-    view, token = await session_store.create(operator_id)
+    view, token = await session_store.create(
+        operator_id,
+        agent_id=TEST_AGENT_ID,
+        access_profile_id=TEST_ACCESS_PROFILE_ID,
+        harness_kind=HarnessKind.CLAUDE_CODE,
+    )
     assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
 
     heartbeat = asyncio.create_task(chat_service._renew_lease(view.session_id))
@@ -648,7 +683,7 @@ async def test_polling_provisioning_reads_the_cluster_at_a_bounded_rate(
 
 
 async def test_provisioning_is_not_readable_for_a_session_another_operator_owns(chat_service, operator_id) -> None:
-    session = await chat_service.create(operator_id)
+    session = await chat_service.create(operator_id, agent_id=TEST_AGENT_ID, harness_kind=HarnessKind.CLAUDE_CODE)
 
     with pytest.raises(KeyError):
         await chat_service.sandbox_provisioning(uuid4(), session.session_id)
@@ -686,7 +721,7 @@ async def test_transient_database_error_rejects_an_integrity_error(
                     # References no operator row, so the INSERT is a foreign-key violation.
                     operator_id=uuid4(),
                     harness_kind=HarnessKind.CLAUDE_CODE,
-                    runtime_kind=HarnessKind.CLAUDE_CODE,
+                    legacy_harness_kind=HarnessKind.CLAUDE_CODE,
                     created_at=datetime.now(UTC),
                 )
             )

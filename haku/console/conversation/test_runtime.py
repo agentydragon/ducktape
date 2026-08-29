@@ -16,12 +16,12 @@ from haku.console.conversation.runtime import Runtime
 from haku.console.database_schema import ConversationItem, Session
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
-from haku.console.session.conftest import configured_runtimes
+from haku.console.session.conftest import TEST_ACCESS_PROFILE_ID, TEST_AGENT_ID, configured_runtimes
 from haku.console.session.launch_identity import ChatLaunchAuthorizer, LaunchIdentity
 from haku.console.session.runtime import SessionService
 from haku.console.session.status import SessionStatus
 from haku.console.session.store import ADOPTION_GRACE, BridgeAuthentication, Store
-from haku.console.x.runtime import RuntimeKey
+from haku.console.x.runtime import HarnessKey
 
 
 async def test_first_conversation_prompt_creates_one_session_then_one_sandbox(
@@ -34,7 +34,12 @@ async def test_first_conversation_prompt_creates_one_session_then_one_sandbox(
     operator_id,
     recording_claims,
 ) -> None:
-    view, _ = await session_store.create_idle(operator_id)
+    view, _ = await session_store.create_idle(
+        operator_id,
+        agent_id=TEST_AGENT_ID,
+        access_profile_id=TEST_ACCESS_PROFILE_ID,
+        harness_kind=HarnessKind.CLAUDE_CODE,
+    )
     conversation_id = await session_store.conversation_of(view.session_id)
     # Model a conversation created or attached without a runtime session.
     async with migrated_sessions.begin() as db:
@@ -94,8 +99,8 @@ async def test_demanded_replacement_reauthorizes_pinned_identity_in_creation_tra
     production = ChatLaunchAuthorizer(
         authority,
         launchable_agent_ids={expected_agent_id},
-        registered_runtime_identities={RuntimeKey(expected_agent_id, HarnessKind.CLAUDE_CODE)},
-        profile_runtime_kinds={"pinned": {HarnessKind.CLAUDE_CODE}},
+        registered_harness_identities={HarnessKey(expected_agent_id, HarnessKind.CLAUDE_CODE)},
+        profile_harness_kinds={"pinned": {HarnessKind.CLAUDE_CODE}},
     )
     calls: list[tuple[UUID, str | None, bool]] = []
 
@@ -103,21 +108,21 @@ async def test_demanded_replacement_reauthorizes_pinned_identity_in_creation_tra
         db: AsyncSession,
         operator_id: UUID,
         agent_id: UUID,
-        runtime_kind: HarnessKind,
+        harness_kind: HarnessKind,
         *,
         expected_profile_id: str | None = None,
     ) -> LaunchIdentity:
         assert db.in_transaction()
         assert agent_id == expected_agent_id
         calls.append((operator_id, expected_profile_id, db.in_transaction()))
-        return await production(db, operator_id, agent_id, runtime_kind, expected_profile_id=expected_profile_id)
+        return await production(db, operator_id, agent_id, harness_kind, expected_profile_id=expected_profile_id)
 
     runtimes = configured_runtimes(recording_claims)
     store = Store(migrated_sessions)
     service = SessionService(
         runtimes, store, session_wakes, launch_authorizer=authorize, default_agent_id=expected_agent_id
     )
-    first = await service.create(operator_id)
+    first = await service.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     conversation_id = await store.conversation_of(first.session_id)
     async with migrated_sessions.begin() as db:
         await db.delete(await db.get(Session, first.session_id))
@@ -135,7 +140,12 @@ async def test_demanded_replacement_reauthorizes_pinned_identity_in_creation_tra
 async def test_new_runtime_and_rolling_old_creator_converge_on_one_session(
     session_store, chat_service, conversation_wakes, migrated_engine, migrated_sessions, operator_id
 ) -> None:
-    view, _ = await session_store.create_idle(operator_id)
+    view, _ = await session_store.create_idle(
+        operator_id,
+        agent_id=TEST_AGENT_ID,
+        access_profile_id=TEST_ACCESS_PROFILE_ID,
+        harness_kind=HarnessKind.CLAUDE_CODE,
+    )
     conversation_id = await session_store.conversation_of(view.session_id)
     async with migrated_sessions.begin() as db:
         await db.delete(await db.get(Session, view.session_id))
@@ -159,7 +169,12 @@ async def test_new_runtime_and_rolling_old_creator_converge_on_one_session(
 async def test_unclaimed_prompt_moves_to_replacement_after_a_stale_lease(
     session_store, chat_service, conversation_wakes, migrated_engine, migrated_sessions, operator_id, recording_claims
 ) -> None:
-    first, token = await session_store.create(operator_id)
+    first, token = await session_store.create(
+        operator_id,
+        agent_id=TEST_AGENT_ID,
+        access_profile_id=TEST_ACCESS_PROFILE_ID,
+        harness_kind=HarnessKind.CLAUDE_CODE,
+    )
     assert await session_store.authenticate_bridge(first.session_id, token) == BridgeAuthentication.ACCEPTED
     conversation_id = await session_store.conversation_of(first.session_id)
     item_id = await session_store.enqueue_conversation_prompt(

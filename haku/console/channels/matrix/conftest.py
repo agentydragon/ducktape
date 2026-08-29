@@ -20,10 +20,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from haku.console.channels.matrix.config import Config
 from haku.console.channels.matrix.conversation import ConversationStore
 from haku.console.channels.matrix.ingress_ledger import IngressLedger
+from haku.console.harnesses.kind import HarnessKind
 
 # The runtime-level fixtures the channel tests compose with. `channels/` is not under `x/`, so
 # pytest's conftest walk does not reach `x/conftest.py`; the fixtures are imported here instead.
-from haku.console.session.conftest import OPERATOR_SUBJECT, conversation_wakes, operator_id, session_store
+from haku.console.session.conftest import OPERATOR_SUBJECT, conversation_wakes, operator_id, session_store, test_agent
 
 MATRIX_USER = "@haku:allegedly.works"
 MATRIX_OPERATOR = "@rai:allegedly.works"
@@ -40,7 +41,7 @@ MATRIX_CONFIG = Config(
 
 @pytest.fixture
 def conversations(migrated_sessions: async_sessionmaker[AsyncSession]) -> ConversationStore:
-    return ConversationStore(migrated_sessions)
+    return ConversationStore(migrated_sessions, harness_kind=HarnessKind.CLAUDE_CODE)
 
 
 @pytest.fixture

@@ -42,7 +42,8 @@ def _conversation(conn: Connection) -> _Conversation:
     )
     conn.execute(
         text(
-            "INSERT INTO conversation (conversation_id, operator_id, runtime_kind, created_at) VALUES (:id, :o, 'claude_code', :n)"
+            "INSERT INTO conversation (conversation_id, operator_id, harness_kind, runtime_kind, created_at) "
+            "VALUES (:id, :o, 'claude_code', 'claude_code', :n)"
         ),
         {"id": written.conversation_id, "o": operator_id, "n": _NOW},
     )

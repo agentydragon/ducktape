@@ -27,7 +27,7 @@ async def _detail(session_store, operator_id, session_id):
 
 
 async def test_narration_reads_back_in_the_order_the_sandbox_produced_it(session_store, operator_id) -> None:
-    session, _ = await session_store.create(operator_id)
+    session, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     for line in ("Cloning into 'haku-state'...", "done.", "Starting Claude Code."):
         await session_store.narrate(session.session_id, line)
 
@@ -44,7 +44,7 @@ async def test_narration_reads_back_in_the_order_the_sandbox_produced_it(session
 async def test_two_identical_narration_lines_are_two_lines(session_store, operator_id) -> None:
     """The rows carry no frame identity, so nothing may collapse a repeat into a replay: a
     bootstrap that says "retrying" twice retried twice."""
-    session, _ = await session_store.create(operator_id)
+    session, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     for _ in range(2):
         await session_store.narrate(session.session_id, "retrying")
 
@@ -55,8 +55,8 @@ async def test_two_identical_narration_lines_are_two_lines(session_store, operat
 
 
 async def test_narration_carries_only_this_session_and_only_setup_output(session_store, operator_id) -> None:
-    session, _ = await session_store.create(operator_id)
-    other, _ = await session_store.create(operator_id)
+    session, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
+    other, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     await session_store.narrate(session.session_id, "mine")
     await session_store.narrate(other.session_id, "theirs")
     await session_store.record_frame(
@@ -69,7 +69,7 @@ async def test_narration_carries_only_this_session_and_only_setup_output(session
 
 
 async def test_a_session_that_narrated_nothing_reports_no_narration(session_store, operator_id) -> None:
-    session, _ = await session_store.create(operator_id)
+    session, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
 
     detail = await _detail(session_store, operator_id, session.session_id)
 
@@ -80,7 +80,7 @@ async def test_a_calls_output_reads_back_as_the_items_text(session_store, operat
     """A call's showable output is its segments like any other item's prose, and a call that printed
     nothing is an empty item rather than an absent one — which is what a reader needs to tell "it
     said nothing" from "it has not answered yet"."""
-    view, token = await session_store.create(operator_id)
+    view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
     await session_store.enqueue_prompt(operator_id, view.session_id, "list the files", SPA_ORIGIN)
     started = await session_store.next_prompt(view.session_id)
@@ -134,7 +134,7 @@ _INSPECTED = [
 
 def test_the_inspector_keeps_native_payloads_opaque() -> None:
     page = conversation_views.frame_page(
-        _INSPECTED, limit=len(_INSPECTED), conversation_id=uuid4(), runtime_kind=HarnessKind.CLAUDE_CODE
+        _INSPECTED, limit=len(_INSPECTED), conversation_id=uuid4(), harness_kind=HarnessKind.CLAUDE_CODE
     )
 
     assert [(frame.kind, frame.payload) for frame in page.frames] == [(row.kind, row.payload) for row in _INSPECTED]

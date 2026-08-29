@@ -84,7 +84,8 @@ async def _insert_session(db: AsyncSession, operator_id: UUID, facts: _Facts) ->
         Conversation(
             conversation_id=conversation_id,
             operator_id=operator_id,
-            runtime_kind=HarnessKind.CLAUDE_CODE,
+            harness_kind=HarnessKind.CLAUDE_CODE,
+            legacy_harness_kind=HarnessKind.CLAUDE_CODE,
             created_at=_NOW,
         )
     )
@@ -178,7 +179,8 @@ async def test_fact_shapes_the_vocabulary_cannot_say_are_unwritable(
                 Conversation(
                     conversation_id=conversation_id,
                     operator_id=operator_id,
-                    runtime_kind=HarnessKind.CLAUDE_CODE,
+                    harness_kind=HarnessKind.CLAUDE_CODE,
+                    legacy_harness_kind=HarnessKind.CLAUDE_CODE,
                     created_at=_NOW,
                 )
             )

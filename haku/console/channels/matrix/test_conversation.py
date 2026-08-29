@@ -45,7 +45,7 @@ from haku.console.x.conversation_events import (
     MessageStarted,
     OpenRef,
 )
-from haku.console.x.runtime import RuntimeKey
+from haku.console.x.runtime import HarnessKey
 
 
 async def test_first_matrix_bind_pins_complete_identity_with_production_authorizer(
@@ -74,8 +74,8 @@ async def test_first_matrix_bind_pins_complete_identity_with_production_authoriz
     production = ChatLaunchAuthorizer(
         authority,
         launchable_agent_ids={agent_id},
-        registered_runtime_identities={RuntimeKey(agent_id, HarnessKind.CLAUDE_CODE)},
-        profile_runtime_kinds={"chat": {HarnessKind.CLAUDE_CODE}},
+        registered_harness_identities={HarnessKey(agent_id, HarnessKind.CLAUDE_CODE)},
+        profile_harness_kinds={"chat": {HarnessKind.CLAUDE_CODE}},
     )
     calls: list[bool] = []
 
@@ -83,15 +83,17 @@ async def test_first_matrix_bind_pins_complete_identity_with_production_authoriz
         db: AsyncSession,
         operator_id: UUID,
         agent_id: UUID,
-        runtime_kind: HarnessKind,
+        harness_kind: HarnessKind,
         *,
         expected_profile_id: str | None = None,
     ) -> LaunchIdentity:
         assert db.in_transaction()
         calls.append(db.in_transaction())
-        return await production(db, operator_id, agent_id, runtime_kind, expected_profile_id=expected_profile_id)
+        return await production(db, operator_id, agent_id, harness_kind, expected_profile_id=expected_profile_id)
 
-    conversations = ConversationStore(migrated_sessions, launch_authorizer=authorize, default_agent_id=agent_id)
+    conversations = ConversationStore(
+        migrated_sessions, launch_authorizer=authorize, default_agent_id=agent_id, harness_kind=HarnessKind.CLAUDE_CODE
+    )
     bound = await conversations.bind_room(MATRIX_ROOM, operator_id)
 
     async with migrated_sessions() as db:
@@ -102,7 +104,7 @@ async def test_first_matrix_bind_pins_complete_identity_with_production_authoriz
         agent_id,
         "chat",
     )
-    assert conversation.runtime_kind is HarnessKind.CLAUDE_CODE
+    assert conversation.harness_kind is HarnessKind.CLAUDE_CODE
     assert calls == [True]
 
 

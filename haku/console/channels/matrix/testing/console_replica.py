@@ -191,7 +191,7 @@ async def _serve() -> None:
         )
     )
     store = Store(sessions, adoption_grace=_seconds("HAKU_E2E_ADOPTION_GRACE_SECONDS"))
-    conversations = ConversationStore(sessions)
+    conversations = ConversationStore(sessions, harness_kind=runtime.kind)
     ledger = IngressLedger(sessions)
     identities = PostgresOperatorIdentityStore(
         sessions, OperatorIdentityTrust(trust_domain=TRUST_DOMAIN, trusted_issuers=frozenset({TRUSTED_ISSUER}))

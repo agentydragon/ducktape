@@ -46,7 +46,7 @@ Codex is deployed and launched today. The `codex_app_server` runtime block
 (`cluster/k8s/haku/console/config.yaml`), its `SandboxTemplate` and `WarmPool`
 (`cluster/k8s/agents/agent-sandbox/workspaces/app/sandboxtemplate-codex.yaml` and
 `sandboxwarmpool-codex.yaml`), the dedicated least-credential codex-runner proxy, the migrations
-permitting `runtime_kind = codex_app_server`, and its access profile all exist in the cluster, and
+permitting `harness_kind = codex_app_server`, and its access profile all exist in the cluster, and
 the Console launches Codex runner pods. What was missing was the runner's Codex driver: a launched
 runner refused at start because `codex-app-server` had no way to interpret its own stream. This
 change supplies it — the runner-side handshake, turn loop and projection above — so a launched Codex

@@ -278,8 +278,8 @@ async def insert_live_session(sessions: async_sessionmaker[AsyncSession], *, bin
         assert operator_id is not None
         await session.execute(
             text(
-                "INSERT INTO conversation (conversation_id, operator_id, runtime_kind, created_at) "
-                "VALUES (:conversation_id, :operator_id, 'claude_code', :n)"
+                "INSERT INTO conversation (conversation_id, operator_id, harness_kind, runtime_kind, created_at) "
+                "VALUES (:conversation_id, :operator_id, 'claude_code', 'claude_code', :n)"
             ),
             {"conversation_id": conversation_id, "operator_id": operator_id, "n": now},
         )

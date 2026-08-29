@@ -354,7 +354,7 @@ class OperatorSessionIdentity:
     status: SessionStatus
     agent_id: UUID | None
     access_profile_id: str | None
-    runtime_kind: HarnessKind
+    harness_kind: HarnessKind
 
 
 @dataclass(frozen=True, slots=True)
@@ -455,7 +455,7 @@ class Store:
         conversation_id: UUID | None = None,
         agent_id: UUID | None = None,
         access_profile_id: str | None = None,
-        runtime_kind: HarnessKind | None = None,
+        harness_kind: HarnessKind | None = None,
         launch_authorizer: LaunchAuthorizer | None = None,
     ) -> tuple[SessionView, str]:
         """Open the idle session used by every production caller."""
@@ -464,7 +464,7 @@ class Store:
             conversation_id=conversation_id,
             agent_id=agent_id,
             access_profile_id=access_profile_id,
-            runtime_kind=runtime_kind,
+            harness_kind=harness_kind,
             launch_authorizer=launch_authorizer,
         )
 
@@ -475,7 +475,7 @@ class Store:
         conversation_id: UUID | None = None,
         agent_id: UUID | None = None,
         access_profile_id: str | None = None,
-        runtime_kind: HarnessKind | None = None,
+        harness_kind: HarnessKind | None = None,
         launch_authorizer: LaunchAuthorizer | None = None,
     ) -> tuple[SessionView, str]:
         """Open an authorized idle session without allocating its sandbox.
@@ -496,13 +496,15 @@ class Store:
                 if launch_authorizer is not None:
                     if agent_id is None:
                         raise LaunchAgentRejectedError
-                    identity = await launch_authorizer(
-                        db, operator_id, agent_id, runtime_kind or HarnessKind.CLAUDE_CODE
-                    )
+                    if harness_kind is None:
+                        raise LaunchAgentRejectedError("chat launch requires a selected harness")
+                    identity = await launch_authorizer(db, operator_id, agent_id, harness_kind)
                     agent_id = identity.agent_id
                     agent_binding_id = identity.binding_id
                     access_profile_id = identity.access_profile_id
-                    runtime_kind = identity.runtime_kind
+                    harness_kind = identity.harness_kind
+                elif harness_kind is None:
+                    raise ValueError("harness_kind is required for a new conversation")
                 conversation_id = uuid4()
                 db.add(
                     Conversation(
@@ -510,10 +512,8 @@ class Store:
                         operator_id=operator_id,
                         agent_id=agent_id,
                         access_profile_id=access_profile_id,
-                        # Expand step of runtime_kind→harness_kind (database_schema.py C4d): dual-write
-                        # both, still read `runtime_kind`, until the contract releases drop it.
-                        harness_kind=runtime_kind or HarnessKind.CLAUDE_CODE,
-                        runtime_kind=runtime_kind or HarnessKind.CLAUDE_CODE,
+                        harness_kind=harness_kind,
+                        legacy_harness_kind=harness_kind,
                         created_at=now,
                     )
                 )
@@ -535,13 +535,13 @@ class Store:
                         db,
                         operator_id,
                         conversation.agent_id,
-                        conversation.runtime_kind,
+                        conversation.harness_kind,
                         expected_profile_id=conversation.access_profile_id,
                     )
                     if (
                         identity.agent_id != conversation.agent_id
                         or identity.access_profile_id != conversation.access_profile_id
-                        or identity.runtime_kind != conversation.runtime_kind
+                        or identity.harness_kind != conversation.harness_kind
                     ):
                         raise LaunchAgentRejectedError
                     agent_binding_id = identity.binding_id
@@ -550,13 +550,13 @@ class Store:
                     for value, expected in (
                         (agent_id, conversation.agent_id),
                         (access_profile_id, conversation.access_profile_id),
-                        (runtime_kind, conversation.runtime_kind),
+                        (harness_kind, conversation.harness_kind),
                     )
                 ):
                     raise ValueError("replacement session does not match pinned conversation identity")
                 agent_id = conversation.agent_id
                 access_profile_id = conversation.access_profile_id
-                runtime_kind = conversation.runtime_kind
+                harness_kind = conversation.harness_kind
                 # Rolling coexistence: an older Matrix supervisor and the neutral reconciler use
                 # different advisory locks. The durable conversation lock is therefore the shared
                 # mutex, and an old writer reaching this method after the new one reuses its winner
@@ -656,13 +656,13 @@ class Store:
                     db,
                     operator_id,
                     conversation.agent_id,
-                    conversation.runtime_kind,
+                    conversation.harness_kind,
                     expected_profile_id=conversation.access_profile_id,
                 )
                 if (
                     identity.agent_id != conversation.agent_id
                     or identity.access_profile_id != conversation.access_profile_id
-                    or identity.runtime_kind != conversation.runtime_kind
+                    or identity.harness_kind != conversation.harness_kind
                 ):
                     raise LaunchAgentRejectedError
                 agent_binding_id = identity.binding_id
@@ -708,7 +708,7 @@ class Store:
         conversation_id: UUID | None = None,
         agent_id: UUID | None = None,
         access_profile_id: str | None = None,
-        runtime_kind: HarnessKind | None = None,
+        harness_kind: HarnessKind | None = None,
     ) -> tuple[SessionView, str]:
         """Seed the pre-lazy allocated state for focused tests of an already-running session."""
         now = datetime.now(UTC)
@@ -723,10 +723,8 @@ class Store:
                         operator_id=operator_id,
                         agent_id=agent_id,
                         access_profile_id=access_profile_id,
-                        # Expand step of runtime_kind→harness_kind (database_schema.py C4d): dual-write
-                        # both, still read `runtime_kind`, until the contract releases drop it.
-                        harness_kind=runtime_kind or HarnessKind.CLAUDE_CODE,
-                        runtime_kind=runtime_kind or HarnessKind.CLAUDE_CODE,
+                        harness_kind=harness_kind,
+                        legacy_harness_kind=harness_kind,
                         created_at=now,
                     )
                 )
@@ -744,7 +742,7 @@ class Store:
                     for value, expected in (
                         (agent_id, conversation.agent_id),
                         (access_profile_id, conversation.access_profile_id),
-                        (runtime_kind, conversation.runtime_kind),
+                        (harness_kind, conversation.harness_kind),
                     )
                 ):
                     raise ValueError("test session does not match pinned conversation identity")
@@ -872,7 +870,7 @@ class Store:
                 Conversation.conversation_id,
                 Conversation.agent_id,
                 Conversation.access_profile_id,
-                Conversation.runtime_kind,
+                Conversation.harness_kind,
                 Conversation.created_at,
                 activity,
             )
@@ -882,7 +880,7 @@ class Store:
                 Conversation.conversation_id,
                 Conversation.agent_id,
                 Conversation.access_profile_id,
-                Conversation.runtime_kind,
+                Conversation.harness_kind,
                 Conversation.created_at,
             )
             .order_by(activity.desc(), Conversation.conversation_id.desc())
@@ -906,7 +904,7 @@ class Store:
                     conversation_id=row.conversation_id,
                     agent_id=row.agent_id,
                     access_profile_id=row.access_profile_id,
-                    harness_kind=row.runtime_kind,
+                    harness_kind=row.harness_kind,
                     created_at=row.created_at,
                     last_activity_at=row.last_activity_at,
                     attachments=attachments[row.conversation_id],
@@ -964,7 +962,7 @@ class Store:
             conversation_id=conversation_id,
             agent_id=conversation.agent_id,
             access_profile_id=conversation.access_profile_id,
-            harness_kind=conversation.runtime_kind,
+            harness_kind=conversation.harness_kind,
             created_at=conversation.created_at,
             attachments=attachments,
             items=[item_of(row) for row in rows],
@@ -1707,7 +1705,7 @@ class Store:
         cursor names, which is the first row the previous page did not return.
         """
         query = (
-            select(Session, Conversation.agent_id, Conversation.access_profile_id, Conversation.runtime_kind)
+            select(Session, Conversation.agent_id, Conversation.access_profile_id, Conversation.harness_kind)
             .join(Conversation, Conversation.conversation_id == Session.conversation_id)
             .order_by(Session.created_at.desc(), Session.session_id.desc())
         )
@@ -1727,13 +1725,13 @@ class Store:
                 conversation_id=row.conversation_id,
                 agent_id=agent_id,
                 access_profile_id=access_profile_id,
-                harness_kind=runtime_kind,
+                harness_kind=harness_kind,
                 attachments=attachments[row.conversation_id],
                 status=row.status,
                 created_at=row.created_at,
                 error=row.error,
             )
-            for row, agent_id, access_profile_id, runtime_kind in sessions
+            for row, agent_id, access_profile_id, harness_kind in sessions
         ]
 
     async def read_session_frames(
@@ -1810,21 +1808,21 @@ class Store:
         async with self._sessions() as db:
             owned = (
                 await db.execute(
-                    select(Session, Conversation.runtime_kind)
+                    select(Session, Conversation.harness_kind)
                     .join(Conversation, Conversation.conversation_id == Session.conversation_id)
                     .where(Session.session_id == session_id, Session.operator_id == operator_id)
                 )
             ).one_or_none()
             if owned is None:
                 raise KeyError(session_id)
-            runtime_kind = owned[1]
+            harness_kind = owned[1]
             query = _bridge_frames(select(SessionFrame).where(SessionFrame.session_id == session_id), kinds)
             if before is not None:
                 query = query.where(SessionFrame.frame_seq < before)
             rows = (await db.scalars(query.order_by(SessionFrame.frame_seq.desc()).limit(limit))).all()
-        session, runtime_kind = owned
+        session, harness_kind = owned
         return frame_page(
-            list(reversed(rows)), limit=limit, conversation_id=session.conversation_id, runtime_kind=runtime_kind
+            list(reversed(rows)), limit=limit, conversation_id=session.conversation_id, harness_kind=harness_kind
         )
 
     async def apply_frame(
@@ -2073,11 +2071,11 @@ class Store:
         outcome = await self.outcome(session_id)
         return outcome.status if outcome is not None else None
 
-    async def runtime_kind_of(self, session_id: UUID) -> HarnessKind:
-        """Return the immutable runtime discriminator of a session's conversation."""
+    async def harness_kind_of(self, session_id: UUID) -> HarnessKind:
+        """Return the immutable harness discriminator of a session's conversation."""
         async with self._sessions() as db:
             kind = await db.scalar(
-                select(Conversation.runtime_kind)
+                select(Conversation.harness_kind)
                 .join(Session, Session.conversation_id == Conversation.conversation_id)
                 .where(Session.session_id == session_id)
             )
@@ -2086,12 +2084,12 @@ class Store:
             return kind
 
     async def session_identity(self, session_id: UUID) -> OperatorSessionIdentity:
-        """Look up the immutable Agent/profile/runtime for internal execution paths."""
+        """Look up the immutable Agent/profile/harness for internal execution paths."""
         async with self._sessions() as db:
             row = (
                 await db.execute(
                     select(
-                        Session.status, Conversation.agent_id, Conversation.access_profile_id, Conversation.runtime_kind
+                        Session.status, Conversation.agent_id, Conversation.access_profile_id, Conversation.harness_kind
                     )
                     .join(Conversation, Conversation.conversation_id == Session.conversation_id)
                     .where(Session.session_id == session_id)
@@ -2103,7 +2101,7 @@ class Store:
                 status=row.status,
                 agent_id=row.agent_id,
                 access_profile_id=row.access_profile_id,
-                runtime_kind=row.runtime_kind,
+                harness_kind=row.harness_kind,
             )
 
     async def conversation_identity(self, conversation_id: UUID, operator_id: UUID) -> OperatorSessionIdentity:
@@ -2111,7 +2109,7 @@ class Store:
         async with self._sessions() as db:
             row = (
                 await db.execute(
-                    select(Conversation.agent_id, Conversation.access_profile_id, Conversation.runtime_kind).where(
+                    select(Conversation.agent_id, Conversation.access_profile_id, Conversation.harness_kind).where(
                         Conversation.conversation_id == conversation_id, Conversation.operator_id == operator_id
                     )
                 )
@@ -2122,7 +2120,7 @@ class Store:
                 status=SessionStatus.READY,
                 agent_id=row.agent_id,
                 access_profile_id=row.access_profile_id,
-                runtime_kind=row.runtime_kind,
+                harness_kind=row.harness_kind,
             )
 
     async def operator_session_identity(self, operator_id: UUID, session_id: UUID) -> OperatorSessionIdentity:
@@ -2131,7 +2129,7 @@ class Store:
             row = (
                 await db.execute(
                     select(
-                        Session.status, Conversation.agent_id, Conversation.access_profile_id, Conversation.runtime_kind
+                        Session.status, Conversation.agent_id, Conversation.access_profile_id, Conversation.harness_kind
                     )
                     .join(Conversation, Conversation.conversation_id == Session.conversation_id)
                     .where(Session.session_id == session_id, Session.operator_id == operator_id)
@@ -2143,7 +2141,7 @@ class Store:
                 status=row.status,
                 agent_id=row.agent_id,
                 access_profile_id=row.access_profile_id,
-                runtime_kind=row.runtime_kind,
+                harness_kind=row.harness_kind,
             )
 
     async def renew_lease(self, session_id: UUID) -> None:

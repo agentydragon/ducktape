@@ -20,7 +20,7 @@ this layer and nowhere above it. A session ends when its runner does, and a conv
 however many of them it takes.
 
 **Conversation** — the durable, provider-neutral record of one thread, pinned to one
-`runtime_kind`: an ordered stream of neutral events, addressed by position, plus the transcript
+`harness_kind`: an ordered stream of neutral events, addressed by position, plus the transcript
 rows those events point at. The pin says which implementation owns prompt/context/projection/replay
 semantics across replacement sessions; it does not put that implementation's wire vocabulary into
 the record. A conversation is what every reader reads and the only thing a channel is offered. It

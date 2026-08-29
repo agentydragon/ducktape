@@ -32,6 +32,7 @@ from haku.console.conversation.item_reads import MessageItem, PromptItem, ToolCa
 from haku.console.conversation.prompt_origin import SPA_ORIGIN
 from haku.console.conversation_read_access import UnrestrictedReads
 from haku.console.database_schema import Session, SubmittedPrompt
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.notifications.session_wakes import SessionWakes
 from haku.console.session.conftest import configured_runtimes, runtime_config
 from haku.console.session.runtime import SessionService, internal_router
@@ -117,7 +118,7 @@ async def test_the_cut_stack_answers_a_prompt_with_a_tool_call_over_the_journal(
     stub_state = tmp_path / "stub"
     stub_state.mkdir()
 
-    view, token = await session_store.create(operator_id)
+    view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     session_id = view.session_id
     conversation_id = await session_store.conversation_of(session_id)
     port = pick_free_port()

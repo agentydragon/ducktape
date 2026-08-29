@@ -6,13 +6,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from haku.console.config import ClaudeCodeImplementationConfig, RuntimeRegistrationConfig
-from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.sandbox_claims import SandboxClaims
 from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
 from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
 from haku.console.x.codex_app_server.runtime import CodexRuntimeAdapter
-from haku.console.x.runtime import AgentRuntimeResources, RuntimeAdapter, RuntimeKey, RuntimeRegistry
+from haku.console.x.runtime import AgentRuntimeResources, HarnessKey, RuntimeAdapter, RuntimeRegistry
 from haku.runner.codex.options import CodexModelProvider
 
 
@@ -30,11 +29,9 @@ class RuntimeRegistration:
     resources: AgentRuntimeResources
 
     @property
-    def key(self) -> RuntimeKey | HarnessKind:
-        """Resource selector, with a kind-only form for rolling-compatible callers."""
-        if self.resources.agent_id is None or self.resources.access_profile_id is None:
-            return self.adapter.kind
-        return RuntimeKey(self.resources.agent_id, self.adapter.kind)
+    def key(self) -> HarnessKey:
+        """The explicit Agent/harness resource selector."""
+        return HarnessKey(self.resources.agent_id, self.adapter.kind)
 
 
 def execution_registry(*registrations: RuntimeRegistration) -> RuntimeRegistry:
@@ -42,7 +39,7 @@ def execution_registry(*registrations: RuntimeRegistration) -> RuntimeRegistry:
     adapters = {registration.adapter.kind: registration.adapter for registration in registrations}
     resources = {registration.key: registration.resources for registration in registrations}
     if len(resources) != len(registrations):
-        raise ValueError("duplicate configured Agent/runtime resource")
+        raise ValueError("duplicate configured Agent/harness resource")
     return RuntimeRegistry(adapters, resources)
 
 

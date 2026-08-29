@@ -26,7 +26,6 @@ from uuid import UUID
 import uvicorn
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
-from more_itertools import one
 from openai import AsyncOpenAI
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -216,7 +215,7 @@ def create_app(
     claude_runtime = console_config.harnesses.claude_code if console_config.harnesses is not None else None
     codex_runtime = console_config.harnesses.codex_app_server if console_config.harnesses is not None else None
     static_by_id = {agent.agent_id: agent for agent in console_config.static_agents}
-    profile_runtime_kinds = {profile.id: set(profile.allowed_harnesses) for profile in console_config.access_profiles}
+    profile_harness_kinds = {profile.id: set(profile.allowed_harnesses) for profile in console_config.access_profiles}
     launchable_agent_ids = {entry.agent_id for entry in console_config.launchable_agents}
     # Each layer owns its own LISTEN connection on its own channel: a session and a conversation
     # are different layers, so their wakes share no wire, no connection, and no module. Two
@@ -375,7 +374,7 @@ def create_app(
     if registrations:
         runtime_registry = runtime_catalog.execution_registry(*registrations)
     else:
-        # Runtime-disabled replicas can still inspect every linked durable runtime kind. This
+        # Runtime-disabled replicas can still inspect every linked durable harness kind. This
         # registry has projection only: no claims, credentials, or launcher.
         runtime_registry = runtime_catalog.projection_registry()
     if codex_runtime is not None:
@@ -408,31 +407,27 @@ def create_app(
 
     # Execution exists only when a launch-capable adapter was configured. Read-only replicas keep
     # the same registry in their store above but expose no session-creation runtime service.
-    default_runtime_kind: HarnessKind | None = None
+    selected_harness_kind: HarnessKind | None = None
     if runtime_registry.configured_kinds:
         authorize_chat_launch = ChatLaunchAuthorizer(
             agent_authority,
             launchable_agent_ids=launchable_agent_ids,
-            registered_runtime_identities=runtime_registry.configured_identities,
-            profile_runtime_kinds=profile_runtime_kinds,
+            registered_harness_identities=runtime_registry.configured_identities,
+            profile_harness_kinds=profile_harness_kinds,
         )
 
         default_chat_agent_id = console_config.default_chat_agent_id
         assert default_chat_agent_id is not None
         default_profile_id = static_by_id[default_chat_agent_id].access_profile_id
-        default_candidates = {
-            identity.runtime_kind
+        selected_harnesses = {
+            identity.harness_kind
             for identity in runtime_registry.configured_identities
             if identity.agent_id == default_chat_agent_id
-            and identity.runtime_kind in profile_runtime_kinds[default_profile_id]
+            and identity.harness_kind in profile_harness_kinds[default_profile_id]
         }
-        if HarnessKind.CLAUDE_CODE in default_candidates:
-            default_runtime_kind = HarnessKind.CLAUDE_CODE
-        else:
-            try:
-                default_runtime_kind = one(default_candidates)
-            except ValueError:
-                raise ValueError("default chat Agent must select one configured runtime") from None
+        if len(selected_harnesses) != 1:
+            raise ValueError("default chat Agent must select exactly one configured harness")
+        selected_harness_kind = next(iter(selected_harnesses))
 
         session_service = session_runtime.SessionService(
             runtime_registry,
@@ -441,7 +436,6 @@ def create_app(
             conversation_history=ConversationHistory(db_sessions),
             launch_authorizer=authorize_chat_launch,
             default_agent_id=default_chat_agent_id,
-            default_runtime_kind=default_runtime_kind,
         )
     else:
         session_service = None
@@ -823,13 +817,13 @@ def create_app(
             ChatLaunchOption(
                 agent_id=identity.agent_id,
                 agent_display_name=static_by_id[identity.agent_id].display_name,
-                runtime=identity.runtime_kind,
-                runtime_display_name=runtime_registry[identity.runtime_kind].display_name,
-                is_default=identity.agent_id == default_agent_id and identity.runtime_kind is default_runtime_kind,
+                runtime=identity.harness_kind,
+                runtime_display_name=runtime_registry[identity.harness_kind].display_name,
+                is_default=identity.agent_id == default_agent_id and identity.harness_kind is selected_harness_kind,
             )
             for identity in runtime_registry.configured_identities
             if identity.agent_id in launchable_agent_ids
-            and identity.runtime_kind in profile_runtime_kinds[static_by_id[identity.agent_id].access_profile_id]
+            and identity.harness_kind in profile_harness_kinds[static_by_id[identity.agent_id].access_profile_id]
         ]
         launch_options.sort(key=lambda option: (not option.is_default, option.agent_display_name, option.runtime.value))
         return ConfigResponse(

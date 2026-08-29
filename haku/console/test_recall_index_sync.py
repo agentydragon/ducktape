@@ -152,7 +152,8 @@ async def say(sessions: async_sessionmaker[AsyncSession], operator_id: UUID, con
             Conversation(
                 conversation_id=conversation_id,
                 operator_id=operator_id,
-                runtime_kind=HarnessKind.CLAUDE_CODE,
+                harness_kind=HarnessKind.CLAUDE_CODE,
+                legacy_harness_kind=HarnessKind.CLAUDE_CODE,
                 created_at=_NOW,
             )
         )

@@ -22,9 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import ChannelSurface
 from haku.console.config import RuntimeRegistrationConfig
+from haku.console.conftest import console_sessions
 from haku.console.conversation.item_vocabulary import ItemStatus, ItemType
 from haku.console.database_schema import ChannelAttachmentRow, ConversationItem, Session
 from haku.console.harnesses.kind import HarnessKind
+from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.notifications.conversation_wakes import ConversationWakes
 from haku.console.notifications.session_wakes import SessionWakes
@@ -39,11 +41,13 @@ from haku.console.x.runtime_catalog import execution_registry, runtime_registrat
 from haku.console.x.testing.recording_claims import RecordingClaims
 
 OPERATOR_SUBJECT = "authentik-user-id"
+TEST_AGENT_ID = UUID("00000000-0000-4000-8000-000000000001")
+TEST_ACCESS_PROFILE_ID = "no_auto_approval"
 
 
 def runtime_config(**overrides: object) -> RuntimeRegistrationConfig:
     values: dict[str, object] = {
-        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "agent_id": str(TEST_AGENT_ID),
         "namespace": "haku-claude-sandbox",
         "warm_pool": "haku-claude",
         "claim_prefix": "claude",
@@ -74,7 +78,10 @@ def configured_runtimes(
 ) -> RuntimeRegistry:
     return execution_registry(
         runtime_registration(
-            config or runtime_config(), claims, system_prompt=system_prompt or SystemPromptTemplate("")
+            config or runtime_config(),
+            claims,
+            system_prompt=system_prompt or SystemPromptTemplate(""),
+            access_profile_id=TEST_ACCESS_PROFILE_ID,
         )
     )
 
@@ -82,6 +89,32 @@ def configured_runtimes(
 @pytest.fixture
 def recording_claims() -> RecordingClaims:
     return RecordingClaims()
+
+
+@pytest.fixture
+async def test_agent(
+    migrated_db_url: str, migrated_identity_store: PostgresOperatorIdentityStore, operator_id: UUID
+) -> None:
+    """Seed the explicit Agent identity used by the channel-neutral session fixtures."""
+    authority = PostgresAgentAuthority(
+        console_sessions(migrated_db_url),
+        public_base_url="https://haku.test",
+        operator_identity_store=migrated_identity_store,
+        access_profiles=(TEST_ACCESS_PROFILE_ID,),
+        default_access_profile_id=TEST_ACCESS_PROFILE_ID,
+    )
+    await authority.reconcile_static_agents(
+        [
+            StaticAgentDefinition(
+                agent_id=TEST_AGENT_ID,
+                display_name="Session Test Agent",
+                operator_id=operator_id,
+                secret_reference="env:SESSION_TEST_AGENT",
+                token_fingerprint=fingerprint_static_token("session-test-agent-token"),
+                access_profile_id=TEST_ACCESS_PROFILE_ID,
+            )
+        ]
+    )
 
 
 class _ProvisioningTestStore(Store):
@@ -94,7 +127,7 @@ class _ProvisioningTestStore(Store):
         conversation_id: UUID | None = None,
         agent_id: UUID | None = None,
         access_profile_id: str | None = None,
-        runtime_kind: HarnessKind | None = None,
+        harness_kind: HarnessKind | None = None,
         launch_authorizer: LaunchAuthorizer | None = None,
     ) -> tuple[SessionView, str]:
         if launch_authorizer is not None:
@@ -103,7 +136,7 @@ class _ProvisioningTestStore(Store):
                 conversation_id=conversation_id,
                 agent_id=agent_id,
                 access_profile_id=access_profile_id,
-                runtime_kind=runtime_kind,
+                harness_kind=harness_kind,
                 launch_authorizer=launch_authorizer,
             )
         return await self._create_provisioning_for_test(
@@ -111,12 +144,14 @@ class _ProvisioningTestStore(Store):
             conversation_id=conversation_id,
             agent_id=agent_id,
             access_profile_id=access_profile_id,
-            runtime_kind=runtime_kind,
+            harness_kind=harness_kind,
         )
 
 
 @pytest.fixture
-def session_store(migrated_sessions: async_sessionmaker[AsyncSession]) -> _ProvisioningTestStore:
+async def session_store(
+    migrated_sessions: async_sessionmaker[AsyncSession], test_agent: None
+) -> _ProvisioningTestStore:
     return _ProvisioningTestStore(migrated_sessions)
 
 

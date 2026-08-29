@@ -175,7 +175,7 @@ fact is written there, once, and everything else is either derived from it or be
 below. What no single model can state is which table derives from which, and the invariants that
 span them:
 
-- **`conversation.runtime_kind` names the adapter that owns the session wire; the event vocabulary
+- **`conversation.harness_kind` names the adapter that owns the session wire; the event vocabulary
   stays provider-neutral.** The pin is the conversation's, so a replacement session inherits it.
 - **The prompt's text is only the `prompt` item's**, so the queue and the transcript cannot come to
   disagree about what was asked.
@@ -218,7 +218,7 @@ whole streaming path depends on and it is cheap to state.
 `haku_conversations.read_conversation_items` pages `conversation_item` and `conversation_turn` by their
 defining stream positions; it re-reads neither `session_frames` through an adapter nor the log
 through a second fold. So the reads cannot disagree with the items and turns the writer derived,
-a reader of them needs neither a session's `runtime_kind` nor any harness vocabulary, a
+a reader of them needs neither a session's `harness_kind` nor any harness vocabulary, a
 conversation that ran before a projection fix keeps the history it had rather than acquiring a new
 one on the next read — and a page's cost is the page's rows, not the conversation's length. What
 such a reader can fail to read is therefore a value in the schema it owns — an `item_type` a newer

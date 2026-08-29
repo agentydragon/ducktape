@@ -12,7 +12,7 @@ from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.x.runtime import (
     AgentRuntimeResources,
-    RuntimeKey,
+    HarnessKey,
     RuntimeNotConfiguredError,
     RuntimeRegistry,
     UnsupportedRuntimeError,
@@ -28,14 +28,14 @@ def test_projection_registry_exposes_each_linked_provider_adapter() -> None:
     assert registry[HarnessKind.CODEX_APP_SERVER].kind is HarnessKind.CODEX_APP_SERVER
 
 
-def test_registry_fails_closed_for_a_runtime_kind_that_is_not_registered() -> None:
+def test_registry_fails_closed_for_a_harness_kind_that_is_not_registered() -> None:
     registry = projection_registry()
 
     with pytest.raises(UnsupportedRuntimeError, match="not registered"):
         registry[cast(HarnessKind, "future_runtime")]
 
 
-def test_execution_resources_are_selected_by_agent_runtime_and_pinned_profile() -> None:
+def test_execution_resources_are_selected_by_agent_harness_and_pinned_profile() -> None:
     adapter = projection_registry()[HarnessKind.CLAUDE_CODE]
     first_agent = uuid4()
     second_agent = uuid4()
@@ -55,20 +55,23 @@ def test_execution_resources_are_selected_by_agent_runtime_and_pinned_profile() 
     registry = RuntimeRegistry(
         {HarnessKind.CLAUDE_CODE: adapter},
         {
-            RuntimeKey(first_agent, HarnessKind.CLAUDE_CODE): resource(first_agent, "haku", "/haku"),
-            RuntimeKey(second_agent, HarnessKind.CLAUDE_CODE): resource(second_agent, "coder", "/coder"),
+            HarnessKey(first_agent, HarnessKind.CLAUDE_CODE): resource(first_agent, "haku", "/haku"),
+            HarnessKey(second_agent, HarnessKind.CLAUDE_CODE): resource(second_agent, "coder", "/coder"),
         },
     )
 
-    assert registry.configured(first_agent, HarnessKind.CLAUDE_CODE, access_profile_id="haku").resources.cwd == "/haku"
+    assert (
+        registry.configured(HarnessKey(first_agent, HarnessKind.CLAUDE_CODE), access_profile_id="haku").resources.cwd
+        == "/haku"
+    )
     assert (
         registry.configured_for(
-            RuntimeKey(second_agent, HarnessKind.CLAUDE_CODE), access_profile_id="coder"
+            HarnessKey(second_agent, HarnessKind.CLAUDE_CODE), access_profile_id="coder"
         ).resources.cwd
         == "/coder"
     )
     with pytest.raises(RuntimeNotConfiguredError, match="access profile"):
-        registry.configured(first_agent, HarnessKind.CLAUDE_CODE, access_profile_id="coder")
+        registry.configured(HarnessKey(first_agent, HarnessKind.CLAUDE_CODE), access_profile_id="coder")
 
 
 if __name__ == "__main__":

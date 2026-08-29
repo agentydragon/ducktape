@@ -24,7 +24,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID
 
-from more_itertools import one
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import create_engine, make_url, select
@@ -68,7 +67,7 @@ from haku.console.notifications.conversation_wakes import ConversationWakes
 from haku.console.session.launch_identity import ChatLaunchAuthorizer
 from haku.console.session.store import Store
 from haku.console.session.subscription import ConversationStream
-from haku.console.x.runtime import RuntimeKey
+from haku.console.x.runtime import HarnessKey
 
 logger = logging.getLogger(__name__)
 
@@ -151,26 +150,26 @@ def verify_worker_schema(database_url: str) -> None:
 
 @dataclass(frozen=True, slots=True)
 class LaunchWiring:
-    """What a first bind stamps: the authorizer and the default identity it authorizes."""
+    """What a first bind stamps: the authorizer and its explicitly selected identity."""
 
     authorizer: ChatLaunchAuthorizer
     default_agent_id: UUID
-    default_runtime_kind: HarnessKind
+    harness_kind: HarnessKind
 
 
 def _launch_wiring(config: AdapterConfigFile) -> LaunchWiring | None:
     """The launch-identity wiring a first bind stamps, from the shared registry.
 
-    Mirrors the console's own composition (`app.create_app`): the registered Agent/runtime pairs
+    Mirrors the console's own composition (`app.create_app`): the registered Agent/harness pairs
     come from the configured harnesses, the profile gates from `access_profiles`, and the default
-    selection prefers Claude among the default Agent's admitted kinds. None where no harness is
-    configured — a bind then opens the conversation without a launch identity, exactly as a
-    launch-incapable console did.
+    selection is valid only when the default Agent has exactly one admitted harness. None where no
+    harness is configured — a bind then fails closed because the final conversation schema requires
+    an explicit harness identity.
     """
     if config.harnesses is None:
         return None
     registered = {
-        RuntimeKey(entry.agent_id, kind)
+        HarnessKey(entry.agent_id, kind)
         for entry, kind in (
             (config.harnesses.claude_code, HarnessKind.CLAUDE_CODE),
             (config.harnesses.codex_app_server, HarnessKind.CODEX_APP_SERVER),
@@ -182,28 +181,23 @@ def _launch_wiring(config: AdapterConfigFile) -> LaunchWiring | None:
     if config.default_chat_agent_id is None:
         raise ValueError("harnesses are configured but default_chat_agent_id is not")
     static_by_id = {agent.agent_id: agent for agent in config.static_agents}
-    profile_runtime_kinds = {profile.id: profile.allowed_harnesses for profile in config.access_profiles}
+    profile_harness_kinds = {profile.id: profile.allowed_harnesses for profile in config.access_profiles}
     authorizer = ChatLaunchAuthorizer(
         StaticLaunchAuthority(),
         launchable_agent_ids={entry.agent_id for entry in config.launchable_agents},
-        registered_runtime_identities=registered,
-        profile_runtime_kinds=profile_runtime_kinds,
+        registered_harness_identities=registered,
+        profile_harness_kinds=profile_harness_kinds,
     )
     default_profile_id = static_by_id[config.default_chat_agent_id].access_profile_id
-    default_candidates = {
-        identity.runtime_kind
+    selected_harnesses = {
+        identity.harness_kind
         for identity in registered
         if identity.agent_id == config.default_chat_agent_id
-        and identity.runtime_kind in profile_runtime_kinds[default_profile_id]
+        and identity.harness_kind in profile_harness_kinds[default_profile_id]
     }
-    if HarnessKind.CLAUDE_CODE in default_candidates:
-        default_runtime_kind = HarnessKind.CLAUDE_CODE
-    else:
-        try:
-            default_runtime_kind = one(default_candidates)
-        except ValueError:
-            raise ValueError("default chat Agent must select one configured runtime") from None
-    return LaunchWiring(authorizer, config.default_chat_agent_id, default_runtime_kind)
+    if len(selected_harnesses) != 1:
+        raise ValueError("default chat Agent must select exactly one configured harness")
+    return LaunchWiring(authorizer, config.default_chat_agent_id, next(iter(selected_harnesses)))
 
 
 async def async_main(settings: AdapterSettings) -> None:
@@ -216,9 +210,7 @@ async def async_main(settings: AdapterSettings) -> None:
         conversations = ConversationStore(sessions)
         if launch is not None:
             conversations.configure_launch_identity(
-                launch.authorizer,
-                default_agent_id=launch.default_agent_id,
-                default_runtime_kind=launch.default_runtime_kind,
+                launch.authorizer, default_agent_id=launch.default_agent_id, harness_kind=launch.harness_kind
             )
         identities = PostgresOperatorIdentityStore(
             sessions,

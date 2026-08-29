@@ -99,7 +99,7 @@ export async function fetchOperator(): Promise<OperatorResponse> {
   return data;
 }
 
-/** Mint a Web conversation with its explicit deploy-authorized Agent/runtime pair. */
+/** Mint a Web conversation with its explicit deploy-authorized Agent/harness pair. */
 export async function createConversation(selection: ChatLaunchOption): Promise<Conversation> {
   const response = await api.POST("/api/conversations", {
     body: { agent_id: selection.agent_id, runtime: selection.runtime },

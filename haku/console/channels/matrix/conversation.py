@@ -104,24 +104,20 @@ class ConversationStore:
         *,
         launch_authorizer: LaunchAuthorizer | None = None,
         default_agent_id: UUID | None = None,
-        default_runtime_kind: HarnessKind = HarnessKind.CLAUDE_CODE,
+        harness_kind: HarnessKind | None = None,
     ):
         self._sessions = sessions
         self._launch_authorizer = launch_authorizer
         self._default_agent_id = default_agent_id
-        self._default_runtime_kind = default_runtime_kind
+        self._harness_kind = harness_kind
 
     def configure_launch_identity(
-        self,
-        authorizer: LaunchAuthorizer,
-        *,
-        default_agent_id: UUID,
-        default_runtime_kind: HarnessKind = HarnessKind.CLAUDE_CODE,
+        self, authorizer: LaunchAuthorizer, *, default_agent_id: UUID, harness_kind: HarnessKind
     ) -> None:
         """Configure production first-bind identity selection after app composition."""
         self._launch_authorizer = authorizer
         self._default_agent_id = default_agent_id
-        self._default_runtime_kind = default_runtime_kind
+        self._harness_kind = harness_kind
 
     async def attachment(self, room_id: str) -> UUID | None:
         async with self._sessions() as db:
@@ -177,17 +173,21 @@ class ConversationStore:
             if self._launch_authorizer is not None:
                 if self._default_agent_id is None:
                     raise RuntimeError("Matrix launch identity is not configured")
-                identity = await self._launch_authorizer(
-                    db, operator_id, self._default_agent_id, self._default_runtime_kind
-                )
+                if self._harness_kind is None:
+                    raise RuntimeError("Matrix harness kind is not configured")
+                identity = await self._launch_authorizer(db, operator_id, self._default_agent_id, self._harness_kind)
+            if identity is None and self._harness_kind is None:
+                raise RuntimeError("Matrix harness kind is not configured")
             conversation_id = uuid4()
+            selected_harness_kind = self._harness_kind if identity is None else identity.harness_kind
             db.add(
                 Conversation(
                     conversation_id=conversation_id,
                     operator_id=operator_id,
                     agent_id=None if identity is None else identity.agent_id,
                     access_profile_id=None if identity is None else identity.access_profile_id,
-                    runtime_kind=HarnessKind.CLAUDE_CODE if identity is None else identity.runtime_kind,
+                    harness_kind=selected_harness_kind,
+                    legacy_harness_kind=selected_harness_kind,
                     created_at=now,
                 )
             )

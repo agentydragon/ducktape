@@ -1,4 +1,4 @@
-"""Operator chat sessions dispatched by immutable conversation runtime kind.
+"""Operator chat sessions dispatched by immutable conversation harness kind.
 
 The turn loop, the runner's websocket bridge, the sandbox lifecycle and the SPA chat surface's own
 routes. The rows underneath, and every transaction that moves them, are `session_store.py`.
@@ -50,6 +50,7 @@ from haku.console.session.store import (
 from haku.console.session.system_prompt import HistoryMessage, HistorySender, SessionIntroduction
 from haku.console.x.runtime import (
     ConfiguredRuntime,
+    HarnessKey,
     RuntimeLaunch,
     RuntimeMcpServer,
     RuntimeNotConfiguredError,
@@ -229,7 +230,6 @@ class SessionService:
         conversation_history: ConversationHistory | None = None,
         launch_authorizer: LaunchAuthorizer | None = None,
         default_agent_id: UUID | None = None,
-        default_runtime_kind: HarnessKind = HarnessKind.CLAUDE_CODE,
     ):
         self._runtimes = runtimes
         self._store = store
@@ -237,7 +237,6 @@ class SessionService:
         self._conversation_history = conversation_history
         self._launch_authorizer = launch_authorizer
         self._default_agent_id = default_agent_id
-        self._default_runtime_kind = default_runtime_kind
         # The neutral-operation journal's commit/ACK/resume side (#4667). Its commits are the
         # store's transactions by another name, so it takes the same session factory.
         self._journal = JournalConsumer(store.sessionmaker)
@@ -248,12 +247,9 @@ class SessionService:
     async def _configured(self, session_id: UUID) -> ConfiguredRuntime:
         identity = await self._store.session_identity(session_id)
         if identity.agent_id is None:
-            # Nullable identity rows are retained during rolling migration.  They can still be
-            # inspected/projected by runtime kind, but execution uses the legacy registration only
-            # until the row is replaced by a pinned conversation.
-            return self._runtimes.configured(identity.runtime_kind)
+            raise RuntimeNotConfiguredError("session has no pinned Agent/harness identity")
         return self._runtimes.configured(
-            identity.agent_id, identity.runtime_kind, access_profile_id=identity.access_profile_id
+            HarnessKey(identity.agent_id, identity.harness_kind), access_profile_id=identity.access_profile_id
         )
 
     async def request_abort(self, operator_id: UUID, session_id: UUID) -> bool:
@@ -271,12 +267,14 @@ class SessionService:
         *,
         conversation_id: UUID | None = None,
         agent_id: UUID | None = None,
-        runtime_kind: HarnessKind | None = None,
+        harness_kind: HarnessKind | None = None,
     ) -> SessionView:
         if self._launch_authorizer is not None:
             selected_agent = agent_id or self._default_agent_id
             if conversation_id is None and selected_agent is None:
                 raise RuntimeError("chat launch requires a selected Agent")
+            if conversation_id is None and harness_kind is None:
+                raise RuntimeError("chat launch requires a selected harness")
             # Store owns the transaction.  It derives a replacement's pinned identity under
             # the conversation row lock and passes the same AsyncSession to the authorizer, so the
             # authorization decision and durable rows cannot be separated by a concurrent disable.
@@ -284,16 +282,26 @@ class SessionService:
                 operator_id,
                 conversation_id=conversation_id,
                 agent_id=selected_agent if conversation_id is None else None,
-                runtime_kind=runtime_kind or self._default_runtime_kind,
+                harness_kind=harness_kind,
                 launch_authorizer=self._launch_authorizer,
             )
         else:
-            # Compatibility for direct unit-test callers and pre-identity local integrations.
+            # Direct callers must provide the harness explicitly; there is no server default.
+            access_profile_id = None
+            if conversation_id is None:
+                if agent_id is None:
+                    raise RuntimeError("chat launch requires a selected Agent")
+                if harness_kind is None:
+                    raise RuntimeError("chat launch requires a selected harness")
+                access_profile_id = self._runtimes.resources_for(HarnessKey(agent_id, harness_kind)).access_profile_id
+                if access_profile_id is None:
+                    raise RuntimeNotConfiguredError("selected Agent has no configured access profile")
             view, token = await self._store.create_idle(
                 operator_id,
                 conversation_id=conversation_id,
                 agent_id=agent_id,
-                runtime_kind=runtime_kind or HarnessKind.CLAUDE_CODE,
+                access_profile_id=access_profile_id,
+                harness_kind=harness_kind,
             )
         assert not token, "an idle session must not expose a runner credential"
         return view
@@ -357,10 +365,10 @@ class SessionService:
             raise
 
     async def create_conversation(
-        self, operator_id: UUID, *, agent_id: UUID | None = None, runtime_kind: HarnessKind | None = None
+        self, operator_id: UUID, *, agent_id: UUID | None = None, harness_kind: HarnessKind | None = None
     ) -> ConversationView:
         """Open a thread and the session that runs it, and read the thread back."""
-        view = await self.create(operator_id, agent_id=agent_id, runtime_kind=runtime_kind)
+        view = await self.create(operator_id, agent_id=agent_id, harness_kind=harness_kind)
         return await self.conversation(operator_id, await self._store.conversation_of(view.session_id))
 
     async def conversation(self, operator_id: UUID, conversation_id: UUID) -> ConversationView:
@@ -384,7 +392,7 @@ class SessionService:
         identity = await self._store.operator_session_identity(operator_id, session_id)
         return SessionProvisioningView(
             session_id=session_id,
-            harness_kind=identity.runtime_kind,
+            harness_kind=identity.harness_kind,
             status=identity.status,
             sandbox=None if identity.status == SessionStatus.IDLE else await self._observed(session_id),
         )
@@ -792,7 +800,7 @@ async def create_conversation(
     runtime are an atomic required pair; there is no server-default launch endpoint.
     """
     try:
-        return await service.create_conversation(actor.operator_id, agent_id=body.agent_id, runtime_kind=body.runtime)
+        return await service.create_conversation(actor.operator_id, agent_id=body.agent_id, harness_kind=body.runtime)
     except LaunchAgentRejectedError:
         raise HTTPException(status_code=403, detail="chat launch is not authorized")
     except KeyError as error:

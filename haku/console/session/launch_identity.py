@@ -10,7 +10,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.console.harnesses.kind import HarnessKind
-from haku.console.x.runtime import RuntimeKey
+from haku.console.x.runtime import HarnessKey
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,7 +20,7 @@ class LaunchIdentity:
     agent_id: UUID
     binding_id: UUID
     access_profile_id: str
-    runtime_kind: HarnessKind
+    harness_kind: HarnessKind
 
 
 class LaunchAgentRejectedError(Exception):
@@ -63,14 +63,14 @@ class ChatLaunchAuthorizer:
         authority: LaunchAuthority,
         *,
         launchable_agent_ids: Collection[UUID],
-        registered_runtime_identities: Collection[RuntimeKey],
-        profile_runtime_kinds: Mapping[str, Collection[HarnessKind]],
+        registered_harness_identities: Collection[HarnessKey],
+        profile_harness_kinds: Mapping[str, Collection[HarnessKind]],
     ) -> None:
         self._authority = authority
         self._launchable_agent_ids = frozenset(launchable_agent_ids)
-        self._registered_runtime_identities = frozenset(registered_runtime_identities)
-        self._profile_runtime_kinds = {
-            profile_id: frozenset(runtime_kinds) for profile_id, runtime_kinds in profile_runtime_kinds.items()
+        self._registered_harness_identities = frozenset(registered_harness_identities)
+        self._profile_harness_kinds = {
+            profile_id: frozenset(harness_kinds) for profile_id, harness_kinds in profile_harness_kinds.items()
         }
 
     async def __call__(
@@ -78,27 +78,27 @@ class ChatLaunchAuthorizer:
         db: AsyncSession,
         operator_id: UUID,
         agent_id: UUID,
-        runtime_kind: HarnessKind,
+        harness_kind: HarnessKind,
         *,
         expected_profile_id: str | None = None,
     ) -> LaunchIdentity:
         if agent_id not in self._launchable_agent_ids:
             raise LaunchAgentRejectedError("selected Agent is not launchable")
-        if RuntimeKey(agent_id, runtime_kind) not in self._registered_runtime_identities:
-            raise LaunchAgentRejectedError("selected Agent/runtime pair is not registered")
+        if HarnessKey(agent_id, harness_kind) not in self._registered_harness_identities:
+            raise LaunchAgentRejectedError("selected Agent/harness pair is not registered")
         authorization = await self._authority.launch_authorization(
             db, operator_id=operator_id, agent_id=agent_id, access_profile_id=expected_profile_id
         )
         profile_id = authorization.access_profile_id
-        if profile_id is None or profile_id not in self._profile_runtime_kinds:
+        if profile_id is None or profile_id not in self._profile_harness_kinds:
             raise LaunchAgentRejectedError("selected Agent has no active access profile")
-        if runtime_kind not in self._profile_runtime_kinds[profile_id]:
-            raise LaunchAgentRejectedError("selected access profile disallows the chat runtime")
+        if harness_kind not in self._profile_harness_kinds[profile_id]:
+            raise LaunchAgentRejectedError("selected access profile disallows the chat harness")
         return LaunchIdentity(
             agent_id=authorization.agent_id,
             binding_id=authorization.binding_id,
             access_profile_id=profile_id,
-            runtime_kind=runtime_kind,
+            harness_kind=harness_kind,
         )
 
 
@@ -108,7 +108,7 @@ class LaunchAuthorizer(Protocol):
         db: AsyncSession,
         operator_id: UUID,
         agent_id: UUID,
-        runtime_kind: HarnessKind,
+        harness_kind: HarnessKind,
         *,
         expected_profile_id: str | None = None,
     ) -> LaunchIdentity: ...

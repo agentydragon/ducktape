@@ -70,7 +70,7 @@ from haku.console.identity.operator_identity import (
 )
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.session.launch_identity import ChatLaunchAuthorizer, LaunchAgentRejectedError, LaunchIdentity
-from haku.console.x.runtime import RuntimeKey
+from haku.console.x.runtime import HarnessKey
 from mcp_infra.authentik_auth.oidc_principal import VerifiedOidcPrincipal
 from third_party.containers.rlocations import PGVECTOR_PG18
 from util.testing.postgres import create_database_sync, force_drop_database_sync
@@ -816,13 +816,13 @@ def _launch_authorizer(
     *,
     launchable: bool = True,
     registered: tuple[HarnessKind, ...] = (HarnessKind.CLAUDE_CODE,),
-    profile_runtime_kinds: dict[str, tuple[HarnessKind, ...]] | None = None,
+    profile_harness_kinds: dict[str, tuple[HarnessKind, ...]] | None = None,
 ) -> ChatLaunchAuthorizer:
     return ChatLaunchAuthorizer(
         harness.authority,
         launchable_agent_ids={agent_id} if launchable else set(),
-        registered_runtime_identities={RuntimeKey(agent_id, kind) for kind in registered},
-        profile_runtime_kinds=profile_runtime_kinds
+        registered_harness_identities={HarnessKey(agent_id, kind) for kind in registered},
+        profile_harness_kinds=profile_harness_kinds
         or {
             "no_auto_approval": (HarnessKind.CLAUDE_CODE,),
             "chat": (HarnessKind.CLAUDE_CODE,),
@@ -857,7 +857,7 @@ async def test_chat_launch_authorizer_derives_current_profile_for_new_launch(
     assert first.access_profile_id == "chat"
     assert second.agent_id == definition.agent_id
     assert second.access_profile_id == "review"
-    assert second.runtime_kind is HarnessKind.CLAUDE_CODE
+    assert second.harness_kind is HarnessKind.CLAUDE_CODE
 
 
 async def test_launch_authorization_requires_caller_owned_transaction(harness: Harness) -> None:
@@ -923,7 +923,7 @@ async def test_launch_authorization_commits_against_a_concurrent_operator_refere
                     conversation_id=uuid4(),
                     operator_id=operator_id,
                     harness_kind=HarnessKind.CLAUDE_CODE,
-                    runtime_kind=HarnessKind.CLAUDE_CODE,
+                    legacy_harness_kind=HarnessKind.CLAUDE_CODE,
                     created_at=harness.clock.now,
                 )
             )
@@ -1016,8 +1016,8 @@ async def test_chat_launch_authorizer_rejects_an_unregistered_agent_runtime_pair
     authorizer = ChatLaunchAuthorizer(
         harness.authority,
         launchable_agent_ids={first.agent_id, second.agent_id},
-        registered_runtime_identities={RuntimeKey(first.agent_id, HarnessKind.CLAUDE_CODE)},
-        profile_runtime_kinds={"no_auto_approval": {HarnessKind.CLAUDE_CODE}},
+        registered_harness_identities={HarnessKey(first.agent_id, HarnessKind.CLAUDE_CODE)},
+        profile_harness_kinds={"no_auto_approval": {HarnessKind.CLAUDE_CODE}},
     )
 
     assert (await _authorize_launch(harness, authorizer, first.agent_id)).agent_id == first.agent_id

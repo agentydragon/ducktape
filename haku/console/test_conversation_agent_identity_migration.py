@@ -134,10 +134,10 @@ def test_session_bearers_and_tool_attribution_are_exactly_session_scoped(db_url:
                     """
                     INSERT INTO conversation (
                         conversation_id, operator_id, agent_id, access_profile_id,
-                        runtime_kind, created_at
+                        harness_kind, runtime_kind, created_at
                     ) VALUES (
                         :conversation_id, :operator_id, :agent_id, 'chat',
-                        'claude_code', :n
+                        'claude_code', 'claude_code', :n
                     )
                     """
                 ),
