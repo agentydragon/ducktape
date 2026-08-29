@@ -20,6 +20,46 @@ launch prompt, a `resume`, or (app-server) a `turn/start` / `turn/steer`.
 | Live progress / mid-run events               | `codex exec --json` piped to a filter under **`Monitor`** | one notification per milestone                     |
 | Mid-turn back-and-forth, abort, many threads | **`codex app-server`** JSON-RPC                           | notifications via the driver's stdout (Monitor it) |
 
+## Container liveness — don't lose workers to the idle reaper
+
+The orchestrator here is a Claude Code **web** session, and its VM is reclaimed on inactivity:
+per the docs, "Cloud sessions stop after a period of inactivity and the session's VM is reclaimed …
+Reopen … to provision a **fresh VM** with your conversation history restored." No exact idle timeout
+is published. The consequences are load-bearing for a fleet:
+
+- **What survives a reclaim:** git-pushed commits and the conversation history (restored on reopen).
+- **What dies:** everything running inside the container — a long-lived `codex app-server` broker,
+  backgrounded `codex exec` workers, in-memory thread/turn ids, and (assume) uncommitted files. So
+  **in-container worker state is not durable** across an idle gap.
+
+Two ways to cope, and a fleet usually needs both:
+
+1. **Stay active so the reaper never fires** (keep-alive within a window):
+   - A **foreground** tool call keeps the turn active for its whole duration — inherently reap-proof
+     while it runs. Safe for a bounded worker turn.
+   - An armed **`Monitor`** (or a `run_in_background` Bash task) is tracked work that re-invokes the
+     session on each event, so the session keeps working rather than sitting idle. This is the
+     practical keep-alive for a live worker stream — **but** `Monitor` is capped at ≤1 h per arm, and
+     "an armed Monitor prevents reclamation" is a reasoned expectation from the tool semantics, **not
+     a documented guarantee**. Don't bet unrecoverable state on it; re-arm before the cap.
+2. **Make the work survive a reclaim** (durability + recovery), which matters the moment a fleet runs
+   longer than one active window:
+   - **Checkpoint to durable storage, not container memory** — push worker branches/results to git,
+     or keep task state in a store the next VM can re-read. Never hold the only copy of a thread id
+     or a result in the orchestrator's RAM.
+   - **Re-provisioning wakes** (`send_later` / a routine / a subscribed PR event) bring the session
+     back as a _fresh_ VM — they are the recovery path, not a keep-alive. On wake, reconnect from the
+     checkpoint.
+   - **Run the workers outside the container.** In-container `codex app-server`/`exec` workers are the
+     most exposed: a reclaim kills them and every unpersisted thread. The robust substrate is the
+     cluster — provision workers as `SandboxClaim` pods (or run `codex app-server` on a pod) so they
+     keep running across an orchestrator reclaim, and reconnect to them on the next wake. See
+     `README.md` → "Launching workers" and its next-steps.
+
+Liveness profile of each pattern below: foreground `exec` — safe while it runs. Background `exec` /
+`Monitor` — safe while armed (bounded), checkpoint + re-arm for longer. In-container `app-server`
+broker — **least durable**; keep it inside one active window or move it to a pod.
+
 ## Three interfaces, when to reach for each
 
 1. **`codex exec` / `codex exec resume`** — turn-based, synchronous, has session memory. The default.
