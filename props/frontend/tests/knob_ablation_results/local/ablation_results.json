@@ -1,0 +1,596 @@
+[
+  {
+    "knob": "flag_disable_gpu",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-gpu",
+    "scenario": "DefinitionDetail",
+    "diffPixels": -1,
+    "diffPercent": -1,
+    "error": "Protocol error (Target.setDiscoverTargets): Target closed"
+  },
+  {
+    "knob": "flag_disable_gpu",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-gpu",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": -1,
+    "diffPercent": -1,
+    "error": "Protocol error (Target.setDiscoverTargets): Target closed"
+  },
+  {
+    "knob": "flag_font_render_hinting",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --font-render-hinting=none",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_font_render_hinting",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --font-render-hinting=none",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 701,
+    "diffPercent": 0.22642118863049096,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_font_subpixel_positioning",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-font-subpixel-positioning",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_font_subpixel_positioning",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-font-subpixel-positioning",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_lcd_text",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-lcd-text",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 3776,
+    "diffPercent": 0.5970904490828589,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_lcd_text",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-lcd-text",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 178,
+    "diffPercent": 0.05749354005167959,
+    "error": null
+  },
+  {
+    "knob": "flag_force_color_profile",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --force-color-profile=srgb",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_force_color_profile",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --force-color-profile=srgb",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_accelerated_2d_canvas",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-accelerated-2d-canvas",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_accelerated_2d_canvas",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-accelerated-2d-canvas",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_gpu_compositing",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-gpu-compositing",
+    "scenario": "DefinitionDetail",
+    "diffPixels": -1,
+    "diffPercent": -1,
+    "error": "Network.enable timed out. Increase the 'protocolTimeout' setting in launch/conne"
+  },
+  {
+    "knob": "flag_disable_gpu_compositing",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-gpu-compositing",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": -1,
+    "diffPercent": -1,
+    "error": "Network.enable timed out. Increase the 'protocolTimeout' setting in launch/conne"
+  },
+  {
+    "knob": "flag_disable_software_rasterizer",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-software-rasterizer",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_software_rasterizer",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-software-rasterizer",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_skia_runtime_opts",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-skia-runtime-opts",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_skia_runtime_opts",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-skia-runtime-opts",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_partial_raster",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-partial-raster",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_partial_raster",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-partial-raster",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_backing_store_limit",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-backing-store-limit",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_backing_store_limit",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-backing-store-limit",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_use_gl",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --use-gl=swiftshader",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_use_gl",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --use-gl=swiftshader",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_force_device_scale_factor",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --force-device-scale-factor=1",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_force_device_scale_factor",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --force-device-scale-factor=1",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_features",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-features=CalculateNativeWinOcclusion,VizDisplayCompositor",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_features",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-features=CalculateNativeWinOcclusion,VizDisplayCompositor",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_accelerated_video_decode",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-accelerated-video-decode",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_accelerated_video_decode",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-accelerated-video-decode",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_canvas_aa",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-canvas-aa",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_canvas_aa",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-canvas-aa",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_2d_canvas_clip_aa",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-2d-canvas-clip-aa",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_2d_canvas_clip_aa",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-2d-canvas-clip-aa",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_webgl",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-webgl",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_webgl",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-webgl",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_webgl2",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-webgl2",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_webgl2",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-webgl2",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_blink_settings",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --blink-settings=imageAnimationPolicy=noAnimation",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_blink_settings",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --blink-settings=imageAnimationPolicy=noAnimation",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_smooth_scrolling",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-smooth-scrolling",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_smooth_scrolling",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-smooth-scrolling",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_threaded_animation",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-threaded-animation",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_threaded_animation",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-threaded-animation",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_threaded_scrolling",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-threaded-scrolling",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_threaded_scrolling",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-threaded-scrolling",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_checker_imaging",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-checker-imaging",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "flag_disable_checker_imaging",
+    "category": "chrome_flag",
+    "description": "Chrome flag: --disable-checker-imaging",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "css_font_smoothing",
+    "category": "css",
+    "description": "CSS: -webkit-font-smoothing: none",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "css_font_smoothing",
+    "category": "css",
+    "description": "CSS: -webkit-font-smoothing: none",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "css_text_rendering",
+    "category": "css",
+    "description": "CSS: text-rendering: geometricPrecision",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "css_text_rendering",
+    "category": "css",
+    "description": "CSS: text-rendering: geometricPrecision",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "css_animation_disable",
+    "category": "css",
+    "description": "CSS: animation/transition duration 0s",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "css_animation_disable",
+    "category": "css",
+    "description": "CSS: animation/transition duration 0s",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "css_hermetic_font",
+    "category": "css",
+    "description": "CSS: Force Inter font family everywhere",
+    "scenario": "DefinitionDetail",
+    "diffPixels": -1,
+    "diffPercent": -1,
+    "error": null
+  },
+  {
+    "knob": "css_hermetic_font",
+    "category": "css",
+    "description": "CSS: Force Inter font family everywhere",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 1124,
+    "diffPercent": 0.36304909560723514,
+    "error": null
+  },
+  {
+    "knob": "env_fontconfig",
+    "category": "env",
+    "description": "Env: FONTCONFIG_FILE (hermetic fontconfig)",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "env_fontconfig",
+    "category": "env",
+    "description": "Env: FONTCONFIG_FILE (hermetic fontconfig)",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "env_freetype",
+    "category": "env",
+    "description": "Env: FREETYPE_PROPERTIES (no stem darkening)",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "env_freetype",
+    "category": "env",
+    "description": "Env: FREETYPE_PROPERTIES (no stem darkening)",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "media_color_scheme",
+    "category": "media",
+    "description": "Media: prefers-color-scheme=light",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "media_color_scheme",
+    "category": "media",
+    "description": "Media: prefers-color-scheme=light",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "media_reduced_motion",
+    "category": "media",
+    "description": "Media: prefers-reduced-motion=reduce",
+    "scenario": "DefinitionDetail",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "media_reduced_motion",
+    "category": "media",
+    "description": "Media: prefers-reduced-motion=reduce",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": 0,
+    "diffPercent": 0,
+    "error": null
+  },
+  {
+    "knob": "viewport_scale_factor",
+    "category": "viewport",
+    "description": "Viewport: deviceScaleFactor=1 (test with 2)",
+    "scenario": "DefinitionDetail",
+    "diffPixels": -1,
+    "diffPercent": -1,
+    "error": null
+  },
+  {
+    "knob": "viewport_scale_factor",
+    "category": "viewport",
+    "description": "Viewport: deviceScaleFactor=1 (test with 2)",
+    "scenario": "DistributionChartRecall",
+    "diffPixels": -1,
+    "diffPercent": -1,
+    "error": null
+  }
+]
