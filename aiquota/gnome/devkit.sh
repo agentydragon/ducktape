@@ -2,7 +2,10 @@
 # Bazel-runnable launcher for local iteration on aiquota.
 #
 # Builds the extension zip via Bazel, extracts it to a temp dir, and launches
-# a nested gnome-shell --devkit session with the extension pre-enabled.
+# a nested gnome-shell --devkit session with the extension pre-enabled. The
+# display setup is explicit because Wyrm2 is a Wayland VM with multiple DRM
+# render nodes; letting Mutter auto-select a display or renderer produces a
+# blank/black devkit surface.
 # Fully isolated: does not write to ~/.local/share or modify live dconf.
 # Requires gnome-shell to be installed on the host (not bundled — local
 # iteration only).
@@ -103,6 +106,25 @@ export XDG_DATA_DIRS="$tmpdir/data${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
 export XDG_CONFIG_HOME="$conf_dir"
 export DCONF_PROFILE="$tmpdir/dconf-profile"
 
+# Mutter's devkit viewer is a client of the existing desktop compositor. When
+# launched from a terminal on Wayland, WAYLAND_DISPLAY is often unset and GTK
+# falls back to an X11 viewer, which is the blank-screen failure mode seen on
+# Wyrm2. Keep the producer and viewer on the same software EGL path as well:
+# Wyrm2 exposes a virtio render node plus two NVIDIA nodes, and Mutter's
+# automatic multi-GPU choice is not reliable for nested framebuffer sharing.
+runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+if [[ -z "${WAYLAND_DISPLAY:-}" && -S "$runtime_dir/wayland-0" ]]; then
+  export WAYLAND_DISPLAY=wayland-0
+fi
+if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+  export GDK_BACKEND="${GDK_BACKEND:-wayland}"
+  echo ">> using host Wayland display $WAYLAND_DISPLAY"
+fi
+export GSK_RENDERER="${GSK_RENDERER:-gl}"
+export LIBGL_ALWAYS_SOFTWARE="${LIBGL_ALWAYS_SOFTWARE:-1}"
+export MESA_LOADER_DRIVER_OVERRIDE="${MESA_LOADER_DRIVER_OVERRIDE:-llvmpipe}"
+export __NV_DISABLE_EXPLICIT_SYNC="${__NV_DISABLE_EXPLICIT_SYNC:-1}"
+
 # Wrapper around the bazel-built aiquota so the spawned CLI always reads the
 # *real* config.toml regardless of XDG_CONFIG_HOME passthrough. Belt-and-
 # suspenders: export AI_QUOTA_BIN (extension.js's preferred path) and also
@@ -124,11 +146,47 @@ export AI_QUOTA_BIN="$wrapper"
 export PATH="$tmpdir/bin:$PATH"
 echo ">> AI_QUOTA_BIN=$AI_QUOTA_BIN"
 
-# --- enable extension in isolated dconf ------------------------------------
-gsettings set org.gnome.shell disable-user-extensions false
-gsettings set org.gnome.shell enabled-extensions "['$uuid']"
-echo ">> enabled $uuid in isolated dconf"
-
 # --- launch the devkit shell ----------------------------------------------
 echo ">> launching gnome-shell --devkit (Ctrl-C to exit)"
-exec dbus-run-session -- gnome-shell --devkit --wayland
+exec dbus-run-session -- sh -c '
+  set -eu
+  gsettings set org.gnome.shell disable-user-extensions false
+  gsettings set org.gnome.shell enabled-extensions "$1"
+
+  runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+  nested_wayland_name="aiquota-$$"
+  suffix=0
+  while [[ -e "$runtime_dir/$nested_wayland_name" || -e "$runtime_dir/$nested_wayland_name.lock" ]]; do
+    suffix=$((suffix + 1))
+    nested_wayland_name="aiquota-$$-$suffix"
+  done
+
+  gnome-shell --devkit --unsafe-mode --wayland --wayland-display="$nested_wayland_name" &
+  shell_pid=$!
+  cleanup() {
+    trap - EXIT INT TERM
+    if kill -0 "$shell_pid" 2>/dev/null; then
+      kill "$shell_pid" 2>/dev/null || true
+    fi
+  }
+  trap cleanup EXIT INT TERM
+
+  for _ in $(seq 1 300); do
+    if [[ -S "$runtime_dir/$nested_wayland_name" ]]; then
+      break
+    fi
+    if ! kill -0 "$shell_pid" 2>/dev/null; then
+      wait "$shell_pid"
+      exit 1
+    fi
+    sleep 0.1
+  done
+
+  if [[ ! -S "$runtime_dir/$nested_wayland_name" ]]; then
+    echo "ERROR: nested Mutter Wayland socket did not appear" >&2
+    exit 1
+  fi
+
+  echo ">> nested Wayland display is $nested_wayland_name"
+  wait "$shell_pid"
+' sh "['aiquota@allegedly.works']"
