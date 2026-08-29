@@ -67,7 +67,7 @@ function GrantSource({ grant }: { grant: Grant }) {
       return (
         <Stack gap={2}>
           <Text size="sm">Database</Text>
-          <ExternalLink href={toolCallPath(grant.source.tool_call_id)} size="xs" ff="monospace" title={grant.source.id}>
+          <ExternalLink href={toolCallPath(grant.source.tool_call_id)} size="xs" ff="monospace">
             tool call {grant.source.tool_call_id.slice(0, 12)}…
           </ExternalLink>
         </Stack>
