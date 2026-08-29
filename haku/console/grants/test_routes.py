@@ -1,4 +1,4 @@
-"""HTTP contract for Kubernetes-grant inspection and generic grant revocation."""
+"""HTTP contract for unified grant inspection and revocation."""
 
 from __future__ import annotations
 
@@ -18,6 +18,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from haku.console.config import KubernetesAuthorizationConfig, KubernetesAuthorizationSubject
 from haku.console.conftest import DEFAULT_ACCESS_PROFILE_ID, default_agent_binding, insert_approved_tool_call
 from haku.console.grants.catalog import GrantCatalog
+from haku.console.grants.http.models import (
+    GrantSpec as HttpGrantSpec,
+    HttpMethod,
+    HttpOrigin,
+    HttpRequestCoverage,
+    HttpScheme,
+)
 from haku.console.grants.http.service import GrantService as HttpGrantService
 from haku.console.grants.kubernetes.authorization import KubernetesSubjectAccessReviewClient
 from haku.console.grants.kubernetes.models import Grant, NamespacesGrantScope, Rule
@@ -37,6 +44,7 @@ class _Console:
     client: TestClient
     sessions: async_sessionmaker[AsyncSession]
     grants: KubernetesGrantService
+    http_grants: HttpGrantService
     agent_id: UUID
     binding_id: UUID
 
@@ -67,7 +75,12 @@ def console(make_operator_client: Callable[..., Any]) -> Iterator[_Console]:
         assert client.portal is not None
         agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
         yield _Console(
-            client=client, sessions=sessions, grants=kubernetes_grants, agent_id=agent_id, binding_id=binding_id
+            client=client,
+            sessions=sessions,
+            grants=kubernetes_grants,
+            http_grants=cast(HttpGrantService, app.state.http_grants),
+            agent_id=agent_id,
+            binding_id=binding_id,
         )
 
 
@@ -94,6 +107,35 @@ def _seed_grant(console: _Console) -> Grant:
     return console.call(create)
 
 
+def _seed_http_grant(console: _Console) -> UUID:
+    source_tool_call_id = console.call(
+        partial(
+            insert_approved_tool_call,
+            console.sessions,
+            binding_id=console.binding_id,
+            now=datetime.datetime.now(datetime.UTC),
+            server_id="grants",
+        )
+    )
+
+    async def create() -> UUID:
+        (grant,) = await console.http_grants.create_grants(
+            owner_agent_id=console.agent_id,
+            grant_principal=AgentGrantPrincipal(agent_id=console.agent_id),
+            source_tool_call_id=source_tool_call_id,
+            grants=(
+                HttpGrantSpec(
+                    origin=HttpOrigin(scheme=HttpScheme.HTTPS, host="grocy.example", port=443),
+                    coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET})),
+                ),
+            ),
+            expires_at=datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=25),
+        )
+        return grant.grant_id
+
+    return console.call(create)
+
+
 def _wire(instant: datetime.datetime) -> str:
     return instant.isoformat().replace("+00:00", "Z")
 
@@ -101,7 +143,7 @@ def _wire(instant: datetime.datetime) -> str:
 def test_lists_only_the_authenticated_operators_agents_with_provenance(console: _Console) -> None:
     grant = _seed_grant(console)
 
-    response = console.client.get("/api/kubernetes-grants")
+    response = console.client.get("/api/grants")
 
     assert response.status_code == 200
     record, config_record = response.json()["grants"]
@@ -113,7 +155,7 @@ def test_lists_only_the_authenticated_operators_agents_with_provenance(console: 
             "tool_call_id": grant.source_tool_call_id,
             "created_at": _wire(grant.created_at),
         },
-        "subject": {"kind": "grant_principal", "principal": {"kind": "agent", "agent_id": str(console.agent_id)}},
+        "subject": {"kind": "agent", "agent_id": str(console.agent_id)},
         "coverage": {
             "kind": "kubernetes_rules",
             "scope": {"kind": "namespaces", "namespaces": ["public-coder-agent"]},
@@ -142,7 +184,7 @@ def test_lists_only_the_authenticated_operators_agents_with_provenance(console: 
     }
 
 
-def test_revoke_requires_a_non_blank_reason(console: _Console) -> None:
+def test_revoke_accepts_a_blank_reason(console: _Console) -> None:
     grant = _seed_grant(console)
     path = "/api/grants/revoke"
 
@@ -155,20 +197,24 @@ def test_revoke_requires_a_non_blank_reason(console: _Console) -> None:
         == 403
     )
     headers = {"Origin": "https://haku.test"}
-    assert (
-        console.client.post(
-            path, json={"grant_ids": [str(grant.grant_id)], "reason": "   "}, headers=headers
-        ).status_code
-        == 422
-    )
-
-    response = console.client.post(
-        path, json={"grant_ids": [str(grant.grant_id)], "reason": "  pilot complete  "}, headers=headers
-    )
+    response = console.client.post(path, json={"grant_ids": [str(grant.grant_id)], "reason": "   "}, headers=headers)
 
     assert response.status_code == 200
-    assert response.json()["grants"][0]["validity"]["status"] == "revoked"
-    assert response.json()["grants"][0]["validity"]["end_reason"] == "pilot complete"
+    assert response.json()["grants"][0]["validity"]["status"] == "ended"
+    assert response.json()["grants"][0]["validity"]["end_reason"] is None
+
+
+def test_lists_http_database_grants_through_the_generic_route(console: _Console) -> None:
+    grant_id = _seed_http_grant(console)
+
+    response = console.client.get("/api/grants")
+
+    assert response.status_code == 200
+    assert {
+        record["grant"]["source"]["id"]
+        for record in response.json()["grants"]
+        if record["grant"]["source"]["kind"] == "database" and record["grant"]["coverage"]["kind"] == "http"
+    } == {str(grant_id)}
 
 
 def test_revoke_grants_uses_durable_grant_ids(console: _Console) -> None:
@@ -199,7 +245,7 @@ def test_revoke_grants_uses_durable_grant_ids(console: _Console) -> None:
 
     assert response.status_code == 200
     assert {item["source"]["id"] for item in response.json()["grants"]} == {str(first.grant_id), str(second.grant_id)}
-    assert [item["validity"]["status"] for item in response.json()["grants"]] == ["revoked", "revoked"]
+    assert [item["validity"]["status"] for item in response.json()["grants"]] == ["ended", "ended"]
     assert [item["validity"]["end_reason"] for item in response.json()["grants"]] == [
         "pilot complete",
         "pilot complete",

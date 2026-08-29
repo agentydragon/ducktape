@@ -7,7 +7,7 @@ import {
   SAMPLE_DAEMONS,
   SAMPLE_DEPLOYMENT,
   SAMPLE_INDEX_STATUS,
-  SAMPLE_KUBERNETES_GRANTS,
+  SAMPLE_GRANTS,
   SAMPLE_MCP_PROBES,
   SAMPLE_MCP_SERVERS,
   SAMPLE_PENDING,
@@ -515,7 +515,7 @@ const mcpServers =
     : SAMPLE_MCP_SERVERS;
 
 async function respond(input: RequestInfo | URL, init: RequestInit | undefined, url: string): Promise<Response | null> {
-  if (url.includes("/api/kubernetes-grants")) return jsonResponse(SAMPLE_KUBERNETES_GRANTS);
+  if (url.includes("/api/grants")) return jsonResponse(SAMPLE_GRANTS);
   if (url.includes("/api/agent-enrollment/agents/") && init?.method === "PUT") {
     const body = JSON.parse(String(init.body)) as { access_profile_id: string };
     return jsonResponse({

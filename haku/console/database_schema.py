@@ -508,7 +508,7 @@ class KubernetesGrantRow(GrantEnvelopeColumns, Base):
     """One Agent-owned, principal-scoped, time-bounded Kubernetes capability lease.
 
     The envelope half of the row (`GrantEnvelopeColumns`) is shared with every grant domain,
-    end facts included: status is derived from ``released_at``/``revoked_at`` and the clock
+    end fact included: status is derived from ``ended_at`` and the clock
     (`grants.envelope.derive_status`), never stored, so expiry needs no sweeper. Scope and
     rules are intentionally JSONB: Kubernetes evolves its resource vocabulary, while the domain
     validates the stable namespace and RBAC-like shapes before writing.
@@ -535,6 +535,7 @@ class KubernetesGrantRow(GrantEnvelopeColumns, Base):
         Index("idx_kubernetes_grants_owner_expiry", "owner_agent_id", "expires_at"),
         Index("idx_kubernetes_grants_agent_principal_expiry", "principal_agent_id", "expires_at"),
         Index("idx_kubernetes_grants_session_principal_expiry", "principal_session_id", "expires_at"),
+        Index("idx_kubernetes_grants_access_profile_principal_expiry", "principal_access_profile_id", "expires_at"),
     )
 
     scope: Mapped[GrantScope] = mapped_column(PydanticColumn(GrantScope), nullable=False)
@@ -549,7 +550,7 @@ class HttpGrantRow(GrantEnvelopeColumns, Base):
     ``methods``/``path_regex`` narrow requests at that origin. The domain canonicalizes and
     validates coverage app-side (`grants.http.models`); Postgres holds only the relational
     invariants. Status is derived, never stored (root STYLE.md § SQLAlchemy): the row records the
-    end facts — ``released_at``, ``revoked_at`` — and the envelope's ``derive_status`` computes
+    end fact — ``ended_at`` — and the envelope's ``derive_status`` computes
     the vocabulary from them and the clock, so expiry needs no sweeper.
     """
 
@@ -563,6 +564,7 @@ class HttpGrantRow(GrantEnvelopeColumns, Base):
         Index("idx_http_grants_owner_expiry", "owner_agent_id", "expires_at"),
         Index("idx_http_grants_agent_principal_expiry", "principal_agent_id", "expires_at"),
         Index("idx_http_grants_session_principal_expiry", "principal_session_id", "expires_at"),
+        Index("idx_http_grants_access_profile_principal_expiry", "principal_access_profile_id", "expires_at"),
     )
 
     scheme: Mapped[HttpScheme] = mapped_column(TextBackedStrEnumColumn(HttpScheme), nullable=False)

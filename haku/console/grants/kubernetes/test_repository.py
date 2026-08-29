@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Awaitable, Callable, Iterator
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from typing import Any, cast
@@ -11,11 +13,17 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.conftest import default_agent_binding, insert_approved_tool_call, insert_live_session
+from haku.console.conftest import (
+    DEFAULT_ACCESS_PROFILE_ID,
+    default_agent_binding,
+    insert_approved_tool_call,
+    insert_live_session,
+)
 from haku.console.database_schema import KubernetesGrantRow
 from haku.console.grants.envelope import GrantOwnershipError, GrantSourceError, GrantStatus
 from haku.console.grants.kubernetes.models import (
@@ -28,6 +36,7 @@ from haku.console.grants.kubernetes.models import (
 )
 from haku.console.grants.kubernetes.repository import PostgresGrantRepository
 from haku.console.grants.principal import (
+    AccessProfileGrantPrincipal,
     AgentGrantPrincipal,
     GrantPrincipalKind,
     RequestPrincipal,
@@ -52,6 +61,28 @@ _RAW_GRANT_INSERT = text(
     )
     """
 )
+
+
+@dataclass(frozen=True, slots=True)
+class _RepositoryClient:
+    client: TestClient
+    sessions: async_sessionmaker[AsyncSession]
+    agent_id: UUID
+    binding_id: UUID
+
+    def call[T](self, func: Callable[..., Awaitable[T]], *args: Any) -> T:
+        assert self.client.portal is not None
+        return self.client.portal.call(func, *args)
+
+
+@pytest.fixture
+def repository_client(make_client: Any) -> Iterator[_RepositoryClient]:
+    with make_client() as client:
+        app = cast(FastAPI, client.app)
+        sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
+        assert client.portal is not None
+        agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
+        yield _RepositoryClient(client=client, sessions=sessions, agent_id=agent_id, binding_id=binding_id)
 
 
 async def _insert_raw_grant(
@@ -87,49 +118,80 @@ async def _insert_raw_grant(
         )
 
 
-def test_repository_enforces_source_provenance_and_lifecycle(make_client: Any) -> None:
-    with make_client() as client:
-        app = cast(FastAPI, client.app)
-        sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
-        assert client.portal is not None
-        agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
-        source_tool_call_id = client.portal.call(
-            partial(insert_approved_tool_call, sessions, binding_id=binding_id, now=_NOW)
+def test_repository_enforces_source_provenance_and_lifecycle(repository_client: _RepositoryClient) -> None:
+    source_tool_call_id = repository_client.call(
+        partial(
+            insert_approved_tool_call, repository_client.sessions, binding_id=repository_client.binding_id, now=_NOW
         )
-        repository = PostgresGrantRepository(sessions)
+    )
+    repository = PostgresGrantRepository(repository_client.sessions)
 
-        async def exercise() -> None:
-            grant = await repository.create(
-                owner_agent_id=agent_id,
-                grant_principal=AgentGrantPrincipal(agent_id=agent_id),
-                source_tool_call_id=source_tool_call_id,
-                scope=_SCOPE,
-                rules=(_RULE,),
-                created_at=_NOW,
-                expires_at=_NOW + timedelta(minutes=5),
-            )
-            assert grant.status is GrantStatus.ACTIVE
-            assert (await repository.get(owner_agent_id=agent_id, grant_id=grant.grant_id)) == grant
-            assert await repository.active_for_request_principal(
-                request_principal=RequestPrincipal(agent_id=agent_id, session_id=None, access_profile_id=None), now=_NOW
-            ) == (grant,)
+    async def exercise() -> None:
+        grant = await repository.create(
+            owner_agent_id=repository_client.agent_id,
+            grant_principal=AgentGrantPrincipal(agent_id=repository_client.agent_id),
+            source_tool_call_id=source_tool_call_id,
+            scope=_SCOPE,
+            rules=(_RULE,),
+            created_at=_NOW,
+            expires_at=_NOW + timedelta(minutes=5),
+        )
+        assert grant.status is GrantStatus.ACTIVE
+        assert (await repository.get(owner_agent_id=repository_client.agent_id, grant_id=grant.grant_id)) == grant
+        assert await repository.active_for_request_principal(
+            request_principal=RequestPrincipal(
+                agent_id=repository_client.agent_id, session_id=None, access_profile_id=None
+            ),
+            now=_NOW,
+        ) == (grant,)
 
-            released = await repository.release(
-                owner_agent_id=agent_id,
-                grant_id=grant.grant_id,
-                reason="no longer needed",
-                now=_NOW + timedelta(minutes=1),
+        ended = await repository.end(
+            owner_agent_ids=frozenset({repository_client.agent_id}),
+            grant_id=grant.grant_id,
+            reason="no longer needed",
+            now=_NOW + timedelta(minutes=1),
+        )
+        assert ended.status is GrantStatus.ENDED
+        assert (
+            await repository.active_for_request_principal(
+                request_principal=RequestPrincipal(
+                    agent_id=repository_client.agent_id, session_id=None, access_profile_id=None
+                ),
+                now=_NOW,
             )
-            assert released.status is GrantStatus.RELEASED
-            assert (
-                await repository.active_for_request_principal(
-                    request_principal=RequestPrincipal(agent_id=agent_id, session_id=None, access_profile_id=None),
-                    now=_NOW,
-                )
-                == ()
-            )
+            == ()
+        )
 
-        client.portal.call(exercise)
+    repository_client.call(exercise)
+
+
+def test_repository_persists_an_access_profile_principal(repository_client: _RepositoryClient) -> None:
+    source_tool_call_id = repository_client.call(
+        partial(
+            insert_approved_tool_call, repository_client.sessions, binding_id=repository_client.binding_id, now=_NOW
+        )
+    )
+    repository = PostgresGrantRepository(repository_client.sessions)
+
+    async def exercise() -> None:
+        grant = await repository.create(
+            owner_agent_id=repository_client.agent_id,
+            grant_principal=AccessProfileGrantPrincipal(access_profile_id=DEFAULT_ACCESS_PROFILE_ID),
+            source_tool_call_id=source_tool_call_id,
+            scope=_SCOPE,
+            rules=(_RULE,),
+            created_at=_NOW,
+            expires_at=_NOW + timedelta(minutes=5),
+        )
+        assert grant.principal == AccessProfileGrantPrincipal(access_profile_id=DEFAULT_ACCESS_PROFILE_ID)
+        assert await repository.active_for_request_principal(
+            request_principal=RequestPrincipal(
+                agent_id=uuid4(), session_id=None, access_profile_id=DEFAULT_ACCESS_PROFILE_ID
+            ),
+            now=_NOW,
+        ) == (grant,)
+
+    repository_client.call(exercise)
 
 
 def test_repository_atomically_creates_multiple_grants_from_one_source(make_client: Any) -> None:
@@ -177,8 +239,8 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
             assert {grant.expires_at for grant in retried} == {_NOW + timedelta(minutes=5)}
 
             with pytest.raises(GrantOwnershipError):
-                await repository.revoke(
-                    owner_agent_id=uuid4(),
+                await repository.end(
+                    owner_agent_ids=frozenset({uuid4()}),
                     grant_id=grants[0].grant_id,
                     reason="must not cross Agent ownership",
                     now=_NOW + timedelta(seconds=20),
@@ -193,32 +255,32 @@ def test_repository_atomically_creates_multiple_grants_from_one_source(make_clie
                 == 2
             )
 
-            released_first = await repository.release(
-                owner_agent_id=agent_id,
+            ended_first = await repository.end(
+                owner_agent_ids=frozenset({agent_id}),
                 grant_id=grants[0].grant_id,
                 reason="first scope no longer needed",
                 now=_NOW + timedelta(seconds=30),
             )
-            assert released_first.status is GrantStatus.RELEASED
+            assert ended_first.status is GrantStatus.ENDED
 
-            revoked = await repository.revoke(
-                owner_agent_id=agent_id,
+            ended = await repository.end(
+                owner_agent_ids=frozenset({agent_id}),
                 grant_id=grants[1].grant_id,
                 reason="operator ended probe",
                 now=_NOW + timedelta(minutes=1),
             )
-            assert revoked.grant_id == grants[1].grant_id
-            assert revoked.status is GrantStatus.REVOKED
-            assert revoked.revoked_at == _NOW + timedelta(minutes=1)
-            assert revoked.end_reason == "operator ended probe"
+            assert ended.grant_id == grants[1].grant_id
+            assert ended.status is GrantStatus.ENDED
+            assert ended.ended_at == _NOW + timedelta(minutes=1)
+            assert ended.end_reason == "operator ended probe"
 
-            repeated = await repository.revoke(
-                owner_agent_id=agent_id,
+            repeated = await repository.end(
+                owner_agent_ids=frozenset({agent_id}),
                 grant_id=grants[1].grant_id,
                 reason="different retry reason",
                 now=_NOW + timedelta(minutes=2),
             )
-            assert repeated == revoked
+            assert repeated == ended
 
             with pytest.raises(GrantSourceError, match="already created a different"):
                 await repository.create_many(

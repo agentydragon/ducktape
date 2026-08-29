@@ -8,11 +8,10 @@ const ENVELOPE = {
   owner_agent_id: "10000000-0000-4000-8000-000000000001",
   principal: { kind: "agent" as const, agent_id: "10000000-0000-4000-8000-000000000001" },
   source_tool_call_id: "tc_create_grant",
-  status: "released" as const,
+  status: "ended" as const,
   created_at: "2026-08-23T10:00:00Z",
   expires_at: "2026-08-23T11:00:00Z",
-  released_at: "2026-08-23T10:15:00Z",
-  revoked_at: null,
+  ended_at: "2026-08-23T10:15:00Z",
   end_reason: "probe complete",
 };
 

@@ -434,18 +434,17 @@ class Store:
         # Exact-session authority never transfers to a replacement session. End it in the same
         # transaction as the session's terminal event so authorization and the durable account
         # cannot disagree. Grant status is derived, so already-expired leases need no write: one
-        # revocation fact ends every lease this session could still exercise.
+        # end fact ends every lease this session could still exercise.
         for row in (KubernetesGrantRow, HttpGrantRow):
             await db.execute(
                 update(row)
                 .where(
                     row.principal_kind == GrantPrincipalKind.SESSION,
                     row.principal_session_id == chat.session_id,
-                    row.released_at.is_(None),
-                    row.revoked_at.is_(None),
+                    row.ended_at.is_(None),
                     row.expires_at > now,
                 )
-                .values(revoked_at=now, end_reason="principal_ended")
+                .values(ended_at=now, end_reason="principal_ended")
             )
 
     async def create(

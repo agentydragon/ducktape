@@ -46,7 +46,7 @@ from haku.console.grants import routes as grant_routes
 from haku.console.grants.catalog import GrantCatalog
 
 # The two grant domains both name their router module `routes`; alias at this one seam.
-from haku.console.grants.http import decide_routes, routes as http_grant_routes
+from haku.console.grants.http import decide_routes
 from haku.console.grants.http.decide_config import load_egress_decide
 from haku.console.grants.http.decide_service import HttpDecideService
 
@@ -54,7 +54,7 @@ from haku.console.grants.http.decide_service import HttpDecideService
 # alias per domain at this one import seam to keep the two straight (STYLE permits collision aliases).
 from haku.console.grants.http.repository import PostgresGrantRepository as PostgresHttpGrantRepository
 from haku.console.grants.http.service import GrantService as HttpGrantService
-from haku.console.grants.kubernetes import proxy_authorization, routes as kubernetes_grant_routes
+from haku.console.grants.kubernetes import proxy_authorization
 from haku.console.grants.kubernetes.authorization import KubernetesSubjectAccessReviewClient
 from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
 from haku.console.grants.kubernetes.repository import PostgresGrantRepository as PostgresKubernetesGrantRepository
@@ -792,8 +792,6 @@ def create_app(
     app.include_router(console_events.router, dependencies=operator_only)
     app.include_router(approval.router, dependencies=operator_only)
     app.include_router(grant_routes.router, dependencies=operator_only)
-    app.include_router(kubernetes_grant_routes.router, dependencies=operator_only)
-    app.include_router(http_grant_routes.router, dependencies=operator_only)
     app.include_router(operator_oauth.router, dependencies=operator_only)
     app.include_router(provider_connection.router, dependencies=operator_only)
     app.include_router(connection_result.router, dependencies=operator_only)

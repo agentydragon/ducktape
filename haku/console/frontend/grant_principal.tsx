@@ -1,6 +1,7 @@
 import { AgentName, useToolCallAgent } from "./agent_names";
+import type { AgentGrant } from "./client";
 
-export type GrantPrincipal = { kind: "agent"; agent_id: string } | { kind: "session"; session_id: string };
+export type GrantPrincipal = AgentGrant["grant"]["subject"];
 
 /** Render a grant principal by Agent name, retaining IDs only where they are the useful identity. */
 export function GrantPrincipalLabel({ principal }: { principal: GrantPrincipal }): JSX.Element {
@@ -23,5 +24,7 @@ export function GrantPrincipalLabel({ principal }: { principal: GrantPrincipal }
           )}
         </>
       );
+    case "access_profile":
+      return <>Access profile {principal.access_profile_id}</>;
   }
 }

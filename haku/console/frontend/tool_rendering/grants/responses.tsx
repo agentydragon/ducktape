@@ -33,10 +33,8 @@ function statusColor(status: string): string {
   switch (status) {
     case "active":
       return "teal";
-    case "released":
-      return "blue";
-    case "revoked":
-      return "red";
+    case "ended":
+      return "gray";
     default:
       return "gray";
   }
@@ -62,7 +60,7 @@ function GrantCoverage({ view, variant }: { view: GrantView; variant: PreviewVar
 
 function GrantResult({ view, variant }: { view: GrantView; variant: PreviewVariant }) {
   const grant = view.grant;
-  const endedAt = grant.released_at ?? grant.revoked_at;
+  const endedAt = grant.ended_at;
   return (
     <Stack gap="xs">
       <Group gap={6}>

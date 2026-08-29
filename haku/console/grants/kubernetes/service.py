@@ -57,12 +57,8 @@ class GrantRepository(Protocol):
 
     async def get(self, *, owner_agent_id: UUID, grant_id: UUID) -> Grant: ...
 
-    async def release(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime) -> Grant: ...
-
-    async def revoke(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime) -> Grant: ...
-
-    async def revoke_for_owners(
-        self, *, owner_agent_ids: frozenset[UUID], grant_id: UUID, reason: str, now: datetime.datetime
+    async def end(
+        self, *, owner_agent_ids: frozenset[UUID], grant_id: UUID, reason: str | None, now: datetime.datetime
     ) -> Grant: ...
 
     async def list_for_request_principal(
@@ -244,52 +240,37 @@ class GrantService:
             raise GrantNotFoundError(str(grant_id))
         return grant
 
-    async def release_grants(
-        self, *, owner_agent_id: UUID, grant_ids: Sequence[UUID], reason: str = "released"
+    async def end_grants(
+        self, *, owner_agent_id: UUID, grant_ids: Sequence[UUID], reason: str | None = None
     ) -> tuple[Grant, ...]:
-        """Release a bounded list sequentially, retaining every durable grant ID.
+        """End a bounded list sequentially, retaining every durable grant ID.
 
-        This is deliberately not an atomic database operation. If a later release fails, earlier
-        releases remain effective and visible; callers can reconcile with ``list_grants``.
+        This is deliberately not an atomic database operation. If a later end fails, earlier ends
+        remain effective and visible; callers can reconcile with ``list_grants``.
         """
 
         grant_ids, reason = validated_end_batch(grant_ids, reason)
         now = self._now()
-        released = [
-            await self._repository.release(owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason, now=now)
+        ended = [
+            await self._repository.end(
+                owner_agent_ids=frozenset({owner_agent_id}), grant_id=grant_id, reason=reason, now=now
+            )
             for grant_id in grant_ids
         ]
-        return tuple(released)
+        return tuple(ended)
 
-    async def release_applicable_grants(
-        self, *, request_principal: RequestPrincipal, grant_ids: Sequence[UUID], reason: str = "released"
+    async def end_applicable_grants(
+        self, *, request_principal: RequestPrincipal, grant_ids: Sequence[UUID], reason: str | None = None
     ) -> tuple[Grant, ...]:
         for grant_id in grant_ids:
             await self.get_applicable_grant(request_principal=request_principal, grant_id=grant_id)
-        return await self.release_grants(owner_agent_id=request_principal.agent_id, grant_ids=grant_ids, reason=reason)
+        return await self.end_grants(owner_agent_id=request_principal.agent_id, grant_ids=grant_ids, reason=reason)
 
-    async def revoke_grant(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str) -> Grant:
-        return await self._repository.revoke(
-            owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason, now=self._now()
-        )
-
-    async def revoke_grant_for_owners(self, *, owner_agent_ids: frozenset[UUID], grant_id: UUID, reason: str) -> Grant:
+    async def end_grant(self, *, owner_agent_ids: frozenset[UUID], grant_id: UUID, reason: str | None) -> Grant:
         if not owner_agent_ids:
             raise ValueError("owner_agent_ids must not be empty")
-        return await self._repository.revoke_for_owners(
+        return await self._repository.end(
             owner_agent_ids=owner_agent_ids, grant_id=grant_id, reason=reason, now=self._now()
-        )
-
-    async def revoke_grants(self, *, owner_agent_id: UUID, grant_ids: Sequence[UUID], reason: str) -> tuple[Grant, ...]:
-        """Revoke a bounded list sequentially; same non-atomicity contract as ``release_grants``."""
-
-        grant_ids, reason = validated_end_batch(grant_ids, reason)
-        now = self._now()
-        return tuple(
-            [
-                await self._repository.revoke(owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason, now=now)
-                for grant_id in grant_ids
-            ]
         )
 
     async def match_request(

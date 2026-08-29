@@ -302,8 +302,7 @@ async def test_session_end_terminalizes_exact_session_grants(session_store, migr
                 rules=[Rule(api_groups=("",), resources=("pods/log",), verbs=("get",))],
                 created_at=datetime.now(UTC),
                 expires_at=datetime.now(UTC) + timedelta(hours=1),
-                released_at=None,
-                revoked_at=None,
+                ended_at=None,
                 end_reason=None,
             )
         )
@@ -355,8 +354,7 @@ async def test_session_end_terminalizes_exact_session_grants(session_store, migr
                 path_regex=None,
                 created_at=datetime.now(UTC),
                 expires_at=datetime.now(UTC) + timedelta(hours=1),
-                released_at=None,
-                revoked_at=None,
+                ended_at=None,
                 end_reason=None,
             )
         )
@@ -366,13 +364,11 @@ async def test_session_end_terminalizes_exact_session_grants(session_store, migr
     async with migrated_sessions() as db:
         grant = await db.get(KubernetesGrantRow, grant_id)
         assert grant is not None
-        assert grant.revoked_at is not None
-        assert grant.released_at is None
+        assert grant.ended_at is not None
         assert grant.end_reason == "principal_ended"
         http_grant = await db.get(HttpGrantRow, http_grant_id)
         assert http_grant is not None
-        assert http_grant.revoked_at is not None
-        assert http_grant.released_at is None
+        assert http_grant.ended_at is not None
         assert http_grant.end_reason == "principal_ended"
 
 

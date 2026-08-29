@@ -1,26 +1,24 @@
 import { Alert, Badge, Button, Code, Group, Loader, SegmentedControl, Select, Stack, Text } from "@mantine/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { displayableError, fetchKubernetesGrants, listAgents, revokeGrant, type AgentKubernetesGrant } from "./client";
+import { displayableError, fetchGrants, listAgents, revokeGrant, type AgentGrant } from "./client";
 import { formatTimestamp } from "./approval_state";
 import { CodeBlock } from "./code_block";
 import { GrantPrincipalLabel } from "./grant_principal";
-import { GrantRevocationDialog, type GrantRevocationTarget } from "./grant_revocation_dialog";
 import { ExternalLink } from "./link";
 import { toolCallPath } from "./routing";
 import { toastError, toastSuccess } from "./toast";
 
 export type GrantHistoryFilter = "active" | "history" | "all";
 
-type KubernetesGrant = AgentKubernetesGrant["grant"];
-type KubernetesRulesCoverage = Extract<KubernetesGrant["coverage"], { kind: "kubernetes_rules" }>;
+type Grant = AgentGrant["grant"];
+type KubernetesRulesCoverage = Extract<Grant["coverage"], { kind: "kubernetes_rules" }>;
 type KubernetesGrantScope = KubernetesRulesCoverage["scope"];
 type KubernetesRule = KubernetesRulesCoverage["rules"][number];
-const STATUS_DISPLAY: Record<KubernetesGrant["validity"]["status"], { label: string; color: string }> = {
+const STATUS_DISPLAY: Record<Grant["validity"]["status"], { label: string; color: string }> = {
   active: { label: "Active", color: "teal" },
   expired: { label: "Expired", color: "gray" },
-  released: { label: "Released by Agent", color: "blue" },
-  revoked: { label: "Revoked by Operator", color: "red" },
+  ended: { label: "Ended", color: "gray" },
 };
 
 function scopeLabel(scope: KubernetesGrantScope): string {
@@ -60,11 +58,11 @@ function RuleLine({ rule }: { rule: KubernetesRule }) {
   );
 }
 
-function GrantFallback({ grant }: { grant: KubernetesGrant }) {
+function GrantFallback({ grant }: { grant: Grant }) {
   return <CodeBlock language="json" value={JSON.stringify(grant, null, 2)} />;
 }
 
-function GrantSource({ grant }: { grant: KubernetesGrant }) {
+function GrantSource({ grant }: { grant: Grant }) {
   switch (grant.source.kind) {
     case "database": {
       const created = formatTimestamp(grant.source.created_at);
@@ -100,21 +98,15 @@ function GrantSource({ grant }: { grant: KubernetesGrant }) {
   return <GrantFallback grant={grant} />;
 }
 
-function GrantSubject({ grant }: { grant: KubernetesGrant }) {
-  switch (grant.subject.kind) {
-    case "grant_principal":
-      return (
-        <Text size="xs">
-          Applies to <GrantPrincipalLabel principal={grant.subject.principal} />
-        </Text>
-      );
-    case "access_profile":
-      return <Text size="xs">Access profile {grant.subject.access_profile_id}</Text>;
-  }
-  return <GrantFallback grant={grant} />;
+function GrantSubject({ grant }: { grant: Grant }) {
+  return (
+    <Text size="xs">
+      Applies to <GrantPrincipalLabel principal={grant.subject} />
+    </Text>
+  );
 }
 
-function GrantCoverage({ grant }: { grant: KubernetesGrant }) {
+function GrantCoverage({ grant }: { grant: Grant }) {
   switch (grant.coverage.kind) {
     case "kubernetes_rules":
       return (
@@ -129,11 +121,18 @@ function GrantCoverage({ grant }: { grant: KubernetesGrant }) {
       );
     case "kubernetes_sar":
       return <Text size="sm">Kubernetes SubjectAccessReview identity: {grant.coverage.subject.username}</Text>;
+    case "http":
+      return (
+        <Text size="sm">
+          HTTP {grant.coverage.origins.map((origin) => `${origin.scheme}://${origin.host}:${origin.port}`).join(", ")} ·{" "}
+          {grant.coverage.coverage.methods.join(", ")} {grant.coverage.coverage.path_regex ?? "all paths"}
+        </Text>
+      );
   }
   return <GrantFallback grant={grant} />;
 }
 
-function GrantValidity({ grant }: { grant: KubernetesGrant }) {
+function GrantValidity({ grant }: { grant: Grant }) {
   const status = STATUS_DISPLAY[grant.validity.status];
   const endsAt = grant.validity.ends_at ? formatTimestamp(grant.validity.ends_at) : null;
   const endedAt = grant.validity.ended_at ? formatTimestamp(grant.validity.ended_at) : null;
@@ -160,13 +159,22 @@ function GrantValidity({ grant }: { grant: KubernetesGrant }) {
 function GrantCard({
   item,
   agentDisplayName,
-  onRevoke,
+  revokePending,
+  revokeBusy,
+  onRequestRevoke,
+  onCancelRevoke,
+  onConfirmRevoke,
 }: {
-  item: AgentKubernetesGrant;
+  item: AgentGrant;
   agentDisplayName: string;
-  onRevoke: (target: GrantRevocationTarget) => void;
+  revokePending: boolean;
+  revokeBusy: boolean;
+  onRequestRevoke: (grantId: string) => void;
+  onCancelRevoke: () => void;
+  onConfirmRevoke: (grantId: string) => void;
 }) {
   const { grant } = item;
+  const canRevoke = grant.source.kind === "database" && grant.validity.status === "active";
   return (
     <section className="haku-shell-card">
       <Stack gap="xs">
@@ -177,38 +185,45 @@ function GrantCard({
         <GrantSource grant={grant} />
         <GrantSubject grant={grant} />
         <GrantCoverage grant={grant} />
-        {grant.source.kind === "database" && grant.validity.status === "active" && (
-          <Button
-            size="compact-sm"
-            color="red"
-            variant="light"
-            onClick={() =>
-              onRevoke({
-                grantId: grant.source.id,
-              })
-            }
-          >
-            Revoke grant…
-          </Button>
-        )}
+        {canRevoke &&
+          (revokePending ? (
+            <Group gap="xs">
+              <Text size="sm">Are you sure?</Text>
+              <Button
+                size="compact-sm"
+                color="red"
+                onClick={() => onConfirmRevoke(grant.source.id)}
+                loading={revokeBusy}
+              >
+                Yes, revoke
+              </Button>
+              <Button size="compact-sm" color="gray" variant="subtle" onClick={onCancelRevoke} disabled={revokeBusy}>
+                Cancel
+              </Button>
+            </Group>
+          ) : (
+            <Button size="compact-sm" color="red" variant="light" onClick={() => onRequestRevoke(grant.source.id)}>
+              Revoke
+            </Button>
+          ))}
       </Stack>
     </section>
   );
 }
 
 export function GrantsPanel(): JSX.Element {
-  const [grants, setGrants] = useState<AgentKubernetesGrant[] | null>(null);
+  const [grants, setGrants] = useState<AgentGrant[] | null>(null);
   const [agentNames, setAgentNames] = useState<Map<string, string>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [historyFilter, setHistoryFilter] = useState<GrantHistoryFilter>("active");
   const [agentId, setAgentId] = useState<string | null>(null);
-  const [revoking, setRevoking] = useState<GrantRevocationTarget | null>(null);
+  const [revokingGrantId, setRevokingGrantId] = useState<string | null>(null);
   const [revokeBusy, setRevokeBusy] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
-    void Promise.all([fetchKubernetesGrants(), listAgents()]).then(
+    void Promise.all([fetchGrants(), listAgents()]).then(
       ([grantResponse, agentResponse]) => {
         setGrants(grantResponse.grants);
         setAgentNames(new Map(agentResponse.agents.map((agent) => [agent.agent_id, agent.display_name])));
@@ -242,11 +257,9 @@ export function GrantsPanel(): JSX.Element {
     [agentId, grants, historyFilter]
   );
 
-  function confirmRevoke(reason: string) {
-    if (!revoking || !reason) return;
-    const target = revoking;
+  function confirmRevoke(grantId: string) {
     setRevokeBusy(true);
-    void revokeGrant(target.grantId, reason).then(
+    void revokeGrant(grantId).then(
       (response) => {
         const updates = new Map(
           response.grants.flatMap((grant) =>
@@ -262,7 +275,7 @@ export function GrantsPanel(): JSX.Element {
             ) ?? null
         );
         setRevokeBusy(false);
-        setRevoking(null);
+        setRevokingGrantId(null);
         toastSuccess("Grant revoked", "The active grant has ended.");
       },
       (e: unknown) => {
@@ -276,7 +289,7 @@ export function GrantsPanel(): JSX.Element {
     <Stack gap="xs" className="haku-page-list">
       <Group justify="space-between" align="flex-start" gap="sm" wrap="wrap">
         <div>
-          <Text fw={600}>Kubernetes grants</Text>
+          <Text fw={600}>Grants</Text>
           <Text size="xs" c="dimmed" mt={4}>
             Configuration-file and database authority for your Agents, with exact scope, rules, provenance, and
             lifecycle history.
@@ -288,7 +301,7 @@ export function GrantsPanel(): JSX.Element {
       </Group>
       <Alert color="blue" variant="light" title="Grant sources">
         Configuration-file access is durable and changes through reviewed deployment configuration. Database grants are
-        operator-approved and may end at a deadline, release, or revocation. Denied requests create neither.
+        operator-approved and may end at a deadline or by operator action. Denied requests create neither.
       </Alert>
       <Group gap="sm" align="flex-end" wrap="wrap">
         <Stack gap={4}>
@@ -319,18 +332,18 @@ export function GrantsPanel(): JSX.Element {
       </Group>
       {error && (
         <Text c="red" size="sm">
-          Failed to load Kubernetes grants: {error}
+          Failed to load grants: {error}
         </Text>
       )}
       {!grants && !error && (
         <Group justify="center" p="xl">
-          <Loader aria-label="Loading Kubernetes grants" />
+          <Loader aria-label="Loading grants" />
         </Group>
       )}
       {grants && visible.length === 0 && (
         <section className="haku-shell-card">
           <Text size="sm" c="dimmed">
-            No {historyFilter === "all" ? "" : `${historyFilter} `}Kubernetes grants match these filters.
+            No {historyFilter === "all" ? "" : `${historyFilter} `}grants match these filters.
           </Text>
         </section>
       )}
@@ -342,16 +355,14 @@ export function GrantsPanel(): JSX.Element {
             key={`${item.agent_id}:${sourceId}`}
             item={item}
             agentDisplayName={agentNames.get(item.agent_id) ?? item.agent_id}
-            onRevoke={setRevoking}
+            revokePending={grant.source.kind === "database" && revokingGrantId === grant.source.id}
+            revokeBusy={revokeBusy}
+            onRequestRevoke={setRevokingGrantId}
+            onCancelRevoke={() => setRevokingGrantId(null)}
+            onConfirmRevoke={confirmRevoke}
           />
         );
       })}
-      <GrantRevocationDialog
-        item={revoking}
-        busy={revokeBusy}
-        onClose={() => setRevoking(null)}
-        onConfirm={confirmRevoke}
-      />
     </Stack>
   );
 }

@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.console.database_schema import Agent, CredentialBinding, McpToolCall, McpToolCallPrincipal, Session
 from haku.console.grants.envelope import GrantNotFoundError, GrantOwnershipError, GrantSourceError
-from haku.console.grants.principal import AgentGrantPrincipal, GrantPrincipal
+from haku.console.grants.principal import AccessProfileGrantPrincipal, AgentGrantPrincipal, GrantPrincipal
 from haku.console.identity.agent import AgentStatus
 from haku.console.session.status import SessionStatus
 from haku.console.tool_calls import ToolCallStatus
@@ -79,6 +79,8 @@ async def assert_owner_principal_and_source(
         )
     if isinstance(grant_principal, AgentGrantPrincipal):
         valid_principal = grant_principal.agent_id == owner_agent_id
+    elif isinstance(grant_principal, AccessProfileGrantPrincipal):
+        valid_principal = grant_principal.access_profile_id == agent.access_profile_id
     else:
         valid_principal = source.session_id is not None and grant_principal.session_id == source.session_id
         if valid_principal:

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Annotated, cast
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from haku.console.grants.catalog import Grant, GrantCatalog
+from haku.console.grants.catalog import DatabaseGrantSource, Grant
+from haku.console.grants.dependencies import GrantCatalogDep
 from haku.console.grants.envelope import GRANT_SET_LIMIT, GrantNotFoundError, GrantOwnershipError
 from haku.console.identity.operator_agents import AgentEnrollmentServiceDep, owned_agents
 from haku.console.identity.operator_auth import OperatorActorDep
@@ -22,26 +22,56 @@ class RevokeGrantResponse(BaseModel):
     grants: tuple[Grant, ...]
 
 
+class AgentGrant(BaseModel):
+    """One effective grant and the Agent it belongs to."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    grant: Grant
+    agent_id: UUID
+
+
+class GrantListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    grants: tuple[AgentGrant, ...]
+
+
+@router.get("", response_model=GrantListResponse)
+async def list_grants(
+    actor: OperatorActorDep, catalog: GrantCatalogDep, agents: AgentEnrollmentServiceDep
+) -> GrantListResponse:
+    """List configuration and database authority across every grant domain."""
+
+    owned = await owned_agents(actor=actor, agents=agents)
+    records = [
+        AgentGrant(grant=grant, agent_id=agent.agent_id)
+        for agent in owned
+        for grant in await catalog.list_for_agent(agent_id=agent.agent_id, access_profile_id=agent.access_profile_id)
+    ]
+    records.sort(
+        key=lambda item: (
+            isinstance(item.grant.source, DatabaseGrantSource),
+            item.grant.source.created_at if isinstance(item.grant.source, DatabaseGrantSource) else None,
+            str(item.grant.source.id)
+            if isinstance(item.grant.source, DatabaseGrantSource)
+            else item.grant.source.entry_id,
+        ),
+        reverse=True,
+    )
+    return GrantListResponse(grants=tuple(records))
+
+
 class RevokeGrantRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     grant_ids: tuple[UUID, ...] = Field(min_length=1, max_length=GRANT_SET_LIMIT)
-    reason: str = Field(min_length=1, max_length=500)
+    reason: str | None = Field(default=None, max_length=500)
 
     @field_validator("reason")
     @classmethod
-    def reason_must_not_be_blank(cls, value: str) -> str:
-        reason = value.strip()
-        if not reason:
-            raise ValueError("revocation reason must not be blank")
-        return reason
-
-
-def _grant_catalog(request: Request) -> GrantCatalog:
-    return cast(GrantCatalog, request.app.state.grant_catalog)
-
-
-GrantCatalogDep = Annotated[GrantCatalog, Depends(_grant_catalog)]
+    def normalize_reason(cls, value: str | None) -> str | None:
+        return value.strip() or None if value is not None else None
 
 
 @router.post("/revoke", response_model=RevokeGrantResponse)
@@ -54,7 +84,7 @@ async def revoke_grants(
     if not owner_agent_ids:
         raise HTTPException(status_code=404, detail="Grant not found")
     try:
-        revoked = await catalog.revoke_database_grants(
+        revoked = await catalog.end_database_grants(
             owner_agent_ids=owner_agent_ids, grant_ids=body.grant_ids, reason=body.reason
         )
     except (GrantNotFoundError, GrantOwnershipError) as error:

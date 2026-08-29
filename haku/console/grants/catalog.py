@@ -34,7 +34,12 @@ from haku.console.grants.kubernetes.authorization import (
 )
 from haku.console.grants.kubernetes.models import Grant as KubernetesGrant, GrantScope, Rule
 from haku.console.grants.kubernetes.service import GrantService as KubernetesGrantService
-from haku.console.grants.principal import AgentGrantPrincipal, GrantPrincipal, RequestPrincipal
+from haku.console.grants.principal import (
+    AccessProfileGrantPrincipal,
+    AgentGrantPrincipal,
+    GrantPrincipal,
+    RequestPrincipal,
+)
 from haku.grants.authorization import AuthorizationAllowed, AuthorizationDecision, AuthorizationDenied, GrantSourceKind
 
 
@@ -53,22 +58,6 @@ class ConfigFileGrantSource(BaseModel):
     kind: Literal[GrantSourceKind.CONFIG_FILE] = GrantSourceKind.CONFIG_FILE
     entry_id: str
 
-
-class GrantPrincipalSubject(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    kind: Literal["grant_principal"] = "grant_principal"
-    principal: GrantPrincipal
-
-
-class AccessProfileSubject(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    kind: Literal["access_profile"] = "access_profile"
-    access_profile_id: str
-
-
-type AccessSubject = Annotated[GrantPrincipalSubject | AccessProfileSubject, Field(discriminator="kind")]
 
 type GrantSource = Annotated[DatabaseGrantSource | ConfigFileGrantSource, Field(discriminator="kind")]
 
@@ -117,11 +106,11 @@ class GrantValidity(BaseModel):
 
     @model_validator(mode="after")
     def _terminal_facts_match_status(self) -> GrantValidity:
-        terminal = self.status in {GrantStatus.RELEASED, GrantStatus.REVOKED}
+        terminal = self.status is GrantStatus.ENDED
         if terminal != (self.ended_at is not None):
-            raise ValueError("a released or revoked grant carries exactly one end timestamp")
-        if (self.ended_at is not None) != (self.end_reason is not None):
-            raise ValueError("a grant end timestamp carries exactly one end reason")
+            raise ValueError("an ended grant carries exactly one end timestamp")
+        if self.ended_at is None and self.end_reason is not None:
+            raise ValueError("a grant end reason requires an end timestamp")
         if self.ends_at is None and self.status is not GrantStatus.ACTIVE:
             raise ValueError("a grant without a deadline is active")
         return self
@@ -133,7 +122,7 @@ class Grant(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     source: GrantSource
-    subject: AccessSubject
+    subject: GrantPrincipal
     coverage: GrantCoverage
     validity: GrantValidity
 
@@ -181,24 +170,18 @@ class GrantCatalog:
         entries.extend(self._config_grants(request_principal=request_principal))
         return tuple(entries)
 
-    async def list_kubernetes_for_agent(self, *, agent_id: UUID, access_profile_id: str | None) -> tuple[Grant, ...]:
-        """List one Agent's database Kubernetes grants and applicable configuration authority."""
+    async def list_for_agent(self, *, agent_id: UUID, access_profile_id: str | None) -> tuple[Grant, ...]:
+        """List one Agent's configuration and database authority across every domain."""
 
         request_principal = RequestPrincipal(agent_id=agent_id, session_id=None, access_profile_id=access_profile_id)
-        grants = await self._kubernetes_grants.list_grants(owner_agent_id=agent_id, include_terminal=True)
-        return (
-            *self._config_kubernetes_grants(request_principal=request_principal),
-            *(self._database_kubernetes_grant(grant) for grant in grants),
+        kubernetes, http = await asyncio.gather(
+            self._kubernetes_grants.list_grants(owner_agent_id=agent_id, include_terminal=True),
+            self._http_grants.list_grants(owner_agent_id=agent_id, include_terminal=True),
         )
-
-    async def list_http_for_agent(self, *, agent_id: UUID, access_profile_id: str | None) -> tuple[Grant, ...]:
-        """List one Agent's database HTTP grants and applicable configuration authority."""
-
-        request_principal = RequestPrincipal(agent_id=agent_id, session_id=None, access_profile_id=access_profile_id)
-        grants = await self._http_grants.list_grants(owner_agent_id=agent_id, include_terminal=True)
         return (
-            *self._config_http_grants(request_principal=request_principal),
-            *(self._database_http_grant(grant) for grant in grants),
+            *self._config_grants(request_principal=request_principal),
+            *(self._database_kubernetes_grant(grant) for grant in kubernetes),
+            *(self._database_http_grant(grant) for grant in http),
         )
 
     async def get_kubernetes_grant(self, *, request_principal: RequestPrincipal, grant_id: UUID) -> Grant:
@@ -215,41 +198,31 @@ class GrantCatalog:
             await self._http_grants.get_applicable_grant(request_principal=request_principal, grant_id=grant_id)
         )
 
-    def describe_kubernetes_grant(self, grant: KubernetesGrant) -> Grant:
-        """Project one database Kubernetes grant after a mutation."""
-
-        return self._database_kubernetes_grant(grant)
-
-    def describe_http_grant(self, grant: HttpGrant) -> Grant:
-        """Project one database HTTP grant after a mutation."""
-
-        return self._database_http_grant(grant)
-
-    async def revoke_database_grant(self, *, owner_agent_ids: frozenset[UUID], grant_id: UUID, reason: str) -> Grant:
-        """Revoke one database grant without exposing which domain stores it."""
+    async def end_database_grant(
+        self, *, owner_agent_ids: frozenset[UUID], grant_id: UUID, reason: str | None
+    ) -> Grant:
+        """End one database grant without exposing which domain stores it."""
 
         try:
             return self._database_kubernetes_grant(
-                await self._kubernetes_grants.revoke_grant_for_owners(
+                await self._kubernetes_grants.end_grant(
                     owner_agent_ids=owner_agent_ids, grant_id=grant_id, reason=reason
                 )
             )
         except GrantNotFoundError:
             return self._database_http_grant(
-                await self._http_grants.revoke_grant_for_owners(
-                    owner_agent_ids=owner_agent_ids, grant_id=grant_id, reason=reason
-                )
+                await self._http_grants.end_grant(owner_agent_ids=owner_agent_ids, grant_id=grant_id, reason=reason)
             )
 
-    async def revoke_database_grants(
-        self, *, owner_agent_ids: frozenset[UUID], grant_ids: tuple[UUID, ...], reason: str
+    async def end_database_grants(
+        self, *, owner_agent_ids: frozenset[UUID], grant_ids: tuple[UUID, ...], reason: str | None
     ) -> tuple[Grant, ...]:
-        """Revoke database grants by durable ID without exposing their storage domains."""
+        """End database grants by durable ID without exposing their storage domains."""
 
         grant_ids, reason = validated_end_batch(grant_ids, reason)
         return tuple(
             [
-                await self.revoke_database_grant(owner_agent_ids=owner_agent_ids, grant_id=grant_id, reason=reason)
+                await self.end_database_grant(owner_agent_ids=owner_agent_ids, grant_id=grant_id, reason=reason)
                 for grant_id in grant_ids
             ]
         )
@@ -268,7 +241,7 @@ class GrantCatalog:
         ):
             return (
                 Grant(
-                    subject=AccessProfileSubject(access_profile_id=request_principal.access_profile_id),
+                    subject=AccessProfileGrantPrincipal(access_profile_id=request_principal.access_profile_id),
                     coverage=KubernetesSarCoverage(subject=subject),
                     source=ConfigFileGrantSource(entry_id=f"kubernetes-profile:{request_principal.access_profile_id}"),
                     validity=GrantValidity(ends_at=None, status=GrantStatus.ACTIVE),
@@ -279,7 +252,7 @@ class GrantCatalog:
     def _config_http_grants(self, *, request_principal: RequestPrincipal) -> tuple[Grant, ...]:
         return tuple(
             Grant(
-                subject=GrantPrincipalSubject(principal=AgentGrantPrincipal(agent_id=request_principal.agent_id)),
+                subject=AgentGrantPrincipal(agent_id=request_principal.agent_id),
                 coverage=HttpCoverage(
                     origins=policy.origins,
                     coverage=policy.coverage,
@@ -298,23 +271,20 @@ class GrantCatalog:
     @staticmethod
     def _database_kubernetes_grant(grant: KubernetesGrant) -> Grant:
         return Grant(
-            subject=GrantPrincipalSubject(principal=grant.principal),
+            subject=grant.principal,
             coverage=KubernetesRulesCoverage(scope=grant.scope, rules=grant.rules),
             source=DatabaseGrantSource(
                 id=grant.grant_id, tool_call_id=grant.source_tool_call_id, created_at=grant.created_at
             ),
             validity=GrantValidity(
-                ends_at=grant.expires_at,
-                status=grant.status,
-                ended_at=grant.released_at or grant.revoked_at,
-                end_reason=grant.end_reason,
+                ends_at=grant.expires_at, status=grant.status, ended_at=grant.ended_at, end_reason=grant.end_reason
             ),
         )
 
     @staticmethod
     def _database_http_grant(grant: HttpGrant) -> Grant:
         return Grant(
-            subject=GrantPrincipalSubject(principal=grant.principal),
+            subject=grant.principal,
             coverage=HttpCoverage(
                 origins=frozenset({grant.spec.origin}),
                 coverage=grant.spec.coverage,
@@ -327,10 +297,7 @@ class GrantCatalog:
                 id=grant.grant_id, tool_call_id=grant.source_tool_call_id, created_at=grant.created_at
             ),
             validity=GrantValidity(
-                ends_at=grant.expires_at,
-                status=grant.status,
-                ended_at=grant.released_at or grant.revoked_at,
-                end_reason=grant.end_reason,
+                ends_at=grant.expires_at, status=grant.status, ended_at=grant.ended_at, end_reason=grant.end_reason
             ),
         )
 

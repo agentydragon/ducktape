@@ -41,7 +41,6 @@ from more_itertools import one
 from haku.egress.addon import EgressGateAddon
 from haku.egress.decision import GrantScope, HttpAuthorizationDenied, RequestMeta
 from haku.egress.localhost_decide_client import DEFAULT_TIMEOUT_SECONDS
-<<<<<<< HEAD
 from haku.egress.testing.proxy_test_harness import (
     BRIDGE_BEARER,
     FENCE_CREDENTIAL,

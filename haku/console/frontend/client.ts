@@ -52,9 +52,8 @@ export type ConversationUpdate = components["schemas"]["ConversationUpdate"];
 export type SessionFrame = components["schemas"]["SessionFrameView"];
 export type SessionFramePage = components["schemas"]["SessionFramePage"];
 export type AgentListResponse = components["schemas"]["AgentListResponse"];
-export type AgentKubernetesGrant = components["schemas"]["haku__console__grants__kubernetes__routes__AgentGrant"];
-export type KubernetesGrantListResponse =
-  components["schemas"]["haku__console__grants__kubernetes__routes__GrantListResponse"];
+export type AgentGrant = components["schemas"]["AgentGrant"];
+export type GrantListResponse = components["schemas"]["GrantListResponse"];
 export type RevokeGrantResponse = components["schemas"]["haku__console__grants__routes__RevokeGrantResponse"];
 export type EnrollmentView = components["schemas"]["EnrollmentView"];
 export type EnrollmentDecisionRequest =
@@ -210,15 +209,15 @@ export async function updateAgentAccessProfile(agentId: string, accessProfileId:
   return data;
 }
 
-export async function fetchKubernetesGrants(): Promise<KubernetesGrantListResponse> {
-  const { data, error } = await api.GET("/api/kubernetes-grants");
-  if (error || !data) throw new Error(errorDetail(error, "Failed to load Kubernetes grants"));
+export async function fetchGrants(): Promise<GrantListResponse> {
+  const { data, error } = await api.GET("/api/grants");
+  if (error || !data) throw new Error(errorDetail(error, "Failed to load grants"));
   return data;
 }
 
-export async function revokeGrant(grantId: string, reason: string): Promise<RevokeGrantResponse> {
+export async function revokeGrant(grantId: string): Promise<RevokeGrantResponse> {
   const { data, error } = await api.POST("/api/grants/revoke", {
-    body: { grant_ids: [grantId], reason },
+    body: { grant_ids: [grantId] },
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to revoke grant"));
   return data;

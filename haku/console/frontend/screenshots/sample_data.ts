@@ -1,7 +1,7 @@
 // Deterministic sample data for the screenshot scenes (harness.tsx) and the API stub
 // (mock_api.ts). Kept separate so both share one source of truth.
 import { makeRecentToolCall, type RecentToolCall } from "../approval_state";
-import type { DeploymentInfo, KubernetesGrantListResponse, ToolCallRecord } from "../client";
+import type { DeploymentInfo, GrantListResponse, ToolCallRecord } from "../client";
 import type { DaemonStatus, IndexStatus, McpServerConnection, McpServerProbe } from "../mcp_status_client";
 import type { RegisteredToolPreviewFixture } from "../tool_rendering/index";
 
@@ -318,7 +318,7 @@ export const SAMPLE_MCP_PROBES: Record<string, McpServerProbe> = Object.fromEntr
   ])
 );
 
-export const SAMPLE_KUBERNETES_GRANTS: KubernetesGrantListResponse = {
+export const SAMPLE_GRANTS: GrantListResponse = {
   grants: [
     {
       agent_id: "30000000-0000-4000-8000-000000000003",
@@ -329,10 +329,7 @@ export const SAMPLE_KUBERNETES_GRANTS: KubernetesGrantListResponse = {
           tool_call_id: "tc_0123456789abcdef01234567",
           created_at: "2026-08-22T00:35:00Z",
         },
-        subject: {
-          kind: "grant_principal",
-          principal: { kind: "agent", agent_id: "30000000-0000-4000-8000-000000000003" },
-        },
+        subject: { kind: "agent", agent_id: "30000000-0000-4000-8000-000000000003" },
         coverage: {
           kind: "kubernetes_rules",
           scope: { kind: "namespaces", namespaces: ["public-coder-agent"] },
@@ -365,10 +362,7 @@ export const SAMPLE_KUBERNETES_GRANTS: KubernetesGrantListResponse = {
           tool_call_id: "tc_0123456789abcdef01234567",
           created_at: "2026-08-22T00:35:00Z",
         },
-        subject: {
-          kind: "grant_principal",
-          principal: { kind: "agent", agent_id: "30000000-0000-4000-8000-000000000003" },
-        },
+        subject: { kind: "agent", agent_id: "30000000-0000-4000-8000-000000000003" },
         coverage: {
           kind: "kubernetes_rules",
           scope: { kind: "cluster" },
@@ -394,10 +388,7 @@ export const SAMPLE_KUBERNETES_GRANTS: KubernetesGrantListResponse = {
           tool_call_id: "tc_1123456789abcdef01234567",
           created_at: "2026-08-21T21:00:00Z",
         },
-        subject: {
-          kind: "grant_principal",
-          principal: { kind: "session", session_id: "60000000-0000-4000-8000-000000000006" },
-        },
+        subject: { kind: "session", session_id: "60000000-0000-4000-8000-000000000006" },
         coverage: {
           kind: "kubernetes_rules",
           scope: { kind: "cluster" },
@@ -413,14 +404,29 @@ export const SAMPLE_KUBERNETES_GRANTS: KubernetesGrantListResponse = {
         },
         validity: {
           ends_at: "2026-08-21T22:00:00Z",
-          status: "revoked",
+          status: "ended",
           ended_at: "2026-08-21T21:20:00Z",
           end_reason: "Pilot complete; return to standard diagnostics.",
         },
       },
     },
+    {
+      agent_id: "30000000-0000-4000-8000-000000000003",
+      grant: {
+        source: { kind: "config_file", entry_id: "grocy-read" },
+        subject: { kind: "access_profile", access_profile_id: "public-coder" },
+        coverage: {
+          kind: "http",
+          origins: [{ scheme: "https", host: "grocy.example", port: 443 }],
+          coverage: { methods: ["get"], path_regex: "/api/.*" },
+          credential_handles: ["grocy-readonly"],
+          allow_prohibited_address: false,
+        },
+        validity: { ends_at: null, status: "active", ended_at: null, end_reason: null },
+      },
+    },
   ],
-} satisfies KubernetesGrantListResponse;
+} satisfies GrantListResponse;
 
 export const SAMPLE_DAEMONS: DaemonStatus[] = [
   {

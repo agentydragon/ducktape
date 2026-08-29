@@ -43,12 +43,7 @@ from haku.console.grants.http.service import GrantService as HttpGrantService
 from haku.console.grants.kubernetes.authorization import RequestAttributes, SubjectAccessReviewResult
 from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
 from haku.console.grants.kubernetes.service import GrantService as KubernetesGrantService
-from haku.console.grants.principal import (
-    AgentGrantPrincipal,
-    GrantPrincipalKind,
-    RequestPrincipal,
-    SessionGrantPrincipal,
-)
+from haku.console.grants.principal import AgentGrantPrincipal, RequestPrincipal, SessionGrantPrincipal
 from haku.console.identity.agent_bearer_authority import AgentBearerAuthority
 from haku.console.identity.enrollment import AgentEnrollmentService
 from haku.console.mcp.execution import (
@@ -233,8 +228,7 @@ def test_server_exposes_exact_stable_tool_set_without_context_argument(console: 
         assert "context" not in tool.inputSchema.get("properties", {})
     # whoami is a pure identity read: no arguments beyond the hidden execution context.
     assert tools["whoami"].inputSchema.get("properties", {}) == {}
-    assert set(tools["create_grant"].inputSchema["properties"]) == {"grants", "duration_seconds", "applies_to"}
-    assert tools["create_grant"].inputSchema["properties"]["applies_to"]["default"] == "agent"
+    assert set(tools["create_grant"].inputSchema["properties"]) == {"grants", "duration_seconds", "principal"}
     # `list_grants` carries only the optional own-scope declaration; `self` is the sole value.
     assert set(tools["list_grants"].inputSchema["properties"]) == {"principal"}
     principal_schema = tools["list_grants"].inputSchema["properties"]["principal"]
@@ -256,7 +250,7 @@ def test_list_grants_is_actor_scoped_under_either_principal_declaration(console:
             context=context,
             requests=[_kubernetes(_K8S_SPEC)],
             duration_seconds=600,
-            applies_to=GrantPrincipalKind.AGENT,
+            principal=AgentGrantPrincipal(agent_id=console.agent_id),
         )
         # `principal=self` and the omitted (reserved broader) read both return only the caller's own
         # grants today — the service is actor-scoped regardless; the scope arg only gates auto-approval.
@@ -333,10 +327,13 @@ def test_create_routes_each_domain_and_tags_the_returned_envelope(console: _Cons
             context=context,
             requests=[_kubernetes(_K8S_SPEC)],
             duration_seconds=600,
-            applies_to=GrantPrincipalKind.AGENT,
+            principal=AgentGrantPrincipal(agent_id=console.agent_id),
         )
         (http_view,) = await console.service.create_grants(
-            context=context, requests=[_http(_HTTP_SPEC)], duration_seconds=600, applies_to=GrantPrincipalKind.AGENT
+            context=context,
+            requests=[_http(_HTTP_SPEC)],
+            duration_seconds=600,
+            principal=AgentGrantPrincipal(agent_id=console.agent_id),
         )
         assert isinstance(kubernetes_view, KubernetesGrantView)
         assert kubernetes_view.domain is GrantDomain.KUBERNETES
@@ -376,7 +373,7 @@ def test_create_rejects_a_call_that_straddles_domains(console: _Console) -> None
                 context=context,
                 requests=[_kubernetes(_K8S_SPEC), _http(_HTTP_SPEC)],
                 duration_seconds=600,
-                applies_to=GrantPrincipalKind.AGENT,
+                principal=AgentGrantPrincipal(agent_id=console.agent_id),
             )
         # Nothing was created in either domain.
         assert not [
@@ -396,9 +393,9 @@ def test_release_routes_by_domain_and_ends_in_the_supplied_order(console: _Conso
             context=context,
             requests=[_kubernetes(_K8S_SPEC), _kubernetes(_K8S_OTHER_SPEC)],
             duration_seconds=600,
-            applies_to=GrantPrincipalKind.AGENT,
+            principal=AgentGrantPrincipal(agent_id=console.agent_id),
         )
-        # An Agent caller's revoke_grants relinquishes its own grants: the recorded fact is a release.
+        # An Agent caller's revoke_grants ends its own grants.
         released = await console.service.revoke_grants(
             context=context,
             domain=GrantDomain.KUBERNETES,
@@ -406,11 +403,11 @@ def test_release_routes_by_domain_and_ends_in_the_supplied_order(console: _Conso
             reason="probe complete",
         )
         assert [view.grant.grant_id for view in released] == [second.grant.grant_id, first.grant.grant_id]
-        assert all(view.grant.status is GrantStatus.RELEASED for view in released)
+        assert all(view.grant.status is GrantStatus.ENDED for view in released)
         refetched = await console.service.get_grant(
             context=context, domain=GrantDomain.KUBERNETES, grant_id=first.grant.grant_id
         )
-        assert refetched.validity.status is GrantStatus.RELEASED
+        assert refetched.validity.status is GrantStatus.ENDED
 
     console.call(exercise)
 
@@ -434,11 +431,11 @@ def test_revoke_is_operator_direct_and_scoped_to_owned_agents(
             context=agent_context,
             requests=[request_factory()],
             duration_seconds=600,
-            applies_to=GrantPrincipalKind.AGENT,
+            principal=AgentGrantPrincipal(agent_id=console.agent_id),
         )
         grant_id = view.grant.grant_id
         # An Agent caller never names an owner: naming owner_agent_id is rejected, and omitting it
-        # relinquishes only its own grants (a release, covered above).
+        # ends only its own grants.
         with pytest.raises(PermissionError, match="may not name owner_agent_id"):
             await console.service.revoke_grants(
                 context=agent_context, domain=domain, owner_agent_id=console.agent_id, grant_ids=[grant_id], reason="no"
@@ -459,7 +456,7 @@ def test_revoke_is_operator_direct_and_scoped_to_owned_agents(
             grant_ids=[grant_id],
             reason="operator revoked",
         )
-        assert revoked.grant.status is GrantStatus.REVOKED
+        assert revoked.grant.status is GrantStatus.ENDED
         assert revoked.grant.end_reason == "operator revoked"
 
     console.call(exercise)
@@ -473,7 +470,7 @@ def test_revoke_is_operator_direct_and_scoped_to_owned_agents(
                 context=_foreign_operator_context(),
                 requests=[_kubernetes(_K8S_SPEC)],
                 duration_seconds=60,
-                applies_to=GrantPrincipalKind.AGENT,
+                principal=AgentGrantPrincipal(agent_id=UUID(int=1)),
             ),
             id="create",
         ),
@@ -503,14 +500,14 @@ def test_session_scope_binds_the_grant_to_the_exact_live_session(console: _Conso
             context=session_context,
             requests=[_http(_HTTP_SPEC)],
             duration_seconds=600,
-            applies_to=GrantPrincipalKind.SESSION,
+            principal=SessionGrantPrincipal(session_id=session_id),
         )
         assert session_view.grant.principal == SessionGrantPrincipal(session_id=session_id)
         (agent_view,) = await console.service.create_grants(
             context=static_context,
             requests=[_http(_HTTP_SPEC)],
             duration_seconds=600,
-            applies_to=GrantPrincipalKind.AGENT,
+            principal=AgentGrantPrincipal(agent_id=console.agent_id),
         )
         # The exact session may exercise both; a static-credential execution never sees the session grant.
         assert {

@@ -10,7 +10,7 @@ references (`decide_config`), never in this domain or in Postgres.
 
 The grant's envelope — owner, principal, provenance, validity window — is the shared
 `haku.console.grants.envelope`. Lifecycle status is derived, never stored (root STYLE.md
-§ SQLAlchemy): the row records the end facts — ``released_at``, ``revoked_at`` — and the
+§ SQLAlchemy): the row records the end fact — ``ended_at`` — and the
 envelope's :func:`~haku.console.grants.envelope.derive_status` computes the vocabulary from
 them and the clock, so expiry needs no sweeper.
 """
@@ -25,16 +25,7 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 import idna
-from pydantic import (
-    AwareDatetime,
-    BaseModel,
-    ConfigDict,
-    Field,
-    PlainSerializer,
-    computed_field,
-    field_validator,
-    model_validator,
-)
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, PlainSerializer, computed_field, field_validator
 
 from haku.console.grants.envelope import NON_EMPTY, GrantEnvelope, GrantStatus, derive_status
 
@@ -193,23 +184,13 @@ class Grant(GrantEnvelope):
 
     spec: GrantSpec
 
-    @model_validator(mode="after")
-    def validate_end_reason(self) -> Grant:
-        ended = self.released_at is not None or self.revoked_at is not None
-        if ended != (self.end_reason is not None and bool(self.end_reason.strip())):
-            raise ValueError("end_reason travels exactly with a recorded end action")
-        return self
-
     # The ignore is pydantic's documented mypy accommodation for computed_field-on-property
     # (mypy's prop-decorator limitation), not a silenced finding.
     @computed_field  # type: ignore[prop-decorator]
     @property
     def status(self) -> GrantStatus:
         return derive_status(
-            released_at=self.released_at,
-            revoked_at=self.revoked_at,
-            expires_at=self.expires_at,
-            now=datetime.datetime.now(datetime.UTC),
+            ended_at=self.ended_at, expires_at=self.expires_at, now=datetime.datetime.now(datetime.UTC)
         )
 
 
