@@ -93,9 +93,13 @@ class AdapterConfigFile(BaseModel):
     static_agents: tuple[ConfiguredAgent, ...] = ()
     launchable_agents: tuple[LaunchableEntry, ...] = ()
     default_chat_agent_id: UUID | None = None
-    # Matrix invites and messages carry no harness selector. This is the explicit harness route
-    # for a *new* Matrix conversation only; an existing room follows its conversation's own row.
-    matrix: MatrixLaunchConfig | None = None
+    matrix: MatrixLaunchConfig | None = Field(
+        default=None,
+        description=(
+            "Explicit harness route for a new Matrix conversation: invites and messages carry no "
+            "harness selector. Existing rooms follow their conversation row."
+        ),
+    )
 
     @model_validator(mode="before")
     @classmethod
