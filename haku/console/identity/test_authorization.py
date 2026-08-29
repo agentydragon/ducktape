@@ -923,7 +923,6 @@ async def test_launch_authorization_commits_against_a_concurrent_operator_refere
                     conversation_id=uuid4(),
                     operator_id=operator_id,
                     harness_kind=HarnessKind.CLAUDE_CODE,
-                    legacy_harness_kind=HarnessKind.CLAUDE_CODE,
                     created_at=harness.clock.now,
                 )
             )

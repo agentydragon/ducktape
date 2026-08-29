@@ -533,10 +533,9 @@ quiet gap.
   - `ChannelSurface` → `channels/` with the channel packaging
 - **C4d · `runtime_kind` → `harness_kind`** _(semantic — coordinated stored + wire + OpenAPI)_ — the
   harness-kind discriminator (§3.1). The wire, enum/OpenAPI, and application API are complete, and
-  this PR performs the stored read-switch: `harness_kind` is authoritative for reads while a
-  storage-only legacy mapping keeps both physical columns in sync. Remaining, after this release
-  converges, are the two contract PRs: stop mapping/writing the legacy column and make it nullable,
-  then drop the legacy column/CHECK and leave the identity trigger protecting only `harness_kind`.
+  the stored read-switch has landed: `harness_kind` is authoritative for reads while the
+  storage-only legacy mapping keeps both physical columns in sync. This release stops that mapping
+  and writing, makes the legacy column nullable, and leaves it only for the final drop release.
   Launch selection is explicit too: no session service or resource registry supplies a default
   harness, and ambiguous deployment configuration fails closed instead of choosing Claude.
 - **C4e · `allowed_chat_runtimes` → `allowed_harnesses`** _(semantic — per-profile config field,

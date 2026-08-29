@@ -178,12 +178,11 @@ async def test_replacement_pins_identity_after_agent_profile_change_and_shares_s
         replacement = await db.get(Session, second.session_id)
     assert conversation is not None
     assert replacement is not None
-    assert (
-        conversation.agent_id,
-        conversation.access_profile_id,
-        conversation.harness_kind,
-        conversation.legacy_harness_kind,
-    ) == (agent_id, "pinned", HarnessKind.CLAUDE_CODE, HarnessKind.CLAUDE_CODE)
+    assert (conversation.agent_id, conversation.access_profile_id, conversation.harness_kind) == (
+        agent_id,
+        "pinned",
+        HarnessKind.CLAUDE_CODE,
+    )
     assert replacement.conversation_id == conversation_id
     assert (replacement.operator_id, replacement.session_id) == (operator_id, second.session_id)
     assert [profile for _agent, profile, _db, _active in authorizer.calls] == [None, "pinned"]
@@ -714,7 +713,6 @@ async def test_transient_database_error_rejects_an_integrity_error(
                     # References no operator row, so the INSERT is a foreign-key violation.
                     operator_id=uuid4(),
                     harness_kind=HarnessKind.CLAUDE_CODE,
-                    legacy_harness_kind=HarnessKind.CLAUDE_CODE,
                     created_at=datetime.now(UTC),
                 )
             )

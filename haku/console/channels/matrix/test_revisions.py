@@ -35,7 +35,6 @@ async def attachment_id(migrated_sessions: async_sessionmaker[AsyncSession], ope
                 conversation_id=conversation_id,
                 operator_id=operator_id,
                 harness_kind=HarnessKind.CLAUDE_CODE,
-                legacy_harness_kind=HarnessKind.CLAUDE_CODE,
                 created_at=now,
             )
         )

@@ -655,7 +655,6 @@ async def test_session_agent_tool_call_retains_exact_session_attribution(
                     agent_id=static_actor.agent_id,
                     access_profile_id=static_actor.access_profile_id,
                     harness_kind=HarnessKind.CLAUDE_CODE,
-                    legacy_harness_kind=HarnessKind.CLAUDE_CODE,
                     created_at=now,
                 )
             )

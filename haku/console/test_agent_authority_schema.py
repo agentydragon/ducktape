@@ -649,6 +649,18 @@ def test_conversation_harness_kind_read_switch_backfills_and_guards_new_column(d
                 ),
                 {"conversation_id": conversation_id},
             )
+
+        apply_migrations(db_url, "0119")
+        with engine.connect() as conn:
+            assert (
+                conn.execute(
+                    text(
+                        "SELECT is_nullable FROM information_schema.columns "
+                        "WHERE table_name = 'conversation' AND column_name = 'runtime_kind'"
+                    )
+                ).scalar_one()
+                == "YES"
+            )
     finally:
         engine.dispose()
 
@@ -1446,9 +1458,8 @@ def test_a_chat_session_cannot_be_written_without_a_lease(db_url: str) -> None:
             conn.execute(
                 text(
                     """
-                    INSERT INTO conversation (
-                        conversation_id, operator_id, harness_kind, runtime_kind, created_at
-                    ) VALUES (:conversation_id, :operator_id, 'claude_code', 'claude_code', :now)
+                    INSERT INTO conversation (conversation_id, operator_id, harness_kind, created_at)
+                    VALUES (:conversation_id, :operator_id, 'claude_code', :now)
                     """
                 ),
                 {"conversation_id": conversation_id, "operator_id": operator_id, "now": now},
@@ -1513,9 +1524,8 @@ def test_an_event_names_an_item_exactly_when_its_kind_is_about_one(db_url: str) 
             conn.execute(
                 text(
                     """
-                    INSERT INTO conversation (
-                        conversation_id, operator_id, harness_kind, runtime_kind, created_at
-                    ) VALUES (:conversation_id, :operator_id, 'claude_code', 'claude_code', :now)
+                    INSERT INTO conversation (conversation_id, operator_id, harness_kind, created_at)
+                    VALUES (:conversation_id, :operator_id, 'claude_code', :now)
                     """
                 ),
                 {"conversation_id": conversation_id, "operator_id": operator_id, "now": now},

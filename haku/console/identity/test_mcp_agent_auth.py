@@ -275,7 +275,6 @@ async def test_session_bearer_resolves_the_pinned_agent_profile_and_session(
                 agent_id=agent_id,
                 access_profile_id="pinned",
                 harness_kind=HarnessKind.CLAUDE_CODE,
-                legacy_harness_kind=HarnessKind.CLAUDE_CODE,
                 created_at=now,
             )
         )
@@ -429,7 +428,6 @@ async def test_session_bearer_is_rejected_after_its_session_ends(
                 agent_id=agent_id,
                 access_profile_id="pinned",
                 harness_kind=HarnessKind.CLAUDE_CODE,
-                legacy_harness_kind=HarnessKind.CLAUDE_CODE,
                 created_at=now,
             )
         )

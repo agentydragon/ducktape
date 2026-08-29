@@ -512,7 +512,6 @@ class Store:
                         agent_id=agent_id,
                         access_profile_id=access_profile_id,
                         harness_kind=harness_kind,
-                        legacy_harness_kind=harness_kind,
                         created_at=now,
                     )
                 )
@@ -723,7 +722,6 @@ class Store:
                         agent_id=agent_id,
                         access_profile_id=access_profile_id,
                         harness_kind=harness_kind,
-                        legacy_harness_kind=harness_kind,
                         created_at=now,
                     )
                 )

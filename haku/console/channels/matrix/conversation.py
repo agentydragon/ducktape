@@ -184,7 +184,6 @@ class ConversationStore:
                     agent_id=None if identity is None else identity.agent_id,
                     access_profile_id=None if identity is None else identity.access_profile_id,
                     harness_kind=selected_harness_kind,
-                    legacy_harness_kind=selected_harness_kind,
                     created_at=now,
                 )
             )

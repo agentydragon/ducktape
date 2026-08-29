@@ -20,8 +20,8 @@ def _conversation(conn: Connection, operator_id: UUID) -> UUID:
     conversation_id = uuid4()
     conn.execute(
         text(
-            "INSERT INTO conversation (conversation_id, operator_id, harness_kind, runtime_kind, created_at) "
-            "VALUES (:id, :operator_id, 'claude_code', 'claude_code', :n)"
+            "INSERT INTO conversation (conversation_id, operator_id, harness_kind, created_at) "
+            "VALUES (:id, :operator_id, 'claude_code', :n)"
         ),
         {"id": conversation_id, "operator_id": operator_id, "n": _NOW},
     )
