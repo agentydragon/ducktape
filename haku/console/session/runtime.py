@@ -887,7 +887,7 @@ async def send_message(
         raise HTTPException(status_code=503, detail=str(error)) from error
 
 
-@router.post("/api/conversations/{conversation_id}/messages")
+@router.post("/api/conversations/{conversation_id}/messages", status_code=202)
 async def send_conversation_message(
     conversation_id: UUID, body: SessionPromptRequest, actor: OperatorActorDep, service: SessionServiceDep
 ) -> PromptAccepted:
