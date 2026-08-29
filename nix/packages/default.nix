@@ -138,7 +138,7 @@ let
     description = "MCP client CLI for the Haku console (/mcp)";
     mainProgram = "hakuctl";
     importsCheck = [ "haku.hakuctl.cli" ];
-    # SYNC: This list must match `requires` in //:hakuctl_wheel (BUILD.bazel).
+    # SYNC: This list must match `requires` in //haku/hakuctl:wheel (BUILD.bazel).
     # When adding a dependency, update BOTH places.
     propagatedBuildInputs = [
       ducktape-util

@@ -40,5 +40,5 @@ server).
 bazel run //haku/hakuctl:cli_bin -- list
 ```
 
-Released as the `hakuctl` wheel (`//:hakuctl_wheel`) and shipped on PATH in the
+Released as the `hakuctl` wheel (`//haku/hakuctl:wheel`) and shipped on PATH in the
 Nix dev-tools closure (`nix/packages/default.nix`, `flake.nix` `devToolsCommon`).

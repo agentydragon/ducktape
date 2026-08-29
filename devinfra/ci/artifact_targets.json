@@ -11,8 +11,8 @@
       "release": "bbr"
     },
     "hakuctl": {
-      "target": "//:hakuctl_wheel",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/hakuctl-0.1.0-py3-none-any.whl",
+      "target": "//haku/hakuctl:wheel",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/haku/hakuctl/hakuctl-0.1.0-py3-none-any.whl",
       "release": "hakuctl"
     },
     "claude-hooks": {
