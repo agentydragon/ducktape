@@ -210,7 +210,6 @@ py_test(
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "//haku/console:mcp_config",
-        "//haku/console/conversation:conversation_event",
         "//haku/console/conversation:history",
         "//haku/console/conversation:prompt_origin",
         "//haku/console/harnesses:kind",
