@@ -17,12 +17,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 
 from haku.console.conversation.history import ConversationHistory
 from haku.console.conversation.item_vocabulary import ItemType
 from haku.console.conversation.journal_consumer import JournalConsumer, JournalViolationError
 from haku.console.conversation.prompt_origin import SPA_ORIGIN, PromptOrigin
+from haku.console.database_retry import transient_database_error
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.identity.operator_auth import OperatorActorDep
 from haku.console.notifications.session_wakes import SessionEvent, SessionEventKind, SessionWakes
@@ -90,27 +90,6 @@ OBSERVATION_TTL = timedelta(seconds=2)
 RE_AWAKENING_MESSAGES = 20
 
 
-# Aborts Postgres resolves by choosing a loser it expects to re-run: deadlock and serialization
-# failure. The statements were not wrong; the interleaving was.
-_RERUNNABLE_SQLSTATES = frozenset({"40001", "40P01"})
-
-
-def _transient_database_error(error: BaseException) -> bool:
-    """A database error that says nothing about the turn: the transaction never committed, and the
-    same statements succeed on a healthy connection — a dropped connection (a CNPG failover or
-    restart), or an abort Postgres asks the loser to re-run. Never an IntegrityError or a
-    programming error, which fail identically on retry and so are the turn's own."""
-    if not isinstance(error, DBAPIError):
-        return False
-    # `orig` is the dialect-adapted DBAPI error; the asyncpg adapter stamps the server's SQLSTATE
-    # onto it as `sqlstate`, and `DBAPIError` offers no typed accessor for it.
-    return (
-        error.connection_invalidated
-        or isinstance(error, (InterfaceError, OperationalError))
-        or getattr(error.orig, "sqlstate", None) in _RERUNNABLE_SQLSTATES
-    )
-
-
 @dataclass(frozen=True, slots=True)
 class ActiveSandboxRecord:
     """The operator-facing projection of one allocated session and its live claim graph."""
@@ -123,16 +102,29 @@ class ActiveSandboxRecord:
     sandbox: SandboxProvisioningView
 
 
+def _leaves(errors: BaseException) -> tuple[BaseException, ...]:
+    """Every leaf of a possibly-nested `except*` group, flattened in order."""
+    if isinstance(errors, BaseExceptionGroup):
+        return tuple(leaf for exc in errors.exceptions for leaf in _leaves(exc))
+    return (errors,)
+
+
 def _first_message(errors: BaseExceptionGroup[Exception]) -> str:
     """The message of the first leaf in *errors*, for the operator-facing `error` column.
 
     `except*` hands back a group even for a single failure, and a group's own `str` is a count
     ("1 sub-exception").
     """
-    leaves = errors.exceptions
-    while leaves and isinstance(leaves[0], BaseExceptionGroup):
-        leaves = leaves[0].exceptions
+    leaves = _leaves(errors)
     return str(leaves[0]) if leaves else str(errors)
+
+
+def _all_transient(errors: BaseExceptionGroup[Exception]) -> bool:
+    """Whether every leaf is a transient database abort — a deadlock or serialization failure the
+    runner will resume past on reconnect, or a dropped connection. Such a group leaves the session
+    for adoption instead of failing it; a group with any other fault is the session's own."""
+    leaves = _leaves(errors)
+    return bool(leaves) and all(transient_database_error(leaf) for leaf in leaves)
 
 
 class SessionPromptRequest(BaseModel):
@@ -661,8 +653,23 @@ class SessionService:
                 keep_sandbox = True
                 await self._store.release_lease(session_id)
             except* Exception as errors:
-                logger.exception("%s journal harness failed for session %s", harness.display_name, session_id)
-                await self._store.fail(session_id, f"{harness.display_name} harness failed: {_first_message(errors)}")
+                if _all_transient(errors):
+                    # A transient database abort (a deadlock or serialization failure Postgres asked
+                    # the loser to re-run, or a connection dropped under a failover) says nothing
+                    # about the session: the batch's transaction rolled back and the runner resumes
+                    # from the durable cursor on reconnect. `JournalConsumer.commit` retries these
+                    # itself; one that still surfaces here leaves the session for adoption rather
+                    # than failing the whole harness on an interleaving the next run will not hit.
+                    logger.warning(
+                        "session %s survived a transient database error: %s", session_id, _first_message(errors)
+                    )
+                    keep_sandbox = True
+                    await self._store.release_lease(session_id)
+                else:
+                    logger.exception("%s journal harness failed for session %s", harness.display_name, session_id)
+                    await self._store.fail(
+                        session_id, f"{harness.display_name} harness failed: {_first_message(errors)}"
+                    )
         except asyncio.CancelledError:
             keep_sandbox = True
             await self._store.release_lease(session_id)

@@ -324,6 +324,33 @@ py_library(
 )
 
 py_library(
+    name = "database_retry",
+    srcs = ["database_retry.py"],
+    deps = [
+        "@pypi//sqlalchemy",
+        "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_database_retry",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_database_retry.py"],
+    deps = [
+        ":conftest",
+        ":database_retry",
+        ":database_schema",
+        "//:conftest",
+        "//haku/console/harnesses:kind",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "capabilities",
     srcs = ["capabilities.py"],
     deps = [

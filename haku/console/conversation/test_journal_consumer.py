@@ -15,9 +15,10 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.conversation import prompt_inbox
+from haku.console.conversation import journal_consumer, prompt_inbox
 from haku.console.conversation.conversation_event import ReasoningDisclosure, TurnOutcome
 from haku.console.conversation.item_vocabulary import ItemStatus, ItemType, ToolOutcome
 from haku.console.conversation.journal_consumer import JournalConsumer, JournalViolationError
@@ -232,6 +233,38 @@ async def test_replayed_batches_reack_without_reapplying(
         item for item in await session_items(migrated_sessions, session_id) if item.item_type is ItemType.MESSAGE
     ]
     assert message.item_text == "Checking the build now."  # segments were not appended twice
+
+
+async def test_commit_retries_a_transient_deadlock_and_applies_once(
+    consumer: JournalConsumer,
+    journal_session: tuple[UUID, UUID],
+    migrated_sessions: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A deadlock Postgres asks the loser to re-run is retried inside `commit`, never surfaced to the
+    caller, and the batch's operations apply exactly once despite the retry."""
+    session_id, conversation_id = journal_session
+    real_notify = journal_consumer.notify_update
+    attempts = 0
+
+    async def deadlock_once(
+        db: AsyncSession, *, session_id: UUID, conversation_id: UUID, position: int | None = None
+    ) -> None:
+        # `notify_update` autoflushes the pending counter `UPDATE`, which is where a deadlock actually
+        # surfaces; the first attempt aborts and rolls back, the retry commits cleanly.
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise OperationalError("UPDATE conversation SET next_event_seq=%s", {}, Exception("deadlock detected"))
+        await real_notify(db, session_id=session_id, conversation_id=conversation_id, position=position)
+
+    monkeypatch.setattr(journal_consumer, "notify_update", deadlock_once)
+    batch = _batch(1, TurnOpened(turn_id=uuid4(), cause=WakeCause(), provenance=_frame(1)))
+
+    assert await consumer.commit(session_id, batch) == BatchAck(acked_batch_seq=1)
+    assert attempts == 2  # failed once, retried once, then committed
+    assert await _cursor(migrated_sessions, session_id) == 1
+    assert len(await _turns(migrated_sessions, conversation_id)) == 1  # the rolled-back attempt left nothing
 
 
 async def test_a_journal_hole_rejects_and_commits_nothing(

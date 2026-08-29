@@ -18,11 +18,8 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 from fastapi import HTTPException
-from more_itertools import one
 from pydantic import ValidationError
-from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.console.config import ClaudeCodeImplementationConfig, HarnessesConfig, HarnessRegistrationConfig
 from haku.console.conftest import console_sessions
@@ -42,12 +39,7 @@ from haku.console.session.conftest import (
     runtime_config,
 )
 from haku.console.session.launch_identity import HarnessLaunchAuthorizer, LaunchAgentRejectedError, LaunchIdentity
-from haku.console.session.runtime import (
-    ConversationCreateRequest,
-    SessionService,
-    _transient_database_error,
-    create_conversation,
-)
+from haku.console.session.runtime import ConversationCreateRequest, SessionService, create_conversation
 from haku.console.session.sandbox_claims import ProvisioningStep, provisioning_view
 from haku.console.session.status import OPEN_SESSION_STATUSES, SessionStatus
 from haku.console.session.store import ADOPTION_GRACE, ActiveSessionRecord, RunnerConnectionAuthentication, Store
@@ -760,44 +752,6 @@ async def test_provisioning_is_not_readable_for_a_session_another_operator_owns(
 
     with pytest.raises(KeyError):
         await chat_service.sandbox_provisioning(uuid4(), session.session_id)
-
-
-async def test_transient_database_error_recognizes_a_real_postgres_deadlock(
-    migrated_sessions: async_sessionmaker[AsyncSession],
-) -> None:
-    """The predicate must match what SQLAlchemy's asyncpg dialect actually raises for SQLSTATE
-    40P01, not a hand-built stand-in — so this manufactures a genuine deadlock: two transactions
-    take two advisory xact locks in opposite orders, a barrier holding both first locks until both
-    are held."""
-    barrier = asyncio.Barrier(2)
-
-    async def cross_lock(first: int, second: int) -> None:
-        async with migrated_sessions.begin() as db:
-            await db.execute(select(func.pg_advisory_xact_lock(first)))
-            await barrier.wait()
-            await db.execute(select(func.pg_advisory_xact_lock(second)))
-
-    outcomes = await asyncio.gather(cross_lock(1, 2), cross_lock(2, 1), return_exceptions=True)
-    error = one(outcome for outcome in outcomes if isinstance(outcome, BaseException))
-    assert _transient_database_error(error)
-
-
-async def test_transient_database_error_rejects_an_integrity_error(
-    migrated_sessions: async_sessionmaker[AsyncSession],
-) -> None:
-    """A constraint violation fails identically on retry, so it is the turn's own failure."""
-    with pytest.raises(IntegrityError) as excinfo:
-        async with migrated_sessions.begin() as db:
-            db.add(
-                Conversation(
-                    conversation_id=uuid4(),
-                    # References no operator row, so the INSERT is a foreign-key violation.
-                    operator_id=uuid4(),
-                    harness_kind=HarnessKind.CLAUDE_CODE,
-                    created_at=datetime.now(UTC),
-                )
-            )
-    assert not _transient_database_error(excinfo.value)
 
 
 if __name__ == "__main__":

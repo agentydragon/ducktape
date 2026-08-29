@@ -37,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.conversation import conversation_event, log
 from haku.console.conversation.log import LogWriter, UnknownItemError
+from haku.console.database_retry import retry_transient_db
 from haku.console.database_schema import ConversationItem, ConversationTurn, Session, SubmittedPrompt
 from haku.console.notifications.conversation_wakes import notify_update
 from haku.runner import neutral_operations
@@ -88,11 +89,15 @@ class JournalConsumer:
                 raise JournalViolationError(f"the session has ended and its journal is closed: {session_id=}")
             return ConsoleResume(neutral_protocol_version=settled, acked_batch_seq=chat.acked_batch_seq or None)
 
+    @retry_transient_db
     async def commit(self, session_id: UUID, batch: OperationBatch) -> BatchAck:
         """Commit one batch atomically and answer the cumulative ACK.
 
         Idempotent by `runner_batch_seq` against the session's cursor: at or below it re-ACKs and
-        applies nothing, exactly one past it applies and advances, anything further rejects.
+        applies nothing, exactly one past it applies and advances, anything further rejects. That
+        idempotency is what lets `retry_transient_db` re-run the whole transaction when Postgres
+        aborts it for a deadlock or serialization failure: a replay re-ACKs the cursor and a
+        first application advances it, either way exactly once.
         """
         now = datetime.now(UTC)
         async with self._sessions.begin() as db:

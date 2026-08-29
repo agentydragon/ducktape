@@ -69,6 +69,7 @@ py_library(
         ":status",
         ":store",
         ":system_prompt",
+        "//haku/console:database_retry",
         "//haku/console/conversation:history",
         "//haku/console/conversation:item_vocabulary",
         "//haku/console/conversation:journal_consumer",
@@ -238,7 +239,6 @@ py_test(
         "//haku/console/x/testing:recording_claims",
         "//haku/runner/codex:options",
         "@pypi//fastapi",
-        "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
