@@ -101,8 +101,8 @@ decided separately with method and path-plus-query metadata.
 
 ## Console decision policy
 
-Console evaluates deploy-managed standing policy first, then the authenticated
-Agent/session's active temporary HTTP grants after a clean standing-policy
+Console evaluates configuration-file HTTP grants first, then the authenticated
+Agent/session's active database HTTP grants after a clean configuration-grant
 denial. A decision may return an exact grant scope, expiry, and substitutions.
 
 The policy boundary includes:

@@ -109,17 +109,17 @@ def test_deployed_console_config_is_valid() -> None:
         if policy["id"] != "grants_own_revoke":
             assert "revoke_grants" not in grant_tools, policy["id"]
 
-    # A standing entry's named credential must actually redeem what the entry admits — the decide
+    # A configuration grant's named credential must actually redeem what it admits — the decide
     # service otherwise skips substitution with only a warning, and the fenced workload's inert
     # placeholder goes upstream and is rejected there (#4941/#4943).
     egress = config.egress_decide
     assert egress is not None
     registry = {credential.handle: credential for credential in egress.credentials}
-    for entry in egress.standing_policies:
+    for entry in egress.grants:
         if entry.credential_handle is None:
             continue
         credential = registry[entry.credential_handle]
-        assert entry.agent_ids <= credential.agent_ids, entry.id
+        assert entry.principal == credential.principal, entry.id
         assert entry.origins <= credential.origins, entry.id
 
 
@@ -199,7 +199,7 @@ def test_deployed_console_settings_load_from_the_shared_yaml(monkeypatch: pytest
     # Codex routes through the colocated Console egress fence (#4670), not its retiring iron proxy.
     assert codex.https_proxy == "http://haku-egress-proxy.haku-console.svc.cluster.local:8888"
     # LiteLLM stays OUT of no_proxy: its model traffic must traverse the fence for the virtual-key
-    # substitution (admitted through the standing policy's allow_prohibited_address).
+    # substitution (admitted through the configuration grant's allow_prohibited_address).
     assert "litellm.litellm.svc.cluster.local" not in codex.no_proxy
 
 

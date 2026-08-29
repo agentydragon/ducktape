@@ -7,7 +7,7 @@ anywhere:
 - `egress_decide.credentials` entry `substitution-smoke` — placeholder
   `EXAMPLE-EGRESS-SMOKE-PLACEHOLDER`, scanned header `authorization`, redeemable only by the haku
   Agent at `https://postman-echo.com:443`;
-- `egress_decide.standing_policies` entry `substitution-smoke` — the reachability half: exactly
+- `egress_decide.grants` entry `substitution-smoke` — the reachability half: exactly
   `GET` `/headers` at that origin for the haku Agent, naming the credential
   (`cluster/k8s/haku/console/config.yaml`);
 - the "credential" value — the committed literal `EXAMPLE-EGRESS-SMOKE-SUBSTITUTED`

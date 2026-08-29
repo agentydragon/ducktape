@@ -1,13 +1,13 @@
-"""Deploy-time credentials and standing policy of the internal HTTP egress decide endpoint (#4670).
+"""Deploy-time credentials and configuration grants of the internal HTTP egress decide endpoint (#4670).
 
 The ``egress_decide`` section of the console config file declares the shared-fence bearer the
 colocated egress proxy presents, the Console-owned egress credential registry (#4885): per handle,
-the inert placeholder a sandbox
-presents, the headers the proxy scans for it, the Agents allowed to redeem it, and the exact
-origins it may be redeemed at — and the deploy-managed standing HTTP policy (#4941): the durable
-per-Agent allowances ``HttpDecideService`` evaluates before temporary grants. Secret values stay
+the inert placeholder a sandbox presents, the headers the proxy scans for it, the principal
+allowed to redeem it, and the exact origins it may be redeemed at — and the configuration-file
+HTTP grants (#4941): the reviewed allowances ``HttpDecideService`` evaluates before database
+grants. Secret values stay
 in env-var references like every other console-only bearer; handles, placeholders, match headers,
-and standing entries are inert and committable by design (#4884 placeholder ruling).
+and grant entries are inert and committable by design (#4884 placeholder ruling).
 ``load_egress_decide`` reads the references once at startup and hands ``HttpDecideService`` the
 resolved values. The section also carries the deploy's ``prohibited_cidrs`` — inert address
 policy the decide service enforces on resolved answers beyond its always-on prohibited classes
@@ -20,12 +20,12 @@ import logging
 import os
 import re
 from ipaddress import IPv4Network, IPv6Network
-from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from haku.console.grants.http.models import CREDENTIAL_HANDLE_PATTERN, HttpOrigin, HttpRequestCoverage
 from util.env import EnvironmentVariableName
+from haku.console.grants.principal import ConfigGrantPrincipal
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +37,8 @@ class EgressCredentialEntry(BaseModel):
 
     A temporary HTTP grant redeems the credential by naming ``handle``
     (`grants.http.models.GrantSpec.credential_handle`); the decide endpoint then emits the
-    ``placeholder`` → real-value substitution for requests the grant admits, but only for an
-    Agent in ``agent_ids`` at an origin in ``origins`` — the #4670 redemption binding. Everything
+    ``placeholder`` → real-value substitution for requests the grant admits, but only for its
+    ``principal`` at an origin in ``origins`` — the #4670 redemption binding. Everything
     here except the env-referenced value is inert: safe to commit, log, and show to Agents.
 
     Presentation (``placeholder``, ``match_headers``) deliberately lives on this reviewed entry,
@@ -79,7 +79,7 @@ class EgressCredentialEntry(BaseModel):
             "credential names its own header, e.g. x-api-key."
         ),
     )
-    agent_ids: frozenset[UUID] = Field(min_length=1, description="Agents allowed to redeem this credential.")
+    principal: ConfigGrantPrincipal = Field(description="Principal allowed to redeem this credential.")
     origins: frozenset[HttpOrigin] = Field(
         min_length=1, description="Exact canonical origins the credential may be redeemed at."
     )
@@ -94,17 +94,17 @@ class EgressCredentialEntry(BaseModel):
         return headers
 
 
-class EgressStandingPolicyEntry(BaseModel):
-    """One deploy-managed standing allowance: which Agents may reach which exact origins, with
+class EgressConfigGrantEntry(BaseModel):
+    """One configuration-file HTTP grant: which principal may reach which exact origins, with
     which request coverage, and optionally which registry credential redeems there.
 
-    Standing entries are the reviewed, durable sibling of temporary grants (#4941): both hold an
+    Configuration grants and database grants (#4941) both hold an
     ``HttpRequestCoverage`` over exact canonical origins — an explicit method set and an optional
-    fullmatch path-plus-query regex — evaluated before grants, with configuration-file decision
+    fullmatch path-plus-query regex — evaluated before database grants, with configuration-file decision
     provenance ``config_file:<id>``. Reachability and credential redemption stay two typed authorities (#4670):
-    a standing entry only *names* a registry handle; presentation (placeholder, match headers) and
-    the redemption binding (Agent/origin allowlists) live on the ``EgressCredentialEntry`` itself,
-    so no standing entry can alter where or how a credential's bytes are injected. Entries may
+    a configuration grant only *names* a registry handle; presentation (placeholder, match headers) and
+    the redemption binding (principal/origin allowlists) live on the ``EgressCredentialEntry`` itself,
+    so no configuration grant can alter where or how a credential's bytes are injected. Entries may
     overlap: the first declared match names the decision, and every matching entry's credential
     redeems.
     """
@@ -116,7 +116,7 @@ class EgressStandingPolicyEntry(BaseModel):
         pattern=r"^[a-z][a-z0-9-]*$",
         description="Stable audit name this entry's admissions carry as decision provenance.",
     )
-    agent_ids: frozenset[UUID] = Field(min_length=1, description="Agents this allowance applies to.")
+    principal: ConfigGrantPrincipal = Field(description="Principal this grant applies to.")
     origins: frozenset[HttpOrigin] = Field(
         min_length=1, description="Exact canonical origins the Agents may reach under this entry."
     )
@@ -126,8 +126,8 @@ class EgressStandingPolicyEntry(BaseModel):
         max_length=64,
         pattern=CREDENTIAL_HANDLE_PATTERN,
         description=(
-            "Registry credential (`egress_decide.credentials`) redeemed for requests this entry "
-            "admits, subject to the registry entry's own Agent/origin binding. Absent, the entry "
+            "Registry credential (`egress_decide.credentials`) redeemed for requests this grant "
+            "admits, subject to the registry entry's own principal/origin binding. Absent, the grant "
             "is pure reachability."
         ),
     )
@@ -147,8 +147,8 @@ class EgressStandingPolicyEntry(BaseModel):
 
 class EgressDecideConfig(BaseModel):
     """Wiring for ``POST /api/internal/http/decide``: the shared-fence bearer the colocated egress
-    proxy presents, the egress credential registry grants and standing entries redeem from, and
-    the standing HTTP policy itself.
+    proxy presents, the egress credential registry grants and configuration grants redeem from, and
+    the configuration-file HTTP grants themselves.
     ``None`` on ``ConsoleConfigFile`` is the production-safe default — the endpoint stays 503
     and the proxy fails closed until a deploy deliberately wires it."""
 
@@ -156,7 +156,7 @@ class EgressDecideConfig(BaseModel):
 
     fence_credential_env_var: EnvironmentVariableName
     credentials: list[EgressCredentialEntry] = Field(default_factory=list)
-    standing_policies: list[EgressStandingPolicyEntry] = Field(default_factory=list)
+    grants: list[EgressConfigGrantEntry] = Field(default_factory=list)
     prohibited_cidrs: frozenset[IPv4Network | IPv6Network] = Field(
         default_factory=frozenset,
         description=(
@@ -191,19 +191,19 @@ class EgressDecideConfig(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _coherent_standing_policies(self) -> EgressDecideConfig:
+    def _coherent_grants(self) -> EgressDecideConfig:
         # Overlapping coverage is deliberately legal — a broad reachability entry beside a narrower
         # credentialed one is a natural reviewed config, and regex path scopes make overlap
         # undecidable in general — but ids must be unique for provenance and every named handle
         # must exist: a dangling reference in a reviewed file is a mistake, not a degrade case.
-        ids = [entry.id for entry in self.standing_policies]
+        ids = [entry.id for entry in self.grants]
         if len(set(ids)) != len(ids):
-            raise ValueError("standing policy entry ids must be distinct")
+            raise ValueError("configuration grant entry ids must be distinct")
         handles = {entry.handle for entry in self.credentials}
-        for entry in self.standing_policies:
+        for entry in self.grants:
             if entry.credential_handle is not None and entry.credential_handle not in handles:
                 raise ValueError(
-                    f"standing policy entry {entry.id} names unknown credential handle {entry.credential_handle}"
+                    f"configuration grant entry {entry.id} names unknown credential handle {entry.credential_handle}"
                 )
         return self
 
@@ -215,20 +215,20 @@ class LoadedEgressCredential(BaseModel):
     placeholder: str
     value: SecretStr
     match_headers: frozenset[str]
-    agent_ids: frozenset[UUID]
+    principal: ConfigGrantPrincipal
     origins: frozenset[HttpOrigin]
 
 
 class LoadedEgressDecide(BaseModel):
     """The decide endpoint's credentials after reading env references.
 
-    Standing policy entries carry no secrets, so they pass through from the config unchanged —
+    Configuration grants carry no secrets, so they pass through from the config unchanged —
     the evaluator's provenance names the literal reviewed entry.
     """
 
     fence_credential: SecretStr
     credentials: list[LoadedEgressCredential] = Field(default_factory=list)
-    standing_policies: list[EgressStandingPolicyEntry] = Field(default_factory=list)
+    grants: list[EgressConfigGrantEntry] = Field(default_factory=list)
 
 
 def load_egress_decide(config: EgressDecideConfig) -> LoadedEgressDecide:
@@ -273,12 +273,10 @@ def load_egress_decide(config: EgressDecideConfig) -> LoadedEgressDecide:
                 placeholder=credential.placeholder,
                 value=SecretStr(value),
                 match_headers=credential.match_headers,
-                agent_ids=credential.agent_ids,
+                principal=credential.principal,
                 origins=credential.origins,
             )
         )
     return LoadedEgressDecide(
-        fence_credential=SecretStr(fence_credential),
-        credentials=loaded_credentials,
-        standing_policies=config.standing_policies,
+        fence_credential=SecretStr(fence_credential), credentials=loaded_credentials, grants=config.grants
     )

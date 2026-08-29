@@ -38,7 +38,7 @@ from ipaddress import IPv4Address, IPv4Network, IPv6Address, IPv6Network
 from haku.console.grants.catalog import GrantCatalog, HttpAccessAllowed
 from haku.console.grants.http.decide_config import LoadedEgressDecide
 from haku.console.grants.http.models import HttpMethod, HttpOrigin, HttpScheme
-from haku.console.grants.principal import RequestPrincipal
+from haku.console.grants.principal import RequestPrincipal, grant_principal_applies_to
 from haku.console.identity.agent_bearer_authority import AgentBearerAuthority
 from haku.egress.decision import (
     DecideRequest,
@@ -128,13 +128,13 @@ class HttpDecideService:
 
     The resolved answer is validated alongside the authorities: an answer touching prohibited
     address space — the always-on classes of ``_prohibited_address_class`` or a deploy-configured
-    prohibited CIDR — denies (#4948) unless a matching configuration-file allowance or database grant carries
+    prohibited CIDR — denies (#4948) unless a matching configuration-file grant or database grant carries
     ``allow_prohibited_address`` and the host resolves *entirely* into prohibited space, the
     destination-scoped internal-service override (module docstring). A mixed public+prohibited
     answer is the rebinding signature and denies regardless of the flag.
-    Evaluation order is configuration-file HTTP allowance first, then the principal's active
+    Evaluation order is configuration-file HTTP grants first, then the principal's active
     database grants after a clean configuration denial. The configured entries live under
-    ``egress_decide.standing_policies`` (#4941), but their source is the configuration file:
+    ``egress_decide.grants`` (#4941), and their source is the configuration file:
     they carry ``config_file:<entry id>`` provenance and no end date.
     """
 
@@ -300,10 +300,10 @@ class HttpDecideService:
         self, *, principal: RequestPrincipal, origin: HttpOrigin, handles: frozenset[str]
     ) -> list[PlaceholderSubstitution]:
         """Resolve the credential handles named by matching database or configuration-file
-        allowances into this request's substitutions.
+        grants into this request's substitutions.
 
         Credential redemption is an authority separate from reachability (#4670): a handle that is
-        not configured, not assigned to the Agent, or not redeemable at this origin yields no
+        not configured, not assigned to the request principal, or not redeemable at this origin yields no
         substitution while the admission stands — the inert placeholder then passes through
         verbatim and is worthless upstream (#4884 placeholder ruling). Each such refusal is an
         operator-visible mismatch between a durable allowance and the deploy config, hence the
@@ -315,8 +315,8 @@ class HttpDecideService:
             if credential is None:
                 logger.warning("egress credential %s named by a matched allowance is not configured", handle)
                 continue
-            if principal.agent_id not in credential.agent_ids:
-                logger.warning("egress credential %s is not assigned to agent %s", handle, principal.agent_id)
+            if not grant_principal_applies_to(credential.principal, principal):
+                logger.warning("egress credential %s is not assigned to principal %s", handle, principal)
                 continue
             if origin not in credential.origins:
                 logger.warning(

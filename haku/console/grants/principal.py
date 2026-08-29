@@ -62,6 +62,10 @@ type GrantPrincipal = Annotated[
     AgentGrantPrincipal | SessionGrantPrincipal | AccessProfileGrantPrincipal, Field(discriminator="kind")
 ]
 
+# Configuration has no authenticated-session lifecycle to bind, so it may name only principals
+# that remain meaningful across restarts and deployments.
+type ConfigGrantPrincipal = Annotated[AgentGrantPrincipal | AccessProfileGrantPrincipal, Field(discriminator="kind")]
+
 
 class RequestPrincipal(BaseModel):
     """Complete trusted authenticated identity attempting to exercise a grant or SAR.

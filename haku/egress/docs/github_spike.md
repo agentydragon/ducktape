@@ -3,7 +3,7 @@
 Prove real GitHub traffic end to end through the colocated Console egress proxy
 ([#4942](https://github.com/agentydragon/ducktape/issues/4942) /
 [#4965](https://github.com/agentydragon/ducktape/pull/4965)), exercised from the
-**public-coder-agent OpenClaw pod**: standing-policy admission with `github-bot` credential
+**public-coder-agent OpenClaw pod**: configuration-grant admission with `github-bot` credential
 substitution (Bearer and git-over-HTTPS Basic), deny without an allowance, the temporary-grant
 path (deny → `create_grant` → retry → release → deny), and fail-closed refusal. Success is the
 gate for repointing the fleet Kyverno injection at this listener
@@ -43,10 +43,10 @@ credential.
 - **`haku-egress-proxy-ca-cert` trust Bundle** extended to write into `public-coder-agent`
   (`cluster/k8s/agents/haku-egress-proxy/trust-bundle.yaml`), so the pod can verify the fence's
   interception leaves.
-- **`egress_decide.standing_policies`** (`cluster/k8s/haku/console/config.yaml`):
+- **`egress_decide.grants`** (`cluster/k8s/haku/console/config.yaml`):
   `haku-github-api` (api.github.com, API methods) and `haku-github-git` (github.com, GET+POST
   for smart HTTP), both redeeming `github-bot` for a live haku session. `codeload.github.com` is
-  deliberately _not_ standing — it is the temporary-grant leg's target.
+  deliberately not configured — it is the database-grant leg's target.
 - **`grants`** in-process MCP server (HTTP-egress domain), exposed to every access profile (operator ruling on
   #4986): any Agent may ask for egress. Deliberately in no auto-approval policy: `create_grant`
   must be manually approved (auto-approved calls cannot mint grants), so every call here queues
@@ -184,7 +184,7 @@ Expect `Repository not found.` (authenticated, then 404) and a
 alternative if the bot PAT can read any private repo: `git ls-remote` that repo and expect its
 refs.
 
-### 4. Denied origin (no standing policy, no grant)
+### 4. Denied origin (no configuration grant, no database grant)
 
 ```bash
 curl -sS -x "$FENCE" --cacert "$FENCE_CA" https://example.com/ ; echo "exit=$?"
@@ -281,7 +281,7 @@ rm -rf /tmp/ducktape-spike /tmp/dt.tgz   # inside the pod; /tmp is an emptyDir a
 ```
 
 Release any still-active spike grants (step 5). Nothing else changed: the pod's fence wiring,
-the standing policy, and the `grants` server exposure are GitOps-managed and **stay** — they are
+the configuration grant, and the `grants` server exposure are GitOps-managed and **stay** — they are
 the first adoption instance, not scaffolding — and the agent's production egress ran through
 iron untouched for the whole exercise. Retiring iron for this agent (repointing its default
 `HTTP_PROXY` at the fence and moving its credential substitutions server-side) is gated on

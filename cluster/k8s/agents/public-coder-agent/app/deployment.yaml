@@ -116,7 +116,7 @@ spec:
               value: "proxy-github-placeholder"
             # The #4943 spike placeholder: requests sent through the colocated Console egress
             # fence (haku-console:8888) carrying this value get the `github-bot` credential
-            # substituted server-side under standing policy (cluster/k8s/haku/console/config.yaml
+            # substituted server-side under a configuration-file grant (cluster/k8s/haku/console/config.yaml
             # egress_decide). Inert on its own and on every other path — iron does not know it.
             # Through the fence, the shared fence credential authenticates only the colocated
             # proxy. The per-session bridge bearer selects the live sandbox Agent for each decide

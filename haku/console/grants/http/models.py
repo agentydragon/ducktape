@@ -105,8 +105,8 @@ class HttpOrigin(BaseModel):
 
 class HttpRequestCoverage(BaseModel):
     """The request-matching half of an allowance at an already-matched origin: a method set plus
-    an optional path pin. Held as a field by temporary grants (`GrantSpec`) and deploy-managed
-    standing policy entries (`decide_config.EgressStandingPolicyEntry`) so both speak one
+    an optional path pin. Held as a field by database grants (`GrantSpec`) and configuration
+    grants (`decide_config.EgressConfigGrantEntry`) so both speak one
     matcher vocabulary."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)

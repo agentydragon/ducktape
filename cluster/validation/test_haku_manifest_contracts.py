@@ -41,13 +41,13 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     assert implementation["api_base_url"].startswith("http://")
     assert "anthropic.com" not in implementation["api_base_url"]
     egress = console_config["egress_decide"]
-    litellm_standing = one(policy for policy in egress["standing_policies"] if policy["id"] == "haku-claude-litellm")
-    origin = one(litellm_standing["origins"])
+    litellm_grant = one(grant for grant in egress["grants"] if grant["id"] == "haku-claude-litellm")
+    origin = one(litellm_grant["origins"])
     assert implementation["api_base_url"] == f"{origin['scheme']}://{origin['host']}:{origin['port']}"
     # LiteLLM resolves to a ClusterIP inside prohibited_cidrs, so the gateway is reachable only
     # because this entry lifts the private-address denial (#5073).
-    assert litellm_standing["allow_prohibited_address"] is True
-    credential = one(c for c in egress["credentials"] if c["handle"] == litellm_standing["credential_handle"])
+    assert litellm_grant["allow_prohibited_address"] is True
+    credential = one(c for c in egress["credentials"] if c["handle"] == litellm_grant["credential_handle"])
     assert implementation["auth_token_placeholder"] == credential["placeholder"]
     assert implementation["model"]
     assert implementation["haiku_model"]
@@ -187,7 +187,7 @@ def test_public_coder_pod_joins_the_colocated_egress_fence(k8s_dir: Path) -> Non
     Service publishes, and the Deployment does NOT cut its default proxy env over to that listener.
     This legacy pod has no live Console bridge bearer, so it remains on its iron proxy; only a
     Console-launched sandbox with a live bridge can use the colocated listener. The migrated Haku
-    runner's standing entries remain coherent with the shared GitHub placeholder.
+    runner's configuration grants remain coherent with the shared GitHub placeholder.
     """
     deployment = yaml.safe_load((k8s_dir / "agents/public-coder-agent/app/deployment.yaml").read_text())
     pod = deployment["spec"]["template"]["spec"]
@@ -235,7 +235,7 @@ def test_public_coder_pod_joins_the_colocated_egress_fence(k8s_dir: Path) -> Non
     assert peer["podSelector"]["matchLabels"] == service["spec"]["selector"]
     assert one(fence_rule["ports"]) == {"port": port["port"], "protocol": "TCP"}
 
-    # The positive migrated-runner path remains coherent: the Haku Agent's standing entries cover
+    # The positive migrated-runner path remains coherent: the Haku Agent's configuration grants cover
     # both GitHub origins and name a credential whose placeholder this spike pod holds. This checks
     # the shared config/placeholder contract without treating the shared fence as Agent identity.
     config = yaml.safe_load((k8s_dir / "haku/console/config.yaml").read_text())
@@ -244,8 +244,8 @@ def test_public_coder_pod_joins_the_colocated_egress_fence(k8s_dir: Path) -> Non
     registry = {entry["handle"]: entry for entry in egress["credentials"]}
     covered = {
         (origin["host"], origin["port"])
-        for entry in egress["standing_policies"]
-        if haku_agent in entry["agent_ids"]
+        for entry in egress["grants"]
+        if entry["principal"] == {"kind": "agent", "agent_id": haku_agent}
         and (handle := entry.get("credential_handle")) is not None
         and registry[handle]["placeholder"] == env["HAKU_GITHUB_TOKEN"]
         for origin in entry["origins"]
@@ -410,8 +410,8 @@ def test_haku_runtimes_and_access_profile_share_one_grant(k8s_dir: Path) -> None
     assert not kinds & {"Role", "RoleBinding", "ClusterRole", "ClusterRoleBinding"}
 
 
-def test_public_coder_and_haku_standing_diagnostics_are_secret_free(k8s_dir: Path) -> None:
-    """Frequently used public diagnostics stay standing without widening secret or exec access."""
+def test_public_coder_and_haku_configured_diagnostics_are_secret_free(k8s_dir: Path) -> None:
+    """Configured public diagnostics do not widen secret or exec access."""
     agent_readable_metadata_label = "rbac.ducktape.io/agent-readable-metadata"
     agent_readable_logs_label = "rbac.ducktape.io/agent-readable-logs"
     expected_namespace_labels = {
@@ -571,7 +571,7 @@ def test_public_coder_and_haku_standing_diagnostics_are_secret_free(k8s_dir: Pat
 
 
 def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
-    """Agent traffic, standing SAR policy, and proxy execution authority stay separate."""
+    """Agent traffic, configured SAR authorization, and proxy execution authority stay separate."""
     agent_dir = k8s_dir / "agents" / "public-coder-agent"
     console_dir = k8s_dir / "haku" / "console"
 
@@ -698,17 +698,17 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
         {"kind": "ServiceAccount", "name": "haku-kube-api-proxy", "namespace": "haku-console"}
     ]
 
-    standing_subject = {
+    configured_subject = {
         "kind": "Group",
         "name": "haku:access-profile:public-coder",
         "apiGroup": "rbac.authorization.k8s.io",
     }
-    haku_standing_subjects = {
+    haku_configured_subjects = {
         ("Group", "oidc-ksbx-groups:haku", None),
         ("Group", "haku:access-profile:haku", None),
         ("ServiceAccount", "haku", "haku-sandbox"),
     }
-    standing_binding_files = (
+    configured_binding_files = (
         agent_dir / "k8s-reader" / "role.yaml",
         agent_dir / "k8s-reader" / "node-reader.yaml",
         agent_dir / "k8s-reader" / "cluster-metadata-reader.yaml",
@@ -717,13 +717,13 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
         k8s_dir / "ducktape-flux" / "ducktape-flux-reader.yaml",
         console_dir / "agent-diagnostics-rbac.yaml",
     )
-    standing_role_refs = {
+    configured_role_refs = {
         (obj["metadata"].get("namespace"), obj["roleRef"]["kind"], obj["roleRef"]["name"])
-        for path in standing_binding_files
+        for path in configured_binding_files
         for obj in yaml.safe_load_all(path.read_text())
-        if obj["kind"] in {"RoleBinding", "ClusterRoleBinding"} and standing_subject in obj["subjects"]
+        if obj["kind"] in {"RoleBinding", "ClusterRoleBinding"} and configured_subject in obj["subjects"]
     }
-    assert standing_role_refs == {
+    assert configured_role_refs == {
         ("public-coder-agent", "Role", "public-coder-agent-reader"),
         ("public-coder-agent", "Role", "agent-public-coder-extended-diagnostics-reader"),
         (None, "ClusterRole", "public-coder-agent-node-reader"),
@@ -732,9 +732,9 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
         ("ducktape-flux", "Role", "ducktape-flux-reader"),
         ("haku-console", "Role", "agent-haku-console-metadata-reader"),
     }
-    assert standing_subject not in ceiling["subjects"]
+    assert configured_subject not in ceiling["subjects"]
     subjects_by_role_ref: dict[tuple[str | None, str, str], set[tuple[str, str, str | None]]] = {}
-    for path in standing_binding_files:
+    for path in configured_binding_files:
         for binding in yaml.safe_load_all(path.read_text()):
             if binding["kind"] not in {"RoleBinding", "ClusterRoleBinding"}:
                 continue
@@ -742,8 +742,8 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
             subjects_by_role_ref.setdefault(role_ref, set()).update(
                 (item["kind"], item["name"], item.get("namespace")) for item in binding["subjects"]
             )
-    for role_ref in standing_role_refs:
-        assert haku_standing_subjects <= subjects_by_role_ref[role_ref], role_ref
+    for role_ref in configured_role_refs:
+        assert haku_configured_subjects <= subjects_by_role_ref[role_ref], role_ref
 
     reader_kustomization = yaml.safe_load((agent_dir / "k8s-reader" / "kustomization.yaml").read_text())
     assert "serviceaccount.yaml" not in reader_kustomization["resources"]

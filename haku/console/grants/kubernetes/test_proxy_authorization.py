@@ -71,7 +71,7 @@ def test_endpoint_is_unavailable_when_not_wired() -> None:
 
 class FakeSarClient:
     def __init__(self, result: SubjectAccessReviewResult | None = None, error: Exception | None = None) -> None:
-        self.result = result or SubjectAccessReviewResult(allowed=True, reason="standing policy")
+        self.result = result or SubjectAccessReviewResult(allowed=True, reason="configured SAR")
         self.error = error
         self.calls: list[tuple[KubernetesAuthorizationSubject, RequestAttributes]] = []
         self.closed = False
@@ -105,7 +105,7 @@ class FakeAuthorizationApi:
                     {
                         "allowed": True,
                         "denied": False,
-                        "reason": "standing policy",
+                        "reason": "configured SAR",
                         "evaluation_error": self.evaluation_error,
                     },
                 )()
@@ -280,7 +280,7 @@ async def test_subject_access_review_client_builds_resource_request_for_fixed_su
         subject=KubernetesAuthorizationSubject(username="proxy", groups=("haku",)),
         attributes=RequestAttributes.model_validate(REQUEST["attributes"]),
     )
-    assert result == SubjectAccessReviewResult(allowed=True, reason="standing policy")
+    assert result == SubjectAccessReviewResult(allowed=True, reason="configured SAR")
     request = authorization.requests[0]
     assert request.spec.user == "proxy"
     assert request.spec.groups == ["haku"]

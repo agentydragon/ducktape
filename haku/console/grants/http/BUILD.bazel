@@ -41,6 +41,7 @@ py_library(
     deps = [
         ":models",
         "//util:env",
+        "//haku/console/grants:principal",
         "@pypi//pydantic",
     ],
 )
@@ -55,7 +56,6 @@ py_library(
         "//haku/console/grants:principal",
         "//haku/console/identity:agent_bearer_authority",
         "//haku/egress:decision",
-        "@pypi//pydantic",
     ],
 )
 
@@ -132,6 +132,7 @@ py_test(
         ":models",
         "//:conftest",
         "//haku/console:conftest",
+        "//haku/console/grants:principal",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

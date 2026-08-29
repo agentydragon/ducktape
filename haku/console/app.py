@@ -486,7 +486,7 @@ def create_app(
         sar_client=(
             KubernetesSubjectAccessReviewClient() if console_config.kubernetes_authorization is not None else None
         ),
-        http_config_policies=tuple(loaded_egress_decide.standing_policies) if loaded_egress_decide else (),
+        http_config_grants=tuple(loaded_egress_decide.grants) if loaded_egress_decide else (),
     )
     if loaded_egress_decide is None:
         http_decide = None
@@ -803,7 +803,7 @@ def create_app(
     app.include_router(enrollment_routes.entry_router)
     app.include_router(session_runtime.internal_router)
     # Machine-to-machine, bearer-forwarding contract for the separate Kubernetes proxy. The
-    # endpoint remains fail-closed unless standing SAR policy is configured.
+    # endpoint remains fail-closed unless configured SAR authorization is present.
     app.include_router(proxy_authorization.router)
     # The colocated egress proxy's decision endpoint is deliberately NOT on this network app.
     # It is the oracle that turns placeholders into real credentials, so it must never be routable

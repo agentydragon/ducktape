@@ -384,7 +384,7 @@ Three seams are handled deliberately — **do not reintroduce the prefix to dodg
    collisions) — never by baking the prefix back into the class name.
 2. **Shared primitives are not domain-specific.** `HttpMethod`, `HttpOrigin`, the k8s
    `RequestAttributes`/SAR types are cross-cutting primitives used **outside** grants (egress decision
-   models, standing policy, kube-api-proxy). They keep a clear shared home and keep meaningful names.
+   models, configuration grants, kube-api-proxy). They keep a clear shared home and keep meaningful names.
    The prefix-drop is for domain-specific grant entities, not cross-cutting primitives.
 3. **Published schema components rename only in a coordinated wire pass.** The console OpenAPI
    document and the exported MCP tool schemas key components by Pydantic **class name** in one flat

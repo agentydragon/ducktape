@@ -132,7 +132,7 @@ async def test_allow_passes_unscanned_placeholder_through_verbatim(upstream: Rec
 
 
 async def test_deny_refuses_without_upstream_contact(upstream: RecordingUpstream, tmp_path: Path) -> None:
-    reason = "no standing policy or active grant"
+    reason = "no configuration grant or active database grant"
     decide = StaticDecideClient(
         HttpAuthorizationDenied(
             reason=reason, grant_scope=GrantScope(scheme="https", host="127.0.0.1", port=upstream.port)
@@ -260,7 +260,7 @@ async def test_localhost_decide_deny_refuses_without_upstream_contact(
     upstream: RecordingUpstream, tmp_path: Path
 ) -> None:
     denied = HttpAuthorizationDenied(
-        reason="no standing policy or active grant",
+        reason="no configuration grant or active database grant",
         grant_scope=GrantScope(scheme="http", host="127.0.0.1", port=upstream.port),
     )
     async with (
@@ -270,7 +270,7 @@ async def test_localhost_decide_deny_refuses_without_upstream_contact(
     ):
         status, body = await proxied_get(proxy, f"http://127.0.0.1:{upstream.port}/secret")
     assert status == 403
-    assert "no standing policy or active grant" in body
+    assert "no configuration grant or active database grant" in body
     assert (upstream.connections, upstream.requests) == (0, [])
 
 

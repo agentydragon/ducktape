@@ -46,7 +46,7 @@ harnesses:
     session_ttl_seconds: 7200
     # Colocated Console egress fence (#4670): replaces the dedicated haku-claude-oauth-proxy iron
     # proxy. Claude Code's inference now goes to the in-cluster LiteLLM gateway (-> CLIProxyAPI) as a
-    # FENCED destination — the `claude-litellm` credential + its allow_prohibited_address standing
+    # FENCED destination — the `claude-litellm` credential + its allow_prohibited_address configuration grant
     # policy below admit and substitute it; the real bearers stay in Console.
     https_proxy: http://haku-egress-proxy.haku-console.svc.cluster.local:8888
     # The sidecar mints leaves with the shared haku-egress-proxy CA, which the mounted
@@ -55,9 +55,9 @@ harnesses:
     ca_bundle: /egress-proxy-ca/ca-certificates.crt
     # Only cluster-internal control-plane hosts stay direct. LiteLLM is deliberately NOT here: its
     # traffic goes through the fence for key substitution, admitted despite its internal ClusterIP by
-    # the LiteLLM standing policy's allow_prohibited_address flag (#5073). Forgejo is deliberately
+    # the LiteLLM configuration grant's allow_prohibited_address flag (#5073). Forgejo is deliberately
     # NOT here either (#4710): the CLI's runtime git/REST traffic to both Forgejo origins traverses
-    # the fence, admitted by the haku-forgejo standing policy (allow_prohibited_address for the
+    # the fence, admitted by the haku-forgejo configuration grant (allow_prohibited_address for the
     # internal service). The bootstrap's haku-state checkout is unaffected — it runs with pod env
     # and has no proxy.
     no_proxy: 127.0.0.1,localhost,haku-console.haku-console.svc.cluster.local,haku-kube-api-proxy.haku-console.svc.cluster.local
@@ -98,7 +98,7 @@ harnesses:
     session_ttl_seconds: 7200
     # Colocated Console egress fence (#4670): replaces the dedicated public-coder-codex-runner-proxy
     # iron proxy. Codex's two credentialed hosts — the internal LiteLLM model gateway and GitHub —
-    # are registered in `egress_decide` below with matching standing policies; LiteLLM's carries
+    # are registered in `egress_decide` below with matching configuration grants; LiteLLM's carries
     # `allow_prohibited_address` because it resolves into the cluster service CIDR, the boundary the
     # fence otherwise denies. The iron proxy's :8080 network rule stays (public-coder-runner-egress)
     # so reverting this line needs no policy change; the CA differs (below), so a full revert also
@@ -111,7 +111,7 @@ harnesses:
     ca_bundle: /etc/ssl/certs/ca-certificates.crt
     # Control-plane traffic (Console bridge/MCP, the Kubernetes auth proxy) stays direct. LiteLLM is
     # deliberately NOT in no_proxy: its model traffic must traverse the fence for the virtual-key
-    # substitution, and the fence admits its cluster-internal resolution through the standing
+    # substitution, and the fence admits its cluster-internal resolution through the configuration
     # policy's allow_prohibited_address. Other cluster-internal hosts stay direct.
     no_proxy: 127.0.0.1,localhost,haku-console.haku-console.svc.cluster.local,haku-kube-api-proxy.haku-console.svc.cluster.local
     mcp_url: http://haku-console.haku-console.svc.cluster.local:9090/mcp
@@ -523,7 +523,7 @@ access_profiles:
     in_process_server_ids:
       - grants
 default_access_profile_id: manual-review
-# Evaluate standing Kubernetes access as a synthetic, non-login access-profile identity. The
+# Evaluate configured Kubernetes access as a synthetic, non-login access-profile identity. The
 # username satisfies Console's explicit SAR subject schema; RBAC grants the same deploy-owned group.
 # `system:authenticated` preserves Kubernetes's standard authenticated discovery surface after
 # Console has authenticated the Agent bearer. None of these values is caller-supplied request data.
@@ -555,15 +555,15 @@ egress_decide:
   # Agent/session attribution.
   fence_credential_env_var: HAKU_EGRESS_FENCE_CREDENTIAL
   # Console-owned egress credential registry (#4951): a grant redeems a credential by naming its
-  # handle, and the endpoint returns the placeholder->value substitution only for an Agent in
-  # `agent_ids` at an origin in `origins`. First entry: the bot GitHub token (mirrors the retiring
+  # handle, and the endpoint returns the placeholder->value substitution only for its `principal`
+  # at an origin in `origins`. First entry: the bot GitHub token (mirrors the retiring
   # iron fence's substitution). The sandbox only ever holds `github-token-placeholder`.
   credentials:
     - handle: github-bot
       placeholder: github-token-placeholder
       value_env_var: HAKU_EGRESS_CREDENTIAL_GITHUB_BOT
       match_headers: [authorization]
-      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
       origins:
         - scheme: https
           host: api.github.com
@@ -583,7 +583,7 @@ egress_decide:
       placeholder: proxy-litellm-haku-console-claude-placeholder
       value_env_var: HAKU_EGRESS_CREDENTIAL_CLAUDE_LITELLM
       match_headers: [authorization]
-      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
       origins:
         - scheme: http
           host: litellm.litellm.svc.cluster.local
@@ -596,7 +596,7 @@ egress_decide:
       placeholder: EXAMPLE-EGRESS-SMOKE-PLACEHOLDER
       value_env_var: HAKU_EGRESS_CREDENTIAL_SUBSTITUTION_SMOKE
       match_headers: [authorization]
-      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
       origins:
         - scheme: https
           host: postman-echo.com
@@ -608,12 +608,12 @@ egress_decide:
     # the sidecar's shared-fence credential authenticates the fence only. The sandbox only ever
     # holds the inert placeholder plus its session bearer.
     #   The public-coder LiteLLM virtual key, substituted only on the internal LiteLLM model gateway;
-    #   its standing policy carries allow_prohibited_address because the gateway is a cluster ClusterIP.
+    #   its configuration grant carries allow_prohibited_address because the gateway is a cluster ClusterIP.
     - handle: codex-litellm
       placeholder: proxy-litellm-public-coder-placeholder
       value_env_var: HAKU_EGRESS_CREDENTIAL_LITELLM_PUBLIC_CODER
       match_headers: [authorization]
-      agent_ids: [43a833f3-2b1c-4a04-9b8c-1df0cedfb79e]
+      principal: { kind: agent, agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e }
       origins:
         - scheme: http
           host: litellm.litellm.svc.cluster.local
@@ -626,7 +626,7 @@ egress_decide:
       placeholder: proxy-github-placeholder
       value_env_var: HAKU_EGRESS_CREDENTIAL_GITHUB_BOT
       match_headers: [authorization]
-      agent_ids: [43a833f3-2b1c-4a04-9b8c-1df0cedfb79e]
+      principal: { kind: agent, agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e }
       origins:
         - scheme: https
           host: api.github.com
@@ -645,7 +645,7 @@ egress_decide:
       placeholder: haku-forgejo-token-placeholder
       value_env_var: HAKU_EGRESS_CREDENTIAL_FORGEJO
       match_headers: [authorization]
-      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
       origins:
         - scheme: http
           host: forgejo-http.forgejo
@@ -656,13 +656,13 @@ egress_decide:
         - scheme: https
           host: git.allegedly.works
           port: 443
-  # Deploy-managed standing HTTP allowances (#4941), evaluated before temporary grants; admissions
-  # carry `standing:<id>` provenance.
-  standing_policies:
+  # Configuration-file HTTP grants (#4941), evaluated before database grants; admissions carry
+  # `config_file:<id>` provenance.
+  grants:
     # The reachability half of the substitution smoke test — exactly GET /headers at the public
     # echo host, redeeming the inert credential above.
     - id: substitution-smoke
-      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
       origins:
         - scheme: https
           host: postman-echo.com
@@ -677,11 +677,11 @@ egress_decide:
     # Coverage: the GitHub API and git-over-HTTPS smart-HTTP endpoints, redeeming the bot
     # credential at both — Bearer on the API, Basic (decoded/swapped/re-encoded proxy-side) on
     # github.com. No path pin: git smart HTTP needs /info/refs?service=git-upload-pack through to
-    # the pack endpoints. codeload.github.com is deliberately NOT standing — the registry can
+    # the pack endpoints. codeload.github.com is deliberately not configured — the registry can
     # redeem there, but reaching it takes a temporary grant, which is the spike's
     # deny -> create_grant -> retry -> release leg (haku/egress/docs/github_spike.md).
     - id: haku-github-api
-      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
       origins:
         - scheme: https
           host: api.github.com
@@ -690,7 +690,7 @@ egress_decide:
         methods: [DELETE, GET, HEAD, PATCH, POST, PUT]
       credential_handle: github-bot
     - id: haku-github-git
-      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
       origins:
         - scheme: https
           host: github.com
@@ -704,7 +704,7 @@ egress_decide:
     # origin only — exactly as codex-litellm below does for the Codex runner. GET+POST: Claude Code
     # POSTs /v1/messages and (with gateway discovery) GETs /v1/models. Redeems the LiteLLM key.
     - id: haku-claude-litellm
-      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
       origins:
         - scheme: http
           host: litellm.litellm.svc.cluster.local
@@ -713,14 +713,14 @@ egress_decide:
         methods: [GET, POST]
       credential_handle: claude-litellm
       allow_prohibited_address: true
-    # The Console-launched Claude runner reached these under the iron fence; keep them standing so it
+    # The Console-launched Claude runner reached these under the iron fence; keep them configured so it
     # keeps the same reach (archive/tarball downloads via codeload; git clone / raw-file / release
     # redirects on the githubusercontent CDN, which serve pre-signed URLs and carry NO credential).
     # Distinct from the codex- GitHub entries below only in credential (github-bot vs codex-github-bot):
     # each runtime's live bridge bearer resolves to its own Agent, so the proxy is handed only the
     # credentials for that Agent.
     - id: haku-github-codeload
-      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
       origins:
         - scheme: https
           host: codeload.github.com
@@ -729,7 +729,7 @@ egress_decide:
         methods: [GET, HEAD]
       credential_handle: github-bot
     - id: haku-githubusercontent
-      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
       origins:
         - scheme: https
           host: objects.githubusercontent.com
@@ -742,7 +742,7 @@ egress_decide:
           port: 443
       coverage:
         methods: [GET, HEAD]
-    # The Console-launched Codex runner's standing reachability, mirroring the host set the retiring
+    # The Console-launched Codex runner's configured reachability, mirroring the host set the retiring
     # public-coder-codex-runner-proxy iron proxy allowed (codex-runner-iron.yaml). codex- ids keep
     # these distinct from the haku- GitHub entries above: each live bridge bearer resolves to one
     # Agent, so a request matches only that Agent's entries and receives only its credentials.
@@ -751,7 +751,7 @@ egress_decide:
     #   scoped to this exact origin — unrestricted methods, matching the iron rule's host-only
     #   substitution so a denied method is never a broken model turn.
     - id: codex-litellm
-      agent_ids: [43a833f3-2b1c-4a04-9b8c-1df0cedfb79e]
+      principal: { kind: agent, agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e }
       origins:
         - scheme: http
           host: litellm.litellm.svc.cluster.local
@@ -761,7 +761,7 @@ egress_decide:
       credential_handle: codex-litellm
       allow_prohibited_address: true
     - id: codex-github-api
-      agent_ids: [43a833f3-2b1c-4a04-9b8c-1df0cedfb79e]
+      principal: { kind: agent, agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e }
       origins:
         - scheme: https
           host: api.github.com
@@ -770,7 +770,7 @@ egress_decide:
         methods: [DELETE, GET, HEAD, PATCH, POST, PUT]
       credential_handle: codex-github-bot
     - id: codex-github-git
-      agent_ids: [43a833f3-2b1c-4a04-9b8c-1df0cedfb79e]
+      principal: { kind: agent, agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e }
       origins:
         - scheme: https
           host: github.com
@@ -778,9 +778,9 @@ egress_decide:
       coverage:
         methods: [GET, POST]
       credential_handle: codex-github-bot
-    #   Archive/tarball downloads a git clone redirects to; reached freely under iron, so standing.
+    #   Archive/tarball downloads a git clone redirects to; reached freely under iron, so configured.
     - id: codex-github-codeload
-      agent_ids: [43a833f3-2b1c-4a04-9b8c-1df0cedfb79e]
+      principal: { kind: agent, agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e }
       origins:
         - scheme: https
           host: codeload.github.com
@@ -790,7 +790,7 @@ egress_decide:
       credential_handle: codex-github-bot
     #   githubusercontent CDN (pre-signed URLs) — pure reachability, no credential, matching iron.
     - id: codex-githubusercontent
-      agent_ids: [43a833f3-2b1c-4a04-9b8c-1df0cedfb79e]
+      principal: { kind: agent, agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e }
       origins:
         - scheme: https
           host: objects.githubusercontent.com
@@ -808,7 +808,7 @@ egress_decide:
     # for the internal http origins (#5073, as the *-litellm entries do); it is a no-op for the
     # public host.
     - id: haku-forgejo
-      agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
       origins:
         - scheme: http
           host: forgejo-http.forgejo
@@ -988,7 +988,7 @@ mcp:
     # One server fronting every temporary-grant domain (#4918): create/list/get/release/revoke over
     # the shared #4889 envelope, each payload tagged with its `domain` (kubernetes | http), plus the
     # kubernetes SAR check `kubernetes_can_i` (side-effect-free). HTTP egress grants (#4670; first
-    # exercised by the #4943 spike) are evaluated by the egress decide endpoint after standing
+    # exercised by the #4943 spike) are evaluated by the egress decide endpoint after configuration-file
     # policy; kubernetes grants are RBAC-like scope/rule coverage. Both ledgers are Console's own
     # Postgres — credential-free. Exposed to EVERY access profile (operator ruling on #4986): any
     # Agent may ask. `create_grant` is deliberately in NO auto-approval policy: grant creation

@@ -161,7 +161,7 @@ def console(make_client: Callable[..., Any]) -> Iterator[_Console]:
         )
 
 
-def test_can_i_reports_standing_policy_through_the_configured_subject(console: _Console) -> None:
+def test_can_i_reports_configured_sar_through_the_configured_subject(console: _Console) -> None:
     context = console.agent_context()
     console.sar.allowed = True
     console.sar.reason = "RBAC: allowed by ClusterRoleBinding"
