@@ -136,23 +136,28 @@ py_test(
 
 py_test(
     name = "test_routes",
+    size = "medium",
     srcs = ["test_routes.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
     deps = [
+        ":authorization",
         ":models",
-        ":routes",
+        ":service",
         "//:conftest",
         "//haku/console:config",
         "//haku/console:conftest",
-        "//haku/console:tool_call_actor",
         "//haku/console/grants:catalog",
-        "//haku/console/grants:envelope",
         "//haku/console/grants:principal",
-        "//haku/console/identity:agent",
-        "//haku/console/identity:enrollment",
-        "//haku/console/identity:operator_auth",
+        "//haku/console/grants/http:service",
         "@pypi//fastapi",
         "@pypi//httpx",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 

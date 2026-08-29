@@ -3,191 +3,118 @@
 from __future__ import annotations
 
 import datetime
-from dataclasses import dataclass, field
-from types import SimpleNamespace
-from uuid import UUID
+from collections.abc import Awaitable, Callable, Iterator
+from dataclasses import dataclass
+from functools import partial
+from typing import Any, cast
+from uuid import UUID, uuid4
 
+import pytest
 import pytest_bazel
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.config import KubernetesAuthorizationSubject
-from haku.console.grants.catalog import (
-    AccessProfileSubject,
-    ConfigFileGrantSource,
-    DatabaseGrantSource,
-    Grant as CatalogGrant,
-    GrantPrincipalSubject,
-    GrantValidity,
-    KubernetesRulesCoverage,
-    KubernetesSarCoverage,
-)
-from haku.console.grants.envelope import GrantNotFoundError, GrantStatus
+from haku.console.config import KubernetesAuthorizationConfig, KubernetesAuthorizationSubject
+from haku.console.conftest import DEFAULT_ACCESS_PROFILE_ID, default_agent_binding, insert_approved_tool_call
+from haku.console.grants.catalog import GrantCatalog
+from haku.console.grants.http.service import GrantService as HttpGrantService
+from haku.console.grants.kubernetes.authorization import KubernetesSubjectAccessReviewClient
 from haku.console.grants.kubernetes.models import Grant, NamespacesGrantScope, Rule
-from haku.console.grants.kubernetes.routes import router
+from haku.console.grants.kubernetes.service import GrantService as KubernetesGrantService
 from haku.console.grants.principal import AgentGrantPrincipal
-from haku.console.identity import operator_auth
-from haku.console.identity.agent import AgentStatus, CredentialBindingStatus, CredentialKind
-from haku.console.identity.enrollment import OperatorAgent
-from haku.console.identity.operator_auth import require_operator_mutation_origin
-from haku.console.tool_call_actor import OperatorActor
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
 
-OPERATOR_ID = UUID("10000000-0000-4000-8000-000000000001")
-AGENT_ID = UUID("30000000-0000-4000-8000-000000000003")
-OTHER_AGENT_ID = UUID("40000000-0000-4000-8000-000000000004")
-GRANT_ID = UUID("50000000-0000-4000-8000-000000000005")
-# Relative: the serialized status is computed against the live clock. Whole seconds, so the
-# expected wire timestamps below serialize without microseconds.
-NOW = datetime.datetime.now(datetime.UTC).replace(microsecond=0)
+_SUBJECT = KubernetesAuthorizationSubject(username="system:serviceaccount:console-test:agent")
 
 
-def _agent() -> OperatorAgent:
-    return OperatorAgent(
-        agent_id=AGENT_ID,
-        display_name="Public Coder",
-        status=AgentStatus.ACTIVE,
-        credential_kind=CredentialKind.STATIC,
-        credential_status=CredentialBindingStatus.ACTIVE,
-        created_at=NOW - datetime.timedelta(days=2),
-        activated_at=NOW - datetime.timedelta(days=2),
-        last_seen_at=NOW - datetime.timedelta(minutes=1),
-        access_profile_id="public-coder",
+@dataclass(frozen=True, slots=True)
+class _Console:
+    """One production-shaped console app over a fresh migrated database."""
+
+    client: TestClient
+    sessions: async_sessionmaker[AsyncSession]
+    grants: KubernetesGrantService
+    agent_id: UUID
+    binding_id: UUID
+
+    def call[T](self, func: Callable[..., Awaitable[T]], *args: Any) -> T:
+        """Run one async step on the app's own event loop, where its engine lives."""
+        assert self.client.portal is not None
+        return self.client.portal.call(func, *args)
+
+
+@pytest.fixture
+def console(make_operator_client: Callable[..., Any]) -> Iterator[_Console]:
+    # The default static Agent is owned by this configured external identity.
+    with make_operator_client(operator_external_user_key="default-op") as client:
+        app = cast(FastAPI, client.app)
+        sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
+        kubernetes_grants = cast(KubernetesGrantService, app.state.kubernetes_grants)
+        # The regular app fixture has no Kubernetes config. Install the production catalog with a
+        # config-file authority so this route exercises both catalog sources without duplicating
+        # its database projection in a test double.
+        app.state.grant_catalog = GrantCatalog(
+            kubernetes_grants=kubernetes_grants,
+            http_grants=cast(HttpGrantService, app.state.http_grants),
+            kubernetes_config=KubernetesAuthorizationConfig(
+                subjects_by_access_profile={DEFAULT_ACCESS_PROFILE_ID: _SUBJECT}
+            ),
+            sar_client=KubernetesSubjectAccessReviewClient(),
+        )
+        assert client.portal is not None
+        agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
+        yield _Console(
+            client=client, sessions=sessions, grants=kubernetes_grants, agent_id=agent_id, binding_id=binding_id
+        )
+
+
+def _seed_grant(console: _Console) -> Grant:
+    source_tool_call_id = console.call(
+        partial(
+            insert_approved_tool_call,
+            console.sessions,
+            binding_id=console.binding_id,
+            now=datetime.datetime.now(datetime.UTC),
+        )
     )
+
+    async def create() -> Grant:
+        return await console.grants.create_grant(
+            owner_agent_id=console.agent_id,
+            grant_principal=AgentGrantPrincipal(agent_id=console.agent_id),
+            source_tool_call_id=source_tool_call_id,
+            scope=NamespacesGrantScope(namespaces={"public-coder-agent"}),
+            rules=(Rule(api_groups={""}, resources={"pods/log"}, verbs={"get"}),),
+            expires_at=datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=25),
+        )
+
+    return console.call(create)
 
 
 def _wire(instant: datetime.datetime) -> str:
     return instant.isoformat().replace("+00:00", "Z")
 
 
-def _grant(*, revoked: bool = False) -> Grant:
-    return Grant(
-        grant_id=GRANT_ID,
-        owner_agent_id=AGENT_ID,
-        principal=AgentGrantPrincipal(agent_id=AGENT_ID),
-        source_tool_call_id="tc_0123456789abcdef01234567",
-        scope=NamespacesGrantScope(namespaces={"public-coder-agent"}),
-        rules=(Rule(api_groups={""}, resources={"pods/log"}, verbs={"get"}),),
-        created_at=NOW - datetime.timedelta(minutes=5),
-        expires_at=NOW + datetime.timedelta(minutes=25),
-        revoked_at=NOW if revoked else None,
-        end_reason="operator reason" if revoked else None,
-    )
+def test_lists_only_the_authenticated_operators_agents_with_provenance(console: _Console) -> None:
+    grant = _seed_grant(console)
 
-
-@dataclass
-class _FakeAgentService:
-    listed_operator_ids: list[UUID] = field(default_factory=list)
-
-    async def list_agents(self, *, operator_id: UUID) -> tuple[OperatorAgent, ...]:
-        self.listed_operator_ids.append(operator_id)
-        return (_agent(),)
-
-
-@dataclass
-class _FakeGrantService:
-    current: Grant = field(default_factory=_grant)
-    listed: list[tuple[UUID, bool]] = field(default_factory=list)
-    revoked: list[tuple[UUID, UUID, str]] = field(default_factory=list)
-    revoked_sets: list[tuple[UUID, str, str]] = field(default_factory=list)
-
-    async def list_grants(self, *, owner_agent_id: UUID, include_terminal: bool = True) -> tuple[Grant, ...]:
-        self.listed.append((owner_agent_id, include_terminal))
-        return (self.current,) if owner_agent_id == AGENT_ID else ()
-
-    async def revoke_grant(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str) -> Grant:
-        self.revoked.append((owner_agent_id, grant_id, reason))
-        if owner_agent_id != AGENT_ID or grant_id != GRANT_ID:
-            raise GrantNotFoundError(str(grant_id))
-        self.current = _grant(revoked=True)
-        return self.current
-
-    async def revoke_grant_set(
-        self, *, owner_agent_id: UUID, source_tool_call_id: str, reason: str
-    ) -> tuple[Grant, ...]:
-        if owner_agent_id != AGENT_ID or source_tool_call_id != self.current.source_tool_call_id:
-            raise GrantNotFoundError(source_tool_call_id)
-        self.revoked_sets.append((owner_agent_id, source_tool_call_id, reason))
-        self.current = _grant(revoked=True)
-        return (self.current,)
-
-
-@dataclass
-class _FakeCatalog:
-    grants: _FakeGrantService
-    listed: list[tuple[UUID, str | None]] = field(default_factory=list)
-
-    async def list_kubernetes_for_agent(
-        self, *, agent_id: UUID, access_profile_id: str | None
-    ) -> tuple[CatalogGrant, ...]:
-        self.listed.append((agent_id, access_profile_id))
-        if agent_id != AGENT_ID:
-            return ()
-        return (self._config_grant(), self.describe_kubernetes_grant(self.grants.current))
-
-    @staticmethod
-    def _config_grant() -> CatalogGrant:
-        return CatalogGrant(
-            source=ConfigFileGrantSource(entry_id="kubernetes-profile:public-coder"),
-            subject=AccessProfileSubject(access_profile_id="public-coder"),
-            coverage=KubernetesSarCoverage(
-                subject=KubernetesAuthorizationSubject(username="system:serviceaccount:public-coder:agent")
-            ),
-            validity=GrantValidity(ends_at=None, status=GrantStatus.ACTIVE),
-        )
-
-    @staticmethod
-    def describe_kubernetes_grant(grant: Grant) -> CatalogGrant:
-        return CatalogGrant(
-            source=DatabaseGrantSource(
-                id=grant.grant_id, tool_call_id=grant.source_tool_call_id, created_at=grant.created_at
-            ),
-            subject=GrantPrincipalSubject(principal=grant.principal),
-            coverage=KubernetesRulesCoverage(scope=grant.scope, rules=grant.rules),
-            validity=GrantValidity(
-                ends_at=grant.expires_at,
-                status=grant.status,
-                ended_at=grant.released_at or grant.revoked_at,
-                end_reason=grant.end_reason,
-            ),
-        )
-
-
-def _client() -> tuple[TestClient, _FakeAgentService, _FakeGrantService, _FakeCatalog]:
-    app = FastAPI()
-    agents = _FakeAgentService()
-    grants = _FakeGrantService()
-    app.state.agent_enrollment_service = agents
-    app.state.kubernetes_grants = grants
-    app.state.grant_catalog = _FakeCatalog(grants)
-    app.state.settings = SimpleNamespace(public_base_url="https://haku.test")
-    app.include_router(router, dependencies=[Depends(require_operator_mutation_origin)])
-    app.dependency_overrides[operator_auth._operator_actor] = lambda: OperatorActor(operator_id=OPERATOR_ID)
-    return TestClient(app, base_url="https://haku.test"), agents, grants, app.state.grant_catalog
-
-
-def test_lists_only_the_authenticated_operators_agents_with_provenance() -> None:
-    client, agents, grants, catalog = _client()
-
-    response = client.get("/api/kubernetes-grants")
+    response = console.client.get("/api/kubernetes-grants")
 
     assert response.status_code == 200
-    assert agents.listed_operator_ids == [OPERATOR_ID]
-    assert grants.listed == []
-    assert catalog.listed == [(AGENT_ID, "public-coder")]
     record, config_record = response.json()["grants"]
-    assert record["agent_id"] == str(AGENT_ID)
-    assert record["agent_display_name"] == "Public Coder"
+    assert record["agent_id"] == str(console.agent_id)
+    assert record["agent_display_name"] == "Console Test Agent"
     assert record["grant"] == {
         "source": {
             "kind": "database",
-            "id": str(GRANT_ID),
-            "tool_call_id": "tc_0123456789abcdef01234567",
-            "created_at": _wire(NOW - datetime.timedelta(minutes=5)),
+            "id": str(grant.grant_id),
+            "tool_call_id": grant.source_tool_call_id,
+            "created_at": _wire(grant.created_at),
         },
-        "subject": {"kind": "grant_principal", "principal": {"kind": "agent", "agent_id": str(AGENT_ID)}},
+        "subject": {"kind": "grant_principal", "principal": {"kind": "agent", "agent_id": str(console.agent_id)}},
         "coverage": {
             "kind": "kubernetes_rules",
             "scope": {"kind": "namespaces", "namespaces": ["public-coder-agent"]},
@@ -201,14 +128,13 @@ def test_lists_only_the_authenticated_operators_agents_with_provenance() -> None
                 }
             ],
         },
-        "validity": {
-            "ends_at": _wire(NOW + datetime.timedelta(minutes=25)),
-            "status": "active",
-            "ended_at": None,
-            "end_reason": None,
-        },
+        "validity": {"ends_at": _wire(grant.expires_at), "status": "active", "ended_at": None, "end_reason": None},
     }
-    assert config_record["grant"]["source"] == {"kind": "config_file", "entry_id": "kubernetes-profile:public-coder"}
+    assert config_record["agent_id"] == str(console.agent_id)
+    assert config_record["grant"]["source"] == {
+        "kind": "config_file",
+        "entry_id": f"kubernetes-profile:{DEFAULT_ACCESS_PROFILE_ID}",
+    }
     assert config_record["grant"]["validity"] == {
         "ends_at": None,
         "status": "active",
@@ -217,53 +143,62 @@ def test_lists_only_the_authenticated_operators_agents_with_provenance() -> None
     }
 
 
-def test_revoke_requires_a_non_blank_reason_and_owned_agent() -> None:
-    client, _agents, grants, _catalog = _client()
-    path = f"/api/kubernetes-grants/{AGENT_ID}/{GRANT_ID}/revoke"
+def test_revoke_requires_a_non_blank_reason_and_owned_agent(console: _Console) -> None:
+    grant = _seed_grant(console)
+    path = f"/api/kubernetes-grants/{console.agent_id}/{grant.grant_id}/revoke"
 
-    assert client.post(path, json={"reason": "risk"}).status_code == 403
-    headers = {"Origin": "https://haku.test"}
-    assert client.post(path, json={"reason": "   "}, headers=headers).status_code == 422
     assert (
-        client.post(
-            f"/api/kubernetes-grants/{OTHER_AGENT_ID}/{GRANT_ID}/revoke", json={"reason": "risk"}, headers=headers
+        console.client.post(path, json={"reason": "risk"}, headers={"Origin": "https://untrusted.test"}).status_code
+        == 403
+    )
+    headers = {"Origin": "https://haku.test"}
+    assert console.client.post(path, json={"reason": "   "}, headers=headers).status_code == 422
+    assert (
+        console.client.post(
+            f"/api/kubernetes-grants/{uuid4()}/{grant.grant_id}/revoke", json={"reason": "risk"}, headers=headers
         ).status_code
         == 404
     )
 
-    response = client.post(path, json={"reason": "  pilot complete  "}, headers=headers)
+    response = console.client.post(path, json={"reason": "  pilot complete  "}, headers=headers)
 
     assert response.status_code == 200
-    assert grants.revoked == [(AGENT_ID, GRANT_ID, "pilot complete")]
     assert response.json()["grant"]["validity"]["status"] == "revoked"
+    assert response.json()["grant"]["validity"]["end_reason"] == "pilot complete"
 
 
-def test_revoke_source_set_requires_reason_and_owned_agent() -> None:
-    client, _agents, grants, _catalog = _client()
-    source = "tc_0123456789abcdef01234567"
-    path = f"/api/kubernetes-grants/{AGENT_ID}/source/{source}/revoke"
+def test_revoke_source_set_requires_reason_and_owned_agent(console: _Console) -> None:
+    grant = _seed_grant(console)
+    path = f"/api/kubernetes-grants/{console.agent_id}/source/{grant.source_tool_call_id}/revoke"
     headers = {"Origin": "https://haku.test"}
 
-    assert client.post(path, json={"reason": "risk"}).status_code == 403
-    assert client.post(path, json={"reason": "   "}, headers=headers).status_code == 422
     assert (
-        client.post(
-            f"/api/kubernetes-grants/{OTHER_AGENT_ID}/source/{source}/revoke", json={"reason": "risk"}, headers=headers
+        console.client.post(path, json={"reason": "risk"}, headers={"Origin": "https://untrusted.test"}).status_code
+        == 403
+    )
+    assert console.client.post(path, json={"reason": "   "}, headers=headers).status_code == 422
+    assert (
+        console.client.post(
+            f"/api/kubernetes-grants/{uuid4()}/source/{grant.source_tool_call_id}/revoke",
+            json={"reason": "risk"},
+            headers=headers,
         ).status_code
         == 404
     )
     assert (
-        client.post(
-            f"/api/kubernetes-grants/{AGENT_ID}/source/tc_unknown/revoke", json={"reason": "risk"}, headers=headers
+        console.client.post(
+            f"/api/kubernetes-grants/{console.agent_id}/source/tc_unknown/revoke",
+            json={"reason": "risk"},
+            headers=headers,
         ).status_code
         == 404
     )
 
-    response = client.post(path, json={"reason": "  pilot complete  "}, headers=headers)
+    response = console.client.post(path, json={"reason": "  pilot complete  "}, headers=headers)
 
     assert response.status_code == 200
-    assert grants.revoked_sets == [(AGENT_ID, source, "pilot complete")]
     assert [item["grant"]["validity"]["status"] for item in response.json()["grants"]] == ["revoked"]
+    assert [item["grant"]["validity"]["end_reason"] for item in response.json()["grants"]] == ["pilot complete"]
 
 
 if __name__ == "__main__":
