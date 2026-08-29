@@ -43,6 +43,11 @@ const SCENES = [
   { name: "console-drawer", viewport: { width: 1200, height: 800 }, frame: true },
   { name: "console-mobile", viewport: { width: 390, height: 760 }, frame: true },
   {
+    name: "approvals-embed",
+    viewport: { width: 560, height: 820 },
+    expectVisible: "::-p-text(Pending)",
+  },
+  {
     name: "settings",
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,

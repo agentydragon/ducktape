@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   AGENT_ENROLLMENT_PATH_PREFIX,
   agentEnrollmentIdForPathname,
+  APPROVALS_EMBED_PATH,
   CONVERSATIONS_PATH,
   CONSOLE_ROOT_PATH,
   HOME_PATH,
@@ -23,6 +24,7 @@ import {
 describe("viewForPathname", () => {
   it("reserves only the _console namespace for trusted pages", () => {
     expect(viewForPathname(SETTINGS_PATH)).toBe("settings");
+    expect(viewForPathname(APPROVALS_EMBED_PATH)).toBe("approvalsEmbed");
     expect(viewForPathname(`${AGENT_ENROLLMENT_PATH_PREFIX}/10000000-0000-4000-8000-000000000001`)).toBe(
       "agentEnrollment"
     );

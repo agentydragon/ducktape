@@ -12,7 +12,10 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files(
     ["logo.svg"],
-    visibility = ["//haku/console/frontend:__pkg__"],
+    visibility = [
+        "//haku/console/frontend:__pkg__",
+        "//haku/console/gnome:__pkg__",
+    ],
 )
 
 py_library(

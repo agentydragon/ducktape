@@ -1,5 +1,5 @@
-# Rebuild ducktape's own pinned artifacts (Python wheels + aiquota's GNOME
-# Shell extension zip) from PR source and run each nix package's importsCheck
+# Rebuild ducktape's own pinned artifacts (Python wheels + GNOME Shell
+# extension archives) from PR source and run each nix package's check
 # against them. DUCKTAPE_ARTIFACT_OVERRIDES (see flake.nix) swaps the released
 # pin for the freshly-Bazel-built artifact so nix's `mkWheel` imports check
 # runs against PR source — catches "wheel forgot a package" bugs like the
@@ -165,8 +165,8 @@ jobs:
           run_from_commit: ${{ steps.source.outputs.sha }}
 
       # Emit the JSON blob flake.nix's artifacts logic consumes. Every pin
-      # in an in-gate release gets an override entry (so aiquota's wheel
-      # AND its extension zip both land as overrides). Verifying every
+      # in an in-gate release gets an override entry (including every asset in
+      # a multi-asset release). Verifying every
       # expected output exists surfaces build/output-path drift with a
       # clear error before nix reads a missing file.
       - name: Assemble artifact overrides

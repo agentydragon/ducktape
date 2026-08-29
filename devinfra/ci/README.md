@@ -73,3 +73,11 @@ extension zip come out of one `bazel build //aiquota:aiquota_wheel
 //aiquota/gnome:aiquota_zip` invocation, and `nix/packages/gnome-shell-aiquota.nix`
 consumes both via `artifacts.aiquota` and `artifacts.aiquota-extension`.
 Changing either output changes the release identity and publishes both assets.
+
+**`haku-approvals`**
+
+The GNOME Shell extension, native GTK/WebKit window, desktop entry, symbolic
+icon, and canonical Haku logo come out of the Bazel-built
+`//haku/console/gnome:haku_approvals_zip` archive. The Nix package consumes
+that release artifact and installs its contents; it does not maintain a second
+source-based copy of the desktop assets.

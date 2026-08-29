@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { hasGeolocationGrant, setGeolocationGrant } from "./geolocation_grant";
 import { initialFrameSrc, routeFromLocation, shouldCloseAutoOpenedApprovalQueue } from "./haku_ui_embed";
-import { rememberEmbedPath, SETTINGS_PATH, TOOL_CALLS_PATH } from "./routing";
+import { APPROVALS_EMBED_PATH, rememberEmbedPath, SETTINGS_PATH, TOOL_CALLS_PATH, viewForPathname } from "./routing";
 import { hasScreenshotGrant, setScreenshotGrant } from "./screenshot_grant";
 
 describe("initialFrameSrc", () => {
@@ -54,6 +54,8 @@ describe("routeFromLocation", () => {
     rememberEmbedPath("/garden/remembered.md");
     expect(routeFromLocation({ pathname: TOOL_CALLS_PATH, hash: "" })).toBe("/garden/remembered.md");
     expect(routeFromLocation({ pathname: SETTINGS_PATH, hash: "" })).toBe("/garden/remembered.md");
+    expect(routeFromLocation({ pathname: APPROVALS_EMBED_PATH, hash: "" })).toBe("/garden/remembered.md");
+    expect(viewForPathname(APPROVALS_EMBED_PATH)).toBe("approvalsEmbed");
   });
 });
 

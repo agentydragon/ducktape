@@ -85,6 +85,37 @@
   overflow-wrap: anywhere;
 }
 
+.haku-approval-embed {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--haku-page-bg);
+  color: var(--mantine-color-text);
+}
+
+.haku-approval-embed-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--haku-border);
+  background: var(--haku-panel-bg);
+}
+
+.haku-approval-embed-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.85rem;
+}
+
+.haku-approval-embed-list {
+  width: min(32rem, 100%);
+  margin: 0 auto;
+}
+
 /* Rendered item markdown (marked → sanitized HTML). Tailwind's typography plugin
    isn't vendored, so the prose elements are styled explicitly here; the container
    carries the `md` class (the inner tags come from dangerouslySetInnerHTML, which

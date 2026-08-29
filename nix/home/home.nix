@@ -100,6 +100,7 @@ in
     ./modules/gnome-shell-keybindings.nix
     ./modules/flameshot-screenshots.nix
     ./modules/aiquota.nix
+    ./modules/haku-approvals.nix
   ];
   # Workstations use the cluster/local (gpt-oss) Codex model providers + profiles.
   ducktape.codex.localModels.enable = true;

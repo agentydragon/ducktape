@@ -88,6 +88,7 @@
   );
 
   ducktape.aiquota.enable = true;
+  ducktape.hakuApprovals.enable = true;
   ducktape.aiquota.remoteApi.enable = true;
 
   # TODO: expose this through an authenticated in-cluster route if rugged's

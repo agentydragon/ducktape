@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 import { type ConfigResponse, displayableError, fetchConfig } from "./client";
 import { HakuUiEmbed } from "./haku_ui_embed";
+import { ApprovalsEmbedPage } from "./approvals_embed_page";
 import { OAuthResultPage } from "./oauth_result_page";
 import { useOAuthResultAnnouncement } from "./oauth_result_announcement";
 import { useConsoleView } from "./routing";
@@ -19,6 +20,7 @@ export default function App(): JSX.Element {
   useOAuthResultAnnouncement(view);
 
   useEffect(() => {
+    if (view === "approvalsEmbed") return;
     let alive = true;
     fetchConfig()
       .then((c) => {
@@ -30,10 +32,12 @@ export default function App(): JSX.Element {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [view]);
 
   if (view === "oauthResult" && oauthResultId !== null)
     return <OAuthResultPage key={oauthResultId} resultId={oauthResultId} />;
+
+  if (view === "approvalsEmbed") return <ApprovalsEmbedPage />;
 
   // The initial config load is the one thing rendered by the shell itself; a failure
   // leaves nothing to frame, so it gets a persistent page-level message — except while the

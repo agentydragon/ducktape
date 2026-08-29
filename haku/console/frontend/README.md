@@ -16,13 +16,17 @@ emitted `.js`, and vitest runs the emitted `.test.js`.
 - `main.tsx` → `app.tsx` → `haku_ui_embed.tsx`, the persistent application shell. The cross-origin
   iframe remains mounted while the content area switches between Haku UI, Settings, and Past tool
   calls, preserving bridge and in-frame state.
-- `routing.ts` — `/_console/settings` and `/_console/tool-calls` are trusted console pages;
+- `routing.ts` — `/_console/settings` and `/_console/tool-calls` are trusted console pages, while
+  `/_console/approvals-embed` is the chrome-free tool-approval surface used by the desktop window;
   `/_console/assets/*` holds fingerprinted browser assets. Every other pathname is mirrored into
   haku-ui, and the last frame path is remembered per tab across console-page detours.
 - `shell_chrome.tsx` — a fixed-width icon rail that reserves the left edge of the viewport. Its
   top approvals trigger controls an independent non-modal drawer over the content area; page icons
   select Haku UI, Settings, or Past tool calls; bottom indicators expose sync, location-sharing,
   and screenshot-capture state through compact popovers.
+- `approvals_embed_page.tsx` — the small-window tool-approval surface. It reuses the approvals tab
+  and shared tool-call cards without mounting navigation chrome or the cross-origin Haku UI iframe;
+  bridge-only location and screenshot approvals remain in the full shell.
 - `settings_panel.tsx` — the Settings page. It reads MCP-server and node-daemon reflection through
   the console's Operator-authenticated MCP transport, validating each result against the
   Python-generated MCP result-schema catalog, and hosts account connect/disconnect, per-Agent
