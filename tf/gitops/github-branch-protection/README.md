@@ -10,6 +10,9 @@ This Terraform module manages branch protection for
 - Required checks are exact GitHub check-run names:
   - `bazel-ci / Test & Build`
   - `Pre-commit checks`
+- Required checks are strict: a PR must be up to date with its base branch, so
+  advancing `devel` invalidates stale green checks until the PR is updated and
+  checked again.
 - Deletion, force-push, and non-linear history are blocked.
 - Pull requests are required so required checks can run, but the solo-repo
   review count is zero.
