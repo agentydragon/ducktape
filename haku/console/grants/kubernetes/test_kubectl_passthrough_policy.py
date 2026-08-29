@@ -10,11 +10,11 @@ import pytest
 import pytest_bazel
 
 from haku.console.conftest import console_settings, write_config
-from haku.console.grants.kubernetes.authorization import AuthorizationResponse, KubernetesAuthorizationSource
 from haku.console.grants.kubernetes.kubectl_passthrough_policy import map_kubectl_passthrough_request
 from haku.console.mcp.tool_call_service import ToolCallApplicationService
 from haku.console.tool_call_actor import AgentActor
 from haku.console.tool_calls import SubmitToolCallRequest, ToolCallStatus
+from haku.grants.authorization import AuthorizationAllowed, AuthorizationDenied, GrantSourceKind
 
 _SERVER_ID = "kubectl-passthrough-mcp"
 
@@ -43,8 +43,10 @@ def _repository(status: ToolCallStatus) -> AsyncMock:
 
 def _authorization(*, allowed: bool, reason: str) -> AsyncMock:
     authorization = AsyncMock()
-    authorization.evaluate.return_value = AuthorizationResponse(
-        allowed=allowed, reason=reason, source=KubernetesAuthorizationSource.SAR, decision_id="sar:1"
+    authorization.evaluate.return_value = (
+        AuthorizationAllowed(source=GrantSourceKind.CONFIG_FILE, decision_id="config_file:public-coder", reason=reason)
+        if allowed
+        else AuthorizationDenied(reason=reason)
     )
     return authorization
 

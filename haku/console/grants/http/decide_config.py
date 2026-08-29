@@ -102,8 +102,8 @@ class EgressStandingPolicyEntry(BaseModel):
 
     Standing entries are the reviewed, durable sibling of temporary grants (#4941): both hold an
     ``HttpRequestCoverage`` over exact canonical origins — an explicit method set and an optional
-    fullmatch path-plus-query regex — evaluated before grants, with decision provenance
-    ``standing:<id>``. Reachability and credential redemption stay two typed authorities (#4670):
+    fullmatch path-plus-query regex — evaluated before grants, with configuration-file decision
+    provenance ``config_file:<id>``. Reachability and credential redemption stay two typed authorities (#4670):
     a standing entry only *names* a registry handle; presentation (placeholder, match headers) and
     the redemption binding (Agent/origin allowlists) live on the ``EgressCredentialEntry`` itself,
     so no standing entry can alter where or how a credential's bytes are injected. Entries may

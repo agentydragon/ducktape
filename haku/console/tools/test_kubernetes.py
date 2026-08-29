@@ -32,12 +32,9 @@ from haku.console.conftest import (
     default_agent_binding,
     insert_approved_tool_call,
 )
-from haku.console.grants.kubernetes.authorization import (
-    KubernetesAuthorizationService,
-    KubernetesAuthorizationSource,
-    RequestAttributes,
-    SubjectAccessReviewResult,
-)
+from haku.console.grants.catalog import GrantCatalog
+from haku.console.grants.kubernetes.authorization import RequestAttributes, SubjectAccessReviewResult
+from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
 from haku.console.grants.kubernetes.models import (
     ClusterGrantScope,
     GrantScopeKind,
@@ -50,6 +47,7 @@ from haku.console.grants.principal import AgentGrantPrincipal, RequestPrincipal
 from haku.console.identity.agent_bearer_authority import AgentBearerAuthority
 from haku.console.mcp.execution import AgentMcpExecutionCaller, McpExecutionContext
 from haku.console.tools.kubernetes import KubernetesAccessCheck, KubernetesToolsService
+from haku.grants.authorization import GrantSourceKind
 
 _NOW = datetime(2026, 8, 20, tzinfo=UTC)
 _SCOPE = NamespacesGrantScope(namespaces=("demo",))
@@ -135,13 +133,19 @@ def console(make_client: Callable[..., Any]) -> Iterator[_Console]:
         app = cast(FastAPI, client.app)
         sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
         grants = cast(GrantService, app.state.kubernetes_grants)
+        http_grants = app.state.http_grants
         sar = _FakeSubjectAccessReviews()
         authorization = KubernetesAuthorizationService(
-            config=KubernetesAuthorizationConfig(subjects_by_access_profile={DEFAULT_ACCESS_PROFILE_ID: _SUBJECT}),
             # The trusted in-process path never resolves a bearer; no sources states that.
             agent_bearer_authority=AgentBearerAuthority(()),
-            grants=grants,
-            sar_client=sar,
+            catalog=GrantCatalog(
+                kubernetes_config=KubernetesAuthorizationConfig(
+                    subjects_by_access_profile={DEFAULT_ACCESS_PROFILE_ID: _SUBJECT}
+                ),
+                sar_client=sar,
+                kubernetes_grants=grants,
+                http_grants=http_grants,
+            ),
         )
         assert client.portal is not None
         agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
@@ -164,7 +168,7 @@ def test_can_i_reports_standing_policy_through_the_configured_subject(console: _
     async def exercise() -> None:
         (result,) = await console.service.can_i(context=context, requests=[KubernetesAccessCheck(attributes=_REQUEST)])
         assert result.allowed is True
-        assert result.source is KubernetesAuthorizationSource.SAR
+        assert result.source is GrantSourceKind.CONFIG_FILE
         assert result.valid_until is None
 
     console.call(exercise)
@@ -178,12 +182,12 @@ def test_can_i_falls_back_to_an_active_grant_only_after_sar_denial(console: _Con
     async def exercise() -> None:
         (denied,) = await console.service.can_i(context=context, requests=[KubernetesAccessCheck(attributes=_REQUEST)])
         assert denied.allowed is False
-        assert denied.source is KubernetesAuthorizationSource.SAR
+        assert denied.reason == "RBAC: access denied"
 
         expires_at = await console.seed_grant(context, GrantSpec(scope=_SCOPE, rules=(_RULE,)))
         (allowed,) = await console.service.can_i(context=context, requests=[KubernetesAccessCheck(attributes=_REQUEST)])
         assert allowed.allowed is True
-        assert allowed.source is KubernetesAuthorizationSource.GRANT
+        assert allowed.source is GrantSourceKind.DATABASE
         assert allowed.valid_until == expires_at
 
     console.call(exercise)
@@ -241,7 +245,7 @@ def test_can_i_inferred_cluster_scope_matches_cluster_grants(console: _Console) 
             context=context, requests=[KubernetesAccessCheck(attributes=attributes)]
         )
         assert allowed.allowed is True
-        assert allowed.source is KubernetesAuthorizationSource.GRANT
+        assert allowed.source is GrantSourceKind.DATABASE
 
     console.call(exercise)
 

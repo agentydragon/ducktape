@@ -20,7 +20,7 @@ from uuid import UUID
 from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
 from haku.console.auto_approval.registry import AutoApprovalPolicyRegistry, PolicyDenial, auto_approve_tool_call
 from haku.console.config import Settings
-from haku.console.grants.kubernetes.authorization import KubernetesAuthorizationService
+from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
 from haku.console.grants.principal import RequestPrincipal
 from haku.console.mcp.execution import (
     AgentMcpExecutionCaller,

@@ -10,7 +10,8 @@ import pytest
 import pytest_bazel
 from pydantic import SecretStr, TypeAdapter, ValidationError
 
-from haku.egress.decision import DecideAllowed, DecideDenied, DecideRequest, DecideResponse, DecisionSource, RequestMeta
+from haku.egress.decision import DecideAllowed, DecideDenied, DecideRequest, DecideResponse, RequestMeta
+from haku.grants.authorization import GrantSourceKind
 
 _BRIDGE = "bridge-session-bearer"
 
@@ -89,8 +90,8 @@ def test_verdicts_parse_by_their_allowed_discriminant() -> None:
         json.dumps(
             {
                 "allowed": True,
-                "source": "grant",
-                "decision_id": "grant:50000000-0000-4000-8000-000000000005",
+                "source": "database",
+                "decision_id": "database:50000000-0000-4000-8000-000000000005",
                 "valid_until": "2026-08-27T12:30:00Z",
                 "substitutions": [
                     {
@@ -103,29 +104,29 @@ def test_verdicts_parse_by_their_allowed_discriminant() -> None:
         )
     )
     assert isinstance(allowed, DecideAllowed)
-    assert allowed.source is DecisionSource.GRANT
+    assert allowed.source is GrantSourceKind.DATABASE
     assert allowed.valid_until == datetime.datetime(2026, 8, 27, 12, 30, tzinfo=datetime.UTC)
     (substitution,) = allowed.substitutions
     assert substitution.match_headers == frozenset({"authorization"})
 
-    # A standing admission carries no deadline: the Console route omits the None field
+    # A config-file admission carries no deadline: the Console route omits the None field
     # (response_model_exclude_none), and the parse restores it.
     standing = adapter.validate_json(
-        json.dumps({"allowed": True, "source": "standing", "decision_id": "standing:haku-github-api"})
+        json.dumps({"allowed": True, "source": "config_file", "decision_id": "config_file:haku-github-api"})
     )
     assert isinstance(standing, DecideAllowed)
-    assert standing.source is DecisionSource.STANDING
+    assert standing.source is GrantSourceKind.CONFIG_FILE
     assert standing.valid_until is None
     assert standing.substitutions == []
 
-    denied = adapter.validate_json(json.dumps({"allowed": False, "source": "none", "reason": "no grant"}))
+    denied = adapter.validate_json(json.dumps({"allowed": False, "reason": "no grant"}))
     assert isinstance(denied, DecideDenied)
     assert denied.grant_scope is None
 
 
 def test_denials_never_claim_an_admitting_source() -> None:
     with pytest.raises(ValidationError):
-        DecideDenied.model_validate({"allowed": False, "source": "grant", "reason": "contradiction"})
+        DecideDenied.model_validate({"allowed": False, "source": "database", "reason": "contradiction"})
     with pytest.raises(ValidationError):
         DecideAllowed.model_validate(
             {"allowed": True, "source": "none", "decision_id": "x", "valid_until": "2026-08-27T12:30:00Z"}

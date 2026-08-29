@@ -17,10 +17,10 @@ from haku.egress.decision import (
     DecideAllowed,
     DecideDenied,
     DecideRequest,
-    DecisionSource,
     GrantScope,
     PlaceholderSubstitution,
 )
+from haku.grants.authorization import GrantSourceKind
 
 _VALID_UNTIL = datetime.datetime(2026, 8, 27, 12, 30, tzinfo=datetime.UTC)
 _FENCE = "shared-fence-credential"
@@ -92,8 +92,8 @@ def test_endpoint_is_unavailable_when_not_wired() -> None:
 def test_allow_wire_shape_carries_provenance_lifetime_and_substitutions() -> None:
     service = _FakeDecideService(
         DecideAllowed(
-            source=DecisionSource.GRANT,
-            decision_id="grant:50000000-0000-4000-8000-000000000005",
+            source=GrantSourceKind.DATABASE,
+            decision_id="database:50000000-0000-4000-8000-000000000005",
             valid_until=_VALID_UNTIL,
             substitutions=[
                 PlaceholderSubstitution(
@@ -110,8 +110,8 @@ def test_allow_wire_shape_carries_provenance_lifetime_and_substitutions() -> Non
     # This response is the one wire a real credential value travels on: localhost, to the proxy.
     assert response.json() == {
         "allowed": True,
-        "source": "grant",
-        "decision_id": "grant:50000000-0000-4000-8000-000000000005",
+        "source": "database",
+        "decision_id": "database:50000000-0000-4000-8000-000000000005",
         "valid_until": "2026-08-27T12:30:00Z",
         "substitutions": [
             {"placeholder": "github-token-placeholder", "value": "ghp-real-value", "match_headers": ["authorization"]}
@@ -121,17 +121,19 @@ def test_allow_wire_shape_carries_provenance_lifetime_and_substitutions() -> Non
     assert decided.request.path == "/api/items?x=1"
 
 
-def test_standing_allow_wire_shape_omits_the_absent_deadline() -> None:
-    # A standing-policy admission has no deadline (None), so the field stays off the wire; the
+def test_config_file_allow_wire_shape_omits_the_absent_deadline() -> None:
+    # A configuration-file admission has no deadline (None), so the field stays off the wire; the
     # client-side default restores None on parse (haku/egress/test_decision.py).
-    service = _FakeDecideService(DecideAllowed(source=DecisionSource.STANDING, decision_id="standing:haku-github-api"))
+    service = _FakeDecideService(
+        DecideAllowed(source=GrantSourceKind.CONFIG_FILE, decision_id="config_file:haku-github-api")
+    )
     with _client(service) as client:
         response = _post(client)
     assert response.status_code == 200
     assert response.json() == {
         "allowed": True,
-        "source": "standing",
-        "decision_id": "standing:haku-github-api",
+        "source": "config_file",
+        "decision_id": "config_file:haku-github-api",
         "substitutions": [],
     }
 
@@ -148,7 +150,6 @@ def test_deny_wire_shape_carries_reason_and_canonical_grant_scope() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "allowed": False,
-        "source": "none",
         "reason": "no active HTTP grant covers the request",
         "grant_scope": {"scheme": "https", "host": "api.example", "port": 443},
     }
@@ -159,12 +160,12 @@ def test_deny_without_grant_scope_omits_the_field() -> None:
     with _client(service) as client:
         response = _post(client)
     assert response.status_code == 200
-    assert response.json() == {"allowed": False, "source": "none", "reason": "unknown fence credential"}
+    assert response.json() == {"allowed": False, "reason": "unknown fence credential"}
 
 
 def test_connect_admission_has_no_path() -> None:
     service = _FakeDecideService(
-        DecideAllowed(source=DecisionSource.GRANT, decision_id="grant:x", valid_until=_VALID_UNTIL)
+        DecideAllowed(source=GrantSourceKind.DATABASE, decision_id="database:x", valid_until=_VALID_UNTIL)
     )
     body = dict(_BODY, request={"method": "CONNECT", "scheme": None, "host": "api.example", "port": 443, "path": None})
     with _client(service) as client:

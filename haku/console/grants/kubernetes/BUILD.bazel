@@ -38,8 +38,8 @@ py_library(
     name = "routes",
     srcs = ["routes.py"],
     deps = [
-        ":models",
         ":service",
+        "//haku/console/grants:catalog",
         "//haku/console/grants:envelope",
         "//haku/console/identity:operator_agents",
         "//haku/console/identity:operator_auth",
@@ -53,10 +53,8 @@ py_library(
     srcs = ["authorization.py"],
     deps = [
         ":models",
-        ":service",
         "//haku/console:config",
-        "//haku/console/grants:principal",
-        "//haku/console/identity:agent_bearer_authority",
+        "//haku/grants:authorization",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
     ],
@@ -76,6 +74,8 @@ py_library(
     srcs = ["proxy_authorization.py"],
     deps = [
         ":authorization",
+        ":authorization_service",
+        "//haku/grants:authorization",
         "@pypi//fastapi",
     ],
 )
@@ -141,8 +141,10 @@ py_test(
         ":models",
         ":routes",
         "//:conftest",
+        "//haku/console:config",
         "//haku/console:conftest",
         "//haku/console:tool_call_actor",
+        "//haku/console/grants:catalog",
         "//haku/console/grants:envelope",
         "//haku/console/grants:principal",
         "//haku/console/identity:agent",
@@ -159,12 +161,12 @@ py_test(
     size = "medium",
     srcs = ["test_kubectl_passthrough_policy.py"],
     deps = [
-        ":authorization",
         ":kubectl_passthrough_policy",
         "//:conftest",
         "//haku/console:conftest",
         "//haku/console:tool_call_actor",
         "//haku/console/mcp:tool_call_service",
+        "//haku/grants:authorization",
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -176,6 +178,7 @@ py_test(
     srcs = ["test_proxy_authorization.py"],
     deps = [
         ":authorization",
+        ":authorization_service",
         ":models",
         ":proxy_authorization",
         ":service",
@@ -183,9 +186,23 @@ py_test(
         "//haku/console:config",
         "//haku/console:conftest",
         "//haku/console:tool_call_actor",
+        "//haku/console/grants:catalog",
         "//haku/console/grants:principal",
+        "//haku/grants:authorization",
         "@pypi//fastapi",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "authorization_service",
+    srcs = ["authorization_service.py"],
+    deps = [
+        ":authorization",
+        "//haku/console/grants:catalog",
+        "//haku/console/grants:principal",
+        "//haku/console/identity:agent_bearer_authority",
+        "//haku/grants:authorization",
     ],
 )

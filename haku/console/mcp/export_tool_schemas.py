@@ -160,6 +160,7 @@ def build_schema_servers() -> dict[str, FastMCP]:
                 grants=GrantsToolsService(
                     kubernetes=dependency,
                     http=dependency,
+                    catalog=dependency,
                     agents=dependency,
                     can_i=KubernetesToolsService(authorization=dependency),
                 ),

@@ -26,7 +26,10 @@ py_library(
         "//haku/console:__pkg__",
         "//haku/console/grants/http:__pkg__",
     ],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        "//haku/grants:authorization",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
@@ -122,6 +125,7 @@ py_library(
         ":decision",
         ":localhost_decide_client",
         ":runner",
+        "//haku/grants:authorization",
         "@pypi//aiohttp",
         "@pypi//more_itertools",
         "@pypi//pydantic",
@@ -152,6 +156,7 @@ py_test(
         ":conftest",
         ":decision",
         "//:conftest",
+        "//haku/grants:authorization",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -11,6 +11,15 @@ import pytest_bazel
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
+from haku.console.grants.catalog import (
+    ConfigFileGrantSource,
+    DatabaseGrantSource,
+    Grant as CatalogGrant,
+    GrantPrincipalSubject,
+    GrantValidity,
+    HttpCoverage,
+)
+from haku.console.grants.envelope import GrantStatus
 from haku.console.grants.http.models import (
     # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
     # gazelle:include_dep @pypi//httpx
@@ -89,50 +98,97 @@ class _FakeGrantService:
         return (self.current,) if owner_agent_id == AGENT_ID else ()
 
 
-def _client() -> tuple[TestClient, _FakeAgentService, _FakeGrantService]:
+@dataclass
+class _FakeCatalog:
+    grants: _FakeGrantService
+    listed: list[tuple[UUID, str | None]] = field(default_factory=list)
+
+    async def list_http_for_agent(self, *, agent_id: UUID, access_profile_id: str | None) -> tuple[CatalogGrant, ...]:
+        self.listed.append((agent_id, access_profile_id))
+        if agent_id != AGENT_ID:
+            return ()
+        return (self._config_grant(), self.describe_http_grant(self.grants.current))
+
+    @staticmethod
+    def _config_grant() -> CatalogGrant:
+        return CatalogGrant(
+            source=ConfigFileGrantSource(entry_id="grocy-config"),
+            subject=GrantPrincipalSubject(principal=AgentGrantPrincipal(agent_id=AGENT_ID)),
+            coverage=HttpCoverage(
+                origins=frozenset({HttpOrigin(scheme=HttpScheme.HTTPS, host="grocy.example", port=443)}),
+                coverage=HttpRequestCoverage(methods=frozenset({HttpMethod.GET}), path_regex="/api/.*"),
+                credential_handles=frozenset(),
+                allow_prohibited_address=False,
+            ),
+            validity=GrantValidity(ends_at=None, status=GrantStatus.ACTIVE),
+        )
+
+    @staticmethod
+    def describe_http_grant(grant: Grant) -> CatalogGrant:
+        return CatalogGrant(
+            source=DatabaseGrantSource(
+                id=grant.grant_id, tool_call_id=grant.source_tool_call_id, created_at=grant.created_at
+            ),
+            subject=GrantPrincipalSubject(principal=grant.principal),
+            coverage=HttpCoverage(
+                origins=frozenset({grant.spec.origin}),
+                coverage=grant.spec.coverage,
+                credential_handles=frozenset(),
+                allow_prohibited_address=grant.spec.allow_prohibited_address,
+            ),
+            validity=GrantValidity(
+                ends_at=grant.expires_at,
+                status=grant.status,
+                ended_at=grant.released_at or grant.revoked_at,
+                end_reason=grant.end_reason,
+            ),
+        )
+
+
+def _client() -> tuple[TestClient, _FakeAgentService, _FakeGrantService, _FakeCatalog]:
     app = FastAPI()
     agents = _FakeAgentService()
     grants = _FakeGrantService()
     app.state.agent_enrollment_service = agents
     app.state.http_grants = grants
+    app.state.grant_catalog = _FakeCatalog(grants)
     app.state.settings = SimpleNamespace(public_base_url="https://haku.test")
     app.include_router(router, dependencies=[Depends(require_operator_mutation_origin)])
     app.dependency_overrides[operator_auth._operator_actor] = lambda: OperatorActor(operator_id=OPERATOR_ID)
-    return TestClient(app, base_url="https://haku.test"), agents, grants
+    return TestClient(app, base_url="https://haku.test"), agents, grants, app.state.grant_catalog
 
 
 def test_lists_only_the_authenticated_operators_agents_with_provenance() -> None:
-    client, agents, grants = _client()
+    client, agents, grants, catalog = _client()
 
     response = client.get("/api/http-grants")
 
     assert response.status_code == 200
     assert agents.listed_operator_ids == [OPERATOR_ID]
-    assert grants.listed == [(AGENT_ID, True)]
-    assert response.json() == {
-        "grants": [
-            {
-                "agent_display_name": "Public Coder",
-                "grant": {
-                    "grant_id": str(GRANT_ID),
-                    "owner_agent_id": str(AGENT_ID),
-                    "principal": {"kind": "agent", "agent_id": str(AGENT_ID)},
-                    "source_tool_call_id": "tc_0123456789abcdef01234567",
-                    "spec": {
-                        "origin": {"scheme": "https", "host": "grocy.example", "port": 443},
-                        "coverage": {"methods": ["GET"], "path_regex": "/api/.*"},
-                        "credential_handle": None,
-                        "allow_prohibited_address": False,
-                    },
-                    "status": "active",
-                    "created_at": _wire(NOW - datetime.timedelta(minutes=5)),
-                    "expires_at": _wire(NOW + datetime.timedelta(hours=2)),
-                    "released_at": None,
-                    "revoked_at": None,
-                    "end_reason": None,
-                },
-            }
-        ]
+    assert grants.listed == []
+    assert catalog.listed == [(AGENT_ID, "public-coder")]
+    record, config_record = response.json()["grants"]
+    assert record["agent_id"] == str(AGENT_ID)
+    assert record["agent_display_name"] == "Public Coder"
+    assert record["grant"]["source"] == {
+        "kind": "database",
+        "id": str(GRANT_ID),
+        "tool_call_id": "tc_0123456789abcdef01234567",
+        "created_at": _wire(NOW - datetime.timedelta(minutes=5)),
+    }
+    assert record["grant"]["coverage"]["kind"] == "http"
+    assert record["grant"]["validity"] == {
+        "ends_at": _wire(NOW + datetime.timedelta(hours=2)),
+        "status": "active",
+        "ended_at": None,
+        "end_reason": None,
+    }
+    assert config_record["grant"]["source"] == {"kind": "config_file", "entry_id": "grocy-config"}
+    assert config_record["grant"]["validity"] == {
+        "ends_at": None,
+        "status": "active",
+        "ended_at": None,
+        "end_reason": None,
     }
 
 

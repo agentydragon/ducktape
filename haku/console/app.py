@@ -42,6 +42,7 @@ from haku.console.conversation.history import ConversationHistory
 from haku.console.conversation.live_updates import ConversationLiveUpdates
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
+from haku.console.grants.catalog import GrantCatalog
 
 # The two grant domains both name their router module `routes`; alias at this one seam.
 from haku.console.grants.http import decide_routes, routes as http_grant_routes
@@ -53,10 +54,8 @@ from haku.console.grants.http.decide_service import HttpDecideService
 from haku.console.grants.http.repository import PostgresGrantRepository as PostgresHttpGrantRepository
 from haku.console.grants.http.service import GrantService as HttpGrantService
 from haku.console.grants.kubernetes import proxy_authorization, routes as kubernetes_grant_routes
-from haku.console.grants.kubernetes.authorization import (
-    KubernetesAuthorizationService,
-    KubernetesSubjectAccessReviewClient,
-)
+from haku.console.grants.kubernetes.authorization import KubernetesSubjectAccessReviewClient
+from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
 from haku.console.grants.kubernetes.repository import PostgresGrantRepository as PostgresKubernetesGrantRepository
 from haku.console.grants.kubernetes.service import GrantService as KubernetesGrantService
 from haku.console.harnesses.kind import HarnessKind
@@ -494,23 +493,28 @@ def create_app(
         PostgresHttpGrantRepository(db_sessions),
         max_lifetime=datetime.timedelta(seconds=console_config.http_grant_max_lifetime_seconds),
     )
-    http_decide = (
-        HttpDecideService(
-            grants=http_grants,
-            credentials=load_egress_decide(console_config.egress_decide),
+    loaded_egress_decide = load_egress_decide(console_config.egress_decide) if console_config.egress_decide else None
+    grant_catalog = GrantCatalog(
+        kubernetes_grants=kubernetes_grants,
+        http_grants=http_grants,
+        kubernetes_config=console_config.kubernetes_authorization,
+        sar_client=(
+            KubernetesSubjectAccessReviewClient() if console_config.kubernetes_authorization is not None else None
+        ),
+        http_config_policies=tuple(loaded_egress_decide.standing_policies) if loaded_egress_decide else (),
+    )
+    if loaded_egress_decide is None:
+        http_decide = None
+    else:
+        assert console_config.egress_decide is not None
+        http_decide = HttpDecideService(
+            catalog=grant_catalog,
+            credentials=loaded_egress_decide,
             prohibited_cidrs=console_config.egress_decide.prohibited_cidrs,
             agent_bearer_authority=bearer_authority,
         )
-        if console_config.egress_decide is not None
-        else None
-    )
     kubernetes_authorization = (
-        KubernetesAuthorizationService(
-            config=console_config.kubernetes_authorization,
-            agent_bearer_authority=bearer_authority,
-            grants=kubernetes_grants,
-            sar_client=KubernetesSubjectAccessReviewClient(),
-        )
+        KubernetesAuthorizationService(agent_bearer_authority=bearer_authority, catalog=grant_catalog)
         if console_config.kubernetes_authorization is not None
         else None
     )
@@ -598,6 +602,7 @@ def create_app(
                     grants_tools.GrantsToolsService(
                         kubernetes=kubernetes_grants,
                         http=http_grants,
+                        catalog=grant_catalog,
                         agents=agent_authority,
                         can_i=kubernetes_tools.KubernetesToolsService(authorization=kubernetes_authorization),
                     )
@@ -739,6 +744,7 @@ def create_app(
     app.state.push_subscription_store = push_subscription_store
     app.state.push_identity = push_identity
     app.state.kubernetes_authorization = kubernetes_authorization
+    app.state.grant_catalog = grant_catalog
     app.state.kubernetes_grants = kubernetes_grants
     app.state.http_grants = http_grants
     app.state.http_decide = http_decide

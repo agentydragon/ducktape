@@ -62,7 +62,7 @@ py_library(
         "//haku/console/auto_approval:github",
         "//haku/console/auto_approval:registry",
         "//haku/console/grants:principal",
-        "//haku/console/grants/kubernetes:authorization",
+        "//haku/console/grants/kubernetes:authorization_service",
         "//haku/console/tools:gmail_client",
         "@ducktape_haku//haku/console:tool_calls",
     ],

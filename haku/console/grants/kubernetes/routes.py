@@ -8,10 +8,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from haku.console.grants.catalog import DatabaseGrantSource, Grant, GrantCatalog
 from haku.console.grants.envelope import GrantNotFoundError, GrantOwnershipError
-from haku.console.grants.kubernetes.models import Grant
 from haku.console.grants.kubernetes.service import GrantService
-from haku.console.identity.operator_agents import AgentEnrollmentServiceDep, owned_agent_names
+from haku.console.identity.operator_agents import AgentEnrollmentServiceDep, owned_agent_names, owned_agents
 from haku.console.identity.operator_auth import OperatorActorDep
 
 router = APIRouter(prefix="/api/kubernetes-grants", tags=["kubernetes-grants"])
@@ -23,6 +23,7 @@ class OperatorGrant(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     grant: Grant
+    agent_id: UUID
     agent_display_name: str
 
 
@@ -53,19 +54,38 @@ def _grant_service(request: Request) -> GrantService:
 GrantServiceDep = Annotated[GrantService, Depends(_grant_service)]
 
 
+def _grant_catalog(request: Request) -> GrantCatalog:
+    return cast(GrantCatalog, request.app.state.grant_catalog)
+
+
+GrantCatalogDep = Annotated[GrantCatalog, Depends(_grant_catalog)]
+
+
 @router.get("", response_model=GrantListResponse)
 async def list_kubernetes_grants(
-    actor: OperatorActorDep, grants: GrantServiceDep, agents: AgentEnrollmentServiceDep
+    actor: OperatorActorDep, catalog: GrantCatalogDep, agents: AgentEnrollmentServiceDep
 ) -> GrantListResponse:
-    """List active and historical grants for only this Operator's Agents."""
+    """List configuration and database authority for only this Operator's Agents."""
 
-    owned = await owned_agent_names(actor=actor, agents=agents)
+    owned = await owned_agents(actor=actor, agents=agents)
     records = [
-        OperatorGrant(grant=grant, agent_display_name=display_name)
-        for agent_id, display_name in owned.items()
-        for grant in await grants.list_grants(owner_agent_id=agent_id, include_terminal=True)
+        OperatorGrant(grant=grant, agent_id=agent.agent_id, agent_display_name=display_name)
+        for agent in owned
+        for grant in await catalog.list_kubernetes_for_agent(
+            agent_id=agent.agent_id, access_profile_id=agent.access_profile_id
+        )
+        for display_name in (agent.display_name,)
     ]
-    records.sort(key=lambda item: (item.grant.created_at, item.grant.grant_id), reverse=True)
+    records.sort(
+        key=lambda item: (
+            isinstance(item.grant.source, DatabaseGrantSource),
+            item.grant.source.created_at if isinstance(item.grant.source, DatabaseGrantSource) else None,
+            str(item.grant.source.id)
+            if isinstance(item.grant.source, DatabaseGrantSource)
+            else item.grant.source.entry_id,
+        ),
+        reverse=True,
+    )
     return GrantListResponse(grants=tuple(records))
 
 
@@ -76,6 +96,7 @@ async def revoke_kubernetes_grant(
     body: RevokeGrantRequest,
     actor: OperatorActorDep,
     grants: GrantServiceDep,
+    catalog: GrantCatalogDep,
     agents: AgentEnrollmentServiceDep,
 ) -> OperatorGrant:
     """Revoke one owned Agent's grant with a durable, operator-supplied reason."""
@@ -88,7 +109,9 @@ async def revoke_kubernetes_grant(
         grant = await grants.revoke_grant(owner_agent_id=agent_id, grant_id=grant_id, reason=body.reason)
     except (GrantNotFoundError, GrantOwnershipError) as error:
         raise HTTPException(status_code=404, detail="Kubernetes grant not found") from error
-    return OperatorGrant(grant=grant, agent_display_name=display_name)
+    return OperatorGrant(
+        grant=catalog.describe_kubernetes_grant(grant), agent_id=agent_id, agent_display_name=display_name
+    )
 
 
 @router.post("/{agent_id}/source/{source_tool_call_id}/revoke", response_model=GrantListResponse)
@@ -98,6 +121,7 @@ async def revoke_kubernetes_grant_set(
     body: RevokeGrantRequest,
     actor: OperatorActorDep,
     grants: GrantServiceDep,
+    catalog: GrantCatalogDep,
     agents: AgentEnrollmentServiceDep,
 ) -> GrantListResponse:
     """Revoke one owned Agent's complete grant set from a reviewed source ToolCall."""
@@ -113,5 +137,10 @@ async def revoke_kubernetes_grant_set(
     except (GrantNotFoundError, GrantOwnershipError) as error:
         raise HTTPException(status_code=404, detail="Kubernetes grant not found") from error
     return GrantListResponse(
-        grants=tuple(OperatorGrant(grant=grant, agent_display_name=display_name) for grant in revoked)
+        grants=tuple(
+            OperatorGrant(
+                grant=catalog.describe_kubernetes_grant(grant), agent_id=agent_id, agent_display_name=display_name
+            )
+            for grant in revoked
+        )
     )

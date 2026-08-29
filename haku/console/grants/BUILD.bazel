@@ -36,6 +36,24 @@ py_library(
     ],
 )
 
+py_library(
+    name = "catalog",
+    srcs = ["catalog.py"],
+    deps = [
+        ":envelope",
+        ":principal",
+        "//haku/console:config",
+        "//haku/console/grants/http:decide_config",
+        "//haku/console/grants/http:models",
+        "//haku/console/grants/http:service",
+        "//haku/console/grants/kubernetes:authorization",
+        "//haku/console/grants/kubernetes:models",
+        "//haku/console/grants/kubernetes:service",
+        "//haku/grants:authorization",
+        "@pypi//pydantic",
+    ],
+)
+
 py_test(
     name = "test_principal",
     srcs = ["test_principal.py"],

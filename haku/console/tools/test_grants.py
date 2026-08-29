@@ -37,14 +37,11 @@ from haku.console.conftest import (
     insert_live_session,
 )
 from haku.console.database_schema import Agent
+from haku.console.grants.catalog import DatabaseGrantSource, GrantCatalog
 from haku.console.grants.envelope import GrantStatus
 from haku.console.grants.http.service import GrantService as HttpGrantService
-from haku.console.grants.kubernetes.authorization import (
-    KubernetesAuthorizationService,
-    KubernetesAuthorizationSource,
-    RequestAttributes,
-    SubjectAccessReviewResult,
-)
+from haku.console.grants.kubernetes.authorization import RequestAttributes, SubjectAccessReviewResult
+from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
 from haku.console.grants.kubernetes.service import GrantService as KubernetesGrantService
 from haku.console.grants.principal import (
     AgentGrantPrincipal,
@@ -70,6 +67,7 @@ from haku.console.tools.grants import (
     build_mcp,
 )
 from haku.console.tools.kubernetes import KubernetesAccessCheck, KubernetesToolsService
+from haku.grants.authorization import GrantSourceKind
 
 _NOW = datetime(2026, 8, 27, tzinfo=UTC)
 _K8S_SPEC = kubernetes_models.GrantSpec(
@@ -198,12 +196,15 @@ def console(make_client: Callable[..., Any]) -> Iterator[_Console]:
         kubernetes_grants = cast(KubernetesGrantService, app.state.kubernetes_grants)
         http_grants = cast(HttpGrantService, app.state.http_grants)
         agents = cast(AgentEnrollmentService, app.state.agent_enrollment_service)
-        authorization = KubernetesAuthorizationService(
-            config=KubernetesAuthorizationConfig(subjects_by_access_profile={DEFAULT_ACCESS_PROFILE_ID: _SUBJECT}),
-            agent_bearer_authority=AgentBearerAuthority(()),
-            grants=kubernetes_grants,
+        catalog = GrantCatalog(
+            kubernetes_grants=kubernetes_grants,
+            http_grants=http_grants,
+            kubernetes_config=KubernetesAuthorizationConfig(
+                subjects_by_access_profile={DEFAULT_ACCESS_PROFILE_ID: _SUBJECT}
+            ),
             sar_client=_FakeSubjectAccessReviews(),
         )
+        authorization = KubernetesAuthorizationService(agent_bearer_authority=AgentBearerAuthority(()), catalog=catalog)
         assert client.portal is not None
         agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
         yield _Console(
@@ -212,6 +213,7 @@ def console(make_client: Callable[..., Any]) -> Iterator[_Console]:
             service=GrantsToolsService(
                 kubernetes=kubernetes_grants,
                 http=http_grants,
+                catalog=catalog,
                 agents=agents,
                 can_i=KubernetesToolsService(authorization=authorization),
             ),
@@ -260,7 +262,9 @@ def test_list_grants_is_actor_scoped_under_either_principal_declaration(console:
         # grants today — the service is actor-scoped regardless; the scope arg only gates auto-approval.
         for principal in ("self", None):
             listed = await console.service.list_grants(context=context, principal=principal)
-            assert [item.grant.grant_id for item in listed] == [view.grant.grant_id]
+            assert [item.source.id for item in listed if isinstance(item.source, DatabaseGrantSource)] == [
+                view.grant.grant_id
+            ]
 
     console.call(exercise)
 
@@ -278,7 +282,7 @@ def test_kubernetes_can_i_rides_the_grants_server(console: _Console) -> None:
             )
             assert allowed.data[0].allowed is True
             # The MCP client deserializes the StrEnum as its wire string, so compare by value.
-            assert allowed.data[0].source == KubernetesAuthorizationSource.SAR
+            assert allowed.data[0].source == GrantSourceKind.CONFIG_FILE
             # An ambiguous unnamespaced request surfaces as one clean ToolError line, not a trace.
             ambiguous = await client.call_tool(
                 "kubernetes_can_i",
@@ -346,20 +350,17 @@ def test_create_routes_each_domain_and_tags_the_returned_envelope(console: _Cons
         assert http_view.grant.spec == _HTTP_SPEC
         assert http_view.grant.status is GrantStatus.ACTIVE
 
-        # list surfaces both domains, each tagged; get routes by the tag it returned.
+        # The catalog list surfaces both database grants through its domain coverage.
         listed = await console.service.list_grants(context=context)
-        assert {(view.domain, view.grant.grant_id) for view in listed} == {
-            ("kubernetes", kubernetes_view.grant.grant_id),
-            ("http", http_view.grant.grant_id),
-        }
-        assert (
-            await console.service.get_grant(
-                context=context, domain="kubernetes", grant_id=kubernetes_view.grant.grant_id
-            )
-        ) == kubernetes_view
-        assert (
-            await console.service.get_grant(context=context, domain="http", grant_id=http_view.grant.grant_id)
-        ) == http_view
+        assert {
+            (view.coverage.kind, view.source.id) for view in listed if isinstance(view.source, DatabaseGrantSource)
+        } == {("kubernetes_rules", kubernetes_view.grant.grant_id), ("http", http_view.grant.grant_id)}
+        kubernetes_grant = await console.service.get_grant(
+            context=context, domain="kubernetes", grant_id=kubernetes_view.grant.grant_id
+        )
+        http_grant = await console.service.get_grant(context=context, domain="http", grant_id=http_view.grant.grant_id)
+        assert kubernetes_grant in listed
+        assert http_grant in listed
 
     console.call(exercise)
 
@@ -376,7 +377,11 @@ def test_create_rejects_a_call_that_straddles_domains(console: _Console) -> None
                 applies_to=GrantPrincipalKind.AGENT,
             )
         # Nothing was created in either domain.
-        assert await console.service.list_grants(context=context) == []
+        assert not [
+            grant
+            for grant in await console.service.list_grants(context=context)
+            if isinstance(grant.source, DatabaseGrantSource)
+        ]
 
     console.call(exercise)
 
@@ -401,7 +406,7 @@ def test_release_routes_by_domain_and_ends_in_the_supplied_order(console: _Conso
         assert [view.grant.grant_id for view in released] == [second.grant.grant_id, first.grant.grant_id]
         assert all(view.grant.status is GrantStatus.RELEASED for view in released)
         refetched = await console.service.get_grant(context=context, domain="kubernetes", grant_id=first.grant.grant_id)
-        assert refetched.grant.status is GrantStatus.RELEASED
+        assert refetched.validity.status is GrantStatus.RELEASED
 
     console.call(exercise)
 
@@ -502,13 +507,16 @@ def test_session_scope_binds_the_grant_to_the_exact_live_session(console: _Conso
             applies_to=GrantPrincipalKind.AGENT,
         )
         # The exact session may exercise both; a static-credential execution never sees the session grant.
-        assert {view.grant.grant_id for view in await console.service.list_grants(context=session_context)} == {
-            session_view.grant.grant_id,
-            agent_view.grant.grant_id,
-        }
-        assert [view.grant.grant_id for view in await console.service.list_grants(context=static_context)] == [
-            agent_view.grant.grant_id
-        ]
+        assert {
+            view.source.id
+            for view in await console.service.list_grants(context=session_context)
+            if isinstance(view.source, DatabaseGrantSource)
+        } == {session_view.grant.grant_id, agent_view.grant.grant_id}
+        assert [
+            view.source.id
+            for view in await console.service.list_grants(context=static_context)
+            if isinstance(view.source, DatabaseGrantSource)
+        ] == [agent_view.grant.grant_id]
 
     console.call(exercise)
 

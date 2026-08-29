@@ -10,12 +10,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from haku.console.config import KubernetesAuthorizationConfig, KubernetesAuthorizationSubject
+from haku.console.grants.catalog import GrantCatalog
 from haku.console.grants.kubernetes.authorization import (
     # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
     # gazelle:include_dep @pypi//httpx
     AuthorizationRequest,
-    KubernetesAuthorizationService,
-    KubernetesAuthorizationSource,
     KubernetesAuthorizationUnavailableError,
     KubernetesBearerRejectedError,
     KubernetesClients,
@@ -23,11 +22,13 @@ from haku.console.grants.kubernetes.authorization import (
     RequestAttributes,
     SubjectAccessReviewResult,
 )
+from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
 from haku.console.grants.kubernetes.models import GrantDecision, GrantScopeKind
 from haku.console.grants.kubernetes.proxy_authorization import router
 from haku.console.grants.kubernetes.service import GrantService
 from haku.console.grants.principal import RequestPrincipal
 from haku.console.tool_call_actor import AgentActor
+from haku.grants.authorization import GrantSourceKind
 
 REQUEST = {
     "attributes": {
@@ -149,18 +150,19 @@ def _service(
     if grants is None:
         grants = AsyncMock()
         grants.match_request.return_value = GrantDecision(allowed=False)
-    return KubernetesAuthorizationService(
-        config=KubernetesAuthorizationConfig(
+    catalog = GrantCatalog(
+        kubernetes_config=KubernetesAuthorizationConfig(
             subjects_by_access_profile={
                 "public-diagnostics": KubernetesAuthorizationSubject(
                     username="system:serviceaccount:haku:haku-kube-proxy", groups=("haku",)
                 )
             }
         ),
-        agent_bearer_authority=cast(Any, bearer_authority),
         sar_client=sar,
-        grants=grants,
+        kubernetes_grants=grants,
+        http_grants=AsyncMock(),
     )
+    return KubernetesAuthorizationService(agent_bearer_authority=cast(Any, bearer_authority), catalog=catalog)
 
 
 class EmptyGrantRepository:
@@ -213,8 +215,8 @@ def test_endpoint_returns_sar_decision() -> None:
     body = response.json()
     assert body["allowed"] is False
     assert body["reason"] == "RBAC denied"
-    assert body["source"] == "sar"
-    assert body["decision_id"].startswith("sar:")
+    assert "source" not in body
+    assert "decision_id" not in body
 
 
 @pytest.mark.asyncio
@@ -230,7 +232,6 @@ async def test_clean_sar_denial_with_real_empty_grant_service_remains_denied() -
 
     assert result.allowed is False
     assert result.reason == "RBAC denied"
-    assert result.source is KubernetesAuthorizationSource.SAR
 
 
 @pytest.mark.parametrize(
@@ -310,13 +311,16 @@ async def test_service_fails_closed_when_sar_times_out() -> None:
             return SubjectAccessReviewResult(allowed=True)
 
     service = KubernetesAuthorizationService(
-        config=KubernetesAuthorizationConfig(
-            subjects_by_access_profile={"public-diagnostics": KubernetesAuthorizationSubject(username="proxy")},
-            timeout_seconds=0.001,
-        ),
         agent_bearer_authority=cast(Any, FakeAgentBearerAuthority()),
-        grants=AsyncMock(),
-        sar_client=HangingSar(),
+        catalog=GrantCatalog(
+            kubernetes_config=KubernetesAuthorizationConfig(
+                subjects_by_access_profile={"public-diagnostics": KubernetesAuthorizationSubject(username="proxy")},
+                timeout_seconds=0.001,
+            ),
+            sar_client=HangingSar(),
+            kubernetes_grants=AsyncMock(),
+            http_grants=AsyncMock(),
+        ),
     )
     with pytest.raises(KubernetesAuthorizationUnavailableError, match="timed out"):
         await service.authorize(bearer="Bearer caller-token", request=AuthorizationRequest.model_validate(REQUEST))
@@ -335,8 +339,8 @@ async def test_active_grant_is_consulted_only_after_clean_sar_denial() -> None:
         FakeSarClient(result=SubjectAccessReviewResult(allowed=False, reason="RBAC denied")), grants=grants
     ).authorize(bearer="Bearer caller-token", request=AuthorizationRequest.model_validate(REQUEST))
     assert result.allowed is True
-    assert result.source is KubernetesAuthorizationSource.GRANT
-    assert result.decision_id == "grant:00000000-0000-4000-8000-000000000099"
+    assert result.source is GrantSourceKind.DATABASE
+    assert result.decision_id == "database:00000000-0000-4000-8000-000000000099"
     assert result.valid_until == datetime.datetime(2026, 8, 21, tzinfo=datetime.UTC)
     grants.match_request.assert_awaited_once()
     kwargs = grants.match_request.await_args.kwargs
@@ -377,8 +381,8 @@ async def test_sar_allow_does_not_consult_grants() -> None:
         bearer="Bearer caller-token", request=AuthorizationRequest.model_validate(REQUEST)
     )
     assert result.allowed is True
-    assert result.source is KubernetesAuthorizationSource.SAR
-    assert result.decision_id.startswith("sar:")
+    assert result.source is GrantSourceKind.CONFIG_FILE
+    assert result.decision_id == "config_file:kubernetes-profile:public-diagnostics"
     grants.match_request.assert_not_awaited()
 
 

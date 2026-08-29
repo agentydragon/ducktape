@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from functools import partial
 from ipaddress import IPv4Address, IPv4Network, IPv6Address, IPv6Network
 from typing import Any, cast
+from unittest.mock import AsyncMock
 from uuid import UUID
 
 import pytest
@@ -23,6 +24,7 @@ from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from haku.console.conftest import default_agent_binding, insert_approved_tool_call
+from haku.console.grants.catalog import GrantCatalog
 from haku.console.grants.http.decide_config import EgressStandingPolicyEntry, LoadedEgressCredential, LoadedEgressDecide
 from haku.console.grants.http.decide_service import HttpDecideService, HttpDecideUnavailableError
 from haku.console.grants.http.models import GrantSpec, HttpMethod, HttpOrigin, HttpRequestCoverage, HttpScheme
@@ -35,10 +37,10 @@ from haku.egress.decision import (
     DecideAllowed,
     DecideDenied,
     DecideRequest,
-    DecisionSource,
     PlaceholderSubstitution,
     RequestMeta,
 )
+from haku.grants.authorization import GrantSourceKind
 
 _NOW = datetime(2026, 8, 27, 12, 0, tzinfo=UTC)
 _ORIGIN = HttpOrigin(scheme=HttpScheme.HTTPS, host="api.example", port=443)
@@ -128,12 +130,17 @@ def _harness(
     assert client.portal is not None
     agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
     grants = GrantService(PostgresGrantRepository(sessions), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    standing_entries = standing(agent_id) if standing is not None else []
     decide = HttpDecideService(
-        grants=grants,
+        catalog=GrantCatalog(
+            kubernetes_grants=cast(Any, app.state.kubernetes_grants),
+            http_grants=grants,
+            http_config_policies=tuple(standing_entries),
+        ),
         credentials=LoadedEgressDecide(
             fence_credential=SecretStr(_FENCE),
             credentials=credentials(agent_id) if credentials is not None else [],
-            standing_policies=standing(agent_id) if standing is not None else [],
+            standing_policies=standing_entries,
         ),
         prohibited_cidrs=prohibited_cidrs,
         agent_bearer_authority=cast(Any, _BridgeBearerAuthority(agent_id=agent_id, binding_id=binding_id)),
@@ -208,8 +215,8 @@ def test_grant_scoped_verdicts_against_stored_grants(make_client: Any) -> None:
 
         allowed = decide(_request(path="/api/items?state=open"))
         assert allowed == DecideAllowed(
-            source=DecisionSource.GRANT,
-            decision_id=f"grant:{prefix_grant_id}",
+            source=GrantSourceKind.DATABASE,
+            decision_id=f"database:{prefix_grant_id}",
             valid_until=_NOW + timedelta(minutes=30),
             substitutions=[],
         )
@@ -272,7 +279,7 @@ def test_connect_tunnel_admission(make_client: Any) -> None:
         # Any active https grant at the origin admits the tunnel, whatever its method/path pins.
         allowed = decide(_request(method="CONNECT", scheme=None, path=None))
         assert isinstance(allowed, DecideAllowed)
-        assert allowed.decision_id == f"grant:{https_grant_id}"
+        assert allowed.decision_id == f"database:{https_grant_id}"
 
         unknown = decide(_request(method="CONNECT", scheme=None, path=None, host="other.example"))
         assert isinstance(unknown, DecideDenied)
@@ -302,7 +309,10 @@ def test_standing_allowance_admits_with_provenance_and_no_deadline(make_client: 
 
         allowed = decide(_request(path="/api/items?state=open"))
         assert allowed == DecideAllowed(
-            source=DecisionSource.STANDING, decision_id="standing:api-standing", valid_until=None, substitutions=[]
+            source=GrantSourceKind.CONFIG_FILE,
+            decision_id="config_file:api-standing",
+            valid_until=None,
+            substitutions=[],
         )
 
         # Ruled in #4884 for grants and identical here: the regex sees path plus query, so an
@@ -339,15 +349,15 @@ def test_standing_wins_over_a_matching_grant(make_client: Any) -> None:
         # Both authorities cover GET; standing is evaluated first and provenance says so.
         covered_by_both = decide(_request())
         assert isinstance(covered_by_both, DecideAllowed)
-        assert covered_by_both.source is DecisionSource.STANDING
-        assert covered_by_both.decision_id == "standing:api-standing"
+        assert covered_by_both.source is GrantSourceKind.CONFIG_FILE
+        assert covered_by_both.decision_id == "config_file:api-standing"
         assert covered_by_both.valid_until is None
 
         # Outside standing coverage the grant path is untouched: same verdict it always gave.
         grant_only = decide(_request(method="POST"))
         assert isinstance(grant_only, DecideAllowed)
-        assert grant_only.source is DecisionSource.GRANT
-        assert grant_only.decision_id == f"grant:{grant_id}"
+        assert grant_only.source is GrantSourceKind.DATABASE
+        assert grant_only.decision_id == f"database:{grant_id}"
         assert grant_only.valid_until == _NOW + timedelta(minutes=30)
 
 
@@ -376,8 +386,8 @@ def test_standing_allowance_redeems_the_registry_credential(make_client: Any) ->
         allowed = client.portal.call(partial(harness.decide.decide, _request(path="/repos/agentydragon/ducktape")))
 
         assert allowed == DecideAllowed(
-            source=DecisionSource.STANDING,
-            decision_id="standing:api-standing",
+            source=GrantSourceKind.CONFIG_FILE,
+            decision_id="config_file:api-standing",
             valid_until=None,
             substitutions=[
                 PlaceholderSubstitution(
@@ -405,7 +415,7 @@ def test_overlapping_standing_entries_union_credentials_and_keep_first_provenanc
         allowed = client.portal.call(partial(harness.decide.decide, _request()))
 
         assert isinstance(allowed, DecideAllowed)
-        assert allowed.decision_id == "standing:broad"
+        assert allowed.decision_id == "config_file:broad"
         assert [substitution.value for substitution in allowed.substitutions] == [_GITHUB_VALUE]
 
 
@@ -425,8 +435,8 @@ def test_standing_connect_tunnel_admission(make_client: Any) -> None:
 
         allowed = decide(_request(method="CONNECT", scheme=None, path=None))
         assert isinstance(allowed, DecideAllowed)
-        assert allowed.source is DecisionSource.STANDING
-        assert allowed.decision_id == "standing:api-standing"
+        assert allowed.source is GrantSourceKind.CONFIG_FILE
+        assert allowed.decision_id == "config_file:api-standing"
         # A tunnel has no inner request yet: nothing to substitute into, even credentialed.
         assert allowed.substitutions == []
 
@@ -473,7 +483,7 @@ def test_standing_unresolvable_credential_degrades(make_client: Any, caplog: pyt
             ]:
                 decision = decide(request)
                 assert isinstance(decision, DecideAllowed), request.request
-                assert decision.source is DecisionSource.STANDING
+                assert decision.source is GrantSourceKind.CONFIG_FILE
                 assert decision.substitutions == []
                 assert warning in caplog.text
         assert _GITHUB_VALUE not in caplog.text
@@ -492,8 +502,8 @@ def test_credentialed_grant_redeems_the_substitution(make_client: Any) -> None:
 
         allowed = decide(_request(path="/repos/agentydragon/ducktape"))
         assert allowed == DecideAllowed(
-            source=DecisionSource.GRANT,
-            decision_id=f"grant:{grant_id}",
+            source=GrantSourceKind.DATABASE,
+            decision_id=f"database:{grant_id}",
             valid_until=_NOW + timedelta(minutes=30),
             substitutions=[
                 PlaceholderSubstitution(
@@ -514,7 +524,7 @@ def test_credentialed_grant_redeems_the_substitution(make_client: Any) -> None:
         )
         combined = decide(_request(path="/repos/agentydragon/ducktape"))
         assert isinstance(combined, DecideAllowed)
-        assert combined.decision_id == f"grant:{reachability_id}"
+        assert combined.decision_id == f"database:{reachability_id}"
         assert combined.valid_until == _NOW + timedelta(minutes=10)
         assert [substitution.value for substitution in combined.substitutions] == [_GITHUB_VALUE]
 
@@ -602,7 +612,7 @@ def test_earliest_expiry_bounds_the_admission(make_client: Any) -> None:
         decision = client.portal.call(partial(harness.decide.decide, _request()))
 
         assert isinstance(decision, DecideAllowed)
-        assert decision.decision_id == f"grant:{earlier_id}"
+        assert decision.decision_id == f"database:{earlier_id}"
         assert decision.valid_until == _NOW + timedelta(minutes=10)
 
 
@@ -735,7 +745,7 @@ def test_flagged_standing_entry_reaches_a_fully_internal_destination(make_client
             )
         )
         assert isinstance(allowed, DecideAllowed)
-        assert allowed.source is DecisionSource.STANDING
+        assert allowed.source is GrantSourceKind.CONFIG_FILE
         assert [substitution.value for substitution in allowed.substitutions] == [_GITHUB_VALUE]
 
         denied = client.portal.call(
@@ -761,8 +771,8 @@ def test_flagged_grant_reaches_a_destination_in_a_configured_prohibited_cidr(mak
             partial(harness.decide.decide, _request(resolved_ips=frozenset({internal}), upstream_ip=internal))
         )
         assert isinstance(allowed, DecideAllowed)
-        assert allowed.source is DecisionSource.GRANT
-        assert allowed.decision_id == f"grant:{grant_id}"
+        assert allowed.source is GrantSourceKind.DATABASE
+        assert allowed.decision_id == f"database:{grant_id}"
 
 
 def test_prohibited_address_override_is_scoped_to_its_own_origin(make_client: Any) -> None:
@@ -801,7 +811,12 @@ async def test_grant_authority_failure_raises_unavailable() -> None:
         create_async_engine("postgresql+asyncpg://nobody:nothing@127.0.0.1:9/unreachable"), expire_on_commit=False
     )
     service = HttpDecideService(
-        grants=GrantService(PostgresGrantRepository(unreachable), max_lifetime=timedelta(hours=1), clock=lambda: _NOW),
+        catalog=GrantCatalog(
+            kubernetes_grants=AsyncMock(),
+            http_grants=GrantService(
+                PostgresGrantRepository(unreachable), max_lifetime=timedelta(hours=1), clock=lambda: _NOW
+            ),
+        ),
         credentials=LoadedEgressDecide(fence_credential=SecretStr(_FENCE)),
         prohibited_cidrs=frozenset(),
         agent_bearer_authority=cast(Any, _UnavailableBridgeBearerAuthority()),

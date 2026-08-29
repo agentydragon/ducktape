@@ -11,11 +11,12 @@ there is no version negotiation and no versioning.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from enum import StrEnum
 from ipaddress import IPv4Address, IPv6Address
-from typing import Annotated, Literal
+from typing import Annotated
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, PlainSerializer, SecretStr, model_validator
+
+from haku.grants.authorization import AuthorizationAllowed, AuthorizationDenied
 
 
 class RequestMeta(BaseModel):
@@ -65,14 +66,6 @@ class PlaceholderSubstitution(BaseModel):
         min_length=1,
         description="Header names (case-insensitive) scanned for the placeholder; it passes through anywhere else.",
     )
-
-
-class DecisionSource(StrEnum):
-    """Authority that produced the effective decision, for audit provenance."""
-
-    STANDING = "standing"
-    GRANT = "grant"
-    NONE = "none"
 
 
 def _sorted_addresses(addresses: Iterable[IPv4Address | IPv6Address]) -> list[str]:
@@ -135,26 +128,14 @@ class GrantScope(BaseModel):
     port: int
 
 
-class DecideAllowed(BaseModel):
+class DecideAllowed(AuthorizationAllowed):
     """Forward after applying the substitutions; a new admission needs a new decision."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    allowed: Literal[True] = True
-    source: Literal[DecisionSource.STANDING, DecisionSource.GRANT] = Field(
-        description="Which authority admitted the request: standing policy or a temporary grant."
-    )
-    decision_id: str = Field(
-        min_length=1, description="Links audit records to the decision's policy provenance, e.g. 'grant:<grant UUID>'."
-    )
     valid_until: AwareDatetime | None = Field(
         default=None,
         description=(
             "Exact admission deadline: a later request, CONNECT, or reconnect needs a fresh decision. "
-            "An already admitted flow may overrun it only within the deployment's hard flow lifetime. "
-            "None for a standing-policy admission, which has no deadline short of a config change — "
-            "and a config change redeploys Console and proxy together; the hard flow lifetime still "
-            "bounds admitted flows."
+            "None means the authority has no end date; the deployment's hard flow lifetime still bounds flows."
         ),
     )
     substitutions: list[PlaceholderSubstitution] = Field(
@@ -163,14 +144,9 @@ class DecideAllowed(BaseModel):
     )
 
 
-class DecideDenied(BaseModel):
+class DecideDenied(AuthorizationDenied):
     """Refuse without contacting the upstream."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    allowed: Literal[False] = False
-    source: Literal[DecisionSource.NONE] = DecisionSource.NONE
-    reason: str = Field(min_length=1, description="Operator-facing denial reason; safe to log and to surface.")
     grant_scope: GrantScope | None = Field(
         default=None,
         description=(

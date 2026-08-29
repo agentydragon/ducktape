@@ -38,12 +38,12 @@ from haku.egress.decision import (
     DecideDenied,
     DecideRequest,
     DecideResponse,
-    DecisionSource,
     PlaceholderSubstitution,
     RequestMeta,
 )
 from haku.egress.localhost_decide_client import DEFAULT_TIMEOUT_SECONDS, LocalhostDecideClient
 from haku.egress.runner import EgressProxy
+from haku.grants.authorization import GrantSourceKind
 
 PLACEHOLDER = "proxy-github-placeholder"
 REAL_CREDENTIAL = "real-redeemed-credential"
@@ -54,8 +54,8 @@ BRIDGE_BEARER = "bridge-session-bearer"
 def allow(*substitutions: PlaceholderSubstitution) -> DecideAllowed:
     """An allow verdict carrying ``substitutions``, valid five minutes out."""
     return DecideAllowed(
-        source=DecisionSource.GRANT,
-        decision_id="grant:50000000-0000-4000-8000-000000000005",
+        source=GrantSourceKind.DATABASE,
+        decision_id="database:50000000-0000-4000-8000-000000000005",
         valid_until=datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=5),
         substitutions=list(substitutions),
     )

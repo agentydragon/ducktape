@@ -6,21 +6,17 @@ from typing import Annotated, cast
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
-from haku.console.grants.kubernetes.authorization import (
-    AuthorizationRequest,
-    AuthorizationResponse,
-    KubernetesAuthorizationService,
-    KubernetesAuthorizationUnavailableError,
-    KubernetesBearerRejectedError,
-)
+from haku.console.grants.kubernetes.authorization import AuthorizationRequest, KubernetesBearerRejectedError
+from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
+from haku.grants.authorization import AuthorizationDecision, AuthorizationUnavailableError
 
 router = APIRouter(prefix="/api/internal/kubernetes", tags=["kubernetes-proxy"])
 
 
-@router.post("/authorize", response_model=AuthorizationResponse, response_model_exclude_none=True)
+@router.post("/authorize", response_model=AuthorizationDecision, response_model_exclude_none=True)
 async def authorize_kubernetes_request(
     request: Request, body: AuthorizationRequest, authorization: Annotated[str | None, Header()] = None
-) -> AuthorizationResponse:
+) -> AuthorizationDecision:
     """Authorize one canonicalized Kubernetes request with the standing SAR policy.
 
     The endpoint is intentionally not operator-session protected: it is the
@@ -39,5 +35,5 @@ async def authorize_kubernetes_request(
         return await service.authorize(bearer=authorization, request=body)
     except KubernetesBearerRejectedError as error:
         raise HTTPException(status_code=401, detail=str(error)) from error
-    except KubernetesAuthorizationUnavailableError as error:
+    except AuthorizationUnavailableError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error

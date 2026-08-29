@@ -1,12 +1,11 @@
-"""Credential-free in-process MCP tools for owned, principal-scoped temporary grants.
+"""Credential-free in-process MCP tools for owned, principal-scoped grants.
 
 One `grants` server fronts every grant domain (#4918): the shared verb set
 (`create_grant`/`list_grants`/`get_grant`/`revoke_grants`) over the #4889
-grant envelope, discriminated by a ``domain`` tag (`kubernetes` | `http`) on each per-domain
-capability payload. The domains keep their own services, tables, and typed coverage
-(`grants.kubernetes` scope/rules; `grants.http` exact origins); this module only routes a
-discriminated request to the right one and tags the returned envelope so the Agent can tell
-them apart. Kubernetes SAR inspection (`can_i`) is not a grant verb and lives on its own
+grant envelope.  Reads and authorization checks go through the catalog, which combines
+configuration-file and database authority.  Domain-specific mutation requests remain explicit
+because their coverage is semantically different (`grants.kubernetes` scope/rules;
+`grants.http` exact origins). Kubernetes SAR inspection (`can_i`) is not a grant verb and lives on its own
 `kubernetes` server (`haku.console.tools.kubernetes`).
 """
 
@@ -25,6 +24,7 @@ import haku.console.grants.http.service as http_service
 import haku.console.grants.kubernetes.models as kubernetes_models
 import haku.console.grants.kubernetes.service as kubernetes_service
 import haku.console.tools.kubernetes as kubernetes_tools
+from haku.console.grants.catalog import Grant, GrantCatalog
 from haku.console.grants.envelope import GRANT_SET_LIMIT, GrantNotFoundError
 from haku.console.grants.principal import GrantPrincipalKind, grant_principal_for
 from haku.console.identity.enrollment import AgentEnrollmentService
@@ -35,6 +35,7 @@ from haku.console.mcp.execution import (
     McpExecutionContext,
     OperatorMcpExecutionCaller,
 )
+from haku.grants.authorization import AuthorizationDecision
 
 GRANTS_SERVER_ID = "grants"
 
@@ -97,17 +98,19 @@ class GrantsToolsService:
         *,
         kubernetes: kubernetes_service.GrantService,
         http: http_service.GrantService,
+        catalog: GrantCatalog,
         agents: AgentEnrollmentService,
         can_i: kubernetes_tools.KubernetesToolsService,
     ) -> None:
         self._kubernetes = kubernetes
         self._http = http
+        self._catalog = catalog
         self._agents = agents
         self._can_i = can_i
 
     async def kubernetes_can_i(
         self, *, context: McpExecutionContext, requests: list[kubernetes_tools.KubernetesAccessCheck]
-    ) -> list[kubernetes_tools.CanIResult]:
+    ) -> list[AuthorizationDecision]:
         return await self._can_i.can_i(context=context, requests=requests)
 
     async def create_grants(
@@ -150,29 +153,20 @@ class GrantsToolsService:
 
     async def list_grants(
         self, *, context: McpExecutionContext, principal: GrantReadScope | None = None
-    ) -> list[GrantView]:
+    ) -> list[Grant]:
         # The read is actor-scoped regardless: `list_applicable_grants` filters to the caller's own
         # grants via the trusted request principal. `principal` is the caller's declared scope,
         # carried for argument-conditional auto-approval; only `self` is served today and it equals
         # that own-scoped read.
         del principal
-        kubernetes_grants = await self._kubernetes.list_applicable_grants(request_principal=context.request_principal)
-        http_grants = await self._http.list_applicable_grants(request_principal=context.request_principal)
-        return [
-            *(KubernetesGrantView(grant=grant) for grant in kubernetes_grants),
-            *(HttpGrantView(grant=grant) for grant in http_grants),
-        ]
+        return list(await self._catalog.list_applicable(request_principal=context.request_principal))
 
-    async def get_grant(self, *, context: McpExecutionContext, domain: GrantDomain, grant_id: UUID) -> GrantView:
+    async def get_grant(self, *, context: McpExecutionContext, domain: GrantDomain, grant_id: UUID) -> Grant:
         if domain == "kubernetes":
-            return KubernetesGrantView(
-                grant=await self._kubernetes.get_applicable_grant(
-                    request_principal=context.request_principal, grant_id=grant_id
-                )
+            return await self._catalog.get_kubernetes_grant(
+                request_principal=context.request_principal, grant_id=grant_id
             )
-        return HttpGrantView(
-            grant=await self._http.get_applicable_grant(request_principal=context.request_principal, grant_id=grant_id)
-        )
+        return await self._catalog.get_http_grant(request_principal=context.request_principal, grant_id=grant_id)
 
     async def revoke_grants(
         self,
@@ -266,7 +260,7 @@ def build_mcp(service: GrantsToolsService) -> FastMCP:
             ),
         ],
         context: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
-    ) -> list[kubernetes_tools.CanIResult]:
+    ) -> list[AuthorizationDecision]:
         return await service.kubernetes_can_i(context=context, requests=requests)
 
     @mcp.tool
@@ -315,7 +309,7 @@ def build_mcp(service: GrantsToolsService) -> FastMCP:
             ),
         ] = None,
         context: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
-    ) -> list[GrantView]:
+    ) -> list[Grant]:
         return await service.list_grants(context=context, principal=principal)
 
     @mcp.tool
@@ -323,7 +317,7 @@ def build_mcp(service: GrantsToolsService) -> FastMCP:
         domain: Annotated[GrantDomain, Field(description="Domain of the grant ID, as returned by create/list.")],
         grant_id: Annotated[UUID, Field(description="Grant UUID returned by create_grant.")],
         context: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
-    ) -> GrantView:
+    ) -> Grant:
         return await service.get_grant(context=context, domain=domain, grant_id=grant_id)
 
     @mcp.tool

@@ -19,7 +19,7 @@ failure never admits, and the proxy fails closed on any non-2xx response.
 Reaching a cluster-internal destination (#4948 override). By default a resolved answer touching
 prohibited address space denies outright — the always-prohibited classes and the deploy's
 ``prohibited_cidrs`` are the app-layer boundary that keeps a fenced Agent off the cluster's own
-network. A standing policy or temporary grant may carry ``allow_prohibited_address`` to lift that
+network. A configuration-file allowance or database grant may carry ``allow_prohibited_address`` to lift that
 denial, but only for its own exact origin and only when the host resolves *entirely* into
 prohibited space: this is the reusable, destination-scoped primitive for granting one Agent access
 to one specific internal service (an in-cluster model gateway, say), never a global private-address
@@ -35,16 +35,15 @@ import secrets
 from dataclasses import dataclass
 from ipaddress import IPv4Address, IPv4Network, IPv6Address, IPv6Network
 
+from haku.console.grants.catalog import GrantCatalog, HttpAccessAllowed
 from haku.console.grants.http.decide_config import LoadedEgressDecide
-from haku.console.grants.http.models import HttpMethod, HttpOrigin, HttpRequestAllowed, HttpScheme
-from haku.console.grants.http.service import GrantService
+from haku.console.grants.http.models import HttpMethod, HttpOrigin, HttpScheme
 from haku.console.grants.principal import RequestPrincipal
 from haku.console.identity.agent_bearer_authority import AgentBearerAuthority
 from haku.egress.decision import (
     DecideAllowed,
     DecideDenied,
     DecideRequest,
-    DecisionSource,
     GrantScope,
     PlaceholderSubstitution,
     RequestMeta,
@@ -129,30 +128,28 @@ class HttpDecideService:
 
     The resolved answer is validated alongside the authorities: an answer touching prohibited
     address space — the always-on classes of ``_prohibited_address_class`` or a deploy-configured
-    prohibited CIDR — denies (#4948) unless a matching standing entry or grant carries
+    prohibited CIDR — denies (#4948) unless a matching configuration-file allowance or database grant carries
     ``allow_prohibited_address`` and the host resolves *entirely* into prohibited space, the
     destination-scoped internal-service override (module docstring). A mixed public+prohibited
     answer is the rebinding signature and denies regardless of the flag.
-    Evaluation order is #4670's: standing HTTP policy first, then the principal's
-    active temporary grants after a clean standing denial. Standing policy is the deploy-managed
-    ``egress_decide.standing_policies`` config (#4941): reviewed durable allowances whose
-    admissions carry ``standing:<entry id>`` provenance and no deadline, since only a redeploy —
-    which restarts Console and proxy together — changes them.
+    Evaluation order is configuration-file HTTP allowance first, then the principal's active
+    database grants after a clean configuration denial. The configured entries live under
+    ``egress_decide.standing_policies`` (#4941), but their source is the configuration file:
+    they carry ``config_file:<entry id>`` provenance and no end date.
     """
 
     def __init__(
         self,
         *,
-        grants: GrantService,
+        catalog: GrantCatalog,
         credentials: LoadedEgressDecide,
         prohibited_cidrs: frozenset[IPv4Network | IPv6Network],
         agent_bearer_authority: AgentBearerAuthority,
     ) -> None:
-        self._grants = grants
+        self._catalog = catalog
         self._credentials = credentials
         self._agent_bearer_authority = agent_bearer_authority
         self._egress_credentials = {credential.handle: credential for credential in credentials.credentials}
-        self._standing_policies = credentials.standing_policies
         self._prohibited_cidrs = sorted(prohibited_cidrs, key=str)
 
     def authenticate_proxy(self, authorization: str) -> bool:
@@ -231,18 +228,13 @@ class HttpDecideService:
             )
             return canonical
         origin = canonical.origin
-        standing = self._standing_decision(
-            principal=principal, canonical=canonical, require_prohibited_address_allowance=overridable
-        )
-        if standing is not None:
-            return standing
         try:
             if isinstance(canonical, _Tunnel):
-                decision = await self._grants.match_tunnel(
+                decision = await self._catalog.match_http_tunnel(
                     request_principal=principal, origin=origin, require_prohibited_address_allowance=overridable
                 )
             else:
-                decision = await self._grants.match_request(
+                decision = await self._catalog.match_http_request(
                     request_principal=principal,
                     method=canonical.method,
                     origin=origin,
@@ -253,8 +245,7 @@ class HttpDecideService:
             # The route converts this to a plain 503, so the underlying failure surfaces only here.
             logger.exception("egress grant authority failure")
             raise HttpDecideUnavailableError("HTTP grant authority is unavailable") from error
-        if isinstance(decision, HttpRequestAllowed):
-            decision_id = f"grant:{decision.grant_id}"
+        if isinstance(decision, HttpAccessAllowed):
             # A tunnel has no inner request yet, so there is nothing to substitute into; each
             # intercepted request is decided — and substituted — individually.
             substitutions = (
@@ -269,14 +260,15 @@ class HttpDecideService:
                 origin.scheme,
                 origin.host,
                 origin.port,
-                decision_id,
-                decision.expires_at.isoformat(),
+                decision.decision_id,
+                decision.valid_until.isoformat() if decision.valid_until is not None else None,
                 sorted(decision.credential_handles),
             )
             return DecideAllowed(
-                source=DecisionSource.GRANT,
-                decision_id=decision_id,
-                valid_until=decision.expires_at,
+                source=decision.source,
+                decision_id=decision.decision_id,
+                reason=decision.reason,
+                valid_until=decision.valid_until,
                 substitutions=substitutions,
             )
         if prohibited_reason is not None:
@@ -306,61 +298,11 @@ class HttpDecideService:
             reason=decision.reason, grant_scope=GrantScope(scheme=origin.scheme, host=origin.host, port=origin.port)
         )
 
-    def _standing_decision(
-        self,
-        *,
-        principal: RequestPrincipal,
-        canonical: _Tunnel | _InnerRequest,
-        require_prohibited_address_allowance: bool,
-    ) -> DecideAllowed | None:
-        """Evaluate deploy-managed standing policy; ``None`` is the clean denial grants follow.
-
-        Entries may overlap: the first declared match names the decision — declaration order in
-        the reviewed config is the one stable, reviewable tiebreak — and every matching entry's
-        credential redeems, mirroring how overlapping grants union their handles. A tunnel is
-        admitted by an origin match alone (its ``https`` scheme is structural, so cleartext-origin
-        entries can never admit one) with method/path pins binding each decrypted inner request;
-        it carries no substitutions because no inner request exists yet.
-
-        ``require_prohibited_address_allowance`` filters to entries carrying
-        ``allow_prohibited_address``: the caller sets it for a fully-internal resolution, so an
-        unflagged entry cannot admit an internal destination even at a matching origin.
-        """
-        origin = canonical.origin
-        matching = [
-            entry
-            for entry in self._standing_policies
-            if principal.agent_id in entry.agent_ids
-            and origin in entry.origins
-            and (isinstance(canonical, _Tunnel) or entry.coverage.covers(method=canonical.method, path=canonical.path))
-            and (not require_prohibited_address_allowance or entry.allow_prohibited_address)
-        ]
-        if not matching:
-            return None
-        decision_id = f"standing:{matching[0].id}"
-        handles = frozenset(entry.credential_handle for entry in matching if entry.credential_handle is not None)
-        substitutions = (
-            []
-            if isinstance(canonical, _Tunnel)
-            else self._substitutions_for(principal=principal, origin=origin, handles=handles)
-        )
-        logger.info(
-            "egress decision allow agent=%s %s %s://%s:%d decision_id=%s credential_handles=%s",
-            principal.agent_id,
-            CONNECT_METHOD if isinstance(canonical, _Tunnel) else canonical.method,
-            origin.scheme,
-            origin.host,
-            origin.port,
-            decision_id,
-            sorted(handles),
-        )
-        return DecideAllowed(source=DecisionSource.STANDING, decision_id=decision_id, substitutions=substitutions)
-
     def _substitutions_for(
         self, *, principal: RequestPrincipal, origin: HttpOrigin, handles: frozenset[str]
     ) -> list[PlaceholderSubstitution]:
-        """Resolve the credential handles named by the matching allowances — temporary grants or
-        standing entries — into this request's substitutions.
+        """Resolve the credential handles named by matching database or configuration-file
+        allowances into this request's substitutions.
 
         Credential redemption is an authority separate from reachability (#4670): a handle that is
         not configured, not assigned to the Agent, or not redeemable at this origin yields no

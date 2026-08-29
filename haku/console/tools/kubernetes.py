@@ -9,34 +9,23 @@ onto the server.
 from __future__ import annotations
 
 import asyncio
-import datetime
 
 from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, ConfigDict, Field
 
 from haku.console.grants.kubernetes.authorization import (
     AuthorizationRequest,
-    AuthorizationResponse,
-    KubernetesAuthorizationService,
-    KubernetesAuthorizationSource,
     RequestAttributes,
     required_rule,
     required_scope,
 )
+from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
 from haku.console.grants.kubernetes.models import GrantScopeKind
 from haku.console.mcp.execution import McpExecutionContext
+from haku.grants.authorization import AuthorizationDecision
 
 # The batch bound the `kubernetes_can_i` tool advertises.
 CAN_I_BATCH_LIMIT = 32
-
-
-class CanIResult(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    allowed: bool
-    reason: str | None = None
-    source: KubernetesAuthorizationSource
-    valid_until: datetime.datetime | None = None
 
 
 class KubernetesAccessCheck(BaseModel):
@@ -70,7 +59,9 @@ class KubernetesToolsService:
     def __init__(self, *, authorization: KubernetesAuthorizationService) -> None:
         self.authorization = authorization
 
-    async def can_i(self, *, context: McpExecutionContext, requests: list[KubernetesAccessCheck]) -> list[CanIResult]:
+    async def can_i(
+        self, *, context: McpExecutionContext, requests: list[KubernetesAccessCheck]
+    ) -> list[AuthorizationDecision]:
         authorization_requests = []
         for index, request in enumerate(requests):
             try:
@@ -88,19 +79,12 @@ class KubernetesToolsService:
                     required_rules=[required_rule(request.attributes)],
                 )
             )
-        decisions = await asyncio.gather(
+        return await asyncio.gather(
             *(
                 self.authorization.authorize_agent(request_principal=context.request_principal, request=request)
                 for request in authorization_requests
             )
         )
-        return [_can_i_result(decision) for decision in decisions]
-
-
-def _can_i_result(decision: AuthorizationResponse) -> CanIResult:
-    return CanIResult(
-        allowed=decision.allowed, reason=decision.reason, source=decision.source, valid_until=decision.valid_until
-    )
 
 
 CAN_I_INSTRUCTIONS = (
