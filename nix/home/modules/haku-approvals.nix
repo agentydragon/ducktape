@@ -14,10 +14,10 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    home.packages = [ ducktapePackages.hakuApprovals ];
+    home.packages = [ ducktapePackages.haku-approvals ];
 
     programs.gnome-shell.extensions = [
-      { package = ducktapePackages.hakuApprovals; }
+      { package = ducktapePackages.haku-approvals; }
     ];
 
   };
