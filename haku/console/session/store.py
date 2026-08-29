@@ -576,6 +576,8 @@ class Store:
                         agent_binding_id=agent_binding_id,
                         bridge_token_fingerprint=None,
                         bridge_connected_at=None,
+                        session_token_fingerprint=None,
+                        runner_connected_at=None,
                         error=None,
                         lease_expires_at=None,
                         created_at=now,
@@ -672,6 +674,8 @@ class Store:
                     agent_binding_id=agent_binding_id,
                     bridge_token_fingerprint=None,
                     bridge_connected_at=None,
+                    session_token_fingerprint=None,
+                    runner_connected_at=None,
                     error=None,
                     lease_expires_at=None,
                     created_at=now,
@@ -750,6 +754,9 @@ class Store:
                     conversation_id=conversation_id,
                     bridge_token_fingerprint=self._fingerprint(session_token),
                     bridge_connected_at=None,
+                    # Dual-write with bridge_token_fingerprint until the 0122 expand contracts.
+                    session_token_fingerprint=self._fingerprint(session_token),
+                    runner_connected_at=None,
                     error=None,
                     lease_expires_at=now + PROVISION_LEASE,
                     created_at=now,
@@ -784,7 +791,10 @@ class Store:
             if chat.status != SessionStatus.IDLE or not await _has_pending_prompt(db, chat.conversation_id):
                 return None
             session_token = secrets.token_urlsafe(32)
-            chat.bridge_token_fingerprint = self._fingerprint(session_token)
+            fingerprint = self._fingerprint(session_token)
+            # Dual-write with bridge_token_fingerprint until the 0122 expand contracts.
+            chat.bridge_token_fingerprint = fingerprint
+            chat.session_token_fingerprint = fingerprint
             chat.lease_expires_at = now + PROVISION_LEASE
             chat.updated_at = now
             writer = await log.writer_for(db, chat.conversation_id, session_id=session_id, turn_id=None, now=now)
@@ -1051,6 +1061,8 @@ class Store:
             first_attach = record.status == SessionStatus.PROVISIONING
             if first_attach:
                 record.bridge_connected_at = now
+                # Dual-write with bridge_connected_at until the 0122 expand contracts.
+                record.runner_connected_at = now
             elif (
                 record.lease_holder not in (None, REPLICA)
                 and record.lease_expires_at is not None

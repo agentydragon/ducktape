@@ -1125,6 +1125,13 @@ class Session(Base):
     # stores its fingerprint in the same transaction that starts provisioning.
     bridge_token_fingerprint: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     bridge_connected_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Expand step of {bridge_token_fingerprint, bridge_connected_at} →
+    # {session_token_fingerprint, runner_connected_at} (C16a, migration 0122, the C4d recipe):
+    # dual-write both pairs, still read the bridge names, until the contract releases backfill
+    # stragglers, move the CHECKs and the partial lease index, switch reads, stop writing the
+    # bridge names, and drop them — each only after the prior release has converged.
+    session_token_fingerprint: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    runner_connected_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # When this session's Agent Sandbox claim was deleted, and NULL until it has been — which is
     # what puts an ended session in `session.store.Store.claim_cleanup_candidates` and what takes it back
     # out. Only ever stamped on a session whose status is already ended.
@@ -1172,6 +1179,7 @@ class Session(Base):
 
     __table_args__ = (
         UniqueConstraint("bridge_token_fingerprint", name="uq_sessions_bridge_token_fingerprint"),
+        UniqueConstraint("session_token_fingerprint", name="uq_sessions_session_token_fingerprint"),
         UniqueConstraint("session_id", "agent_binding_id", name="uq_sessions_session_agent_binding"),
         # The fact shapes the derivation reads, held by the database so no writer can record a
         # combination the vocabulary cannot say. An error is how an ended session ended;

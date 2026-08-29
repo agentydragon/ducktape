@@ -207,7 +207,7 @@ async def make_idle(sessions: async_sessionmaker[AsyncSession], session_id: UUID
         await db.execute(
             update(Session)
             .where(Session.session_id == session_id)
-            .values(bridge_token_fingerprint=None, lease_expires_at=None)
+            .values(bridge_token_fingerprint=None, session_token_fingerprint=None, lease_expires_at=None)
         )
 
 
