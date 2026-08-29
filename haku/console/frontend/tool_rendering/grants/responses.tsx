@@ -77,7 +77,11 @@ function GrantResult({ view, variant }: { view: GrantView; variant: PreviewVaria
             <GrantPrincipalLabel principal={grant.principal} />
           </Field>
           <Timestamp label="Created" value={grant.created_at} />
-          <Timestamp label="Expires" value={grant.expires_at} />
+          {grant.expires_at ? (
+            <Timestamp label="Expires" value={grant.expires_at} />
+          ) : (
+            <Field label="Expires">Never</Field>
+          )}
           {endedAt && <Timestamp label="Ended" value={endedAt} />}
           {grant.end_reason && <Field label="End reason">{grant.end_reason}</Field>}
         </Stack>

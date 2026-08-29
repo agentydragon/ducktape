@@ -222,10 +222,7 @@ class PostgresGrantRepository:
             rows = (
                 await session.scalars(
                     select(KubernetesGrantRow)
-                    .where(
-                        request_principal_clause(KubernetesGrantRow, request_principal),
-                        _active(now),
-                    )
+                    .where(request_principal_clause(KubernetesGrantRow, request_principal), _active(now))
                     .order_by(KubernetesGrantRow.expires_at.asc().nulls_last(), KubernetesGrantRow.created_at)
                 )
             ).all()

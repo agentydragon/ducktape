@@ -188,9 +188,11 @@ def test_repository_persists_permanent_grants(repository_client: _RepositoryClie
         assert await repository.active_for_request_principal(
             request_principal=principal, now=_NOW + timedelta(days=365)
         ) == (grant,)
-        assert (await repository.end(
-            owner_agent_ids=frozenset({repository_client.agent_id}), grant_id=grant.grant_id, reason=None, now=_NOW
-        )).status is GrantStatus.ENDED
+        assert (
+            await repository.end(
+                owner_agent_ids=frozenset({repository_client.agent_id}), grant_id=grant.grant_id, reason=None, now=_NOW
+            )
+        ).status is GrantStatus.ENDED
 
     repository_client.call(exercise)
 

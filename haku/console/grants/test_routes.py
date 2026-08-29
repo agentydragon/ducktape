@@ -143,6 +143,7 @@ def _wire(instant: datetime.datetime) -> str:
 
 def test_lists_direct_catalog_grants_with_provenance(console: _Console) -> None:
     grant = _seed_grant(console)
+    assert grant.expires_at is not None
 
     response = console.client.get("/api/grants")
 

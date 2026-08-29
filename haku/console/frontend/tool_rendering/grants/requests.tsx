@@ -147,7 +147,9 @@ function CreateGrantPreview({ args, variant }: PreviewProps<CreateGrantArgs>) {
         <PreviewTitle>
           {domain} {plural(args.grants.length, "grant")}
         </PreviewTitle>
-        <PreviewBadge variant="outline">for {formatDuration(args.duration_seconds)}</PreviewBadge>
+        <PreviewBadge variant="outline">
+          {args.duration_seconds == null ? "permanent" : `for ${formatDuration(args.duration_seconds)}`}
+        </PreviewBadge>
         <PreviewBadge variant="light">
           applies to{" "}
           {args.principal.kind === "agent"

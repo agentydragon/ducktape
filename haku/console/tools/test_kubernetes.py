@@ -124,6 +124,7 @@ class _Console:
             grants=[spec],
             expires_at=datetime.now(UTC) + timedelta(seconds=600),
         )
+        assert grant.expires_at is not None
         return grant.expires_at
 
 
