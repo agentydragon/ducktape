@@ -26,7 +26,7 @@ pkgs.stdenvNoCC.mkDerivation {
 
     mkdir -p "$extDir"
     unzip -q "$src" -d "$extDir"
-    install -Dm755 "$extDir/haku-approvals-window.js" "$out/libexec/haku-approvals-window.js"
+    install -Dm644 "$extDir/haku-approvals-window.js" "$out/libexec/haku-approvals-window.js"
     install -Dm644 "$extDir/logo.svg" "$out/libexec/logo.svg"
     install -Dm644 "$extDir/logo.svg" "$out/share/icons/hicolor/scalable/apps/haku-approvals.svg"
     install -Dm644 "$extDir/haku-approvals.desktop" "$out/share/applications/haku-approvals.desktop"
