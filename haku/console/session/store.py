@@ -379,7 +379,7 @@ class ActiveSessionRecord:
     """One operator-owned allocated session that still has a sandbox claim to account for."""
 
     session_id: UUID
-    runtime_kind: HarnessKind
+    harness_kind: HarnessKind
     status: SessionStatus
     created_at: datetime
     updated_at: datetime
@@ -1800,7 +1800,7 @@ class Store:
             )
         async with self._sessions() as db:
             rows = (await db.execute(query.limit(limit))).all()
-            session_ids = {row.session_id for row, _runtime_kind in rows}
+            session_ids = {row.session_id for row, _harness_kind in rows}
             if session_ids:
                 responding = set(
                     (
@@ -1816,12 +1816,12 @@ class Store:
         return [
             ActiveSessionRecord(
                 session_id=row.session_id,
-                runtime_kind=runtime_kind,
+                harness_kind=harness_kind,
                 status=live_status(row, responding=row.session_id in responding),
                 created_at=row.created_at,
                 updated_at=row.updated_at,
             )
-            for row, runtime_kind in rows
+            for row, harness_kind in rows
         ]
 
     async def read_session_frames(

@@ -55,7 +55,7 @@ def _records() -> list[ActiveSandboxRecord]:
     return [
         ActiveSandboxRecord(
             session_id=session_id,
-            runtime_kind=HarnessKind.CLAUDE_CODE,
+            harness_kind=HarnessKind.CLAUDE_CODE,
             status=status,
             created_at=NOW - datetime.timedelta(minutes=index),
             updated_at=NOW,

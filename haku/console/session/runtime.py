@@ -96,7 +96,7 @@ class ActiveSandboxRecord:
     """The operator-facing projection of one allocated session and its live claim graph."""
 
     session_id: UUID
-    runtime_kind: HarnessKind
+    harness_kind: HarnessKind
     status: SessionStatus
     created_at: datetime
     updated_at: datetime
@@ -436,7 +436,7 @@ class SessionService:
                 records.append(
                     ActiveSandboxRecord(
                         session_id=session.session_id,
-                        runtime_kind=session.runtime_kind,
+                        harness_kind=session.harness_kind,
                         status=session.status,
                         created_at=session.created_at,
                         updated_at=session.updated_at,

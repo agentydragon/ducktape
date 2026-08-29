@@ -525,21 +525,21 @@ async def test_active_sandbox_inventory_skips_absent_claims_and_fills_the_page(
     rows = [
         ActiveSessionRecord(
             session_id=first.session_id,
-            runtime_kind=HarnessKind.CLAUDE_CODE,
+            harness_kind=HarnessKind.CLAUDE_CODE,
             status=SessionStatus.PROVISIONING,
             created_at=now,
             updated_at=now,
         ),
         ActiveSessionRecord(
             session_id=second.session_id,
-            runtime_kind=HarnessKind.CLAUDE_CODE,
+            harness_kind=HarnessKind.CLAUDE_CODE,
             status=SessionStatus.PROVISIONING,
             created_at=now - timedelta(seconds=1),
             updated_at=now,
         ),
         ActiveSessionRecord(
             session_id=third.session_id,
-            runtime_kind=HarnessKind.CLAUDE_CODE,
+            harness_kind=HarnessKind.CLAUDE_CODE,
             status=SessionStatus.PROVISIONING,
             created_at=now - timedelta(seconds=2),
             updated_at=now,

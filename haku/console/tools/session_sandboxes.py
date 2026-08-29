@@ -84,7 +84,7 @@ def _operator_id(execution: McpExecutionContext, access: InProcessServerAccessPo
 def _view(record: ActiveSandboxRecord) -> ActiveSandbox:
     return ActiveSandbox(
         session_id=record.session_id,
-        harness_kind=record.runtime_kind,
+        harness_kind=record.harness_kind,
         status=record.status,
         created_at=record.created_at,
         updated_at=record.updated_at,
