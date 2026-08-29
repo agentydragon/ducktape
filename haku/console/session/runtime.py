@@ -18,8 +18,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 
-from haku.console.chat_models import ItemType
 from haku.console.conversation.history import ConversationHistory
+from haku.console.conversation.item_vocabulary import ItemType
 from haku.console.conversation.journal_consumer import JournalConsumer, JournalViolationError
 from haku.console.conversation.prompt_origin import SPA_ORIGIN, PromptOrigin
 from haku.console.harnesses.kind import HarnessKind
