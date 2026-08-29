@@ -15,20 +15,19 @@ from haku.console.identity.operator_auth import OperatorActorDep
 router = APIRouter(prefix="/api/kubernetes-grants", tags=["kubernetes-grants"])
 
 
-class OperatorGrant(BaseModel):
-    """One grant plus the operator-owned Agent name used by the browser."""
+class AgentGrant(BaseModel):
+    """One grant and the Agent that owns it."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     grant: Grant
     agent_id: UUID
-    agent_display_name: str
 
 
 class GrantListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    grants: tuple[OperatorGrant, ...]
+    grants: tuple[AgentGrant, ...]
 
 
 def _grant_catalog(request: Request) -> GrantCatalog:
@@ -46,12 +45,11 @@ async def list_kubernetes_grants(
 
     owned = await owned_agents(actor=actor, agents=agents)
     records = [
-        OperatorGrant(grant=grant, agent_id=agent.agent_id, agent_display_name=display_name)
+        AgentGrant(grant=grant, agent_id=agent.agent_id)
         for agent in owned
         for grant in await catalog.list_kubernetes_for_agent(
             agent_id=agent.agent_id, access_profile_id=agent.access_profile_id
         )
-        for display_name in (agent.display_name,)
     ]
     records.sort(
         key=lambda item: (

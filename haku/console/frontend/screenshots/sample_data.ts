@@ -322,7 +322,6 @@ export const SAMPLE_KUBERNETES_GRANTS: KubernetesGrantListResponse = {
   grants: [
     {
       agent_id: "30000000-0000-4000-8000-000000000003",
-      agent_display_name: "Public Coder",
       grant: {
         source: {
           kind: "database",
@@ -359,7 +358,6 @@ export const SAMPLE_KUBERNETES_GRANTS: KubernetesGrantListResponse = {
     },
     {
       agent_id: "30000000-0000-4000-8000-000000000003",
-      agent_display_name: "Public Coder",
       grant: {
         source: {
           kind: "database",
@@ -389,7 +387,6 @@ export const SAMPLE_KUBERNETES_GRANTS: KubernetesGrantListResponse = {
     },
     {
       agent_id: "30000000-0000-4000-8000-000000000003",
-      agent_display_name: "Public Coder",
       grant: {
         source: {
           kind: "database",

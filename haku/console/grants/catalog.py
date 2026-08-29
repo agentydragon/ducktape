@@ -225,29 +225,31 @@ class GrantCatalog:
 
         return self._database_http_grant(grant)
 
-    async def revoke_database_grant(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str) -> Grant:
+    async def revoke_database_grant(self, *, owner_agent_ids: frozenset[UUID], grant_id: UUID, reason: str) -> Grant:
         """Revoke one database grant without exposing which domain stores it."""
 
         try:
             return self._database_kubernetes_grant(
-                await self._kubernetes_grants.revoke_grant(
-                    owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason
+                await self._kubernetes_grants.revoke_grant_for_owners(
+                    owner_agent_ids=owner_agent_ids, grant_id=grant_id, reason=reason
                 )
             )
         except GrantNotFoundError:
             return self._database_http_grant(
-                await self._http_grants.revoke_grant(owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason)
+                await self._http_grants.revoke_grant_for_owners(
+                    owner_agent_ids=owner_agent_ids, grant_id=grant_id, reason=reason
+                )
             )
 
     async def revoke_database_grants(
-        self, *, owner_agent_id: UUID, grant_ids: tuple[UUID, ...], reason: str
+        self, *, owner_agent_ids: frozenset[UUID], grant_ids: tuple[UUID, ...], reason: str
     ) -> tuple[Grant, ...]:
         """Revoke database grants by durable ID without exposing their storage domains."""
 
         grant_ids, reason = validated_end_batch(grant_ids, reason)
         return tuple(
             [
-                await self.revoke_database_grant(owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason)
+                await self.revoke_database_grant(owner_agent_ids=owner_agent_ids, grant_id=grant_id, reason=reason)
                 for grant_id in grant_ids
             ]
         )

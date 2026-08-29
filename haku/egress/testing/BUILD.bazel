@@ -1,0 +1,30 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_testonly = True)
+
+py_library(
+    name = "static_decide_client",
+    srcs = ["static_decide_client.py"],
+    visibility = ["//haku/egress:__pkg__"],
+    deps = [
+        "//haku/egress:decide_client",
+        "//haku/egress:decision",
+    ],
+)
+
+py_library(
+    name = "proxy_test_harness",
+    srcs = ["proxy_test_harness.py"],
+    visibility = ["//haku/egress:__pkg__"],
+    deps = [
+        "//haku/egress:addon",
+        "//haku/egress:decide_client",
+        "//haku/egress:decision",
+        "//haku/egress:localhost_decide_client",
+        "//haku/egress:runner",
+        "//haku/grants:authorization",
+        "@pypi//aiohttp",
+        "@pypi//more_itertools",
+        "@pypi//pydantic",
+    ],
+)

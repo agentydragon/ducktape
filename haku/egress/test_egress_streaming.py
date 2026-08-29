@@ -30,7 +30,7 @@ from pathlib import Path
 import aiohttp
 import pytest_bazel
 
-from haku.egress.proxy_test_harness import (
+from haku.egress.testing.proxy_test_harness import (
     PLACEHOLDER,
     REAL_CREDENTIAL,
     allow,
@@ -38,7 +38,7 @@ from haku.egress.proxy_test_harness import (
     make_proxy,
     proxy_url,
 )
-from haku.egress.static_decide_client import StaticDecideClient
+from haku.egress.testing.static_decide_client import StaticDecideClient
 
 UNIT = os.urandom(1 << 20)  # 1 MiB payload unit, reused for every block so memory stays flat
 RESPONSE_TOTAL = 256 << 20  # 256 MiB downstream body

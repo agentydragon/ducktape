@@ -61,6 +61,10 @@ class GrantRepository(Protocol):
 
     async def revoke(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime) -> Grant: ...
 
+    async def revoke_for_owners(
+        self, *, owner_agent_ids: frozenset[UUID], grant_id: UUID, reason: str, now: datetime.datetime
+    ) -> Grant: ...
+
     async def list_for_request_principal(
         self, *, request_principal: RequestPrincipal, now: datetime.datetime, include_terminal: bool = True
     ) -> tuple[Grant, ...]: ...
@@ -267,6 +271,13 @@ class GrantService:
     async def revoke_grant(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str) -> Grant:
         return await self._repository.revoke(
             owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason, now=self._now()
+        )
+
+    async def revoke_grant_for_owners(self, *, owner_agent_ids: frozenset[UUID], grant_id: UUID, reason: str) -> Grant:
+        if not owner_agent_ids:
+            raise ValueError("owner_agent_ids must not be empty")
+        return await self._repository.revoke_for_owners(
+            owner_agent_ids=owner_agent_ids, grant_id=grant_id, reason=reason, now=self._now()
         )
 
     async def revoke_grants(self, *, owner_agent_id: UUID, grant_ids: Sequence[UUID], reason: str) -> tuple[Grant, ...]:

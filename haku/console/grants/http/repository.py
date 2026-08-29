@@ -151,7 +151,7 @@ class PostgresGrantRepository:
             return _row_to_model(row)
 
     async def _end(
-        self, *, owner_agent_id: UUID, grant_id: UUID, release: bool, reason: str, now: datetime.datetime
+        self, *, owner_agent_ids: frozenset[UUID], grant_id: UUID, release: bool, reason: str, now: datetime.datetime
     ) -> Grant:
         reason = reason.strip()
         if not reason:
@@ -160,7 +160,7 @@ class PostgresGrantRepository:
             row = await session.scalar(select(HttpGrantRow).where(HttpGrantRow.grant_id == grant_id).with_for_update())
             if row is None:
                 raise GrantNotFoundError(str(grant_id))
-            if row.owner_agent_id != owner_agent_id:
+            if row.owner_agent_id not in owner_agent_ids:
                 raise GrantOwnershipError(str(grant_id))
             # Only a still-active grant records an end action: an already-ended one keeps its
             # facts, and an expired one stays expired by derivation rather than being relabeled.
@@ -174,10 +174,21 @@ class PostgresGrantRepository:
             return _row_to_model(row)
 
     async def release(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime) -> Grant:
-        return await self._end(owner_agent_id=owner_agent_id, grant_id=grant_id, release=True, reason=reason, now=now)
+        return await self._end(
+            owner_agent_ids=frozenset({owner_agent_id}), grant_id=grant_id, release=True, reason=reason, now=now
+        )
 
     async def revoke(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime) -> Grant:
-        return await self._end(owner_agent_id=owner_agent_id, grant_id=grant_id, release=False, reason=reason, now=now)
+        return await self._end(
+            owner_agent_ids=frozenset({owner_agent_id}), grant_id=grant_id, release=False, reason=reason, now=now
+        )
+
+    async def revoke_for_owners(
+        self, *, owner_agent_ids: frozenset[UUID], grant_id: UUID, reason: str, now: datetime.datetime
+    ) -> Grant:
+        return await self._end(
+            owner_agent_ids=owner_agent_ids, grant_id=grant_id, release=False, reason=reason, now=now
+        )
 
     async def list_for_request_principal(
         self, *, request_principal: RequestPrincipal, now: datetime.datetime, include_terminal: bool = True

@@ -19,7 +19,7 @@ keep the hostname (asserted below), so mitmproxy's upstream verification still c
 the real hostname against the real certificate.
 
 The reusable harness (recording upstream, stub console, decide-client doubles, pinned
-dial helpers) lives in ``proxy_test_harness.py``; the #4914 integration suites build on
+dial helpers) lives in ``testing/proxy_test_harness.py``; the #4914 integration suites build on
 the same module.
 """
 
@@ -41,7 +41,8 @@ from more_itertools import one
 from haku.egress.addon import EgressGateAddon
 from haku.egress.decision import GrantScope, HttpAuthorizationDenied, RequestMeta
 from haku.egress.localhost_decide_client import DEFAULT_TIMEOUT_SECONDS
-from haku.egress.proxy_test_harness import (
+<<<<<<< HEAD
+from haku.egress.testing.proxy_test_harness import (
     BRIDGE_BEARER,
     FENCE_CREDENTIAL,
     PLACEHOLDER,
@@ -64,7 +65,7 @@ from haku.egress.proxy_test_harness import (
     stub_console,
     tunneled_get,
 )
-from haku.egress.static_decide_client import StaticDecideClient
+from haku.egress.testing.static_decide_client import StaticDecideClient
 
 
 async def test_allow_substitutes_presented_placeholder(upstream: RecordingUpstream, tmp_path: Path) -> None:

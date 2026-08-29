@@ -1,7 +1,7 @@
 import { Alert, Badge, Button, Code, Group, Loader, SegmentedControl, Select, Stack, Text } from "@mantine/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { displayableError, fetchKubernetesGrants, revokeGrant, type OperatorKubernetesGrant } from "./client";
+import { displayableError, fetchKubernetesGrants, listAgents, revokeGrant, type AgentKubernetesGrant } from "./client";
 import { formatTimestamp } from "./approval_state";
 import { CodeBlock } from "./code_block";
 import { GrantPrincipalLabel } from "./grant_principal";
@@ -12,7 +12,7 @@ import { toastError, toastSuccess } from "./toast";
 
 export type GrantHistoryFilter = "active" | "history" | "all";
 
-type KubernetesGrant = OperatorKubernetesGrant["grant"];
+type KubernetesGrant = AgentKubernetesGrant["grant"];
 type KubernetesRulesCoverage = Extract<KubernetesGrant["coverage"], { kind: "kubernetes_rules" }>;
 type KubernetesGrantScope = KubernetesRulesCoverage["scope"];
 type KubernetesRule = KubernetesRulesCoverage["rules"][number];
@@ -159,9 +159,11 @@ function GrantValidity({ grant }: { grant: KubernetesGrant }) {
 
 function GrantCard({
   item,
+  agentDisplayName,
   onRevoke,
 }: {
-  item: OperatorKubernetesGrant;
+  item: AgentKubernetesGrant;
+  agentDisplayName: string;
   onRevoke: (target: GrantRevocationTarget) => void;
 }) {
   const { grant } = item;
@@ -169,7 +171,7 @@ function GrantCard({
     <section className="haku-shell-card">
       <Stack gap="xs">
         <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
-          <Text fw={600}>{item.agent_display_name}</Text>
+          <Text fw={600}>{agentDisplayName}</Text>
           <GrantValidity grant={grant} />
         </Group>
         <GrantSource grant={grant} />
@@ -182,8 +184,6 @@ function GrantCard({
             variant="light"
             onClick={() =>
               onRevoke({
-                agentId: item.agent_id,
-                agentDisplayName: item.agent_display_name,
                 grantId: grant.source.id,
               })
             }
@@ -197,7 +197,8 @@ function GrantCard({
 }
 
 export function KubernetesGrantsPanel(): JSX.Element {
-  const [grants, setGrants] = useState<OperatorKubernetesGrant[] | null>(null);
+  const [grants, setGrants] = useState<AgentKubernetesGrant[] | null>(null);
+  const [agentNames, setAgentNames] = useState<Map<string, string>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [historyFilter, setHistoryFilter] = useState<GrantHistoryFilter>("active");
@@ -207,9 +208,10 @@ export function KubernetesGrantsPanel(): JSX.Element {
 
   const load = useCallback(() => {
     setLoading(true);
-    void fetchKubernetesGrants().then(
-      (response) => {
-        setGrants(response.grants);
+    void Promise.all([fetchKubernetesGrants(), listAgents()]).then(
+      ([grantResponse, agentResponse]) => {
+        setGrants(grantResponse.grants);
+        setAgentNames(new Map(agentResponse.agents.map((agent) => [agent.agent_id, agent.display_name])));
         setError(null);
         setLoading(false);
       },
@@ -224,10 +226,8 @@ export function KubernetesGrantsPanel(): JSX.Element {
   useEffect(load, [load]);
 
   const agents = useMemo(() => {
-    const names = new Map<string, string>();
-    for (const item of grants ?? []) names.set(item.agent_id, item.agent_display_name);
-    return [...names].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
-  }, [grants]);
+    return [...agentNames].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [agentNames]);
 
   const visible = useMemo(
     () =>
@@ -246,11 +246,11 @@ export function KubernetesGrantsPanel(): JSX.Element {
     if (!revoking || !reason) return;
     const target = revoking;
     setRevokeBusy(true);
-    void revokeGrant(target.agentId, target.grantId, reason).then(
+    void revokeGrant(target.grantId, reason).then(
       (response) => {
         const updates = new Map(
-          response.grants.flatMap((item) =>
-            item.grant.source.kind === "database" ? [[item.grant.source.id, item.grant.validity] as const] : []
+          response.grants.flatMap((grant) =>
+            grant.source.kind === "database" ? [[grant.source.id, grant.validity] as const] : []
           )
         );
         setGrants(
@@ -263,7 +263,7 @@ export function KubernetesGrantsPanel(): JSX.Element {
         );
         setRevokeBusy(false);
         setRevoking(null);
-        toastSuccess("Grant revoked", `${target.agentDisplayName} no longer has this active grant.`);
+        toastSuccess("Grant revoked", "The active grant has ended.");
       },
       (e: unknown) => {
         setRevokeBusy(false);
@@ -337,7 +337,14 @@ export function KubernetesGrantsPanel(): JSX.Element {
       {visible.map((item) => {
         const { grant } = item;
         const sourceId = grant.source.kind === "database" ? grant.source.id : grant.source.entry_id;
-        return <GrantCard key={`${item.agent_id}:${sourceId}`} item={item} onRevoke={setRevoking} />;
+        return (
+          <GrantCard
+            key={`${item.agent_id}:${sourceId}`}
+            item={item}
+            agentDisplayName={agentNames.get(item.agent_id) ?? item.agent_id}
+            onRevoke={setRevoking}
+          />
+        );
       })}
       <GrantRevocationDialog
         item={revoking}

@@ -169,7 +169,6 @@ def test_lists_only_the_authenticated_operators_agents_with_provenance() -> None
     assert catalog.listed == [(AGENT_ID, "public-coder")]
     record, config_record = response.json()["grants"]
     assert record["agent_id"] == str(AGENT_ID)
-    assert record["agent_display_name"] == "Public Coder"
     assert record["grant"]["source"] == {
         "kind": "database",
         "id": str(GRANT_ID),

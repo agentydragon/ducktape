@@ -10,26 +10,16 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from haku.console.grants.catalog import Grant, GrantCatalog
 from haku.console.grants.envelope import GRANT_SET_LIMIT, GrantNotFoundError, GrantOwnershipError
-from haku.console.identity.operator_agents import AgentEnrollmentServiceDep, owned_agent_names
+from haku.console.identity.operator_agents import AgentEnrollmentServiceDep, owned_agents
 from haku.console.identity.operator_auth import OperatorActorDep
 
 router = APIRouter(prefix="/api/grants", tags=["grants"])
 
 
-class OperatorGrant(BaseModel):
-    """One revoked grant plus its Operator-owned Agent name."""
-
+class RevokeGrantResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    grant: Grant
-    agent_id: UUID
-    agent_display_name: str
-
-
-class GrantListResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    grants: tuple[OperatorGrant, ...]
+    grants: tuple[Grant, ...]
 
 
 class RevokeGrantRequest(BaseModel):
@@ -54,28 +44,19 @@ def _grant_catalog(request: Request) -> GrantCatalog:
 GrantCatalogDep = Annotated[GrantCatalog, Depends(_grant_catalog)]
 
 
-@router.post("/{agent_id}/revoke", response_model=GrantListResponse)
+@router.post("/revoke", response_model=RevokeGrantResponse)
 async def revoke_grants(
-    agent_id: UUID,
-    body: RevokeGrantRequest,
-    actor: OperatorActorDep,
-    catalog: GrantCatalogDep,
-    agents: AgentEnrollmentServiceDep,
-) -> GrantListResponse:
+    body: RevokeGrantRequest, actor: OperatorActorDep, catalog: GrantCatalogDep, agents: AgentEnrollmentServiceDep
+) -> RevokeGrantResponse:
     """Revoke owned database grants by durable ID, regardless of coverage domain."""
 
-    owned = await owned_agent_names(actor=actor, agents=agents)
-    display_name = owned.get(agent_id)
-    if display_name is None:
+    owner_agent_ids = frozenset(agent.agent_id for agent in await owned_agents(actor=actor, agents=agents))
+    if not owner_agent_ids:
         raise HTTPException(status_code=404, detail="Grant not found")
     try:
         revoked = await catalog.revoke_database_grants(
-            owner_agent_id=agent_id, grant_ids=body.grant_ids, reason=body.reason
+            owner_agent_ids=owner_agent_ids, grant_ids=body.grant_ids, reason=body.reason
         )
     except (GrantNotFoundError, GrantOwnershipError) as error:
         raise HTTPException(status_code=404, detail="Grant not found") from error
-    return GrantListResponse(
-        grants=tuple(
-            OperatorGrant(grant=grant, agent_id=agent_id, agent_display_name=display_name) for grant in revoked
-        )
-    )
+    return RevokeGrantResponse(grants=revoked)

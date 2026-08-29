@@ -23,7 +23,7 @@ import pytest_bazel
 from more_itertools import one
 
 from haku.egress.decision import HttpAuthorizationDenied
-from haku.egress.proxy_test_harness import (
+from haku.egress.testing.proxy_test_harness import (
     RecordingUpstream,
     ServerError,
     allow_with_substitution,
@@ -34,7 +34,7 @@ from haku.egress.proxy_test_harness import (
     stub_client,
     stub_console,
 )
-from haku.egress.static_decide_client import StaticDecideClient
+from haku.egress.testing.static_decide_client import StaticDecideClient
 
 
 async def test_decide_endpoint_down_fails_closed(upstream: RecordingUpstream, tmp_path: Path) -> None:

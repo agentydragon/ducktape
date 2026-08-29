@@ -52,13 +52,10 @@ export type ConversationUpdate = components["schemas"]["ConversationUpdate"];
 export type SessionFrame = components["schemas"]["SessionFrameView"];
 export type SessionFramePage = components["schemas"]["SessionFramePage"];
 export type AgentListResponse = components["schemas"]["AgentListResponse"];
-// The #4918 entity-prefix drop renamed these route models to `OperatorGrant`/`GrantListResponse`,
-// which collide with the http domain's in the flat OpenAPI component namespace; pydantic emits
-// module-path-qualified component keys, which the generated types carry (naming_and_layout §4.1 seam 3).
-export type OperatorKubernetesGrant = components["schemas"]["haku__console__grants__kubernetes__routes__OperatorGrant"];
+export type AgentKubernetesGrant = components["schemas"]["haku__console__grants__kubernetes__routes__AgentGrant"];
 export type KubernetesGrantListResponse =
   components["schemas"]["haku__console__grants__kubernetes__routes__GrantListResponse"];
-export type RevokeGrantListResponse = components["schemas"]["haku__console__grants__routes__GrantListResponse"];
+export type RevokeGrantResponse = components["schemas"]["haku__console__grants__routes__RevokeGrantResponse"];
 export type EnrollmentView = components["schemas"]["EnrollmentView"];
 export type EnrollmentDecisionRequest =
   | components["schemas"]["CreateEnrollmentRequest"]
@@ -219,9 +216,8 @@ export async function fetchKubernetesGrants(): Promise<KubernetesGrantListRespon
   return data;
 }
 
-export async function revokeGrant(agentId: string, grantId: string, reason: string): Promise<RevokeGrantListResponse> {
-  const { data, error } = await api.POST("/api/grants/{agent_id}/revoke", {
-    params: { path: { agent_id: agentId } },
+export async function revokeGrant(grantId: string, reason: string): Promise<RevokeGrantResponse> {
+  const { data, error } = await api.POST("/api/grants/revoke", {
     body: { grant_ids: [grantId], reason },
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to revoke grant"));

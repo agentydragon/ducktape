@@ -19,7 +19,7 @@ import pytest_bazel
 from more_itertools import one
 
 from haku.egress.decision import PlaceholderSubstitution
-from haku.egress.proxy_test_harness import (
+from haku.egress.testing.proxy_test_harness import (
     PLACEHOLDER,
     REAL_CREDENTIAL,
     RecordingUpstream,
@@ -30,7 +30,7 @@ from haku.egress.proxy_test_harness import (
     proxied_get,
     proxied_get_raw,
 )
-from haku.egress.static_decide_client import StaticDecideClient
+from haku.egress.testing.static_decide_client import StaticDecideClient
 
 
 async def test_multiple_substitutions_each_reach_their_header(upstream: RecordingUpstream, tmp_path: Path) -> None:

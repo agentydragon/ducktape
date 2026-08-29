@@ -535,6 +535,17 @@ async function respond(input: RequestInfo | URL, init: RequestInit | undefined, 
       access_profiles: ["manual_review", "haku_v1"],
       agents: [
         {
+          agent_id: "30000000-0000-4000-8000-000000000003",
+          display_name: "Public Coder",
+          status: "active",
+          credential_kind: "static",
+          credential_status: "active",
+          created_at: "2026-07-18T12:00:00Z",
+          activated_at: "2026-07-18T12:00:00Z",
+          last_seen_at: "2026-07-20T19:30:00Z",
+          access_profile_id: "manual_review",
+        },
+        {
           agent_id: "40000000-0000-4000-8000-000000000004",
           display_name: "Claude Desktop",
           status: "active",

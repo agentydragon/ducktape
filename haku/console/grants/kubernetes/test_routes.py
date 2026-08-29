@@ -106,7 +106,6 @@ def test_lists_only_the_authenticated_operators_agents_with_provenance(console: 
     assert response.status_code == 200
     record, config_record = response.json()["grants"]
     assert record["agent_id"] == str(console.agent_id)
-    assert record["agent_display_name"] == "Console Test Agent"
     assert record["grant"] == {
         "source": {
             "kind": "database",
@@ -143,9 +142,9 @@ def test_lists_only_the_authenticated_operators_agents_with_provenance(console: 
     }
 
 
-def test_revoke_requires_a_non_blank_reason_and_owned_agent(console: _Console) -> None:
+def test_revoke_requires_a_non_blank_reason(console: _Console) -> None:
     grant = _seed_grant(console)
-    path = f"/api/grants/{console.agent_id}/revoke"
+    path = "/api/grants/revoke"
 
     assert (
         console.client.post(
@@ -162,28 +161,20 @@ def test_revoke_requires_a_non_blank_reason_and_owned_agent(console: _Console) -
         ).status_code
         == 422
     )
-    assert (
-        console.client.post(
-            f"/api/grants/{uuid4()}/revoke",
-            json={"grant_ids": [str(grant.grant_id)], "reason": "risk"},
-            headers=headers,
-        ).status_code
-        == 404
-    )
 
     response = console.client.post(
         path, json={"grant_ids": [str(grant.grant_id)], "reason": "  pilot complete  "}, headers=headers
     )
 
     assert response.status_code == 200
-    assert response.json()["grants"][0]["grant"]["validity"]["status"] == "revoked"
-    assert response.json()["grants"][0]["grant"]["validity"]["end_reason"] == "pilot complete"
+    assert response.json()["grants"][0]["validity"]["status"] == "revoked"
+    assert response.json()["grants"][0]["validity"]["end_reason"] == "pilot complete"
 
 
 def test_revoke_grants_uses_durable_grant_ids(console: _Console) -> None:
     first = _seed_grant(console)
     second = _seed_grant(console)
-    path = f"/api/grants/{console.agent_id}/revoke"
+    path = "/api/grants/revoke"
     headers = {"Origin": "https://haku.test"}
 
     assert (
@@ -196,14 +187,6 @@ def test_revoke_grants_uses_durable_grant_ids(console: _Console) -> None:
     )
     assert console.client.post(path, json={"grant_ids": [], "reason": "risk"}, headers=headers).status_code == 422
     assert (
-        console.client.post(
-            f"/api/grants/{uuid4()}/revoke",
-            json={"grant_ids": [str(first.grant_id)], "reason": "risk"},
-            headers=headers,
-        ).status_code
-        == 404
-    )
-    assert (
         console.client.post(path, json={"grant_ids": [str(uuid4())], "reason": "risk"}, headers=headers).status_code
         == 404
     )
@@ -215,12 +198,9 @@ def test_revoke_grants_uses_durable_grant_ids(console: _Console) -> None:
     )
 
     assert response.status_code == 200
-    assert {item["grant"]["source"]["id"] for item in response.json()["grants"]} == {
-        str(first.grant_id),
-        str(second.grant_id),
-    }
-    assert [item["grant"]["validity"]["status"] for item in response.json()["grants"]] == ["revoked", "revoked"]
-    assert [item["grant"]["validity"]["end_reason"] for item in response.json()["grants"]] == [
+    assert {item["source"]["id"] for item in response.json()["grants"]} == {str(first.grant_id), str(second.grant_id)}
+    assert [item["validity"]["status"] for item in response.json()["grants"]] == ["revoked", "revoked"]
+    assert [item["validity"]["end_reason"] for item in response.json()["grants"]] == [
         "pilot complete",
         "pilot complete",
     ]

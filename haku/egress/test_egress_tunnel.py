@@ -29,8 +29,8 @@ from more_itertools import one
 
 from haku.egress.decide_client import DecideClient
 from haku.egress.decision import HttpAuthorizationDecision, HttpAuthorizationDenied, RequestMeta
-from haku.egress.proxy_test_harness import RecordingUpstream, allow, make_proxy, proxy_url, tunneled_get
-from haku.egress.static_decide_client import StaticDecideClient
+from haku.egress.testing.proxy_test_harness import RecordingUpstream, allow, make_proxy, proxy_url, tunneled_get
+from haku.egress.testing.static_decide_client import StaticDecideClient
 from haku.egress.tls_test_support import client_tls_context, make_self_signed_cert, server_tls_context
 
 

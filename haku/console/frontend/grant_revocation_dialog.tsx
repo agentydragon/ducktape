@@ -2,8 +2,6 @@ import { Button, Group, Modal, Stack, Text, Textarea } from "@mantine/core";
 import { useEffect, useState } from "react";
 
 export type GrantRevocationTarget = {
-  agentId: string;
-  agentDisplayName: string;
   grantId: string;
 };
 
@@ -23,9 +21,7 @@ export function GrantRevocationDialog({
   return (
     <Modal opened={item !== null} onClose={busy ? () => undefined : onClose} title="Revoke grant" centered returnFocus>
       <Stack gap="sm">
-        <Text size="sm">
-          End this active grant for <strong>{item?.agentDisplayName}</strong> immediately.
-        </Text>
+        <Text size="sm">End this active grant immediately.</Text>
         {item && (
           <Text size="xs" c="dimmed" ff="monospace">
             {item.grantId}
