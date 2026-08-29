@@ -22,6 +22,7 @@ from haku.console.conversation.history import ConversationHistory
 from haku.console.conversation.item_vocabulary import ItemType
 from haku.console.conversation.journal_consumer import JournalConsumer, JournalViolationError
 from haku.console.conversation.prompt_origin import SPA_ORIGIN, PromptOrigin
+from haku.console.conversation_read_access import ConversationAccessDeniedError, ConversationReadScope
 from haku.console.database_retry import transient_database_error
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.identity.operator_auth import OperatorActorDep
@@ -382,7 +383,9 @@ class SessionService:
         sandbox = await self.provisioning_of(view.session.session_id, view.session.status)
         return view.model_copy(update={"provisioning": sandbox})
 
-    async def sandbox_provisioning(self, operator_id: UUID, session_id: UUID) -> SessionProvisioningView:
+    async def sandbox_provisioning(
+        self, operator_id: UUID, session_id: UUID, *, scope: ConversationReadScope | None = None
+    ) -> SessionProvisioningView:
         """How this one session's sandbox came up — asked of a session in any state.
 
         **Per session, because a conversation runs several.** Each got its own sandbox and the one
@@ -393,9 +396,12 @@ class SessionService:
         which is the whole point of asking a non-provisioning session. Once cleanup deletes the
         claim the answer becomes `claim_absent`, which is truthful rather than an error.
 
-        Raises `KeyError` for a session this Operator does not own.
+        Raises `KeyError` for a session this Operator does not own, or
+        `ConversationAccessDeniedError` when an optional profile-DAG scope cannot read it.
         """
         identity = await self._store.operator_session_identity(operator_id, session_id)
+        if scope is not None and not scope.allows(identity.access_profile_id):
+            raise ConversationAccessDeniedError(f"{session_id=}")
         return SessionProvisioningView(
             session_id=session_id,
             harness_kind=identity.harness_kind,

@@ -148,7 +148,7 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
         )
     if (sessions := dependencies.sessions) is not None:
         servers[workers_tools.WORKERS_SERVER_ID] = InProcessServerRegistration(
-            builder=lambda _token: workers_tools.build_mcp(sessions),
+            builder=lambda _token: workers_tools.build_mcp(sessions, conversation_reads=conversation_reads),
             credential_kind=InProcessCredentialKind.NONE,
             authorizer=in_process_access.authorizer_for(workers_tools.WORKERS_SERVER_ID),
         )

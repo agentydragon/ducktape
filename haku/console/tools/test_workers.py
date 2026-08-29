@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.conftest import TEST_OPERATOR_IDENTITY, TEST_OPERATOR_OIDC, console_sessions, write_config
 from haku.console.conversation.prompt_origin import SPA_ORIGIN
+from haku.console.conversation_read_access import ConversationReadAccessPolicy
 from haku.console.database_schema import (
     Agent,
     Conversation,
@@ -239,6 +240,7 @@ def workers_console(
     config_path = write_config(tmp_path / "workers_console.yaml", config)
     profiles = ConsoleConfigFile.model_validate(config).access_profiles
     access = InProcessServerAccessPolicy(tuple(profiles))
+    conversation_reads = ConversationReadAccessPolicy(tuple(profiles))
     sessions = console_sessions(migrated_db_url)
     identity_store = PostgresOperatorIdentityStore(
         sessions,
@@ -249,7 +251,7 @@ def workers_console(
     runtime = _session_runtime(sessions, identity_store, migrated_db_url)
     in_process_servers: InProcessServers = {
         workers_tools.WORKERS_SERVER_ID: InProcessServerRegistration(
-            builder=lambda _token: workers_tools.build_mcp(runtime),
+            builder=lambda _token: workers_tools.build_mcp(runtime, conversation_reads=conversation_reads),
             credential_kind=InProcessCredentialKind.NONE,
             authorizer=access.authorizer_for(workers_tools.WORKERS_SERVER_ID),
         )

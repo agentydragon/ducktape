@@ -69,6 +69,7 @@ py_library(
         ":status",
         ":store",
         ":system_prompt",
+        "//haku/console:conversation_read_access",
         "//haku/console:database_retry",
         "//haku/console/conversation:history",
         "//haku/console/conversation:item_vocabulary",

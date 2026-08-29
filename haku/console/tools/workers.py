@@ -31,6 +31,7 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from haku.console.conversation.prompt_origin import SPA_ORIGIN
+from haku.console.conversation_read_access import ConversationAccessDeniedError, ConversationReadAccessPolicy
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.mcp.execution import (
     EXECUTION_CONTEXT_DEPENDENCY,
@@ -38,6 +39,7 @@ from haku.console.mcp.execution import (
     McpExecutionContext,
     OperatorMcpExecutionCaller,
 )
+from haku.console.session.conversation_views import SessionProvisioningView
 from haku.console.session.launch_identity import LaunchAgentRejectedError
 from haku.console.session.runtime import SessionService
 
@@ -52,7 +54,8 @@ class DispatchedWorker(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     session_id: UUID = Field(
-        description="The new worker session. Poll its outcome with the conversation read tools (get_worker_result)."
+        description="The new worker session. Poll its sandbox with get_worker_provisioning or outcome with "
+        "get_worker_result."
     )
 
 
@@ -75,16 +78,17 @@ def _dispatching_operator(context: McpExecutionContext) -> UUID:
     assert_never(context.caller)
 
 
-def build_mcp(sessions: SessionService) -> FastMCP:
-    """Build the one-tool ``workers`` server over the console's session runtime."""
+def build_mcp(sessions: SessionService, *, conversation_reads: ConversationReadAccessPolicy) -> FastMCP:
+    """Build the ``workers`` server over the console's session runtime."""
 
     mcp: FastMCP = FastMCP(
         name=WORKERS_SERVER_ID,
         instructions=(
             "Dispatch a one-shot hosted worker: open a conversation for a worker Agent on a harness, "
             "seed its opening prompt, and get back the session id immediately without awaiting the work. "
+            "Poll its sandbox with get_worker_provisioning and its outcome with get_worker_result. "
             "The worker runs under its own Agent perimeter (its own grants and fence identity), not "
-            "yours. Every dispatch is reviewed and approved by the Operator per call."
+            "yours. Every dispatch is reviewed and approved by the Operator per call; reads are pass-through."
         ),
     )
 
@@ -126,5 +130,27 @@ def build_mcp(sessions: SessionService) -> FastMCP:
             raise ToolError("the selected worker Agent is not launchable on this harness") from None
         await sessions.enqueue_conversation_prompt(operator_id, conversation.conversation_id, prompt, SPA_ORIGIN)
         return DispatchedWorker(session_id=conversation.session.session_id)
+
+    @mcp.tool
+    async def get_worker_provisioning(
+        session_id: Annotated[
+            UUID, Field(description="The worker session `dispatch_worker` returned, whose sandbox to inspect.")
+        ],
+        execution: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
+    ) -> SessionProvisioningView:
+        """Read the existing live sandbox provisioning view for a dispatched worker session.
+
+        Reports the claim, Sandbox, Pod, and runner state behind the session, including the phase or
+        observation error that explains a worker which has not launched. The read is pass-through
+        and is fenced by the caller's profile-DAG conversation scope.
+        """
+        try:
+            return await sessions.sandbox_provisioning(
+                execution.operator_id, session_id, scope=conversation_reads.scope_for(execution.caller)
+            )
+        except ConversationAccessDeniedError:
+            raise ToolError("conversation access denied") from None
+        except KeyError:
+            raise ToolError("worker session not found") from None
 
     return mcp

@@ -446,9 +446,11 @@ auto_approval_policies:
     server: gmail
     label_prefix: haku/
   # Reading back what happened and what is written down: the frames of a past session, the result
-  # of a worker Haku dispatched (#5193), and semantic search over the same sessions plus haku-state.
+  # and sandbox provisioning state of a worker Haku dispatched (#5193), and semantic search over
+  # the same sessions plus haku-state.
   # One atom because they are one authority — every tool here reads a corpus Haku can already reach
-  # (it has a haku-state clone, and `read_session_frames`/`get_worker_result` span the sessions in its
+  # (it has a haku-state clone, and `read_session_frames`/`get_worker_result`/`get_worker_provisioning`
+  # span the sessions in its
   # read scope), so this adds discoverability rather than reachability. `get_worker_result` is a
   # side-effect-free read of the worker session Haku already opened through `dispatch_worker`, so it
   # is pass-through here exactly like the other conversation reads. Both cross rooms and sessions but
@@ -463,6 +465,8 @@ auto_approval_policies:
         - read_conversation_items
         - read_session_frames
         - get_worker_result
+      workers:
+        - get_worker_provisioning
       haku_index:
         - search
         - index_status
