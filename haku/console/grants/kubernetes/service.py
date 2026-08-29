@@ -55,6 +55,8 @@ class GrantRepository(Protocol):
         self, *, owner_agent_id: UUID, now: datetime.datetime, include_terminal: bool = True
     ) -> tuple[Grant, ...]: ...
 
+    async def list_all(self, *, now: datetime.datetime, include_terminal: bool = True) -> tuple[Grant, ...]: ...
+
     async def get(self, *, owner_agent_id: UUID, grant_id: UUID) -> Grant: ...
 
     async def end(
@@ -225,6 +227,11 @@ class GrantService:
         return await self._repository.list(
             owner_agent_id=owner_agent_id, now=self._now(), include_terminal=include_terminal
         )
+
+    async def list_all(self, *, include_terminal: bool = True) -> tuple[Grant, ...]:
+        """List every stored grant, irrespective of owner or subject."""
+
+        return await self._repository.list_all(now=self._now(), include_terminal=include_terminal)
 
     async def list_applicable_grants(
         self, *, request_principal: RequestPrincipal, include_terminal: bool = True

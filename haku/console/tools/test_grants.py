@@ -255,12 +255,17 @@ def test_list_grants_resolves_self_and_named_subjects(console: _Console) -> None
             duration_seconds=600,
             principal=AgentGrantPrincipal(agent_id=console.agent_id),
         )
-        # `self` and omission both resolve the trusted caller; only the former is auto-approved.
-        for principal in ("self", None):
-            listed = await console.service.list_grants(context=context, principal=principal)
-            assert [item.source.id for item in listed if isinstance(item.source, DatabaseGrantSource)] == [
-                view.grant.grant_id
-            ]
+        self_grants = await console.service.list_grants(context=context, principal="self")
+        assert [item.source.id for item in self_grants if isinstance(item.source, DatabaseGrantSource)] == [
+            view.grant.grant_id
+        ]
+        all_grants = await console.service.list_grants(context=context)
+        assert [item.source.id for item in all_grants if isinstance(item.source, DatabaseGrantSource)] == [
+            view.grant.grant_id
+        ]
+        assert [grant.source.entry_id for grant in all_grants if isinstance(grant.source, ConfigFileGrantSource)] == [
+            f"kubernetes-profile:{DEFAULT_ACCESS_PROFILE_ID}"
+        ]
         named = await console.service.list_grants(
             context=context, principal=AgentGrantPrincipal(agent_id=console.agent_id)
         )
@@ -523,17 +528,22 @@ def test_session_scope_binds_the_grant_to_the_exact_live_session(console: _Conso
             duration_seconds=600,
             principal=AgentGrantPrincipal(agent_id=console.agent_id),
         )
-        # The exact session may exercise both; a static-credential execution never sees the session grant.
+        # `self` resolves the trusted request principal; omission lists every catalog grant.
         assert {
             view.source.id
-            for view in await console.service.list_grants(context=session_context)
+            for view in await console.service.list_grants(context=session_context, principal="self")
             if isinstance(view.source, DatabaseGrantSource)
         } == {session_view.grant.grant_id, agent_view.grant.grant_id}
-        assert [
+        assert {
+            view.source.id
+            for view in await console.service.list_grants(context=static_context, principal="self")
+            if isinstance(view.source, DatabaseGrantSource)
+        } == {agent_view.grant.grant_id}
+        assert {
             view.source.id
             for view in await console.service.list_grants(context=static_context)
             if isinstance(view.source, DatabaseGrantSource)
-        ] == [agent_view.grant.grant_id]
+        } == {session_view.grant.grant_id, agent_view.grant.grant_id}
         assert [
             view.source.id
             for view in await console.service.list_grants(

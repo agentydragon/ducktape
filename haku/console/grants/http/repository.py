@@ -146,6 +146,16 @@ class PostgresGrantRepository:
             ).all()
             return tuple(_row_to_model(row) for row in rows)
 
+    async def list_all(self, *, now: datetime.datetime, include_terminal: bool = True) -> tuple[Grant, ...]:
+        async with self._sessions() as session:
+            statement = select(HttpGrantRow)
+            if not include_terminal:
+                statement = statement.where(_not_ended(), HttpGrantRow.expires_at > now)
+            rows = (
+                await session.scalars(statement.order_by(HttpGrantRow.created_at.desc(), HttpGrantRow.grant_id))
+            ).all()
+            return tuple(_row_to_model(row) for row in rows)
+
     async def get(self, *, owner_agent_id: UUID, grant_id: UUID) -> Grant:
         async with self._sessions() as session:
             row = await session.scalar(select(HttpGrantRow).where(HttpGrantRow.grant_id == grant_id))

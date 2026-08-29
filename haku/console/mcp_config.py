@@ -269,8 +269,8 @@ class GrantSelfListAutoApprovalPolicy(AutoApprovalPolicyBase):
     """Conditionally auto-approve an Agent listing its OWN grants (`list_grants(principal='self')`).
 
     Only the explicit own-scope read auto-approves; omitting `principal` or naming a principal stays
-    manual. The named-principal form returns authority declared for that exact subject, while `self`
-    resolves the caller's trusted request principal.
+    manual. The omitted form lists every declared grant, the named-principal form returns authority
+    declared for that exact subject, and `self` resolves the caller's trusted request principal.
     """
 
     type: Literal["grant_self_list"] = "grant_self_list"

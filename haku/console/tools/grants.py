@@ -46,8 +46,8 @@ class GrantDomain(StrEnum):
     HTTP = "http"
 
 
-# Only the explicit `self` read auto-approves. A named principal is an Operator-reviewed broader
-# read; omitted principal retains the caller's own effective-authority view but stays manual.
+# Only the explicit `self` read auto-approves. Named and omitted reads are broader and require
+# Operator approval.
 type GrantReadScope = Literal["self"] | GrantPrincipal
 
 
@@ -158,8 +158,10 @@ class GrantsToolsService:
         self, *, context: McpExecutionContext, principal: GrantReadScope | None = None
     ) -> list[Grant]:
         request_principal = context.request_principal
-        if principal is None or principal == "self":
+        if principal == "self":
             return list(await self._catalog.list_applicable(request_principal=request_principal))
+        if principal is None:
+            return list(await self._catalog.list_all())
         return list(await self._catalog.list_for_principal(principal=principal))
 
     async def get_grant(self, *, context: McpExecutionContext, domain: GrantDomain, grant_id: UUID) -> Grant:
@@ -300,7 +302,7 @@ def build_mcp(service: GrantsToolsService) -> FastMCP:
                 description=(
                     "Grant subject to list. 'self' resolves the caller's trusted request principal and is "
                     "the click-free path. A named principal returns grants declared for exactly that subject; "
-                    "it requires Operator approval. Omit it to list the caller's effective authority."
+                    "it requires Operator approval. Omit it to list all declared grants."
                 )
             ),
         ] = None,
