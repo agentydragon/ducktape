@@ -13,6 +13,7 @@ from haku.console.grants.kubernetes.models import Grant, GrantSpec, NamespacesGr
 from haku.console.grants.kubernetes.service import GrantService
 from haku.console.grants.principal import (
     AgentGrantPrincipal,
+    GrantPrincipal,
     RequestPrincipal,
     SessionGrantPrincipal,
     grant_principal_applies_to,
@@ -74,7 +75,14 @@ class FakeRepository:
         return created
 
     async def list(self, *, owner_agent_id, now, include_terminal=True):
-        return tuple(g for g in self.grants.values() if g.owner_agent_id == owner_agent_id)
+        return tuple(
+            grant
+            for grant in self.grants.values()
+            if grant.owner_agent_id == owner_agent_id and (include_terminal or self._active(grant, now))
+        )
+
+    async def list_all(self, *, now, include_terminal=True):
+        return tuple(grant for grant in self.grants.values() if include_terminal or self._active(grant, now))
 
     async def list_for_request_principal(self, *, request_principal, now, include_terminal=True):
         return tuple(
@@ -82,6 +90,13 @@ class FakeRepository:
             for grant in self.grants.values()
             if grant_principal_applies_to(grant.principal, request_principal)
             and (include_terminal or self._active(grant, now))
+        )
+
+    async def list_for_principal(self, *, principal: GrantPrincipal, now, include_terminal=True):
+        return tuple(
+            grant
+            for grant in self.grants.values()
+            if grant.principal == principal and (include_terminal or self._active(grant, now))
         )
 
     async def get(self, *, owner_agent_id, grant_id):
