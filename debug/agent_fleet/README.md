@@ -113,11 +113,12 @@ codex exec --json --skip-git-repo-check -C <dir> '<prompt>' </dev/null
   real `sk-...` virtual key completes.
 - **Codex has the same metadata gap, but softer:** `item.completed` emits `Model metadata for
 'chatgpt/oai-responses/gpt-5.6-luna' not found. Defaulting to fallback metadata; this can degrade
-performance and cause issues.` It warns and proceeds rather than clamping. codex **accepts**
-  `model_context_window` / `model_max_output_tokens` config keys (no `--strict-config` rejection),
-  **but setting them does not silence the warning** — it still fired with `model_context_window =
-  372000` in the config (observed 2026-08-28). So whether those keys change codex's actual accounting
-  is unverified; do not assume they "fix" the gap. The warning is non-blocking (workers completed
+performance and cause issues.` It warns and proceeds rather than clamping. codex takes a valid
+  `model_context_window` config key (passes `--strict-config`); **`model_max_output_tokens` is NOT a
+  valid codex key** — `--strict-config` rejects it as unknown (non-strict codex silently ignores it,
+  which earlier masked this). And **`model_context_window = 372000` does not silence the warning** —
+  it still fired with the key set (observed 2026-08-28). So whether it changes codex's accounting is
+  unverified; do not assume it "fixes" the gap. The warning is non-blocking (workers completed
   correctly). Left for a separate change surface.
 - `gotcha`: `codex exec '<prompt>'` still blocks on stdin when stdin isn't a TTY (it appends a
   `<stdin>` block); always redirect `</dev/null` in a non-interactive driver, or it hangs to timeout.
