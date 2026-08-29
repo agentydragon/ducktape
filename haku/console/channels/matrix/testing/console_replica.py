@@ -160,7 +160,7 @@ async def _serve() -> None:
         homeserver=_environment("HAKU_E2E_HOMESERVER"),
         user_id=_environment("HAKU_E2E_BOT_USER_ID"),
         operator_user_id=_environment("HAKU_E2E_OPERATOR_USER_ID"),
-        operator_subject="matrix-operator",
+        operator_subject=_environment("HAKU_E2E_OPERATOR_SUBJECT"),
         password=password,
     )
     runtime = RuntimeRegistrationConfig(
