@@ -150,10 +150,10 @@ model_list:
       supports_function_calling: true
   # gpt-5.6: pin the measured CLIProxyAPI subscription window (SSOT:
   # CODEX_CONTEXT_WINDOW / CODEX_MAX_TOKENS in model_rosters.py; this file is
-  # regenerated/enforced by test_litellm_config.py). litellm's model_cost DB is
-  # wrong here -- it has no entry for the
-  # anthropic/-prefixed slug (advertises null) and fuzzy-matches the openai/-prefixed
-  # twin to the raw-API 922k, far larger than this subscription path actually serves.
+  # regenerated/enforced by test_litellm_config.py). litellm's model_cost DB is wrong
+  # here -- no entry for the anthropic/-prefixed slug (advertises null), and the
+  # openai/-prefixed twin matches litellm's raw-API entry for gpt-5.6-sol (922k), far
+  # larger than this subscription path actually serves.
   # gpt-5.4/5.5/5.3-codex-spark are deliberately left unset: never probed.
   - model_name: chatgpt/ant-messages/gpt-5.6-sol
     litellm_params:

@@ -80,13 +80,13 @@ CLIPROXY_MODELS: list[str] = [
 ]
 
 # Context window + max output tokens for the Codex-subscription models. Measured,
-# not published, and the published figures are wrong in both directions: the raw
-# models are ~1.05M and Codex product documentation says 272K, while this serving
-# path (client -> LiteLLM -> CLIProxyAPI -> upstream) accepts neither. litellm's
-# model_cost DB carries no window for the anthropic/-prefixed subscription slugs and
-# mis-matches the openai/-prefixed twins to the ~1.05M/922K raw-API figure, so this
-# measured value is the SSOT and the LiteLLM config injects it into the routes'
-# model_info (test_litellm_config.py).
+# not published: litellm's model_cost DB (live-fetched from BerriAI) has exact
+# entries for the real OpenAI models at their raw-API windows -- gpt-5.6-{sol,terra,
+# luna} at 922K, gpt-5.4/5.5 at 1.05M -- and Codex product docs say 272K, but none
+# is what this subscription path (client -> LiteLLM -> CLIProxyAPI -> upstream)
+# actually serves. So the openai/-prefixed routes advertise litellm's raw-API window
+# (it has no entry for the anthropic/-prefixed twins -> null); this measured value is
+# the SSOT the LiteLLM config injects into model_info (test_litellm_config.py).
 #
 # openai_utils/probe_context_window.py binary-searches the live path. On 2026-07-29
 # all three 5.6 models behaved identically: 370,629 tokens accepted, 372,194
