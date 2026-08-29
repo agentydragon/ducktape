@@ -700,6 +700,18 @@ ts_library(
 )
 
 ts_library(
+    name = "grant_revocation_dialog",
+    srcs = ["grant_revocation_dialog.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "kubernetes_grants_panel",
     srcs = ["kubernetes_grants_panel.tsx"],
     isolated_typecheck = True,
@@ -709,6 +721,7 @@ ts_library(
         ":client",
         ":code_block",
         ":grant_principal",
+        ":grant_revocation_dialog",
         ":link",
         ":routing",
         ":toast",
@@ -884,6 +897,7 @@ filegroup(
         "confirm_dialog.tsx",
         "field.tsx",
         "gmail_client.ts",
+        "grant_revocation_dialog.tsx",
         "grocy_client.ts",
         "haku_ui_embed.tsx",
         "icons.tsx",

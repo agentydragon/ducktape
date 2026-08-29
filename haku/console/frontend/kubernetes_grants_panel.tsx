@@ -1,26 +1,14 @@
-import {
-  Alert,
-  Badge,
-  Button,
-  Code,
-  Group,
-  Loader,
-  Modal,
-  SegmentedControl,
-  Select,
-  Stack,
-  Text,
-  Textarea,
-} from "@mantine/core";
+import { Alert, Badge, Button, Code, Group, Loader, SegmentedControl, Select, Stack, Text } from "@mantine/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { displayableError, fetchKubernetesGrants, revokeGrant, type OperatorKubernetesGrant } from "./client";
 import { formatTimestamp } from "./approval_state";
 import { CodeBlock } from "./code_block";
+import { GrantPrincipalLabel } from "./grant_principal";
+import { GrantRevocationDialog, type GrantRevocationTarget } from "./grant_revocation_dialog";
 import { ExternalLink } from "./link";
 import { toolCallPath } from "./routing";
 import { toastError, toastSuccess } from "./toast";
-import { principalText } from "./tool_rendering/grants/responses";
 
 export type GrantHistoryFilter = "active" | "history" | "all";
 
@@ -28,12 +16,6 @@ type KubernetesGrant = OperatorKubernetesGrant["grant"];
 type KubernetesRulesCoverage = Extract<KubernetesGrant["coverage"], { kind: "kubernetes_rules" }>;
 type KubernetesGrantScope = KubernetesRulesCoverage["scope"];
 type KubernetesRule = KubernetesRulesCoverage["rules"][number];
-type RevokeTarget = {
-  agentId: string;
-  agentDisplayName: string;
-  grantId: string;
-};
-
 const STATUS_DISPLAY: Record<KubernetesGrant["validity"]["status"], { label: string; color: string }> = {
   active: { label: "Active", color: "teal" },
   expired: { label: "Expired", color: "gray" },
@@ -121,7 +103,11 @@ function GrantSource({ grant }: { grant: KubernetesGrant }) {
 function GrantSubject({ grant }: { grant: KubernetesGrant }) {
   switch (grant.subject.kind) {
     case "grant_principal":
-      return <Text size="xs">Applies to {principalText(grant.subject.principal)}</Text>;
+      return (
+        <Text size="xs">
+          Applies to <GrantPrincipalLabel principal={grant.subject.principal} />
+        </Text>
+      );
     case "access_profile":
       return <Text size="xs">Access profile {grant.subject.access_profile_id}</Text>;
   }
@@ -171,7 +157,13 @@ function GrantValidity({ grant }: { grant: KubernetesGrant }) {
   );
 }
 
-function GrantCard({ item, onRevoke }: { item: OperatorKubernetesGrant; onRevoke: (target: RevokeTarget) => void }) {
+function GrantCard({
+  item,
+  onRevoke,
+}: {
+  item: OperatorKubernetesGrant;
+  onRevoke: (target: GrantRevocationTarget) => void;
+}) {
   const { grant } = item;
   return (
     <section className="haku-shell-card">
@@ -204,68 +196,13 @@ function GrantCard({ item, onRevoke }: { item: OperatorKubernetesGrant; onRevoke
   );
 }
 
-function RevokeDialog({
-  item,
-  busy,
-  onClose,
-  onConfirm,
-}: {
-  item: RevokeTarget | null;
-  busy: boolean;
-  onClose: () => void;
-  onConfirm: (reason: string) => void;
-}) {
-  const [reason, setReason] = useState("");
-  useEffect(() => setReason(""), [item?.grantId]);
-  return (
-    <Modal
-      opened={item !== null}
-      onClose={busy ? () => undefined : onClose}
-      title="Revoke Kubernetes grant"
-      centered
-      returnFocus
-    >
-      <Stack gap="sm">
-        <Text size="sm">
-          End this active grant for <strong>{item?.agentDisplayName}</strong> immediately.
-        </Text>
-        {item && (
-          <Text size="xs" c="dimmed" ff="monospace">
-            {item.grantId}
-          </Text>
-        )}
-        <Textarea
-          label="Revocation reason"
-          description="Required and retained with the grant's audit history."
-          placeholder="Why is this grant being revoked?"
-          value={reason}
-          onChange={(event) => setReason(event.currentTarget.value)}
-          minRows={3}
-          maxLength={500}
-          required
-          disabled={busy}
-          autoFocus
-        />
-        <Group justify="flex-end">
-          <Button variant="subtle" color="gray" onClick={onClose} disabled={busy}>
-            Cancel
-          </Button>
-          <Button color="red" onClick={() => onConfirm(reason.trim())} disabled={!reason.trim()} loading={busy}>
-            Revoke grant
-          </Button>
-        </Group>
-      </Stack>
-    </Modal>
-  );
-}
-
 export function KubernetesGrantsPanel(): JSX.Element {
   const [grants, setGrants] = useState<OperatorKubernetesGrant[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [historyFilter, setHistoryFilter] = useState<GrantHistoryFilter>("active");
   const [agentId, setAgentId] = useState<string | null>(null);
-  const [revoking, setRevoking] = useState<RevokeTarget | null>(null);
+  const [revoking, setRevoking] = useState<GrantRevocationTarget | null>(null);
   const [revokeBusy, setRevokeBusy] = useState(false);
 
   const load = useCallback(() => {
@@ -326,11 +263,11 @@ export function KubernetesGrantsPanel(): JSX.Element {
         );
         setRevokeBusy(false);
         setRevoking(null);
-        toastSuccess("Kubernetes grant revoked", `${target.agentDisplayName} no longer has this active grant.`);
+        toastSuccess("Grant revoked", `${target.agentDisplayName} no longer has this active grant.`);
       },
       (e: unknown) => {
         setRevokeBusy(false);
-        toastError("Couldn't revoke Kubernetes grant", e);
+        toastError("Couldn't revoke grant", e);
       }
     );
   }
@@ -402,7 +339,12 @@ export function KubernetesGrantsPanel(): JSX.Element {
         const sourceId = grant.source.kind === "database" ? grant.source.id : grant.source.entry_id;
         return <GrantCard key={`${item.agent_id}:${sourceId}`} item={item} onRevoke={setRevoking} />;
       })}
-      <RevokeDialog item={revoking} busy={revokeBusy} onClose={() => setRevoking(null)} onConfirm={confirmRevoke} />
+      <GrantRevocationDialog
+        item={revoking}
+        busy={revokeBusy}
+        onClose={() => setRevoking(null)}
+        onConfirm={confirmRevoke}
+      />
     </Stack>
   );
 }
