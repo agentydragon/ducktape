@@ -282,6 +282,16 @@ class ClaudeCodeImplementationConfig(BaseModel):
     haiku_model: str = Field(min_length=1)
     auth_token_placeholder: str = Field(min_length=1)
     gateway_discovery: bool = True
+    tool_search: str | None = Field(
+        default=None,
+        pattern=r"^(true|false|auto(:[0-9]{1,3})?)$",
+        description=(
+            "ENABLE_TOOL_SEARCH for the CLI, verbatim. The CLI hard-disables MCP tool search "
+            "for any non-first-party ANTHROPIC_BASE_URL and never probes the gateway, so a "
+            "gateway that does pass the tool-search betas through must be asserted here "
+            "(#5155). None leaves the CLI's own host heuristic in place."
+        ),
+    )
 
 
 type RuntimeImplementationConfig = Annotated[
@@ -312,6 +322,8 @@ class RuntimeRegistrationConfig(RuntimeExecutionConfig):
             }
             if implementation.gateway_discovery:
                 provider_environment["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] = "1"
+            if implementation.tool_search is not None:
+                provider_environment["ENABLE_TOOL_SEARCH"] = implementation.tool_search
         else:
             provider_environment = {
                 "GH_PAT": implementation.github_token_placeholder,

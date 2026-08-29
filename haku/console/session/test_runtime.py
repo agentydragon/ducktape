@@ -278,6 +278,16 @@ def test_claude_environment_contains_placeholder_proxy_and_ca_only() -> None:
     }
 
 
+def test_claude_environment_asserts_tool_search_only_when_configured() -> None:
+    implementation = runtime_config().implementation.model_dump(mode="json") | {"tool_search": "true"}
+    config = runtime_config(implementation=implementation)
+
+    assert config.environment()["ENABLE_TOOL_SEARCH"] == "true"
+
+    with pytest.raises(ValidationError, match="tool_search"):
+        runtime_config(implementation=implementation | {"tool_search": "always"})
+
+
 def _codex_runtime_config(**overrides: Any) -> RuntimeRegistrationConfig:
     implementation: dict[str, Any] = {
         "kind": "codex_app_server",
@@ -372,6 +382,7 @@ def test_claude_registration_uses_the_shared_discriminated_model() -> None:
         "haiku_model": "anthropic-max20/ant-messages/claude-haiku-4-5-20251001",
         "auth_token_placeholder": "not-a-secret",
         "gateway_discovery": True,
+        "tool_search": None,
     }
     assert RuntimeRegistrationConfig.model_validate(wire) == config
     assert isinstance(config.implementation, ClaudeCodeImplementationConfig)
