@@ -105,6 +105,7 @@ class AdapterConfigFile(BaseModel):
         ),
     )
 
+
 def load_adapter_config(path: Path) -> AdapterConfigFile:
     if not path.is_file():
         raise RuntimeError(f"haku-matrix-adapter config file does not exist: {path}")
