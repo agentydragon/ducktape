@@ -31,6 +31,7 @@ ts_library(
         "//:node_modules/zod",
         "//haku/console/frontend:agent_names",
         "//haku/console/frontend:field",
+        "//haku/console/frontend:mcp_tool_result_schema",
         "//haku/console/frontend:mcp_tool_schema",
         "//haku/console/frontend/tool_rendering:entry",
         "//haku/console/frontend/tool_rendering:server_ids",

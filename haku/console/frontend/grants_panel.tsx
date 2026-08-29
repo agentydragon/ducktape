@@ -174,7 +174,7 @@ function GrantCard({
   onConfirmRevoke: (grantId: string) => void;
 }) {
   const { grant } = item;
-  const canRevoke = grant.source.kind === "database" && grant.validity.status === "active";
+  const databaseSource = grant.source.kind === "database" ? grant.source : null;
   return (
     <section className="haku-shell-card">
       <Stack gap="xs">
@@ -185,14 +185,15 @@ function GrantCard({
         <GrantSource grant={grant} />
         <GrantSubject grant={grant} />
         <GrantCoverage grant={grant} />
-        {canRevoke &&
+        {databaseSource !== null &&
+          grant.validity.status === "active" &&
           (revokePending ? (
             <Group gap="xs">
               <Text size="sm">Are you sure?</Text>
               <Button
                 size="compact-sm"
                 color="red"
-                onClick={() => onConfirmRevoke(grant.source.id)}
+                onClick={() => onConfirmRevoke(databaseSource.id)}
                 loading={revokeBusy}
               >
                 Yes, revoke
@@ -202,7 +203,7 @@ function GrantCard({
               </Button>
             </Group>
           ) : (
-            <Button size="compact-sm" color="red" variant="light" onClick={() => onRequestRevoke(grant.source.id)}>
+            <Button size="compact-sm" color="red" variant="light" onClick={() => onRequestRevoke(databaseSource.id)}>
               Revoke
             </Button>
           ))}

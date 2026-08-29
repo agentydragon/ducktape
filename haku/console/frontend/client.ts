@@ -54,7 +54,7 @@ export type SessionFramePage = components["schemas"]["SessionFramePage"];
 export type AgentListResponse = components["schemas"]["AgentListResponse"];
 export type AgentGrant = components["schemas"]["AgentGrant"];
 export type GrantListResponse = components["schemas"]["GrantListResponse"];
-export type RevokeGrantResponse = components["schemas"]["haku__console__grants__routes__RevokeGrantResponse"];
+export type RevokeGrantResponse = components["schemas"]["RevokeGrantResponse"];
 export type EnrollmentView = components["schemas"]["EnrollmentView"];
 export type EnrollmentDecisionRequest =
   | components["schemas"]["CreateEnrollmentRequest"]

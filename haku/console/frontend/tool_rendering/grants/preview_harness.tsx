@@ -8,6 +8,10 @@ type CreateGrantItem = McpToolArgumentsFor<"grants", "create_grant">["grants"][n
 type GrantView = McpToolResultFor<"grants", "revoke_grants">[number];
 
 const AGENT_DISPLAY_NAMES = { "10000000-0000-4000-8000-000000000001": "Haku agent" };
+const AGENT_PRINCIPAL = {
+  kind: "agent" as const,
+  agent_id: "10000000-0000-4000-8000-000000000001",
+};
 
 const KUBERNETES_ITEM: CreateGrantItem = {
   domain: "kubernetes" as const,
@@ -66,7 +70,7 @@ const PREVIEW_FIXTURES = [
     title: "Create temporary Kubernetes grants",
     serverId: "grants",
     toolName: "create_grant",
-    args: { grants: [KUBERNETES_ITEM], duration_seconds: 3600 },
+    args: { grants: [KUBERNETES_ITEM], duration_seconds: 3600, principal: AGENT_PRINCIPAL },
     agentDisplayNames: AGENT_DISPLAY_NAMES,
     result: [KUBERNETES_VIEW],
   },
@@ -74,7 +78,7 @@ const PREVIEW_FIXTURES = [
     title: "Create a temporary HTTP egress grant",
     serverId: "grants",
     toolName: "create_grant",
-    args: { grants: [HTTP_ITEM], duration_seconds: 1800 },
+    args: { grants: [HTTP_ITEM], duration_seconds: 1800, principal: AGENT_PRINCIPAL },
     agentDisplayNames: AGENT_DISPLAY_NAMES,
     result: [
       {

@@ -23,7 +23,7 @@ describe("settingsTabFromSearch", () => {
 
   it("restores a linked tab", () => {
     expect(settingsTabFromSearch("?tab=nodes")).toBe("nodes");
-    expect(settingsTabFromSearch("?tab=kubernetes")).toBe("kubernetes");
+    expect(settingsTabFromSearch("?tab=grants")).toBe("grants");
   });
 
   it("falls back safely for unknown tabs", () => {

@@ -418,7 +418,7 @@ export const SAMPLE_GRANTS: GrantListResponse = {
         coverage: {
           kind: "http",
           origins: [{ scheme: "https", host: "grocy.example", port: 443 }],
-          coverage: { methods: ["get"], path_regex: "/api/.*" },
+          coverage: { methods: ["GET"], path_regex: "/api/.*" },
           credential_handles: ["grocy-readonly"],
           allow_prohibited_address: false,
         },
