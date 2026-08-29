@@ -27,10 +27,15 @@ per the docs, "Cloud sessions stop after a period of inactivity and the session'
 Reopen … to provision a **fresh VM** with your conversation history restored." No exact idle timeout
 is published. The consequences are load-bearing for a fleet:
 
-- **What survives a reclaim:** git-pushed commits and the conversation history (restored on reopen).
-- **What dies:** everything running inside the container — a long-lived `codex app-server` broker,
-  backgrounded `codex exec` workers, in-memory thread/turn ids, and (assume) uncommitted files. So
-  **in-container worker state is not durable** across an idle gap.
+- **Survives for sure:** git-pushed commits and the conversation history (restored on reopen).
+- **Dies for sure:** every running process — a long-lived `codex app-server` broker, backgrounded
+  `codex exec` workers, and the in-memory thread/turn ids they hold. A fresh VM has no live
+  processes, full stop.
+- **Uncertain — do not rely on it:** filesystem state (uncommitted files, a scratchpad). The docs say
+  a fresh VM is provisioned, which points to disk being re-cloned from git, but whether some paths
+  persist is **not verified here** (the operator suspects some might). Treat in-container files as not
+  reliably durable and **push anything that matters to git**; if some survive, that's a bonus, not a
+  guarantee to build on.
 
 Two ways to cope, and a fleet usually needs both:
 
