@@ -31,7 +31,7 @@ from collections.abc import Awaitable, Callable
 from ipaddress import IPv4Address, IPv6Address, ip_address
 from typing import assert_never
 
-from mitmproxy import http
+from mitmproxy import connection, http
 from mitmproxy.proxy import server_hooks
 
 from haku.egress.decide_client import DecideClient
@@ -42,7 +42,6 @@ logger = logging.getLogger(__name__)
 DEFAULT_DECIDE_TIMEOUT_SECONDS = 5.0
 
 _FAIL_CLOSED_MESSAGE = "egress decision unavailable; refusing (fail closed)"
-_FLOW_PROXY_CLIENT_CREDENTIAL = "haku.egress.proxy_client_credential"
 
 type ResolveAddresses = Callable[[str, int], Awaitable[frozenset[IPv4Address | IPv6Address]]]
 
@@ -86,18 +85,23 @@ def _proxy_client_bearer(value: str) -> str | None:
         return None
 
 
-def _take_proxy_client_bearer(flow: http.HTTPFlow) -> tuple[str | None, bool]:
+def _take_proxy_client_bearer(flow: http.HTTPFlow, credentials: dict[str, str]) -> tuple[str | None, bool]:
     """Consume proxy auth and retain it across CONNECT's later intercepted inner requests."""
     header = flow.request.headers.get("proxy-authorization")
+    client_id = flow.client_conn.id if flow.client_conn is not None else None
     if header is not None:
         # Proxy-Authorization is for this listener, never for the upstream server. Remove it even
         # when malformed so a failed attempt cannot accidentally cross the fence.
         del flow.request.headers["proxy-authorization"]
         credential = _proxy_client_bearer(header)
-        flow.metadata[_FLOW_PROXY_CLIENT_CREDENTIAL] = credential
+        if client_id is not None:
+            if credential is None:
+                credentials.pop(client_id, None)
+            else:
+                credentials[client_id] = credential
         return credential, True
-    if _FLOW_PROXY_CLIENT_CREDENTIAL in flow.metadata:
-        return flow.metadata[_FLOW_PROXY_CLIENT_CREDENTIAL], True
+    if client_id is not None and (credential := credentials.get(client_id)) is not None:
+        return credential, True
     return None, False
 
 
@@ -147,10 +151,17 @@ class EgressGateAddon:
         # (host, port), possibly from a newer allow than the flow that triggered the dial.
         # Grows by distinct destinations seen; never shrinks.
         self._pinned_upstreams: dict[tuple[str, int], IPv4Address | IPv6Address] = {}
+        # CONNECT's inner intercepted request is a separate Flow from the CONNECT flow, but both
+        # belong to the same client connection. Keep the bridge bearer there until disconnect so
+        # the inner request cannot be mistaken for an unauthenticated new client.
+        self._proxy_client_credentials: dict[str, str] = {}
+
+    def client_disconnected(self, client: connection.Client) -> None:
+        self._proxy_client_credentials.pop(client.id, None)
 
     async def http_connect(self, flow: http.HTTPFlow) -> None:
         # A non-2xx response on a CONNECT flow makes mitmproxy refuse the tunnel.
-        client_credential, supplied = _take_proxy_client_bearer(flow)
+        client_credential, supplied = _take_proxy_client_bearer(flow, self._proxy_client_credentials)
         meta = RequestMeta(
             method=flow.request.method, scheme=None, host=flow.request.host, port=flow.request.port, path=None
         )
@@ -158,7 +169,7 @@ class EgressGateAddon:
 
     async def request(self, flow: http.HTTPFlow) -> None:
         request = flow.request
-        client_credential, supplied = _take_proxy_client_bearer(flow)
+        client_credential, supplied = _take_proxy_client_bearer(flow, self._proxy_client_credentials)
         meta = RequestMeta(
             method=request.method, scheme=request.scheme, host=request.host, port=request.port, path=request.path
         )
@@ -216,8 +227,9 @@ class EgressGateAddon:
         self, flow: http.HTTPFlow, meta: RequestMeta, *, client_credential: str | None, credential_supplied: bool
     ) -> None:
         flow.response = _refusal(502, _FAIL_CLOSED_MESSAGE)
-        if credential_supplied and client_credential is None:
-            flow.response = _refusal(407, "invalid proxy client bearer")
+        if client_credential is None:
+            reason = "invalid proxy client bearer" if credential_supplied else "proxy client bearer required"
+            flow.response = _refusal(407, reason)
             return
         try:
             async with asyncio.timeout(self._decide_timeout_seconds):

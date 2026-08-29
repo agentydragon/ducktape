@@ -59,6 +59,7 @@ from haku.egress.proxy_test_harness import (
     make_proxy,
     pinned_and_decoy_upstreams,
     proxied_get,
+    proxy_url,
     stub_client,
     stub_console,
     tunneled_get,
@@ -166,7 +167,7 @@ async def test_connect_deny_refuses_tunnel(upstream: RecordingUpstream, tmp_path
     decide = StaticDecideClient(DecideDenied(reason="no grant for origin"))
     async with make_proxy(decide, tmp_path) as proxy, aiohttp.ClientSession() as session:
         with pytest.raises(aiohttp.ClientHttpProxyError) as excinfo:
-            await session.get(f"https://127.0.0.1:{upstream.port}/", proxy=f"http://127.0.0.1:{proxy.listen_port}")
+            await session.get(f"https://127.0.0.1:{upstream.port}/", proxy=proxy_url(proxy))
     assert excinfo.value.status == 403
     assert (upstream.connections, upstream.requests) == (0, [])
     assert decide.requests == [
@@ -177,7 +178,7 @@ async def test_connect_deny_refuses_tunnel(upstream: RecordingUpstream, tmp_path
 async def test_connect_decide_exception_fails_closed(upstream: RecordingUpstream, tmp_path: Path) -> None:
     async with make_proxy(RaisingDecideClient(), tmp_path) as proxy, aiohttp.ClientSession() as session:
         with pytest.raises(aiohttp.ClientHttpProxyError) as excinfo:
-            await session.get(f"https://127.0.0.1:{upstream.port}/", proxy=f"http://127.0.0.1:{proxy.listen_port}")
+            await session.get(f"https://127.0.0.1:{upstream.port}/", proxy=proxy_url(proxy))
     assert excinfo.value.status == 502
     assert (upstream.connections, upstream.requests) == (0, [])
 
@@ -195,7 +196,6 @@ async def test_localhost_decide_allow_flows_end_to_end(upstream: RecordingUpstre
     assert one(upstream.requests).headers["authorization"] == f"Bearer {REAL_CREDENTIAL}"
     sent = one(stub.requests)
     assert sent.request == RequestMeta(method="GET", scheme="http", host="127.0.0.1", port=upstream.port, path="/hello")
-    assert sent.proxy_client_credential is not None
     assert sent.proxy_client_credential.get_secret_value() == BRIDGE_BEARER
     assert "proxy-authorization" not in one(upstream.requests).headers
     assert (sent.resolved_ips, sent.upstream_ip) == (frozenset({IPv4Address("127.0.0.1")}), IPv4Address("127.0.0.1"))
@@ -211,6 +211,21 @@ async def test_invalid_proxy_client_bearer_is_refused_without_upstream_contact(
             f"http://127.0.0.1:{upstream.port}/unauthenticated",
             proxy=f"http://127.0.0.1:{proxy.listen_port}",
             proxy_auth=aiohttp.BasicAuth("not-the-bearer", "wrong"),
+        ) as response,
+    ):
+        status = response.status
+    assert status == 407
+    assert (upstream.connections, upstream.requests) == (0, [])
+
+
+async def test_missing_proxy_client_bearer_is_refused_without_upstream_contact(
+    upstream: RecordingUpstream, tmp_path: Path
+) -> None:
+    async with (
+        make_proxy(StaticDecideClient(allow_with_substitution()), tmp_path) as proxy,
+        aiohttp.ClientSession() as session,
+        session.get(
+            f"http://127.0.0.1:{upstream.port}/unauthenticated", proxy=f"http://127.0.0.1:{proxy.listen_port}"
         ) as response,
     ):
         status = response.status
@@ -244,7 +259,7 @@ async def test_localhost_decide_connect_deny_refuses_tunnel(upstream: RecordingU
         aiohttp.ClientSession() as session,
     ):
         with pytest.raises(aiohttp.ClientHttpProxyError) as excinfo:
-            await session.get(f"https://127.0.0.1:{upstream.port}/", proxy=f"http://127.0.0.1:{proxy.listen_port}")
+            await session.get(f"https://127.0.0.1:{upstream.port}/", proxy=proxy_url(proxy))
     assert excinfo.value.status == 403
     assert (upstream.connections, upstream.requests) == (0, [])
     assert one(stub.requests).request == RequestMeta(

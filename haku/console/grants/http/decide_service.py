@@ -192,11 +192,6 @@ class HttpDecideService:
 
     async def decide(self, request: DecideRequest) -> DecideAllowed | DecideDenied:
         meta = request.request
-        if request.proxy_client_credential is None:
-            logger.info(
-                "egress decision deny %s %s:%d: proxy client credential required", meta.method, meta.host, meta.port
-            )
-            return DecideDenied(reason="proxy client credential required")
         try:
             resolved = await self._agent_bearer_authority.resolve(request.proxy_client_credential.get_secret_value())
         except Exception as error:

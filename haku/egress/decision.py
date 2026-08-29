@@ -79,10 +79,6 @@ def _sorted_addresses(addresses: Iterable[IPv4Address | IPv6Address]) -> list[st
     return [str(address) for address in sorted(addresses, key=lambda address: (address.version, int(address)))]
 
 
-def _secret_value_or_none(value: SecretStr | None) -> str | None:
-    return None if value is None else value.get_secret_value()
-
-
 type ResolvedAddresses = Annotated[
     frozenset[IPv4Address | IPv6Address],
     # Bounded complete resolution: the proxy authorizes every address the answer contained, and an
@@ -113,13 +109,12 @@ class DecideRequest(BaseModel):
     upstream_ip: IPv4Address | IPv6Address = Field(
         description="The one resolved address the proxy pinned for the actual upstream connection."
     )
-    proxy_client_credential: Annotated[SecretStr | None, PlainSerializer(_secret_value_or_none, when_used="json")] = (
+    proxy_client_credential: Annotated[SecretStr, PlainSerializer(SecretStr.get_secret_value, when_used="json")] = (
         Field(
-            default=None,
             description=(
-                "The sandbox-to-proxy bearer, normally the same HAKU_RUNNER_TOKEN used by "
-                "the MCP bridge. Console resolves it to a live Agent session when present."
-            ),
+                "The required sandbox-to-proxy bearer, normally the same HAKU_RUNNER_TOKEN used by "
+                "the MCP bridge. Console resolves it to a live Agent session."
+            )
         )
     )
 

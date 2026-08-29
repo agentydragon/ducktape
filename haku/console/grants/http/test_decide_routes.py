@@ -24,8 +24,10 @@ from haku.egress.decision import (
 
 _VALID_UNTIL = datetime.datetime(2026, 8, 27, 12, 30, tzinfo=datetime.UTC)
 _FENCE = "shared-fence-credential"
+_BRIDGE = "bridge-session-bearer"
 
 _BODY = {
+    "proxy_client_credential": _BRIDGE,
     "request": {"method": "GET", "scheme": "https", "host": "api.example", "port": 443, "path": "/api/items?x=1"},
     "resolved_ips": ["192.0.2.10", "2001:db8::10"],
     "upstream_ip": "192.0.2.10",

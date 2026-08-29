@@ -162,7 +162,7 @@ def _create_grants(client: Any, harness: _Harness, *specs: GrantSpec, expires_at
 
 def _request(
     *,
-    proxy_client_credential: str | None = _BRIDGE,
+    proxy_client_credential: str = _BRIDGE,
     method: str = "GET",
     scheme: str | None = "https",
     host: str = "api.example",
@@ -172,7 +172,7 @@ def _request(
     upstream_ip: IPv4Address | IPv6Address = _PUBLIC_V4,
 ) -> DecideRequest:
     return DecideRequest(
-        proxy_client_credential=(None if proxy_client_credential is None else SecretStr(proxy_client_credential)),
+        proxy_client_credential=SecretStr(proxy_client_credential),
         request=RequestMeta(method=method, scheme=scheme, host=host, port=port, path=path),
         resolved_ips=resolved_ips,
         upstream_ip=upstream_ip,
@@ -243,8 +243,6 @@ def test_grant_scoped_verdicts_against_stored_grants(make_client: Any) -> None:
 def test_live_bridge_bearer_is_required_for_attribution(make_client: Any) -> None:
     with make_client() as client:
         harness = _harness(client, standing=lambda agent_id: [_standing_entry(agent_id)])
-        missing = client.portal.call(partial(harness.decide.decide, _request(proxy_client_credential=None)))
-        assert missing == DecideDenied(reason="proxy client credential required")
         denied = client.portal.call(
             partial(harness.decide.decide, _request(proxy_client_credential="not-a-live-session"))
         )

@@ -69,9 +69,8 @@ The proxy accepts the bridge bearer from `Proxy-Authorization` as either:
 - `Basic <base64(:token)>`, with an empty username.
 
 It removes that header before forwarding upstream. For CONNECT, it carries the
-parsed bearer from the outer flow to the inner request. Malformed supplied
-proxy credentials receive a local `407`; missing credentials reach the decision
-service and are denied there.
+parsed bearer from the outer flow to the inner request. Missing or malformed
+proxy credentials receive a local `407` and never reach the upstream.
 
 For every admission, the proxy:
 
