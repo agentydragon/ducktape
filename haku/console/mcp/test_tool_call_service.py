@@ -493,7 +493,12 @@ async def test_recall_index_authorizer_denies_argument_escalation_before_submiss
         actor=actor,
     )
 
-    assert (record.status, record.denial_reason) == (ToolCallStatus.DENIED, "recall index access denied")
+    assert (record.status, record.decision_note, record.decision_operator_id) == (
+        ToolCallStatus.DENIED,
+        "recall index access denied",
+        None,
+    )
+    assert record.denial_reason == "recall index access denied"
     assert executor.executions == []
     assert notifier.pending == []
 

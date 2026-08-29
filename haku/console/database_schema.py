@@ -602,7 +602,13 @@ class StaticCredential(Base):
 
 class McpToolCall(Base):
     __tablename__ = "mcp_tool_calls"
-    __table_args__ = (Index("idx_mcp_tool_calls_created_at", "created_at"),)
+    __table_args__ = (
+        Index("idx_mcp_tool_calls_created_at", "created_at"),
+        CheckConstraint(
+            "decision_note IS NULL OR char_length(decision_note) <= 4096",
+            name="ck_mcp_tool_calls_decision_note_length",
+        ),
+    )
 
     tool_call_id: Mapped[str] = mapped_column(Text, primary_key=True)
     server_id: Mapped[str] = mapped_column(Text, nullable=False)
@@ -617,6 +623,10 @@ class McpToolCall(Base):
     title: Mapped[str | None] = mapped_column(Text, nullable=True)
     result_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decision_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decision_operator_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="RESTRICT"), nullable=True
+    )
     denial_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     withdrawal_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     approval_policy_id: Mapped[str | None] = mapped_column(Text, nullable=True)

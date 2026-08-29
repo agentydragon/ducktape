@@ -130,9 +130,13 @@ class ToolCallRepository(Protocol):
         cursor: ToolCallPageCursor | None = None,
     ) -> list[ToolCallRecord]: ...
 
-    async def mark_running(self, tool_call_id: str, *, actor: OperatorActor) -> ToolCallRecord: ...
+    async def mark_running(
+        self, tool_call_id: str, decision_note: str | None = None, *, actor: OperatorActor
+    ) -> ToolCallRecord: ...
 
-    async def deny(self, tool_call_id: str, reason: str | None, *, actor: OperatorActor) -> ToolCallRecord: ...
+    async def deny(
+        self, tool_call_id: str, decision_note: str | None = None, *, actor: OperatorActor
+    ) -> ToolCallRecord: ...
 
     async def withdraw(self, tool_call_id: str, reason: str | None, *, actor: AgentActor) -> ToolCallRecord: ...
 
@@ -470,15 +474,15 @@ class ToolCallApplicationService:
     ) -> ToolCallRecord:
         operator = self._require_operator(actor)
         if decision.decision is ApprovalDecision.DENY:
-            record = await self._repository.deny(tool_call_id, decision.reason, actor=operator)
+            record = await self._repository.deny(tool_call_id, decision.decision_note, actor=operator)
             await self._publish(operator.operator_id, record.tool_call_id)
             await self._notify_resolved(operator.operator_id, record)
             logger.info(
-                "tool call %s denied server=%s tool=%s reason=%r",
+                "tool call %s denied server=%s tool=%s decision_note=%r",
                 record.tool_call_id,
                 record.server_id,
                 record.tool_name,
-                decision.reason,
+                decision.decision_note,
             )
             return record
         if decision.decision is not ApprovalDecision.APPROVE:
@@ -487,7 +491,7 @@ class ToolCallApplicationService:
         pending = await self._repository.get(tool_call_id, actor=operator)
         server = _server_entry(self._settings, pending.server_id)
         auth_token = await self._backend_auth(server, operator.operator_id)
-        running = await self._repository.mark_running(tool_call_id, actor=operator)
+        running = await self._repository.mark_running(tool_call_id, decision.decision_note, actor=operator)
         # The ask is settled the moment it is approved, even though the run has not started. Retract
         # here rather than at terminal, so a notification on another device stops offering buttons
         # for a decision that has already been made.

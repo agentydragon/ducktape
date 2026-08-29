@@ -13,10 +13,18 @@ from enum import StrEnum
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 MCP_TOOL_META_KEY = "works.allegedly.haku/tool"
 MCP_TOOL_CALL_META_KEY = "works.allegedly.haku/tool-call"
+MAX_DECISION_NOTE_LENGTH = 4096
+
+
+def _normalize_decision_note(value: Any) -> Any:
+    if isinstance(value, str):
+        value = value.strip()
+        return value or None
+    return value
 
 
 # Conflates "which input-schema shape does the proxy tool advertise" (enveloped vs raw)
@@ -75,7 +83,23 @@ class SubmitToolCallRequest(BaseModel):
 
 class ApprovalDecisionRequest(BaseModel):
     decision: ApprovalDecision
-    reason: str | None = None
+    decision_note: str | None = Field(default=None, max_length=MAX_DECISION_NOTE_LENGTH)
+    # Temporary compatibility for the old frontend. This is removed once all static clients have
+    # crossed the decision_note contract; the canonical field and generated types are decision_note.
+    reason: str | None = Field(default=None, max_length=MAX_DECISION_NOTE_LENGTH, deprecated=True)
+
+    @field_validator("decision_note", "reason", mode="before")
+    @classmethod
+    def normalize_note(cls, value: Any) -> Any:
+        return _normalize_decision_note(value)
+
+    @model_validator(mode="after")
+    def resolve_legacy_reason(self) -> ApprovalDecisionRequest:
+        if self.reason is not None:
+            if self.decision_note is not None:
+                raise ValueError("decision_note and legacy reason cannot both be supplied")
+            self.decision_note = self.reason
+        return self
 
 
 class OperatorToolCallCaller(BaseModel):
@@ -107,8 +131,15 @@ class ToolCallRecord(BaseModel):
     title: str | None = None
     result: dict[str, Any] | None = None
     error: str | None = None
+    decision_note: str | None = Field(default=None, max_length=MAX_DECISION_NOTE_LENGTH)
+    decision_operator_id: UUID | None = None
     denial_reason: str | None = None
     withdrawal_reason: str | None = None
     approval_policy_id: str | None = None
     auto_approval_evaluation: str | None = None
     approved_at: datetime.datetime | None = None
+
+    @field_validator("decision_note", mode="before")
+    @classmethod
+    def normalize_note(cls, value: Any) -> Any:
+        return _normalize_decision_note(value)

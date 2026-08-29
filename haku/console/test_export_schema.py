@@ -55,7 +55,16 @@ def test_harness_kind_is_a_read_only_closed_identity_field() -> None:
 
 def test_tool_call_serializer_preserves_the_structured_frontend_schema() -> None:
     published = schemas()["ToolCallRecord"]
-    assert {"tool_call_id", "caller", "status", "arguments", "rationale", "result"} <= published["properties"].keys()
+    assert {
+        "tool_call_id",
+        "caller",
+        "status",
+        "arguments",
+        "rationale",
+        "result",
+        "decision_note",
+        "decision_operator_id",
+    } <= published["properties"].keys()
     assert {"tool_call_id", "caller", "status", "arguments"} <= set(published["required"])
 
 

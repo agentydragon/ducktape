@@ -298,6 +298,7 @@ class PostgresToolCallLedger:
                 arguments=req.arguments,
                 rationale=req.rationale,
                 title=req.title,
+                decision_note=auto_denial_reason,
                 denial_reason=auto_denial_reason,
                 approval_policy_id=auto_approval_policy_id,
                 auto_approval_evaluation=auto_approval_evaluation,
@@ -359,22 +360,32 @@ class PostgresToolCallLedger:
             projections = result.mappings().all()
             return [self._record_from_mapping(projection, fields=fields) for projection in projections]
 
-    async def mark_running(self, tool_call_id: str, *, actor: OperatorActor) -> ToolCallRecord:
+    async def mark_running(
+        self, tool_call_id: str, decision_note: str | None = None, *, actor: OperatorActor
+    ) -> ToolCallRecord:
         operator = self._require_operator_actor(actor)
         async with self._sessions.begin() as session:
             row, principal = await self._lock_pending(session, tool_call_id, operator)
             await self._require_executable_principal(session, principal, operator.operator_id)
             row.status = ToolCallStatus.RUNNING
             row.updated_at = row.approved_at = datetime.datetime.now(datetime.UTC)
+            row.decision_note = decision_note
+            row.decision_operator_id = operator.operator_id
             return self._record_from_principal(row, principal)
 
-    async def deny(self, tool_call_id: str, reason: str | None, *, actor: OperatorActor) -> ToolCallRecord:
+    async def deny(
+        self, tool_call_id: str, decision_note: str | None = None, *, actor: OperatorActor
+    ) -> ToolCallRecord:
         operator = self._require_operator_actor(actor)
         async with self._sessions.begin() as session:
             row, principal = await self._lock_pending(session, tool_call_id, operator)
             row.status = ToolCallStatus.DENIED
             row.updated_at = datetime.datetime.now(datetime.UTC)
-            row.denial_reason = reason
+            row.decision_note = decision_note
+            row.decision_operator_id = operator.operator_id
+            # Temporary expand-release compatibility for old frontend bundles. This is removed
+            # once the frontend contract has converged and the legacy column is dropped.
+            row.denial_reason = decision_note
             return self._record_from_principal(row, principal)
 
     async def withdraw(self, tool_call_id: str, reason: str | None, *, actor: AgentActor) -> ToolCallRecord:
@@ -540,6 +551,8 @@ class PostgresToolCallLedger:
             McpToolCall.updated_at.label("updated_at"),
             McpToolCall.title.label("title"),
             McpToolCall.error.label("error"),
+            McpToolCall.decision_note.label("decision_note"),
+            McpToolCall.decision_operator_id.label("decision_operator_id"),
             McpToolCall.denial_reason.label("denial_reason"),
             McpToolCall.withdrawal_reason.label("withdrawal_reason"),
             McpToolCall.approval_policy_id.label("approval_policy_id"),
@@ -580,6 +593,8 @@ class PostgresToolCallLedger:
             title=record.title,
             result_json=record.result,
             error=record.error,
+            decision_note=record.decision_note,
+            decision_operator_id=record.decision_operator_id,
             denial_reason=record.denial_reason,
             withdrawal_reason=record.withdrawal_reason,
             approval_policy_id=record.approval_policy_id,
@@ -629,6 +644,8 @@ class PostgresToolCallLedger:
             updated_at=projection["updated_at"],
             title=projection["title"],
             error=projection["error"],
+            decision_note=projection["decision_note"],
+            decision_operator_id=projection["decision_operator_id"],
             denial_reason=projection["denial_reason"],
             withdrawal_reason=projection["withdrawal_reason"],
             approval_policy_id=projection["approval_policy_id"],
@@ -661,6 +678,8 @@ class PostgresToolCallLedger:
             title=row.title,
             result=row.result_json,
             error=row.error,
+            decision_note=row.decision_note,
+            decision_operator_id=row.decision_operator_id,
             denial_reason=row.denial_reason,
             withdrawal_reason=row.withdrawal_reason,
             approval_policy_id=row.approval_policy_id,
