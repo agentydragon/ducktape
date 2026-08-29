@@ -608,20 +608,21 @@ function ApprovalsPanel(props: ShellChromeProps & { onClose: () => void }) {
               {pendingCount}
             </Badge>
           </Group>
-          <ActionIcon variant="subtle" color="gray" aria-label="Close approvals" onClick={props.onClose}>
-            <CloseIcon />
-          </ActionIcon>
+          <Group gap={2} wrap="nowrap">
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              aria-label="Past tool calls"
+              title="Past tool calls"
+              onClick={() => props.onNavigate("toolCalls")}
+            >
+              <HistoryIcon />
+            </ActionIcon>
+            <ActionIcon variant="subtle" color="gray" aria-label="Close approvals" onClick={props.onClose}>
+              <CloseIcon />
+            </ActionIcon>
+          </Group>
         </Group>
-        <Button
-          size="xs"
-          variant="light"
-          color="gray"
-          fullWidth
-          leftSection={<HistoryIcon />}
-          onClick={() => props.onNavigate("toolCalls")}
-        >
-          Past tool calls
-        </Button>
       </section>
       <div className="haku-shell-scroll">
         <ApprovalsTab {...props} />

@@ -1,8 +1,9 @@
-import { Badge, Code, Stack, Text } from "@mantine/core";
+import { Code, Loader, Stack, Text } from "@mantine/core";
 import type { ReactNode } from "react";
 import type { ToolCallItem } from "../client";
 
 import { CodeBlock } from "../code_block";
+import { SyncErrorIcon } from "../icons";
 
 const COLLAPSE_AFTER_CHARACTERS = 600;
 const COLLAPSE_AFTER_LINES = 10;
@@ -202,20 +203,26 @@ function toolCallSummary(call: ToolCallItem): ReactNode {
  * output, structured result — is behind the fold.
  */
 export function ToolCallView({ call }: { call: ToolCallItem }): JSX.Element {
+  const failed = call.outcome === "failed" || call.status === "failed";
   return (
     <details className="haku-conversation-tool-call">
       <summary className="haku-conversation-tool-call-summary">
         <span className="haku-conversation-tool-call-name">{call.tool_name}</span>
         <span className="haku-conversation-tool-call-snippet">{toolCallSummary(call)}</span>
-        {(call.outcome === "failed" || call.status === "failed") && (
-          <Badge variant="light" color="red">
-            failed
-          </Badge>
+        {failed && (
+          <span className="haku-conversation-tool-call-status" role="img" aria-label="Tool call failed" title="Failed">
+            <SyncErrorIcon size={16} color="var(--mantine-color-red-6)" />
+          </span>
         )}
         {call.status === "open" && (
-          <Badge variant="light" color="blue">
-            running
-          </Badge>
+          <span
+            className="haku-conversation-tool-call-status"
+            role="img"
+            aria-label="Tool call running"
+            title="Running"
+          >
+            <Loader size={14} color="blue" />
+          </span>
         )}
       </summary>
       <Stack gap="xs" className="haku-conversation-tool-call-body">

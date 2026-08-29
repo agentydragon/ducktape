@@ -537,7 +537,7 @@
   content: "▾";
 }
 
-/* One line while folded: the snippet takes what the badges leave and ellipsizes. */
+/* One line while folded: the snippet takes what the status marker leaves and ellipsizes. */
 .haku-conversation-tool-call-snippet {
   color: var(--mantine-color-dimmed);
   font-size: var(--mantine-font-size-xs);
@@ -552,6 +552,19 @@
  * as prose. */
 .haku-conversation-tool-call-snippet-mono {
   font-family: var(--mantine-font-family-monospace);
+}
+
+.haku-conversation-tool-call-status,
+.haku-tool-call-status {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.haku-conversation-tool-call-status svg,
+.haku-tool-call-status svg {
+  display: block;
 }
 
 /* Expanded content indents under the chevron so it visibly belongs to its line, since there is no
@@ -688,6 +701,81 @@
   flex: 0 0 auto;
 }
 
+/* Provisioning is a live resource read, so its useful shape is a compact status table. The age
+   marker only appears when the read is old enough to question, rather than spending a column on
+   a timestamp that is normally fresh. */
+.haku-provisioning {
+  width: min(100%, 46rem);
+  border-block: 1px solid var(--haku-border);
+  padding: 0.7rem 0;
+  background: var(--haku-panel-bg);
+}
+
+.haku-provisioning-header {
+  min-width: 0;
+}
+
+.haku-provisioning-header > .mantine-Group-root:first-child {
+  min-width: 0;
+}
+
+.haku-provisioning-step {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.haku-provisioning-stale {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.haku-provisioning-table {
+  margin-top: 0.5rem;
+  table-layout: fixed;
+}
+
+.haku-provisioning-table th {
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.haku-provisioning-table th:first-child {
+  width: 9rem;
+}
+
+.haku-provisioning-table th:nth-child(2) {
+  width: 7.5rem;
+}
+
+.haku-provisioning-table td {
+  min-width: 0;
+  padding-block: 0.45rem;
+  overflow-wrap: anywhere;
+}
+
+.haku-provisioning-status {
+  white-space: nowrap;
+}
+
+.haku-provisioning-detail,
+.haku-provisioning-name,
+.haku-provisioning-detail-line {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.haku-provisioning-note {
+  margin-top: 0.45rem;
+  overflow-wrap: anywhere;
+}
+
 /* Inventory surfaces are rows, not a stack of miniature cards. Mantine owns the table semantics;
    these rules only give it Haku's compact rhythm and a readable mobile collapse. */
 .haku-dense-table-wrap {
@@ -763,9 +851,10 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
-      "primary status"
-      "secondary action"
-      "extra extra";
+      "primary primary"
+      "secondary secondary"
+      "extra extra"
+      "status action";
     gap: 0.2rem 0.75rem;
     padding: 0.65rem 0.75rem;
     border-top: 1px solid var(--haku-border);
@@ -803,9 +892,61 @@
   .haku-dense-table td[data-slot="extra"] {
     grid-area: extra;
   }
+
+  .haku-provisioning-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .haku-provisioning-header > .mantine-Group-root:first-child {
+    flex: 1 1 100%;
+  }
+
+  .haku-provisioning-table thead {
+    display: none;
+  }
+
+  .haku-provisioning-table,
+  .haku-provisioning-table tbody,
+  .haku-provisioning-table tr,
+  .haku-provisioning-table td {
+    display: block;
+  }
+
+  .haku-provisioning-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "resource status"
+      "detail detail";
+    gap: 0.2rem 0.75rem;
+    padding-block: 0.45rem;
+    border-top: 1px solid var(--haku-border);
+  }
+
+  .haku-provisioning-table tbody tr:first-child {
+    border-top: 0;
+  }
+
+  .haku-provisioning-table td {
+    padding: 0;
+    border: 0;
+  }
+
+  .haku-provisioning-resource {
+    grid-area: resource;
+  }
+
+  .haku-provisioning-status {
+    grid-area: status;
+  }
+
+  .haku-provisioning-detail {
+    grid-area: detail;
+  }
 }
 
-/* The card's identity header: title + action line + rationale/error subheads. The status badge
+/* The card's identity header: title + action line + rationale/error subheads. The status marker
    and Brief/Full selector float top-right (`haku-card-head-actions`) so the text wraps under them
    on the first line(s) and reclaims the full card width below, rather than every line being
    narrowed to leave the badge's column empty. `flow-root` contains the float within the header. */

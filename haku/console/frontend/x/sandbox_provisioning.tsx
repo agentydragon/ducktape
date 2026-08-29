@@ -1,6 +1,7 @@
-import { Badge, Box, Code, Group, Loader, Paper, Stack, Text } from "@mantine/core";
+import { Badge, Group, Loader, Table, Text } from "@mantine/core";
 
 import type { Conversation } from "../client";
+import { formatTimestamp } from "../approval_state";
 
 type Provisioning = NonNullable<Conversation["provisioning"]>;
 
@@ -13,10 +14,24 @@ const STEP_LABELS: Record<Provisioning["step"], string> = {
   waiting_for_runner: "Pod is ready; waiting for the Claude bridge",
 };
 
+const STEP_SUMMARIES: Record<Provisioning["step"], string> = {
+  claim_absent: "Claim absent",
+  claim_created: "Claim created",
+  waiting_for_sandbox: "Waiting for Sandbox",
+  waiting_for_pod: "Waiting for Pod",
+  waiting_for_pod_ready: "Waiting for Pod ready",
+  waiting_for_runner: "Waiting for runner",
+};
+
 function readiness(value: boolean | null | undefined, pending: string): { color: string; label: string } {
   if (value === true) return { color: "teal", label: "ready" };
   if (value === false) return { color: "yellow", label: "not ready" };
   return { color: "gray", label: pending };
+}
+
+function inspectionAge(inspectedAt: string): { text: string; title: string } | null {
+  const timestamp = formatTimestamp(inspectedAt);
+  return timestamp.text === "just now" ? null : { text: `stale · ${timestamp.text}`, title: timestamp.title };
 }
 
 /** What Kubernetes says about a sandbox still coming up.
@@ -26,25 +41,40 @@ function readiness(value: boolean | null | undefined, pending: string): { color:
  * account for a session that dies before the CLI produces a single frame.
  */
 export function SandboxProvisioning({ provisioning }: { provisioning: Provisioning }): JSX.Element {
+  const stale = inspectionAge(provisioning.inspected_at);
   return (
-    <Paper withBorder p="md">
-      <Stack gap="md">
-        <Group gap="sm">
-          <Loader size="sm" />
-          <div>
-            <Text fw={600} size="sm">
-              {STEP_LABELS[provisioning.step]}
-            </Text>
-            <Text c="dimmed" size="xs">
-              Live state from the Agent Sandbox resources; waiting for the runner to connect.
-            </Text>
-          </div>
+    <section className="haku-provisioning" aria-label="Sandbox provisioning">
+      <Group className="haku-provisioning-header" justify="space-between" align="center" wrap="nowrap">
+        <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
+          <Loader size="xs" aria-label="Sandbox provisioning in progress" />
+          <Text fw={600} size="sm" style={{ flex: "0 0 auto" }}>
+            Sandbox provisioning
+          </Text>
+          <Text size="xs" c="dimmed" className="haku-provisioning-step" title={STEP_LABELS[provisioning.step]}>
+            {STEP_SUMMARIES[provisioning.step]}
+          </Text>
         </Group>
-        <Stack gap="xs">
+        {stale && (
+          <Text size="xs" c="yellow" className="haku-provisioning-stale" title={stale.title}>
+            {stale.text}
+          </Text>
+        )}
+      </Group>
+      <Table className="haku-provisioning-table" aria-label="Sandbox resources">
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>Resource</Table.Th>
+            <Table.Th>Status</Table.Th>
+            <Table.Th>Detail</Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
           <Resource
             label="SandboxClaim"
             name={provisioning.claim_name}
             readiness={readiness(provisioning.claim_ready, "pending")}
+            detail={provisioning.claim_reason ?? provisioning.claim_message ?? undefined}
+            detailTitle={provisioning.claim_message ?? undefined}
           />
           <Resource
             label="Sandbox"
@@ -58,27 +88,19 @@ export function SandboxProvisioning({ provisioning }: { provisioning: Provisioni
             detail={provisioning.pod_phase ? `phase: ${provisioning.pod_phase}` : undefined}
           />
           <Resource
-            label="runner container"
+            label="Runner"
             readiness={readiness(provisioning.runner_ready, "not reported")}
             detail={provisioning.runner_state ?? undefined}
           />
           <Resource label="Claude bridge" readiness={{ color: "blue", label: "waiting" }} />
-          {(provisioning.claim_reason || provisioning.claim_message) && (
-            <Text c="dimmed" size="xs">
-              Claim: {[provisioning.claim_reason, provisioning.claim_message].filter(Boolean).join(" — ")}
-            </Text>
-          )}
-          {provisioning.observation_error && (
-            <Text c="red" size="xs">
-              Kubernetes observation failed: {provisioning.observation_error}
-            </Text>
-          )}
-          <Text c="dimmed" size="xs">
-            Observed {new Date(provisioning.inspected_at).toLocaleTimeString()}
-          </Text>
-        </Stack>
-      </Stack>
-    </Paper>
+        </Table.Tbody>
+      </Table>
+      {provisioning.observation_error && (
+        <Text c="red" size="xs" className="haku-provisioning-note">
+          Observation failed · {provisioning.observation_error}
+        </Text>
+      )}
+    </section>
   );
 }
 
@@ -87,60 +109,42 @@ function Resource({
   name,
   readiness: state,
   detail,
+  detailTitle,
 }: {
   label: string;
   name?: string | null;
   readiness: { color: string; label: string };
   detail?: string;
+  detailTitle?: string;
 }) {
-  const badge = (
-    <Badge color={state.color} variant="light" size="sm">
-      {state.label}
-    </Badge>
-  );
-  const value = (
-    <Stack gap={0} style={{ minWidth: 0 }}>
-      {name && (
-        <Code block style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {name}
-        </Code>
-      )}
-      {detail && (
-        <Text c="dimmed" size="xs">
-          {detail}
-        </Text>
-      )}
-    </Stack>
-  );
   return (
-    <>
-      <Box hiddenFrom="sm">
-        <Stack gap={2}>
-          <Group justify="space-between" wrap="nowrap">
-            <Text size="xs" fw={600}>
-              {label}
-            </Text>
-            {badge}
-          </Group>
-          {value}
-        </Stack>
-      </Box>
-      <Box visibleFrom="sm">
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(7.5rem, auto) minmax(0, 1fr) auto",
-            alignItems: "center",
-            columnGap: "0.5rem",
-          }}
-        >
-          <Text size="xs" fw={600}>
-            {label}
+    <Table.Tr>
+      <Table.Td data-slot="resource" className="haku-provisioning-resource">
+        <Text size="xs" fw={600}>
+          {label}
+        </Text>
+      </Table.Td>
+      <Table.Td data-slot="status" className="haku-provisioning-status">
+        <Badge color={state.color} variant="light" size="xs">
+          {state.label}
+        </Badge>
+      </Table.Td>
+      <Table.Td data-slot="detail" className="haku-provisioning-detail">
+        {name ? (
+          <Text size="xs" ff="monospace" className="haku-provisioning-name">
+            <span title={name}>{name}</span>
           </Text>
-          {value}
-          {badge}
-        </div>
-      </Box>
-    </>
+        ) : (
+          <Text size="xs" c="dimmed" className="haku-provisioning-detail-line" title={detailTitle ?? detail}>
+            {detail ?? "—"}
+          </Text>
+        )}
+        {name && detail && (
+          <Text c="dimmed" size="xs" className="haku-provisioning-detail-line" title={detailTitle ?? detail}>
+            {detail}
+          </Text>
+        )}
+      </Table.Td>
+    </Table.Tr>
   );
 }

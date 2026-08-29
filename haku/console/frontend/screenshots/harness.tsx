@@ -174,6 +174,8 @@ function sceneElement(scene: string) {
       return <IndicatorScene state="error" />;
     case "session-expiring":
       return <SessionExpiringScene />;
+    case "not-found":
+      return <ConsoleScene view="notFound" />;
     case "oauth-success":
     case "oauth-success-mobile":
       return (

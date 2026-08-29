@@ -43,9 +43,16 @@ const SCENES = [
   { name: "console-drawer", viewport: { width: 1200, height: 800 }, frame: true },
   { name: "console-mobile", viewport: { width: 390, height: 760 }, frame: true },
   {
+    name: "not-found",
+    viewport: { width: 900, height: 600 },
+    closeApprovals: true,
+    expectVisible: "::-p-text(Page not found)",
+    frame: true,
+  },
+  {
     name: "approvals-embed",
     viewport: { width: 560, height: 820 },
-    expectVisible: "::-p-text(Pending)",
+    expectVisible: "button::-p-text(Approve)",
   },
   {
     name: "settings",
@@ -167,14 +174,14 @@ const SCENES = [
     name: "conversation-provisioning",
     viewport: { width: 1200, height: 900 },
     closeApprovals: true,
-    expectVisible: "::-p-text(Waiting for the Pod and runner container)",
+    expectVisible: "::-p-text(Waiting for Pod ready)",
     frame: true,
   },
   {
     name: "conversation-provisioning-mobile",
     viewport: { width: 390, height: 900 },
     closeApprovals: true,
-    expectVisible: "::-p-text(Waiting for the Pod and runner container)",
+    expectVisible: "::-p-text(Waiting for Pod ready)",
     frame: true,
   },
   {

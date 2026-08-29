@@ -38,6 +38,7 @@ ts_library(
         "//:node_modules/react",
         "//haku/console/frontend:client",
         "//haku/console/frontend:code_block",
+        "//haku/console/frontend:icons",
     ],
 )
 
@@ -50,6 +51,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//haku/console/frontend:approval_state",
         "//haku/console/frontend:client",
     ],
 )
