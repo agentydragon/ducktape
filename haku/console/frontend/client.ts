@@ -41,7 +41,6 @@ export type Item = components["schemas"]["Item"];
 export type ToolCallItem = components["schemas"]["ToolCallItem"];
 export type ConversationSummary = components["schemas"]["ConversationSummary"];
 export type ConversationPage = components["schemas"]["ConversationPage"];
-export type ConversationCursor = components["schemas"]["ConversationCursor"];
 export type Conversation = components["schemas"]["ConversationView"];
 export type Session = components["schemas"]["SessionView"];
 // What `WS /api/conversations/{id}/follow` sends. Generated like every type above: the schema
@@ -114,10 +113,10 @@ export async function createConversation(selection: ChatLaunchOption): Promise<C
  * `cursor` is a previous page's `next_cursor`; omitting it opens on the newest. Keyset rather than
  * an offset because a conversation never ends, so this list only grows and only at its top.
  */
-export async function fetchConversations(cursor?: ConversationCursor, limit = 25): Promise<ConversationPage> {
+export async function fetchConversations(cursor?: string, limit = 25): Promise<ConversationPage> {
   const { data, error } = await api.GET("/api/conversations", {
     params: {
-      query: { limit, before_activity: cursor?.last_activity_at, before_conversation: cursor?.conversation_id },
+      query: { limit, cursor: cursor ?? undefined },
     },
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to load conversations"));

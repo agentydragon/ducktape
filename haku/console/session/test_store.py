@@ -56,6 +56,7 @@ from haku.console.grants.kubernetes.models import NamespacesGrantScope, Rule
 from haku.console.grants.principal import GrantPrincipalKind
 from haku.console.notifications.session_wakes import SessionEvent, SessionEventKind
 from haku.console.session.conftest import age_lease, answers, attach_channel, lease_of, make_idle
+from haku.console.session.conversation_views import ConversationCursor
 from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
 from haku.console.session.setup_output import SETUP_OUTPUT_KIND
 from haku.console.session.status import OPEN_SESSION_STATUSES, LeaseExpiryReason, SessionStatus
@@ -81,6 +82,24 @@ from haku.console.x.conversation_events import (
 )
 
 ROOM = "!room:example.org"
+
+
+def test_conversation_cursor_is_one_opaque_round_trip_value() -> None:
+    cursor = ConversationCursor(
+        last_activity_at=datetime(2026, 8, 28, 12, 34, 56, tzinfo=UTC),
+        conversation_id=UUID("00000000-0000-4000-8000-000000000001"),
+    )
+
+    encoded = cursor.encode()
+
+    assert "before_activity" not in encoded
+    assert "before_conversation" not in encoded
+    assert ConversationCursor.parse(encoded) == cursor
+
+
+def test_conversation_cursor_rejects_malformed_values() -> None:
+    with pytest.raises(ValueError, match="malformed conversation cursor"):
+        ConversationCursor.parse("not-a-cursor")
 
 
 def _harness(frames: Sequence[FrameRecord]) -> list[HarnessFrameRecord]:

@@ -94,15 +94,39 @@ class ConversationCursor(BaseModel):
     last_activity_at: datetime
     conversation_id: UUID
 
+    @classmethod
+    def parse(cls, value: str) -> ConversationCursor:
+        """Decode a cursor handed out by ``encode``, raising ``ValueError`` otherwise."""
+        timestamp, separator, conversation_id = value.partition("~")
+        if not separator or not conversation_id:
+            raise ValueError(f"malformed conversation cursor: {value!r}")
+        try:
+            return cls(last_activity_at=datetime.fromisoformat(timestamp), conversation_id=UUID(conversation_id))
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"malformed conversation cursor: {value!r}") from error
+
+    def encode(self) -> str:
+        # UUIDs cannot contain the separator, so this remains a compact opaque token while the
+        # database key can evolve without exposing two query parameters.
+        return f"{self.last_activity_at.isoformat()}~{self.conversation_id}"
+
 
 class ConversationPage(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     conversations: list[ConversationSummary]
-    next_cursor: ConversationCursor | None = Field(
-        description="The first conversation this page did not return. Pass its fields back as "
-        "`before_activity`/`before_conversation` to continue; absent when this page is the last."
+    next_cursor: str | None = Field(
+        description="Opaque position for the next page; pass it back as `cursor`. Absent when this page is the last."
     )
+
+
+class ConversationPageResult(BaseModel):
+    """The typed page exchanged between the route and its store before cursor serialization."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    conversations: list[ConversationSummary]
+    next_cursor: ConversationCursor | None
 
 
 class ConversationView(BaseModel):

@@ -9,7 +9,6 @@ import {
   fetchConversations,
   type ChatLaunchOption,
   type Conversation,
-  type ConversationCursor,
   type Item,
   type ConversationSummary,
   type Session,
@@ -195,7 +194,7 @@ function ConversationListPage() {
   // Null until the first read lands: an empty inventory and an unread one look the same
   // otherwise, and the two want different things on screen.
   const [conversations, setConversations] = useState<ConversationSummary[] | null>(null);
-  const [nextCursor, setNextCursor] = useState<ConversationCursor | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);

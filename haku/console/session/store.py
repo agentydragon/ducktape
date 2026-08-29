@@ -65,7 +65,7 @@ from haku.console.notifications.conversation_wakes import ConversationWakeKind, 
 from haku.console.notifications.session_wakes import SessionEventKind, notify
 from haku.console.session.conversation_views import (
     ConversationCursor,
-    ConversationPage,
+    ConversationPageResult,
     ConversationSummary,
     ConversationUpdate,
     ConversationView,
@@ -851,7 +851,7 @@ class Store:
 
     async def list_operator_conversations(
         self, operator_id: UUID, *, cursor: ConversationCursor | None, limit: int
-    ) -> ConversationPage:
+    ) -> ConversationPageResult:
         """One page of this Operator's conversations, newest activity first.
 
         Scoped, unlike the MCP reader: a browser-facing inventory must never reveal another
@@ -900,7 +900,7 @@ class Store:
             counts = await _item_counts(db, threads)
             live = await _live_sessions(db, threads)
             ended = await _last_ended_sessions(db, threads - live.keys())
-        return ConversationPage(
+        return ConversationPageResult(
             conversations=[
                 ConversationSummary(
                     conversation_id=row.conversation_id,

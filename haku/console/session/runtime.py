@@ -30,6 +30,7 @@ from haku.console.session.conversation_views import (
     MAX_FRAME_PAGE,
     ConversationCursor,
     ConversationPage,
+    ConversationPageResult,
     ConversationView,
     SessionFramePage,
     SessionProvisioningView,
@@ -763,23 +764,25 @@ StoreDep = Annotated[Store, Depends(_store)]
 async def list_conversations(
     actor: OperatorActorDep,
     store: StoreDep,
-    before_activity: Annotated[datetime | None, Query()] = None,
-    before_conversation: Annotated[UUID | None, Query()] = None,
+    cursor: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
 ) -> ConversationPage:
     """One page of this Operator's conversations, newest activity first.
 
-    The two cursor parameters are the halves of `next_cursor` and travel together: either both or
-    neither, because half a keyset is not a position.
+    ``cursor`` is opaque to the browser: the store still uses the typed keyset position, but the
+    wire has one echo-only token like the tool-call ledger.
     """
-    if (before_activity is None) != (before_conversation is None):
-        raise HTTPException(status_code=422, detail="before_activity and before_conversation go together")
-    cursor = (
-        None
-        if before_activity is None or before_conversation is None
-        else ConversationCursor(last_activity_at=before_activity, conversation_id=before_conversation)
+    try:
+        page_cursor = ConversationCursor.parse(cursor) if cursor is not None else None
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    page: ConversationPageResult = await store.list_operator_conversations(
+        actor.operator_id, cursor=page_cursor, limit=limit
     )
-    return await store.list_operator_conversations(actor.operator_id, cursor=cursor, limit=limit)
+    return ConversationPage(
+        conversations=page.conversations,
+        next_cursor=page.next_cursor.encode() if page.next_cursor is not None else None,
+    )
 
 
 @router.post("/api/conversations", status_code=201)
