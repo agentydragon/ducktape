@@ -24,7 +24,7 @@ const ApprovalIndicator = GObject.registerClass(
 
       this.add_child(
         new St.Icon({
-          gicon: Gio.icon_new_for_string(`${extension.path}/icons/haku-approvals-symbolic.svg`),
+          gicon: Gio.icon_new_for_string(`${extension.path}/logo.svg`),
           style_class: "system-status-icon haku-approvals-indicator",
         })
       );

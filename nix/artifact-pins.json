@@ -49,8 +49,8 @@
       "sha256": "7N7Jq4YzxGNFp2ShQvGqy4Bj7CN7i4DCFDjDblBbWkc="
     },
     "haku-approvals": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/haku-approvals-5123978f8f90/haku-approvals.zip",
-      "sha256": "USOXj4+QOTIf7m9h+gqaGzB9RIDmJ8nVAeUMBhrERxE="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/haku-approvals-6f1e9ea5e707/haku-approvals.zip",
+      "sha256": "bx6epecH04/soMILzsnUB9pmdkvnHdLGhi5kZUlNWe0="
     },
     "debundle": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-5d1eedc70973/debundle",

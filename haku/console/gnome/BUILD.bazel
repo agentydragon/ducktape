@@ -9,7 +9,6 @@ pkg_files(
         "extension.js",
         "haku-approvals.desktop",
         "haku-approvals-window.js",
-        "icons/haku-approvals-symbolic.svg",
         "metadata.json",
         "stylesheet.css",
         "//haku/console:logo.svg",
