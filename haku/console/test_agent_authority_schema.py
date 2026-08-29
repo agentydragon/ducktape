@@ -653,7 +653,7 @@ def test_conversation_harness_kind_read_switch_backfills_and_guards_new_column(d
                 {"conversation_id": conversation_id},
             )
 
-        apply_migrations(db_url, "0119")
+        apply_migrations(db_url, "0120")
         with engine.connect() as conn:
             assert (
                 conn.execute(

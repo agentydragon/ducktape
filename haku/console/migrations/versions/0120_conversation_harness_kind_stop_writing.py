@@ -5,8 +5,8 @@ required it to be populated. Once that image has converged, this release removes
 and dual-write, then makes the legacy column nullable so an old writer cannot fail a new row insert.
 The physical column and its CHECK remain for the final drop release.
 
-Revision ID: 0119
-Revises: 0118
+Revision ID: 0120
+Revises: 0119
 """
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0119"
-down_revision: str | None = "0118"
+revision: str = "0120"
+down_revision: str | None = "0119"
 branch_labels: str | None = None
 depends_on: str | None = None
 
