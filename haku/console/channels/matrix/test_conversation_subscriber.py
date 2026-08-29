@@ -161,7 +161,7 @@ def notices(
 async def served(session_store: Store, operator_id: UUID, binding: RoomAttachment) -> UUID:
     """A ready session serving the bound room, on the conversation the room is attached to."""
     view, token = await session_store.create(operator_id, conversation_id=binding.conversation_id)
-    await session_store.authenticate_bridge(view.session_id, token)
+    await session_store.authenticate_runner_connection(view.session_id, token)
     return view.session_id
 
 

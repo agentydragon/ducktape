@@ -804,8 +804,14 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
     assert '# {"$imagepolicy": "flux-system:haku-harness-runner"}' in template_text
     assert container["args"] == ["--harness", "codex-app-server"]
     environment = sandbox_env(template)
-    assert environment["HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL"]["value"] == (
+    assert environment["HAKU_RUNNER_WEBSOCKET_URL"]["value"] == (
         "ws://haku-console.haku-console.svc.cluster.local:9090/internal/claude/runner"
+    )
+    # Delete with the template's CLEANUP: the legacy spelling rides along, same value, while
+    # runner images that predate the rename may still be pinned.
+    assert (
+        environment["HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL"]["value"]
+        == (environment["HAKU_RUNNER_WEBSOCKET_URL"]["value"])
     )
     assert environment["OPENAI_API_KEY"] == {
         "name": "OPENAI_API_KEY",

@@ -61,7 +61,7 @@ from haku.console.conversation.conversation_event import (
 from haku.console.conversation.prompt_origin import MatrixOrigin
 from haku.console.database_schema import ConversationEventRow
 from haku.console.harnesses.kind import HarnessKind
-from haku.console.session.store import BridgeAuthentication, Store
+from haku.console.session.store import RunnerConnectionAuthentication, Store
 from haku.console.session.subscription import ConversationStream
 
 
@@ -281,7 +281,10 @@ async def carried_prompt(
 ) -> UUID:
     """A prompt in the record carrying *event_id*, as an accepted batch leaves one behind."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     await session_store.submit_prompt(
         operator_id,
         await session_store.conversation_of(view.session_id),

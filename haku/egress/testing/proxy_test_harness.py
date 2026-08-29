@@ -48,7 +48,7 @@ from haku.grants.authorization import GrantSourceKind
 PLACEHOLDER = "proxy-github-placeholder"
 REAL_CREDENTIAL = "real-redeemed-credential"
 FENCE_CREDENTIAL = "shared-fence-credential"
-BRIDGE_BEARER = "bridge-session-bearer"
+SESSION_TOKEN = "test-session-token"
 
 
 def allow(*substitutions: PlaceholderSubstitution) -> HttpAuthorizationAllowed:
@@ -153,7 +153,7 @@ def make_proxy(
 def proxy_url(proxy: EgressProxy) -> str:
     # URL userinfo makes aiohttp send the same Basic proxy credential ordinary runner-launched
     # clients use. The addon decodes it and the upstream never sees Proxy-Authorization.
-    return f"http://:{BRIDGE_BEARER}@127.0.0.1:{proxy.listen_port}"
+    return f"http://:{SESSION_TOKEN}@127.0.0.1:{proxy.listen_port}"
 
 
 async def proxied_get(proxy: EgressProxy, url: str, headers: dict[str, str] | None = None) -> tuple[int, str]:
@@ -172,7 +172,7 @@ async def proxied_get_raw(proxy_port: int, url: str, header_lines: list[tuple[st
     need. ``url`` is the absolute request target (``http://host:port/path``).
     """
     authority = url.split("//", 1)[1].split("/", 1)[0]
-    proxy_auth = base64.b64encode(f":{BRIDGE_BEARER}".encode()).decode()
+    proxy_auth = base64.b64encode(f":{SESSION_TOKEN}".encode()).decode()
     lines = [
         f"GET {url} HTTP/1.1",
         f"Host: {authority}",
@@ -199,9 +199,9 @@ class RaisingDecideClient(DecideClient):
         *,
         resolved_ips: frozenset[IPv4Address | IPv6Address],
         upstream_ip: IPv4Address | IPv6Address,
-        proxy_client_credential: str,
+        session_token: str,
     ) -> HttpAuthorizationDecision:
-        del resolved_ips, upstream_ip, proxy_client_credential
+        del resolved_ips, upstream_ip, session_token
         raise RuntimeError("decide transport exploded")
 
 
@@ -212,9 +212,9 @@ class HangingDecideClient(DecideClient):
         *,
         resolved_ips: frozenset[IPv4Address | IPv6Address],
         upstream_ip: IPv4Address | IPv6Address,
-        proxy_client_credential: str,
+        session_token: str,
     ) -> HttpAuthorizationDecision:
-        del resolved_ips, upstream_ip, proxy_client_credential
+        del resolved_ips, upstream_ip, session_token
         await asyncio.Event().wait()
         raise AssertionError("unreachable: the event is never set")
 
@@ -226,9 +226,9 @@ class MalformedDecideClient(DecideClient):
         *,
         resolved_ips: frozenset[IPv4Address | IPv6Address],
         upstream_ip: IPv4Address | IPv6Address,
-        proxy_client_credential: str,
+        session_token: str,
     ) -> HttpAuthorizationDecision:
-        del request, resolved_ips, upstream_ip, proxy_client_credential
+        del request, resolved_ips, upstream_ip, session_token
         return cast(HttpAuthorizationDecision, {"allowed": True, "substitutions": []})
 
 
@@ -375,7 +375,7 @@ async def tunneled_get(proxy_port: int, authority: str, path: str) -> tuple[int,
     """
     reader, writer = await asyncio.open_connection("127.0.0.1", proxy_port)
     try:
-        proxy_auth = base64.b64encode(f":{BRIDGE_BEARER}".encode()).decode()
+        proxy_auth = base64.b64encode(f":{SESSION_TOKEN}".encode()).decode()
         writer.write(
             f"CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n"
             f"Proxy-Authorization: Basic {proxy_auth}\r\n\r\n".encode()

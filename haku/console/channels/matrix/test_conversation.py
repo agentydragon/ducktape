@@ -37,7 +37,7 @@ from haku.console.database_schema import Conversation, ConversationEventRow, Con
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.session.launch_identity import ChatLaunchAuthorizer, LaunchIdentity
-from haku.console.session.store import BridgeAuthentication, Store
+from haku.console.session.store import RunnerConnectionAuthentication, Store
 from haku.console.x.conversation_events import (
     ConversationEvent as FoldedEvent,
     ItemSegment,
@@ -141,7 +141,10 @@ async def serving_session(session_store: Store, operator_id: UUID, conversation_
     """A Matrix session ready to take prompts, made the way the supervisor and a runner make one."""
     view, token = await session_store.create(operator_id, conversation_id=conversation_id)
     assert token is not None
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     return view.session_id
 
 

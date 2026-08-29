@@ -1,4 +1,4 @@
-"""Canonical static and exact-session Haku Agent bearer authority."""
+"""Canonical static and session-token Haku Agent bearer authority."""
 
 from __future__ import annotations
 
@@ -23,7 +23,10 @@ from haku.console.session.status import SessionStatus
 from haku.console.tool_call_actor import AgentActor
 
 _STATIC_BINDING_CREDENTIAL_PREFIX = "haku-static-binding:"
-_CHAT_SESSION_CREDENTIAL_PREFIX = "haku-chat-session:"
+# The session-named audit id for a session-token credential generation: it identifies the
+# Session, and is never itself a credential. Compared only in-process (mcp_agent_auth's
+# same-request revalidation), so the value is free to change with the vocabulary.
+_SESSION_CREDENTIAL_PREFIX = "haku-session:"
 _AGENT_SESSION_STATUSES = (SessionStatus.READY, SessionStatus.RESPONDING)
 
 
@@ -75,7 +78,7 @@ class _StaticAgentBearerSource:
 
 
 class _SessionAgentBearerSource:
-    """Resolve a live Console session bearer through the canonical launch authority."""
+    """Resolve a live session token through the canonical launch authority."""
 
     def __init__(self, authority: PostgresAgentAuthority, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._authority = authority
@@ -126,7 +129,7 @@ class _SessionAgentBearerSource:
                         access_profile_id=row.access_profile_id,
                         session_id=row.session_id,
                     ),
-                    credential_id=f"{_CHAT_SESSION_CREDENTIAL_PREFIX}{row.session_id}",
+                    credential_id=f"{_SESSION_CREDENTIAL_PREFIX}{row.session_id}",
                 )
         except (LaunchAgentRejectedError, ValueError):
             return None
@@ -135,7 +138,7 @@ class _SessionAgentBearerSource:
 
 
 class AgentBearerAuthority:
-    """Authenticate raw static/session bearers against current durable Agent authority."""
+    """Authenticate raw static credentials and session tokens against current durable Agent authority."""
 
     def __init__(self, sources: tuple[Callable[..., Awaitable[ResolvedAgentBearer | None]], ...]) -> None:
         self._sources = sources
@@ -171,7 +174,7 @@ def build_agent_bearer_authority(
     static_credentials: StaticAgentCredentialRegistry,
     session_tokens: async_sessionmaker[AsyncSession] | None = None,
 ) -> AgentBearerAuthority:
-    """Compose configured static and exact-session bearer authorities."""
+    """Compose configured static-credential and session-token bearer authorities."""
 
     sources: list[Callable[..., Awaitable[ResolvedAgentBearer | None]]] = []
     if static_credentials.fingerprints:

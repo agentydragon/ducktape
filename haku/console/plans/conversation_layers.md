@@ -65,7 +65,7 @@ ready session with nothing queued and refuses otherwise; a replacement session i
 conversation's tail as prompt text.
 
 **Handover** is the operator's "only one session holds it at a time", and the lease is what holds
-it: `authenticate_bridge` admits one runner connection while a lease is valid, and expiry makes the
+it: `authenticate_runner_connection` admits one runner connection while a lease is valid, and expiry makes the
 row adoptable (§ 14). `channel_attachment`'s partial unique index is a different rule wearing the same
 words — **one live conversation per _address_** — and reading it as the handover rule is what makes
 a channel's row look like a statement about sessions (§ 7).
@@ -784,7 +784,7 @@ notices. The current channel implementation is the inventory.
 
 **The projector is single-writer per session.** The lease gives that, and it is the reason none of
 this needs the fold to be re-runnable. An expired lease means unowned rather than dead, but the
-property still holds: `authenticate_bridge` admits one holder at a time while a lease is valid, and
+property still holds: `authenticate_runner_connection` admits one holder at a time while a lease is valid, and
 expiry only makes the row adoptable. A future change to the lease's meaning should be checked
 against this assumption rather than around it.
 

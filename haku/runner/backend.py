@@ -28,11 +28,24 @@ import anyio
 from haku.runner.protocol import HarnessLaunch, decode_object, encode_object
 from haku.runner.session_api import SessionApi
 
-# The exact-session credential used by the runner bridge and by the Agent at Console MCP. The
-# runner keeps the claim-owned value out of launch overlays, and the console's deploy config
-# refuses the name as a provider API-key variable.
-BRIDGE_CREDENTIAL_VARIABLE = "HAKU_RUNNER_TOKEN"
+# The session token: one per-Session secret the runner presents to the runner protocol, the Agent
+# presents to Console MCP, and the proxy receives as proxy authentication. The runner keeps the
+# claim-owned value out of launch overlays, and the console's deploy config refuses the name as a
+# provider API-key variable.
+SESSION_TOKEN_VARIABLE = "HAKU_SESSION_TOKEN"
+# CLEANUP(added 2026-08-29): pre-rename spelling of SESSION_TOKEN_VARIABLE, still minted into
+# SandboxClaim env by consoles that predate the rename and read by runner images built before it.
+# Drop this constant, the fallback in `environment_session_token`, the launch-overlay strip below,
+# and the console's dual mint (haku/console/session/sandbox_claims.py) once the deployed console
+# mints HAKU_SESSION_TOKEN and no live sandbox predates the rename — one release after the console
+# and runner images have both converged past it.
+LEGACY_SESSION_TOKEN_VARIABLE = "HAKU_RUNNER_TOKEN"
 _PROXY_ENVIRONMENT_VARIABLES = ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy")
+
+
+def environment_session_token() -> str | None:
+    """The claim-owned session token from this runner Pod's environment, or None."""
+    return os.environ.get(SESSION_TOKEN_VARIABLE) or os.environ.get(LEGACY_SESSION_TOKEN_VARIABLE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,23 +68,27 @@ class ProcessLaunch:
 
 
 def child_environment(launch: HarnessLaunch) -> dict[str, str]:
-    """Overlay launch values while retaining the claim-owned exact-session credential.
+    """Overlay launch values while retaining the claim-owned session token.
 
-    The Console sends proxy topology in the launch, while the claim-owned bridge bearer remains
+    The Console sends proxy topology in the launch, while the claim-owned session token remains
     in the runner Pod environment. URL userinfo is used only in the child process environment so
     ordinary HTTP clients send ``Proxy-Authorization`` without a second secret or a launch-frame
     credential.
     """
     environment = {
         **os.environ,
-        **{key: value for key, value in launch.environment.items() if key != BRIDGE_CREDENTIAL_VARIABLE},
+        **{
+            key: value
+            for key, value in launch.environment.items()
+            if key not in (SESSION_TOKEN_VARIABLE, LEGACY_SESSION_TOKEN_VARIABLE)
+        },
     }
     if proxy_variables := set(launch.environment) & set(_PROXY_ENVIRONMENT_VARIABLES):
-        bearer = os.environ.get(BRIDGE_CREDENTIAL_VARIABLE)
-        if not bearer:
-            raise RuntimeError("proxy environment requires a bridge bearer")
+        token = environment_session_token()
+        if not token:
+            raise RuntimeError("proxy environment requires a session token")
         for variable in proxy_variables:
-            environment[variable] = _proxy_url_with_bearer(environment[variable], bearer)
+            environment[variable] = _proxy_url_with_bearer(environment[variable], token)
     return environment
 
 

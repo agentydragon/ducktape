@@ -274,16 +274,18 @@ These are tracked old spellings, not alternate names. Historical migration ident
 place as history; new code, wire fields, deployment names, and current documentation move to the
 canonical terms above.
 
-- **Session token family** (runner/backend, session allocation/claims, MCP, and egress decision code):
-  `HAKU_RUNNER_TOKEN`, `BRIDGE_CREDENTIAL_VARIABLE`, `BRIDGE_BEARER`, `bridge_token`,
-  `bridge_token_fingerprint`, `proxy_client_credential`, “sandbox-to-proxy bearer,”
-  “exact-session credential,” “exact-session bearer,” “bridge bearer,” and “runner bearer.” Rename
-  the secret/config/body/storage vocabulary to `HAKU_SESSION_TOKEN`, `SESSION_TOKEN_VARIABLE`,
-  `session_token`, and `session_token_fingerprint`. The derived audit id
-  `_CHAT_SESSION_CREDENTIAL_PREFIX`/`haku-chat-session:` should become a session-named id, not a
-  second credential. Rename connection-specific `bridge_connected_at`, `authenticate_bridge`, and
-  `BridgeAuthentication` to runner-connection names rather than forcing “session token” into a
-  connection lifecycle name. `AgentBearerAuthority`, `_SessionAgentBearerSource`, and
+- **Session token family** (runner/backend, session allocation/claims, MCP, and egress decision
+  code) — **landed (C16a)** up to its deployed-transition riders: `SESSION_TOKEN_VARIABLE` /
+  `HAKU_SESSION_TOKEN` with a tombstoned `LEGACY_SESSION_TOKEN_VARIABLE` fallback, `session_token`
+  through allocation/claims/decide code, `authenticate_runner_connection` /
+  `RunnerConnectionAuthentication` for the connection lifecycle, and the `haku-session:` audit id.
+  Each rider carries a `CLEANUP` naming its removal condition: the claim's dual env mint and the
+  launch `bearer_environment_variable` still saying the legacy name (haku/console/session/), and
+  the decide body still serializing `proxy_client_credential` while validation accepts both
+  spellings (haku/egress/decision.py). The stored `bridge_token_fingerprint` /
+  `bridge_connected_at` → `session_token_fingerprint` / `runner_connected_at` columns ride the C4d
+  expand/contract recipe: expand (add + dual-write, reads stay old) first, contract releases
+  following convergence. `AgentBearerAuthority`, `_SessionAgentBearerSource`, and
   `ResolvedAgentBearer` are authority/source/result types, not more names for the secret; their
   identity-lane treatment stays separate.
 - **Runner protocol/frame family:** “runner bridge,” “bridge protocol,” “bridge websocket,” “bridge
@@ -300,14 +302,15 @@ canonical terms above.
 - **Dispatch/adaptation metaphors:** “journal bridge,” “bridge into durable vocabulary,” and generic
   “bridge” prose. Use “journal dispatch,” “adapter,” “fold,” or “conversion,” according to the actual
   operation.
-- **Old Agent SDK runner naming:** `HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL` is still deployed and read
-  by the runner, despite the runner driving the CLI wire directly. The old
-  `haku-agent-sdk-oauth-token` resource/patch names and `agent-sdk` paths in the egress-proxy
-  manifests are also current deployment-adjacent residue. Rename the URL to
-  `HAKU_RUNNER_WEBSOCKET_URL`, retire the obsolete resource naming after checking its rendered
-  Secret consumer, and do not introduce or revive `HAKU_AGENT_SDK_RUNNER_TOKEN`. Keep
-  `claude_agent_sdk` only where it is literally the build source for the bundled Claude executable;
-  mark SDK design/provenance documents and compatibility comments as historical rather than current
+- **Old Agent SDK runner naming** — **landed (C16a)** up to tombstoned residue: the runner reads
+  `HAKU_RUNNER_WEBSOCKET_URL` (legacy fallback tombstoned), and the SandboxTemplates carry both
+  spellings until the pinned runner image converges. The `haku-agent-sdk-oauth-token` inner Secret
+  name survives only inside its SOPS ciphertext — its rendered name is already
+  `haku-claude-oauth-token`, consumed solely by `claude-iron-deployment.yaml` — because the SOPS
+  document MAC covers metadata values; the `CLEANUP` on the file names the age-key re-encrypt that
+  retires it and the kustomization rename patch. `HAKU_AGENT_SDK_RUNNER_TOKEN` was never introduced
+  and must not be. Keep `claude_agent_sdk` only where it is literally the build source for the
+  bundled Claude executable; SDK design/provenance documents stay historical rather than current
   runtime guidance.
 - **Harness/backend family:** `RuntimeExecutionConfig`, `RuntimeImplementationConfig`,
   `RuntimeRegistrationConfig`, `ChatRuntimesConfig`, `RuntimeLaunch`, `RuntimeMcpServer`,
@@ -553,14 +556,11 @@ quiet gap.
   names occur in deployed environment variables, SandboxClaim fields, persisted fingerprints,
   published request bodies, OpenAPI/MCP descriptions, tests, and cross-repository frontend package
   names.
-  - **C16a · session token and runner URL:** rename `HAKU_RUNNER_TOKEN` to `HAKU_SESSION_TOKEN`,
-    `bridge_token`/`bridge_token_fingerprint` to `session_token`/`session_token_fingerprint`, and
-    `proxy_client_credential` to `session_token`; rename connection-specific APIs to runner-connection
-    names. Replace the deployed `HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL` with
-    `HAKU_RUNNER_WEBSOCKET_URL`; audit and retire the egress-proxy `haku-agent-sdk-*` resource names
-    once their rendered consumers are confirmed. Update the Console, runner, MCP launch configuration,
-    proxy decision client, SandboxTemplates, manifests, tests, and generated schemas together; do not
-    leave a second session-token alias in the monorepo or revive the obsolete SDK token name.
+  - **C16a · session token and runner URL:** landed (§3.7's session-token and Agent-SDK bullets
+    carry the per-rider state). Remaining: the tombstoned transition riders as their conditions
+    come due, and the stored-column contract steps after the expand converges — switch reads to
+    `session_token_fingerprint`/`runner_connected_at` (move the CHECKs/unique/partial-index),
+    stop writing the old columns, then drop them, one converged release apart.
   - **C16b · frame vocabulary:** rename `BridgeFrameKind` and bridge-specific current prose to
     `SessionFrameKind`/runner-protocol terminology, preserving `SessionFrame`, `HarnessFrame`, and
     the opaque native payload boundary. Keep `Bridge v3` and old migration names only in historical

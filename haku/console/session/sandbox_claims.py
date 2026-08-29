@@ -24,7 +24,7 @@ from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 from kubernetes_asyncio.config.config_exception import ConfigException
 from pydantic import BaseModel, ConfigDict
 
-from haku.runner.backend import BRIDGE_CREDENTIAL_VARIABLE
+from haku.runner.backend import LEGACY_SESSION_TOKEN_VARIABLE, SESSION_TOKEN_VARIABLE
 from util.kubernetes import CustomObjectsClient
 
 logger = logging.getLogger(__name__)
@@ -105,7 +105,7 @@ class SandboxClaimSpec:
 
 
 class SandboxClaims(Protocol):
-    async def create(self, *, session_id: UUID, bridge_token: str, expires_at: datetime) -> None: ...
+    async def create(self, *, session_id: UUID, session_token: str, expires_at: datetime) -> None: ...
 
     async def renew(self, *, session_id: UUID, expires_at: datetime) -> None: ...
 
@@ -148,7 +148,7 @@ class KubernetesSandboxClaims:
     def _claim_name(self, session_id: UUID) -> str:
         return f"{self._spec.claim_prefix}-{session_id.hex}"
 
-    async def create(self, *, session_id: UUID, bridge_token: str, expires_at: datetime) -> None:
+    async def create(self, *, session_id: UUID, session_token: str, expires_at: datetime) -> None:
         body = {
             "apiVersion": "extensions.agents.x-k8s.io/v1beta1",
             "kind": "SandboxClaim",
@@ -165,7 +165,12 @@ class KubernetesSandboxClaims:
                 "env": [
                     *({"name": name, "value": value} for name, value in self._spec.runner_environment.items()),
                     {"name": "HAKU_RUNNER_SESSION_ID", "value": str(session_id)},
-                    {"name": BRIDGE_CREDENTIAL_VARIABLE, "value": bridge_token},
+                    {"name": SESSION_TOKEN_VARIABLE, "value": session_token},
+                    # CLEANUP(added 2026-08-29): dual mint while runner images that read only the
+                    # legacy name may still serve claims; drop with the fallback in
+                    # haku/runner/backend.py once the deployed runner image reads
+                    # HAKU_SESSION_TOKEN — one release after both images converge.
+                    {"name": LEGACY_SESSION_TOKEN_VARIABLE, "value": session_token},
                 ],
             },
         }

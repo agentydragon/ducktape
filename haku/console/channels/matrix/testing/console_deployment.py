@@ -121,7 +121,7 @@ class Deployment:
             # The nested binaries need the test's RUNFILES_* to find their own, and the stub
             # inherits this environment in turn (`backend.child_environment`), which is how
             # it learns where to leave its handshake files.
-            "HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL": f"ws://127.0.0.1:{self._port}/internal/claude/runner",
+            "HAKU_RUNNER_WEBSOCKET_URL": f"ws://127.0.0.1:{self._port}/internal/claude/runner",
             "HAKU_CLAUDE_PATH": str(get_required_path(STUB_CLAUDE)),
             "HAKU_STUB_STATE": str(self.stub_state),
         }
@@ -335,7 +335,7 @@ class Deployment:
                 self._runners[session_id] = await self._spawn(
                     f"runner-{len(self._session_ids)}",
                     get_required_path(RUNNER_BIN),
-                    {"HAKU_RUNNER_SESSION_ID": str(session_id), "HAKU_RUNNER_TOKEN": claim["bridge_token"]},
+                    {"HAKU_RUNNER_SESSION_ID": str(session_id), "HAKU_SESSION_TOKEN": claim["session_token"]},
                     "--harness",
                     "claude",
                 )

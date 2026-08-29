@@ -18,13 +18,13 @@ mutation is approving/releasing one temporary grant.
 ## Identity: who the fence sees
 
 The sidecar presents one static shared-fence credential (`HAKU_EGRESS_FENCE_CREDENTIAL`). A
-Console-launched runtime sandbox additionally presents its exact-session bridge bearer, the same
-token used for the runner bridge and Console MCP; the decide service resolves that bearer through
+Console-launched runtime sandbox additionally presents its session token, the same
+secret used for the runner protocol and Console MCP; the decide service resolves that token through
 the live-session authority and uses the session's Agent/profile/binding for HTTP egress. Callers
-without the bridge bearer are denied; there is no static Agent identity fallback.
+without the session token are denied; there is no static Agent identity fallback.
 
 This OpenClaw spike uses the separate iron proxy for its production path. It does not carry a
-Console session bridge bearer, so pointing it at the colocated fence would be denied; it cannot
+Console session token, so pointing it at the colocated fence would be denied; it cannot
 exercise the colocated decision/grant path until it is given a live session identity. The
 shared-fence credential is the sidecar-to-Console credential; it is not the sandbox-to-proxy
 credential.
@@ -50,7 +50,7 @@ credential.
 - **`grants`** in-process MCP server (HTTP-egress domain), exposed to every access profile (operator ruling on
   #4986): any Agent may ask for egress. Deliberately in no auto-approval policy: `create_grant`
   must be manually approved (auto-approved calls cannot mint grants), so every call here queues
-  for the operator. A Console-launched haku session carrying its live bridge bearer is the
+  for the operator. A Console-launched haku session carrying its live session token is the
   intended caller for this colocated path.
 
 ## Pre-checks (read-only)

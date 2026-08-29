@@ -55,7 +55,7 @@ def stream(migrated_sessions) -> ConversationStream:
 async def a_thread(session_store: Store, operator_id: UUID, *said: str) -> Thread:
     """A ready session whose conversation holds one prompt item per prompt."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
-    await session_store.authenticate_bridge(view.session_id, token)
+    await session_store.authenticate_runner_connection(view.session_id, token)
     thread = Thread(conversation_id=await session_store.conversation_of(view.session_id), session_id=view.session_id)
     for prompt in said:
         await say(session_store, operator_id, thread, prompt)
@@ -171,7 +171,7 @@ async def test_a_replacement_session_continues_the_same_stream(session_store, op
     died reads on into its replacement's rows."""
     thread = await a_thread(session_store, operator_id, "before")
     replacement, token = await session_store.create(operator_id, conversation_id=thread.conversation_id)
-    await session_store.authenticate_bridge(replacement.session_id, token)
+    await session_store.authenticate_runner_connection(replacement.session_id, token)
     await session_store.enqueue_prompt(operator_id, replacement.session_id, "after", SPA_ORIGIN)
 
     assert prompts(await stream.read(thread.conversation_id, after=START)) == ["before", "after"]

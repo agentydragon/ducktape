@@ -31,6 +31,11 @@ spec:
           args: ["--harness", "codex-app-server"]
           workingDir: /workspace
           env:
+            - name: HAKU_RUNNER_WEBSOCKET_URL
+              value: ws://haku-console.haku-console.svc.cluster.local:9090/internal/claude/runner
+            # CLEANUP(added 2026-08-29): pre-rename spelling for runner images that predate
+            # HAKU_RUNNER_WEBSOCKET_URL; drop once the pinned haku-harness-runner image reads the
+            # new name — one release after this template and the image converge.
             - name: HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL
               value: ws://haku-console.haku-console.svc.cluster.local:9090/internal/claude/runner
             # The shared image retains Haku's legacy image-level setup only for rolling

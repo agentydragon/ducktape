@@ -97,7 +97,7 @@ provenance both are revalidated from. The five, at their definitions:
   `grants` server's `whoami` tool returns this `McpExecutionCaller` — the caller's resolved
   console/MCP principal — so an Agent (or Operator) can read exactly who Console authenticated it as.
   HTTP egress separately authenticates the shared fence through its `Authorization` credential and
-  derives Agent/session identity from the live bridge bearer.
+  derives Agent/session identity from the live session token.
 
 The runtime caller is `RuntimeActor` (`OperatorActor | AgentActor`). Only the authority constructs an
 `AgentActor(agent_id, operator_id, binding_id, access_profile_id)` from durable state. Operators

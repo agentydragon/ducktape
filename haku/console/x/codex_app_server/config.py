@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.http_url import UncredentialedHttpUrl
-from haku.runner.backend import BRIDGE_CREDENTIAL_VARIABLE
+from haku.runner.backend import LEGACY_SESSION_TOKEN_VARIABLE, SESSION_TOKEN_VARIABLE
 
 
 class ReasoningEffort(StrEnum):
@@ -78,6 +78,6 @@ class CodexAppServerImplementationConfig(BaseModel):
     @field_validator("api_key_env_var")
     @classmethod
     def _provider_key_must_not_alias_session_authority(cls, value: str) -> str:
-        if value == BRIDGE_CREDENTIAL_VARIABLE:
-            raise ValueError("provider key variable must not alias an exact-session credential")
+        if value in (SESSION_TOKEN_VARIABLE, LEGACY_SESSION_TOKEN_VARIABLE):
+            raise ValueError("provider key variable must not alias the session token")
         return value

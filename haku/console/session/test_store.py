@@ -63,9 +63,9 @@ from haku.console.session.status import OPEN_SESSION_STATUSES, LeaseExpiryReason
 from haku.console.session.store import (
     ADOPTION_GRACE,
     REPLICA,
-    BridgeAuthentication,
     PositionUnusableError,
     PromptRefusedError,
+    RunnerConnectionAuthentication,
     Store,
     TurnState,
 )
@@ -90,13 +90,15 @@ def _harness(frames: Sequence[FrameRecord]) -> list[HarnessFrameRecord]:
     return cast(list[HarnessFrameRecord], list(frames))
 
 
-async def test_bridge_authentication_distinguishes_accept_terminal_and_rejected(
+async def test_runner_connection_authentication_distinguishes_accept_terminal_and_rejected(
     session_store, operator_id, migrated_sessions
 ) -> None:
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     session_id = view.session_id
 
-    assert await session_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(session_id, token) == RunnerConnectionAuthentication.ACCEPTED
+    )
     async with migrated_sessions() as db:
         record = await db.get(Session, session_id)
         assert record is not None
@@ -107,17 +109,25 @@ async def test_bridge_authentication_distinguishes_accept_terminal_and_rejected(
         assert record.bridge_token_fingerprint == Store._fingerprint(token)
 
     await session_store.fail(session_id, "runner failed")
-    assert await session_store.authenticate_bridge(session_id, token) == BridgeAuthentication.TERMINAL
-    assert await session_store.authenticate_bridge(session_id, "wrong") == BridgeAuthentication.REJECTED
+    assert (
+        await session_store.authenticate_runner_connection(session_id, token) == RunnerConnectionAuthentication.TERMINAL
+    )
+    assert (
+        await session_store.authenticate_runner_connection(session_id, "wrong")
+        == RunnerConnectionAuthentication.REJECTED
+    )
 
 
-async def test_an_idle_session_has_no_bridge_credential_to_authenticate(
+async def test_an_idle_session_has_no_session_token_to_authenticate(
     session_store, operator_id, migrated_sessions
 ) -> None:
     view, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     await make_idle(migrated_sessions, view.session_id)
 
-    assert await session_store.authenticate_bridge(view.session_id, "anything") == BridgeAuthentication.REJECTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, "anything")
+        == RunnerConnectionAuthentication.REJECTED
+    )
 
 
 async def test_the_first_idle_prompt_mints_exactly_one_allocation(
@@ -137,7 +147,7 @@ async def test_the_first_idle_prompt_mints_exactly_one_allocation(
     async with migrated_sessions() as db:
         record = await db.get(Session, view.session_id)
         assert record is not None
-        assert record.bridge_token_fingerprint == Store._fingerprint(allocation.bridge_token)
+        assert record.bridge_token_fingerprint == Store._fingerprint(allocation.session_token)
     assert (
         len(await authored_events_of_kind(migrated_sessions, view.session_id, AuthoredEventKind.SESSION_PROVISIONING))
         == 2
@@ -401,8 +411,14 @@ async def test_a_cleaned_up_session_admits_nobody_and_says_which_of_the_two_reas
     await session_store.request_close(operator_id, view.session_id)
     await session_store.complete_claim_cleanup(view.session_id)
 
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.TERMINAL
-    assert await session_store.authenticate_bridge(view.session_id, "wrong") == BridgeAuthentication.REJECTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.TERMINAL
+    )
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, "wrong")
+        == RunnerConnectionAuthentication.REJECTED
+    )
 
 
 async def test_how_far_a_turn_has_got_is_derived_from_the_items_it_opened(
@@ -417,7 +433,9 @@ async def test_how_far_a_turn_has_got_is_derived_from_the_items_it_opened(
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     session_id = view.session_id
     await attach_channel(migrated_sessions, session_id, ROOM)
-    assert await session_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(session_id, token) == RunnerConnectionAuthentication.ACCEPTED
+    )
     await session_store.enqueue_prompt(operator_id, session_id, "why did it fail?", SPA_ORIGIN)
     started = await session_store.next_prompt(session_id)
     assert started is not None
@@ -868,7 +886,10 @@ async def test_a_prompt_records_the_channel_events_it_was_folded_from(
     already have a copy?".
     """
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     await session_store.enqueue_prompt(
         operator_id, view.session_id, "first\nsecond", MatrixOrigin(address=ROOM, refs=("$a", "$b"))
     )
@@ -890,7 +911,10 @@ async def test_exchanges_page_by_their_own_keyset(session_store, operator_id) ->
     """`(started_at, turn_id)`, because two exchanges of one session can share a start instant and
     a cursor naming only the timestamp would step over one of a tied pair."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     for index in range(3):
         await session_store.enqueue_prompt(operator_id, view.session_id, f"prompt {index}", SPA_ORIGIN)
         turn = await session_store.next_prompt(view.session_id)
@@ -912,7 +936,10 @@ async def test_a_turn_ends_at_the_frame_it_names_rather_than_at_the_head_of_the_
     it while the turn is still being closed, so a bound taken from the log swallows a frame the turn
     did not produce."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     await session_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?", SPA_ORIGIN)
     turn = await session_store.next_prompt(view.session_id)
     assert turn is not None
@@ -934,7 +961,10 @@ async def test_a_turn_that_ended_on_no_frame_is_bounded_by_the_ones_it_recorded(
     came before the turn opened belongs to no turn of its own, and reporting it would hand a reader
     a range that ends before it starts."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     await session_store.record_frame(
         view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "system"}
     )
@@ -976,7 +1006,10 @@ async def test_the_items_read_as_the_conversation_rather_than_the_protocol(sessi
     """What a conversation meant, with a way back to the frames it was read off."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     conversation_id = await session_store.conversation_of(view.session_id)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     await session_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?", SPA_ORIGIN)
     started = await session_store.next_prompt(view.session_id)
     assert started is not None
@@ -1026,7 +1059,10 @@ async def test_the_items_read_hands_back_the_rows_the_writer_materialised(
     because a change to the projection would move one of them and not the other."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     conversation_id = await session_store.conversation_of(view.session_id)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     await _exchange(session_store, operator_id, view.session_id, "first?", "one")
     await _exchange(session_store, operator_id, view.session_id, "second?", "two")
 
@@ -1041,7 +1077,10 @@ async def test_an_item_page_resumes_at_its_cursor_without_refolding_the_thread(s
     is served from its position alone — page N of a long conversation costs what page one does."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     conversation_id = await session_store.conversation_of(view.session_id)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     for index in range(3):
         await _exchange(session_store, operator_id, view.session_id, f"ask {index}", f"answer {index}")
 
@@ -1060,7 +1099,10 @@ async def test_a_frame_the_fold_never_committed_is_not_an_item(session_store, op
     never whatever the frame table happens to hold. `read_session_frames` still serves the frame by name."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     conversation_id = await session_store.conversation_of(view.session_id)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     await session_store.record_frame(
         view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, text_delta("h")
     )
@@ -1079,7 +1121,10 @@ async def test_a_call_and_its_answer_are_one_item(session_store, operator_id) ->
     arrives, and `status` is what says whether it has."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     conversation_id = await session_store.conversation_of(view.session_id)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     await session_store.enqueue_prompt(operator_id, view.session_id, "look it up", SPA_ORIGIN)
     started = await session_store.next_prompt(view.session_id)
     assert started is not None
@@ -1139,13 +1184,16 @@ async def test_the_items_read_spans_replaced_sessions(session_store, migrated_se
     where a sandbox died; which session produced an item is on its provenance."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     conversation_id = await session_store.conversation_of(view.session_id)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     await _exchange(session_store, operator_id, view.session_id, "first?", "one")
     await session_store.fail(view.session_id, "sandbox died")
     replacement, replacement_token = await session_store.create(operator_id, conversation_id=conversation_id)
     assert replacement.session_id != view.session_id
-    assert await session_store.authenticate_bridge(replacement.session_id, replacement_token) == (
-        BridgeAuthentication.ACCEPTED
+    assert await session_store.authenticate_runner_connection(replacement.session_id, replacement_token) == (
+        RunnerConnectionAuthentication.ACCEPTED
     )
     await _exchange(session_store, operator_id, replacement.session_id, "second?", "two")
 
@@ -1186,7 +1234,10 @@ async def test_operator_conversation_read_surface_keeps_inventory_and_transcript
     await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     matrix, matrix_token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     await attach_channel(migrated_sessions, matrix.session_id, ROOM)
-    assert await session_store.authenticate_bridge(matrix.session_id, matrix_token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(matrix.session_id, matrix_token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     await session_store.enqueue_prompt(
         operator_id, matrix.session_id, "What is happening?", MatrixOrigin(address=ROOM, refs=("$asked",))
     )
@@ -1218,7 +1269,10 @@ async def test_a_conversation_a_channel_holds_takes_a_prompt_typed_in_the_browse
     """
     matrix, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     await attach_channel(migrated_sessions, matrix.session_id, ROOM)
-    assert await session_store.authenticate_bridge(matrix.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(matrix.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
 
     await session_store.enqueue_prompt(operator_id, matrix.session_id, "typed into the tab", SPA_ORIGIN)
     detail = await session_store.get_operator_conversation(
@@ -1309,7 +1363,10 @@ async def test_a_second_prompt_is_refused_while_a_turn_is_open(session_store, op
     """Admission asks the turn rather than the session's status, so a mid-turn prompt cannot become
     fold-into-turn with no fold path wired."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     await session_store.enqueue_prompt(operator_id, view.session_id, "first", SPA_ORIGIN)
     turn = await session_store.next_prompt(view.session_id)
     assert turn is not None
@@ -1330,7 +1387,10 @@ async def test_a_prompt_is_taken_off_the_queue_rather_than_found_by_status(
 
     Keyed by the conversation, so a prompt may outlive the session that took it."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     await session_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?", SPA_ORIGIN)
 
     conversation_id = await session_store.conversation_of(view.session_id)
@@ -1352,7 +1412,10 @@ async def test_one_prompt_in_flight_is_a_schema_property(session_store, migrated
     """The index and not a scan-plus-rule: two replicas racing on one session would otherwise each
     conclude they may accept."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     await session_store.enqueue_prompt(operator_id, view.session_id, "first", SPA_ORIGIN)
 
     conversation_id = await session_store.conversation_of(view.session_id)
@@ -1385,7 +1448,10 @@ async def test_a_prompt_item_with_no_queue_row_is_not_a_prompt(session_store, mi
     """The queue is the only admission record. A prompt item on its own is transcript — one already
     answered, or the residue of a session that was stuck — not a prompt waiting to run."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     conversation_id = await session_store.conversation_of(view.session_id)
     async with migrated_sessions.begin() as db:
         db.add(
@@ -1416,7 +1482,10 @@ async def test_the_view_says_responding_for_as_long_as_the_turn_is_open(session_
     """`status` is the SPA's contract, and the view derives it from the open turn rather than from
     the column."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     await session_store.enqueue_prompt(operator_id, view.session_id, "work", SPA_ORIGIN)
     assert (await session_store.get(operator_id, view.session_id)).status == SessionStatus.READY, (
         "a queued prompt is not a turn in flight"
@@ -1439,7 +1508,10 @@ async def test_a_session_that_ended_does_not_report_a_turn_it_left_open(
     """A replica losing its pod mid-turn closes nothing, so the open row is exactly the record of
     an abandoned exchange — and must not make a failed session read as still working."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     await session_store.enqueue_prompt(operator_id, view.session_id, "work", SPA_ORIGIN)
     assert await session_store.next_prompt(view.session_id) is not None
     await age_lease(migrated_sessions, view.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
@@ -1461,7 +1533,10 @@ async def test_abort_is_refused_until_a_turn_is_actually_running(session_store, 
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     # The bridge handshake is what takes a session from provisioning to ready, and only a
     # ready session accepts a prompt.
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
 
     assert await session_store.request_abort(view.session_id) is False
 
@@ -1485,7 +1560,10 @@ async def test_abort_reaches_the_replica_running_the_turn(
     store would pass on an in-process path.
     """
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     await session_store.enqueue_prompt(operator_id, view.session_id, "work", SPA_ORIGIN)
     assert await session_store.next_prompt(view.session_id) is not None, "the turn the abort names"
 
@@ -1602,10 +1680,16 @@ async def test_a_replica_taking_a_session_over_records_who_it_took_it_from(
     every roll."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     with patch("haku.console.session.store.REPLICA", "haku-console-b"):
-        assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+        assert (
+            await session_store.authenticate_runner_connection(view.session_id, token)
+            == RunnerConnectionAuthentication.ACCEPTED
+        )
     await age_lease(migrated_sessions, view.session_id, seconds_ago=1)
 
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
 
     taken = one(await authored_events_of_kind(migrated_sessions, view.session_id, AuthoredEventKind.SESSION_ADOPTED))
     assert taken.kind == AuthoredEventKind.SESSION_ADOPTED
@@ -1623,8 +1707,14 @@ async def test_the_first_runner_to_attach_is_not_a_takeover_and_neither_is_its_r
     stream open with an ownership event that says nothing happened."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
 
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
 
     assert [event.kind for event in await authored_events(migrated_sessions, view.session_id)] == [
         AuthoredEventKind.SESSION_PROVISIONING
@@ -1674,7 +1764,10 @@ async def accepted_prompt(session_store: Store, operator_id: UUID) -> tuple[UUID
     """
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     assert token is not None
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     prompt = await session_store.enqueue_prompt(
         operator_id, view.session_id, "what were we doing", MatrixOrigin(address=ROOM, refs=("$asked",))
     )
@@ -1688,7 +1781,10 @@ async def test_an_accepted_prompt_is_an_item_like_any_other(session_store, migra
     Addressed by `event_seq` like the agent's answer is, because without it a reader following the
     stream sees answers to questions that are not in it."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
 
     item_id = await session_store.enqueue_prompt(operator_id, view.session_id, "list the files", SPA_ORIGIN)
 
@@ -1752,7 +1848,10 @@ async def test_a_turn_that_ended_any_other_way_leaves_no_abort_row(
 async def test_a_refused_prompt_is_not_in_the_stream(session_store, migrated_sessions, operator_id) -> None:
     """The row and the event commit together, so what is not accepted is not recorded."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     await session_store.enqueue_prompt(operator_id, view.session_id, "first", SPA_ORIGIN)
 
     with pytest.raises(PromptRefusedError) as refusal:
@@ -1807,7 +1906,10 @@ async def test_shutdown_hands_back_every_lease_this_replica_holds(
     each is adoptable at once instead of waiting out the sweep's grace. Not failed — handed back."""
     held = [await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE) for _ in range(2)]
     for view, token in held:
-        assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+        assert (
+            await session_store.authenticate_runner_connection(view.session_id, token)
+            == RunnerConnectionAuthentication.ACCEPTED
+        )
 
     assert await session_store.release_held_leases() == 2
 
@@ -1824,7 +1926,10 @@ async def test_shutdown_leaves_another_replicas_lease_alone(session_store, migra
     """One replica going down must not hand back a session another replica is still serving."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     with patch("haku.console.session.store.REPLICA", "haku-console-b"):
-        assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+        assert (
+            await session_store.authenticate_runner_connection(view.session_id, token)
+            == RunnerConnectionAuthentication.ACCEPTED
+        )
 
     assert await session_store.release_held_leases() == 0
     holder, _ = await lease_of(migrated_sessions, view.session_id)
@@ -1834,7 +1939,10 @@ async def test_shutdown_leaves_another_replicas_lease_alone(session_store, migra
 async def test_shutdown_does_not_touch_an_ended_session(session_store, migrated_sessions, operator_id) -> None:
     """A session that already ended is not this replica's to hand back, even if it once held it."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     await session_store.fail(view.session_id, "something went wrong")
 
     assert await session_store.release_held_leases() == 0
@@ -1902,7 +2010,9 @@ async def test_a_frames_events_land_as_rows_with_the_cursor_that_says_they_did(
     """The projection's own output, stored in the transaction that moves the cursor."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     session_id = view.session_id
-    assert await session_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(session_id, token) == RunnerConnectionAuthentication.ACCEPTED
+    )
     await session_store.enqueue_prompt(operator_id, session_id, "list the files", SPA_ORIGIN)
     started = await session_store.next_prompt(session_id)
     assert started is not None
@@ -1978,7 +2088,10 @@ async def test_an_event_row_cannot_be_written_without_a_provenance_union(
     item is named at all, and `conversation_item.item_type` is where the arm actually follows from.
     """
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     await session_store.enqueue_prompt(operator_id, view.session_id, "list the files", SPA_ORIGIN)
     started = await session_store.next_prompt(view.session_id)
     assert started is not None
@@ -2074,7 +2187,9 @@ async def test_an_update_carries_the_rows_the_events_after_a_position_name(sessi
     """
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     session_id = view.session_id
-    assert await session_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(session_id, token) == RunnerConnectionAuthentication.ACCEPTED
+    )
     conversation_id = await session_store.conversation_of(session_id)
     await _exchange(session_store, operator_id, session_id, "first", "one")
     held = await session_store.conversation_position(conversation_id)
@@ -2098,13 +2213,19 @@ async def test_an_update_carries_what_a_replaced_session_wrote_after_the_positio
     the old session wrote after it are still owed to the reader, and the new session's follow them.
     """
     first, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
-    assert await session_store.authenticate_bridge(first.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(first.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     conversation_id = await session_store.conversation_of(first.session_id)
     held = await session_store.conversation_position(conversation_id)
     await _exchange(session_store, operator_id, first.session_id, "before the sandbox died", "answered")
 
     second, token = await session_store.create(operator_id, conversation_id=conversation_id)
-    assert await session_store.authenticate_bridge(second.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(second.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     await _exchange(session_store, operator_id, second.session_id, "after it was replaced", "answered again")
     changes = await session_store.read_operator_conversation_changes(operator_id, conversation_id, after=held, limit=50)
 
@@ -2122,7 +2243,10 @@ async def test_a_claimed_prompt_reaches_a_reader_as_the_responding_status(sessio
     tells a tab the thread started working is the session's derived status, and the exchange
     itself is `list_turns`' business."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     conversation_id = await session_store.conversation_of(view.session_id)
     await session_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?", SPA_ORIGIN)
     enqueued = await session_store.read_operator_conversation_changes(operator_id, conversation_id, after=0, limit=50)
@@ -2147,7 +2271,10 @@ async def test_a_position_the_log_cannot_answer_from_is_refused_rather_than_read
     positions a read hands out are 0 and this conversation's own rows, so membership is the check.
     """
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     conversation_id = await session_store.conversation_of(view.session_id)
     await session_store.enqueue_prompt(operator_id, view.session_id, "why did it fail?", SPA_ORIGIN)
     held = await session_store.conversation_position(conversation_id)
@@ -2160,7 +2287,10 @@ async def test_an_update_over_its_limit_is_refused_rather_than_shortened(session
     """Silently short is a message the reader never learns about. `ConversationFollow` turns the
     refusal into a snapshot, which is the honest answer when most of one would be sent anyway."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     conversation_id = await session_store.conversation_of(view.session_id)
     await _exchange(session_store, operator_id, view.session_id, "first", "one")
     await _exchange(session_store, operator_id, view.session_id, "second", "two")
@@ -2190,7 +2320,10 @@ async def test_open_wake_turn_brackets_a_harness_initiated_exchange(
     anchored on the exchange's first recorded frame, and a prompt item in the harness's voice
     saying what woke it."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
 
     wake = await session_store.open_wake_turn(
         view.session_id, 'Background command "fetch" completed', first_frame_seq=7

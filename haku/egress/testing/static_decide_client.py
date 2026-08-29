@@ -21,8 +21,8 @@ class StaticDecideClient(DecideClient):
         *,
         resolved_ips: frozenset[IPv4Address | IPv6Address],
         upstream_ip: IPv4Address | IPv6Address,
-        proxy_client_credential: str,
+        session_token: str,
     ) -> HttpAuthorizationDecision:
-        del resolved_ips, upstream_ip, proxy_client_credential
+        del resolved_ips, upstream_ip, session_token
         self.requests.append(request)
         return self._decision

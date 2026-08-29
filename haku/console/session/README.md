@@ -51,12 +51,14 @@ about half the time. `Store.request_abort` (`store.py`) is the shape to copy.
   for any session it can read, a room's included; the reply goes wherever that session's
   channel sends replies, so a prompt typed in the browser also lands in the room.
 
-### SandboxClaim bearer boundary
+### SandboxClaim session-token boundary
 
-The allocator puts the session's random `HAKU_RUNNER_TOKEN` directly in the runtime
-`SandboxClaim.spec.env`. This is currently the upstream Agent Sandbox API's only way to pass the
+The allocator puts the session's random session token directly in the runtime
+`SandboxClaim.spec.env` (as `HAKU_SESSION_TOKEN`, plus the pre-rename `HAKU_RUNNER_TOKEN` until
+every deployed runner image reads the new name). This is currently the upstream Agent Sandbox
+API's only way to pass the
 claim-local environment: its `EnvVar` does not yet offer Secret-backed `valueFrom` injection. The
-same bearer authenticates the runner bridge, Console MCP, and the HTTP egress proxy, so this claim
+same token authenticates the runner protocol, Console MCP, and the HTTP egress proxy, so this claim
 field is an authority-bearing handoff, not ordinary launch configuration.
 
 This is load-bearing security policy. Runtime `SandboxClaims` must not become a generally readable

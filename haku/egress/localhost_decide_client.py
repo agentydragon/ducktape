@@ -1,8 +1,8 @@
 """Client of the colocated Console decision endpoint (github.com/agentydragon/ducktape/issues/4670).
 
 Speaks ``POST /api/internal/http/decide`` (haku/console/grants/http/decide_routes.py):
-the shared-fence credential travels in ``Authorization``, and the sandbox-to-proxy
-bridge bearer travels inside the ``DecideRequest`` body; the gate's resolution and pin arrive as
+the shared-fence credential travels in ``Authorization``, and the caller's session
+token travels inside the ``DecideRequest`` body; the gate's resolution and pin arrive as
 arguments and travel verbatim. Any failure — connection error,
 timeout, non-2xx (401 rejected bearer, 503 unconfigured or authority failure),
 unparseable body — raises instead of inventing a verdict; the gate addon turns
@@ -46,13 +46,10 @@ class LocalhostDecideClient(DecideClient):
         *,
         resolved_ips: frozenset[IPv4Address | IPv6Address],
         upstream_ip: IPv4Address | IPv6Address,
-        proxy_client_credential: str,
+        session_token: str,
     ) -> HttpAuthorizationDecision:
         decide_request = DecideRequest(
-            proxy_client_credential=SecretStr(proxy_client_credential),
-            request=request,
-            resolved_ips=resolved_ips,
-            upstream_ip=upstream_ip,
+            session_token=SecretStr(session_token), request=request, resolved_ips=resolved_ips, upstream_ip=upstream_ip
         )
         response = await self._client.post(
             DECIDE_PATH, content=decide_request.model_dump_json(), headers={"Content-Type": "application/json"}

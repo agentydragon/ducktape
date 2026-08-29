@@ -62,20 +62,20 @@ def _auth_refusal(message: str) -> http.Response:
     git's libcurl (proxy anyauth) sends its first CONNECT bare and picks a scheme from
     ``Proxy-Authenticate``; without the challenge it aborts instead of retrying with the
     credentials it already holds from the proxy URL userinfo (#5154). Basic is the scheme
-    those clients send; ``_proxy_client_bearer`` also accepts an explicit Bearer.
+    those clients send; ``_proxy_session_token`` also accepts an explicit Bearer.
     """
     response = _refusal(407, message)
     response.headers["proxy-authenticate"] = 'Basic realm="haku-egress"'
     return response
 
 
-def _proxy_client_bearer(value: str) -> str | None:
-    """Extract the bridge bearer from Bearer or URL-userinfo Basic proxy auth.
+def _proxy_session_token(value: str) -> str | None:
+    """Extract the session token from Bearer or URL-userinfo Basic proxy auth.
 
     Runner-launched clients get credentials through ``http://:<token>@proxy`` because that is
     understood by ordinary HTTP clients. A caller may also send an explicit Bearer header. Basic
-    userinfo is deliberately accepted only with an empty username: the proxy credential is one
-    bearer, not a username/password pair.
+    userinfo is deliberately accepted only with an empty username: the session token is one
+    secret, not a username/password pair.
     """
     scheme, header_separator, payload = value.partition(" ")
     if not header_separator or not payload.strip():
@@ -98,7 +98,7 @@ def _proxy_client_bearer(value: str) -> str | None:
         return None
 
 
-def _take_proxy_client_bearer(flow: http.HTTPFlow, credentials: dict[str, str]) -> tuple[str | None, bool]:
+def _take_session_token(flow: http.HTTPFlow, tokens: dict[str, str]) -> tuple[str | None, bool]:
     """Consume proxy auth and retain it across CONNECT's later intercepted inner requests."""
     header = flow.request.headers.get("proxy-authorization")
     client_id = flow.client_conn.id if flow.client_conn is not None else None
@@ -106,15 +106,15 @@ def _take_proxy_client_bearer(flow: http.HTTPFlow, credentials: dict[str, str]) 
         # Proxy-Authorization is for this listener, never for the upstream server. Remove it even
         # when malformed so a failed attempt cannot accidentally cross the fence.
         del flow.request.headers["proxy-authorization"]
-        credential = _proxy_client_bearer(header)
+        token = _proxy_session_token(header)
         if client_id is not None:
-            if credential is None:
-                credentials.pop(client_id, None)
+            if token is None:
+                tokens.pop(client_id, None)
             else:
-                credentials[client_id] = credential
-        return credential, True
-    if client_id is not None and (credential := credentials.get(client_id)) is not None:
-        return credential, True
+                tokens[client_id] = token
+        return token, True
+    if client_id is not None and (token := tokens.get(client_id)) is not None:
+        return token, True
     return None, False
 
 
@@ -165,28 +165,28 @@ class EgressGateAddon:
         # Grows by distinct destinations seen; never shrinks.
         self._pinned_upstreams: dict[tuple[str, int], IPv4Address | IPv6Address] = {}
         # CONNECT's inner intercepted request is a separate Flow from the CONNECT flow, but both
-        # belong to the same client connection. Keep the bridge bearer there until disconnect so
+        # belong to the same client connection. Keep the session token there until disconnect so
         # the inner request cannot be mistaken for an unauthenticated new client.
-        self._proxy_client_credentials: dict[str, str] = {}
+        self._session_tokens: dict[str, str] = {}
 
     def client_disconnected(self, client: connection.Client) -> None:
-        self._proxy_client_credentials.pop(client.id, None)
+        self._session_tokens.pop(client.id, None)
 
     async def http_connect(self, flow: http.HTTPFlow) -> None:
         # A non-2xx response on a CONNECT flow makes mitmproxy refuse the tunnel.
-        client_credential, supplied = _take_proxy_client_bearer(flow, self._proxy_client_credentials)
+        session_token, supplied = _take_session_token(flow, self._session_tokens)
         meta = RequestMeta(
             method=flow.request.method, scheme=None, host=flow.request.host, port=flow.request.port, path=None
         )
-        await self._gate(flow, meta, client_credential=client_credential, credential_supplied=supplied)
+        await self._gate(flow, meta, session_token=session_token, token_supplied=supplied)
 
     async def request(self, flow: http.HTTPFlow) -> None:
         request = flow.request
-        client_credential, supplied = _take_proxy_client_bearer(flow, self._proxy_client_credentials)
+        session_token, supplied = _take_session_token(flow, self._session_tokens)
         meta = RequestMeta(
             method=request.method, scheme=request.scheme, host=request.host, port=request.port, path=request.path
         )
-        await self._gate(flow, meta, client_credential=client_credential, credential_supplied=supplied)
+        await self._gate(flow, meta, session_token=session_token, token_supplied=supplied)
 
     def responseheaders(self, flow: http.HTTPFlow) -> None:
         """Stream the upstream response body to the client instead of buffering it whole.
@@ -237,11 +237,11 @@ class EgressGateAddon:
         data.server.address = (str(pinned), port)
 
     async def _gate(
-        self, flow: http.HTTPFlow, meta: RequestMeta, *, client_credential: str | None, credential_supplied: bool
+        self, flow: http.HTTPFlow, meta: RequestMeta, *, session_token: str | None, token_supplied: bool
     ) -> None:
         flow.response = _refusal(502, _FAIL_CLOSED_MESSAGE)
-        if client_credential is None:
-            reason = "invalid proxy client bearer" if credential_supplied else "proxy client bearer required"
+        if session_token is None:
+            reason = "invalid session token" if token_supplied else "session token required"
             flow.response = _auth_refusal(reason)
             return
         try:
@@ -252,7 +252,7 @@ class EgressGateAddon:
                 resolved = await self._resolve(meta.host, meta.port)
                 upstream_ip = min(resolved, key=lambda address: (address.version, int(address)))
                 decision = await self._decide.decide(
-                    meta, resolved_ips=resolved, upstream_ip=upstream_ip, proxy_client_credential=client_credential
+                    meta, resolved_ips=resolved, upstream_ip=upstream_ip, session_token=session_token
                 )
             match decision:
                 case HttpAuthorizationDenied():

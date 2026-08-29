@@ -269,11 +269,13 @@ The fenced-workload-facing listener is `:8888` (`egress-proxy-service.yaml`,
 - **`haku-egress-proxy-identity`** (`haku-egress-proxy-identity-eso.yaml`, one ESO Password generator
   into one Secret) — `fence-credential`, an opaque bearer **shared** by server and sidecar. The
   sidecar presents it in the `Authorization` header; the server authenticates only the shared fence,
-  while the live bridge bearer identifies the sandbox Agent. It is compared in-memory and registered
+  while the live session token identifies the sandbox Agent. It is compared in-memory and registered
   nowhere DB-side, so ESO regenerating it is safe — the Secret's Reloader annotation restarts the pod
   so both containers reload together. It is generated once (`refreshInterval: 8760h`).
-- **Per-session bridge bearer** — the Console writes `HAKU_RUNNER_TOKEN` into each runtime
-  `SandboxClaim.spec.env`. The runner uses that one bearer for its bridge, Console MCP, and any HTTP
+- **Session token** — the Console writes `HAKU_SESSION_TOKEN` into each runtime
+  `SandboxClaim.spec.env` (with the pre-rename `HAKU_RUNNER_TOKEN` riding along until every deployed
+  runner image reads the new name). The runner uses that one token for the runner protocol, Console
+  MCP, and any HTTP
   proxy selected in its launch environment, so HTTP egress and MCP resolve to the same live session
   Agent/profile/binding. This literal claim field is temporary: upstream Agent Sandbox does not yet
   support Secret-backed env injection. It is load-bearing that runtime `SandboxClaims` are not broadly
@@ -325,8 +327,8 @@ port-8080 iron fence to `haku-egress-proxy.haku-console.svc:8888` — is the ado
 first spike (#4943). The spike targets the public-coder-agent OpenClaw pod, which carries the
 fence wiring itself (`../../agents/public-coder-agent/app/deployment.yaml`); the operator
 procedure is <../../../../haku/egress/docs/github_spike.md>. Iron-fence retirement (which carries the shared CA out of
-`cluster/k8s/agents/haku-egress-proxy/`), adoption of a live bridge bearer for every colocated
-caller, Secret-backed binding for the per-session bearer (tracked in
+`cluster/k8s/agents/haku-egress-proxy/`), adoption of a live session token for every colocated
+caller, Secret-backed binding for the session token (tracked in
 `haku/sandbox/TODO.md`),
 and the embedded runner's `stream_large_bodies` + h2/gRPC handling for broad adoption (dind layer pulls
 OOM-killed the iron fence without the former; the sidecar is sized `1Gi` for the small-body spike until

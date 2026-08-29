@@ -89,10 +89,10 @@ class FileSandboxClaims:
     def _path(self, session_id: UUID) -> Path:
         return self._directory / f"{session_id}.json"
 
-    async def create(self, *, session_id: UUID, bridge_token: str, expires_at: datetime) -> None:
+    async def create(self, *, session_id: UUID, session_token: str, expires_at: datetime) -> None:
         del expires_at
         staged = self._directory / f".{session_id}.staged"
-        staged.write_text(json.dumps({"session_id": str(session_id), "bridge_token": bridge_token}))
+        staged.write_text(json.dumps({"session_id": str(session_id), "session_token": session_token}))
         staged.replace(self._path(session_id))
         logger.info("claim created for session %s", session_id)
 

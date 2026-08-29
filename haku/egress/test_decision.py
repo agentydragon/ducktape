@@ -19,12 +19,12 @@ from haku.egress.decision import (
 )
 from haku.grants.authorization import GrantSourceKind
 
-_BRIDGE = "bridge-session-bearer"
+_SESSION_TOKEN = "test-session-token"
 
 
 def _request(**overrides: object) -> DecideRequest:
     fields: dict[str, object] = {
-        "proxy_client_credential": SecretStr(_BRIDGE),
+        "session_token": SecretStr(_SESSION_TOKEN),
         "request": RequestMeta(method="GET", scheme="https", host="api.example", port=443, path="/api/items?x=1"),
         "resolved_ips": frozenset({IPv4Address("192.0.2.10"), IPv6Address("2001:db8::10")}),
         "upstream_ip": IPv4Address("192.0.2.10"),
@@ -33,16 +33,28 @@ def _request(**overrides: object) -> DecideRequest:
     return DecideRequest.model_validate(fields)
 
 
-def test_bridge_credential_travels_on_the_wire_but_masks_everywhere_else() -> None:
+def test_session_token_travels_on_the_wire_but_masks_everywhere_else() -> None:
     request = _request()
 
     wire = request.model_dump_json()
 
-    assert json.loads(wire)["proxy_client_credential"] == _BRIDGE
-    assert _BRIDGE not in repr(request)
-    assert _BRIDGE not in str(request)
+    # The wire still says proxy_client_credential: serialization keeps the pre-rename spelling
+    # until the CLEANUP in decision.py flips it, so an old-console pod parses a new proxy's body.
+    assert json.loads(wire)["proxy_client_credential"] == _SESSION_TOKEN
+    assert _SESSION_TOKEN not in repr(request)
+    assert _SESSION_TOKEN not in str(request)
     # The parsed form on the Console side masks identically.
-    assert _BRIDGE not in repr(DecideRequest.model_validate_json(wire))
+    assert _SESSION_TOKEN not in repr(DecideRequest.model_validate_json(wire))
+
+
+def test_both_wire_spellings_validate() -> None:
+    """Old proxies say proxy_client_credential; the alias window accepts either spelling."""
+    payload = json.loads(_request().model_dump_json())
+    legacy = DecideRequest.model_validate(payload)
+    assert legacy.session_token.get_secret_value() == _SESSION_TOKEN
+    payload["session_token"] = payload.pop("proxy_client_credential")
+    renamed = DecideRequest.model_validate(payload)
+    assert renamed.session_token.get_secret_value() == _SESSION_TOKEN
 
 
 def test_wire_round_trip_preserves_the_request() -> None:
@@ -53,16 +65,17 @@ def test_wire_round_trip_preserves_the_request() -> None:
     assert parsed.request == request.request
     assert parsed.resolved_ips == request.resolved_ips
     assert parsed.upstream_ip == request.upstream_ip
-    assert parsed.proxy_client_credential is not None
-    assert parsed.proxy_client_credential.get_secret_value() == _BRIDGE
+    assert parsed.session_token is not None
+    assert parsed.session_token.get_secret_value() == _SESSION_TOKEN
 
 
-def test_proxy_client_credential_is_required() -> None:
+def test_session_token_is_required() -> None:
     payload = json.loads(_request().model_dump_json())
     payload.pop("proxy_client_credential")
-    with pytest.raises(ValidationError, match="proxy_client_credential"):
+    with pytest.raises(ValidationError, match="session_token"):
         DecideRequest.model_validate(payload)
 
+    # A null under either spelling is refused too; the error names the key that carried it.
     payload["proxy_client_credential"] = None
     with pytest.raises(ValidationError, match="proxy_client_credential"):
         DecideRequest.model_validate(payload)

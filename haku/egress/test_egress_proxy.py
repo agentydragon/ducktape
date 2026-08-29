@@ -42,10 +42,10 @@ from haku.egress.addon import EgressGateAddon
 from haku.egress.decision import GrantScope, HttpAuthorizationDenied, RequestMeta
 from haku.egress.localhost_decide_client import DEFAULT_TIMEOUT_SECONDS
 from haku.egress.testing.proxy_test_harness import (
-    BRIDGE_BEARER,
     FENCE_CREDENTIAL,
     PLACEHOLDER,
     REAL_CREDENTIAL,
+    SESSION_TOKEN,
     GarbageBody,
     Hang,
     HangingDecideClient,
@@ -196,12 +196,12 @@ async def test_localhost_decide_allow_flows_end_to_end(upstream: RecordingUpstre
     assert one(upstream.requests).headers["authorization"] == f"Bearer {REAL_CREDENTIAL}"
     sent = one(stub.requests)
     assert sent.request == RequestMeta(method="GET", scheme="http", host="127.0.0.1", port=upstream.port, path="/hello")
-    assert sent.proxy_client_credential.get_secret_value() == BRIDGE_BEARER
+    assert sent.session_token.get_secret_value() == SESSION_TOKEN
     assert "proxy-authorization" not in one(upstream.requests).headers
     assert (sent.resolved_ips, sent.upstream_ip) == (frozenset({IPv4Address("127.0.0.1")}), IPv4Address("127.0.0.1"))
 
 
-async def test_invalid_proxy_client_bearer_is_refused_without_upstream_contact(
+async def test_invalid_session_token_is_refused_without_upstream_contact(
     upstream: RecordingUpstream, tmp_path: Path
 ) -> None:
     async with (
@@ -222,7 +222,7 @@ async def test_invalid_proxy_client_bearer_is_refused_without_upstream_contact(
     assert (upstream.connections, upstream.requests) == (0, [])
 
 
-async def test_missing_proxy_client_bearer_is_refused_without_upstream_contact(
+async def test_missing_session_token_is_refused_without_upstream_contact(
     upstream: RecordingUpstream, tmp_path: Path
 ) -> None:
     async with (

@@ -23,7 +23,7 @@ credential on the resulting request. The design space considered:
 
 The current implementation is a shared mitmproxy-based fence colocated with
 Console and a single Console↔proxy decision call. The shared fence credential
-authenticates the proxy/fence to that endpoint; the live bridge bearer supplies
+authenticates the proxy/fence to that endpoint; the live session token supplies
 Agent and session identity. See <../../../haku/egress/SPEC.md> for the
 security and wire contract.
 

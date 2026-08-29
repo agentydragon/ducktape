@@ -25,7 +25,7 @@ import anyio
 from anyio.streams.memory import MemoryObjectReceiveStream
 from websockets.exceptions import ConnectionClosed, InvalidHandshake
 
-from haku.runner.backend import BRIDGE_CREDENTIAL_VARIABLE, Harness
+from haku.runner.backend import Harness, environment_session_token
 from haku.runner.backend_registry import HarnessFactory, runner_harnesses
 from haku.runner.communicator import RECONNECT_BASE_DELAY, Communicator, ConsoleRefusedError
 from haku.runner.neutral_operations import BatchAck, ConsoleResume
@@ -76,13 +76,13 @@ def _write_runner_file(path: Path, content: str) -> None:
             os.close(descriptor)
 
 
-def _materialize_proxy_kubeconfig(launch: HarnessLaunch, bearer_token: str | None) -> HarnessLaunch:
+def _materialize_proxy_kubeconfig(launch: HarnessLaunch, session_token: str | None) -> HarnessLaunch:
     """Write a claim-local kubeconfig for Console's selected Kubernetes proxy.
 
-    The bearer is intentionally stored in a mode-0600 tokenFile rather than in argv or kubeconfig
-    YAML. It is already present by design in the ephemeral SandboxClaim environment for bridge and
-    MCP authentication. The proxy URL is launch-selected so the runner does not carry a catalog of
-    Console topology or bypass the authorization boundary.
+    The session token is intentionally stored in a mode-0600 tokenFile rather than in argv or
+    kubeconfig YAML. It is already present by design in the ephemeral SandboxClaim environment for
+    runner-protocol and MCP authentication. The proxy URL is launch-selected so the runner does not
+    carry a catalog of Console topology or bypass the authorization boundary.
 
     The proxy URL must be https: client-go reads kubeconfig user credentials only for a TLS
     server, so against a plain-http proxy kubectl sends every request unauthenticated and the
@@ -93,10 +93,10 @@ def _materialize_proxy_kubeconfig(launch: HarnessLaunch, bearer_token: str | Non
     if not proxy_url:
         return launch
     # The claim-owned credential always wins. Launch-selected environment is topology/options,
-    # never authority, and must not be able to replace the bearer inherited by this runner Pod.
-    token = bearer_token or os.environ.get(BRIDGE_CREDENTIAL_VARIABLE)
+    # never authority, and must not be able to replace the token inherited by this runner Pod.
+    token = session_token or environment_session_token()
     if not token:
-        raise RuntimeError(f"{KUBERNETES_PROXY_URL_ENV} requires a bridge bearer")
+        raise RuntimeError(f"{KUBERNETES_PROXY_URL_ENV} requires a session token")
 
     home = Path(os.environ.get("HOME", "/home/runner"))
     kube_dir = home / ".kube"
@@ -229,7 +229,7 @@ async def _run_harness(harness: Harness, launch: HarnessLaunch, session: Session
         scope.cancel()
 
 
-async def run(websocket_url: str, harness: Harness, bearer_token: str | None, setup_path: Path | None = None) -> None:
+async def run(websocket_url: str, harness: Harness, session_token: str | None, setup_path: Path | None = None) -> None:
     """Serve one harness to whichever console is up, across as many connections as that takes.
 
     **The harness's CLI outlives the connection**, which is what keeps a console roll from ending
@@ -241,7 +241,7 @@ async def run(websocket_url: str, harness: Harness, bearer_token: str | None, se
     console that refuses this runner outright (wrong generation, consumed credential, terminal
     session, journal violation) ends it at once.
     """
-    communicator = Communicator(websocket_url, bearer_token)
+    communicator = Communicator(websocket_url, session_token)
     outbound_sender, outbound_receiver = anyio.create_memory_object_stream[str](OUTBOUND_BUFFER)
     # Retained across connections: numbering, frame retention and journal retention are the
     # session's, however many consoles serve it.
@@ -262,7 +262,7 @@ async def run(websocket_url: str, harness: Harness, bearer_token: str | None, se
                 if not launched:
                     # Materialize launch-owned Kubernetes configuration exactly once, before any
                     # bootstrap or harness code has had an opportunity to modify HOME.
-                    launch = _materialize_proxy_kubeconfig(launch, bearer_token)
+                    launch = _materialize_proxy_kubeconfig(launch, session_token)
                     selected_setup = _launch_setup_path(launch, setup_path)
                     if selected_setup is not None:
                         await prepare_workspace(selected_setup, cwd=launch.cwd, narrate=_narrator(websocket, session))
@@ -296,7 +296,13 @@ def _optional_path(value: str | None) -> Path | None:
 
 def parse_args(harnesses: Mapping[str, HarnessFactory]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Bridge a Haku Console WebSocket to an agent CLI's stdio.")
-    parser.add_argument("--websocket-url", default=os.environ.get("HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL"))
+    # CLEANUP(added 2026-08-29): drop the HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL fallback once the
+    # SandboxTemplates set only HAKU_RUNNER_WEBSOCKET_URL and no live sandbox predates that
+    # manifest change — one release after the templates converge.
+    parser.add_argument(
+        "--websocket-url",
+        default=os.environ.get("HAKU_RUNNER_WEBSOCKET_URL") or os.environ.get("HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL"),
+    )
     parser.add_argument("--session-id", default=os.environ.get("HAKU_RUNNER_SESSION_ID"))
     parser.add_argument(
         "--harness",
@@ -315,7 +321,7 @@ def parse_args(harnesses: Mapping[str, HarnessFactory]) -> argparse.Namespace:
     if not args.harness:
         parser.error("--harness or HAKU_HARNESS is required")
     if not args.websocket_url:
-        parser.error("--websocket-url or HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL is required")
+        parser.error("--websocket-url or HAKU_RUNNER_WEBSOCKET_URL is required")
     if args.session_id:
         args.websocket_url = f"{args.websocket_url.rstrip('/')}/{args.session_id}"
     return args
@@ -325,11 +331,7 @@ def main() -> None:
     harnesses = runner_harnesses()
     args = parse_args(harnesses)
     anyio.run(
-        run,
-        args.websocket_url,
-        harnesses[args.harness](args.cli_path),
-        os.environ.get(BRIDGE_CREDENTIAL_VARIABLE),
-        args.setup_path,
+        run, args.websocket_url, harnesses[args.harness](args.cli_path), environment_session_token(), args.setup_path
     )
 
 

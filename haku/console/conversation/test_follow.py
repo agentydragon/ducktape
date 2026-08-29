@@ -79,7 +79,7 @@ async def _started(session_store: Store, operator_id: UUID) -> tuple[UUID, UUID]
         access_profile_id=TEST_ACCESS_PROFILE_ID,
         harness_kind=HarnessKind.CLAUDE_CODE,
     )
-    await session_store.authenticate_bridge(view.session_id, token)
+    await session_store.authenticate_runner_connection(view.session_id, token)
     return view.session_id, await session_store.conversation_of(view.session_id)
 
 
@@ -241,7 +241,7 @@ async def test_a_replacement_sessions_rows_reach_a_follower_that_never_named_it(
     assert isinstance(await _next(messages), ConversationSnapshot)
 
     replacement, token = await session_store.create(operator_id, conversation_id=conversation_id)
-    await session_store.authenticate_bridge(replacement.session_id, token)
+    await session_store.authenticate_runner_connection(replacement.session_id, token)
     await _exchange(session_store, operator_id, replacement.session_id, "carry on", "carrying on")
     update = await _next(messages)
 

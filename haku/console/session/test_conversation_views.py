@@ -17,7 +17,7 @@ from haku.console.harnesses.kind import HarnessKind
 from haku.console.session import conversation_views
 from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
 from haku.console.session.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
-from haku.console.session.store import BridgeAuthentication
+from haku.console.session.store import RunnerConnectionAuthentication
 from haku.console.x.conversation_events import CallRef, ItemSegment, ToolCallCompleted, ToolCallStarted
 
 
@@ -81,7 +81,10 @@ async def test_a_calls_output_reads_back_as_the_items_text(session_store, operat
     nothing is an empty item rather than an absent one — which is what a reader needs to tell "it
     said nothing" from "it has not answered yet"."""
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     await session_store.enqueue_prompt(operator_id, view.session_id, "list the files", SPA_ORIGIN)
     started = await session_store.next_prompt(view.session_id)
     assert started is not None

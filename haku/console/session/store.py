@@ -263,7 +263,7 @@ async def _last_ended_sessions(db: AsyncSession, conversations: set[UUID]) -> di
     return dict(rows.all())
 
 
-class BridgeAuthentication(StrEnum):
+class RunnerConnectionAuthentication(StrEnum):
     """What admission has to say to a redialling runner.
 
     **"Not yours" and "not yet" are different.** The runner redials about a second after its socket
@@ -359,10 +359,10 @@ class OperatorSessionIdentity:
 
 @dataclass(frozen=True, slots=True)
 class SessionAllocation:
-    """The sandbox session credential minted by the transaction that starts provisioning."""
+    """The session token minted by the transaction that starts provisioning."""
 
     session_id: UUID
-    bridge_token: str
+    session_token: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -712,7 +712,7 @@ class Store:
         """Seed the pre-lazy allocated state for focused tests of an already-running session."""
         now = datetime.now(UTC)
         session_id = uuid4()
-        bridge_token = secrets.token_urlsafe(32)
+        session_token = secrets.token_urlsafe(32)
         async with self._sessions.begin() as db:
             if conversation_id is None:
                 conversation_id = uuid4()
@@ -750,7 +750,7 @@ class Store:
                     session_id=session_id,
                     operator_id=operator_id,
                     conversation_id=conversation_id,
-                    bridge_token_fingerprint=self._fingerprint(bridge_token),
+                    bridge_token_fingerprint=self._fingerprint(session_token),
                     bridge_connected_at=None,
                     error=None,
                     lease_expires_at=now + PROVISION_LEASE,
@@ -761,7 +761,7 @@ class Store:
             await db.flush([session])
             writer = await log.writer_for(db, conversation_id, session_id=session_id, turn_id=None, now=now)
             writer.authored(conversation_event.SessionProvisioning())
-        return await self.get(operator_id, session_id), bridge_token
+        return await self.get(operator_id, session_id), session_token
 
     async def allocate(self, operator_id: UUID, session_id: UUID) -> SessionAllocation | None:
         """Start provisioning an idle session once its conversation has work queued.
@@ -769,7 +769,7 @@ class Store:
         The row lock is the allocation mutex. A prompt request and the runtime reconciler may both
         observe the same accepted prompt, but exactly one moves ``idle`` to ``provisioning`` — the
         credential fingerprint *is* that transition — and receives a credential with which to
-        create the SandboxClaim. The prompt, bridge fingerprint, provisioning lease and lifecycle
+        create the SandboxClaim. The prompt, session-token fingerprint, provisioning lease and lifecycle
         event are therefore durable before the external Kubernetes write begins.
 
         Returns ``None`` when the session is already allocated or no prompt has created demand yet.
@@ -785,8 +785,8 @@ class Store:
                 raise KeyError(session_id)
             if chat.status != SessionStatus.IDLE or not await _has_pending_prompt(db, chat.conversation_id):
                 return None
-            bridge_token = secrets.token_urlsafe(32)
-            chat.bridge_token_fingerprint = self._fingerprint(bridge_token)
+            session_token = secrets.token_urlsafe(32)
+            chat.bridge_token_fingerprint = self._fingerprint(session_token)
             chat.lease_expires_at = now + PROVISION_LEASE
             chat.updated_at = now
             writer = await log.writer_for(db, chat.conversation_id, session_id=session_id, turn_id=None, now=now)
@@ -797,7 +797,7 @@ class Store:
                 conversation_id=chat.conversation_id,
                 position=writer.conversation.next_event_seq - 1,
             )
-            return SessionAllocation(session_id=session_id, bridge_token=bridge_token)
+            return SessionAllocation(session_id=session_id, session_token=session_token)
 
     async def sessions_awaiting_sandbox(self) -> tuple[SandboxDemand, ...]:
         """Return every idle session with durable demand, longest-waiting first.
@@ -1027,7 +1027,7 @@ class Store:
             items=[item_of(row) for row in rows],
         )
 
-    async def authenticate_bridge(self, session_id: UUID, token: str) -> BridgeAuthentication:
+    async def authenticate_runner_connection(self, session_id: UUID, token: str) -> RunnerConnectionAuthentication:
         """Admit a runner to its session — the first time, and every time after.
 
         **Taking the lease is the admission.** A live session admits any runner that can take its
@@ -1045,9 +1045,9 @@ class Store:
                 or record.bridge_token_fingerprint is None
                 or not secrets.compare_digest(record.bridge_token_fingerprint, self._fingerprint(token))
             ):
-                return BridgeAuthentication.REJECTED
+                return RunnerConnectionAuthentication.REJECTED
             if record.status in ENDED_SESSION_STATUSES:
-                return BridgeAuthentication.TERMINAL
+                return RunnerConnectionAuthentication.TERMINAL
             # `provisioning` *is* "allocated and never attached", so the stamp below is the whole
             # transition to `ready`.
             first_attach = record.status == SessionStatus.PROVISIONING
@@ -1061,7 +1061,7 @@ class Store:
                 # Somebody else is still serving this session and saying so. Turning this runner
                 # away keeps one CLI answering to one console — but only until that lease lapses,
                 # which is why it is `HELD` rather than `REJECTED`.
-                return BridgeAuthentication.HELD
+                return RunnerConnectionAuthentication.HELD
             previous_holder = record.lease_holder
             record.lease_holder = REPLICA
             record.lease_expires_at = now + LEASE_TTL
@@ -1071,7 +1071,7 @@ class Store:
             if not first_attach and previous_holder != REPLICA:
                 writer = await log.writer_for(db, record.conversation_id, session_id=session_id, turn_id=None, now=now)
                 writer.authored(conversation_event.SessionAdopted(previous_holder=previous_holder, holder=REPLICA))
-            return BridgeAuthentication.ACCEPTED
+            return RunnerConnectionAuthentication.ACCEPTED
 
     async def release_lease(self, session_id: UUID) -> None:
         """Hand a live session back for adoption, without declaring it dead.
@@ -2164,7 +2164,7 @@ class Store:
         that `supervise_once` reads as healthy. This is the only observer that is not that process.
 
         **An expired lease means unowned, not dead**, and the threshold below is that distinction.
-        `authenticate_bridge` admits any runner once the lease has lapsed, so an expired session is
+        `authenticate_runner_connection` admits any runner once the lease has lapsed, so an expired session is
         adoptable without anything having to hand it back — but not *instantly* adopted, since the
         runner redials on a backoff. A session is therefore dead only once it has been adoptable
         for a whole `ADOPTION_GRACE` and nobody took it.

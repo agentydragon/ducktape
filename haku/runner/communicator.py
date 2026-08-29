@@ -62,7 +62,7 @@ def _worth_redialling(error: BaseException) -> bool:
 
     **Do not tighten the 5xx arm to a status list.** A console whose session is still leased by a
     replica shutting down answers 503 deliberately, through the ASGI denial-response extension,
-    precisely so this returns True — see `BridgeAuthentication.HELD`.
+    precisely so this returns True — see `RunnerConnectionAuthentication.HELD`.
     """
     if isinstance(error, InvalidStatus):
         return error.response.status_code >= 500
@@ -104,9 +104,9 @@ async def _handshake_journal(websocket: TextWebSocket) -> ConsoleResume:
 class Communicator:
     """The console-facing transport of one runner session, harness-invariant."""
 
-    def __init__(self, websocket_url: str, bearer_token: str | None):
+    def __init__(self, websocket_url: str, session_token: str | None):
         self._websocket_url = websocket_url
-        self._headers: dict[str, str] | None = {"Authorization": f"Bearer {bearer_token}"} if bearer_token else None
+        self._headers: dict[str, str] | None = {"Authorization": f"Bearer {session_token}"} if session_token else None
 
     async def dial(self) -> TextWebSocket:
         """Connect, waiting out a console that is missing for as long as that is worth doing.

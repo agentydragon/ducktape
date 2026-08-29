@@ -377,7 +377,7 @@ launches — beside the way an Agent arrives from outside, and replaces neither.
 **The permission machinery is now wired through the session.** `agents/` holds the canonical Agent
 domain and enrollment selects the Agent's access profile. A conversation pins Agent/profile/runtime;
 each session pins the credential binding that authorized that sandbox. Allocation mints one
-exact-session bearer for the runner websocket and direct `/mcp` calls. It arrives through the
+session token for the runner websocket and direct `/mcp` calls. It arrives through the
 SandboxClaim environment and is intentionally available to the provider CLI and its child commands;
 Console resolves it back to that specific session and pinned identity. Runtime configuration
 therefore holds an MCP endpoint, not a static Agent credential. Each configured runtime pins the

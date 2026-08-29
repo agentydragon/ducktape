@@ -307,7 +307,7 @@ async def test_session_bearer_resolves_the_pinned_agent_profile_and_session(
     assert isinstance(auth, StaticMcpAuth)
     access = await auth.provider.verify_token(session_token)
     assert access is not None
-    assert access.client_id == f"haku-chat-session:{session_id}"
+    assert access.client_id == f"haku-session:{session_id}"
     assert await auth.static_actor_resolver.resolve_static_actor(access) == AgentActor(
         agent_id=agent_id,
         operator_id=resolved_operator_id,

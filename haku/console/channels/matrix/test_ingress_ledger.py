@@ -17,7 +17,7 @@ from haku.console.conversation.conversation_event import TurnAnswered
 from haku.console.conversation.prompt_origin import MatrixOrigin
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.conftest import TEST_ACCESS_PROFILE_ID, TEST_AGENT_ID
-from haku.console.session.store import BridgeAuthentication, PromptRefusedError, Store
+from haku.console.session.store import PromptRefusedError, RunnerConnectionAuthentication, Store
 
 ROOM = "!room:allegedly.works"
 
@@ -36,7 +36,10 @@ async def ready_session(session_store: Store, operator_id: UUID, *, conversation
         access_profile_id=TEST_ACCESS_PROFILE_ID,
         harness_kind=HarnessKind.CLAUDE_CODE,
     )
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     return view.session_id
 
 

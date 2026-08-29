@@ -19,7 +19,7 @@ def _launch(**overrides: Any) -> RuntimeLaunch:
         "environment": {"CODEX_HOME": "/codex-home"},
         "mcp_servers": {
             "haku-console": RuntimeMcpServer(
-                url="https://console.test/mcp", bearer_environment_variable="HAKU_RUNNER_TOKEN"
+                url="https://console.test/mcp", bearer_environment_variable="HAKU_SESSION_TOKEN"
             )
         },
         "appended_system_prompt": "you are Haku",
@@ -50,7 +50,7 @@ def test_codex_launch_carries_the_provider_argv_and_the_runner_thread_params() -
         'base_url = "http://litellm.test/v1", env_key = "OPENAI_API_KEY", '
         'wire_api = "responses"}}',
         "-c",
-        'mcp_servers = {haku-console = {url = "https://console.test/mcp", bearer_token_env_var = "HAKU_RUNNER_TOKEN"}}',
+        'mcp_servers = {haku-console = {url = "https://console.test/mcp", bearer_token_env_var = "HAKU_SESSION_TOKEN"}}',
         "app-server",
         "--listen",
         "stdio://",

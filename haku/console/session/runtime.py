@@ -41,9 +41,9 @@ from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
 from haku.console.session.status import SessionStatus
 from haku.console.session.store import (
     LEASE_RENEW_INTERVAL,
-    BridgeAuthentication,
     PromptRecords,
     PromptRefusedError,
+    RunnerConnectionAuthentication,
     SandboxDemand,
     Store,
 )
@@ -57,7 +57,7 @@ from haku.console.x.runtime import (
     RuntimeRegistry,
     UnsupportedRuntimeError,
 )
-from haku.runner.backend import BRIDGE_CREDENTIAL_VARIABLE
+from haku.runner.backend import LEGACY_SESSION_TOKEN_VARIABLE
 from haku.runner.client import RecordedFrame
 from haku.runner.neutral_operations import OperationBatch, RunnerHello
 from haku.runner.protocol import (
@@ -341,16 +341,16 @@ class SessionService:
         allocation = await self._store.allocate(operator_id, session_id)
         if allocation is None:
             return False
-        await self._create_claim(allocation.session_id, allocation.bridge_token)
+        await self._create_claim(allocation.session_id, allocation.session_token)
         return True
 
-    async def _create_claim(self, session_id: UUID, bridge_token: str) -> None:
+    async def _create_claim(self, session_id: UUID, session_token: str) -> None:
         try:
             configured = await self._configured(session_id)
             resources = configured.resources
             await resources.claims.create(
                 session_id=session_id,
-                bridge_token=bridge_token,
+                session_token=session_token,
                 expires_at=datetime.now(UTC) + timedelta(seconds=resources.session_ttl_seconds),
             )
         except Exception as error:
@@ -499,7 +499,7 @@ class SessionService:
             )
         )
 
-    async def handle_journal_runner(self, websocket: WebSocket, session_id: UUID, bearer: str) -> None:
+    async def handle_journal_runner(self, websocket: WebSocket, session_id: UUID, session_token: str) -> None:
         """Serve one runner at the neutral-operation generation (#4667 stage 4).
 
         The Console parses no native frames here: the runner interprets them and sends the
@@ -523,17 +523,17 @@ class SessionService:
             await websocket.close(code=NOT_ADMITTED_CODE, reason="invalid or consumed runner credential")
             return
 
-        authentication = await self._store.authenticate_bridge(session_id, bearer)
-        if authentication == BridgeAuthentication.HELD:
+        authentication = await self._store.authenticate_runner_connection(session_id, session_token)
+        if authentication == RunnerConnectionAuthentication.HELD:
             await websocket.send_denial_response(
                 Response(status_code=503, content=b"session is held by another replica")
             )
             return
-        if authentication == BridgeAuthentication.TERMINAL:
+        if authentication == RunnerConnectionAuthentication.TERMINAL:
             await self._cleanup_terminal_claim(session_id)
             await websocket.close(code=NOT_ADMITTED_CODE, reason="runner session is already terminal")
             return
-        if authentication == BridgeAuthentication.REJECTED:
+        if authentication == RunnerConnectionAuthentication.REJECTED:
             await websocket.close(code=NOT_ADMITTED_CODE, reason="invalid or consumed runner credential")
             return
 
@@ -553,7 +553,11 @@ class SessionService:
                     cwd=agent_resources.cwd,
                     environment=agent_resources.environment,
                     mcp_servers={
-                        name: RuntimeMcpServer(url=url, bearer_environment_variable=BRIDGE_CREDENTIAL_VARIABLE)
+                        # CLEANUP(added 2026-08-29): a sandbox claimed by a pre-rename console
+                        # carries only the legacy variable, so the launch must reference the name
+                        # every live pod has. Flip to SESSION_TOKEN_VARIABLE once no live sandbox
+                        # predates the HAKU_SESSION_TOKEN rename — one release after it deploys.
+                        name: RuntimeMcpServer(url=url, bearer_environment_variable=LEGACY_SESSION_TOKEN_VARIABLE)
                         for name, url in agent_resources.mcp_server_urls.items()
                     },
                     appended_system_prompt=appended,
@@ -909,8 +913,8 @@ async def delete_session(session_id: UUID, actor: OperatorActorDep, service: Ses
 async def runner_websocket(websocket: WebSocket, session_id: UUID) -> None:
     service = cast(SessionService | None, websocket.app.state.session_service)
     authorization = websocket.headers.get("authorization", "")
-    scheme, _, bearer = authorization.partition(" ")
-    if service is None or scheme.lower() != "bearer" or not bearer:
+    scheme, _, session_token = authorization.partition(" ")
+    if service is None or scheme.lower() != "bearer" or not session_token:
         await websocket.close(code=NOT_ADMITTED_CODE, reason="runner authentication required")
         return
-    await service.handle_journal_runner(websocket, session_id, bearer)
+    await service.handle_journal_runner(websocket, session_id, session_token)

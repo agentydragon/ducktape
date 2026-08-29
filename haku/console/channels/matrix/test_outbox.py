@@ -29,7 +29,7 @@ from haku.console.conversation.conversation_event import FrameRange
 from haku.console.conversation.item_vocabulary import ItemStatus, ItemType
 from haku.console.conversation.prompt_origin import SPA_ORIGIN
 from haku.console.database_schema import ConversationItem, MatrixOutbox
-from haku.console.session.store import BridgeAuthentication, Store
+from haku.console.session.store import RunnerConnectionAuthentication, Store
 from haku.console.x.conversation_events import ItemSegment, MessageCompleted, MessageStarted, OpenRef
 
 
@@ -56,7 +56,10 @@ async def session_id(session_store: Store, binding: RoomAttachment, operator_id:
     Started on the conversation the room is attached to, the way the supervisor starts one.
     """
     view, token = await session_store.create(operator_id, conversation_id=binding.conversation_id)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     return view.session_id
 
 

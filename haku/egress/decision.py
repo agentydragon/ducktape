@@ -4,8 +4,11 @@ One decision call carries both the reachability verdict and the request-specific
 credential-substitution operations (github.com/agentydragon/ducktape/issues/4670).
 The wire models below (``DecideRequest``/``HttpAuthorizationDecision``) are the schema of
 Console's ``POST /api/internal/http/decide``, shared with the proxy adapter as an
-internal same-release contract: proxy and Console deploy from one commit, so
-there is no version negotiation and no versioning.
+internal same-release contract: proxy and Console are one pod speaking over its
+loopback, with no version negotiation and no versioning. The one skew this file
+must still absorb is the two containers' image tags landing in separate Flux
+automation commits, which re-rolls the pod minutes apart with one side ahead —
+the ``session_token`` wire aliases below exist for exactly that window.
 """
 
 from __future__ import annotations
@@ -14,7 +17,16 @@ from collections.abc import Iterable
 from ipaddress import IPv4Address, IPv6Address
 from typing import Annotated
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, PlainSerializer, SecretStr, model_validator
+from pydantic import (
+    AliasChoices,
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    PlainSerializer,
+    SecretStr,
+    model_validator,
+)
 
 from haku.grants.authorization import AuthorizationAllowed, AuthorizationDenied
 
@@ -88,12 +100,14 @@ class DecideRequest(BaseModel):
     Header values and bodies stay out of the call: the placeholder the sandbox holds is inert, so
     nothing about it needs to travel inward — grant evaluation alone decides which substitutions
     come back — and Console sits on the request-decision path, never the body path (#4670). The
-    ``proxy_client_credential`` is the required sandbox-to-proxy credential. Console-launched
-    sandboxes use their existing bridge bearer here, so MCP and HTTP share one session credential;
-    it is the sole source of Agent/session identity for this decision.
+    ``session_token`` is the required per-Session secret the sandbox presented as proxy
+    authentication — the same HAKU_SESSION_TOKEN the runner protocol and Console MCP authenticate —
+    and it is the sole source of Agent/session identity for this decision.
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    # serialize_by_alias makes every dump apply the session_token serialization_alias below; it
+    # leaves the other fields untouched (no aliases) and goes with the CLEANUP there.
+    model_config = ConfigDict(extra="forbid", frozen=True, serialize_by_alias=True)
 
     request: RequestMeta
     resolved_ips: ResolvedAddresses = Field(
@@ -102,13 +116,19 @@ class DecideRequest(BaseModel):
     upstream_ip: IPv4Address | IPv6Address = Field(
         description="The one resolved address the proxy pinned for the actual upstream connection."
     )
-    proxy_client_credential: Annotated[SecretStr, PlainSerializer(SecretStr.get_secret_value, when_used="json")] = (
-        Field(
-            description=(
-                "The required sandbox-to-proxy bearer, normally the same HAKU_RUNNER_TOKEN used by "
-                "the MCP bridge. Console resolves it to a live Agent session."
-            )
-        )
+    session_token: Annotated[SecretStr, PlainSerializer(SecretStr.get_secret_value, when_used="json")] = Field(
+        # CLEANUP(added 2026-08-29): proxy_client_credential is the pre-rename wire spelling.
+        # Serialization keeps it so a proxy image one automation commit ahead of its pod's Console
+        # image (or behind) never hits extra="forbid" — a deny-all window, since the gate fails
+        # closed. One release after both images converge: drop serialization_alias (and the
+        # serialize_by_alias in model_config) so the wire says session_token; the release after
+        # that, drop the validation alias.
+        validation_alias=AliasChoices("session_token", "proxy_client_credential"),
+        serialization_alias="proxy_client_credential",
+        description=(
+            "The caller's session token, presented to the proxy as proxy authentication. "
+            "Console resolves it to a live Agent session."
+        ),
     )
 
     @model_validator(mode="after")

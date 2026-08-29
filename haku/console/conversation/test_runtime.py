@@ -20,7 +20,7 @@ from haku.console.session.conftest import TEST_ACCESS_PROFILE_ID, TEST_AGENT_ID,
 from haku.console.session.launch_identity import ChatLaunchAuthorizer, LaunchIdentity
 from haku.console.session.runtime import SessionService
 from haku.console.session.status import SessionStatus
-from haku.console.session.store import ADOPTION_GRACE, BridgeAuthentication, Store
+from haku.console.session.store import ADOPTION_GRACE, RunnerConnectionAuthentication, Store
 from haku.console.x.runtime import HarnessKey
 
 
@@ -173,7 +173,10 @@ async def test_unclaimed_prompt_moves_to_replacement_after_a_stale_lease(
         access_profile_id=TEST_ACCESS_PROFILE_ID,
         harness_kind=HarnessKind.CLAUDE_CODE,
     )
-    assert await session_store.authenticate_bridge(first.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(first.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     conversation_id = await session_store.conversation_of(first.session_id)
     item_id = await session_store.enqueue_conversation_prompt(
         operator_id, conversation_id, "do not lose me", SPA_ORIGIN

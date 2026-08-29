@@ -3,15 +3,15 @@
 The decision endpoint is the oracle of the egress fence: it converts an authenticated caller
 identity plus concrete request metadata into a reachability verdict and the request-specific
 credential substitutions. The shared-fence credential arrives in ``Authorization`` and is not a
-general Agent/Operator credential. A Console-launched sandbox also supplies its bridge bearer in
+general Agent/Operator credential. A Console-launched sandbox also supplies its session token in
 the body:
 
 - the **shared-fence credential** in ``Authorization`` — endpoint-scoped by construction and
   resolved only here; it authenticates the shared fence, but does not identify an Agent;
-- the required **sandbox bridge bearer** in the body — resolved through ``AgentBearerAuthority``
+- the required **session token** in the body — resolved through ``AgentBearerAuthority``
   and accepted only for a live session, then used as the exact data-plane Agent identity. It is
-  the same bearer used by the runner bridge and Console MCP. A missing or non-session bearer is
-  denied; there is no static Agent fallback.
+  the same secret the runner protocol and Console MCP authenticate. A missing or non-session
+  token is denied; there is no static Agent fallback.
 
 Every error path denies: an unknown fence credential, ungrantable metadata, or a grant-authority
 failure never admits, and the proxy fails closed on any non-2xx response.
@@ -190,15 +190,13 @@ class HttpDecideService:
     async def decide(self, request: DecideRequest) -> HttpAuthorizationAllowed | HttpAuthorizationDenied:
         meta = request.request
         try:
-            resolved = await self._agent_bearer_authority.resolve(request.proxy_client_credential.get_secret_value())
+            resolved = await self._agent_bearer_authority.resolve(request.session_token.get_secret_value())
         except Exception as error:
             logger.exception("egress proxy client authority failure")
             raise HttpDecideUnavailableError("HTTP proxy client authority is unavailable") from error
         if resolved is None or resolved.actor.session_id is None:
-            logger.info(
-                "egress decision deny %s %s:%d: unknown proxy client credential", meta.method, meta.host, meta.port
-            )
-            return HttpAuthorizationDenied(reason="unknown proxy client credential")
+            logger.info("egress decision deny %s %s:%d: unknown session token", meta.method, meta.host, meta.port)
+            return HttpAuthorizationDenied(reason="unknown session token")
         principal = RequestPrincipal.from_source(resolved.actor)
         prohibited_reason = self._prohibited_answer_reason(request)
         # A fully-internal answer is overridable by an allowance carrying allow_prohibited_address;

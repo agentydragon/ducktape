@@ -50,7 +50,7 @@ from haku.console.session.runtime import (
 )
 from haku.console.session.sandbox_claims import ProvisioningStep, provisioning_view
 from haku.console.session.status import OPEN_SESSION_STATUSES, SessionStatus
-from haku.console.session.store import ADOPTION_GRACE, BridgeAuthentication, Store
+from haku.console.session.store import ADOPTION_GRACE, RunnerConnectionAuthentication, Store
 from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
 from haku.console.x.runtime import HarnessKey, RuntimeLaunch
@@ -410,9 +410,10 @@ def test_runtime_registration_schema_exposes_the_implementation_discriminator() 
     assert len(implementation["oneOf"]) == 2
 
 
-def test_codex_runtime_rejects_session_authority_as_the_provider_key() -> None:
-    with pytest.raises(ValidationError, match="exact-session credential"):
-        _codex_runtime_config(api_key_env_var="HAKU_RUNNER_TOKEN")
+@pytest.mark.parametrize("variable", ["HAKU_SESSION_TOKEN", "HAKU_RUNNER_TOKEN"])
+def test_codex_runtime_rejects_session_authority_as_the_provider_key(variable: str) -> None:
+    with pytest.raises(ValidationError, match="session token"):
+        _codex_runtime_config(api_key_env_var=variable)
 
 
 @pytest.mark.parametrize("field", ["api_base_url", "mcp_url"])
@@ -430,7 +431,7 @@ async def _allocated_session(chat_service: SessionService, recording_claims: Rec
         harness_kind=HarnessKind.CLAUDE_CODE,
     )
     await recording_claims.create(
-        session_id=view.session_id, bridge_token=token, expires_at=datetime.now(UTC) + timedelta(hours=1)
+        session_id=view.session_id, session_token=token, expires_at=datetime.now(UTC) + timedelta(hours=1)
     )
     return view
 
@@ -473,16 +474,19 @@ async def test_a_returning_runner_is_admitted_and_takes_the_lease(
     session = await _allocated_session(chat_service, recording_claims, operator_id)
     session_id = session.session_id
     token = recording_claims.tokens[session_id]
-    assert await session_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(session_id, token) == RunnerConnectionAuthentication.ACCEPTED
+    )
 
     with patch("haku.console.session.store.REPLICA", "haku-console-b"):
-        assert await session_store.authenticate_bridge(session_id, token) == BridgeAuthentication.HELD, (
-            "a replica still renewing its lease keeps the session it is serving — but only until it lapses"
-        )
+        assert (
+            await session_store.authenticate_runner_connection(session_id, token) == RunnerConnectionAuthentication.HELD
+        ), "a replica still renewing its lease keeps the session it is serving — but only until it lapses"
         await session_store.release_lease(session_id)
-        assert await session_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED, (
-            "a session handed back is adoptable by whichever replica the runner reaches"
-        )
+        assert (
+            await session_store.authenticate_runner_connection(session_id, token)
+            == RunnerConnectionAuthentication.ACCEPTED
+        ), "a session handed back is adoptable by whichever replica the runner reaches"
 
 
 async def test_startup_reconciliation_retries_terminal_claim_cleanup(
@@ -543,13 +547,16 @@ async def test_a_returning_runner_beats_the_sweep(
     session = await _allocated_session(chat_service, recording_claims, operator_id)
     session_id = session.session_id
     token = recording_claims.tokens[session_id]
-    assert await session_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(session_id, token) == RunnerConnectionAuthentication.ACCEPTED
+    )
     await age_lease(migrated_sessions, session_id, seconds_ago=1)
 
     with patch("haku.console.session.store.REPLICA", "haku-console-b"):
-        assert await session_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED, (
-            "a lapsed lease is adoptable by whichever replica the runner reaches"
-        )
+        assert (
+            await session_store.authenticate_runner_connection(session_id, token)
+            == RunnerConnectionAuthentication.ACCEPTED
+        ), "a lapsed lease is adoptable by whichever replica the runner reaches"
 
     assert await session_store.expire_stale_leases() == 0
     assert await session_store.status(session_id) in OPEN_SESSION_STATUSES
@@ -567,7 +574,10 @@ async def test_the_lease_heartbeat_also_slides_the_sandbox_deadline(
         access_profile_id=TEST_ACCESS_PROFILE_ID,
         harness_kind=HarnessKind.CLAUDE_CODE,
     )
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
 
     heartbeat = asyncio.create_task(chat_service._renew_lease(view.session_id))
     try:
@@ -594,7 +604,10 @@ async def test_a_released_session_nobody_readopted_is_not_called_never_attached(
     "never attached" for a session that was attached for hours."""
     session = await _allocated_session(chat_service, recording_claims, operator_id)
     token = recording_claims.tokens[session.session_id]
-    assert await session_store.authenticate_bridge(session.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(session.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     await session_store.release_lease(session.session_id)
     await age_lease(migrated_sessions, session.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
 

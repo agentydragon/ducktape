@@ -26,13 +26,13 @@ does not cache dynamic decisions.
 The two credentials in this path have different principals and must not be
 combined:
 
-| Credential                     | Direction                               | Meaning                                                                                                                           |
-| ------------------------------ | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `HAKU_EGRESS_FENCE_CREDENTIAL` | proxy → Console, `Authorization` header | Authenticates the shared egress fence to the decision endpoint. It is endpoint-scoped and does not identify an Agent.             |
-| `HAKU_RUNNER_TOKEN`            | Sandbox runner → proxy and Console      | Exact-session bridge bearer. It is the sole source of Agent and session identity for HTTP egress and is also used by Console MCP. |
+| Credential                     | Direction                               | Meaning                                                                                                                             |
+| ------------------------------ | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `HAKU_EGRESS_FENCE_CREDENTIAL` | proxy → Console, `Authorization` header | Authenticates the shared egress fence to the decision endpoint. It is endpoint-scoped and does not identify an Agent.               |
+| `HAKU_SESSION_TOKEN`           | Sandbox runner → proxy and Console      | The per-Session session token. It is the sole source of Agent and session identity for HTTP egress and is also used by Console MCP. |
 
-The decision service resolves `HAKU_RUNNER_TOKEN` through the live
-`AgentBearerAuthority`. A missing, invalid, expired, or non-session bearer is
+The decision service resolves the session token through the live
+`AgentBearerAuthority`. A missing, invalid, expired, or non-session token is
 denied. There is no static Agent identity fallback.
 
 The shared fence credential is deliberately not a general Agent, MCP, session,
@@ -41,8 +41,11 @@ credential cannot select another Agent.
 
 ## Sandbox and runner boundary
 
-At session allocation, Console places the random `HAKU_RUNNER_TOKEN` literally
-in the runtime `SandboxClaim.spec.env`. The upstream `EnvVar` API does not yet
+At session allocation, Console places the random session token literally in
+the runtime `SandboxClaim.spec.env` as `HAKU_SESSION_TOKEN` (and, until every
+deployed runner image reads that name, as the pre-rename `HAKU_RUNNER_TOKEN` —
+the `CLEANUP` in `haku/console/session/sandbox_claims.py` names the removal
+condition). The upstream `EnvVar` API does not yet
 support Secret-backed injection. This is safe only while runtime claims are not
 broadly readable: ordinary Agents and service accounts must not get, list, or
 watch claims. Console's narrow claim access and the cleanup/controller paths
@@ -53,30 +56,30 @@ inspection. The token must stay out of launch frames, argv, logs, and persisted
 session records; only an audit-safe fingerprint may be recorded.
 
 The runner inherits the claim-owned token. When Console selects an
-`HTTP_PROXY` or `HTTPS_PROXY`, the runner puts the same bearer in that proxy URL
+`HTTP_PROXY` or `HTTPS_PROXY`, the runner puts the same token in that proxy URL
 as empty-username URL userinfo (`http://:<token>@proxy`). The token is not
 copied into the launch frame or command arguments. The runner keeps the claim
-value in its process environment for the bridge and MCP.
+value in its process environment for the runner protocol and MCP.
 
 The Secret-backed claim migration and the role-based rename of the shared
 decision-endpoint credential are deferred in <../sandbox/TODO.md>.
 
 ## Proxy authentication and decision flow
 
-The proxy accepts the bridge bearer from `Proxy-Authorization` as either:
+The proxy accepts the session token from `Proxy-Authorization` as either:
 
 - `Bearer <token>`; or
 - `Basic <base64(:token)>`, with an empty username.
 
 It removes that header before forwarding upstream. For CONNECT, it carries the
-parsed bearer from the outer flow to the inner request. Missing or malformed
+parsed token from the outer flow to the inner request. Missing or malformed
 proxy credentials receive a local `407` and never reach the upstream.
 
 For every admission, the proxy:
 
 1. resolves the complete bounded address set for the connection target;
 2. sends the shared fence credential in the `Authorization` header, plus the
-   bridge bearer, pinned address, and connection/request metadata in the
+   session token, pinned address, and connection/request metadata in the
    decision body to Console;
 3. refuses denied, malformed, unavailable, or otherwise unclassifiable
    decisions;
@@ -124,8 +127,8 @@ the shared fence credential.
 
 ## Non-negotiable invariants
 
-- Every HTTP decision has a live bridge bearer or is denied.
-- The bridge bearer is the same exact-session credential used for MCP and HTTP.
+- Every HTTP decision has a live session token or is denied.
+- The session token is the same per-Session secret used for MCP and HTTP.
 - The shared fence credential authenticates only the shared fence to Console;
   it carries no Agent binding.
 - Removing proxy environment variables does not create direct egress; Cilium

@@ -42,6 +42,11 @@ spec:
           args: ["--harness", "claude"]
           workingDir: /workspace
           env:
+            - name: HAKU_RUNNER_WEBSOCKET_URL
+              value: ws://haku-console.haku-console.svc.cluster.local:9090/internal/claude/runner
+            # CLEANUP(added 2026-08-29): pre-rename spelling for runner images that predate
+            # HAKU_RUNNER_WEBSOCKET_URL; drop once the pinned haku-harness-runner image reads the
+            # new name — one release after this template and the image converge.
             - name: HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL
               value: ws://haku-console.haku-console.svc.cluster.local:9090/internal/claude/runner
             # The shared per-claim bootstrap (cluster/k8s/haku/workspaces/image/haku-sandbox-setup.sh,

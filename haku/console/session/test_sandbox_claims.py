@@ -93,11 +93,11 @@ def sandbox_claims(custom_objects_api, core_v1_api) -> KubernetesSandboxClaims:
     )
 
 
-async def test_claim_injects_the_session_credential(sandbox_claims, custom_objects_api) -> None:
+async def test_claim_injects_the_session_token(sandbox_claims, custom_objects_api) -> None:
     session_id = UUID("10000000-0000-4000-8000-000000000001")
 
     await sandbox_claims.create(
-        session_id=session_id, bridge_token="session-secret", expires_at=datetime(2026, 8, 1, 5, 0, tzinfo=UTC)
+        session_id=session_id, session_token="session-secret", expires_at=datetime(2026, 8, 1, 5, 0, tzinfo=UTC)
     )
 
     assert custom_objects_api.created is not None
@@ -106,8 +106,11 @@ async def test_claim_injects_the_session_credential(sandbox_claims, custom_objec
     body = args[4]
     assert body["metadata"]["name"] == "claude-10000000000040008000000000000001"
     assert body["spec"]["warmPoolRef"] == {"name": "haku-claude"}
+    # Both spellings, one value: runner images from before the HAKU_SESSION_TOKEN rename read only
+    # the legacy name (the CLEANUP in sandbox_claims.py names the removal condition).
     assert body["spec"]["env"] == [
         {"name": "HAKU_RUNNER_SESSION_ID", "value": str(session_id)},
+        {"name": "HAKU_SESSION_TOKEN", "value": "session-secret"},
         {"name": "HAKU_RUNNER_TOKEN", "value": "session-secret"},
     ]
     assert body["spec"]["lifecycle"] == {"shutdownPolicy": "DeleteForeground", "shutdownTime": "2026-08-01T05:00:00Z"}
