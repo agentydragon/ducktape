@@ -92,7 +92,7 @@ async def test_build_critic_sh_via_agent(
 
         yield m.report_success()
 
-    @GraderMock.mock(check_consumed=False)
+    @GraderMock.mock()
     def grader_mock(m: GraderMock) -> PlayGen:
         yield None  # First request
 

@@ -50,7 +50,7 @@ async def test_grader_clusters_novel_issues_from_two_critiques(
     critic_1_id = uuid4()
     critic_2_id = uuid4()
 
-    @GraderMock.mock(check_consumed=False)
+    @GraderMock.mock()
     def mock(m: GraderMock) -> PlayGen:
         yield None  # First request
 

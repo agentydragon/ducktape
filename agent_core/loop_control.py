@@ -9,8 +9,6 @@ Policies and decisions are expressed as algebraic types to keep them disjoint
 and easy to compose.
 
 Notes / Future work (TODOs):
-- Add a RequireSpecific(names: tuple[str, ...]) policy to constrain the next tool
-  choice to a known subset once a concrete use case appears.
 - Consider optional injection knobs (for debugging only), e.g., synthesizing
   transcript messages or function-call outputs; default off to keep core clean.
 """
@@ -39,19 +37,6 @@ class AllowAnyToolOrTextMessage(ToolPolicy):
 @dataclass(frozen=True)
 class RequireAnyTool(ToolPolicy):
     """Require the model to call at least one tool for the next sample."""
-
-
-@dataclass(frozen=True)
-class ForbidAllTools(ToolPolicy):
-    """Disallow tool calls for the next sample (rarely useful)."""
-
-
-# Constrained-required policy: require one of specific tool names
-# Note: Names should match the function names exposed to the model (e.g.,
-# use build_mcp_function to compose "prompt_feedback" / "propose_prompt").
-@dataclass(frozen=True)
-class RequireSpecific(ToolPolicy):
-    names: tuple[str, ...]
 
 
 # ---------------------------------------------------------------------------

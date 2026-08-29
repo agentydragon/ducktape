@@ -40,9 +40,9 @@ async def test_grader_report_failure_exits_with_failure(
     """
     report_failure_called = asyncio.Event()
 
-    # check_consumed=False: report_failure terminates the agent before a second
-    # API call, so the generator never advances past its last yield.
-    @GraderMock.mock(check_consumed=False)
+    # report_failure terminates the agent before a second API call, so the
+    # generator never advances past its last yield.
+    @GraderMock.mock()
     def mock(m: GraderMock) -> PlayGen:
         yield None  # First request (system prompt)
         report_failure_called.set()

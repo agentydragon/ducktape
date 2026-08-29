@@ -50,7 +50,7 @@ async def test_grader_picks_up_drift(e2e_stack, test_snapshot, all_files_scope, 
 
     grading_done = asyncio.Event()
 
-    @GraderMock.mock(check_consumed=False)  # Grader may be aborted before consuming all
+    @GraderMock.mock()  # Grader may be aborted before consuming all
     def mock(m: GraderMock) -> PlayGen:
         yield None  # First request
 

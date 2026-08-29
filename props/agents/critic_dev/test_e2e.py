@@ -123,7 +123,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
         yield m.submit(issues_count=0, summary="Critic completed")
 
     # Grader mock for zero-issue case: should never be woken
-    @GraderMock.mock(check_consumed=False)
+    @GraderMock.mock()
     def grader_mock(m: GraderMock) -> PlayGen:
         yield None  # First request (waits for drift)
         raise AssertionError("Grader should not be woken when critic submits 0 issues")
@@ -299,7 +299,7 @@ async def test_po_creates_custom_critic_image(
 
     # Grader mock for custom critic: grades "custom-test-issue" on test.py
     # test.py matches: tp-003/occ-1, tp-004/occ-1, tp-005/occ-1, fp-001/fp-occ-1 = 4 edges
-    @GraderMock.mock(check_consumed=False)
+    @GraderMock.mock()
     def grader_mock(m: GraderMock) -> PlayGen:
         yield None  # First request
 

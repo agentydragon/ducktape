@@ -89,10 +89,10 @@ def mock_or_live(request, live_openai_model):
     """
     mode = request.param
 
-    def factory(mock_cls, *args, check_consumed=True, **kwargs):
+    def factory(mock_cls, *args, **kwargs):
         if mode is ClientMode.LIVE:
             live_client = build_client(live_openai_model)
             return lambda fn: live_client
-        return mock_cls.mock(*args, check_consumed=check_consumed, **kwargs)
+        return mock_cls.mock(*args, **kwargs)
 
     return factory

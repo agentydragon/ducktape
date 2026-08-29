@@ -50,7 +50,7 @@ async def test_grader_sleep_wake_cycle(e2e_stack, test_snapshot, all_files_scope
     round_1_complete = asyncio.Event()
     round_2_complete = asyncio.Event()
 
-    @GraderMock.mock(check_consumed=False)
+    @GraderMock.mock()
     def mock(m: GraderMock) -> PlayGen:
         yield None  # First request (system prompt)
 

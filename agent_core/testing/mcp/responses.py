@@ -100,16 +100,10 @@ class DockerExecMock(MCPDecoratorMock):
             yield from m.exec(["submit"])
     """
 
-    def __init__(
-        self,
-        play_fn: Callable[[DockerExecMock], PlayGen],
-        runtime: Mounted[ContainerExecServer],
-        *,
-        check_consumed: bool = True,
-    ) -> None:
+    def __init__(self, play_fn: Callable[[DockerExecMock], PlayGen], runtime: Mounted[ContainerExecServer]) -> None:
         self._runtime = runtime
         # Safe: play() only calls play_fn with self which is DockerExecMock
-        super().__init__(play_fn, check_consumed=check_consumed)  # type: ignore[arg-type]
+        super().__init__(play_fn)  # type: ignore[arg-type]
 
     def exec(
         self, cmd: list[str], timeout_ms: int = 30000, cwd: str | None = None

@@ -13,7 +13,6 @@ from uuid import uuid4
 
 import anyio
 import pydantic_core
-from more_itertools import one
 from pydantic import TypeAdapter
 
 from agent_core.events import (
@@ -31,12 +30,10 @@ from agent_core.loop_control import (
     Abort,
     AllowAnyToolOrTextMessage,
     Compact,
-    ForbidAllTools,
     InjectItems,
     LoopDecision,
     NoAction,
     RequireAnyTool,
-    RequireSpecific,
     ToolPolicy,
 )
 from agent_core.model import AgentModelProto, AgentModelRequest, ResponsesAgentModel
@@ -52,7 +49,6 @@ from openai_utils.model import (
     ReasoningItem,
     SystemMessage,
     ToolChoice,
-    ToolChoiceFunction,
     UserMessage,
 )
 from openai_utils.types import ReasoningEffort, ReasoningSummary, build_reasoning_params
@@ -262,16 +258,12 @@ SYSTEM_INSTRUCTIONS = "You are a code agent. Be concise."
 def _tool_choice_from_policy(policy: ToolPolicy) -> ToolChoice:
     """Map a ToolPolicy to Responses API tool_choice value.
 
-    Exhaustive and strict: raises on unknown policy; RequireSpecific supports exactly one name.
+    Exhaustive and strict: raises on unknown policy.
     """
     if isinstance(policy, RequireAnyTool):
         return "required"
     if isinstance(policy, AllowAnyToolOrTextMessage):
         return "auto"
-    if isinstance(policy, ForbidAllTools):
-        return "none"
-    if isinstance(policy, RequireSpecific):
-        return ToolChoiceFunction(name=one(policy.names))
     raise TypeError(f"Unknown ToolPolicy: {type(policy).__name__}")
 
 
@@ -428,22 +420,6 @@ class Agent:
         """
         self._transcript.append(message)
         self._notify_handlers_for_transcript_item(message)
-
-    # TODO: Consider eliminating these no-handler methods by allowing handlers to be attached
-    # after transcript reconstruction. Then all inserts could use process_message() uniformly.
-    # Current use case: session resume / conversation replay (cmd_speak_with_dead.py).
-
-    def insert_transcript_item(self, item: TranscriptItem) -> None:
-        """Insert a transcript item (message, tool call, reasoning, or tool output) without triggering handlers.
-
-        Use this to reconstruct a full transcript including tool calls and their outputs,
-        e.g., when resuming from a saved session or replaying a previous conversation.
-        """
-        self._transcript.append(item)
-
-    def insert_transcript_items(self, items: Sequence[TranscriptItem]) -> None:
-        """Insert multiple transcript items without triggering handlers."""
-        self._transcript.extend(items)
 
     async def _build_effective_instructions(self) -> str | None:
         """Build instructions for the OpenAI API request.
@@ -902,7 +878,7 @@ class Agent:
         """Create an Agent.
 
         Tool policy is set once at initialization and remains fixed throughout the agent's lifetime.
-        Common values: RequireAnyTool() (typical), AllowAnyToolOrTextMessage(), ForbidAllTools().
+        Common values: RequireAnyTool() (typical), AllowAnyToolOrTextMessage().
 
         For static system prompts, use process_message(SystemMessage.text("...")) before calling run().
         For dynamic instructions that can change between phases, provide dynamic_instructions callback.
@@ -929,9 +905,3 @@ class Agent:
         self._transcript.append(event)
         for h in self._handlers:
             h.on_tool_result_event(event)
-
-    # Exposed for abort flows: synthesize aborted outputs for all pending calls
-    def abort_pending_tool_calls(self) -> None:
-        for fc in list(self.pending_function_calls):
-            self._emit_tool_result(fc, _abort_result())
-        self.pending_function_calls.clear()

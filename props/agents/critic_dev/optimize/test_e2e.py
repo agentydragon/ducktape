@@ -175,7 +175,7 @@ async def test_optimizer_orchestrates_critic(
 
     # Grader mock for "orchestration-test-001" on test.py
     # test.py matches: tp-003/occ-1, tp-004/occ-1, tp-005/occ-1, fp-001/fp-occ-1 = 4 edges
-    @GraderMock.mock(check_consumed=False)
+    @GraderMock.mock()
     def grader_mock(m: GraderMock) -> PlayGen:
         yield None  # First request
 

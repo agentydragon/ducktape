@@ -192,32 +192,14 @@ class GeneratorMock(ItemFactory, OpenAIModelProto):
 
     model = "test-model"
 
-    _check_consumed: bool = True
-
     def __init__(self) -> None:
         super().__init__(call_id_prefix="test")
-        self._consumed = False
-        self._gen = self._wrapped_play()
+        self._gen = self.play()
         next(self._gen)  # Prime to first yield
 
     @abstractmethod
     def play(self) -> PlayGen:
         """Override in subclass to provide the generator."""
-
-    def _wrapped_play(self) -> PlayGen:
-        """Wrap play() to track consumption."""
-        yield from self.play()
-        self._consumed = True
-
-    @property
-    def consumed(self) -> bool:
-        """True if generator ran to completion."""
-        return self._consumed
-
-    def assert_consumed(self) -> None:
-        """Assert generator was fully consumed (no more yields pending)."""
-        if not self._consumed:
-            raise AssertionError("Mock has unconsumed steps - generator did not complete")
 
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         """Send request to generator, return wrapped response."""
@@ -262,32 +244,27 @@ class DecoratorMock(GeneratorMock):
             req = yield
             yield m.assistant_text("Done")
 
-    By default, assert_consumed() is called automatically after the test to
-    verify all steps were executed. Use check_consumed=False to disable.
     """
 
     # play_fn accepts subclass type at runtime, but type system can't express
     # "callable accepting same type as self" with classmethod factory pattern
     _play_fn: Callable[[DecoratorMock], PlayGen]
 
-    def __init__(self, play_fn: Callable[[DecoratorMock], PlayGen], *, check_consumed: bool = True) -> None:
+    def __init__(self, play_fn: Callable[[DecoratorMock], PlayGen]) -> None:
         self._play_fn = play_fn
-        self._check_consumed = check_consumed
         super().__init__()
 
     def play(self) -> PlayGen:
         return self._play_fn(self)
 
     @classmethod
-    def mock[T: DecoratorMock](
-        cls: type[T], *args: object, check_consumed: bool = True, **kwargs: object
-    ) -> Callable[[Callable[[T], PlayGen]], T]:
+    def mock[T: DecoratorMock](cls: type[T], *args: object, **kwargs: object) -> Callable[[Callable[[T], PlayGen]], T]:
         """Decorator to create mock instance from generator function."""
 
         def decorator(fn: Callable[[T], PlayGen]) -> T:
             # fn: Callable[[T], ...] stored as Callable[[DecoratorMock], ...] - safe
             # because play() only calls it with self (which is T at runtime)
-            return cls(fn, *args, check_consumed=check_consumed, **kwargs)  # type: ignore[arg-type]
+            return cls(fn, *args, **kwargs)  # type: ignore[arg-type]
 
         return decorator
 
