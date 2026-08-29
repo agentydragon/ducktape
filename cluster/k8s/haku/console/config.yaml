@@ -1107,15 +1107,6 @@ mcp:
         credential:
           kind: operator_connection
           connection: google_calendar
-    # `haku_routine` (haku/console/tools/routine.py): launch_routine fires the Haku claude-code-web
-    # routine via the haku-routine-launch-token secret (HAKU_CONSOLE_LAUNCH_ROUTINE__*), not the
-    # Google grant. Superseding the bespoke launch-routine capability tier. It carries its own
-    # credential, so it needs no operator-resolved backend auth.
-    - id: haku_routine
-      backend:
-        kind: in_process
-        credential:
-          kind: none
     # `haku_index` (haku/console/tools/recall_index.py): semantic search over haku-state,
     # public Ducktape source, and Haku's own past conversations. Listing it here is what builds
     # the searcher, and the
