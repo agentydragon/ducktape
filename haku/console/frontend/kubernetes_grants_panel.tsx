@@ -35,14 +35,19 @@ type KubernetesGrantSet = {
   grants: OperatorKubernetesGrant[];
 };
 
-const STATUS_DISPLAY: Record<string, { label: string; color: string }> = {
+type KubernetesGrant = OperatorKubernetesGrant["grant"];
+type KubernetesRulesCoverage = Extract<KubernetesGrant["coverage"], { kind: "kubernetes_rules" }>;
+type KubernetesGrantScope = KubernetesRulesCoverage["scope"];
+type KubernetesRule = KubernetesRulesCoverage["rules"][number];
+
+const STATUS_DISPLAY: Record<KubernetesGrant["validity"]["status"], { label: string; color: string }> = {
   active: { label: "Active", color: "teal" },
   expired: { label: "Expired", color: "gray" },
   released: { label: "Released by Agent", color: "blue" },
   revoked: { label: "Revoked by Operator", color: "red" },
 };
 
-function scopeLabel(scope: { kind: string; namespaces?: string[] }): string {
+function scopeLabel(scope: KubernetesGrantScope): string {
   switch (scope.kind) {
     case "namespaces":
       return `Namespaces: ${scope.namespaces?.join(", ") ?? ""}`;
@@ -55,17 +60,7 @@ function scopeLabel(scope: { kind: string; namespaces?: string[] }): string {
   }
 }
 
-function RuleLine({
-  rule,
-}: {
-  rule: {
-    verbs: string[];
-    non_resource_urls?: string[];
-    api_groups?: string[];
-    resources?: string[];
-    resource_names?: string[];
-  };
-}) {
+function RuleLine({ rule }: { rule: KubernetesRule }) {
   const verbs = rule.verbs.join(", ");
   const nonResourceUrls = rule.non_resource_urls ?? [];
   if (nonResourceUrls.length > 0) {
