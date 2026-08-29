@@ -16,3 +16,5 @@ hardware path explicitly.
 
 `HAKU_CONSOLE_URL` can override the default `https://haku.allegedly.works` origin for local or
 staging console deployments.
+
+For local development, run `./haku/console/gnome/devkit.sh` from the repository root.

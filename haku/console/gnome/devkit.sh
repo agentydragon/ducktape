@@ -6,9 +6,13 @@
 # it tests current source rather than the last released Nix pin.
 set -euo pipefail
 
+script_directory="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd -- "$script_directory/../../.." && pwd)"
+cd "$repo_root"
+
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   cat <<'EOF'
-Usage: ./haku-approvals-devkit.sh
+Usage: ./haku/console/gnome/devkit.sh
 
 Builds the Haku Approvals package from the local Bazel artifact and launches
 the standalone GTK/WebKit application in the current graphical session.
