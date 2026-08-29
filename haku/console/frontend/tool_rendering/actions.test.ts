@@ -39,6 +39,19 @@ describe("toolActionDescription", () => {
         namespace: "prod",
       })
     ).toEqual({ text: "kubectl: Get Deployment" });
+    expect(
+      toolActionDescription(KUBECTL_SERVER_ID, "pods_list_in_namespace", {
+        namespace: "prod",
+        labelSelector: "app=api",
+      })
+    ).toEqual({ text: "kubectl: List Pods in prod" });
+    expect(
+      toolActionDescription(KUBECTL_SERVER_ID, "pods_exec", {
+        name: "api-0",
+        namespace: "prod",
+        command: ["sh", "-c", "echo hello"],
+      })
+    ).toEqual({ text: "kubectl: Exec in prod/api-0" });
   });
 
   it("flags destructive calls, which a notification must say in words", () => {

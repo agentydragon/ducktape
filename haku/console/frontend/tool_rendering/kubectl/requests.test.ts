@@ -32,6 +32,30 @@ describe("kubectlPreviews", () => {
     }
   });
 
+  it("renders pods_list_in_namespace with selectors in both variants", () => {
+    for (const variant of ["compact", "detailed"] as const) {
+      expect(
+        renderPreview(
+          kubectlPreviews.pods_list_in_namespace,
+          { namespace: "prod", labelSelector: "app=api", fieldSelector: "status.phase=Running" },
+          variant
+        )
+      ).not.toBeNull();
+    }
+  });
+
+  it("renders pods_exec target and command in both variants", () => {
+    for (const variant of ["compact", "detailed"] as const) {
+      expect(
+        renderPreview(
+          kubectlPreviews.pods_exec,
+          { name: "api-0", namespace: "prod", container: "api", command: ["sh", "-c", "echo hello"] },
+          variant
+        )
+      ).not.toBeNull();
+    }
+  });
+
   it("renders resources_create_or_update in both variants (compact clamps the manifest)", () => {
     const manifest = Array.from({ length: 20 }, (_, i) => `line-${i}: value`).join("\n");
     for (const variant of ["compact", "detailed"] as const) {

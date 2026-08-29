@@ -35,6 +35,27 @@ const PREVIEW_FIXTURES = [
     toolName: "pods_delete",
     args: { name: "worker-6f9c2", namespace: "haku-sandbox" },
   },
+  {
+    title: "List running worker pods",
+    serverId: "kubectl-passthrough-mcp",
+    toolName: "pods_list_in_namespace",
+    args: {
+      namespace: "haku-sandbox",
+      labelSelector: "app=worker",
+      fieldSelector: "status.phase=Running",
+    },
+  },
+  {
+    title: "Check the worker health endpoint",
+    serverId: "kubectl-passthrough-mcp",
+    toolName: "pods_exec",
+    args: {
+      name: "worker-6f9c2",
+      namespace: "haku-sandbox",
+      container: "worker",
+      command: ["sh", "-c", "curl -fsS http://127.0.0.1:8080/healthz"],
+    },
+  },
 ] satisfies (RegisteredToolPreviewFixture & { title: string })[];
 
 mountPreviewCards(PREVIEW_FIXTURES);

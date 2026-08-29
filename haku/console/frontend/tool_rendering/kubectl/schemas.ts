@@ -48,6 +48,30 @@ export const zPodsDeleteArgs: ReturnType<
   name: z.string(),
   namespace: z.string().optional(),
 });
+export const zPodsListInNamespaceArgs: ReturnType<
+  typeof z.object<{
+    fieldSelector: z.ZodOptional<z.ZodString>;
+    labelSelector: z.ZodOptional<z.ZodString>;
+    namespace: z.ZodString;
+  }>
+> = z.object({
+  fieldSelector: z.string().optional(),
+  labelSelector: z.string().optional(),
+  namespace: z.string(),
+});
+export const zPodsExecArgs: ReturnType<
+  typeof z.object<{
+    command: z.ZodArray<z.ZodString>;
+    container: z.ZodOptional<z.ZodString>;
+    name: z.ZodString;
+    namespace: z.ZodOptional<z.ZodString>;
+  }>
+> = z.object({
+  command: z.array(z.string()),
+  container: z.string().optional(),
+  name: z.string(),
+  namespace: z.string().optional(),
+});
 export const zPodsLogArgs: ReturnType<
   typeof z.object<{
     name: z.ZodString;
