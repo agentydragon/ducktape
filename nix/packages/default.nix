@@ -355,6 +355,10 @@ rec {
 
   # Alias for programs.gnome-shell.extensions compatibility.
   inherit hakuApprovals;
+  # Kebab release-name attribute the CI nix-package gate builds (release key
+  # `haku-approvals` in devinfra/ci/artifact_targets.json); `hakuApprovals` is
+  # the home-manager-facing name. Keep both — deduping either breaks a consumer.
+  haku-approvals = hakuApprovals;
   gnome-shell-aiquota = aiquota;
   gnome-shell-haku-approvals = hakuApprovals;
   tana-outliner = pkgs.callPackage ./tana-outliner.nix { };
