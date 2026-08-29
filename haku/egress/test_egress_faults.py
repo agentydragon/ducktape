@@ -22,8 +22,8 @@ import pytest
 import pytest_bazel
 from more_itertools import one
 
-from haku.egress.decision import DecideDenied
-from haku.egress.proxy_test_harness import (
+from haku.egress.decision import HttpAuthorizationDenied
+from haku.egress.testing.proxy_test_harness import (
     RecordingUpstream,
     ServerError,
     allow_with_substitution,
@@ -34,7 +34,7 @@ from haku.egress.proxy_test_harness import (
     stub_client,
     stub_console,
 )
-from haku.egress.static_decide_client import StaticDecideClient
+from haku.egress.testing.static_decide_client import StaticDecideClient
 
 
 async def test_decide_endpoint_down_fails_closed(upstream: RecordingUpstream, tmp_path: Path) -> None:
@@ -82,7 +82,9 @@ async def test_restart_re_decides_every_request(upstream: RecordingUpstream, tmp
         first_status, _ = await proxied_get(proxy, f"http://127.0.0.1:{upstream.port}/before")
     assert (first_status, upstream.connections) == (200, 1)
 
-    async with make_proxy(StaticDecideClient(DecideDenied(reason="restarted with no grant")), tmp_path) as proxy:
+    async with make_proxy(
+        StaticDecideClient(HttpAuthorizationDenied(reason="restarted with no grant")), tmp_path
+    ) as proxy:
         second_status, body = await proxied_get(proxy, f"http://127.0.0.1:{upstream.port}/after")
     assert second_status == 403
     assert "restarted with no grant" in body

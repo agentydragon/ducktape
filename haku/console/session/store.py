@@ -72,11 +72,12 @@ from haku.console.session.conversation_views import (
     SessionFramePage,
     SessionView,
     frame_page,
+    live_status,
     session_view,
     setup_narration,
 )
 from haku.console.session.launch_identity import LaunchAgentRejectedError, LaunchAuthorizer
-from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
+from haku.console.session.session_frames import FrameDirection, SessionFrameKind
 from haku.console.session.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
 from haku.console.session.status import (
     ENDED_SESSION_STATUSES,
@@ -110,16 +111,16 @@ ADOPTION_GRACE = timedelta(seconds=45)
 REPLICA = os.environ.get("HOSTNAME", "unknown")
 
 
-def _bridge_frames(
-    query: Select[tuple[SessionFrame]], kinds: Sequence[BridgeFrameKind] | None = None
+def _restrict_frame_kinds(
+    query: Select[tuple[SessionFrame]], kinds: Sequence[SessionFrameKind] | None = None
 ) -> Select[tuple[SessionFrame]]:
-    """Restrict a frame query using only Haku's outer bridge discriminator.
+    """Restrict a frame query using only Haku's outer frame discriminator.
 
     The default rollout is the selected harness's native wire. Console-authored setup narration is
     available when explicitly requested, and through its dedicated narration view, but is not a
     native harness frame merely because it shares the append-only table.
     """
-    selected = [BridgeFrameKind.HARNESS_FRAME] if kinds is None else list(kinds)
+    selected = [SessionFrameKind.HARNESS_FRAME] if kinds is None else list(kinds)
     return query.where(SessionFrame.kind.in_(selected))
 
 
@@ -263,7 +264,7 @@ async def _last_ended_sessions(db: AsyncSession, conversations: set[UUID]) -> di
     return dict(rows.all())
 
 
-class BridgeAuthentication(StrEnum):
+class RunnerConnectionAuthentication(StrEnum):
     """What admission has to say to a redialling runner.
 
     **"Not yours" and "not yet" are different.** The runner redials about a second after its socket
@@ -370,15 +371,26 @@ class OperatorSessionIdentity:
     status: SessionStatus
     agent_id: UUID | None
     access_profile_id: str | None
+    harness_kind: HarnessKind
+
+
+@dataclass(frozen=True, slots=True)
+class ActiveSessionRecord:
+    """One operator-owned allocated session that still has a sandbox claim to account for."""
+
+    session_id: UUID
     runtime_kind: HarnessKind
+    status: SessionStatus
+    created_at: datetime
+    updated_at: datetime
 
 
 @dataclass(frozen=True, slots=True)
 class SessionAllocation:
-    """The sandbox session credential minted by the transaction that starts provisioning."""
+    """The session token minted by the transaction that starts provisioning."""
 
     session_id: UUID
-    bridge_token: str
+    session_token: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -450,18 +462,17 @@ class Store:
         # Exact-session authority never transfers to a replacement session. End it in the same
         # transaction as the session's terminal event so authorization and the durable account
         # cannot disagree. Grant status is derived, so already-expired leases need no write: one
-        # revocation fact ends every lease this session could still exercise.
+        # end fact ends every lease this session could still exercise.
         for row in (KubernetesGrantRow, HttpGrantRow):
             await db.execute(
                 update(row)
                 .where(
                     row.principal_kind == GrantPrincipalKind.SESSION,
                     row.principal_session_id == chat.session_id,
-                    row.released_at.is_(None),
-                    row.revoked_at.is_(None),
+                    row.ended_at.is_(None),
                     row.expires_at > now,
                 )
-                .values(revoked_at=now, end_reason="principal_ended")
+                .values(ended_at=now, end_reason="principal_ended")
             )
 
     async def create(
@@ -471,7 +482,7 @@ class Store:
         conversation_id: UUID | None = None,
         agent_id: UUID | None = None,
         access_profile_id: str | None = None,
-        runtime_kind: HarnessKind | None = None,
+        harness_kind: HarnessKind | None = None,
         launch_authorizer: LaunchAuthorizer | None = None,
     ) -> tuple[SessionView, str]:
         """Open the idle session used by every production caller."""
@@ -480,7 +491,7 @@ class Store:
             conversation_id=conversation_id,
             agent_id=agent_id,
             access_profile_id=access_profile_id,
-            runtime_kind=runtime_kind,
+            harness_kind=harness_kind,
             launch_authorizer=launch_authorizer,
         )
 
@@ -491,7 +502,7 @@ class Store:
         conversation_id: UUID | None = None,
         agent_id: UUID | None = None,
         access_profile_id: str | None = None,
-        runtime_kind: HarnessKind | None = None,
+        harness_kind: HarnessKind | None = None,
         launch_authorizer: LaunchAuthorizer | None = None,
     ) -> tuple[SessionView, str]:
         """Open an authorized idle session without allocating its sandbox.
@@ -512,13 +523,15 @@ class Store:
                 if launch_authorizer is not None:
                     if agent_id is None:
                         raise LaunchAgentRejectedError
-                    identity = await launch_authorizer(
-                        db, operator_id, agent_id, runtime_kind or HarnessKind.CLAUDE_CODE
-                    )
+                    if harness_kind is None:
+                        raise LaunchAgentRejectedError("chat launch requires a selected harness")
+                    identity = await launch_authorizer(db, operator_id, agent_id, harness_kind)
                     agent_id = identity.agent_id
                     agent_binding_id = identity.binding_id
                     access_profile_id = identity.access_profile_id
-                    runtime_kind = identity.runtime_kind
+                    harness_kind = identity.harness_kind
+                elif harness_kind is None:
+                    raise ValueError("harness_kind is required for a new conversation")
                 conversation_id = uuid4()
                 db.add(
                     Conversation(
@@ -526,10 +539,7 @@ class Store:
                         operator_id=operator_id,
                         agent_id=agent_id,
                         access_profile_id=access_profile_id,
-                        # Expand step of runtime_kind→harness_kind (database_schema.py C4d): dual-write
-                        # both, still read `runtime_kind`, until the contract releases drop it.
-                        harness_kind=runtime_kind or HarnessKind.CLAUDE_CODE,
-                        runtime_kind=runtime_kind or HarnessKind.CLAUDE_CODE,
+                        harness_kind=harness_kind,
                         created_at=now,
                     )
                 )
@@ -551,13 +561,13 @@ class Store:
                         db,
                         operator_id,
                         conversation.agent_id,
-                        conversation.runtime_kind,
+                        conversation.harness_kind,
                         expected_profile_id=conversation.access_profile_id,
                     )
                     if (
                         identity.agent_id != conversation.agent_id
                         or identity.access_profile_id != conversation.access_profile_id
-                        or identity.runtime_kind != conversation.runtime_kind
+                        or identity.harness_kind != conversation.harness_kind
                     ):
                         raise LaunchAgentRejectedError
                     agent_binding_id = identity.binding_id
@@ -566,13 +576,13 @@ class Store:
                     for value, expected in (
                         (agent_id, conversation.agent_id),
                         (access_profile_id, conversation.access_profile_id),
-                        (runtime_kind, conversation.runtime_kind),
+                        (harness_kind, conversation.harness_kind),
                     )
                 ):
                     raise ValueError("replacement session does not match pinned conversation identity")
                 agent_id = conversation.agent_id
                 access_profile_id = conversation.access_profile_id
-                runtime_kind = conversation.runtime_kind
+                harness_kind = conversation.harness_kind
                 # Rolling coexistence: an older Matrix supervisor and the neutral reconciler use
                 # different advisory locks. The durable conversation lock is therefore the shared
                 # mutex, and an old writer reaching this method after the new one reuses its winner
@@ -594,6 +604,8 @@ class Store:
                         agent_binding_id=agent_binding_id,
                         bridge_token_fingerprint=None,
                         bridge_connected_at=None,
+                        session_token_fingerprint=None,
+                        runner_connected_at=None,
                         error=None,
                         lease_expires_at=None,
                         created_at=now,
@@ -672,13 +684,13 @@ class Store:
                     db,
                     operator_id,
                     conversation.agent_id,
-                    conversation.runtime_kind,
+                    conversation.harness_kind,
                     expected_profile_id=conversation.access_profile_id,
                 )
                 if (
                     identity.agent_id != conversation.agent_id
                     or identity.access_profile_id != conversation.access_profile_id
-                    or identity.runtime_kind != conversation.runtime_kind
+                    or identity.harness_kind != conversation.harness_kind
                 ):
                     raise LaunchAgentRejectedError
                 agent_binding_id = identity.binding_id
@@ -690,6 +702,8 @@ class Store:
                     agent_binding_id=agent_binding_id,
                     bridge_token_fingerprint=None,
                     bridge_connected_at=None,
+                    session_token_fingerprint=None,
+                    runner_connected_at=None,
                     error=None,
                     lease_expires_at=None,
                     created_at=now,
@@ -724,12 +738,12 @@ class Store:
         conversation_id: UUID | None = None,
         agent_id: UUID | None = None,
         access_profile_id: str | None = None,
-        runtime_kind: HarnessKind | None = None,
+        harness_kind: HarnessKind | None = None,
     ) -> tuple[SessionView, str]:
         """Seed the pre-lazy allocated state for focused tests of an already-running session."""
         now = datetime.now(UTC)
         session_id = uuid4()
-        bridge_token = secrets.token_urlsafe(32)
+        session_token = secrets.token_urlsafe(32)
         async with self._sessions.begin() as db:
             if conversation_id is None:
                 conversation_id = uuid4()
@@ -739,10 +753,7 @@ class Store:
                         operator_id=operator_id,
                         agent_id=agent_id,
                         access_profile_id=access_profile_id,
-                        # Expand step of runtime_kind→harness_kind (database_schema.py C4d): dual-write
-                        # both, still read `runtime_kind`, until the contract releases drop it.
-                        harness_kind=runtime_kind or HarnessKind.CLAUDE_CODE,
-                        runtime_kind=runtime_kind or HarnessKind.CLAUDE_CODE,
+                        harness_kind=harness_kind,
                         created_at=now,
                     )
                 )
@@ -760,7 +771,7 @@ class Store:
                     for value, expected in (
                         (agent_id, conversation.agent_id),
                         (access_profile_id, conversation.access_profile_id),
-                        (runtime_kind, conversation.runtime_kind),
+                        (harness_kind, conversation.harness_kind),
                     )
                 ):
                     raise ValueError("test session does not match pinned conversation identity")
@@ -769,8 +780,11 @@ class Store:
                     session_id=session_id,
                     operator_id=operator_id,
                     conversation_id=conversation_id,
-                    bridge_token_fingerprint=self._fingerprint(bridge_token),
+                    bridge_token_fingerprint=self._fingerprint(session_token),
                     bridge_connected_at=None,
+                    # Dual-write with bridge_token_fingerprint until the 0122 expand contracts.
+                    session_token_fingerprint=self._fingerprint(session_token),
+                    runner_connected_at=None,
                     error=None,
                     lease_expires_at=now + PROVISION_LEASE,
                     created_at=now,
@@ -780,7 +794,7 @@ class Store:
             await db.flush([session])
             writer = await log.writer_for(db, conversation_id, session_id=session_id, turn_id=None, now=now)
             writer.authored(conversation_event.SessionProvisioning())
-        return await self.get(operator_id, session_id), bridge_token
+        return await self.get(operator_id, session_id), session_token
 
     async def allocate(self, operator_id: UUID, session_id: UUID) -> SessionAllocation | None:
         """Start provisioning an idle session once its conversation has work queued.
@@ -788,7 +802,7 @@ class Store:
         The row lock is the allocation mutex. A prompt request and the runtime reconciler may both
         observe the same accepted prompt, but exactly one moves ``idle`` to ``provisioning`` — the
         credential fingerprint *is* that transition — and receives a credential with which to
-        create the SandboxClaim. The prompt, bridge fingerprint, provisioning lease and lifecycle
+        create the SandboxClaim. The prompt, session-token fingerprint, provisioning lease and lifecycle
         event are therefore durable before the external Kubernetes write begins.
 
         Returns ``None`` when the session is already allocated or no prompt has created demand yet.
@@ -804,8 +818,11 @@ class Store:
                 raise KeyError(session_id)
             if chat.status != SessionStatus.IDLE or not await _has_pending_prompt(db, chat.conversation_id):
                 return None
-            bridge_token = secrets.token_urlsafe(32)
-            chat.bridge_token_fingerprint = self._fingerprint(bridge_token)
+            session_token = secrets.token_urlsafe(32)
+            fingerprint = self._fingerprint(session_token)
+            # Dual-write with bridge_token_fingerprint until the 0122 expand contracts.
+            chat.bridge_token_fingerprint = fingerprint
+            chat.session_token_fingerprint = fingerprint
             chat.lease_expires_at = now + PROVISION_LEASE
             chat.updated_at = now
             writer = await log.writer_for(db, chat.conversation_id, session_id=session_id, turn_id=None, now=now)
@@ -816,7 +833,7 @@ class Store:
                 conversation_id=chat.conversation_id,
                 position=writer.conversation.next_event_seq - 1,
             )
-            return SessionAllocation(session_id=session_id, bridge_token=bridge_token)
+            return SessionAllocation(session_id=session_id, session_token=session_token)
 
     async def sessions_awaiting_sandbox(self) -> tuple[SandboxDemand, ...]:
         """Return every idle session with durable demand, longest-waiting first.
@@ -888,7 +905,7 @@ class Store:
                 Conversation.conversation_id,
                 Conversation.agent_id,
                 Conversation.access_profile_id,
-                Conversation.runtime_kind,
+                Conversation.harness_kind,
                 Conversation.created_at,
                 activity,
             )
@@ -898,7 +915,7 @@ class Store:
                 Conversation.conversation_id,
                 Conversation.agent_id,
                 Conversation.access_profile_id,
-                Conversation.runtime_kind,
+                Conversation.harness_kind,
                 Conversation.created_at,
             )
             .order_by(activity.desc(), Conversation.conversation_id.desc())
@@ -922,7 +939,7 @@ class Store:
                     conversation_id=row.conversation_id,
                     agent_id=row.agent_id,
                     access_profile_id=row.access_profile_id,
-                    harness_kind=row.runtime_kind,
+                    harness_kind=row.harness_kind,
                     created_at=row.created_at,
                     last_activity_at=row.last_activity_at,
                     attachments=attachments[row.conversation_id],
@@ -980,7 +997,7 @@ class Store:
             conversation_id=conversation_id,
             agent_id=conversation.agent_id,
             access_profile_id=conversation.access_profile_id,
-            harness_kind=conversation.runtime_kind,
+            harness_kind=conversation.harness_kind,
             created_at=conversation.created_at,
             attachments=attachments,
             items=[item_of(row) for row in rows],
@@ -1046,7 +1063,7 @@ class Store:
             items=[item_of(row) for row in rows],
         )
 
-    async def authenticate_bridge(self, session_id: UUID, token: str) -> BridgeAuthentication:
+    async def authenticate_runner_connection(self, session_id: UUID, token: str) -> RunnerConnectionAuthentication:
         """Admit a runner to its session — the first time, and every time after.
 
         **Taking the lease is the admission.** A live session admits any runner that can take its
@@ -1064,14 +1081,16 @@ class Store:
                 or record.bridge_token_fingerprint is None
                 or not secrets.compare_digest(record.bridge_token_fingerprint, self._fingerprint(token))
             ):
-                return BridgeAuthentication.REJECTED
+                return RunnerConnectionAuthentication.REJECTED
             if record.status in ENDED_SESSION_STATUSES:
-                return BridgeAuthentication.TERMINAL
+                return RunnerConnectionAuthentication.TERMINAL
             # `provisioning` *is* "allocated and never attached", so the stamp below is the whole
             # transition to `ready`.
             first_attach = record.status == SessionStatus.PROVISIONING
             if first_attach:
                 record.bridge_connected_at = now
+                # Dual-write with bridge_connected_at until the 0122 expand contracts.
+                record.runner_connected_at = now
             elif (
                 record.lease_holder not in (None, REPLICA)
                 and record.lease_expires_at is not None
@@ -1080,7 +1099,7 @@ class Store:
                 # Somebody else is still serving this session and saying so. Turning this runner
                 # away keeps one CLI answering to one console — but only until that lease lapses,
                 # which is why it is `HELD` rather than `REJECTED`.
-                return BridgeAuthentication.HELD
+                return RunnerConnectionAuthentication.HELD
             previous_holder = record.lease_holder
             record.lease_holder = REPLICA
             record.lease_expires_at = now + LEASE_TTL
@@ -1090,7 +1109,7 @@ class Store:
             if not first_attach and previous_holder != REPLICA:
                 writer = await log.writer_for(db, record.conversation_id, session_id=session_id, turn_id=None, now=now)
                 writer.authored(conversation_event.SessionAdopted(previous_holder=previous_holder, holder=REPLICA))
-            return BridgeAuthentication.ACCEPTED
+            return RunnerConnectionAuthentication.ACCEPTED
 
     async def release_lease(self, session_id: UUID) -> None:
         """Hand a live session back for adoption, without declaring it dead.
@@ -1338,7 +1357,7 @@ class Store:
             if records is not None:
                 await records(db, row.prompt_id)
             # RUNTIME_DEMAND provisions a session for a conversation that has none; PROMPT wakes the
-            # runner bridge of a live one to dispatch what it now owes.
+            # runner connection of a live one to dispatch what it now owes.
             await notify_conversation(db, ConversationWakeKind.RUNTIME_DEMAND, conversation_id)
             if chat is not None:
                 await notify(db, SessionEventKind.PROMPT, chat.session_id)
@@ -1589,7 +1608,7 @@ class Store:
         self,
         session_id: UUID,
         direction: FrameDirection,
-        kind: BridgeFrameKind,
+        kind: SessionFrameKind,
         payload: dict[str, Any],
         *,
         runner_seq: int | None = None,
@@ -1601,8 +1620,8 @@ class Store:
         a replay** — the same runner position already exists in this log — and the caller must not
         act on it again. Console-authored records have no runner position and are always appended.
 
-        *kind* is passed rather than read out of the payload: it is the bridge record class, while
-        the native harness discriminator stays inside the opaque payload.
+        *kind* is passed rather than read out of the payload: it is the outer session-frame class,
+        while the native harness discriminator stays inside the opaque payload.
 
         *runner_seq* is the runner's own number for the frame, where one came from a runner that
         numbers. Nothing here orders by it; what reads it is `highest_runner_seq`. Default None
@@ -1620,7 +1639,7 @@ class Store:
         db: AsyncSession,
         session_id: UUID,
         direction: FrameDirection,
-        kind: BridgeFrameKind,
+        kind: SessionFrameKind,
         payload: dict[str, Any],
         *,
         runner_seq: int | None,
@@ -1723,7 +1742,7 @@ class Store:
         cursor names, which is the first row the previous page did not return.
         """
         query = (
-            select(Session, Conversation.agent_id, Conversation.access_profile_id, Conversation.runtime_kind)
+            select(Session, Conversation.agent_id, Conversation.access_profile_id, Conversation.harness_kind)
             .join(Conversation, Conversation.conversation_id == Session.conversation_id)
             .order_by(Session.created_at.desc(), Session.session_id.desc())
         )
@@ -1743,13 +1762,66 @@ class Store:
                 conversation_id=row.conversation_id,
                 agent_id=agent_id,
                 access_profile_id=access_profile_id,
-                harness_kind=runtime_kind,
+                harness_kind=harness_kind,
                 attachments=attachments[row.conversation_id],
                 status=row.status,
                 created_at=row.created_at,
                 error=row.error,
             )
-            for row, agent_id, access_profile_id, runtime_kind in sessions
+            for row, agent_id, access_profile_id, harness_kind in sessions
+        ]
+
+    async def list_active_sessions(
+        self, operator_id: UUID, *, before_created_at: datetime | None, before_session_id: UUID | None, limit: int
+    ) -> list[ActiveSessionRecord]:
+        """List allocated, not-yet-ended sessions owned by one Operator.
+
+        ``bridge_token_fingerprint`` is the durable allocation fact: idle sessions have no claim,
+        while provisioning, ready, responding, and closing sessions do. The status is projected
+        with the same open-turn rule as conversation reads, so this inventory cannot grow a second
+        notion of a running session.
+        """
+        query = (
+            select(Session, Conversation.harness_kind)
+            .join(Conversation, Conversation.conversation_id == Session.conversation_id)
+            .where(
+                Session.operator_id == operator_id,
+                Session.ended_at.is_(None),
+                Session.bridge_token_fingerprint.is_not(None),
+            )
+            .order_by(Session.created_at.desc(), Session.session_id.desc())
+        )
+        if before_created_at is not None or before_session_id is not None:
+            if before_created_at is None or before_session_id is None:
+                raise ValueError("active-session cursor must include created_at and session_id")
+            query = query.where(
+                tuple_(Session.created_at, Session.session_id)
+                <= tuple_(literal(before_created_at), literal(before_session_id))
+            )
+        async with self._sessions() as db:
+            rows = (await db.execute(query.limit(limit))).all()
+            session_ids = {row.session_id for row, _runtime_kind in rows}
+            if session_ids:
+                responding = set(
+                    (
+                        await db.scalars(
+                            select(ConversationTurn.session_id).where(
+                                ConversationTurn.session_id.in_(session_ids), ConversationTurn.ended_at.is_(None)
+                            )
+                        )
+                    ).all()
+                )
+            else:
+                responding = set()
+        return [
+            ActiveSessionRecord(
+                session_id=row.session_id,
+                runtime_kind=runtime_kind,
+                status=live_status(row, responding=row.session_id in responding),
+                created_at=row.created_at,
+                updated_at=row.updated_at,
+            )
+            for row, runtime_kind in rows
         ]
 
     async def read_session_frames(
@@ -1759,7 +1831,7 @@ class Store:
         cursor: int | None,
         limit: int,
         scope: ConversationReadScope,
-        kinds: Sequence[BridgeFrameKind] | None = None,
+        kinds: Sequence[SessionFrameKind] | None = None,
     ) -> list[FrameRecord]:
         """One page of a session's frame log, in wire order, from the start of the log onwards.
 
@@ -1768,7 +1840,7 @@ class Store:
         The cursor names the first frame to return rather than the last one already returned, so
         an item's `first_frame_seq` is a cursor as it stands.
         """
-        query = _bridge_frames(select(SessionFrame).where(SessionFrame.session_id == session_id), kinds)
+        query = _restrict_frame_kinds(select(SessionFrame).where(SessionFrame.session_id == session_id), kinds)
         if cursor is not None:
             query = query.where(SessionFrame.frame_seq >= cursor)
         async with self._sessions() as db:
@@ -1856,7 +1928,7 @@ class Store:
         *,
         before_seq: int | None,
         limit: int,
-        kinds: Sequence[BridgeFrameKind] | None = None,
+        kinds: Sequence[SessionFrameKind] | None = None,
     ) -> SessionFramePage:
         """The tail of an Operator-owned session's rollout, for the console's frame inspector.
 
@@ -1874,21 +1946,21 @@ class Store:
         async with self._sessions() as db:
             owned = (
                 await db.execute(
-                    select(Session, Conversation.runtime_kind)
+                    select(Session, Conversation.harness_kind)
                     .join(Conversation, Conversation.conversation_id == Session.conversation_id)
                     .where(Session.session_id == session_id, Session.operator_id == operator_id)
                 )
             ).one_or_none()
             if owned is None:
                 raise KeyError(session_id)
-            runtime_kind = owned[1]
-            query = _bridge_frames(select(SessionFrame).where(SessionFrame.session_id == session_id), kinds)
+            harness_kind = owned[1]
+            query = _restrict_frame_kinds(select(SessionFrame).where(SessionFrame.session_id == session_id), kinds)
             if before is not None:
                 query = query.where(SessionFrame.frame_seq < before)
             rows = (await db.scalars(query.order_by(SessionFrame.frame_seq.desc()).limit(limit))).all()
-        session, runtime_kind = owned
+        session, harness_kind = owned
         return frame_page(
-            list(reversed(rows)), limit=limit, conversation_id=session.conversation_id, runtime_kind=runtime_kind
+            list(reversed(rows)), limit=limit, conversation_id=session.conversation_id, harness_kind=harness_kind
         )
 
     async def apply_frame(
@@ -2137,11 +2209,11 @@ class Store:
         outcome = await self.outcome(session_id)
         return outcome.status if outcome is not None else None
 
-    async def runtime_kind_of(self, session_id: UUID) -> HarnessKind:
-        """Return the immutable runtime discriminator of a session's conversation."""
+    async def harness_kind_of(self, session_id: UUID) -> HarnessKind:
+        """Return the immutable harness discriminator of a session's conversation."""
         async with self._sessions() as db:
             kind = await db.scalar(
-                select(Conversation.runtime_kind)
+                select(Conversation.harness_kind)
                 .join(Session, Session.conversation_id == Conversation.conversation_id)
                 .where(Session.session_id == session_id)
             )
@@ -2150,12 +2222,12 @@ class Store:
             return kind
 
     async def session_identity(self, session_id: UUID) -> OperatorSessionIdentity:
-        """Look up the immutable Agent/profile/runtime for internal execution paths."""
+        """Look up the immutable Agent/profile/harness for internal execution paths."""
         async with self._sessions() as db:
             row = (
                 await db.execute(
                     select(
-                        Session.status, Conversation.agent_id, Conversation.access_profile_id, Conversation.runtime_kind
+                        Session.status, Conversation.agent_id, Conversation.access_profile_id, Conversation.harness_kind
                     )
                     .join(Conversation, Conversation.conversation_id == Session.conversation_id)
                     .where(Session.session_id == session_id)
@@ -2167,7 +2239,7 @@ class Store:
                 status=row.status,
                 agent_id=row.agent_id,
                 access_profile_id=row.access_profile_id,
-                runtime_kind=row.runtime_kind,
+                harness_kind=row.harness_kind,
             )
 
     async def conversation_identity(self, conversation_id: UUID, operator_id: UUID) -> OperatorSessionIdentity:
@@ -2175,7 +2247,7 @@ class Store:
         async with self._sessions() as db:
             row = (
                 await db.execute(
-                    select(Conversation.agent_id, Conversation.access_profile_id, Conversation.runtime_kind).where(
+                    select(Conversation.agent_id, Conversation.access_profile_id, Conversation.harness_kind).where(
                         Conversation.conversation_id == conversation_id, Conversation.operator_id == operator_id
                     )
                 )
@@ -2186,7 +2258,7 @@ class Store:
                 status=SessionStatus.READY,
                 agent_id=row.agent_id,
                 access_profile_id=row.access_profile_id,
-                runtime_kind=row.runtime_kind,
+                harness_kind=row.harness_kind,
             )
 
     async def operator_session_identity(self, operator_id: UUID, session_id: UUID) -> OperatorSessionIdentity:
@@ -2195,7 +2267,7 @@ class Store:
             row = (
                 await db.execute(
                     select(
-                        Session.status, Conversation.agent_id, Conversation.access_profile_id, Conversation.runtime_kind
+                        Session.status, Conversation.agent_id, Conversation.access_profile_id, Conversation.harness_kind
                     )
                     .join(Conversation, Conversation.conversation_id == Session.conversation_id)
                     .where(Session.session_id == session_id, Session.operator_id == operator_id)
@@ -2207,7 +2279,7 @@ class Store:
                 status=row.status,
                 agent_id=row.agent_id,
                 access_profile_id=row.access_profile_id,
-                runtime_kind=row.runtime_kind,
+                harness_kind=row.harness_kind,
             )
 
     async def renew_lease(self, session_id: UUID) -> None:
@@ -2231,7 +2303,7 @@ class Store:
         that `supervise_once` reads as healthy. This is the only observer that is not that process.
 
         **An expired lease means unowned, not dead**, and the threshold below is that distinction.
-        `authenticate_bridge` admits any runner once the lease has lapsed, so an expired session is
+        `authenticate_runner_connection` admits any runner once the lease has lapsed, so an expired session is
         adoptable without anything having to hand it back — but not *instantly* adopted, since the
         runner redials on a backoff. A session is therefore dead only once it has been adoptable
         for a whole `ADOPTION_GRACE` and nobody took it.
@@ -2295,7 +2367,7 @@ class Store:
 
         Returns False when no turn is in flight. Over NOTIFY rather than an in-process registry
         because the two ends land on different replicas: the abort event belongs to the pod holding
-        the runner's bridge websocket, while the operator's HTTP request is balanced across all.
+        the runner connection, while the operator's HTTP request is balanced across all.
         """
         async with self._sessions.begin() as db:
             chat = await db.get(Session, session_id)
@@ -2319,11 +2391,11 @@ def _expiry_detail(reason: LeaseExpiryReason, holder: str | None) -> str:
 def _frame_record(row: SessionFrame) -> FrameRecord:
     """One stored frame as its wire variant, told apart by the row's own kind."""
     match row.kind:
-        case BridgeFrameKind.HARNESS_FRAME:
+        case SessionFrameKind.HARNESS_FRAME:
             return HarnessFrameRecord(
                 frame_seq=row.frame_seq, direction=row.direction, created_at=row.created_at, payload=row.payload
             )
-        case BridgeFrameKind.SETUP_OUTPUT:
+        case SessionFrameKind.SETUP_OUTPUT:
             text = row.payload.get("text")
             if not isinstance(text, str):
                 # Console-authored, so the shape is ours; a row without its line is corruption.

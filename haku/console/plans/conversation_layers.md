@@ -1,4 +1,4 @@
-# The chat runtime: sessions, conversations, channels
+# The chat harness: sessions, conversations, channels
 
 The model, set by the operator on 2026-08-17:
 
@@ -10,14 +10,14 @@ with the cardinality settled in the same breath:
 > - **conversation**: can span over multiple sessions; only one session holds it at a time
 > - **matrix room**: I think we can assume that 1 matrix room == 1 conversation
 
-This is the chat runtime's one plan: the invariant the layering is aiming at (§ 1), the protocols
+This is the chat harness registration's one plan: the invariant the layering is aiming at (§ 1), the protocols
 that follow from it, and § 9's ordered list of what is left to build. Design that is still true is
 stated in the present tense; work that has landed is deleted rather than ticked off, so what remains
 here is what remains to do.
 
 **Nothing in code cites this file, and nothing should.** A plan empties out as its work lands, so
 every identifier in it is transient by construction and a comment pointing at one goes stale
-without anything noticing. How the layers work once this plan is spent is <../docs/chat_layers.md>,
+without anything noticing. How the layers work once this plan is spent is <../docs/conversation_layers.md>,
 a contract several call sites depend on belongs in <../x/README.md> or a `SPEC.md`
 (<../channels/matrix/SPEC.md> is where the Matrix channel's own guarantees live), and an invariant
 one call site depends on belongs in that call site's own words.
@@ -31,13 +31,13 @@ The layering is two forbidden edges (operator, 2026-08-18):
 > A **session** listens to and sends to the **conversation**, never to a channel.
 
 The conversation is the only thing either side talks to. **How the three layers work when this
-holds is <../docs/chat_layers.md>** — what each owns, the two routes a fact takes into the record,
+holds is <../docs/conversation_layers.md>** — what each owns, the two routes a fact takes into the record,
 and where a new table, port or event kind belongs. Every step below is checked against it, and the
 rule leaves this plan with the last step that achieves it.
 
 ### The edges that are bugs
 
-Every line here is an edge the invariant still forbids after neutral runtime supervision landed.
+Every line here is an edge the invariant still forbids after neutral harness supervision landed.
 
 **A channel that knows a session.**
 
@@ -65,7 +65,7 @@ ready session with nothing queued and refuses otherwise; a replacement session i
 conversation's tail as prompt text.
 
 **Handover** is the operator's "only one session holds it at a time", and the lease is what holds
-it: `authenticate_bridge` admits one runner connection while a lease is valid, and expiry makes the
+it: `authenticate_runner_connection` admits one runner connection while a lease is valid, and expiry makes the
 row adoptable (§ 14). `channel_attachment`'s partial unique index is a different rule wearing the same
 words — **one live conversation per _address_** — and reading it as the handover rule is what makes
 a channel's row look like a statement about sessions (§ 7).
@@ -204,7 +204,8 @@ lands inside it is redacted on observation. The standing guarantees are
   — replays are suppressed, duplicates repaired, an operator redaction respected. What no reader
   does yet is compare the copy's _content_ against the fold's desired body (the tag carries ids,
   never text), so an edit the homeserver lost stays stale until the next state change or takeover
-  sweep; step 2 of § 9 is where a content check would live if it earns its cost.
+  sweep; a content check to catch that is the open item in § 8 (_What is missing_), if it earns its
+  cost.
 - **The token cannot live in the room**, because it is what reads the room. So the channel keeps a
   private store whatever else moves; the only question is what else is in it.
 
@@ -321,7 +322,7 @@ Matrix queue to know how far Matrix has got.
 
 ### A session has no frontend
 
-This boundary is now enforced: the turn runtime records conversation facts and holds no channel
+This boundary is now enforced: the turn harness records conversation facts and holds no channel
 object. An attachment only selects the shared direct-chat system prompt; channel subscribers render
 setup, answers, silence and live state from the conversation stream. Address and delivery state stay
 inside the channel.
@@ -351,7 +352,7 @@ attachment rows. That is what an SPA session is, and it costs one row and no dec
 
 **Where events live.** On the conversation. "This session's sandbox died", "this replica adopted
 it", "the lease lapsed" are _caused_ by a session and are things the operator is told in a room, so
-they are conversation facts (<../docs/chat_layers.md>); the session they name is a field, not the
+they are conversation facts (<../docs/conversation_layers.md>); the session they name is a field, not the
 key. Identity-only is a statement about the `conversation` row, not about the record: the log is
 keyed to the conversation and the conversation table still holds nothing but an id.
 
@@ -399,8 +400,8 @@ room binds beside the others, which was **the point rather than the cost** (§ 7
   be refused. Measured to work (<../../cli_protocol/probes/steering.py>): a prompt written mid-turn
   is absorbed at the next tool boundary and the model acts on it, in one turn with one `result`
   frame — and a turn generating continuous prose has no boundary to absorb at, so it falls back to
-  next-turn delivery. That is a runner-protocol capability rather than queueing, and the bridge
-  already has an unused input path in that direction. It wants the layering first, because it is
+  next-turn delivery. That is a runner-protocol capability rather than queueing, and the runner
+  protocol already has an unused input path in that direction. It wants the layering first, because it is
   about what the conversation admits and admission is answered today inside a channel's sync loop.
 
 - **Channel state lives in Postgres, not in the room.** The watermark stays a row; `m.fully_read`
@@ -484,52 +485,26 @@ operator invite creates a second conversation and starts its reconciler beside t
 
 ## 9. The order
 
-Each step is independently reviewable. The dependency order below is the channel stack; the
-backend-neutral runtime/Agent-selection work in #4431 is a parallel review track and must not be
-mixed into these PRs.
+Each remaining step is independently reviewable. The backend-neutral harness/Agent-selection work
+in #4431 is a parallel review track and must not be mixed into these PRs.
 
-1. **Completed — Matrix's own copy is read** (§ 3). The own-sender `/sync` projection feeds
-   `matrix_room_copy` without admitting anything as a prompt; reconciliation finds an existing
-   source before sending, the deterministic transaction id covers only the send-to-echo window, and
-   a duplicate that lands inside it is redacted on observation. The editable copy stays unread
-   until step 2 gives it a durable subject.
+1. **Add Matrix commands.** Abort first, then new/close session semantics as conversation
+   operations — session supervision behind the conversation already makes them so. Commands are
+   ingress interception, never agent tools or approval gestures. Use a namespace Element does not
+   consume (for example `!haku stop`).
 
-2. **Completed — turn notices are spans** (§ 4). The fold (`channels/matrix/spans.py`) produces
-   bounded bodies under stable turn/session subjects — the opening event's position — and closes
-   each span by sealing scrollback facts and redacting spent live state; the subscriber reconciles
-   it beside the sealed notices, off one cursor, with a takeover sweep for lines nothing open
-   accounts for. The pure fold and the Matrix effect are tested separately.
-
-3. **Completed — session supervision is behind the conversation.** `conversation.runtime.Runtime` owns
-   global lease expiry, terminal-claim cleanup and exactly-once idle-session creation under the
-   conversation row lock. Web and Matrix admit prompts by conversation; Matrix has no session
-   supervisor, lifecycle latch or `MXSE` lock. The runtime identity seam from #4431 may later inform
-   which session implementation is created, but no provider choice leaks into the channel.
-
-4. **Completed — reconciliation is attachment-scoped, and rooms are served in parallel.** One
-   Matrix `/sync` owner keeps the user-wide token and dispatches its room events by attachment; the
-   sync leader sweeps one reconciler per live attachment
-   (`channels/matrix/attachment_reconciler.py`) owning that room's conversation cursor, reply
-   outbox, revisions and send budget, so an operator invite creates another conversation and
-   starts another reconciler. `bound_room()` and the process-global pacer state are gone;
-   `RoomPacers` addresses the budgets by attachment.
-
-5. **Add Matrix commands.** Abort first, then new/close session semantics once step 3 makes them
-   conversation operations. Commands are ingress interception, never agent tools or approval
-   gestures. Use a namespace Element does not consume (for example `!haku stop`).
-
-6. **Interlink the channels.** Matrix events link to durable console routes; the console links back
+2. **Interlink the channels.** Matrix events link to durable console routes; the console links back
    with `matrix.to`; sessions and tool calls link both ways. This is independent of the others once
    the route names are chosen to survive permanent, federated events.
 
-**Dependencies.** Steps 5 and 6 are independent of each other. The
+**Dependencies.** The two steps are independent of each other. The
 channel-neutral allocator is already complete and is not a step in this plan.
 
-**Independent runtime work.** The `provisioning` refinement (§ 10) and the read-surface work
+**Independent harness work.** The `provisioning` refinement (§ 10) and the read-surface work
 (§ 13) are not channel dependencies. Bridge v3 already made the frame payload harness-neutral; any remaining
-numbering/contract cleanup stays in that runtime stack. The
-`session_runtime.py` split and its abort wait can land with #4431 or step 5 on their own merits, not
-as incidental channel-reconciler edits.
+numbering/contract cleanup stays in that harness stack. The
+`session_runtime.py` split and its abort wait can land with #4431 or the Matrix-commands step on
+their own merits, not as incidental channel-reconciler edits.
 
 ## 10. `provisioning` is lossy
 
@@ -614,7 +589,7 @@ tests and little else. That chain is gone with the fold-backed read; `unprojecte
 surface either, and the adapter's count of frame classes it could not map is asserted by the
 capture tests and shown to nobody.
 
-**The runtime seam now enforces the rule.** `RuntimeAdapter.turn_handler()` returns a provider-owned,
+**The harness seam now enforces the rule.** `HarnessAdapter.turn_handler()` returns a provider-owned,
 typed stateful reducer, and each native frame crosses back into generic Console code only as neutral
 `FrameEffects`. The turn loop, adoption and reprojection all drive that interface; no generic layer
 selects a branch from the native JSON. Exact payloads remain separately addressable in the raw-frame
@@ -670,7 +645,7 @@ silently:
 
 ## 12. How this executes
 
-§ 9 is the dependency order. This is how it is worked: what fans out, what cannot, and where the
+§ 9 is the remaining work. This is how it is worked: what fans out, what cannot, and where the
 position is kept so a session that dies mid-flight loses nothing but its own context.
 
 ### The bottleneck is migrations, and it is narrower than the step list suggests
@@ -784,7 +759,7 @@ notices. The current channel implementation is the inventory.
 
 **The projector is single-writer per session.** The lease gives that, and it is the reason none of
 this needs the fold to be re-runnable. An expired lease means unowned rather than dead, but the
-property still holds: `authenticate_bridge` admits one holder at a time while a lease is valid, and
+property still holds: `authenticate_runner_connection` admits one holder at a time while a lease is valid, and
 expiry only makes the row adoptable. A future change to the lease's meaning should be checked
 against this assumption rather than around it.
 

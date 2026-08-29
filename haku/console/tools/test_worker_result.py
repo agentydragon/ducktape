@@ -32,9 +32,9 @@ from haku.console.database_schema import Conversation, ConversationItem, Convers
 from haku.console.grants.principal import RequestPrincipal
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
-from haku.console.in_process_server_access import InProcessServerAccessPolicy
+from haku.console.mcp.execution import AgentMcpExecutionCaller, McpExecutionContext, mcp_execution_request_meta
+from haku.console.mcp.in_process_server_access import InProcessServerAccessPolicy
 from haku.console.mcp_config import AccessProfile
-from haku.console.mcp_execution import AgentMcpExecutionCaller, McpExecutionContext, mcp_execution_request_meta
 from haku.console.session.status import SessionStatus
 from haku.console.session.store import Store
 from haku.console.tools.conversations import HAKU_CONVERSATIONS_SERVER_ID, build_mcp
@@ -123,7 +123,6 @@ async def _seed_session(env: _Env, *, ready: bool, profile: str = _WORKER_PROFIL
                 agent_id=env.worker_agent_id,
                 access_profile_id=profile,
                 harness_kind=HarnessKind.CODEX_APP_SERVER,
-                runtime_kind=HarnessKind.CODEX_APP_SERVER,
                 created_at=now,
                 next_event_seq=1,
             )

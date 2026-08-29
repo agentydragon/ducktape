@@ -140,10 +140,10 @@ HTTPS. A successful response is:
 ```
 
 Console should return `allowed: false` for a valid identity denied by the
-standing policy, `401` for an invalid Haku identity, and a non-2xx response
+configured SAR authorization, `401` for an invalid Haku identity, and a non-2xx response
 when the Kubernetes authorization API cannot be read. The proxy fails closed
 on every non-2xx or malformed response. Allowed decisions require a non-empty
-`decision_id`. Standing SAR decisions omit `valid_until`; a later temporary-grant
+`decision_id`. Configured SAR decisions omit `valid_until`; a later database-grant
 decision may include it, in which case the proxy terminates the upstream request
 at that instant.
 

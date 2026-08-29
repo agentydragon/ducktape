@@ -42,7 +42,7 @@ def test_a_delta_has_no_identity_and_must_not_be_given_one() -> None:
 
 
 def test_what_the_console_authored_itself_has_none() -> None:
-    """Neither crosses the bridge as a conversation frame, so neither is ever replayed."""
+    """Neither crosses the runner protocol as a conversation frame, so neither is ever replayed."""
     assert frame_uid("setup_output", {"text": "cloning"}) is None
     assert frame_uid("partial", {"type": "assistant"}) is None
 

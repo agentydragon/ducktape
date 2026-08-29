@@ -15,8 +15,8 @@ class FrameDirection(StrEnum):
     FROM_AGENT = "from_agent"
 
 
-class BridgeFrameKind(StrEnum):
-    """Which Haku bridge envelope was durably recorded.
+class SessionFrameKind(StrEnum):
+    """Which runner protocol envelope was durably recorded.
 
     The selected harness is immutable on the session, and its native discriminator remains inside
     the opaque payload.  This enum therefore names only Haku's framing vocabulary, never Claude's

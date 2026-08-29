@@ -40,7 +40,7 @@ js_openapi_schema(
 js_json_schema(
     name = "mcp_tool_arguments",
     out = "api/mcp_tool_arguments.d.ts",
-    generator = "//haku/console:export_mcp_tool_schemas_bin",
+    generator = "//haku/console/mcp:export_tool_schemas_bin",
     schema_out = "api/mcp_tool_arguments.schema.json",
 )
 
@@ -53,7 +53,7 @@ js_json_schema(
     name = "mcp_tool_results",
     out = "api/mcp_tool_results.d.ts",
     args = ["--results"],
-    generator = "//haku/console:export_mcp_tool_schemas_bin",
+    generator = "//haku/console/mcp:export_tool_schemas_bin",
     schema_out = "api/mcp_tool_results.schema.json",
 )
 
@@ -89,6 +89,31 @@ ts_library(
         ":operator_login",
         ":schema",
         "//:node_modules/openapi-fetch",
+    ],
+)
+
+ts_library(
+    name = "agent_names",
+    srcs = ["agent_names.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "grant_principal",
+    srcs = ["grant_principal.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":agent_names",
+        ":client",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
     ],
 )
 
@@ -131,6 +156,17 @@ ts_library(
 ts_library(
     name = "mcp_status_client",
     srcs = ["mcp_status_client.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":mcp_client",
+        ":mcp_tool_result_schema",
+    ],
+)
+
+ts_library(
+    name = "session_sandboxes_client",
+    srcs = ["session_sandboxes_client.ts"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -346,6 +382,7 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
+        ":agent_names",
         ":approval_state",
         ":client",
         ":toast",
@@ -675,20 +712,21 @@ ts_library(
 )
 
 ts_library(
-    name = "kubernetes_grants_panel",
-    srcs = ["kubernetes_grants_panel.tsx"],
+    name = "grants_panel",
+    srcs = ["grants_panel.tsx"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
         ":approval_state",
         ":client",
+        ":code_block",
+        ":grant_principal",
         ":link",
         ":routing",
         ":toast",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//haku/console/frontend/tool_rendering/grants:responses",
     ],
 )
 
@@ -702,11 +740,12 @@ ts_library(
         ":async_resource",
         ":client",
         ":console_events",
-        ":kubernetes_grants_panel",
+        ":grants_panel",
         ":link",
         ":mcp_status_client",
         ":open_external",
         ":push_subscription",
+        ":session_sandboxes_client",
         ":toast",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -785,6 +824,7 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
+        ":agent_names",
         ":approvals_embed_page",
         ":client",
         ":haku_ui_embed",
@@ -857,11 +897,11 @@ filegroup(
         "confirm_dialog.tsx",
         "field.tsx",
         "gmail_client.ts",
+        "grants_panel.tsx",
         "grocy_client.ts",
         "haku_ui_embed.tsx",
         "icons.tsx",
         "index.html",
-        "kubernetes_grants_panel.tsx",
         "main.tsx",
         "oauth_result_announcement.ts",
         "oauth_result_page.tsx",
@@ -957,6 +997,7 @@ ts_library(
     tags = ["no-lint"],
     tsconfig = TSCONFIG,
     deps = [
+        ":agent_names",
         ":approval_state",
         ":approvals_embed_page",
         ":client",
@@ -1281,6 +1322,7 @@ ts_library(
         ":async_resource",
         ":client",
         ":mcp_status_client",
+        ":session_sandboxes_client",
         ":settings_panel",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",

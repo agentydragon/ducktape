@@ -7,7 +7,8 @@ is the module map.
 - `worker.py` — the worker binary: settings-as-contract, the narrow-role schema probe, and the
   composition of everything below against the conversation seam.
 - `config.py` — the channel's own wiring (`Config`) and the worker's narrow slice of the shared
-  console config file (`AdapterConfigFile`, the launch-identity registry).
+  console config file (`AdapterConfigFile`, the launch-identity registry plus the explicit
+  `matrix.default_agent_id` and `matrix.default_harness_kind` route for new rooms).
 - `client.py` — the client-API calls the loop makes, over `matrix-nio`.
 - `sync.py` — logs in as `@haku`, long-polls `/sync` (one owner for the user-wide token), binds
   each room the operator invites Haku into, and dispatches inbound events by room to their

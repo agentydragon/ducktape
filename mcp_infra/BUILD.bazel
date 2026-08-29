@@ -12,25 +12,6 @@ py_library(
     ],
 )
 
-# Shared test utilities (non-Docker)
-py_library(
-    name = "test_support",
-    testonly = True,
-    visibility = ["//mcp_infra:__subpackages__"],
-    deps = [
-        ":conftest",
-        "//agent_core/testing:fixtures",
-        "//agent_core/testing/mcp:fixtures",
-        "//mcp_infra/exec/docker:container_session",
-        "//mcp_infra/exec/docker:launcher",
-        "//mcp_infra/exec/docker:server",
-        "//mcp_infra/testing:fixtures",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_test(
     name = "test_types",
     srcs = ["test_types.py"],

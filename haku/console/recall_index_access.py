@@ -6,8 +6,8 @@ from collections.abc import Iterable
 from typing import Any
 
 from haku.console.grants.principal import RequestPrincipal
+from haku.console.mcp.execution import AgentMcpExecutionCaller, McpExecutionCaller, OperatorMcpExecutionCaller
 from haku.console.mcp_config import AccessProfile
-from haku.console.mcp_execution import AgentMcpExecutionCaller, McpExecutionCaller, OperatorMcpExecutionCaller
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 
 

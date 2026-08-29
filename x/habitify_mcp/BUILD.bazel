@@ -22,12 +22,6 @@ py_library(
 )
 
 py_library(
-    name = "constants",
-    srcs = ["constants.py"],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
     name = "testing_models",
     srcs = ["testing_models.py"],
     visibility = ["//visibility:public"],

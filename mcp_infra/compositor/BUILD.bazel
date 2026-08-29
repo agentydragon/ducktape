@@ -17,17 +17,6 @@ py_library(
 )
 
 py_library(
-    name = "clients",
-    srcs = ["clients.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":compositor",
-        "//mcp_infra:snapshots",
-        "@pypi//fastmcp_slim",
-    ],
-)
-
-py_library(
     name = "meta_server",
     srcs = ["meta_server.py"],
     visibility = ["//:__subpackages__"],

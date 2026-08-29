@@ -12,6 +12,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, SecretStr, model_validator
 
 from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
+from util.env import EnvironmentVariableName
 
 
 class EmbedderConfig(BaseModel):
@@ -70,8 +71,8 @@ class GitRecallIndexDefinition(RecallIndexDefinition):
     index_type: Literal["git"] = "git"
     repo_url: str
     branch: str = "main"
-    username_env_var: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]*$")
-    password_env_var: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]*$")
+    username_env_var: EnvironmentVariableName | None = None
+    password_env_var: EnvironmentVariableName | None = None
     # A bare mirror, on ephemeral pod storage by default: losing it costs a clone, not an
     # embedding, since the chunk cache is content-addressed and lives in Postgres.
     mirror_path: Path = Path("/tmp/haku-recall-index/mirror.git")

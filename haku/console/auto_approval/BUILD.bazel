@@ -50,7 +50,7 @@ py_library(
         ":decision",
         "//haku/console:tool_call_actor",
         "//haku/console/grants:principal",
-        "//haku/console/grants/kubernetes:authorization",
+        "//haku/console/grants/kubernetes:authorization_service",
         "//haku/console/grants/kubernetes:kubectl_passthrough_policy",
     ],
 )
@@ -65,7 +65,7 @@ py_library(
         ":kubernetes",
         "//haku/console:mcp_config",
         "//haku/console:tool_call_actor",
-        "//haku/console/grants/kubernetes:authorization",
+        "//haku/console/grants/kubernetes:authorization_service",
         "//haku/console/tools:gmail_client",
         "@pypi//fastmcp_slim",
         "@pypi//jsonschema",

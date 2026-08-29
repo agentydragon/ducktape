@@ -151,18 +151,13 @@ def test_grant_spec_allow_prohibited_address_defaults_off_and_round_trips() -> N
     assert GrantSpec.model_validate(flagged.model_dump(mode="json")) == flagged
 
 
-def test_status_is_derived_from_end_facts_and_the_clock() -> None:
+def test_status_is_derived_from_one_end_fact_and_the_clock() -> None:
     early = datetime.datetime(2026, 8, 21, 0, 30, tzinfo=datetime.UTC)
-    assert derive_status(released_at=None, revoked_at=None, expires_at=_EXPIRES, now=_CREATED) is GrantStatus.ACTIVE
-    assert derive_status(released_at=None, revoked_at=None, expires_at=_EXPIRES, now=_EXPIRES) is GrantStatus.EXPIRED
-    assert derive_status(released_at=early, revoked_at=None, expires_at=_EXPIRES, now=_EXPIRES) is (
-        GrantStatus.RELEASED
-    )
-    assert derive_status(released_at=None, revoked_at=early, expires_at=_EXPIRES, now=_EXPIRES) is (GrantStatus.REVOKED)
+    assert derive_status(ended_at=None, expires_at=_EXPIRES, now=_CREATED) is GrantStatus.ACTIVE
+    assert derive_status(ended_at=None, expires_at=_EXPIRES, now=_EXPIRES) is GrantStatus.EXPIRED
+    assert derive_status(ended_at=early, expires_at=_EXPIRES, now=_EXPIRES) is GrantStatus.ENDED
     # Expiration wins over an end action recorded at or past the time bound.
-    assert derive_status(released_at=_EXPIRES, revoked_at=None, expires_at=_EXPIRES, now=_EXPIRES) is (
-        GrantStatus.EXPIRED
-    )
+    assert derive_status(ended_at=_EXPIRES, expires_at=_EXPIRES, now=_EXPIRES) is GrantStatus.EXPIRED
 
 
 def _grant_payload() -> dict[str, object]:
@@ -177,10 +172,10 @@ def _grant_payload() -> dict[str, object]:
     }
 
 
-@pytest.mark.parametrize("field", ["created_at", "expires_at", "released_at"])
+@pytest.mark.parametrize("field", ["created_at", "expires_at", "ended_at"])
 def test_grant_timestamps_require_timezone_awareness(field: str) -> None:
     payload = _grant_payload()
-    if field == "released_at":
+    if field == "ended_at":
         payload.update(end_reason="done")
     payload[field] = datetime.datetime(2026, 8, 21)
 
@@ -196,17 +191,16 @@ def test_agent_grant_principal_must_belong_to_lifecycle_owner() -> None:
         Grant.model_validate(payload)
 
 
-def test_grant_end_facts_travel_together() -> None:
+def test_grant_end_reason_is_optional_but_nonblank() -> None:
     early = datetime.datetime(2026, 8, 21, 0, 30, tzinfo=datetime.UTC)
 
     payload = _grant_payload()
-    payload.update(released_at=early)
-    with pytest.raises(ValidationError, match="end_reason travels exactly with a recorded end action"):
-        Grant.model_validate(payload)
+    payload.update(ended_at=early)
+    assert Grant.model_validate(payload).ended_at == early
 
     payload = _grant_payload()
-    payload.update(released_at=early, revoked_at=early, end_reason="both")
-    with pytest.raises(ValidationError, match="cannot be both released and revoked"):
+    payload.update(ended_at=early, end_reason="  ")
+    with pytest.raises(ValidationError, match="end_reason must not be blank"):
         Grant.model_validate(payload)
 
 
@@ -217,10 +211,10 @@ def test_status_is_computed_from_facts_and_clock() -> None:
     expired = Grant.model_validate(_grant_payload())
     assert expired.status is GrantStatus.EXPIRED
 
-    released = Grant.model_validate({**_grant_payload(), "released_at": early, "end_reason": "done"})
-    assert released.status is GrantStatus.RELEASED
+    ended = Grant.model_validate({**_grant_payload(), "ended_at": early, "end_reason": "done"})
+    assert ended.status is GrantStatus.ENDED
     # The computed field still serializes: the wire keeps its status key.
-    assert released.model_dump()["status"] is GrantStatus.RELEASED
+    assert ended.model_dump()["status"] is GrantStatus.ENDED
 
     active_payload = _grant_payload()
     active_payload["expires_at"] = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=1)

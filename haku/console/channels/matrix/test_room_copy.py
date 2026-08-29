@@ -12,7 +12,7 @@ import pytest
 import pytest_bazel
 
 from haku.console.channels.matrix.client import ConversationEventSource, ProjectedEvent, Redaction
-from haku.console.channels.matrix.conftest import MATRIX_ROOM
+from haku.console.channels.matrix.conftest import MATRIX_ROOM, MATRIX_TEST_HARNESS_KIND
 from haku.console.channels.matrix.conversation import ConversationStore
 from haku.console.channels.matrix.room_copy import RedundantCopy, RoomCopy
 
@@ -25,7 +25,7 @@ def copy(migrated_sessions) -> RoomCopy:
 @pytest.fixture
 async def attached(conversations: ConversationStore, operator_id: UUID) -> tuple[UUID, UUID]:
     """A bound room's conversation and attachment, which recorded echoes must exist under."""
-    bound = await conversations.bind_room(MATRIX_ROOM, operator_id)
+    bound = await conversations.bind_room(MATRIX_ROOM, operator_id, harness_kind=MATRIX_TEST_HARNESS_KIND)
     attachment_id = await conversations.attachment(MATRIX_ROOM)
     assert attachment_id is not None
     return bound.conversation_id, attachment_id

@@ -23,7 +23,7 @@ from haku.console.conversation.reads import (
     WorkerStatus,
 )
 from haku.console.conversation_read_access import ConversationReadScope
-from haku.console.session.session_frames import BridgeFrameKind
+from haku.console.session.session_frames import SessionFrameKind
 from haku.console.session.status import SessionStatus
 from haku.console.session.store import Store, WorkerOutcome
 
@@ -44,7 +44,7 @@ class ConversationReads:
         cursor: int | None,
         limit: int,
         scope: ConversationReadScope,
-        kinds: Sequence[BridgeFrameKind] | None = None,
+        kinds: Sequence[SessionFrameKind] | None = None,
     ) -> list[FrameRecord]:
         return await self._store.read_session_frames(session_id, cursor=cursor, limit=limit, scope=scope, kinds=kinds)
 

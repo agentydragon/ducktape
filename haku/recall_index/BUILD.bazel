@@ -12,6 +12,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":chunking",
+        "//util:env",
         "@pypi//pydantic",
     ],
 )

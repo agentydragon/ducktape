@@ -16,13 +16,13 @@ from haku.console.conversation_read_access import (
     UnrestrictedReads,
 )
 from haku.console.grants.principal import RequestPrincipal
-from haku.console.mcp_config import AccessProfile
-from haku.console.mcp_execution import (
+from haku.console.mcp.execution import (
     AgentMcpExecutionCaller,
     McpExecutionContext,
     OperatorMcpExecutionCaller,
     mcp_execution_request_meta,
 )
+from haku.console.mcp_config import AccessProfile
 from haku.console.recall_index_access import RecallIndexAccessPolicy
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tools.recall_index import (

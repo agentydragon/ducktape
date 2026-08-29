@@ -23,8 +23,8 @@ from haku.console.database_schema import (
 )
 from haku.console.identity.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.identity.operator_identity import OperatorStatus
+from haku.console.mcp.operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp_config import McpServerEntry
-from haku.console.mcp_operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.oauth.provider_connection import PostgresProviderConnectionStore
 from haku.console.oauth.token_support import REFRESH_SKEW
 

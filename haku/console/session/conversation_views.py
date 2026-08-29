@@ -24,7 +24,7 @@ from haku.console.conversation.reads import ChannelAttachment, SetupOutputRecord
 from haku.console.database_schema import Session, SessionFrame
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.sandbox_claims import SandboxProvisioningView
-from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
+from haku.console.session.session_frames import FrameDirection, SessionFrameKind
 from haku.console.session.setup_output import SETUP_OUTPUT_KIND
 from haku.console.session.status import SessionStatus
 
@@ -269,7 +269,7 @@ class SessionFrameView(BaseModel):
 
     frame_seq: int
     direction: FrameDirection
-    kind: BridgeFrameKind
+    kind: SessionFrameKind
     created_at: datetime
     payload: dict[str, Any]
 
@@ -289,7 +289,7 @@ class SessionFramePage(BaseModel):
 
 
 def frame_page(
-    rows: Sequence[SessionFrame], *, limit: int, conversation_id: UUID, runtime_kind: HarnessKind
+    rows: Sequence[SessionFrame], *, limit: int, conversation_id: UUID, harness_kind: HarnessKind
 ) -> SessionFramePage:
     """One page of rollout rows in wire order, with the cursor for the page before it.
 
@@ -309,7 +309,7 @@ def frame_page(
     return SessionFramePage(
         frames=frames,
         conversation_id=conversation_id,
-        harness_kind=runtime_kind,
+        harness_kind=harness_kind,
         next_before_seq=frames[0].frame_seq if len(frames) == limit else None,
     )
 

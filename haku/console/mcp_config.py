@@ -4,7 +4,7 @@ The console's deploy-time YAML names the MCP servers Haku may drive through the 
 queue; this module models that config, looks entries up by id, and resolves how to reach
 each one — the in-process `FastMCP` transport or remote URL, and the static bearer
 credential where one applies. The tool-call application service, `McpServerDispatcher`
-(`mcp_approval`), and operator OAuth linkage (`mcp_operator_oauth`) build on this shared substrate.
+(`approval`), and operator OAuth linkage (`operator_oauth`) build on this shared substrate.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from fastmcp.client.transports import StreamableHttpTransport
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from haku.console.config import (
-    ChatRuntimesConfig,
+    HarnessesConfig,
     HostexecConfig,
     KubernetesAuthorizationConfig,
     NodeDaemonsConfig,
@@ -38,6 +38,7 @@ from haku.console.tool_call_actor import RuntimeActor
 from haku.recall_index.config import ConfiguredRecallIndex, GitRecallIndexDefinition
 from haku.sandbox.config import SandboxEnvironmentConfig
 from mcp_infra.prefix import MCPMountPrefix
+from util.env import EnvironmentVariableName
 
 
 class McpServerNotFoundError(LookupError):
@@ -50,8 +51,8 @@ class OperatorConnectionProviderDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     kind: ProviderConnectionKind
-    client_id_env_var: str = Field(min_length=1, pattern=r"^[A-Z][A-Z0-9_]*$")
-    client_secret_env_var: str = Field(min_length=1, pattern=r"^[A-Z][A-Z0-9_]*$")
+    client_id_env_var: EnvironmentVariableName
+    client_secret_env_var: EnvironmentVariableName
 
 
 class OperatorConnectionDefinition(BaseModel):
@@ -117,8 +118,8 @@ class PreregisteredOAuthClient(BaseModel):
     # client_id is the same for all. A public client normally declares this directly; a
     # confidential client can source it from an injected Secret instead.
     client_id: str | None = Field(default=None, min_length=1)
-    client_id_env_var: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]*$")
-    client_secret_env_var: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]*$")
+    client_id_env_var: EnvironmentVariableName | None = None
+    client_secret_env_var: EnvironmentVariableName | None = None
     token_endpoint_auth_method: Literal["client_secret_basic", "client_secret_post"] | None = None
 
     @model_validator(mode="after")
@@ -267,10 +268,10 @@ class GitHubPublicRepositoryAutoApprovalPolicy(AutoApprovalPolicyBase):
 class GrantSelfListAutoApprovalPolicy(AutoApprovalPolicyBase):
     """Conditionally auto-approve an Agent listing its OWN grants (`list_grants(principal='self')`).
 
-    Only the explicit own-scope read auto-approves; omitting `principal` (the reserved broader read)
-    or naming another principal stays manual. The `list_grants` read is actor-scoped regardless — the
-    grant service filters to the caller's own grants by the trusted request principal — so this only
-    removes the click for the safe scope, never widens what the tool can return.
+    Only the explicit own-scope read auto-approves; omitting `principal` or naming a principal stays
+    manual. The omitted form lists every declared grant, the named-principal form returns authority
+    declared for that exact subject, and `self` resolves the caller's trusted request principal.
+    ``include_inactive`` does not widen that principal scope.
     """
 
     type: Literal["grant_self_list"] = "grant_self_list"
@@ -334,25 +335,8 @@ class AccessProfile(BaseModel):
     # acyclic and transitive with self-read implicit. `conversation_read_access` derives the one
     # read scope both `haku_conversations` drilldowns and `haku_index` chat search enforce. The
     # graph grants information visibility only — never tool authority, approvals, credentials, or
-    # runtime grants.
+    # harness grants.
     can_read_profiles: set[str] = Field(default_factory=set)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _accept_allowed_chat_runtimes_alias(cls, value: object) -> object:
-        # CLEANUP(added 2026-08-28): remove the allowed_chat_runtimes alias (and its Matrix-adapter
-        #   twin in channels/matrix/config.py) once the deployed haku-console-config ConfigMap
-        #   carries `allowed_harnesses` and no older image that reads only `allowed_chat_runtimes`
-        #   is deployable (contract step of #4772 C4e).
-        if isinstance(value, dict) and "allowed_chat_runtimes" in value:
-            if "allowed_harnesses" in value:
-                raise ValueError(
-                    "allowed_harnesses and its deprecated alias allowed_chat_runtimes are both set; "
-                    "keep only allowed_harnesses"
-                )
-            value = dict(value)
-            value["allowed_harnesses"] = value.pop("allowed_chat_runtimes")
-        return value
 
 
 class LaunchableAgent(BaseModel):
@@ -362,8 +346,8 @@ class LaunchableAgent(BaseModel):
 
     agent_id: UUID
     system_prompt_template: Path = Field(
-        description="This Agent's identity template. Prompts belong to Agents, not runtimes: a "
-        "runtime is how a session executes, while who the session is speaking as is the launched "
+        description="This Agent's identity template. Prompts belong to Agents, not harnesses: a "
+        "harness is how a session executes, while who the session is speaking as is the launched "
         "Agent's. Templates may `{% include %}` siblings from their own directory — the shared "
         "attached-chat fragment rides in that way rather than through a config key."
     )
@@ -412,28 +396,25 @@ class ConsoleConfigFile(BaseModel):
     # libgit2 does not inherit Python/OpenSSL environment variables. Configure its process-wide
     # trust store explicitly before any HTTPS recall source is cloned or fetched.
     git_ca_bundle: Path = Path("/etc/ssl/certs/ca-certificates.crt")
-    # Closed implementation kinds, not deploy-chosen runtime instance ids. Absent config preserves
-    # the existing console-without-chat mode. Real provider credentials remain outside sandboxes.
-    harnesses: ChatRuntimesConfig | None = None
+    # Closed implementation kinds, not deploy-chosen harness instance ids. Absent config preserves
+    # the existing console-without-conversation mode. Real provider credentials remain outside sandboxes.
+    harnesses: HarnessesConfig | None = None
     auto_approval_policies: list[AutoApprovalPolicy] = Field(min_length=1)
     access_profiles: list[AccessProfile] = Field(min_length=1)
     default_access_profile_id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
     operator_connection_providers: dict[str, OperatorConnectionProviderDefinition] = Field(default_factory=dict)
     operator_connections: dict[str, OperatorConnectionDefinition] = Field(default_factory=dict)
     static_agents: list[StaticAgentEntry] = Field(default_factory=list)
-    # Only these durable identities may be selected by the chat API.  Keeping this separate from
+    # Only these durable identities may be selected by the launch API.  Keeping this separate from
     # static_agents makes the launch boundary explicit and leaves room for OAuth Agents later.
     launchable_agents: list[LaunchableAgent] = Field(default_factory=list)
-    # Surface fallback only. Runtime implementations are not Agent identities: an explicit launch
-    # may choose any allowlisted Agent whose profile permits the requested runtime.
-    default_chat_agent_id: UUID | None = None
     # The `hostexec` in-process server's in-scope machines + token-exchange scope. Non-secret deploy
     # topology, so it lives here beside the `hostexec` catalog entry rather than in an env var. Unset
     # → the server is not offered, no offline_access is requested at operator login, and no operator
     # Authentik token is persisted (nothing would read it).
     hostexec: HostexecConfig | None = None
     node_daemons: NodeDaemonsConfig | None = None
-    # Declared source configuration, not a runtime convention. This is intentionally in the
+    # Declared source configuration, not a harness convention. This is intentionally in the
     # deploy-owned non-secret catalog: adding a new source is a reviewed Git change, and matching
     # credentials remain environment references on that entry.
     recall_indexes: tuple[ConfiguredRecallIndex, ...] = ()
@@ -463,6 +444,8 @@ class ConsoleConfigFile(BaseModel):
                 raise ValueError("claude_runtime was replaced by harnesses.claude_code")
             if "chat_runtimes" in value:
                 raise ValueError("chat_runtimes was renamed to harnesses")
+            if "default_chat_agent_id" in value:
+                raise ValueError("default_chat_agent_id was renamed to default_agent_id")
         return value
 
     @model_validator(mode="after")
@@ -628,14 +611,9 @@ class ConsoleConfigFile(BaseModel):
         unknown_launchable = launchable_ids - static_ids
         if unknown_launchable:
             raise ValueError(f"launchable Agents are not configured static Agents: {sorted(unknown_launchable)!r}")
-        default_chat_agent_id = self.default_chat_agent_id
-        if default_chat_agent_id is not None and default_chat_agent_id not in launchable_ids:
-            raise ValueError("default chat Agent must be launchable")
         if self.harnesses is not None:
-            if default_chat_agent_id is None:
-                raise ValueError("configured harnesses require a default chat Agent")
             static_by_id = {agent.agent_id: agent for agent in self.static_agents}
-            configured_identities = {(runtime.agent_id, runtime.kind) for runtime in self.harnesses.registrations}
+            configured_identities = {(harness.agent_id, harness.kind) for harness in self.harnesses.registrations}
             runtime_agent_ids = {agent_id for agent_id, _kind in configured_identities}
             unknown_runtime_agents = runtime_agent_ids - static_ids
             if unknown_runtime_agents:
@@ -645,10 +623,10 @@ class ConsoleConfigFile(BaseModel):
             unlaunchable_runtime_agents = runtime_agent_ids - launchable_ids
             if unlaunchable_runtime_agents:
                 raise ValueError(f"harness Agents are not launchable: {sorted(unlaunchable_runtime_agents)!r}")
-            for runtime in self.harnesses.registrations:
-                profile = profiles[static_by_id[runtime.agent_id].access_profile_id]
-                if runtime.kind not in profile.allowed_harnesses:
-                    raise ValueError(f"harness Agent {runtime.agent_id} profile disallows {runtime.kind.value}")
+            for harness in self.harnesses.registrations:
+                profile = profiles[static_by_id[harness.agent_id].access_profile_id]
+                if harness.kind not in profile.allowed_harnesses:
+                    raise ValueError(f"harness Agent {harness.agent_id} profile disallows {harness.kind.value}")
             for agent_id in launchable_ids:
                 if not any(identity_agent_id == agent_id for identity_agent_id, _kind in configured_identities):
                     raise ValueError(f"launchable Agent {agent_id} has no configured harness registration")

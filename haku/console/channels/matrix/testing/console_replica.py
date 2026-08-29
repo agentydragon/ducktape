@@ -2,7 +2,7 @@
 
 <../test_fullstack_e2e.py> is about what the room ends up containing across a console going away,
 so the console has to be something that can *go away* — a process the test starts, stops and starts
-again, on one port, against one database. Everything it composes is production wiring: the runtime
+again, on one port, against one database. Everything it composes is production wiring: the harness
 half from `haku.console.app`, the channel half from the adapter worker's composition (<../worker.py>)
 — one process where production runs two, which is itself the production roll state, since the
 adapter and a loop-carrying console only ever contend for the sync election. What is replaced is
@@ -41,7 +41,7 @@ from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.console.channels.matrix.client import Error
-from haku.console.channels.matrix.config import Config
+from haku.console.channels.matrix.config import Config, MatrixLaunchConfig
 from haku.console.channels.matrix.conversation import ConversationStore, Turns
 from haku.console.channels.matrix.ingress_ledger import IngressLedger
 from haku.console.channels.matrix.outbox import PendingReply, RoomOutbox
@@ -49,20 +49,23 @@ from haku.console.channels.matrix.outbox_wake import OutboxWakes
 from haku.console.channels.matrix.revisions import RevisionLog
 from haku.console.channels.matrix.room_copy import RoomCopy
 from haku.console.channels.matrix.sync import SyncService, SyncStore
-from haku.console.config import RuntimeRegistrationConfig
+from haku.console.config import HarnessRegistrationConfig
 from haku.console.conversation.history import ConversationHistory
 from haku.console.conversation.runtime import Runtime
+from haku.console.harnesses.kind import HarnessKind
+from haku.console.identity.launch_authority import StaticLaunchAuthority
 from haku.console.identity.operator_identity import OperatorIdentityTrust
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.notifications.conversation_wakes import ConversationWakes
 from haku.console.notifications.session_wakes import SessionWakes
+from haku.console.session.launch_identity import HarnessLaunchAuthorizer
 from haku.console.session.runtime import SessionService, internal_router
 from haku.console.session.sandbox_allocation import SandboxAllocator
 from haku.console.session.sandbox_claims import SandboxProvisioningView
 from haku.console.session.store import Store
 from haku.console.session.subscription import ConversationStream
 from haku.console.session.system_prompt import SystemPromptTemplate
-from haku.console.x.runtime_catalog import execution_registry, runtime_registration
+from haku.console.x.runtime_catalog import execution_registry, harness_registration
 from haku.console.x.testing.recording_claims import fixed_provisioning_view
 
 logger = logging.getLogger("haku.console.channels.matrix.testing.console_replica")
@@ -86,10 +89,10 @@ class FileSandboxClaims:
     def _path(self, session_id: UUID) -> Path:
         return self._directory / f"{session_id}.json"
 
-    async def create(self, *, session_id: UUID, bridge_token: str, expires_at: datetime) -> None:
+    async def create(self, *, session_id: UUID, session_token: str, expires_at: datetime) -> None:
         del expires_at
         staged = self._directory / f".{session_id}.staged"
-        staged.write_text(json.dumps({"session_id": str(session_id), "bridge_token": bridge_token}))
+        staged.write_text(json.dumps({"session_id": str(session_id), "session_token": session_token}))
         staged.replace(self._path(session_id))
         logger.info("claim created for session %s", session_id)
 
@@ -105,6 +108,14 @@ class FileSandboxClaims:
 
     def observation_error(self, *, session_id: UUID, error: str) -> SandboxProvisioningView:
         return fixed_provisioning_view(session_id).model_copy(update={"observation_error": error})
+
+    def watch_changes(self, stop: asyncio.Event) -> AsyncIterator[None]:
+        async def empty() -> AsyncIterator[None]:
+            await stop.wait()
+            return
+            yield
+
+        return empty()
 
     async def aclose(self) -> None:
         return None
@@ -148,19 +159,24 @@ def _seconds(name: str) -> timedelta:
 async def _serve() -> None:
     database_url = _environment("HAKU_E2E_DATABASE_URL")
     password = SecretStr(_environment("HAKU_E2E_BOT_PASSWORD"))
+    matrix_launch = MatrixLaunchConfig(
+        default_agent_id=UUID(_environment("HAKU_E2E_MATRIX_DEFAULT_AGENT_ID")),
+        default_harness_kind=HarnessKind(_environment("HAKU_E2E_MATRIX_DEFAULT_HARNESS_KIND")),
+    )
+    access_profile_id = _environment("HAKU_E2E_MATRIX_ACCESS_PROFILE_ID")
     matrix = Config(
         homeserver=_environment("HAKU_E2E_HOMESERVER"),
         user_id=_environment("HAKU_E2E_BOT_USER_ID"),
         operator_user_id=_environment("HAKU_E2E_OPERATOR_USER_ID"),
-        operator_subject="matrix-operator",
+        operator_subject=_environment("HAKU_E2E_OPERATOR_SUBJECT"),
         password=password,
     )
-    runtime = RuntimeRegistrationConfig(
-        agent_id=UUID("00000000-0000-4000-8000-000000000001"),
+    harness = HarnessRegistrationConfig(
+        agent_id=matrix_launch.default_agent_id,
         namespace="haku-claude-sandbox",
         warm_pool="haku-claude",
         claim_prefix="claude",
-        runtime_label="claude-chat",
+        harness_label="claude",
         cwd=_environment("HAKU_E2E_WORKSPACE"),
         session_ttl_seconds=7200,
         https_proxy="http://proxy.test:8180",
@@ -170,11 +186,13 @@ async def _serve() -> None:
         implementation={
             "kind": "claude_code",
             "api_base_url": "http://litellm.test:4000",
-            "model": "claude/ant-messages/claude-sonnet-5",
-            "haiku_model": "claude/ant-messages/claude-haiku-4-5-20251001",
+            "model": "anthropic-max20/ant-messages/claude-sonnet-5",
+            "haiku_model": "anthropic-max20/ant-messages/claude-haiku-4-5-20251001",
             "auth_token_placeholder": "not-a-secret",
         },
     )
+    if matrix_launch.default_harness_kind is not harness.kind:
+        raise ValueError("Matrix launch harness does not match the configured test harness")
 
     engine = create_async_engine(database_url, pool_pre_ping=True)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
@@ -183,15 +201,24 @@ async def _serve() -> None:
     await session_wakes.start()
     await conversation_wakes.start()
     claims = FileSandboxClaims(Path(_environment("HAKU_E2E_CLAIMS_DIR")))
-    runtimes = execution_registry(
-        runtime_registration(
-            runtime,
+    harnesses = execution_registry(
+        harness_registration(
+            harness,
             claims,
             system_prompt=SystemPromptTemplate.from_path(Path(_environment("HAKU_E2E_SYSTEM_PROMPT_TEMPLATE"))),
+            access_profile_id=access_profile_id,
         )
     )
     store = Store(sessions, adoption_grace=_seconds("HAKU_E2E_ADOPTION_GRACE_SECONDS"))
-    conversations = ConversationStore(sessions)
+    launch_authorizer = HarnessLaunchAuthorizer(
+        StaticLaunchAuthority(),
+        launchable_agent_ids={matrix_launch.default_agent_id},
+        registered_harness_identities=harnesses.configured_identities,
+        profile_harness_kinds={access_profile_id: {harness.kind}},
+    )
+    conversations = ConversationStore(
+        sessions, launch_authorizer=launch_authorizer, default_agent_id=matrix_launch.default_agent_id
+    )
     ledger = IngressLedger(sessions)
     identities = PostgresOperatorIdentityStore(
         sessions, OperatorIdentityTrust(trust_domain=TRUST_DOMAIN, trusted_issuers=frozenset({TRUSTED_ISSUER}))
@@ -211,9 +238,16 @@ async def _serve() -> None:
         sessions,
         ConversationStream(sessions),
         conversation_wakes,
+        new_conversation_harness_kind=matrix_launch.default_harness_kind,
         armed=Path(_environment("HAKU_E2E_REFUSE_NEXT_REPLY")),
     )
-    service = SessionService(runtimes, store, session_wakes, conversation_history=ConversationHistory(sessions))
+    service = SessionService(
+        harnesses,
+        store,
+        session_wakes,
+        conversation_history=ConversationHistory(sessions),
+        launch_authorizer=launch_authorizer,
+    )
     supervisor = Runtime(
         service, store, conversation_wakes, engine, sweep_interval=_seconds("HAKU_E2E_SWEEP_INTERVAL_SECONDS")
     )

@@ -26,21 +26,12 @@ from uuid import UUID
 import uvicorn
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
-from more_itertools import one
 from openai import AsyncOpenAI
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.middleware.sessions import SessionMiddleware
 
-from haku.console import (
-    capabilities,
-    mcp_approval,
-    mcp_catalog_reconciler,
-    mcp_mount,
-    mcp_operator_oauth,
-    mcp_server,
-    tool_call_service,
-)
+from haku.console import capabilities
 from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
 from haku.console.config import MCP_PATH, Settings
 
@@ -50,9 +41,11 @@ from haku.console.conversation.history import ConversationHistory
 from haku.console.conversation.live_updates import ConversationLiveUpdates
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
+from haku.console.grants import routes as grant_routes
+from haku.console.grants.catalog import GrantCatalog
 
 # The two grant domains both name their router module `routes`; alias at this one seam.
-from haku.console.grants.http import decide_routes, routes as http_grant_routes
+from haku.console.grants.http import decide_routes
 from haku.console.grants.http.decide_config import load_egress_decide
 from haku.console.grants.http.decide_service import HttpDecideService
 
@@ -60,14 +53,11 @@ from haku.console.grants.http.decide_service import HttpDecideService
 # alias per domain at this one import seam to keep the two straight (STYLE permits collision aliases).
 from haku.console.grants.http.repository import PostgresGrantRepository as PostgresHttpGrantRepository
 from haku.console.grants.http.service import GrantService as HttpGrantService
-from haku.console.grants.kubernetes import proxy_authorization, routes as kubernetes_grant_routes
-from haku.console.grants.kubernetes.authorization import (
-    KubernetesAuthorizationService,
-    KubernetesSubjectAccessReviewClient,
-)
+from haku.console.grants.kubernetes import proxy_authorization
+from haku.console.grants.kubernetes.authorization import KubernetesSubjectAccessReviewClient
+from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
 from haku.console.grants.kubernetes.repository import PostgresGrantRepository as PostgresKubernetesGrantRepository
 from haku.console.grants.kubernetes.service import GrantService as KubernetesGrantService
-from haku.console.harnesses.kind import HarnessKind
 from haku.console.hostexecd import service
 from haku.console.identity import (
     agent_bearer_authority,
@@ -81,7 +71,8 @@ from haku.console.identity.authorization import PostgresAgentAuthority, StaticAg
 from haku.console.identity.fastmcp_adapter import HakuMcpActorResolver, install_operator_session_route_guard
 from haku.console.identity.operator_identity import OperatorIdentityTrust
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.in_process_servers import (
+from haku.console.mcp import approval, catalog_reconciler, mount, operator_oauth, server, tool_call_service
+from haku.console.mcp.in_process_servers import (
     HostexecServerConfig,
     InProcessServerDependencies,
     SandboxServerConfig,
@@ -97,14 +88,14 @@ from haku.console.mcp_config import (
     load_static_agents,
     validate_in_process_server_bindings,
 )
-from haku.console.models import ChatLaunchOption, ConfigResponse
+from haku.console.models import ConfigResponse, LaunchOption
 from haku.console.notifications import connection_metrics, console_events, push, push_routes
 from haku.console.notifications.conversation_wakes import ConversationWakes
 from haku.console.notifications.session_wakes import SessionWakes
 from haku.console.oauth import association_maintenance, connection_result, provider_connection, token_state
 from haku.console.recall_index_reader import PostgresIndexSearcher
-from haku.console.session import runtime as session_runtime, sandbox_allocation, sandbox_claims
-from haku.console.session.launch_identity import ChatLaunchAuthorizer
+from haku.console.session import runtime as session_runtime, sandbox_allocation, sandbox_claims, sandbox_observer
+from haku.console.session.launch_identity import HarnessLaunchAuthorizer
 from haku.console.session.store import Store
 from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.tools import (
@@ -113,6 +104,7 @@ from haku.console.tools import (
     kubernetes as kubernetes_tools,
     routine as routine_tools,
     sandbox as sandbox_tools,
+    session_sandboxes as session_sandboxes_tools,
 )
 from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
 from haku.console.x import runtime as console_runtime, runtime_catalog
@@ -220,10 +212,10 @@ def create_app(
         db_sessions, operator_identity_store=operator_identity_store
     )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
-    claude_runtime = console_config.harnesses.claude_code if console_config.harnesses is not None else None
-    codex_runtime = console_config.harnesses.codex_app_server if console_config.harnesses is not None else None
+    claude_harness = console_config.harnesses.claude_code if console_config.harnesses is not None else None
+    codex_harness = console_config.harnesses.codex_app_server if console_config.harnesses is not None else None
     static_by_id = {agent.agent_id: agent for agent in console_config.static_agents}
-    profile_runtime_kinds = {profile.id: set(profile.allowed_harnesses) for profile in console_config.access_profiles}
+    profile_harness_kinds = {profile.id: set(profile.allowed_harnesses) for profile in console_config.access_profiles}
     launchable_agent_ids = {entry.agent_id for entry in console_config.launchable_agents}
     # Each layer owns its own LISTEN connection on its own channel: a session and a conversation
     # are different layers, so their wakes share no wire, no connection, and no module. Two
@@ -233,10 +225,10 @@ def create_app(
     # Conversation changes reach open tabs over the console socket the shell already holds,
     # coalesced per conversation. Constructed unconditionally: it listens on the conversation
     # channel and sends on the console one, neither of which depends on this replica running a
-    # Claude runtime.
+    # Claude harness.
     conversation_live_updates = ConversationLiveUpdates(conversation_wakes, console_event_hub, db_sessions)
-    tool_call_ledger = mcp_approval.PostgresToolCallLedger(db_sessions)
-    mcp_operator_oauth_store = mcp_operator_oauth.PostgresMcpOperatorOAuthStore(
+    tool_call_ledger = approval.PostgresToolCallLedger(db_sessions)
+    mcp_operator_oauth_store = operator_oauth.PostgresMcpOperatorOAuthStore(
         db_sessions,
         operator_identity_store=operator_identity_store,
         token_states=oauth_token_states,
@@ -308,14 +300,15 @@ def create_app(
             loaded_static_agents if loaded_static_agents is not None else load_static_agents(settings)
         )
 
-    runtime_registry: console_runtime.RuntimeRegistry
-    registrations: list[runtime_catalog.RuntimeRegistration] = []
+    harness_registry: console_runtime.HarnessRegistry
+    registrations: list[runtime_catalog.HarnessRegistration] = []
+    session_claims: list[sandbox_claims.SandboxClaims] = []
     runner_environment = (
         {}
         if settings.runner_kubernetes_proxy_url is None
         else {KUBERNETES_PROXY_URL_ENV: settings.runner_kubernetes_proxy_url}
     )
-    # Prompts belong to launchable Agents: each runtime registration loads its Agent's identity
+    # Prompts belong to launchable Agents: each harness registration loads its Agent's identity
     # template, whose own `{% include %}` pulls in the shared attached-chat fragment. Rendered here
     # at startup for every launchable Agent, so a broken include or name prevents readiness rather
     # than failing the first attached chat session hours later.
@@ -326,24 +319,26 @@ def create_app(
         template.verify_renders()
         return template
 
-    if claude_runtime is not None:
+    if claude_harness is not None:
         try:
-            claude_profile_id = static_by_id[claude_runtime.agent_id].access_profile_id
+            claude_profile_id = static_by_id[claude_harness.agent_id].access_profile_id
         except KeyError as error:
             raise ValueError("configured Claude Agent must be a static Agent") from error
+        claude_claims = sandbox_claims.KubernetesSandboxClaims(
+            sandbox_claims.SandboxClaimSpec(
+                namespace=claude_harness.namespace,
+                warm_pool=claude_harness.warm_pool,
+                claim_prefix=claude_harness.claim_prefix,
+                harness_label=claude_harness.harness_label,
+                runner_environment={},
+            )
+        )
+        session_claims.append(claude_claims)
         registrations.append(
-            runtime_catalog.runtime_registration(
-                claude_runtime,
-                sandbox_claims.KubernetesSandboxClaims(
-                    sandbox_claims.SandboxClaimSpec(
-                        namespace=claude_runtime.namespace,
-                        warm_pool=claude_runtime.warm_pool,
-                        claim_prefix=claude_runtime.claim_prefix,
-                        runtime_label=claude_runtime.runtime_label,
-                        runner_environment={},
-                    )
-                ),
-                system_prompt=agent_system_prompt(claude_runtime.agent_id),
+            runtime_catalog.harness_registration(
+                claude_harness,
+                claude_claims,
+                system_prompt=agent_system_prompt(claude_harness.agent_id),
                 access_profile_id=claude_profile_id,
                 execution_environment={
                     **runner_environment,
@@ -355,24 +350,26 @@ def create_app(
                 },
             )
         )
-    if codex_runtime is not None:
+    if codex_harness is not None:
         try:
-            codex_profile_id = static_by_id[codex_runtime.agent_id].access_profile_id
+            codex_profile_id = static_by_id[codex_harness.agent_id].access_profile_id
         except KeyError as error:
             raise ValueError("configured Codex Agent must be a static Agent") from error
+        codex_claims = sandbox_claims.KubernetesSandboxClaims(
+            sandbox_claims.SandboxClaimSpec(
+                namespace=codex_harness.namespace,
+                warm_pool=codex_harness.warm_pool,
+                claim_prefix=codex_harness.claim_prefix,
+                harness_label=codex_harness.harness_label,
+                runner_environment={},
+            )
+        )
+        session_claims.append(codex_claims)
         registrations.append(
-            runtime_catalog.runtime_registration(
-                codex_runtime,
-                sandbox_claims.KubernetesSandboxClaims(
-                    sandbox_claims.SandboxClaimSpec(
-                        namespace=codex_runtime.namespace,
-                        warm_pool=codex_runtime.warm_pool,
-                        claim_prefix=codex_runtime.claim_prefix,
-                        runtime_label=codex_runtime.runtime_label,
-                        runner_environment={},
-                    )
-                ),
-                system_prompt=agent_system_prompt(codex_runtime.agent_id),
+            runtime_catalog.harness_registration(
+                codex_harness,
+                codex_claims,
+                system_prompt=agent_system_prompt(codex_harness.agent_id),
                 access_profile_id=codex_profile_id,
                 # The public-coder SandboxTemplate already owns the explicit empty-workspace
                 # setup policy. Registration contributes only Console-selected shared topology.
@@ -380,17 +377,17 @@ def create_app(
             )
         )
     if registrations:
-        runtime_registry = runtime_catalog.execution_registry(*registrations)
+        harness_registry = runtime_catalog.execution_registry(*registrations)
     else:
-        # Runtime-disabled replicas can still inspect every linked durable runtime kind. This
+        # Harness-disabled replicas can still inspect every linked durable harness kind. This
         # registry has projection only: no claims, credentials, or launcher.
-        runtime_registry = runtime_catalog.projection_registry()
-    if codex_runtime is not None:
-        codex_profile_id = static_by_id[codex_runtime.agent_id].access_profile_id
+        harness_registry = runtime_catalog.projection_registry()
+    if codex_harness is not None:
+        codex_profile_id = static_by_id[codex_harness.agent_id].access_profile_id
         profile_agents = {
             agent_id for agent_id, agent in static_by_id.items() if agent.access_profile_id == codex_profile_id
         }
-        if profile_agents != {codex_runtime.agent_id}:
+        if profile_agents != {codex_harness.agent_id}:
             raise ValueError("configured Codex Agent must have a dedicated access profile")
     # Projection-only composition may link dormant adapters, while launch-capable production
     # composition includes only deliberately supported adapters and resources.
@@ -414,41 +411,21 @@ def create_app(
         return tuple([await resolve_agent(agent) for agent in loaded_static_agents])
 
     # Execution exists only when a launch-capable adapter was configured. Read-only replicas keep
-    # the same registry in their store above but expose no session-creation runtime service.
-    default_runtime_kind: HarnessKind | None = None
-    if runtime_registry.configured_kinds:
-        authorize_chat_launch = ChatLaunchAuthorizer(
+    # the same registry in their store above but expose no session-creation harness service.
+    if harness_registry.configured_kinds:
+        authorize_harness_launch = HarnessLaunchAuthorizer(
             agent_authority,
             launchable_agent_ids=launchable_agent_ids,
-            registered_runtime_identities=runtime_registry.configured_identities,
-            profile_runtime_kinds=profile_runtime_kinds,
+            registered_harness_identities=harness_registry.configured_identities,
+            profile_harness_kinds=profile_harness_kinds,
         )
 
-        default_chat_agent_id = console_config.default_chat_agent_id
-        assert default_chat_agent_id is not None
-        default_profile_id = static_by_id[default_chat_agent_id].access_profile_id
-        default_candidates = {
-            identity.runtime_kind
-            for identity in runtime_registry.configured_identities
-            if identity.agent_id == default_chat_agent_id
-            and identity.runtime_kind in profile_runtime_kinds[default_profile_id]
-        }
-        if HarnessKind.CLAUDE_CODE in default_candidates:
-            default_runtime_kind = HarnessKind.CLAUDE_CODE
-        else:
-            try:
-                default_runtime_kind = one(default_candidates)
-            except ValueError:
-                raise ValueError("default chat Agent must select one configured runtime") from None
-
         session_service = session_runtime.SessionService(
-            runtime_registry,
+            harness_registry,
             session_store,
             session_wakes,
             conversation_history=ConversationHistory(db_sessions),
-            launch_authorizer=authorize_chat_launch,
-            default_agent_id=default_chat_agent_id,
-            default_runtime_kind=default_runtime_kind,
+            launch_authorizer=authorize_harness_launch,
         )
     else:
         session_service = None
@@ -462,7 +439,7 @@ def create_app(
         if session_service is not None
         else None
     )
-    # A followed conversation's own socket. Keep it behind executable runtime composition because
+    # A followed conversation's own socket. Keep it behind executable harness composition because
     # a follower opens on the same read `GET /api/conversations/{id}` serves; a projection-only
     # replica answers neither.
     follow = (
@@ -501,22 +478,28 @@ def create_app(
         PostgresHttpGrantRepository(db_sessions),
         max_lifetime=datetime.timedelta(seconds=console_config.http_grant_max_lifetime_seconds),
     )
-    http_decide = (
-        HttpDecideService(
-            grants=http_grants,
-            credentials=load_egress_decide(console_config.egress_decide),
-            prohibited_cidrs=console_config.egress_decide.prohibited_cidrs,
-        )
-        if console_config.egress_decide is not None
-        else None
+    loaded_egress_decide = load_egress_decide(console_config.egress_decide) if console_config.egress_decide else None
+    grant_catalog = GrantCatalog(
+        kubernetes_grants=kubernetes_grants,
+        http_grants=http_grants,
+        kubernetes_config=console_config.kubernetes_authorization,
+        sar_client=(
+            KubernetesSubjectAccessReviewClient() if console_config.kubernetes_authorization is not None else None
+        ),
+        http_config_grants=tuple(loaded_egress_decide.grants) if loaded_egress_decide else (),
     )
-    kubernetes_authorization = (
-        KubernetesAuthorizationService(
-            config=console_config.kubernetes_authorization,
+    if loaded_egress_decide is None:
+        http_decide = None
+    else:
+        assert console_config.egress_decide is not None
+        http_decide = HttpDecideService(
+            catalog=grant_catalog,
+            credentials=loaded_egress_decide,
+            prohibited_cidrs=console_config.egress_decide.prohibited_cidrs,
             agent_bearer_authority=bearer_authority,
-            grants=kubernetes_grants,
-            sar_client=KubernetesSubjectAccessReviewClient(),
         )
+    kubernetes_authorization = (
+        KubernetesAuthorizationService(agent_bearer_authority=bearer_authority, catalog=grant_catalog)
         if console_config.kubernetes_authorization is not None
         else None
     )
@@ -543,6 +526,7 @@ def create_app(
     # `launch_routine` config/secret; independent of the Google connection above.
     routine_launcher = routine_tools.RoutineLauncher(settings.launch_routine) if settings.launch_routine else None
     sandbox_server: SandboxServerConfig | None = None
+    sandbox_session_observer: sandbox_observer.SandboxSessionObserver | None = None
     if in_process_servers is None:
         # hostexec being configured implies a real Authentik operator OIDC, so deriving the token
         # endpoint here (only in this branch) is safe.
@@ -558,7 +542,7 @@ def create_app(
         # listed and where the policy that lets an agent call it lives, and a boolean elsewhere
         # could only ever disagree with it — a listed server with no builder fails the binding
         # validation below.
-        configured_server_ids = {server.id for server in console_config.mcp.servers}
+        configured_server_ids = {entry.id for entry in console_config.mcp.servers}
         index_searcher = None
         if HAKU_INDEX_SERVER_ID in configured_server_ids:
             if settings.embedder is None:
@@ -593,10 +577,16 @@ def create_app(
                 index=index_searcher,
                 recall_access_profiles=tuple(console_config.access_profiles),
                 configured_recall_index_ids=tuple(index.index_id for index in console_config.recall_indexes),
-                # Only with an executable runtime: otherwise nothing writes sessions, so the read
+                # Only with an executable harness: otherwise nothing writes sessions, so the read
                 # tools would reflect an always-empty corpus.
-                conversations=(reader.ConversationReads(session_store) if runtime_registry.configured_kinds else None),
+                conversations=(reader.ConversationReads(session_store) if harness_registry.configured_kinds else None),
                 sandbox=sandbox_server,
+                session_sandboxes=(
+                    session_service
+                    if session_service is not None
+                    and session_sandboxes_tools.HAKU_SESSION_SANDBOXES_SERVER_ID in configured_server_ids
+                    else None
+                ),
                 # One `grants` server fronts both grant domains plus the kubernetes SAR check
                 # (`kubernetes_can_i`, #4918), so it needs the kubernetes authorization service; it
                 # registers only when that is configured (as it always is in the deployed config).
@@ -604,6 +594,7 @@ def create_app(
                     grants_tools.GrantsToolsService(
                         kubernetes=kubernetes_grants,
                         http=http_grants,
+                        catalog=grant_catalog,
                         agents=agent_authority,
                         can_i=kubernetes_tools.KubernetesToolsService(authorization=kubernetes_authorization),
                     )
@@ -612,14 +603,21 @@ def create_app(
                 ),
             )
         )
+        if (
+            session_service is not None
+            and session_sandboxes_tools.HAKU_SESSION_SANDBOXES_SERVER_ID in configured_server_ids
+        ):
+            sandbox_session_observer = sandbox_observer.SandboxSessionObserver(
+                session_service, session_claims, db_engine, console_event_hub, operator_identity_store.list_active_ids
+            )
     validate_in_process_server_bindings(console_config, in_process_servers)
     # The console's one path out to its configured MCP servers. Executing a tool and reflecting a
     # catalog are the same dispatch over the same transports, so they are one object: executing and
     # reflecting are not separate roles with separate wiring.
-    dispatcher = mcp_approval.McpServerDispatcher(
+    dispatcher = approval.McpServerDispatcher(
         in_process_servers, catalog_cache_ttl_seconds=settings.mcp_catalog_refresh_interval_seconds
     )
-    catalogs = mcp_catalog_reconciler.OperatorCatalogReconciler(
+    catalogs = catalog_reconciler.OperatorCatalogReconciler(
         servers=console_config.mcp.servers,
         dispatcher=dispatcher,
         oauth_store=mcp_operator_oauth_store,
@@ -646,7 +644,7 @@ def create_app(
     # The console's own Agent-and-Operator MCP server, mounted at /mcp — its reason to run.
     # Its tools re-expose the connected servers through the same application service. Always built;
     # `build_auth` fails loud if nothing can authenticate to it (no static agent, no OAuth).
-    console_mcp_context = mcp_server.ConsoleMcpContext(
+    console_mcp_context = server.ConsoleMcpContext(
         settings=settings,
         tool_calls=tool_calls,
         oauth_store=mcp_operator_oauth_store,
@@ -656,9 +654,7 @@ def create_app(
         node_daemons=hostexecd_service,
     )
 
-    console_mcp = mcp_server.build_console_mcp(
-        console_mcp_context, auth=mcp_auth.provider, actor_resolver=actor_resolver
-    )
+    console_mcp = server.build_console_mcp(console_mcp_context, auth=mcp_auth.provider, actor_resolver=actor_resolver)
     # The console runs multiple interchangeable replicas. FastMCP's default stateful HTTP
     # transport keeps its session map in-process, so a subsequent request routed to another pod
     # receives "Session not found". Haku's tools keep durable state in Postgres and do not need
@@ -684,6 +680,7 @@ def create_app(
         # Prompt demand is channel-neutral and durable. Start its elected reconciler only after
         # the notification listener is live; the first sweep is also the restart backstop.
         allocating = sandbox_allocator.run() if sandbox_allocator is not None else contextlib.nullcontext()
+        observing = sandbox_session_observer.run() if sandbox_session_observer is not None else contextlib.nullcontext()
         async with agent_authority.expiry_maintenance(), oauth_maintenance.run(), catalogs.run():
             await console_event_hub.start()
             await session_wakes.start()
@@ -694,7 +691,7 @@ def create_app(
                 # a concrete shared store; the static-only variant has no OAuth subsystem to initialize.
                 if isinstance(mcp_auth, mcp_agent_auth.OAuthMcpAuth):
                     await mcp_auth.storage.setup()
-                async with conversation_live_updates.run(), supervising, allocating, mcp_asgi.lifespan(app):
+                async with conversation_live_updates.run(), supervising, allocating, observing, mcp_asgi.lifespan(app):
                     yield
             finally:
                 # Cancel in-flight approved-call executions (each marks its row cancelled) before the
@@ -747,6 +744,7 @@ def create_app(
     app.state.push_subscription_store = push_subscription_store
     app.state.push_identity = push_identity
     app.state.kubernetes_authorization = kubernetes_authorization
+    app.state.grant_catalog = grant_catalog
     app.state.kubernetes_grants = kubernetes_grants
     app.state.http_grants = http_grants
     app.state.http_decide = http_decide
@@ -791,10 +789,9 @@ def create_app(
     app.include_router(session_runtime.router, dependencies=operator_only)
     app.include_router(conversation_follow.router, dependencies=operator_only)
     app.include_router(console_events.router, dependencies=operator_only)
-    app.include_router(mcp_approval.router, dependencies=operator_only)
-    app.include_router(kubernetes_grant_routes.router, dependencies=operator_only)
-    app.include_router(http_grant_routes.router, dependencies=operator_only)
-    app.include_router(mcp_operator_oauth.router, dependencies=operator_only)
+    app.include_router(approval.router, dependencies=operator_only)
+    app.include_router(grant_routes.router, dependencies=operator_only)
+    app.include_router(operator_oauth.router, dependencies=operator_only)
     app.include_router(provider_connection.router, dependencies=operator_only)
     app.include_router(connection_result.router, dependencies=operator_only)
     app.include_router(enrollment_routes.operator_router, dependencies=operator_only)
@@ -806,7 +803,7 @@ def create_app(
     app.include_router(enrollment_routes.entry_router)
     app.include_router(session_runtime.internal_router)
     # Machine-to-machine, bearer-forwarding contract for the separate Kubernetes proxy. The
-    # endpoint remains fail-closed unless standing SAR policy is configured.
+    # endpoint remains fail-closed unless configured SAR authorization is present.
     app.include_router(proxy_authorization.router)
     # The colocated egress proxy's decision endpoint is deliberately NOT on this network app.
     # It is the oracle that turns placeholders into real credentials, so it must never be routable
@@ -824,26 +821,24 @@ def create_app(
 
     @app.get("/api/config", dependencies=operator_only)
     async def config() -> ConfigResponse:
-        """Static config for the SPA, including deploy-authorized Web chat launch pairs."""
+        """Static config for the SPA, including deploy-authorized Web launch pairs."""
         launch = settings.launch_routine
-        default_agent_id = console_config.default_chat_agent_id
         launch_options = [
-            ChatLaunchOption(
+            LaunchOption(
                 agent_id=identity.agent_id,
                 agent_display_name=static_by_id[identity.agent_id].display_name,
-                runtime=identity.runtime_kind,
-                runtime_display_name=runtime_registry[identity.runtime_kind].display_name,
-                is_default=identity.agent_id == default_agent_id and identity.runtime_kind is default_runtime_kind,
+                harness_kind=identity.harness_kind,
+                harness_display_name=harness_registry[identity.harness_kind].display_name,
             )
-            for identity in runtime_registry.configured_identities
+            for identity in harness_registry.configured_identities
             if identity.agent_id in launchable_agent_ids
-            and identity.runtime_kind in profile_runtime_kinds[static_by_id[identity.agent_id].access_profile_id]
+            and identity.harness_kind in profile_harness_kinds[static_by_id[identity.agent_id].access_profile_id]
         ]
-        launch_options.sort(key=lambda option: (not option.is_default, option.agent_display_name, option.runtime.value))
+        launch_options.sort(key=lambda option: (option.agent_display_name, option.harness_kind.value))
         return ConfigResponse(
             launch_routine_url=launch.page_url if launch else None,
             haku_ui_url=settings.haku_ui_url,
-            chat_launch_options=launch_options,
+            launch_options=launch_options,
         )
 
     # Operator browser auth is mandatory. SessionMiddleware establishes request.session, which the
@@ -861,7 +856,7 @@ def create_app(
     )
 
     # MCP server (streamable HTTP), mounted after the API routers and before the SPA.
-    mcp_mount.mount_mcp_app(app, path=MCP_PATH, mcp_app=mcp_asgi)
+    mount.mount_mcp_app(app, path=MCP_PATH, mcp_app=mcp_asgi)
 
     # Optional direct local/dev fallback. Production serves the SPA from the
     # haku-console-static nginx image and leaves static_dir unset on this process.

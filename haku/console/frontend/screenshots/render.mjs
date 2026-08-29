@@ -68,27 +68,51 @@ const SCENES = [
     frame: true,
   },
   {
-    name: "settings-kubernetes",
+    name: "settings-grants",
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,
-    clicks: ['[role="tab"]::-p-text(Kubernetes grants)'],
-    expectVisible: "::-p-text(Temporary grants)",
+    clicks: ['[role="tab"]::-p-text(Grants)'],
+    expectVisible: "::-p-text(Grant sources)",
     frame: true,
   },
   {
-    name: "settings-kubernetes-history",
+    name: "settings-grants-history",
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,
-    clicks: ['[role="tab"]::-p-text(Kubernetes grants)', "::-p-text(History)"],
-    expectVisible: "::-p-text(Pilot complete; return to standing diagnostics.)",
+    clicks: ['[role="tab"]::-p-text(Grants)', "::-p-text(History)"],
+    expectVisible: "::-p-text(Pilot complete; return to standard diagnostics.)",
     frame: true,
   },
   {
-    name: "settings-kubernetes-revoke",
+    name: "settings-grants-revoke",
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,
-    clicks: ['[role="tab"]::-p-text(Kubernetes grants)', "button::-p-text(Revoke active set…)"],
-    expectVisible: "::-p-text(Revocation reason)",
+    clicks: ['[role="tab"]::-p-text(Grants)', "button::-p-text(Revoke)"],
+    expectVisible: "::-p-text(Are you sure?)",
+    frame: true,
+  },
+  {
+    name: "settings-sessions",
+    viewport: { width: 1200, height: 1000 },
+    closeApprovals: true,
+    clicks: ['[role="tab"]::-p-text(Sessions)'],
+    expectVisible: "::-p-text(Active Console-launched sandboxes.)",
+    frame: true,
+  },
+  {
+    name: "settings-sessions-mobile",
+    viewport: { width: 390, height: 760 },
+    closeApprovals: true,
+    clicks: ['[role="tab"]::-p-text(Sessions)'],
+    expectVisible: "::-p-text(Active Console-launched sandboxes.)",
+    frame: true,
+  },
+  {
+    name: "settings-sessions-terminate",
+    viewport: { width: 1200, height: 1000 },
+    closeApprovals: true,
+    clicks: ['[role="tab"]::-p-text(Sessions)', "button::-p-text(Terminate)"],
+    expectVisible: "::-p-text(This permanently deletes the SandboxClaim and its container.)",
     frame: true,
   },
   {
@@ -171,7 +195,7 @@ const SCENES = [
     name: "conversation-detail",
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,
-    expectVisible: "::-p-text(1 earlier session)",
+    expectVisible: "::-p-text(Claude Desktop)",
     frame: true,
   },
   {
@@ -223,7 +247,7 @@ const SCENES = [
   },
   {
     // The frame inspector, which opens on the tail of the log — prove the response arrived by
-    // waiting for its runtime label. Native payload details may be folded in compact JSON blocks.
+    // waiting for its harness-kind label. Native payload details may be folded in compact JSON blocks.
     name: "session-frames",
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,

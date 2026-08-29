@@ -23,6 +23,7 @@ py_library(
     srcs = ["config.py"],
     deps = [
         ":http_url",
+        "//haku/console/harnesses:environment",
         "//haku/console/harnesses:kind",
         "//haku/console/x/codex_app_server:config",
         "//haku/recall_index:config",
@@ -31,6 +32,26 @@ py_library(
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "mcp_config",
+    srcs = ["mcp_config.py"],
+    deps = [
+        ":config",
+        ":tool_call_actor",
+        "//haku/console/grants/http:decide_config",
+        "//haku/console/harnesses:kind",
+        "//haku/console/identity:naming",
+        "//haku/console/oauth:provider_connection_registry",
+        "//haku/recall_index:config",
+        "//haku/sandbox:config",
+        "//mcp_infra:prefix",
+        "//util:env",
+        "@pypi//fastmcp_slim",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -70,60 +91,17 @@ py_test(
 )
 
 py_test(
-    name = "test_chat_identity_config",
-    srcs = ["test_chat_identity_config.py"],
-    deps = [
-        ":conftest",
-        ":mcp_config",
-        "//:conftest",
-        "//haku/console/harnesses:kind",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_conversation_read_access",
     srcs = ["test_conversation_read_access.py"],
     deps = [
         ":conftest",
         ":conversation_read_access",
         ":mcp_config",
-        ":mcp_execution",
         ":tool_call_actor",
         "//:conftest",
         "//haku/console/grants:principal",
+        "//haku/console/mcp:execution",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "mcp_config",
-    srcs = ["mcp_config.py"],
-    deps = [
-        ":config",
-        ":tool_call_actor",
-        "//haku/console/grants/http:decide_config",
-        "//haku/console/harnesses:kind",
-        "//haku/console/identity:naming",
-        "//haku/console/oauth:provider_connection_registry",
-        "//haku/recall_index:config",
-        "//haku/sandbox:config",
-        "//mcp_infra:prefix",
-        "@pypi//fastmcp_slim",
-        "@pypi//pydantic",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_library(
-    name = "mcp_execution",
-    srcs = ["mcp_execution.py"],
-    deps = [
-        "//haku/console/grants:principal",
-        "@pypi//fastmcp_slim",
-        "@pypi//pydantic",
     ],
 )
 
@@ -249,9 +227,9 @@ py_library(
     srcs = ["recall_index_access.py"],
     deps = [
         ":mcp_config",
-        ":mcp_execution",
         ":tool_call_actor",
         "//haku/console/grants:principal",
+        "//haku/console/mcp:execution",
     ],
 )
 
@@ -260,43 +238,9 @@ py_library(
     srcs = ["conversation_read_access.py"],
     deps = [
         ":mcp_config",
-        ":mcp_execution",
         ":tool_call_actor",
         "//haku/console/grants:principal",
-    ],
-)
-
-py_library(
-    name = "in_process_server_access",
-    srcs = ["in_process_server_access.py"],
-    deps = [
-        ":mcp_config",
-        ":mcp_execution",
-        ":tool_call_actor",
-        "//haku/console/grants:principal",
-    ],
-)
-
-py_library(
-    name = "in_process_servers",
-    srcs = ["in_process_servers.py"],
-    deps = [
-        ":config",
-        ":conversation_read_access",
-        ":in_process_server_access",
-        ":mcp_config",
-        ":recall_index_access",
-        "//haku/console/tools:conversations",
-        "//haku/console/tools:gmail",
-        "//haku/console/tools:google_calendar",
-        "//haku/console/tools:grants",
-        "//haku/console/tools:hostexec",
-        "//haku/console/tools:hostexec_client",
-        "//haku/console/tools:hostexec_token",
-        "//haku/console/tools:recall_index",
-        "//haku/console/tools:routine",
-        "//haku/console/tools:sandbox",
-        "//haku/sandbox:config",
+        "//haku/console/mcp:execution",
     ],
 )
 
@@ -380,6 +324,33 @@ py_library(
 )
 
 py_library(
+    name = "database_retry",
+    srcs = ["database_retry.py"],
+    deps = [
+        "@pypi//sqlalchemy",
+        "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_database_retry",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_database_retry.py"],
+    deps = [
+        ":conftest",
+        ":database_retry",
+        ":database_schema",
+        "//:conftest",
+        "//haku/console/harnesses:kind",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "capabilities",
     srcs = ["capabilities.py"],
     deps = [
@@ -388,110 +359,6 @@ py_library(
         "//haku/console/tools:routine",
         "@pypi//fastapi",
         "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "mcp_operator_oauth",
-    srcs = ["mcp_operator_oauth.py"],
-    deps = [
-        ":database_schema",
-        ":deps",
-        ":mcp_config",
-        "//haku/console/identity:operator_auth",
-        "//haku/console/identity:operator_identity_store",
-        "//haku/console/notifications:console_events",
-        "//haku/console/oauth:connection_result",
-        "//haku/console/oauth:token_state",
-        "//haku/console/oauth:token_support",
-        "@pypi//fastapi",
-        "@pypi//httpx",
-        "@pypi//mcp",
-        "@pypi//prometheus_client",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "mcp_mount",
-    srcs = ["mcp_mount.py"],
-    deps = ["@pypi//starlette"],
-)
-
-py_library(
-    name = "tool_call_service",
-    srcs = ["tool_call_service.py"],
-    deps = [
-        ":config",
-        ":mcp_config",
-        ":mcp_execution",
-        ":tool_call_actor",
-        "//haku/console/auto_approval:github",
-        "//haku/console/auto_approval:registry",
-        "//haku/console/grants:principal",
-        "//haku/console/grants/kubernetes:authorization",
-        "//haku/console/tools:gmail_client",
-        "@ducktape_haku//haku/console:tool_calls",
-    ],
-)
-
-py_library(
-    name = "mcp_reflection_cache",
-    srcs = ["mcp_reflection_cache.py"],
-    deps = ["@pypi//mcp"],
-)
-
-py_library(
-    name = "mcp_catalog_reconciler",
-    srcs = ["mcp_catalog_reconciler.py"],
-    deps = [
-        ":mcp_approval",
-        ":mcp_config",
-        ":mcp_operator_oauth",
-        ":mcp_reflection_cache",
-        ":tool_call_service",
-        "//haku/console/notifications:console_events",
-    ],
-)
-
-py_test(
-    name = "test_mcp_catalog_reconciler",
-    srcs = ["test_mcp_catalog_reconciler.py"],
-    deps = [
-        ":conftest",
-        ":mcp_approval",
-        ":mcp_catalog_reconciler",
-        ":mcp_config",
-        ":mcp_reflection_cache",
-        "//:conftest",
-        "//haku/console/notifications:console_events",
-        "@pypi//mcp",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "mcp_approval",
-    srcs = ["mcp_approval.py"],
-    deps = [
-        ":database_schema",
-        ":mcp_config",
-        ":mcp_execution",
-        ":mcp_operator_oauth",
-        ":mcp_reflection_cache",
-        ":tool_call_actor",
-        ":tool_call_service",
-        "//haku/console/identity:agent",
-        "//haku/console/identity:operator_auth",
-        "//haku/console/identity:operator_identity",
-        "//haku/console/session:status",
-        "@ducktape_haku//haku/console:tool_calls",
-        "@pypi//fastapi",
-        "@pypi//fastmcp_slim",
-        "@pypi//mcp",
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -505,47 +372,6 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_mcp_reflection_cache",
-    srcs = ["test_mcp_reflection_cache.py"],
-    deps = [
-        ":conftest",
-        ":mcp_reflection_cache",
-        "//:conftest",
-        "@pypi//mcp",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "mcp_guidance",
-    srcs = ["mcp_guidance.py"],
-)
-
-py_library(
-    name = "mcp_server",
-    srcs = ["mcp_server.py"],
-    deps = [
-        ":config",
-        ":mcp_approval",
-        ":mcp_catalog_reconciler",
-        ":mcp_config",
-        ":mcp_guidance",
-        ":mcp_operator_oauth",
-        ":tool_call_actor",
-        ":tool_call_service",
-        "//haku/console/auto_approval:registry",
-        "//haku/console/hostexecd:service",
-        "//haku/console/identity:fastmcp_adapter",
-        "//haku/console/oauth:provider_connection",
-        "@ducktape_haku//haku/console:tool_calls",
-        "@pypi//fastmcp_slim",
-        "@pypi//mcp",
-        "@pypi//pydantic",
     ],
 )
 
@@ -568,31 +394,6 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "//third_party/containers:rlocations",
-    ],
-)
-
-py_test(
-    name = "test_mcp_operator_oauth",
-    size = "medium",
-    srcs = ["test_mcp_operator_oauth.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":database_schema",
-        ":mcp_config",
-        ":mcp_operator_oauth",
-        "//:conftest",
-        "//haku/console/identity:operator_identity",
-        "//haku/console/oauth:token_state",
-        "@pypi//httpx",
-        "@pypi//mcp",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -636,32 +437,26 @@ py_library(
         ":config",
         ":database_migrate",
         ":deployment",
-        ":in_process_servers",
-        ":mcp_approval",
-        ":mcp_catalog_reconciler",
         ":mcp_config",
-        ":mcp_mount",
-        ":mcp_operator_oauth",
-        ":mcp_server",
         ":models",
         ":recall_index_reader",
-        ":tool_call_service",
         "//haku/console/auto_approval:github",
         "//haku/console/conversation:follow",
         "//haku/console/conversation:history",
         "//haku/console/conversation:live_updates",
         "//haku/console/conversation:reader",
         "//haku/console/conversation:runtime",
+        "//haku/console/grants:catalog",
+        "//haku/console/grants:routes",
         "//haku/console/grants/http:decide_config",
         "//haku/console/grants/http:decide_routes",
         "//haku/console/grants/http:decide_service",
         "//haku/console/grants/http:repository",
-        "//haku/console/grants/http:routes",
         "//haku/console/grants/http:service",
         "//haku/console/grants/kubernetes:authorization",
+        "//haku/console/grants/kubernetes:authorization_service",
         "//haku/console/grants/kubernetes:proxy_authorization",
         "//haku/console/grants/kubernetes:repository",
-        "//haku/console/grants/kubernetes:routes",
         "//haku/console/grants/kubernetes:service",
         "//haku/console/harnesses:kind",
         "//haku/console/hostexecd:service",
@@ -675,6 +470,13 @@ py_library(
         "//haku/console/identity:operator_identity",
         "//haku/console/identity:operator_identity_store",
         "//haku/console/identity:operator_login_flow",
+        "//haku/console/mcp:approval",
+        "//haku/console/mcp:catalog_reconciler",
+        "//haku/console/mcp:in_process_servers",
+        "//haku/console/mcp:mount",
+        "//haku/console/mcp:operator_oauth",
+        "//haku/console/mcp:server",
+        "//haku/console/mcp:tool_call_service",
         "//haku/console/notifications:connection_metrics",
         "//haku/console/notifications:console_events",
         "//haku/console/notifications:conversation_wakes",
@@ -689,6 +491,7 @@ py_library(
         "//haku/console/session:runtime",
         "//haku/console/session:sandbox_allocation",
         "//haku/console/session:sandbox_claims",
+        "//haku/console/session:sandbox_observer",
         "//haku/console/session:store",
         "//haku/console/session:system_prompt",
         "//haku/console/tools:gmail",
@@ -697,6 +500,7 @@ py_library(
         "//haku/console/tools:recall_index",
         "//haku/console/tools:routine",
         "//haku/console/tools:sandbox",
+        "//haku/console/tools:session_sandboxes",
         "//haku/console/x:runtime",
         "//haku/console/x:runtime_catalog",
         "//haku/recall_index:config",
@@ -749,48 +553,6 @@ py_binary(
     name = "export_schema_bin",
     main_module = "haku.console.export_schema",
     deps = [":export_schema"],
-)
-
-py_library(
-    name = "export_mcp_tool_schemas",
-    srcs = ["export_mcp_tool_schemas.py"],
-    deps = [
-        ":config",
-        ":in_process_servers",
-        ":mcp_server",
-        "//grocy_mcp:batch_tools",
-        "//grocy_mcp:client",
-        "//grocy_mcp:mcp_types",
-        "//haku/console/hostexecd:service",
-        "//haku/console/tools:grants",
-        "//haku/console/tools:kubernetes",
-        "//mcp_infra:request_scoped_openapi",
-        "@pypi//fastmcp_slim",
-        "@pypi//pydantic",
-    ],
-)
-
-# Prints the exact tools/list input schemas for the frontend's generated MCP
-# argument validators and types.
-py_binary(
-    name = "export_mcp_tool_schemas_bin",
-    main_module = "haku.console.export_mcp_tool_schemas",
-    deps = [":export_mcp_tool_schemas"],
-)
-
-py_test(
-    name = "test_export_mcp_tool_schemas",
-    size = "medium",
-    srcs = ["test_export_mcp_tool_schemas.py"],
-    deps = [
-        ":conftest",
-        ":export_mcp_tool_schemas",
-        "//:conftest",
-        "@pypi//jsonschema",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//referencing",
-    ],
 )
 
 py_library(
@@ -860,127 +622,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//respx",
-    ],
-)
-
-py_test(
-    name = "test_mcp_server",
-    size = "medium",
-    srcs = ["test_mcp_server.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
-    requires_docker = True,
-    deps = [
-        ":app",
-        ":config",
-        ":conftest",
-        ":mcp_approval",
-        ":mcp_catalog_reconciler",
-        ":mcp_config",
-        ":mcp_guidance",
-        ":mcp_operator_oauth",
-        ":mcp_reflection_cache",
-        ":mcp_server",
-        ":tool_call_actor",
-        ":tool_call_service",
-        "//:conftest",
-        "//haku/console/identity:operator_identity",
-        "//haku/console/oauth:provider_connection",
-        "//haku/console/tools:gmail",
-        "//haku/console/tools:google_calendar",
-        "//haku/console/tools:google_calendar_client",
-        "//mcp_infra:persistence",
-        "//util:net",
-        "//util/testing:asgi",
-        "//util/testing:mock_oidc",
-        "@ducktape_haku//haku/console:tool_calls",
-        "@pypi//fastmcp_slim",
-        "@pypi//httpx",
-        "@pypi//jsonschema",
-        "@pypi//mcp",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//referencing",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_tool_call_service",
-    size = "medium",
-    srcs = ["test_tool_call_service.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":database_schema",
-        ":mcp_approval",
-        ":mcp_config",
-        ":mcp_execution",
-        ":recall_index_access",
-        ":tool_call_actor",
-        ":tool_call_service",
-        "//:conftest",
-        "//haku/console/grants:principal",
-        "//haku/console/identity:agent",
-        "//haku/console/identity:authentik_operator_token",
-        "//haku/console/identity:operator_identity_store",
-        "//haku/console/oauth:provider_connection",
-        "//haku/console/oauth:token_state",
-        "@ducktape_haku//haku/console:tool_calls",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_mcp_approval",
-    size = "medium",
-    srcs = ["test_mcp_approval.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":database_migrate",
-        ":database_schema",
-        ":mcp_approval",
-        ":mcp_config",
-        ":mcp_execution",
-        ":mcp_operator_oauth",
-        ":mcp_reflection_cache",
-        ":tool_call_actor",
-        ":tool_call_service",
-        "//:conftest",
-        "//haku/console/harnesses:kind",
-        "//haku/console/hostexecd:models",
-        "//haku/console/identity:agent",
-        "//haku/console/identity:authorization",
-        "//haku/console/identity:operator_auth",
-        "//haku/console/identity:operator_identity",
-        "//haku/console/notifications:console_events",
-        "//haku/console/oauth:token_state",
-        "//haku/console/tools:gmail",
-        "//util:net",
-        "//util/testing:asgi",
-        "@ducktape_haku//haku/console:tool_calls",
-        "@pypi//fastapi",
-        "@pypi//fastmcp_slim",
-        "@pypi//mcp",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-        "@pypi//starlette",
     ],
 )
 
@@ -1246,6 +887,24 @@ py_test(
         ":database_migrate",
         "//:conftest",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_session_token_columns_migration",
+    size = "medium",
+    srcs = ["test_session_token_columns_migration.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":database_migrate",
+        "//:conftest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],

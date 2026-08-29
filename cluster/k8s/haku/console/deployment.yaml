@@ -1,12 +1,18 @@
 # The Haku Console API: reviewed FastAPI code behind the separately deployed static frontend.
 # The console is the trusted outer shell — it serves config + the capability tier
 # (launch-routine) and frames Haku's own UI (haku-ui) as a sandboxed cross-origin
-# iframe. It writes nothing to haku-state (feedback/trace writes moved into haku-ui)
-# and holds no Git credential: recall-index maintenance — and the Forgejo credential
-# it needs — lives in the separate haku-indexer Deployment, while this pod only reads
-# the committed index state for `haku_index.search`/`index_status`. It likewise runs
-# no Matrix client and holds no Matrix credential: the channel adapter is the
-# separate haku-matrix-adapter Deployment.
+# iframe. It writes nothing to haku-state (feedback/trace writes moved into haku-ui);
+# recall-index maintenance lives in the separate haku-indexer Deployment, so this pod
+# only READS the committed index state for `haku_index.search`/`index_status` and holds
+# no *index* Git credential. It does hold the haku Forgejo write credential
+# (haku-forgejo-git) for a different reason: the colocated egress decide endpoint
+# substitutes it into the hosted haku agent's fenced Forgejo egress, so that agent uses
+# its full Forgejo user (read/write/push) through the fence — deliberate and accepted,
+# the write exposure bounded by haku-state `main` branch protection (force-push/delete
+# blocked). Temporary: once the indexer gains its own read-only Forgejo credential this
+# pod need not share haku-forgejo-git with it (TODO in test_haku_indexer_worker_contract).
+# It likewise runs no Matrix client and holds no Matrix credential: the channel adapter is
+# the separate haku-matrix-adapter Deployment.
 # The haku-console-static Deployment serves the bundled SPA and proxies public backend requests
 # here through this Service. Keeping it out of this pod means a frontend-only image update does
 # not restart the API, MCP streams, or background workers.
@@ -38,7 +44,7 @@ metadata:
     # do NOT use reloader's blanket auto mode: the projected static-image metadata
     # changes on every frontend release and must not restart API/MCP/background work.
     configmap.reloader.stakater.com/reload: haku-console-config
-    secret.reloader.stakater.com/reload: haku-routine-launch-token,haku-console-oidc,haku-console-web-push-vapid,tana-agentydragon-gmail-com-account-pat,ha-mcp-bearer,haku-console-db-app,haku-console-agent-api,haku-console-public-coder-agent,haku-console-node-daemon-wyrm2,haku-console-node-daemon-rugged,haku-console-google-client-credentials,haku-console-google-calendar-client-credentials,haku-console-github-mcp-client-credentials,haku-egress-proxy-identity,haku-egress-github-token,litellm-key-public-coder-agent,litellm-key-haku-console-claude
+    secret.reloader.stakater.com/reload: haku-routine-launch-token,haku-console-oidc,haku-console-web-push-vapid,tana-agentydragon-gmail-com-account-pat,ha-mcp-bearer,haku-console-db-app,haku-console-agent-api,haku-console-public-coder-agent,haku-console-node-daemon-wyrm2,haku-console-node-daemon-rugged,haku-console-google-client-credentials,haku-console-google-calendar-client-credentials,haku-console-github-mcp-client-credentials,haku-egress-proxy-identity,haku-egress-github-token,litellm-key-public-coder-agent,litellm-key-haku-console-claude,haku-forgejo-git
 spec:
   replicas: 2
   strategy:
@@ -71,10 +77,10 @@ spec:
       # took ~2s. Costs no availability — the database is node-pinned here anyway.
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
-      # Narrow runtime identity: create/delete/get SandboxClaims and read
+      # Narrow runtime identity: create/delete/get/observe SandboxClaims and read
       # their assigned Sandbox + Pod in the dedicated haku-runtime-sandbox namespace so the
-      # Operator UI can explain provisioning. It has no list/watch, Secret, log, exec, or
-      # SandboxTemplate access.
+      # Operator UI can explain provisioning and invalidate active-session projections. It has no
+      # Secret, log, exec, or SandboxTemplate access.
       serviceAccountName: haku-console
       automountServiceAccountToken: true
       # Room for a graceful shutdown to hand chat-session leases back before SIGKILL: the app
@@ -110,7 +116,7 @@ spec:
               drop: ["ALL"]
       containers:
         - name: server
-          image: ghcr.io/agentydragon/haku-console:devel-20260829012106-2970e82 # {"$imagepolicy": "flux-system:haku-console"}
+          image: ghcr.io/agentydragon/haku-console:devel-20260829122102-6c7e95f # {"$imagepolicy": "flux-system:haku-console"}
           imagePullPolicy: Always
           ports:
             - name: api
@@ -120,7 +126,7 @@ spec:
             # policies as the images, preserving reproducible image contents while exposing the
             # commits selected by this pod manifest.
             - name: HAKU_CONSOLE_IMAGE_TAG
-              value: devel-20260829012106-2970e82 # {"$imagepolicy": "flux-system:haku-console:tag"}
+              value: devel-20260829122102-6c7e95f # {"$imagepolicy": "flux-system:haku-console:tag"}
             # Capability tier: the launch-routine action. The console builds both the
             # (public) fire URL and the claude.ai/code page deep-link from this routine
             # (trigger) id; the bearer comes from the haku-console-only secret so Haku
@@ -383,21 +389,14 @@ spec:
               value: auth.allegedly.works/authentik-user-id/v1
             # Colocated egress fence (#4942, #4670). config.yaml's `egress_decide` section names
             # these env vars; `load_egress_decide` reads them at startup and the decide endpoint
-            # (loopback :8079, served by app._serve) resolves them per request. Values are shared
-            # with the egress-proxy sidecar below where the sidecar must present the same bearer:
-            #   - proxy identity bearer the sidecar presents (proxy_token_env_var)
-            - name: HAKU_EGRESS_PROXY_TOKEN
+            # (loopback :8079, served by app._serve) resolves requests using the shared-fence
+            # credential the sidecar presents in Authorization. It authenticates the sidecar only
+            # and carries no Agent identity (egress_decide.fence_credential_env_var).
+            - name: HAKU_EGRESS_FENCE_CREDENTIAL
               valueFrom:
                 secretKeyRef:
                   name: haku-egress-proxy-identity
-                  key: proxy-token
-            #   - the haku Agent's fence credential the endpoint resolves to that Agent
-            #     (egress_decide.fence_credentials[].token_env_var)
-            - name: HAKU_EGRESS_FENCE_HAKU
-              valueFrom:
-                secretKeyRef:
-                  name: haku-egress-proxy-identity
-                  key: fence-credential-haku
+                  key: fence-credential
             #   - the github-bot registry credential's real value (#4951 EgressCredentialEntry
             #     value_env_var). The Console holds it and substitutes it into decide responses;
             #     the sandbox only ever presents the inert `github-token-placeholder`. Synced from
@@ -406,8 +405,8 @@ spec:
             #     load_egress_decide, so a not-yet-synced ESO Secret degrades the github-bot handle
             #     rather than crash-looping the console (the endpoint still serves reachability
             #     verdicts). optional: true keeps a missing Secret from blocking pod startup, so the
-            #     skip path is actually reached; the proxy-token and fence credentials below stay
-            #     required (load_egress_decide fails loud on those).
+            #     skip path is actually reached; the fence credential below stays required
+            #     (load_egress_decide fails loud on it).
             - name: HAKU_EGRESS_CREDENTIAL_GITHUB_BOT
               valueFrom:
                 secretKeyRef:
@@ -446,6 +445,24 @@ spec:
             #     above stay Secret-backed and fail-loud.
             - name: HAKU_EGRESS_CREDENTIAL_SUBSTITUTION_SMOKE
               value: EXAMPLE-EGRESS-SMOKE-SUBSTITUTED
+            #   - the forgejo registry credential's real value: Haku's own in-cluster Forgejo account
+            #     password, which the Console substitutes into the haku Agent's Forgejo egress
+            #     (git-over-HTTP Basic + the REST API) at the internal forgejo-http.forgejo origin; the
+            #     sandbox holds only `forgejo-token-placeholder`. This is the SAME haku-forgejo-git
+            #     Secret the haku-state indexer chunk pod mounts — the full haku Forgejo credential,
+            #     deliberately: the hosted haku agent uses its whole Forgejo user (read/write/push)
+            #     through the fence, so the write credential lands on this API pod for substitution
+            #     regardless of packaging. That the API server now shares this one secret with the
+            #     indexer chunk pod is an accepted trade (test_haku_indexer_worker_contract carves out
+            #     exactly this handle); the write exposure is bounded by haku-state `main` branch
+            #     protection (force-push/delete blocked). Optional (#4970): an unset Secret degrades the
+            #     forgejo handle (placeholder 401s) rather than crash-looping the console.
+            - name: HAKU_EGRESS_CREDENTIAL_FORGEJO
+              valueFrom:
+                secretKeyRef:
+                  name: haku-forgejo-git
+                  key: password
+                  optional: true
           resources:
             requests:
               cpu: 50m
@@ -498,7 +515,7 @@ spec:
         # any decision-path error; the fenced-workload-facing listener is 8888, published by
         # egress-proxy-service.yaml for the force-proxy fence.
         - name: egress-proxy
-          image: ghcr.io/agentydragon/haku-egress-proxy:devel-20260828065145-d97304f # {"$imagepolicy": "flux-system:haku-egress-proxy"}
+          image: ghcr.io/agentydragon/haku-egress-proxy:devel-20260829113647-29f0dbb # {"$imagepolicy": "flux-system:haku-egress-proxy"}
           imagePullPolicy: Always
           env:
             - name: HAKU_EGRESS_DECIDE_URL
@@ -507,18 +524,13 @@ spec:
               value: "8888"
             - name: HAKU_EGRESS_CONFDIR
               value: /egress-proxy-confdir
-            # The proxy-identity bearer Console authenticates, and the haku Agent's fence credential
-            # Console resolves to that Agent — the same two values the server container reads above.
-            - name: HAKU_EGRESS_PROXY_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: haku-egress-proxy-identity
-                  key: proxy-token
+            # The shared-fence credential the sidecar presents in Authorization; the server
+            # container reads the same value above.
             - name: HAKU_EGRESS_FENCE_CREDENTIAL
               valueFrom:
                 secretKeyRef:
                   name: haku-egress-proxy-identity
-                  key: fence-credential-haku
+                  key: fence-credential
           ports:
             - name: proxy
               containerPort: 8888

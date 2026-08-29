@@ -7,9 +7,10 @@ upstream model:
 - `chatgpt/ant-messages/*` / `chatgpt/oai-responses/*` — ChatGPT/Codex subscription via
   CLIProxyAPI, on the Anthropic Messages wire (Claude Code clients) and the OpenAI
   Responses wire (Codex clients)
-- `claude/ant-messages/*` — Claude Code subscription via CLIProxyAPI's Claude OAuth
-  session, on the Anthropic Messages wire (a different upstream session on the same pod
-  as `chatgpt/*`, distinct from the direct-API `claude-*` entries)
+- `anthropic-max20/ant-messages/*` — Claude Code subscription via CLIProxyAPI's Claude
+  OAuth session, on the Anthropic Messages wire (a different upstream session on the same
+  pod as `chatgpt/*`, distinct from the direct-API `anthropic-api/ant-messages/*` entries)
+- `anthropic-api/ant-messages/*` — direct Anthropic API on the Anthropic Messages wire
 - `tana/ant-messages/*` — Tana account via tana-litellm, an Anthropic Messages
   passthrough
 - `google/oai-chat/*` / `google/oai-embeddings/*` — Google AI key (Gemini)
@@ -34,11 +35,9 @@ the request body (Claude Code, Codex, OpenClaw), and on this stack a model name 
 rides in a URL path or a Kubernetes resource name.
 
 The provider segment rides in front, not behind, because key allowlists match
-`model_name` prefixes (the `claude-*` wildcard in tf/gitops/litellm-keys/main.tf): a
-suffix-shaped Anthropic name would begin with `claude-` and silently join every
-`claude-*` allowlist. Deliberately not renamed: the direct-API `claude-*` entries
-(Claude Code names those slugs itself, and the client keys' `claude-*` wildcard admits
-them), the groq entries, and the self-hosted Ollama entries, whose
+`model_name` prefixes (the `anthropic-api/ant-messages/*` wildcard in
+tf/gitops/litellm-keys/main.tf). Deliberately not renamed: the raw upstream model slugs
+inside the exposed names, the groq entries, and the self-hosted Ollama entries, whose
 `-openai-chat`/`-ollama-native` wire suffixes have no account to name.
 """
 
@@ -49,7 +48,8 @@ class Provider(StrEnum):
     """First scheme segment: the upstream account/provider an entry spends from."""
 
     CHATGPT = "chatgpt"
-    CLAUDE = "claude"
+    ANTHROPIC_API = "anthropic-api"
+    ANTHROPIC_MAX20 = "anthropic-max20"
     TANA = "tana"
     GOOGLE = "google"
 
@@ -79,6 +79,29 @@ CLIPROXY_MODELS: list[str] = [
     "gpt-5.3-codex-spark",
 ]
 
+# Context window + max output tokens for the Codex-subscription models. Measured,
+# not published: litellm's model_cost DB (live-fetched from BerriAI) has exact
+# entries for the real OpenAI models at their raw-API windows -- gpt-5.6-{sol,terra,
+# luna} at 922K, gpt-5.4/5.5 at 1.05M -- and Codex product docs say 272K, but none
+# is what this subscription path (client -> LiteLLM -> CLIProxyAPI -> upstream)
+# actually serves. So the openai/-prefixed routes advertise litellm's raw-API window
+# (it has no entry for the anthropic/-prefixed twins -> null); this measured value is
+# the SSOT the LiteLLM config injects into model_info (test_litellm_config.py).
+#
+# openai_utils/probe_context_window.py binary-searches the live path. On 2026-07-29
+# all three 5.6 models behaved identically: 370,629 tokens accepted, 372,194
+# rejected. Re-derive with:
+#
+#     kubectl exec -i -n <ns> <pod> -- python3 - --low 350000 --high 400000 \
+#         chatgpt/ant-messages/gpt-5.6-{luna,sol,terra} < openai_utils/probe_context_window.py
+CODEX_CONTEXT_WINDOW = 372_000
+CODEX_MAX_TOKENS = 128_000
+
+# Only the probed 5.6 models carry the measured window in the LiteLLM manifest;
+# gpt-5.4/5.5/5.3-codex-spark were never probed and are left without model_info
+# token limits. A newly added 5.6 model must be probed before being added here.
+CODEX_MEASURED_MODELS: list[str] = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
+
 # Tana-UI models fronted through tana-litellm. Tana encodes reasoning effort in the
 # model name (`/medium`, `/high`), not a `reasoning_effort` param, so there is no clean
 # "one model + effort knob" to map onto; we expose one model per family at its default
@@ -92,7 +115,7 @@ TANA_MODELS: list[tuple[str, str]] = [
 
 # Current-generation Anthropic roster, verified against the authenticated /v1/models
 # endpoint. Mirrored into Haku OpenClaw and Terraform, and reused as the exposed set for
-# the cliproxyapi Claude-subscription `claude/ant-messages/*` route: cliproxyapi's Claude
+# the cliproxyapi Claude-subscription `anthropic-max20/ant-messages/*` route: cliproxyapi's Claude
 # OAuth session serves older generations too, but we expose only this current group — the
 # subscription and the direct API serve the same current models, and sharing one list
 # keeps them in sync ("newest group only", as with the Gemini roster).
@@ -141,7 +164,7 @@ GEMINI_EMBEDDING_MODELS: list[str] = ["gemini-embedding-2", "gemini-embedding-00
 # Published input/output token limits shared across the current Gemini chat
 # generation: ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview,
 # .../gemini-3.7-flash, and .../gemini-3.5-flash-lite (2026-08-23). Unlike
-# Codex's CODEX_CONTEXT_WINDOW below, there is no live serving-path probe for
+# Codex's CODEX_CONTEXT_WINDOW above, there is no live serving-path probe for
 # a third-party hosted API, so this is Google's published figure rather than
 # a measured one. Used by public-coder-agent's OpenClaw catalog.
 GEMINI_CONTEXT_WINDOW = 1_048_576

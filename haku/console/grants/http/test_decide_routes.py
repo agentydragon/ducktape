@@ -12,22 +12,22 @@ from fastapi.testclient import TestClient
 from haku.console.grants.http.decide_routes import router
 from haku.console.grants.http.decide_service import HttpDecideUnavailableError
 from haku.egress.decision import (
+    DecideRequest,
+    GrantScope,
     # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
     # gazelle:include_dep @pypi//httpx
-    DecideAllowed,
-    DecideDenied,
-    DecideRequest,
-    DecisionSource,
-    GrantScope,
+    HttpAuthorizationAllowed,
+    HttpAuthorizationDenied,
     PlaceholderSubstitution,
 )
+from haku.grants.authorization import GrantSourceKind
 
 _VALID_UNTIL = datetime.datetime(2026, 8, 27, 12, 30, tzinfo=datetime.UTC)
-_PROXY_TOKEN = "proxy-identity-token"
-_FENCE = "agent-fence-credential"
+_FENCE = "shared-fence-credential"
+_SESSION_TOKEN = "test-session-token"
 
 _BODY = {
-    "fence_credential": _FENCE,
+    "session_token": _SESSION_TOKEN,
     "request": {"method": "GET", "scheme": "https", "host": "api.example", "port": 443, "path": "/api/items?x=1"},
     "resolved_ips": ["192.0.2.10", "2001:db8::10"],
     "upstream_ip": "192.0.2.10",
@@ -37,16 +37,16 @@ _BODY = {
 class _FakeDecideService:
     """Recording double for the route's two service calls (the real evaluation has its own tests)."""
 
-    def __init__(self, decision: DecideAllowed | DecideDenied | Exception) -> None:
+    def __init__(self, decision: HttpAuthorizationAllowed | HttpAuthorizationDenied | Exception) -> None:
         self.decision = decision
         self.authenticated: list[str] = []
         self.decided: list[DecideRequest] = []
 
     def authenticate_proxy(self, authorization: str) -> bool:
         self.authenticated.append(authorization)
-        return authorization == f"Bearer {_PROXY_TOKEN}"
+        return authorization == f"Bearer {_FENCE}"
 
-    async def decide(self, request: DecideRequest) -> DecideAllowed | DecideDenied:
+    async def decide(self, request: DecideRequest) -> HttpAuthorizationAllowed | HttpAuthorizationDenied:
         self.decided.append(request)
         if isinstance(self.decision, Exception):
             raise self.decision
@@ -61,13 +61,13 @@ def _client(service: _FakeDecideService | None = None) -> TestClient:
     return TestClient(app)
 
 
-def _post(client: TestClient, body: dict[str, Any] | None = None, token: str | None = _PROXY_TOKEN) -> Any:
+def _post(client: TestClient, body: dict[str, Any] | None = None, token: str | None = _FENCE) -> Any:
     headers = {} if token is None else {"Authorization": f"Bearer {token}"}
     return client.post("/api/internal/http/decide", json=body if body is not None else _BODY, headers=headers)
 
 
 def test_endpoint_requires_bearer() -> None:
-    service = _FakeDecideService(DecideDenied(reason="unreached"))
+    service = _FakeDecideService(HttpAuthorizationDenied(reason="unreached"))
     with _client(service) as client:
         response = _post(client, token=None)
     assert response.status_code == 401
@@ -75,9 +75,9 @@ def test_endpoint_requires_bearer() -> None:
 
 
 def test_endpoint_rejects_a_wrong_bearer() -> None:
-    service = _FakeDecideService(DecideDenied(reason="unreached"))
+    service = _FakeDecideService(HttpAuthorizationDenied(reason="unreached"))
     with _client(service) as client:
-        response = _post(client, token="not-the-proxy-token")
+        response = _post(client, token="not-the-fence-token")
     assert response.status_code == 401
     assert service.decided == []
 
@@ -91,9 +91,9 @@ def test_endpoint_is_unavailable_when_not_wired() -> None:
 
 def test_allow_wire_shape_carries_provenance_lifetime_and_substitutions() -> None:
     service = _FakeDecideService(
-        DecideAllowed(
-            source=DecisionSource.GRANT,
-            decision_id="grant:50000000-0000-4000-8000-000000000005",
+        HttpAuthorizationAllowed(
+            source=GrantSourceKind.DATABASE,
+            decision_id="database:50000000-0000-4000-8000-000000000005",
             valid_until=_VALID_UNTIL,
             substitutions=[
                 PlaceholderSubstitution(
@@ -110,8 +110,8 @@ def test_allow_wire_shape_carries_provenance_lifetime_and_substitutions() -> Non
     # This response is the one wire a real credential value travels on: localhost, to the proxy.
     assert response.json() == {
         "allowed": True,
-        "source": "grant",
-        "decision_id": "grant:50000000-0000-4000-8000-000000000005",
+        "source": "database",
+        "decision_id": "database:50000000-0000-4000-8000-000000000005",
         "valid_until": "2026-08-27T12:30:00Z",
         "substitutions": [
             {"placeholder": "github-token-placeholder", "value": "ghp-real-value", "match_headers": ["authorization"]}
@@ -119,27 +119,28 @@ def test_allow_wire_shape_carries_provenance_lifetime_and_substitutions() -> Non
     }
     (decided,) = service.decided
     assert decided.request.path == "/api/items?x=1"
-    assert decided.fence_credential.get_secret_value() == _FENCE
 
 
-def test_standing_allow_wire_shape_omits_the_absent_deadline() -> None:
-    # A standing-policy admission has no deadline (None), so the field stays off the wire; the
+def test_config_file_allow_wire_shape_omits_the_absent_deadline() -> None:
+    # A configuration-file admission has no deadline (None), so the field stays off the wire; the
     # client-side default restores None on parse (haku/egress/test_decision.py).
-    service = _FakeDecideService(DecideAllowed(source=DecisionSource.STANDING, decision_id="standing:haku-github-api"))
+    service = _FakeDecideService(
+        HttpAuthorizationAllowed(source=GrantSourceKind.CONFIG_FILE, decision_id="config_file:haku-github-api")
+    )
     with _client(service) as client:
         response = _post(client)
     assert response.status_code == 200
     assert response.json() == {
         "allowed": True,
-        "source": "standing",
-        "decision_id": "standing:haku-github-api",
+        "source": "config_file",
+        "decision_id": "config_file:haku-github-api",
         "substitutions": [],
     }
 
 
 def test_deny_wire_shape_carries_reason_and_canonical_grant_scope() -> None:
     service = _FakeDecideService(
-        DecideDenied(
+        HttpAuthorizationDenied(
             reason="no active HTTP grant covers the request",
             grant_scope=GrantScope(scheme="https", host="api.example", port=443),
         )
@@ -149,23 +150,22 @@ def test_deny_wire_shape_carries_reason_and_canonical_grant_scope() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "allowed": False,
-        "source": "none",
         "reason": "no active HTTP grant covers the request",
         "grant_scope": {"scheme": "https", "host": "api.example", "port": 443},
     }
 
 
 def test_deny_without_grant_scope_omits_the_field() -> None:
-    service = _FakeDecideService(DecideDenied(reason="unknown fence credential"))
+    service = _FakeDecideService(HttpAuthorizationDenied(reason="unknown fence credential"))
     with _client(service) as client:
         response = _post(client)
     assert response.status_code == 200
-    assert response.json() == {"allowed": False, "source": "none", "reason": "unknown fence credential"}
+    assert response.json() == {"allowed": False, "reason": "unknown fence credential"}
 
 
 def test_connect_admission_has_no_path() -> None:
     service = _FakeDecideService(
-        DecideAllowed(source=DecisionSource.GRANT, decision_id="grant:x", valid_until=_VALID_UNTIL)
+        HttpAuthorizationAllowed(source=GrantSourceKind.DATABASE, decision_id="database:x", valid_until=_VALID_UNTIL)
     )
     body = dict(_BODY, request={"method": "CONNECT", "scheme": None, "host": "api.example", "port": 443, "path": None})
     with _client(service) as client:
@@ -184,12 +184,12 @@ def test_authority_failure_is_a_503_never_an_allow() -> None:
 
 
 def test_malformed_body_is_rejected_before_evaluation() -> None:
-    service = _FakeDecideService(DecideDenied(reason="unreached"))
+    service = _FakeDecideService(HttpAuthorizationDenied(reason="unreached"))
     incoherent = dict(_BODY, upstream_ip="198.51.100.9")  # pinned address outside the resolved set
     with _client(service) as client:
-        missing_field = _post(client, body={"fence_credential": _FENCE})
+        body_credential = _post(client, body={"fence_credential": _FENCE})
         unresolved_pin = _post(client, body=incoherent)
-    assert missing_field.status_code == 422
+    assert body_credential.status_code == 422
     assert unresolved_pin.status_code == 422
     assert service.decided == []
 
@@ -197,7 +197,7 @@ def test_malformed_body_is_rejected_before_evaluation() -> None:
 def test_verdict_and_auth_failure_responses_never_echo_the_fence_credential() -> None:
     # 422 validation errors echo the rejected input back to its localhost sender by FastAPI
     # convention; verdicts and auth failures are what reach logs and surfaces, and stay clean.
-    service = _FakeDecideService(DecideDenied(reason="unknown fence credential"))
+    service = _FakeDecideService(HttpAuthorizationDenied(reason="no active HTTP grant covers the request"))
     with _client(service) as client:
         responses = [_post(client), _post(client, token="wrong"), _post(client, token=None)]
     assert all(_FENCE not in response.text for response in responses)

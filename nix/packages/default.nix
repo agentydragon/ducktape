@@ -154,8 +154,8 @@ let
   # Combined CLI + GNOME Shell extension package.
   aiquota = pkgs.callPackage ./gnome-shell-aiquota.nix { inherit artifacts lib; };
 
-  # Chrome-free GTK/WebKit approval window plus the GNOME Shell launcher.
-  hakuApprovals = pkgs.callPackage ./gnome-shell-haku-approvals.nix {
+  # Chrome-free GTK/WebKit approvals application.
+  hakuApprovals = pkgs.callPackage ./haku-approvals.nix {
     inherit
       artifacts
       lib
@@ -353,14 +353,12 @@ rec {
 
   aw-watcher-tmux = pkgs.callPackage ./aw-watcher-tmux.nix { };
 
-  # Alias for programs.gnome-shell.extensions compatibility.
   inherit hakuApprovals;
   # Kebab release-name attribute the CI nix-package gate builds (release key
   # `haku-approvals` in devinfra/ci/artifact_targets.json); `hakuApprovals` is
   # the home-manager-facing name. Keep both — deduping either breaks a consumer.
   haku-approvals = hakuApprovals;
   gnome-shell-aiquota = aiquota;
-  gnome-shell-haku-approvals = hakuApprovals;
   tana-outliner = pkgs.callPackage ./tana-outliner.nix { };
   gmail-mcp = pkgs.callPackage ./gmail-mcp.nix { };
   foxflss = pkgs.callPackage ./foxflss.nix { };

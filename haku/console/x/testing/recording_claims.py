@@ -21,6 +21,7 @@ test about the *real* step derivation needs `../test_sandbox_claims.py`, not thi
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from datetime import datetime
 from uuid import UUID
 
@@ -61,7 +62,7 @@ class RecordingClaims:
         """Make inspection raise, as an unreachable Kubernetes does."""
         self._failure = error
 
-    async def create(self, *, session_id: UUID, bridge_token: str, expires_at: datetime) -> None:
+    async def create(self, *, session_id: UUID, session_token: str, expires_at: datetime) -> None:
         assert expires_at > datetime.now(expires_at.tzinfo)
         if session_id in self.refused:
             raise RuntimeError("claim creation refused")
@@ -69,7 +70,7 @@ class RecordingClaims:
         self.created_event.set()
         # The claim is where a test reaches the credential: the store mints it and
         # `SessionService.create` does not hand them back.
-        self.tokens[session_id] = bridge_token
+        self.tokens[session_id] = session_token
 
     async def renew(self, *, session_id: UUID, expires_at: datetime) -> None:
         self.renewed.append((session_id, expires_at))
@@ -87,6 +88,14 @@ class RecordingClaims:
         return provisioning_view(
             f"claude-{session_id.hex}", step=ProvisioningStep.CLAIM_CREATED, observation_error=error
         )
+
+    def watch_changes(self, stop: asyncio.Event) -> AsyncIterator[None]:
+        async def empty() -> AsyncIterator[None]:
+            await stop.wait()
+            return
+            yield
+
+        return empty()
 
     async def aclose(self) -> None:
         return None

@@ -17,7 +17,7 @@ This README is the component map, not a second copy of every contract:
 - <docs/containment.md> — iframe isolation, trusted chrome, bridge verbs, consent, and browser-side
   exfiltration bounds.
 - <docs/oauth_browser_surfaces.md> — account-link and Agent-enrollment browser boundaries.
-- <docs/chat_layers.md>, <docs/conversation_schema.md>, and <x/README.md> — the experimental chat
+- <docs/conversation_layers.md>, <docs/conversation_schema.md>, and <x/README.md> — the experimental conversation
   runtime, its durable records, and channel/harness boundaries.
 - <../docs/security.md> — threat model and security invariants.
 - <../../cluster/k8s/haku/console/README.md> — deployment topology, migration release work, routing,
@@ -40,7 +40,7 @@ console's Recall mirror is read-only.
 ## MCP approval queue — authored tool calls, console-approved
 
 `ToolCallApplicationService` is the actor-scoped lifecycle boundary. Agent callers enter through
-`mcp_server.py`; the operator browser enters through `mcp_approval.py`. The service owns the
+`mcp/server.py`; the operator browser enters through `mcp/approval.py`. The service owns the
 canonical `tool_call_id`, schema validation, reviewed auto-approval decision, audit row, waiting,
 execution, and result.
 
@@ -64,13 +64,13 @@ The browser reads pending calls and the audit ledger through `/api/approvals/pen
 WebSocket is only a lossy invalidation channel: REST remains authoritative. `list_node_daemons`
 reflects persisted heartbeat/lease state; the separately authenticated `/api/node-daemons/v1/*`
 machine API owns heartbeat, durable work claims, lease renewal, and idempotent results. Operator
-OAuth and provider associations are managed by `mcp_operator_oauth.py` and
+OAuth and provider associations are managed by `mcp/operator_oauth.py` and
 `oauth/provider_connection.py`; browser rendering and callback-result handling are specified in
 <docs/oauth_browser_surfaces.md>.
 
 ### MCP server (`/mcp`)
 
-`mcp_server.py` mounts one native MCP server for Agents and the trusted Operator frontend. Agents
+`mcp/server.py` mounts one native MCP server for Agents and the trusted Operator frontend. Agents
 submit through `ToolCallApplicationService.submit_and_wait`. A DB-revalidated Operator session uses
 `execute_direct`, resolving downstream credentials in that Operator's context without creating an
 approval row; browser MCP requests still require the exact console Origin.
@@ -109,7 +109,7 @@ and the Postgres-backed state required by the accepted private seam. See
 
 #### Catalog reconciliation
 
-`tools/list` is a snapshot read. `mcp_catalog_reconciler.py` builds one atomic per-Operator
+`tools/list` is a snapshot read. `mcp/catalog_reconciler.py` builds one atomic per-Operator
 generation before readiness and refreshes it periodically. Connection changes invalidate that
 Operator's generation across replicas through Postgres `LISTEN`/`NOTIFY`; a newly admitted Operator
 queues an immediate pass.
@@ -126,7 +126,7 @@ The canonical contract is <docs/agent_authority.md>. In short: `Operator`, `Agen
 bindings, grants, names, profiles, and tool-call principals are durable local identities; every
 Agent call records exact binding provenance; and browser enrollment must converge with the MCP-side
 principal before a binding becomes active. Access profiles independently own auto-approval,
-Recall-index, in-process-server, and chat-runtime launch grants; missing assignments fail closed.
+Recall-index, in-process-server, and harness launch grants; missing assignments fail closed.
 Agents submit/read only their own calls and never approve themselves.
 
 ### In-process MCP servers — no second deployment
@@ -136,7 +136,7 @@ instance. `McpServerDispatcher` uses the same client/reflection path for both, w
 implementation code injects any in-process credential only at execution. Startup rejects a
 credential kind the implementation did not declare.
 
-Built-ins are assembled in `in_process_servers.py`:
+Built-ins are assembled in `mcp/in_process_servers.py`:
 
 - `gmail` and `google_calendar` execute as the acting Operator's separately linked Google grants.
   Their tool schemas/descriptions are the API contract; `TODO.md` inventories intentionally
@@ -146,12 +146,18 @@ Built-ins are assembled in `in_process_servers.py`:
   index state (`recall_index_reader.py`). Source materialization and embedding are the separate
   maintenance stages of `recall_index_sync.py`, run by the independently deployed `haku-indexer`
   worker (`indexer.py`) as role-flagged Deployments: one chunk Deployment per logical index, each
-  mounting only its own index's config slice, plus one shared embed Deployment. Only the
-  `haku-state` chunk pod holds the `haku-state` Git credential (Haku's Forgejo account, capable of
-  writes but used read-only; public Ducktape is anonymous), the embed role the batch embedder
-  endpoint — so this API pod carries no Git credential. <../recall_index/README.md> owns the index
-  design.
-- `haku_conversations` exposes actor-scoped reads over the console's chat records; the runtime and
+  mounting only its own index's config slice, plus one shared embed Deployment. Among the indexer
+  roles only the `haku-state` chunk pod holds the `haku-state` Git credential (Haku's Forgejo
+  account, capable of writes but used read-only for indexing; public Ducktape is anonymous), the
+  embed role the batch embedder endpoint. The API pod holds that same Forgejo credential
+  (`haku-forgejo-git`) too, but for egress substitution rather than indexing: the colocated egress
+  decide endpoint substitutes it into the hosted haku agent's fenced Forgejo egress, so that agent
+  uses its full Forgejo user (read/write/push) through the fence — deliberate and accepted, the
+  write exposure bounded by `haku-state` `main` branch protection (force-push/delete blocked). This
+  sharing is temporary: once the indexer gains its own read-only Forgejo credential the API pod need
+  not hold `haku-forgejo-git` (TODO in `test_haku_indexer_worker_contract`).
+  <../recall_index/README.md> owns the index design.
+- `haku_conversations` exposes actor-scoped reads over the console's conversation records; the runtime and
   record vocabulary are documented under <x/README.md>.
 - `haku_routine` launches the reviewed routine through ordinary approval.
 - `hostexec` exchanges the acting Operator's login authority only during approved execution; its

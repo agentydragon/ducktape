@@ -31,17 +31,31 @@ from collections.abc import Awaitable, Callable
 from ipaddress import IPv4Address, IPv6Address, ip_address
 from typing import assert_never
 
-from mitmproxy import http
+from mitmproxy import connection, http
 from mitmproxy.proxy import server_hooks
 
 from haku.egress.decide_client import DecideClient
-from haku.egress.decision import DecideAllowed, DecideDenied, PlaceholderSubstitution, RequestMeta
+from haku.egress.decision import (
+    GrantScope,
+    HttpAuthorizationAllowed,
+    HttpAuthorizationDenied,
+    PlaceholderSubstitution,
+    RequestMeta,
+)
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_DECIDE_TIMEOUT_SECONDS = 5.0
 
 _FAIL_CLOSED_MESSAGE = "egress decision unavailable; refusing (fail closed)"
+_EGRESS_DENIED_HEADER = "X-Haku-Egress-Denied"
+_GRANT_SCOPE_HEADER = "X-Haku-Grant-Scope"
+_EGRESS_HELP_HEADER = "X-Haku-Egress-Help"
+_EGRESS_HELP = (
+    "No grant covers this origin. Request one: `grants__create_grant` with "
+    "`{origin: {scheme, host, port}, coverage: {methods}}`, a short `duration_seconds`, "
+    "and a rationale for the operator. See your active grants: `grants__list_grants`."
+)
 
 type ResolveAddresses = Callable[[str, int], Awaitable[frozenset[IPv4Address | IPv6Address]]]
 
@@ -52,8 +66,86 @@ async def resolve_addresses(host: str, port: int) -> frozenset[IPv4Address | IPv
     return frozenset(ip_address(sockaddr[0]) for _family, _type, _proto, _canonname, sockaddr in infos)
 
 
-def _refusal(status: int, message: str) -> http.Response:
-    return http.Response.make(status, f"{message}\n".encode(), {"content-type": "text/plain; charset=utf-8"})
+def _refusal(status: int, message: str, headers: dict[str, str] | None = None) -> http.Response:
+    response_headers = {"content-type": "text/plain; charset=utf-8", **(headers or {})}
+    return http.Response.make(status, f"{message}\n".encode(), response_headers)
+
+
+def _grant_scope_origin(scope: GrantScope) -> str:
+    return f"{scope.scheme}://{scope.host}:{scope.port}"
+
+
+def _denial_refusal(decision: HttpAuthorizationDenied) -> http.Response:
+    """Explain an authorization denial in both CONNECT-visible headers and the response body."""
+    headers = {_EGRESS_DENIED_HEADER: decision.reason, _EGRESS_HELP_HEADER: _EGRESS_HELP}
+    body = f"egress denied: {decision.reason}\n{_EGRESS_HELP}"
+    if decision.grant_scope is not None:
+        origin = _grant_scope_origin(decision.grant_scope)
+        headers[_GRANT_SCOPE_HEADER] = origin
+        body += f"\nRequest the covering grant for {origin}."
+    return _refusal(403, body, headers)
+
+
+def _auth_refusal(message: str) -> http.Response:
+    """407 with the RFC 9110 §11.7.1 challenge, so challenge-response clients can retry.
+
+    git's libcurl (proxy anyauth) sends its first CONNECT bare and picks a scheme from
+    ``Proxy-Authenticate``; without the challenge it aborts instead of retrying with the
+    credentials it already holds from the proxy URL userinfo (#5154). Basic is the scheme
+    those clients send; ``_proxy_session_token`` also accepts an explicit Bearer.
+    """
+    response = _refusal(407, message)
+    response.headers["proxy-authenticate"] = 'Basic realm="haku-egress"'
+    return response
+
+
+def _proxy_session_token(value: str) -> str | None:
+    """Extract the session token from Bearer or URL-userinfo Basic proxy auth.
+
+    Runner-launched clients get credentials through ``http://:<token>@proxy`` because that is
+    understood by ordinary HTTP clients. A caller may also send an explicit Bearer header. Basic
+    userinfo is deliberately accepted only with an empty username: the session token is one
+    secret, not a username/password pair.
+    """
+    scheme, header_separator, payload = value.partition(" ")
+    if not header_separator or not payload.strip():
+        return None
+    payload = payload.strip()
+    if scheme.lower() == "bearer":
+        return payload
+    if scheme.lower() != "basic":
+        return None
+    try:
+        decoded = base64.b64decode(payload, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    username, credential_separator, password = decoded.partition(b":")
+    if credential_separator != b":" or username or not password:
+        return None
+    try:
+        return password.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
+def _take_session_token(flow: http.HTTPFlow, tokens: dict[str, str]) -> tuple[str | None, bool]:
+    """Consume proxy auth and retain it across CONNECT's later intercepted inner requests."""
+    header = flow.request.headers.get("proxy-authorization")
+    client_id = flow.client_conn.id if flow.client_conn is not None else None
+    if header is not None:
+        # Proxy-Authorization is for this listener, never for the upstream server. Remove it even
+        # when malformed so a failed attempt cannot accidentally cross the fence.
+        del flow.request.headers["proxy-authorization"]
+        token = _proxy_session_token(header)
+        if client_id is not None:
+            if token is None:
+                tokens.pop(client_id, None)
+            else:
+                tokens[client_id] = token
+        return token, True
+    if client_id is not None and (token := tokens.get(client_id)) is not None:
+        return token, True
+    return None, False
 
 
 def _swap_placeholder(header_value: str, substitution: PlaceholderSubstitution) -> str:
@@ -102,20 +194,29 @@ class EgressGateAddon:
         # (host, port), possibly from a newer allow than the flow that triggered the dial.
         # Grows by distinct destinations seen; never shrinks.
         self._pinned_upstreams: dict[tuple[str, int], IPv4Address | IPv6Address] = {}
+        # CONNECT's inner intercepted request is a separate Flow from the CONNECT flow, but both
+        # belong to the same client connection. Keep the session token there until disconnect so
+        # the inner request cannot be mistaken for an unauthenticated new client.
+        self._session_tokens: dict[str, str] = {}
+
+    def client_disconnected(self, client: connection.Client) -> None:
+        self._session_tokens.pop(client.id, None)
 
     async def http_connect(self, flow: http.HTTPFlow) -> None:
         # A non-2xx response on a CONNECT flow makes mitmproxy refuse the tunnel.
+        session_token, supplied = _take_session_token(flow, self._session_tokens)
         meta = RequestMeta(
             method=flow.request.method, scheme=None, host=flow.request.host, port=flow.request.port, path=None
         )
-        await self._gate(flow, meta)
+        await self._gate(flow, meta, session_token=session_token, token_supplied=supplied)
 
     async def request(self, flow: http.HTTPFlow) -> None:
         request = flow.request
+        session_token, supplied = _take_session_token(flow, self._session_tokens)
         meta = RequestMeta(
             method=request.method, scheme=request.scheme, host=request.host, port=request.port, path=request.path
         )
-        await self._gate(flow, meta)
+        await self._gate(flow, meta, session_token=session_token, token_supplied=supplied)
 
     def responseheaders(self, flow: http.HTTPFlow) -> None:
         """Stream the upstream response body to the client instead of buffering it whole.
@@ -165,8 +266,14 @@ class EgressGateAddon:
             return
         data.server.address = (str(pinned), port)
 
-    async def _gate(self, flow: http.HTTPFlow, meta: RequestMeta) -> None:
+    async def _gate(
+        self, flow: http.HTTPFlow, meta: RequestMeta, *, session_token: str | None, token_supplied: bool
+    ) -> None:
         flow.response = _refusal(502, _FAIL_CLOSED_MESSAGE)
+        if session_token is None:
+            reason = "invalid session token" if token_supplied else "session token required"
+            flow.response = _auth_refusal(reason)
+            return
         try:
             async with asyncio.timeout(self._decide_timeout_seconds):
                 # One resolution per admission: the decision validates this complete answer,
@@ -174,12 +281,14 @@ class EgressGateAddon:
                 # then numeric) is the address server_connect will dial verbatim.
                 resolved = await self._resolve(meta.host, meta.port)
                 upstream_ip = min(resolved, key=lambda address: (address.version, int(address)))
-                decision = await self._decide.decide(meta, resolved_ips=resolved, upstream_ip=upstream_ip)
+                decision = await self._decide.decide(
+                    meta, resolved_ips=resolved, upstream_ip=upstream_ip, session_token=session_token
+                )
             match decision:
-                case DecideDenied():
+                case HttpAuthorizationDenied():
                     logger.info("deny %s %s:%d: %s", meta.method, meta.host, meta.port, decision.reason)
-                    flow.response = _refusal(403, f"egress denied: {decision.reason}")
-                case DecideAllowed():
+                    flow.response = _denial_refusal(decision)
+                case HttpAuthorizationAllowed():
                     self._pinned_upstreams[(meta.host, meta.port)] = upstream_ip
                     applied = sum(
                         _apply_substitution(flow.request, substitution) for substitution in decision.substitutions

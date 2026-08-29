@@ -91,7 +91,7 @@ spec:
                 secretKeyRef:
                   name: litellm-salt-key
                   key: key
-            # Anthropic key for the claude-* upstream models (ESO mirror of the
+            # Anthropic key for the anthropic-api/ant-messages/* exposed models (ESO mirror of the
             # spend-capped haku-cloud workspace key; see secrets/anthropic-api-key-eso.yaml).
             - name: ANTHROPIC_API_KEY
               valueFrom:

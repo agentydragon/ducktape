@@ -14,17 +14,16 @@ import yaml
 from pydantic import ValidationError
 
 from haku.console.grants.http.decide_config import (
+    EgressConfigGrantEntry,
     EgressCredentialEntry,
     EgressDecideConfig,
-    EgressFenceCredentialEntry,
-    EgressStandingPolicyEntry,
     load_egress_decide,
 )
 from haku.console.grants.http.models import HttpMethod, HttpOrigin, HttpRequestCoverage, HttpScheme
+from haku.console.grants.principal import AgentGrantPrincipal, SessionGrantPrincipal
 
 _AGENT = UUID("10000000-0000-4000-8000-000000000001")
-_PROXY_TOKEN = "proxy-identity-token"
-_FENCE = "agent-fence-credential"
+_FENCE = "shared-fence-credential"
 _ORIGIN = HttpOrigin(scheme=HttpScheme.HTTPS, host="api.github.com", port=443)
 
 
@@ -34,22 +33,22 @@ def _credential_entry(**overrides: Any) -> EgressCredentialEntry:
         "placeholder": "github-token-placeholder",
         "value_env_var": "EGRESS_CREDENTIAL_GITHUB_BOT",
         "match_headers": frozenset({"Authorization"}),
-        "agent_ids": frozenset({_AGENT}),
+        "principal": AgentGrantPrincipal(agent_id=_AGENT),
         "origins": frozenset({_ORIGIN}),
     }
     return EgressCredentialEntry(**{**fields, **overrides})
 
 
 def test_egress_decide_config_requires_distinct_env_references() -> None:
-    with pytest.raises(ValueError, match="distinct"):
-        EgressDecideConfig(
-            proxy_token_env_var="EGRESS_TOKEN",
-            fence_credentials=[EgressFenceCredentialEntry(agent_id=_AGENT, token_env_var="EGRESS_TOKEN")],
-        )
     with pytest.raises(ValueError, match="identity secrets"):
         EgressDecideConfig(
-            proxy_token_env_var="EGRESS_TOKEN", credentials=[_credential_entry(value_env_var="EGRESS_TOKEN")]
+            fence_credential_env_var="EGRESS_TOKEN", credentials=[_credential_entry(value_env_var="EGRESS_TOKEN")]
         )
+
+
+def test_egress_decide_config_has_one_fence_credential() -> None:
+    with pytest.raises(ValidationError, match="fence_credentials"):
+        EgressDecideConfig.model_validate({"fence_credentials": [], "fence_credential_env_var": "EGRESS_FENCE"})
 
 
 def test_credential_entry_canonicalizes_and_validates_match_headers() -> None:
@@ -61,16 +60,16 @@ def test_credential_entry_canonicalizes_and_validates_match_headers() -> None:
 
 
 def test_credential_registry_requires_coherent_handles_and_placeholders() -> None:
-    other = {"value_env_var": "EGRESS_CREDENTIAL_OTHER", "agent_ids": frozenset({_AGENT})}
+    other = {"value_env_var": "EGRESS_CREDENTIAL_OTHER", "principal": AgentGrantPrincipal(agent_id=_AGENT)}
     with pytest.raises(ValueError, match="handles must be distinct"):
         EgressDecideConfig(
-            proxy_token_env_var="EGRESS_TOKEN",
+            fence_credential_env_var="EGRESS_TOKEN",
             credentials=[_credential_entry(), _credential_entry(placeholder="other-token-placeholder", **other)],
         )
     # A placeholder containing another would make the substring-swap substitutions order-dependent.
     with pytest.raises(ValueError, match="placeholder"):
         EgressDecideConfig(
-            proxy_token_env_var="EGRESS_TOKEN",
+            fence_credential_env_var="EGRESS_TOKEN",
             credentials=[
                 _credential_entry(),
                 _credential_entry(handle="github-bot-wide", placeholder="github-token-placeholder-wide", **other),
@@ -80,44 +79,32 @@ def test_credential_registry_requires_coherent_handles_and_placeholders() -> Non
 
 def test_prohibited_cidrs_parse_as_networks_and_default_empty() -> None:
     config = EgressDecideConfig.model_validate(
-        {"proxy_token_env_var": "EGRESS_TOKEN", "prohibited_cidrs": ["10.96.0.0/12", "fd00:10::/64"]}
+        {"fence_credential_env_var": "EGRESS_TOKEN", "prohibited_cidrs": ["10.96.0.0/12", "fd00:10::/64"]}
     )
     assert config.prohibited_cidrs == frozenset({IPv4Network("10.96.0.0/12"), IPv6Network("fd00:10::/64")})
-    assert EgressDecideConfig(proxy_token_env_var="EGRESS_TOKEN").prohibited_cidrs == frozenset()
+    assert EgressDecideConfig(fence_credential_env_var="EGRESS_TOKEN").prohibited_cidrs == frozenset()
     with pytest.raises(ValidationError):  # host bits set: an address, not a range
-        EgressDecideConfig.model_validate({"proxy_token_env_var": "EGRESS_TOKEN", "prohibited_cidrs": ["10.96.0.1/12"]})
+        EgressDecideConfig.model_validate(
+            {"fence_credential_env_var": "EGRESS_TOKEN", "prohibited_cidrs": ["10.96.0.1/12"]}
+        )
 
 
 def test_load_egress_decide_reads_env_references_and_fails_loud(monkeypatch: pytest.MonkeyPatch) -> None:
-    config = EgressDecideConfig(
-        proxy_token_env_var="EGRESS_PROXY_TOKEN",
-        fence_credentials=[EgressFenceCredentialEntry(agent_id=_AGENT, token_env_var="EGRESS_FENCE_A")],
-    )
-    monkeypatch.delenv("EGRESS_PROXY_TOKEN", raising=False)
-    with pytest.raises(RuntimeError, match="EGRESS_PROXY_TOKEN"):
-        load_egress_decide(config)
-
-    monkeypatch.setenv("EGRESS_PROXY_TOKEN", _PROXY_TOKEN)
+    config = EgressDecideConfig(fence_credential_env_var="EGRESS_FENCE_A")
+    monkeypatch.delenv("EGRESS_FENCE_A", raising=False)
     with pytest.raises(RuntimeError, match="EGRESS_FENCE_A"):
-        load_egress_decide(config)
-
-    monkeypatch.setenv("EGRESS_FENCE_A", _PROXY_TOKEN)
-    with pytest.raises(RuntimeError, match="duplicate"):
         load_egress_decide(config)
 
     monkeypatch.setenv("EGRESS_FENCE_A", _FENCE)
     loaded = load_egress_decide(config)
-    assert loaded.proxy_token.get_secret_value() == _PROXY_TOKEN
-    (credential,) = loaded.fence_credentials
-    assert credential.agent_id == _AGENT
-    assert credential.token.get_secret_value() == _FENCE
+    assert loaded.fence_credential.get_secret_value() == _FENCE
 
 
 def test_second_presentation_shares_the_value_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
     """One credential, two presentations: two entries over one env reference, each with its own
     handle, placeholder, and match headers."""
     config = EgressDecideConfig(
-        proxy_token_env_var="EGRESS_PROXY_TOKEN",
+        fence_credential_env_var="EGRESS_FENCE",
         credentials=[
             _credential_entry(),
             _credential_entry(
@@ -127,7 +114,7 @@ def test_second_presentation_shares_the_value_env_var(monkeypatch: pytest.Monkey
             ),
         ],
     )
-    monkeypatch.setenv("EGRESS_PROXY_TOKEN", _PROXY_TOKEN)
+    monkeypatch.setenv("EGRESS_FENCE", _FENCE)
     monkeypatch.setenv("EGRESS_CREDENTIAL_GITHUB_BOT", "ghp-real-value")
 
     bearer, api_key = load_egress_decide(config).credentials
@@ -137,65 +124,63 @@ def test_second_presentation_shares_the_value_env_var(monkeypatch: pytest.Monkey
     assert api_key.match_headers == frozenset({"x-api-key"})
 
 
-def _standing_entry(**overrides: Any) -> EgressStandingPolicyEntry:
-    """Build a standing entry; ``methods``/``path_regex`` overrides populate the nested coverage."""
+def _config_grant(**overrides: Any) -> EgressConfigGrantEntry:
+    """Build a configuration grant; ``methods``/``path_regex`` overrides populate coverage."""
     coverage_fields: dict[str, Any] = {"methods": frozenset({HttpMethod.GET})}
     for key in ("methods", "path_regex"):
         if key in overrides:
             coverage_fields[key] = overrides.pop(key)
     fields: dict[str, Any] = {
         "id": "haku-github-api",
-        "agent_ids": frozenset({_AGENT}),
+        "principal": AgentGrantPrincipal(agent_id=_AGENT),
         "origins": frozenset({_ORIGIN}),
         "coverage": HttpRequestCoverage(**coverage_fields),
     }
-    return EgressStandingPolicyEntry(**{**fields, **overrides})
+    return EgressConfigGrantEntry(**{**fields, **overrides})
 
 
-def test_standing_policy_entries_validate_fail_loud() -> None:
+def test_config_grant_entries_validate_fail_loud() -> None:
     with pytest.raises(ValueError, match="ids must be distinct"):
         EgressDecideConfig(
-            proxy_token_env_var="EGRESS_TOKEN",
-            standing_policies=[_standing_entry(), _standing_entry(methods=frozenset({HttpMethod.POST}))],
+            fence_credential_env_var="EGRESS_TOKEN",
+            grants=[_config_grant(), _config_grant(methods=frozenset({HttpMethod.POST}))],
         )
     with pytest.raises(ValueError, match="unknown credential handle"):
-        EgressDecideConfig(
-            proxy_token_env_var="EGRESS_TOKEN", standing_policies=[_standing_entry(credential_handle="ghost")]
-        )
+        EgressDecideConfig(fence_credential_env_var="EGRESS_TOKEN", grants=[_config_grant(credential_handle="ghost")])
     with pytest.raises(ValueError, match="path_regex"):
-        _standing_entry(path_regex="([unclosed")
+        _config_grant(path_regex="([unclosed")
     with pytest.raises(ValueError, match="id"):
-        _standing_entry(id="Not A Slug")
+        _config_grant(id="Not A Slug")
     # Origins use the grant vocabulary, so ungrantable shapes are refused at parse time.
     with pytest.raises(ValueError, match="wildcard"):
-        EgressStandingPolicyEntry.model_validate(
+        EgressConfigGrantEntry.model_validate(
             {
                 "id": "wild",
-                "agent_ids": [str(_AGENT)],
+                "principal": {"kind": "agent", "agent_id": str(_AGENT)},
                 "origins": [{"scheme": "https", "host": "*.github.com", "port": 443}],
                 "coverage": {"methods": ["GET"]},
             }
         )
 
 
-def test_overlapping_standing_entries_are_deliberately_legal() -> None:
+def test_overlapping_configuration_grants_are_deliberately_legal() -> None:
     config = EgressDecideConfig(
-        proxy_token_env_var="EGRESS_TOKEN",
+        fence_credential_env_var="EGRESS_TOKEN",
         credentials=[_credential_entry()],
-        standing_policies=[
-            _standing_entry(id="broad"),
-            _standing_entry(id="credentialed", path_regex="/repos/.*", credential_handle="github-bot"),
+        grants=[
+            _config_grant(id="broad"),
+            _config_grant(id="credentialed", path_regex="/repos/.*", credential_handle="github-bot"),
         ],
     )
-    assert [entry.id for entry in config.standing_policies] == ["broad", "credentialed"]
+    assert [entry.id for entry in config.grants] == ["broad", "credentialed"]
 
 
-def test_standing_entry_allow_prohibited_address_defaults_off_and_parses() -> None:
-    assert _standing_entry().allow_prohibited_address is False
-    parsed = EgressStandingPolicyEntry.model_validate(
+def test_config_grant_allow_prohibited_address_defaults_off_and_parses() -> None:
+    assert _config_grant().allow_prohibited_address is False
+    parsed = EgressConfigGrantEntry.model_validate(
         {
             "id": "internal-gateway",
-            "agent_ids": [str(_AGENT)],
+            "principal": {"kind": "agent", "agent_id": str(_AGENT)},
             "origins": [{"scheme": "http", "host": "gateway.internal.example", "port": 4000}],
             "coverage": {"methods": ["POST"]},
             "allow_prohibited_address": True,
@@ -204,22 +189,22 @@ def test_standing_entry_allow_prohibited_address_defaults_off_and_parses() -> No
     assert parsed.allow_prohibited_address is True
 
 
-def test_load_egress_decide_passes_standing_policies_through(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Standing entries carry no secrets, so the loaded view is the literal reviewed entry."""
+def test_load_egress_decide_passes_configuration_grants_through(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Configuration grants carry no secrets, so loading preserves the reviewed entry."""
     config = EgressDecideConfig(
-        proxy_token_env_var="EGRESS_PROXY_TOKEN",
+        fence_credential_env_var="EGRESS_FENCE",
         credentials=[_credential_entry()],
-        standing_policies=[_standing_entry(credential_handle="github-bot")],
+        grants=[_config_grant(credential_handle="github-bot")],
     )
-    monkeypatch.setenv("EGRESS_PROXY_TOKEN", _PROXY_TOKEN)
+    monkeypatch.setenv("EGRESS_FENCE", _FENCE)
     monkeypatch.setenv("EGRESS_CREDENTIAL_GITHUB_BOT", "ghp-real-value")
 
-    assert load_egress_decide(config).standing_policies == config.standing_policies
+    assert load_egress_decide(config).grants == config.grants
 
 
-def test_github_spike_standing_config(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The #4943 GitHub spike shape: Agent haku reaches api.github.com + github.com under standing
-    policy, redeeming the bot credential at both — Bearer on the API, git-over-HTTPS Basic on
+def test_github_spike_configuration_grants(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The #4943 GitHub spike shape: Agent haku reaches api.github.com + github.com through config
+    grants, redeeming the bot credential at both — Bearer on the API, git-over-HTTPS Basic on
     github.com (one registry entry: both are Authorization presentations of one placeholder).
     The deployed section lives in cluster/k8s/haku/console/config.yaml; its coherence with the
     registry is asserted over the real file in test_deployment_config.py."""
@@ -228,29 +213,26 @@ def test_github_spike_standing_config(monkeypatch: pytest.MonkeyPatch) -> None:
         yaml.safe_load(
             textwrap.dedent(
                 """
-                proxy_token_env_var: HAKU_EGRESS_PROXY_TOKEN
-                fence_credentials:
-                  - agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
-                    token_env_var: HAKU_EGRESS_FENCE_HAKU
+                fence_credential_env_var: HAKU_EGRESS_FENCE_CREDENTIAL
                 credentials:
                   - handle: github-bot
                     placeholder: github-token-placeholder
                     value_env_var: HAKU_EGRESS_CREDENTIAL_GITHUB_BOT
                     match_headers: [authorization]
-                    agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+                    principal: {kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2}
                     origins:
                       - {scheme: https, host: api.github.com, port: 443}
                       - {scheme: https, host: github.com, port: 443}
-                standing_policies:
+                grants:
                   - id: haku-github-api
-                    agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+                    principal: {kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2}
                     origins:
                       - {scheme: https, host: api.github.com, port: 443}
                     coverage:
                       methods: [DELETE, GET, HEAD, PATCH, POST, PUT]
                     credential_handle: github-bot
                   - id: haku-github-git
-                    agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
+                    principal: {kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2}
                     origins:
                       - {scheme: https, host: github.com, port: 443}
                     coverage:
@@ -260,23 +242,22 @@ def test_github_spike_standing_config(monkeypatch: pytest.MonkeyPatch) -> None:
             )
         )
     )
-    monkeypatch.setenv("HAKU_EGRESS_PROXY_TOKEN", _PROXY_TOKEN)
-    monkeypatch.setenv("HAKU_EGRESS_FENCE_HAKU", _FENCE)
+    monkeypatch.setenv("HAKU_EGRESS_FENCE_CREDENTIAL", _FENCE)
     monkeypatch.setenv("HAKU_EGRESS_CREDENTIAL_GITHUB_BOT", "ghp-real-value")
     loaded = load_egress_decide(config)
 
-    api_entry, git_entry = loaded.standing_policies
+    api_entry, git_entry = loaded.grants
     assert (api_entry.id, git_entry.id) == ("haku-github-api", "haku-github-git")
     # Absent path_regex covers every path plus query — git smart HTTP needs
     # /info/refs?service=git-upload-pack through to the pack endpoints.
     assert git_entry.coverage.path_regex is None
     assert git_entry.coverage.methods == frozenset({HttpMethod.GET, HttpMethod.POST})
-    # The registry binding must actually redeem what the standing entries admit: same Agent set,
-    # every standing origin within the credential's redemption origins.
+    # The registry binding must actually redeem what the configuration grants admit: same principal,
+    # every grant origin within the credential's redemption origins.
     (credential,) = loaded.credentials
-    for entry in loaded.standing_policies:
+    for entry in loaded.grants:
         assert entry.credential_handle == credential.handle
-        assert entry.agent_ids <= credential.agent_ids == frozenset({haku})
+        assert entry.principal == credential.principal == AgentGrantPrincipal(agent_id=haku)
         assert entry.origins <= credential.origins
 
 
@@ -284,10 +265,10 @@ def test_load_egress_credentials_present_value_conflicts_fail_loud(monkeypatch: 
     """Absence is tolerated (see the skip test), but a present-but-conflicting registry value is a
     misconfiguration or attack and still raises: it may not duplicate an identity secret nor equal a
     configured placeholder."""
-    config = EgressDecideConfig(proxy_token_env_var="EGRESS_PROXY_TOKEN", credentials=[_credential_entry()])
-    monkeypatch.setenv("EGRESS_PROXY_TOKEN", _PROXY_TOKEN)
+    config = EgressDecideConfig(fence_credential_env_var="EGRESS_FENCE", credentials=[_credential_entry()])
+    monkeypatch.setenv("EGRESS_FENCE", _FENCE)
 
-    monkeypatch.setenv("EGRESS_CREDENTIAL_GITHUB_BOT", _PROXY_TOKEN)
+    monkeypatch.setenv("EGRESS_CREDENTIAL_GITHUB_BOT", _FENCE)
     with pytest.raises(RuntimeError, match="duplicate"):
         load_egress_decide(config)
 
@@ -302,17 +283,24 @@ def test_load_egress_credentials_present_value_conflicts_fail_loud(monkeypatch: 
     assert loaded.placeholder == "github-token-placeholder"
     assert loaded.value.get_secret_value() == "ghp-real-value"
     assert loaded.match_headers == frozenset({"authorization"})
-    assert loaded.agent_ids == frozenset({_AGENT})
+    assert loaded.principal == AgentGrantPrincipal(agent_id=_AGENT)
     assert loaded.origins == frozenset({_ORIGIN})
+
+
+def test_configuration_entries_reject_session_principals() -> None:
+    with pytest.raises(ValidationError):
+        _config_grant(principal=SessionGrantPrincipal(session_id=UUID(int=1)))
+    with pytest.raises(ValidationError):
+        _credential_entry(principal=SessionGrantPrincipal(session_id=UUID(int=1)))
 
 
 def test_load_egress_decide_skips_credential_with_unset_env_var(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     """A registry credential whose value env var is unset is skipped with a warning, not fatal: the
-    endpoint still loads the proxy token and every credential whose var is set."""
+    endpoint still loads the fence credential and every registry credential whose var is set."""
     config = EgressDecideConfig(
-        proxy_token_env_var="EGRESS_PROXY_TOKEN",
+        fence_credential_env_var="EGRESS_FENCE",
         credentials=[
             _credential_entry(),
             _credential_entry(
@@ -322,7 +310,7 @@ def test_load_egress_decide_skips_credential_with_unset_env_var(
             ),
         ],
     )
-    monkeypatch.setenv("EGRESS_PROXY_TOKEN", _PROXY_TOKEN)
+    monkeypatch.setenv("EGRESS_FENCE", _FENCE)
     monkeypatch.setenv("EGRESS_CREDENTIAL_GITHUB_BOT", "ghp-real-value")
     monkeypatch.delenv("EGRESS_CREDENTIAL_GITLAB_BOT", raising=False)
 

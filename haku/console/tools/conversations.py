@@ -7,7 +7,7 @@ two durable records: the conversation — neutral events folded into items as ea
 and `session_frames`, the verbatim wire they were read off. A tool call and the result it got
 are in both — which the room is not.
 
-**Each read is named and keyed by the layer it reads** (<../docs/chat_layers.md>): a session has
+**Each read is named and keyed by the layer it reads** (<../docs/conversation_layers.md>): a session has
 frames; a conversation has events, which fold into items. `read_conversation_items` is what a conversation
 *meant* — prompts, messages, reasoning, tool calls and their results, as one vocabulary that says
 nothing about which agent backend produced them, keyed by the conversation because the thread
@@ -81,9 +81,9 @@ from haku.console.conversation_read_access import (
     ConversationReadAccessPolicy,
     ConversationReadScope,
 )
-from haku.console.in_process_server_access import InProcessServerAccessPolicy
-from haku.console.mcp_execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext
-from haku.console.session.session_frames import BridgeFrameKind
+from haku.console.mcp.execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext
+from haku.console.mcp.in_process_server_access import InProcessServerAccessPolicy
+from haku.console.session.session_frames import SessionFrameKind
 
 # Wire-frozen id: named by cluster/k8s/haku/console/config.yaml and persisted in
 # ledger `server_id` rows — renaming is a config + data migration.
@@ -156,7 +156,7 @@ class ConversationReader(Protocol):
         cursor: int | None,
         limit: int,
         scope: ConversationReadScope,
-        kinds: Sequence[BridgeFrameKind] | None = None,
+        kinds: Sequence[SessionFrameKind] | None = None,
     ) -> list[FrameRecord]: ...
 
     async def list_turns(
@@ -301,7 +301,7 @@ def build_mcp(
                 cursor=cursor,
                 limit=limit + 1,
                 scope=scope,
-                kinds=None if kinds is None else [BridgeFrameKind(kind) for kind in kinds],
+                kinds=None if kinds is None else [SessionFrameKind(kind) for kind in kinds],
             )
         except ConversationAccessDeniedError:
             raise ToolError("conversation access denied") from None

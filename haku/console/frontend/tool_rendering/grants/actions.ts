@@ -18,9 +18,8 @@ export const grantsActions: Record<string, ActionEntry> = {
     const domain = args.grants.length > 0 ? `${domainLabel(args.grants[0].domain)} ` : "";
     return { text: `Grants: Create ${domain}${plural(args.grants.length)}` };
   }),
-  // One end-grants tool: an Operator naming owner_agent_id revokes, an Agent omitting it releases.
   revoke_grants: fromArgs(zRevokeGrantsArgs, (args) => ({
-    text: `Grants: ${args.owner_agent_id ? "Revoke" : "Release"} ${domainLabel(args.domain)} ${plural(args.grant_ids.length)}`,
+    text: `Grants: End ${domainLabel(args.domain)} ${plural(args.grant_ids.length)}`,
     destructive: true,
   })),
 };

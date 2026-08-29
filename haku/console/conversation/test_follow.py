@@ -23,8 +23,9 @@ from haku.console.conversation.follow import ConversationFollow
 from haku.console.conversation.item_reads import Item, MessageItem, PromptItem
 from haku.console.conversation.item_vocabulary import ItemStatus, ItemType
 from haku.console.conversation.prompt_origin import SPA_ORIGIN
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.notifications.conversation_wakes import ConversationWakes
-from haku.console.session.conftest import attach_channel
+from haku.console.session.conftest import TEST_ACCESS_PROFILE_ID, TEST_AGENT_ID, attach_channel
 from haku.console.session.conversation_views import (
     ConversationFollowMessage,
     ConversationSnapshot,
@@ -32,7 +33,7 @@ from haku.console.session.conversation_views import (
     ConversationView,
 )
 from haku.console.session.runtime import SessionService
-from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
+from haku.console.session.session_frames import FrameDirection, SessionFrameKind
 from haku.console.session.status import SessionStatus
 from haku.console.session.store import Store
 from haku.console.x.conversation_events import ItemSegment, MessageCompleted, MessageStarted, OpenRef
@@ -72,8 +73,13 @@ def _prose(items: list[Item]) -> list[str]:
 
 
 async def _started(session_store: Store, operator_id: UUID) -> tuple[UUID, UUID]:
-    view, token = await session_store.create(operator_id)
-    await session_store.authenticate_bridge(view.session_id, token)
+    view, token = await session_store.create(
+        operator_id,
+        agent_id=TEST_AGENT_ID,
+        access_profile_id=TEST_ACCESS_PROFILE_ID,
+        harness_kind=HarnessKind.CLAUDE_CODE,
+    )
+    await session_store.authenticate_runner_connection(view.session_id, token)
     return view.session_id, await session_store.conversation_of(view.session_id)
 
 
@@ -83,10 +89,10 @@ async def _exchange(session_store: Store, operator_id: UUID, session_id: UUID, p
     turn = await session_store.next_prompt(session_id)
     assert turn is not None
     await session_store.record_frame(
-        session_id, FrameDirection.TO_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "user"}
+        session_id, FrameDirection.TO_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "user"}
     )
     spoke = await session_store.record_frame(
-        session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "assistant"}
+        session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "assistant"}
     )
     where = FrameRange(spoke.frame_seq, spoke.frame_seq)
     await session_store.apply_frame(
@@ -235,7 +241,7 @@ async def test_a_replacement_sessions_rows_reach_a_follower_that_never_named_it(
     assert isinstance(await _next(messages), ConversationSnapshot)
 
     replacement, token = await session_store.create(operator_id, conversation_id=conversation_id)
-    await session_store.authenticate_bridge(replacement.session_id, token)
+    await session_store.authenticate_runner_connection(replacement.session_id, token)
     await _exchange(session_store, operator_id, replacement.session_id, "carry on", "carrying on")
     update = await _next(messages)
 
@@ -324,7 +330,12 @@ async def test_a_sandbox_still_coming_up_is_read_again_with_no_wake_to_carry_it(
     """Kubernetes writes no `conversation_event` row when a pod goes ready, so a follower waiting only
     for wakes would show a provisioning panel frozen at whatever it opened on — during exactly the
     phase that panel exists for."""
-    view, _ = await session_store.create(operator_id)
+    view, _ = await session_store.create(
+        operator_id,
+        agent_id=TEST_AGENT_ID,
+        access_profile_id=TEST_ACCESS_PROFILE_ID,
+        harness_kind=HarnessKind.CLAUDE_CODE,
+    )
     conversation_id = await session_store.conversation_of(view.session_id)
     messages = following.follow(operator_id, conversation_id)
 

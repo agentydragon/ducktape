@@ -95,12 +95,6 @@ js_library(
 )
 
 js_library(
-    name = "IssueIdLink",
-    srcs = ["IssueIdLink.svelte"],
-    deps = [":router"],
-)
-
-js_library(
     name = "OccurrenceLink",
     srcs = ["OccurrenceLink.svelte"],
     deps = [":router"],

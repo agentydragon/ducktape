@@ -20,7 +20,7 @@ api.use({
 });
 
 export type ConfigResponse = components["schemas"]["ConfigResponse"];
-export type ChatLaunchOption = components["schemas"]["ChatLaunchOption"];
+export type LaunchOption = components["schemas"]["LaunchOption"];
 export type OperatorResponse = components["schemas"]["OperatorResponse"];
 export type DeploymentInfo = components["schemas"]["DeploymentInfo"];
 export type LaunchRoutineResult = components["schemas"]["LaunchRoutineResult"];
@@ -52,12 +52,10 @@ export type ConversationUpdate = components["schemas"]["ConversationUpdate"];
 export type SessionFrame = components["schemas"]["SessionFrameView"];
 export type SessionFramePage = components["schemas"]["SessionFramePage"];
 export type AgentListResponse = components["schemas"]["AgentListResponse"];
-// The #4918 entity-prefix drop renamed these route models to `OperatorGrant`/`GrantListResponse`,
-// which collide with the http domain's in the flat OpenAPI component namespace; pydantic emits
-// module-path-qualified component keys, which the generated types carry (naming_and_layout §4.1 seam 3).
-export type OperatorKubernetesGrant = components["schemas"]["haku__console__grants__kubernetes__routes__OperatorGrant"];
-export type KubernetesGrantListResponse =
-  components["schemas"]["haku__console__grants__kubernetes__routes__GrantListResponse"];
+export type Grant = components["schemas"]["Grant"];
+export type GrantPrincipal = Grant["subject"];
+export type GrantListResponse = components["schemas"]["GrantListResponse"];
+export type RevokeGrantResponse = components["schemas"]["RevokeGrantResponse"];
 export type EnrollmentView = components["schemas"]["EnrollmentView"];
 export type EnrollmentDecisionRequest =
   | components["schemas"]["CreateEnrollmentRequest"]
@@ -99,10 +97,10 @@ export async function fetchOperator(): Promise<OperatorResponse> {
   return data;
 }
 
-/** Mint a Web conversation with its explicit deploy-authorized Agent/runtime pair. */
-export async function createConversation(selection: ChatLaunchOption): Promise<Conversation> {
+/** Mint a Web conversation with its explicit deploy-authorized Agent/harness pair. */
+export async function createConversation(selection: LaunchOption): Promise<Conversation> {
   const response = await api.POST("/api/conversations", {
-    body: { agent_id: selection.agent_id, runtime: selection.runtime },
+    body: { agent_id: selection.agent_id, harness_kind: selection.harness_kind },
   });
   const { data, error } = response;
   if (error || !data) throw new Error(errorDetail(error, "Failed to start a conversation"));
@@ -212,22 +210,20 @@ export async function updateAgentAccessProfile(agentId: string, accessProfileId:
   return data;
 }
 
-export async function fetchKubernetesGrants(): Promise<KubernetesGrantListResponse> {
-  const { data, error } = await api.GET("/api/kubernetes-grants");
-  if (error || !data) throw new Error(errorDetail(error, "Failed to load Kubernetes grants"));
+/** List every grant, or only grants declared for one exact principal. */
+export async function fetchGrants(principal?: GrantPrincipal): Promise<GrantListResponse> {
+  const { data, error } = await api.GET("/api/grants", {
+    params: { query: principal ? { principal: JSON.stringify(principal) } : {} },
+  });
+  if (error || !data) throw new Error(errorDetail(error, "Failed to load grants"));
   return data;
 }
 
-export async function revokeKubernetesGrantSet(
-  agentId: string,
-  sourceToolCallId: string,
-  reason: string
-): Promise<KubernetesGrantListResponse> {
-  const { data, error } = await api.POST("/api/kubernetes-grants/{agent_id}/source/{source_tool_call_id}/revoke", {
-    params: { path: { agent_id: agentId, source_tool_call_id: sourceToolCallId } },
-    body: { reason },
+export async function revokeGrant(grantId: string): Promise<RevokeGrantResponse> {
+  const { data, error } = await api.POST("/api/grants/revoke", {
+    body: { grant_ids: [grantId] },
   });
-  if (error || !data) throw new Error(errorDetail(error, "Failed to revoke Kubernetes grant set"));
+  if (error || !data) throw new Error(errorDetail(error, "Failed to revoke grant"));
   return data;
 }
 

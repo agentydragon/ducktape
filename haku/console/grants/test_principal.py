@@ -9,6 +9,7 @@ import pytest_bazel
 from pydantic import TypeAdapter, ValidationError
 
 from haku.console.grants.principal import (
+    AccessProfileGrantPrincipal,
     AgentGrantPrincipal,
     GrantPrincipal,
     GrantPrincipalKind,
@@ -30,6 +31,10 @@ GRANT_PRINCIPAL_ADAPTER: TypeAdapter[GrantPrincipal] = TypeAdapter(GrantPrincipa
     [
         ({"kind": "agent", "agent_id": str(AGENT_A)}, AgentGrantPrincipal(agent_id=AGENT_A)),
         ({"kind": "session", "session_id": str(SESSION_A)}, SessionGrantPrincipal(session_id=SESSION_A)),
+        (
+            {"kind": "access_profile", "access_profile_id": "public-coder"},
+            AccessProfileGrantPrincipal(access_profile_id="public-coder"),
+        ),
     ],
 )
 def test_grant_principal_variants_round_trip_json(payload: dict[str, str], expected: GrantPrincipal) -> None:
@@ -41,6 +46,7 @@ def test_grant_principal_variants_round_trip_json(payload: dict[str, str], expec
 def test_principal_kinds_default_for_internal_construction() -> None:
     assert AgentGrantPrincipal(agent_id=AGENT_A).kind is GrantPrincipalKind.AGENT
     assert SessionGrantPrincipal(session_id=SESSION_A).kind is GrantPrincipalKind.SESSION
+    assert AccessProfileGrantPrincipal(access_profile_id="public-coder").kind is GrantPrincipalKind.ACCESS_PROFILE
 
 
 @pytest.mark.parametrize(
@@ -107,6 +113,17 @@ def test_session_grant_principal_covers_only_the_exact_live_session_identity() -
     )
     assert not grant_principal_applies_to(
         principal, RequestPrincipal(agent_id=AGENT_A, session_id=SESSION_B, access_profile_id=None)
+    )
+
+
+def test_access_profile_grant_principal_covers_agents_assigned_to_that_profile() -> None:
+    principal = AccessProfileGrantPrincipal(access_profile_id="public-coder")
+
+    assert grant_principal_applies_to(
+        principal, RequestPrincipal(agent_id=AGENT_A, session_id=None, access_profile_id="public-coder")
+    )
+    assert not grant_principal_applies_to(
+        principal, RequestPrincipal(agent_id=AGENT_A, session_id=None, access_profile_id="other")
     )
 
 

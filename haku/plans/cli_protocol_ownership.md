@@ -81,11 +81,11 @@ full flow no longer dies on a clock. What that leaves for this document is the p
 **A tended session now has no upper bound on its lifetime, and that bound was the
 protocol-compatibility window.** A runner's image is fixed when its claim is created, so the oldest
 live runner is exactly as old as the longest-lived session — exactly how far back the console must
-still speak the bridge protocol. Under the old fixed TTL with a janitor above it the window was
+still speak the runner protocol. Under the old fixed TTL with a janitor above it the window was
 finite and derivable: at roughly six console releases a day, a 24h horizon meant the last day's
 runner images. With the deadline slid and no janitor, "the console must remain compatible with every
-bridge version ever shipped" is the policy unless a bound is chosen. Pick the horizon deliberately —
-bound the session lifetime, or version the bridge protocol so an old runner degrades rather than
+runner protocol version ever shipped" is the policy unless a bound is chosen. Pick the horizon deliberately —
+bound the session lifetime, or version the runner protocol so an old runner degrades rather than
 breaks — and derive the support window from it, rather than discovering it when an eight-month-old
 sandbox refuses a handshake.
 

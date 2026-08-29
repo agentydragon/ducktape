@@ -1,4 +1,4 @@
-"""Focused contracts for the Agent Sandbox Claude chat runtime.
+"""Focused contracts for the Agent Sandbox Claude chat harness.
 
 **No channel is imported here, deliberately.** An attachment only selects whether the conversation
 gets the shared direct-chat system prompt; setup, answers, silence and live state are durable facts
@@ -12,19 +12,16 @@ import asyncio
 import contextlib
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
 from fastapi import HTTPException
-from more_itertools import one
 from pydantic import ValidationError
-from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from haku.console.config import ChatRuntimesConfig, ClaudeCodeImplementationConfig, RuntimeRegistrationConfig
+from haku.console.config import ClaudeCodeImplementationConfig, HarnessesConfig, HarnessRegistrationConfig
 from haku.console.conftest import console_sessions
 from haku.console.conversation.history import ConversationHistory
 from haku.console.conversation.prompt_origin import SPA_ORIGIN
@@ -33,41 +30,52 @@ from haku.console.harnesses.kind import HarnessKind
 from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.notifications.session_wakes import SessionWakes
-from haku.console.session.conftest import age_lease, attach_channel, configured_runtimes, runtime_config
-from haku.console.session.launch_identity import ChatLaunchAuthorizer, LaunchAgentRejectedError, LaunchIdentity
-from haku.console.session.runtime import (
-    ConversationCreateRequest,
-    SessionService,
-    _transient_database_error,
-    create_conversation,
+from haku.console.session.conftest import (
+    TEST_ACCESS_PROFILE_ID,
+    TEST_AGENT_ID,
+    age_lease,
+    attach_channel,
+    configured_harnesses,
+    runtime_config,
 )
+from haku.console.session.launch_identity import HarnessLaunchAuthorizer, LaunchAgentRejectedError, LaunchIdentity
+from haku.console.session.runtime import ConversationCreateRequest, SessionService, create_conversation
 from haku.console.session.sandbox_claims import ProvisioningStep, provisioning_view
 from haku.console.session.status import OPEN_SESSION_STATUSES, SessionStatus
-from haku.console.session.store import ADOPTION_GRACE, BridgeAuthentication, Store
+from haku.console.session.store import ADOPTION_GRACE, ActiveSessionRecord, RunnerConnectionAuthentication, Store
 from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
-from haku.console.x.runtime import RuntimeKey
+from haku.console.x.runtime import HarnessKey, HarnessLaunchSpec
+from haku.console.x.runtime_catalog import harness_registration
 from haku.console.x.testing.recording_claims import RecordingClaims
+from haku.runner.codex.options import CODEX_MODEL_ENV, CODEX_REASONING_EFFORT_ENV
 
 
-def test_runtime_deployment_wiring_has_no_application_defaults() -> None:
-    assert all(field.is_required() for field in RuntimeRegistrationConfig.model_fields.values())
-    assert ChatRuntimesConfig.model_fields["claude_code"].is_required()
-    assert not ChatRuntimesConfig.model_fields["codex_app_server"].is_required()
+def test_harness_deployment_wiring_has_no_application_defaults() -> None:
+    assert all(field.is_required() for field in HarnessRegistrationConfig.model_fields.values())
+    assert HarnessesConfig.model_fields["claude_code"].is_required()
+    assert not HarnessesConfig.model_fields["codex_app_server"].is_required()
     assert not ConsoleConfigFile.model_fields["harnesses"].is_required()
 
 
 def test_new_conversation_request_rejects_client_supplied_access_profile() -> None:
     with pytest.raises(ValidationError, match="extra_forbidden"):
         ConversationCreateRequest.model_validate(
-            {"agent_id": str(uuid4()), "runtime": HarnessKind.CLAUDE_CODE, "access_profile_id": "admin"}
+            {"agent_id": str(uuid4()), "harness_kind": HarnessKind.CLAUDE_CODE, "access_profile_id": "admin"}
         )
 
 
-@pytest.mark.parametrize("body", [{"agent_id": str(uuid4())}, {"runtime": HarnessKind.CLAUDE_CODE}])
+@pytest.mark.parametrize("body", [{"agent_id": str(uuid4())}, {"harness_kind": HarnessKind.CLAUDE_CODE}])
 def test_new_conversation_request_requires_the_complete_launch_pair(body: dict[str, object]) -> None:
     with pytest.raises(ValidationError, match="Field required"):
         ConversationCreateRequest.model_validate(body)
+
+
+async def test_direct_session_service_has_no_default_agent_or_harness(chat_service, operator_id) -> None:
+    with pytest.raises(RuntimeError, match="selected Agent"):
+        await chat_service.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
+    with pytest.raises(RuntimeError, match="selected harness"):
+        await chat_service.create(operator_id, agent_id=TEST_AGENT_ID)
 
 
 async def test_post_conversation_launch_rejection_is_generic_403() -> None:
@@ -78,18 +86,18 @@ async def test_post_conversation_launch_rejection_is_generic_403() -> None:
     actor = type("Actor", (), {"operator_id": uuid4()})()
     with pytest.raises(HTTPException) as error:
         await create_conversation(
-            ConversationCreateRequest(agent_id=uuid4(), runtime=HarnessKind.CLAUDE_CODE),
+            ConversationCreateRequest(agent_id=uuid4(), harness_kind=HarnessKind.CLAUDE_CODE),
             actor,
             cast(SessionService, RejectingService()),
         )
 
     assert error.value.status_code == 403
-    assert error.value.detail == "chat launch is not authorized"
+    assert error.value.detail == "launch is not authorized"
     assert "durable internal reason" not in str(error.value)
 
 
 class _RecordingLaunchAuthorizer:
-    def __init__(self, delegate: ChatLaunchAuthorizer) -> None:
+    def __init__(self, delegate: HarnessLaunchAuthorizer) -> None:
         self._delegate = delegate
         self.calls: list[tuple[UUID, str | None, AsyncSession, bool]] = []
 
@@ -98,13 +106,13 @@ class _RecordingLaunchAuthorizer:
         db: AsyncSession,
         operator_id: UUID,
         agent_id: UUID,
-        runtime_kind: HarnessKind,
+        harness_kind: HarnessKind,
         *,
         expected_profile_id: str | None = None,
     ) -> LaunchIdentity:
         assert db.in_transaction()
         self.calls.append((agent_id, expected_profile_id, db, db.in_transaction()))
-        return await self._delegate(db, operator_id, agent_id, runtime_kind, expected_profile_id=expected_profile_id)
+        return await self._delegate(db, operator_id, agent_id, harness_kind, expected_profile_id=expected_profile_id)
 
 
 async def test_replacement_pins_identity_after_agent_profile_change_and_shares_store_transaction(
@@ -127,27 +135,27 @@ async def test_replacement_pins_identity_after_agent_profile_change_and_shares_s
         [
             StaticAgentDefinition(
                 agent_id=agent_id,
-                display_name="Pinned Runtime Agent",
+                display_name="Pinned Harness Agent",
                 operator_id=operator_id,
                 secret_reference="env:PINNED_RUNTIME_AGENT",
-                token_fingerprint=fingerprint_static_token("pinned-runtime-token"),
+                token_fingerprint=fingerprint_static_token("pinned-harness-token"),
                 access_profile_id="pinned",
             )
         ]
     )
     authorizer = _RecordingLaunchAuthorizer(
-        ChatLaunchAuthorizer(
+        HarnessLaunchAuthorizer(
             authority,
             launchable_agent_ids={agent_id},
-            registered_runtime_identities={RuntimeKey(agent_id, HarnessKind.CLAUDE_CODE)},
-            profile_runtime_kinds={"pinned": {HarnessKind.CLAUDE_CODE}, "current": {HarnessKind.CLAUDE_CODE}},
+            registered_harness_identities={HarnessKey(agent_id, HarnessKind.CLAUDE_CODE)},
+            profile_harness_kinds={"pinned": {HarnessKind.CLAUDE_CODE}, "current": {HarnessKind.CLAUDE_CODE}},
         )
     )
-    runtimes = configured_runtimes(recording_claims)
+    harnesses = configured_harnesses(recording_claims)
     store = Store(migrated_sessions)
-    service = SessionService(runtimes, store, session_wakes, launch_authorizer=authorizer, default_agent_id=agent_id)
+    service = SessionService(harnesses, store, session_wakes, launch_authorizer=authorizer)
 
-    first = await service.create(operator_id)
+    first = await service.create(operator_id, agent_id=agent_id, harness_kind=HarnessKind.CLAUDE_CODE)
     conversation_id = await store.conversation_of(first.session_id)
     async with migrated_sessions.begin() as db:
         agent = await db.get(Agent, agent_id)
@@ -162,7 +170,7 @@ async def test_replacement_pins_identity_after_agent_profile_change_and_shares_s
         replacement = await db.get(Session, second.session_id)
     assert conversation is not None
     assert replacement is not None
-    assert (conversation.agent_id, conversation.access_profile_id, conversation.runtime_kind) == (
+    assert (conversation.agent_id, conversation.access_profile_id, conversation.harness_kind) == (
         agent_id,
         "pinned",
         HarnessKind.CLAUDE_CODE,
@@ -191,7 +199,6 @@ def _console_config(**overrides: object) -> dict[str, object]:
         "launchable_agents": [
             {"agent_id": "00000000-0000-4000-8000-000000000001", "system_prompt_template": "/prompt"}
         ],
-        "default_chat_agent_id": "00000000-0000-4000-8000-000000000001",
     }
     config.update(overrides)
     return config
@@ -201,12 +208,6 @@ def test_chat_runtime_config_is_closed_and_rejects_the_retired_shape() -> None:
     parsed = ConsoleConfigFile.model_validate(_console_config())
     assert parsed.harnesses is not None
     assert parsed.harnesses.claude_code == runtime_config()
-
-    old_shared_config = _console_config()
-    old_shared_config.pop("launchable_agents")
-    old_shared_config.pop("default_chat_agent_id")
-    with pytest.raises(ValidationError, match="default chat Agent"):
-        ConsoleConfigFile.model_validate(old_shared_config)
 
     with pytest.raises(ValidationError, match="extra_forbidden"):
         ConsoleConfigFile.model_validate(
@@ -220,7 +221,7 @@ def test_chat_runtime_config_is_closed_and_rejects_the_retired_shape() -> None:
 
     with pytest.raises(ValidationError, match="claude_code must select the claude_code implementation"):
         ConsoleConfigFile.model_validate(
-            _console_config(harnesses={"claude_code": _codex_runtime_config().model_dump(mode="json")})
+            _console_config(harnesses={"claude_code": _codex_harness_config().model_dump(mode="json")})
         )
 
     with pytest.raises(ValidationError, match="claude_runtime was replaced"):
@@ -244,7 +245,7 @@ def test_chat_runtime_config_fails_closed_when_malformed() -> None:
     flat["auth_token_placeholder"] = flat.pop("implementation")["auth_token_placeholder"]
     flat["mcp_static_agent_id"] = flat.pop("agent_id")
     flat.pop("claim_prefix")
-    flat.pop("runtime_label")
+    flat.pop("harness_label")
     with pytest.raises(ValidationError, match="implementation"):
         ConsoleConfigFile.model_validate(_console_config(harnesses={"claude_code": flat}))
 
@@ -255,8 +256,8 @@ def test_claude_environment_contains_placeholder_proxy_and_ca_only() -> None:
     assert config.environment() == {
         "ANTHROPIC_BASE_URL": "http://litellm.test:4000",
         "ANTHROPIC_AUTH_TOKEN": "not-a-secret",
-        "ANTHROPIC_MODEL": "claude/ant-messages/claude-sonnet-5",
-        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude/ant-messages/claude-haiku-4-5-20251001",
+        "ANTHROPIC_MODEL": "anthropic-max20/ant-messages/claude-sonnet-5",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "anthropic-max20/ant-messages/claude-haiku-4-5-20251001",
         "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1",
         "HTTP_PROXY": "http://proxy.test:8180",
         "HTTPS_PROXY": "http://proxy.test:8180",
@@ -269,7 +270,22 @@ def test_claude_environment_contains_placeholder_proxy_and_ca_only() -> None:
     }
 
 
-def _codex_runtime_config(**overrides: Any) -> RuntimeRegistrationConfig:
+def test_claude_environment_merges_configured_extra_environment_last() -> None:
+    implementation = runtime_config().implementation.model_dump(mode="json")
+    config = runtime_config(
+        implementation=implementation
+        | {"environment": {"ENABLE_TOOL_SEARCH": "true", "ANTHROPIC_MODEL": "deploy-override"}}
+    )
+
+    environment = config.environment()
+    assert environment["ENABLE_TOOL_SEARCH"] == "true"
+    assert environment["ANTHROPIC_MODEL"] == "deploy-override"
+
+    with pytest.raises(ValidationError, match="environment"):
+        runtime_config(implementation=implementation | {"environment": {"not a name": "x"}})
+
+
+def _codex_harness_config(**overrides: Any) -> HarnessRegistrationConfig:
     implementation: dict[str, Any] = {
         "kind": "codex_app_server",
         "model": "codex-gpt-5.6-sol",
@@ -284,10 +300,10 @@ def _codex_runtime_config(**overrides: Any) -> RuntimeRegistrationConfig:
             implementation[field] = overrides.pop(field)
     values: dict[str, Any] = {
         "agent_id": "00000000-0000-4000-8000-000000000002",
-        "namespace": "haku-runtime-sandbox",
+        "namespace": "haku-harness-sandbox",
         "warm_pool": "haku-public-coder-codex",
         "claim_prefix": "codex",
-        "runtime_label": "codex-chat",
+        "harness_label": "codex",
         "cwd": "/workspace",
         "session_ttl_seconds": 7200,
         "https_proxy": "http://public-coder-codex-runner-proxy:8080",
@@ -297,11 +313,11 @@ def _codex_runtime_config(**overrides: Any) -> RuntimeRegistrationConfig:
         "implementation": implementation,
     }
     values.update(overrides)
-    return RuntimeRegistrationConfig(**values)
+    return HarnessRegistrationConfig(**values)
 
 
 def test_codex_environment_keeps_provider_auth_in_the_sandbox_template() -> None:
-    config = _codex_runtime_config()
+    config = _codex_harness_config()
 
     assert isinstance(config.implementation, CodexAppServerImplementationConfig)
     assert config.environment() == {
@@ -320,6 +336,26 @@ def test_codex_environment_keeps_provider_auth_in_the_sandbox_template() -> None
     assert "OPENAI_API_KEY" not in config.environment()
 
 
+def test_harness_registration_threads_the_codex_model_and_effort_into_the_launch(
+    recording_claims: RecordingClaims,
+) -> None:
+    # The console reads implementation.model/reasoning_effort into the launch environment the runner
+    # reads for thread/start (haku/runner/codex/test_harness.py) -- the missing frame that let a codex
+    # session fall back to its bare sandbox default and 403 at LiteLLM.
+    config = _codex_harness_config()
+    assert isinstance(config.implementation, CodexAppServerImplementationConfig)
+    registration = harness_registration(config, recording_claims, system_prompt=SystemPromptTemplate(""))
+
+    launch = registration.adapter.build_launch(
+        HarnessLaunchSpec(
+            cwd="/workspace", environment={}, mcp_servers={}, appended_system_prompt=None, resume_from=None
+        )
+    )
+
+    assert launch.environment[CODEX_MODEL_ENV] == config.implementation.model
+    assert launch.environment[CODEX_REASONING_EFFORT_ENV] == config.implementation.reasoning_effort
+
+
 def test_claude_registration_uses_the_shared_discriminated_model() -> None:
     config = runtime_config(ca_bundle="/ca/bundle.pem")
     wire = config.model_dump(mode="json")
@@ -329,7 +365,7 @@ def test_claude_registration_uses_the_shared_discriminated_model() -> None:
         "namespace",
         "warm_pool",
         "claim_prefix",
-        "runtime_label",
+        "harness_label",
         "cwd",
         "session_ttl_seconds",
         "https_proxy",
@@ -341,33 +377,34 @@ def test_claude_registration_uses_the_shared_discriminated_model() -> None:
     assert wire["implementation"] == {
         "kind": "claude_code",
         "api_base_url": "http://litellm.test:4000",
-        "model": "claude/ant-messages/claude-sonnet-5",
-        "haiku_model": "claude/ant-messages/claude-haiku-4-5-20251001",
+        "model": "anthropic-max20/ant-messages/claude-sonnet-5",
+        "haiku_model": "anthropic-max20/ant-messages/claude-haiku-4-5-20251001",
         "auth_token_placeholder": "not-a-secret",
         "gateway_discovery": True,
+        "environment": {},
     }
-    assert RuntimeRegistrationConfig.model_validate(wire) == config
+    assert HarnessRegistrationConfig.model_validate(wire) == config
     assert isinstance(config.implementation, ClaudeCodeImplementationConfig)
     assert config.kind is HarnessKind.CLAUDE_CODE
-    assert (config.agent_id, config.claim_prefix, config.runtime_label) == (
+    assert (config.agent_id, config.claim_prefix, config.harness_label) == (
         UUID("00000000-0000-4000-8000-000000000001"),
         "claude",
-        "claude-chat",
+        "claude",
     )
 
 
-def test_runtime_registration_requires_an_explicit_implementation_discriminator() -> None:
-    raw = _codex_runtime_config().model_dump(mode="json")
+def test_harness_registration_requires_an_explicit_implementation_discriminator() -> None:
+    raw = _codex_harness_config().model_dump(mode="json")
     implementation = raw["implementation"]
     assert isinstance(implementation, dict)
     implementation.pop("kind")
 
     with pytest.raises(ValidationError, match="union_tag_not_found"):
-        RuntimeRegistrationConfig.model_validate(raw)
+        HarnessRegistrationConfig.model_validate(raw)
 
 
-def test_runtime_registration_schema_exposes_the_implementation_discriminator() -> None:
-    schema = RuntimeRegistrationConfig.model_json_schema()
+def test_harness_registration_schema_exposes_the_implementation_discriminator() -> None:
+    schema = HarnessRegistrationConfig.model_json_schema()
     implementation = schema["properties"]["implementation"]
     if reference := implementation.get("$ref"):
         implementation = schema["$defs"][reference.rsplit("/", 1)[-1]]
@@ -382,22 +419,28 @@ def test_runtime_registration_schema_exposes_the_implementation_discriminator() 
     assert len(implementation["oneOf"]) == 2
 
 
-def test_codex_runtime_rejects_session_authority_as_the_provider_key() -> None:
-    with pytest.raises(ValidationError, match="exact-session credential"):
-        _codex_runtime_config(api_key_env_var="HAKU_AGENT_SDK_RUNNER_TOKEN")
+@pytest.mark.parametrize("variable", ["HAKU_SESSION_TOKEN", "HAKU_RUNNER_TOKEN"])
+def test_codex_harness_rejects_session_authority_as_the_provider_key(variable: str) -> None:
+    with pytest.raises(ValidationError, match="session token"):
+        _codex_harness_config(api_key_env_var=variable)
 
 
 @pytest.mark.parametrize("field", ["api_base_url", "mcp_url"])
-def test_runtime_registration_rejects_credentials_in_control_plane_urls(field: str) -> None:
+def test_harness_registration_rejects_credentials_in_control_plane_urls(field: str) -> None:
     with pytest.raises(ValidationError, match=field):
-        _codex_runtime_config(**{field: "http://durable-secret@example.test/path"})
+        _codex_harness_config(**{field: "http://durable-secret@example.test/path"})
 
 
 async def _allocated_session(chat_service: SessionService, recording_claims: RecordingClaims, operator_id: UUID):
     """Seed a claim-backed session for tests whose subject starts after allocation."""
-    view, token = await chat_service._store._create_provisioning_for_test(operator_id)
+    view, token = await chat_service._store._create_provisioning_for_test(
+        operator_id,
+        agent_id=TEST_AGENT_ID,
+        access_profile_id=TEST_ACCESS_PROFILE_ID,
+        harness_kind=HarnessKind.CLAUDE_CODE,
+    )
     await recording_claims.create(
-        session_id=view.session_id, bridge_token=token, expires_at=datetime.now(UTC) + timedelta(hours=1)
+        session_id=view.session_id, session_token=token, expires_at=datetime.now(UTC) + timedelta(hours=1)
     )
     return view
 
@@ -405,7 +448,7 @@ async def _allocated_session(chat_service: SessionService, recording_claims: Rec
 async def test_the_first_idle_prompt_creates_the_claim_once(
     allocator, session_store, chat_service, recording_claims, operator_id
 ) -> None:
-    session = await chat_service.create(operator_id)
+    session = await chat_service.create(operator_id, agent_id=TEST_AGENT_ID, harness_kind=HarnessKind.CLAUDE_CODE)
     assert await session_store.status(session.session_id) == SessionStatus.IDLE
     assert recording_claims.created == []
 
@@ -424,7 +467,7 @@ async def test_the_first_idle_prompt_creates_the_claim_once(
 
 
 async def test_idle_provisioning_details_do_not_read_kubernetes(chat_service, recording_claims, operator_id) -> None:
-    session = await chat_service.create(operator_id)
+    session = await chat_service.create(operator_id, agent_id=TEST_AGENT_ID, harness_kind=HarnessKind.CLAUDE_CODE)
 
     view = await chat_service.sandbox_provisioning(operator_id, session.session_id)
 
@@ -440,16 +483,19 @@ async def test_a_returning_runner_is_admitted_and_takes_the_lease(
     session = await _allocated_session(chat_service, recording_claims, operator_id)
     session_id = session.session_id
     token = recording_claims.tokens[session_id]
-    assert await session_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(session_id, token) == RunnerConnectionAuthentication.ACCEPTED
+    )
 
     with patch("haku.console.session.store.REPLICA", "haku-console-b"):
-        assert await session_store.authenticate_bridge(session_id, token) == BridgeAuthentication.HELD, (
-            "a replica still renewing its lease keeps the session it is serving — but only until it lapses"
-        )
+        assert (
+            await session_store.authenticate_runner_connection(session_id, token) == RunnerConnectionAuthentication.HELD
+        ), "a replica still renewing its lease keeps the session it is serving — but only until it lapses"
         await session_store.release_lease(session_id)
-        assert await session_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED, (
-            "a session handed back is adoptable by whichever replica the runner reaches"
-        )
+        assert (
+            await session_store.authenticate_runner_connection(session_id, token)
+            == RunnerConnectionAuthentication.ACCEPTED
+        ), "a session handed back is adoptable by whichever replica the runner reaches"
 
 
 async def test_startup_reconciliation_retries_terminal_claim_cleanup(
@@ -469,6 +515,56 @@ async def test_startup_reconciliation_retries_terminal_claim_cleanup(
     assert await session_store.claim_cleanup_candidates() == []
 
 
+async def test_active_sandbox_inventory_skips_absent_claims_and_fills_the_page(
+    chat_service, recording_claims, operator_id
+) -> None:
+    first = await _allocated_session(chat_service, recording_claims, operator_id)
+    second = await _allocated_session(chat_service, recording_claims, operator_id)
+    third = await _allocated_session(chat_service, recording_claims, operator_id)
+    now = datetime.now(UTC)
+    rows = [
+        ActiveSessionRecord(
+            session_id=first.session_id,
+            runtime_kind=HarnessKind.CLAUDE_CODE,
+            status=SessionStatus.PROVISIONING,
+            created_at=now,
+            updated_at=now,
+        ),
+        ActiveSessionRecord(
+            session_id=second.session_id,
+            runtime_kind=HarnessKind.CLAUDE_CODE,
+            status=SessionStatus.PROVISIONING,
+            created_at=now - timedelta(seconds=1),
+            updated_at=now,
+        ),
+        ActiveSessionRecord(
+            session_id=third.session_id,
+            runtime_kind=HarnessKind.CLAUDE_CODE,
+            status=SessionStatus.PROVISIONING,
+            created_at=now - timedelta(seconds=2),
+            updated_at=now,
+        ),
+    ]
+    chat_service._store.list_active_sessions = AsyncMock(side_effect=[rows[:2], [rows[1], rows[2]]])
+    views = {
+        first.session_id: provisioning_view(f"claude-{first.session_id.hex}", step=ProvisioningStep.CLAIM_ABSENT),
+        second.session_id: provisioning_view(f"claude-{second.session_id.hex}", step=ProvisioningStep.CLAIM_CREATED),
+        third.session_id: provisioning_view(f"claude-{third.session_id.hex}", step=ProvisioningStep.CLAIM_CREATED),
+    }
+
+    async def observe(session_id: UUID):
+        return views[session_id]
+
+    chat_service._observed = AsyncMock(side_effect=observe)
+
+    result = await chat_service.list_active_sandboxes(
+        operator_id, before_created_at=None, before_session_id=None, limit=2
+    )
+
+    assert [record.session_id for record in result] == [second.session_id, third.session_id]
+    assert [call.kwargs["limit"] for call in chat_service._store.list_active_sessions.await_args_list] == [2, 2]
+
+
 ROOM = "!room:example.org"
 
 
@@ -477,15 +573,25 @@ async def test_only_an_attached_chat_conversation_gets_the_chat_prompt(
 ) -> None:
     """The conversation selects chat context; the session never receives a channel object."""
     service = SessionService(
-        configured_runtimes(
+        configured_harnesses(
             recording_claims, system_prompt=SystemPromptTemplate("{{ session_id }} {{ recent_messages | length }}")
         ),
         session_store,
         session_wakes,
         conversation_history=ConversationHistory(migrated_sessions),
     )
-    spa, _ = await session_store.create(operator_id)
-    attached, _ = await session_store.create(operator_id)
+    spa, _ = await session_store.create(
+        operator_id,
+        agent_id=TEST_AGENT_ID,
+        access_profile_id=TEST_ACCESS_PROFILE_ID,
+        harness_kind=HarnessKind.CLAUDE_CODE,
+    )
+    attached, _ = await session_store.create(
+        operator_id,
+        agent_id=TEST_AGENT_ID,
+        access_profile_id=TEST_ACCESS_PROFILE_ID,
+        harness_kind=HarnessKind.CLAUDE_CODE,
+    )
     await attach_channel(migrated_sessions, attached.session_id, ROOM)
 
     assert await service._appended_prompt(spa.session_id) is None
@@ -500,13 +606,16 @@ async def test_a_returning_runner_beats_the_sweep(
     session = await _allocated_session(chat_service, recording_claims, operator_id)
     session_id = session.session_id
     token = recording_claims.tokens[session_id]
-    assert await session_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(session_id, token) == RunnerConnectionAuthentication.ACCEPTED
+    )
     await age_lease(migrated_sessions, session_id, seconds_ago=1)
 
     with patch("haku.console.session.store.REPLICA", "haku-console-b"):
-        assert await session_store.authenticate_bridge(session_id, token) == BridgeAuthentication.ACCEPTED, (
-            "a lapsed lease is adoptable by whichever replica the runner reaches"
-        )
+        assert (
+            await session_store.authenticate_runner_connection(session_id, token)
+            == RunnerConnectionAuthentication.ACCEPTED
+        ), "a lapsed lease is adoptable by whichever replica the runner reaches"
 
     assert await session_store.expire_stale_leases() == 0
     assert await session_store.status(session_id) in OPEN_SESSION_STATUSES
@@ -518,8 +627,16 @@ async def test_the_lease_heartbeat_also_slides_the_sandbox_deadline(
     """The sandbox is a renewed lease, not a fixed timer: the heartbeat that renews the console
     lease also pushes the SandboxClaim's deadline out, so an active session is not reaped at
     `session_ttl_seconds`."""
-    view, token = await session_store.create(operator_id)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    view, token = await session_store.create(
+        operator_id,
+        agent_id=TEST_AGENT_ID,
+        access_profile_id=TEST_ACCESS_PROFILE_ID,
+        harness_kind=HarnessKind.CLAUDE_CODE,
+    )
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
 
     heartbeat = asyncio.create_task(chat_service._renew_lease(view.session_id))
     try:
@@ -546,7 +663,10 @@ async def test_a_released_session_nobody_readopted_is_not_called_never_attached(
     "never attached" for a session that was attached for hours."""
     session = await _allocated_session(chat_service, recording_claims, operator_id)
     token = recording_claims.tokens[session.session_id]
-    assert await session_store.authenticate_bridge(session.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(session.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     await session_store.release_lease(session.session_id)
     await age_lease(migrated_sessions, session.session_id, seconds_ago=int(ADOPTION_GRACE.total_seconds()) + 1)
 
@@ -628,49 +748,10 @@ async def test_polling_provisioning_reads_the_cluster_at_a_bounded_rate(
 
 
 async def test_provisioning_is_not_readable_for_a_session_another_operator_owns(chat_service, operator_id) -> None:
-    session = await chat_service.create(operator_id)
+    session = await chat_service.create(operator_id, agent_id=TEST_AGENT_ID, harness_kind=HarnessKind.CLAUDE_CODE)
 
     with pytest.raises(KeyError):
         await chat_service.sandbox_provisioning(uuid4(), session.session_id)
-
-
-async def test_transient_database_error_recognizes_a_real_postgres_deadlock(
-    migrated_sessions: async_sessionmaker[AsyncSession],
-) -> None:
-    """The predicate must match what SQLAlchemy's asyncpg dialect actually raises for SQLSTATE
-    40P01, not a hand-built stand-in — so this manufactures a genuine deadlock: two transactions
-    take two advisory xact locks in opposite orders, a barrier holding both first locks until both
-    are held."""
-    barrier = asyncio.Barrier(2)
-
-    async def cross_lock(first: int, second: int) -> None:
-        async with migrated_sessions.begin() as db:
-            await db.execute(select(func.pg_advisory_xact_lock(first)))
-            await barrier.wait()
-            await db.execute(select(func.pg_advisory_xact_lock(second)))
-
-    outcomes = await asyncio.gather(cross_lock(1, 2), cross_lock(2, 1), return_exceptions=True)
-    error = one(outcome for outcome in outcomes if isinstance(outcome, BaseException))
-    assert _transient_database_error(error)
-
-
-async def test_transient_database_error_rejects_an_integrity_error(
-    migrated_sessions: async_sessionmaker[AsyncSession],
-) -> None:
-    """A constraint violation fails identically on retry, so it is the turn's own failure."""
-    with pytest.raises(IntegrityError) as excinfo:
-        async with migrated_sessions.begin() as db:
-            db.add(
-                Conversation(
-                    conversation_id=uuid4(),
-                    # References no operator row, so the INSERT is a foreign-key violation.
-                    operator_id=uuid4(),
-                    harness_kind=HarnessKind.CLAUDE_CODE,
-                    runtime_kind=HarnessKind.CLAUDE_CODE,
-                    created_at=datetime.now(UTC),
-                )
-            )
-    assert not _transient_database_error(excinfo.value)
 
 
 if __name__ == "__main__":

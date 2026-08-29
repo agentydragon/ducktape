@@ -21,8 +21,9 @@ from __future__ import annotations
 from typing import Any
 
 # The kinds this console keeps that are not the CLI's protocol at all: a line the sandbox printed,
-# and the console's own reconstruction of an answer still arriving. Neither crosses the bridge as a
-# conversation frame, so neither is ever replayed, and neither has an agent-assigned id to use.
+# and the console's own reconstruction of an answer still arriving. Neither crosses the runner
+# protocol as a conversation frame, so neither is ever replayed, and neither has an agent-assigned
+# id to use.
 CONSOLE_AUTHORED_KINDS = frozenset({"setup_output", "partial"})
 
 

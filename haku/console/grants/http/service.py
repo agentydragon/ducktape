@@ -35,21 +35,21 @@ class GrantRepository(Protocol):
         source_tool_call_id: str,
         grants: Sequence[GrantSpec],
         created_at: datetime.datetime,
-        expires_at: datetime.datetime,
+        expires_at: datetime.datetime | None,
     ) -> tuple[Grant, ...]: ...
 
     async def list(
-        self, *, owner_agent_id: UUID, now: datetime.datetime, include_terminal: bool = True
+        self, *, principal: GrantPrincipal | None, now: datetime.datetime, include_inactive: bool = False
     ) -> tuple[Grant, ...]: ...
 
     async def get(self, *, owner_agent_id: UUID, grant_id: UUID) -> Grant: ...
 
-    async def release(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime) -> Grant: ...
-
-    async def revoke(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str, now: datetime.datetime) -> Grant: ...
+    async def end(
+        self, *, owner_agent_ids: frozenset[UUID], grant_id: UUID, reason: str | None, now: datetime.datetime
+    ) -> Grant: ...
 
     async def list_for_request_principal(
-        self, *, request_principal: RequestPrincipal, now: datetime.datetime, include_terminal: bool = True
+        self, *, request_principal: RequestPrincipal, now: datetime.datetime, include_inactive: bool = False
     ) -> tuple[Grant, ...]: ...
 
     async def active_for_request_principal(
@@ -95,7 +95,7 @@ class GrantService:
         grant_principal: GrantPrincipal,
         source_tool_call_id: str,
         grants: Sequence[GrantSpec],
-        expires_at: datetime.datetime,
+        expires_at: datetime.datetime | None,
     ) -> tuple[Grant, ...]:
         """Atomically create coverage grants with one source call and shared timestamps."""
 
@@ -111,18 +111,20 @@ class GrantService:
             expires_at=expires_at,
         )
 
-    async def list_grants(self, *, owner_agent_id: UUID, include_terminal: bool = True) -> tuple[Grant, ...]:
-        return await self._repository.list(
-            owner_agent_id=owner_agent_id, now=self._now(), include_terminal=include_terminal
-        )
+    async def list(
+        self, *, principal: GrantPrincipal | None = None, include_inactive: bool = False
+    ) -> tuple[Grant, ...]:
+        """List all grants, or the grants declared for one exact principal."""
+
+        return await self._repository.list(principal=principal, now=self._now(), include_inactive=include_inactive)
 
     async def list_applicable_grants(
-        self, *, request_principal: RequestPrincipal, include_terminal: bool = True
+        self, *, request_principal: RequestPrincipal, include_inactive: bool = False
     ) -> tuple[Grant, ...]:
         """List only grants this authenticated request principal may exercise."""
 
         return await self._repository.list_for_request_principal(
-            request_principal=request_principal, now=self._now(), include_terminal=include_terminal
+            request_principal=request_principal, now=self._now(), include_inactive=include_inactive
         )
 
     async def get_grant(self, *, owner_agent_id: UUID, grant_id: UUID) -> Grant:
@@ -134,52 +136,44 @@ class GrantService:
             raise GrantNotFoundError(str(grant_id))
         return grant
 
-    async def release_grants(
-        self, *, owner_agent_id: UUID, grant_ids: Sequence[UUID], reason: str = "released"
+    async def end_grants(
+        self, *, owner_agent_id: UUID, grant_ids: Sequence[UUID], reason: str | None = None
     ) -> tuple[Grant, ...]:
-        """Release a bounded list sequentially, retaining every durable grant ID.
+        """End a bounded list sequentially, retaining every durable grant ID.
 
-        This is deliberately not an atomic database operation. If a later release fails, earlier
-        releases remain effective and visible; callers can reconcile with ``list_grants``.
+        This is deliberately not an atomic database operation. If a later end fails, earlier ends
+        remain effective and visible; callers can reconcile with ``list_grants``.
         """
 
         grant_ids, reason = validated_end_batch(grant_ids, reason)
         now = self._now()
         return tuple(
             [
-                await self._repository.release(owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason, now=now)
+                await self._repository.end(
+                    owner_agent_ids=frozenset({owner_agent_id}), grant_id=grant_id, reason=reason, now=now
+                )
                 for grant_id in grant_ids
             ]
         )
 
-    async def release_applicable_grants(
-        self, *, request_principal: RequestPrincipal, grant_ids: Sequence[UUID], reason: str = "released"
+    async def end_applicable_grants(
+        self, *, request_principal: RequestPrincipal, grant_ids: Sequence[UUID], reason: str | None = None
     ) -> tuple[Grant, ...]:
         for grant_id in grant_ids:
             await self.get_applicable_grant(request_principal=request_principal, grant_id=grant_id)
-        return await self.release_grants(owner_agent_id=request_principal.agent_id, grant_ids=grant_ids, reason=reason)
+        return await self.end_grants(owner_agent_id=request_principal.agent_id, grant_ids=grant_ids, reason=reason)
 
-    async def revoke_grant(self, *, owner_agent_id: UUID, grant_id: UUID, reason: str) -> Grant:
-        return await self._repository.revoke(
-            owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason, now=self._now()
-        )
-
-    async def revoke_grants(self, *, owner_agent_id: UUID, grant_ids: Sequence[UUID], reason: str) -> tuple[Grant, ...]:
-        """Revoke a bounded list sequentially; same non-atomicity contract as ``release_grants``."""
-
-        grant_ids, reason = validated_end_batch(grant_ids, reason)
-        now = self._now()
-        return tuple(
-            [
-                await self._repository.revoke(owner_agent_id=owner_agent_id, grant_id=grant_id, reason=reason, now=now)
-                for grant_id in grant_ids
-            ]
+    async def end_grant(self, *, owner_agent_ids: frozenset[UUID], grant_id: UUID, reason: str | None) -> Grant:
+        if not owner_agent_ids:
+            raise ValueError("owner_agent_ids must not be empty")
+        return await self._repository.end(
+            owner_agent_ids=owner_agent_ids, grant_id=grant_id, reason=reason, now=self._now()
         )
 
     @staticmethod
     def _allowed(matching: Sequence[Grant]) -> HttpRequestAllowed:
         """Bound the admission by the earliest matching expiry; report every named credential."""
-        grant = min(matching, key=lambda item: item.expires_at)
+        grant = min(matching, key=lambda item: (item.expires_at is None, item.expires_at))
         return HttpRequestAllowed(
             grant_id=grant.grant_id,
             expires_at=grant.expires_at,

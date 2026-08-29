@@ -2,7 +2,7 @@
 Type=Application
 Name=Haku Approvals
 Comment=Review pending Haku tool calls in a dedicated window
-Exec=haku-approvals
+Exec=haku-approvals --show
 Icon=haku-approvals
 Terminal=false
 Categories=Utility;Development;

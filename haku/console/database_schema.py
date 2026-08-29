@@ -58,7 +58,7 @@ from haku.console.identity.agent import (
 from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
 from haku.console.pydantic_column import PydanticColumn
-from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
+from haku.console.session.session_frames import FrameDirection, SessionFrameKind
 from haku.console.session.status import SessionStatus
 from haku.console.tool_calls import ToolCallStatus
 from util.enum_vocab import UnknownValue
@@ -505,10 +505,10 @@ class AuthorizationGrant(Base):
 
 
 class KubernetesGrantRow(GrantEnvelopeColumns, Base):
-    """One Agent-owned, principal-scoped, time-bounded Kubernetes capability lease.
+    """One Agent-owned, principal-scoped Kubernetes capability grant.
 
     The envelope half of the row (`GrantEnvelopeColumns`) is shared with every grant domain,
-    end facts included: status is derived from ``released_at``/``revoked_at`` and the clock
+    end fact included: status is derived from ``ended_at`` and the clock
     (`grants.envelope.derive_status`), never stored, so expiry needs no sweeper. Scope and
     rules are intentionally JSONB: Kubernetes evolves its resource vocabulary, while the domain
     validates the stable namespace and RBAC-like shapes before writing.
@@ -535,6 +535,7 @@ class KubernetesGrantRow(GrantEnvelopeColumns, Base):
         Index("idx_kubernetes_grants_owner_expiry", "owner_agent_id", "expires_at"),
         Index("idx_kubernetes_grants_agent_principal_expiry", "principal_agent_id", "expires_at"),
         Index("idx_kubernetes_grants_session_principal_expiry", "principal_session_id", "expires_at"),
+        Index("idx_kubernetes_grants_access_profile_principal_expiry", "principal_access_profile_id", "expires_at"),
     )
 
     scope: Mapped[GrantScope] = mapped_column(PydanticColumn(GrantScope), nullable=False)
@@ -542,14 +543,14 @@ class KubernetesGrantRow(GrantEnvelopeColumns, Base):
 
 
 class HttpGrantRow(GrantEnvelopeColumns, Base):
-    """One Agent-owned, principal-scoped, time-bounded HTTP egress lease.
+    """One Agent-owned, principal-scoped HTTP egress grant.
 
     The envelope half of the row (`GrantEnvelopeColumns`) is shared with every grant domain.
     The origin is three relational columns because a grant pins exactly ``(scheme, host, port)``;
     ``methods``/``path_regex`` narrow requests at that origin. The domain canonicalizes and
     validates coverage app-side (`grants.http.models`); Postgres holds only the relational
     invariants. Status is derived, never stored (root STYLE.md § SQLAlchemy): the row records the
-    end facts — ``released_at``, ``revoked_at`` — and the envelope's ``derive_status`` computes
+    end fact — ``ended_at`` — and the envelope's ``derive_status`` computes
     the vocabulary from them and the clock, so expiry needs no sweeper.
     """
 
@@ -563,6 +564,7 @@ class HttpGrantRow(GrantEnvelopeColumns, Base):
         Index("idx_http_grants_owner_expiry", "owner_agent_id", "expires_at"),
         Index("idx_http_grants_agent_principal_expiry", "principal_agent_id", "expires_at"),
         Index("idx_http_grants_session_principal_expiry", "principal_session_id", "expires_at"),
+        Index("idx_http_grants_access_profile_principal_expiry", "principal_access_profile_id", "expires_at"),
     )
 
     scheme: Mapped[HttpScheme] = mapped_column(TextBackedStrEnumColumn(HttpScheme), nullable=False)
@@ -987,16 +989,9 @@ class Conversation(Base):
     # than on a session so a replacement runner necessarily inherits the implementation whose prompt,
     # replay and projection semantics created the thread. Text + CHECK is deliberate: the next
     # harness widens one transactional constraint rather than altering a PostgreSQL enum type.
-    harness_kind: Mapped[HarnessKind | None] = mapped_column(TextBackedStrEnumColumn(HarnessKind), nullable=True)
-    # CLEANUP(added 2026-08-28): expand step of runtime_kind→harness_kind (naming_and_layout.md §3.1
-    #   C4d, #4772). `harness_kind` is the rename target; this release backfills it and dual-writes
-    #   both columns but still *reads* `runtime_kind`, which post-#5050 replicas also read — so no
-    #   replica reads a vanished column mid-roll. `harness_kind` is nullable only for rows a #5050
-    #   replica inserts during this expand roll (it does not know the column); the read-switch
-    #   release backfills those and makes it NOT NULL. Contract sequence, each after the prior has
-    #   converged: (1) switch reads to `harness_kind`, backfill+NOT NULL; (2) stop writing/mapping
-    #   `runtime_kind`, make it nullable; (3) drop `runtime_kind` and `ck_conversation_runtime_kind`.
-    runtime_kind: Mapped[HarnessKind] = mapped_column(TextBackedStrEnumColumn(HarnessKind), nullable=False)
+    # C4d release 2: this is the sole application discriminator. The legacy physical column remains
+    # in PostgreSQL for the compatibility window, but is intentionally not mapped or written here.
+    harness_kind: Mapped[HarnessKind] = mapped_column(TextBackedStrEnumColumn(HarnessKind), nullable=False)
     # The next `conversation_event.event_seq` to hand out, taken under `SELECT … FOR UPDATE` in the
     # writing transaction. A counter here rather than a sequence because the log's address must be
     # **dense** — a sequence is unique but leaves gaps, and a gap a channel cannot distinguish from
@@ -1010,9 +1005,6 @@ class Conversation(Base):
             name="ck_conversation_access_profile_id_nonempty",
         ),
         CheckConstraint("(agent_id IS NULL) = (access_profile_id IS NULL)", name="ck_conversation_agent_profile_pair"),
-        CheckConstraint("runtime_kind IN ('claude_code', 'codex_app_server')", name="ck_conversation_runtime_kind"),
-        # NULL passes (a #5050 replica's expand-roll insert); the read-switch release backfills and
-        # adds NOT NULL. Dropped with `runtime_kind`'s CHECK once the column is the sole survivor.
         CheckConstraint("harness_kind IN ('claude_code', 'codex_app_server')", name="ck_conversation_harness_kind"),
         CheckConstraint("next_event_seq > 0", name="ck_conversation_next_event_seq"),
         Index("idx_conversation_operator", "operator_id", "created_at"),
@@ -1133,6 +1125,13 @@ class Session(Base):
     # stores its fingerprint in the same transaction that starts provisioning.
     bridge_token_fingerprint: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     bridge_connected_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Expand step of {bridge_token_fingerprint, bridge_connected_at} →
+    # {session_token_fingerprint, runner_connected_at} (C16a, migration 0122, the C4d recipe):
+    # dual-write both pairs, still read the bridge names, until the contract releases backfill
+    # stragglers, move the CHECKs and the partial lease index, switch reads, stop writing the
+    # bridge names, and drop them — each only after the prior release has converged.
+    session_token_fingerprint: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    runner_connected_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # When this session's Agent Sandbox claim was deleted, and NULL until it has been — which is
     # what puts an ended session in `session.store.Store.claim_cleanup_candidates` and what takes it back
     # out. Only ever stamped on a session whose status is already ended.
@@ -1180,6 +1179,7 @@ class Session(Base):
 
     __table_args__ = (
         UniqueConstraint("bridge_token_fingerprint", name="uq_sessions_bridge_token_fingerprint"),
+        UniqueConstraint("session_token_fingerprint", name="uq_sessions_session_token_fingerprint"),
         UniqueConstraint("session_id", "agent_binding_id", name="uq_sessions_session_agent_binding"),
         # The fact shapes the derivation reads, held by the database so no writer can record a
         # combination the vocabulary cannot say. An error is how an ended session ended;
@@ -1656,7 +1656,7 @@ class SubmittedPrompt(Base):
 
 
 class SessionFrame(Base):
-    """The bridge's opaque wire log for one session.
+    """The runner protocol's opaque wire log for one session.
 
     The rollout — what the agent *did*, tool calls with their results — exists nowhere else.
     `conversation_item` keeps a tool call's arguments and not the frames carrying the results, so
@@ -1666,7 +1666,7 @@ class SessionFrame(Base):
     would silently inherit whatever the reader unpacks — thinking blocks are on the wire and
     are dropped by the turn loop's extraction, as is a result's cost and usage.
 
-    ``kind`` is only the bridge class (``harness_frame`` or ``setup_output``). For harness rows,
+    ``kind`` is only the outer frame class (``harness_frame`` or ``setup_output``). For harness rows,
     ``payload`` stores the complete native frame exactly as the selected harness emitted or
     received it, including its own ``type`` or JSON-RPC method when it has one; none is copied into
     this column and no provider wrapper is added.
@@ -1681,10 +1681,10 @@ class SessionFrame(Base):
         PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False
     )
     direction: Mapped[FrameDirection] = mapped_column(TextBackedStrEnumColumn(FrameDirection), nullable=False)
-    # The outer bridge discriminator, never the native payload's `type` or JSON-RPC method.
-    kind: Mapped[BridgeFrameKind] = mapped_column(TextBackedStrEnumColumn(BridgeFrameKind), nullable=False)
+    # The outer frame discriminator, never the native payload's `type` or JSON-RPC method.
+    kind: Mapped[SessionFrameKind] = mapped_column(TextBackedStrEnumColumn(SessionFrameKind), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    # The **runner's** number for this frame, off the bridge envelope (`HarnessFrame.seq`), where
+    # The **runner's** number for this frame, off the runner protocol envelope (`HarnessFrame.seq`), where
     # the runner gave one. Dense and monotonic over everything one runner process sent, which
     # `frame_seq` above is deliberately not — so this is the number a reconnect is computed from:
     # the console hands back the highest it holds and the runner replays only what is above it.

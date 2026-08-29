@@ -1,7 +1,7 @@
 # haku/console/conversation — the durable, provider-neutral record
 
 A conversation is the one thread every surface reads and the only thing a channel or a session
-is offered — the layer contract is <../docs/chat_layers.md>, the schema's invariants
+is offered — the layer contract is <../docs/conversation_layers.md>, the schema's invariants
 <../docs/conversation_schema.md>. Graduated from `../x/` under #4772; the target layout is
 <../docs/naming_and_layout.md> § 2, where the one Pydantic event vocabulary is `conversation_event.py`.
 

@@ -39,7 +39,7 @@ configMapGenerator:
       - config.yaml
       - haku_system_prompt.md.j2
       - public_coder_system_prompt.md.j2
-      - chat_prompt_fragment.md.j2
+      - conversation_prompt_fragment.md.j2
   # One instance, one config slice (#4886): each per-index chunk Deployment mounts only its own
   # index's definition, so one index's config change (or parse breakage) never touches another
   # index's pod. The slices are derivation-tested projections of config.yaml's recall_indexes.

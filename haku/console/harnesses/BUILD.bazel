@@ -6,3 +6,12 @@ py_library(
     name = "kind",
     srcs = ["kind.py"],
 )
+
+py_library(
+    name = "environment",
+    srcs = ["environment.py"],
+    deps = [
+        "//util:env",
+        "@pypi//pydantic",
+    ],
+)

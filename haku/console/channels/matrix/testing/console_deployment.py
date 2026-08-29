@@ -22,6 +22,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from haku.console.channels.matrix.config import MatrixLaunchConfig
 from haku.console.conversation.item_vocabulary import ItemType
 from haku.console.conversation_read_access import UnrestrictedReads
 from haku.console.database_schema import ConversationItem, MatrixSyncWatermark, Session, SubmittedPrompt
@@ -69,9 +70,12 @@ class Deployment:
         bot_user_id: str,
         bot_password: str,
         operator_user_id: str,
+        operator_subject: str,
         database_url: str,
         sessions: async_sessionmaker[AsyncSession],
         store: Store,
+        matrix_launch: MatrixLaunchConfig,
+        matrix_access_profile_id: str,
         state: Path,
     ):
         self.bot_user_id = bot_user_id
@@ -102,16 +106,22 @@ class Deployment:
             "HAKU_E2E_BOT_USER_ID": bot_user_id,
             "HAKU_E2E_BOT_PASSWORD": bot_password,
             "HAKU_E2E_OPERATOR_USER_ID": operator_user_id,
+            "HAKU_E2E_OPERATOR_SUBJECT": operator_subject,
             "HAKU_E2E_WORKSPACE": str(workspace),
             "HAKU_E2E_CLAIMS_DIR": str(self._claims),
             "HAKU_E2E_REFUSE_NEXT_REPLY": str(self._refusal),
             "HAKU_E2E_SYSTEM_PROMPT_TEMPLATE": str(get_required_path(SYSTEM_PROMPT_TEMPLATE)),
             "HAKU_E2E_ADOPTION_GRACE_SECONDS": str(ADOPTION_GRACE.total_seconds()),
             "HAKU_E2E_SWEEP_INTERVAL_SECONDS": str(SWEEP_INTERVAL.total_seconds()),
+            # The process is the Matrix worker's launch composition in miniature. Keep the route
+            # explicit so a full-stack test cannot accidentally pass by relying on a service default.
+            "HAKU_E2E_MATRIX_DEFAULT_AGENT_ID": str(matrix_launch.default_agent_id),
+            "HAKU_E2E_MATRIX_DEFAULT_HARNESS_KIND": matrix_launch.default_harness_kind.value,
+            "HAKU_E2E_MATRIX_ACCESS_PROFILE_ID": matrix_access_profile_id,
             # The nested binaries need the test's RUNFILES_* to find their own, and the stub
             # inherits this environment in turn (`backend.child_environment`), which is how
             # it learns where to leave its handshake files.
-            "HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL": f"ws://127.0.0.1:{self._port}/internal/claude/runner",
+            "HAKU_RUNNER_WEBSOCKET_URL": f"ws://127.0.0.1:{self._port}/internal/claude/runner",
             "HAKU_CLAUDE_PATH": str(get_required_path(STUB_CLAUDE)),
             "HAKU_STUB_STATE": str(self.stub_state),
         }
@@ -215,7 +225,7 @@ class Deployment:
             await db.execute(update(MatrixSyncWatermark).values(next_batch=position))
 
     async def serving(self, *, after: UUID | None = None) -> UUID:
-        """Wait until the room has a sandbox behind it with the bridge up, and say which session.
+        """Wait until the room has a sandbox behind it with its runner connected, and say which session.
 
         Lazy sessions have no sandbox before their first prompt, so this cannot be the pre-prompt
         sync barrier. Full-stack callers first wait for the room-joined notice, then send the
@@ -229,7 +239,7 @@ class Deployment:
         """
         await self._wait_until("a session to be provisioned", lambda: self._provisioned(after))
         session_id = self._session_ids[-1]
-        await self._wait_until("the bridge to connect", lambda: self._ready(session_id))
+        await self._wait_until("the runner to connect", lambda: self._ready(session_id))
         return session_id
 
     async def wait_until_recorded(self, session_id: UUID, text: str) -> None:
@@ -325,7 +335,7 @@ class Deployment:
                 self._runners[session_id] = await self._spawn(
                     f"runner-{len(self._session_ids)}",
                     get_required_path(RUNNER_BIN),
-                    {"HAKU_RUNNER_SESSION_ID": str(session_id), "HAKU_AGENT_SDK_RUNNER_TOKEN": claim["bridge_token"]},
+                    {"HAKU_RUNNER_SESSION_ID": str(session_id), "HAKU_SESSION_TOKEN": claim["session_token"]},
                     "--harness",
                     "claude",
                 )

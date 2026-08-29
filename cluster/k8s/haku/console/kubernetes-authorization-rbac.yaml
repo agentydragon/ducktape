@@ -8,7 +8,7 @@ kind: ClusterRole
 metadata:
   name: haku-console-subject-access-reviewer
   annotations:
-    description: Allows Haku Console to evaluate fixed Kubernetes standing-policy subjects.
+    description: Allows Haku Console to evaluate configured Kubernetes SAR subjects.
 rules:
   - apiGroups: ["authorization.k8s.io"]
     resources: ["subjectaccessreviews"]

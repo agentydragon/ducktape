@@ -20,7 +20,7 @@ from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, Field
 
 from haku.console.conversation_read_access import ConversationReadAccessPolicy, ConversationReadScope
-from haku.console.mcp_execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext
+from haku.console.mcp.execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext
 from haku.console.recall_index_access import RecallIndexAccessPolicy
 
 HAKU_INDEX_SERVER_ID = "haku_index"

@@ -35,7 +35,7 @@ import httpx
 import pytest_bazel
 from more_itertools import one
 
-from haku.egress.proxy_test_harness import (
+from haku.egress.testing.proxy_test_harness import (
     PLACEHOLDER,
     REAL_CREDENTIAL,
     allow,
@@ -43,7 +43,7 @@ from haku.egress.proxy_test_harness import (
     make_proxy,
     proxy_url,
 )
-from haku.egress.static_decide_client import StaticDecideClient
+from haku.egress.testing.static_decide_client import StaticDecideClient
 from haku.egress.tls_test_support import client_tls_context, make_self_signed_cert, server_tls_context
 
 

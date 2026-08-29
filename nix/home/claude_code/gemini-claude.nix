@@ -28,4 +28,9 @@ import ./gateway.nix { inherit pkgs lib; } "gemini-claude" {
     "WebFetch"
     "WebSearch"
   ];
+  # Gemini's published window/output (SSOT: cluster/k8s/litellm/app/model_rosters.py
+  # GEMINI_CONTEXT_WINDOW / GEMINI_MAX_OUTPUT_TOKENS). Without maxContextTokens Claude Code
+  # assumes 200k for this unrecognized slug and compacts away ~80% of Gemini's ~1M window.
+  maxContextTokens = 1048576;
+  maxOutputTokens = 65536;
 }

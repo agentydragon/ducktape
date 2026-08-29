@@ -8,7 +8,7 @@ that hostname. The standalone Haku Kubernetes proxy authenticates the bearer wit
 evaluates the deploy-owned `public-coder` standing SAR subject, strips all caller credentials, and
 uses its own rotating projected ServiceAccount token upstream.
 
-The synthetic, non-login `haku:access-profile:public-coder` group is the fixed standing-policy SAR
+The synthetic, non-login `haku:access-profile:public-coder` group is the configured SAR
 identity. Console selects it only from the deploy-owned `public-coder` access-profile configuration;
 the caller cannot supply it. Console also includes Kubernetes's standard `system:authenticated`
 group after it authenticates the Agent bearer, preserving normal API discovery without pretending

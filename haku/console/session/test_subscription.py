@@ -26,6 +26,7 @@ from haku.console.conversation.conversation_event import (
     UnknownEventBody,
 )
 from haku.console.conversation.prompt_origin import SPA_ORIGIN
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.store import Store
 from haku.console.session.subscription import (
     START,
@@ -53,8 +54,8 @@ def stream(migrated_sessions) -> ConversationStream:
 
 async def a_thread(session_store: Store, operator_id: UUID, *said: str) -> Thread:
     """A ready session whose conversation holds one prompt item per prompt."""
-    view, token = await session_store.create(operator_id)
-    await session_store.authenticate_bridge(view.session_id, token)
+    view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
+    await session_store.authenticate_runner_connection(view.session_id, token)
     thread = Thread(conversation_id=await session_store.conversation_of(view.session_id), session_id=view.session_id)
     for prompt in said:
         await say(session_store, operator_id, thread, prompt)
@@ -170,7 +171,7 @@ async def test_a_replacement_session_continues_the_same_stream(session_store, op
     died reads on into its replacement's rows."""
     thread = await a_thread(session_store, operator_id, "before")
     replacement, token = await session_store.create(operator_id, conversation_id=thread.conversation_id)
-    await session_store.authenticate_bridge(replacement.session_id, token)
+    await session_store.authenticate_runner_connection(replacement.session_id, token)
     await session_store.enqueue_prompt(operator_id, replacement.session_id, "after", SPA_ORIGIN)
 
     assert prompts(await stream.read(thread.conversation_id, after=START)) == ["before", "after"]
@@ -214,7 +215,7 @@ async def test_a_kind_this_release_has_no_words_for_is_read_past_rather_than_rai
 
 async def test_a_new_conversation_already_records_its_session_provisioning(session_store, operator_id, stream) -> None:
     """Starting the session is the first durable fact, before an operator or runner says anything."""
-    view, _ = await session_store.create(operator_id)
+    view, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     conversation_id = await session_store.conversation_of(view.session_id)
 
     read = await stream.read(conversation_id, after=START)

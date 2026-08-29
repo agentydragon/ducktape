@@ -76,6 +76,7 @@ from haku.console.channels.matrix.room_copy import RoomCopy
 from haku.console.channels.matrix.spans import Span, SpanKind
 from haku.console.conversation.log import writer_for
 from haku.console.database_schema import MatrixAccessToken, MatrixSyncWatermark
+from haku.console.harnesses.kind import HarnessKind
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.notifications.conversation_wakes import ConversationWakes
 from haku.console.session.subscription import ConversationStream
@@ -181,6 +182,8 @@ class SyncService:
         sessions: async_sessionmaker[AsyncSession],
         stream: ConversationStream,
         notifications: ConversationWakes,
+        *,
+        new_conversation_harness_kind: HarnessKind | None = None,
     ):
         self._config = config
         self._password = config.password
@@ -195,6 +198,7 @@ class SyncService:
         self._sessions = sessions
         self._stream = stream
         self._notifications = notifications
+        self._new_conversation_harness_kind = new_conversation_harness_kind
         self._room_outbox = outbox
         self._outbox_wakes = outbox_wakes
         self._client = Client(config.homeserver, config.user_id, config.device_id)
@@ -258,7 +262,9 @@ class SyncService:
         # Binding opens the room's conversation, so this needs the Operator it belongs to. An
         # identity that cannot be resolved yet raises, leaving the invite unjoined; the homeserver
         # keeps reporting it, so the next pass tries again.
-        binding = await self._conversations.bind_room(invite.room_id, await self._operator_id())
+        binding = await self._conversations.bind_room(
+            invite.room_id, await self._operator_id(), harness_kind=self._new_conversation_harness_kind
+        )
         await self._client.join(token, invite.room_id)
         logger.info("Matrix: joined %s on invite from %s", invite.room_id, invite.inviter)
         await self._queue_notice(binding, "joined — this is now Haku's room", RoomEventKind.ROOM)
@@ -587,7 +593,9 @@ class SyncService:
         ):
             if room_id in bindings:
                 continue
-            binding = await self._conversations.bind_room(room_id, await self._operator_id())
+            binding = await self._conversations.bind_room(
+                room_id, await self._operator_id(), harness_kind=self._new_conversation_harness_kind
+            )
             bindings[binding.room_id] = binding
             logger.info("Matrix: adopted %s from traffic — no conversation was bound to it", room_id)
             await self._queue_notice(binding, "adopted this room — no conversation was bound to it", RoomEventKind.ROOM)

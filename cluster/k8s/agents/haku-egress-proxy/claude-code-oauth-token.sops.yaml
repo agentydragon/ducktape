@@ -1,23 +1,28 @@
-# PLACEHOLDER ONLY. Mint the long-lived token on a trusted interactive
-# workstation where Claude Code is installed and signed into the operator's
-# Claude Pro/Max account:
+# Long-lived Claude Code subscription OAuth token, rendered as the
+# haku-claude-oauth-token Secret (the kustomization patch relocates this
+# object's plaintext metadata) and consumed only by claude-iron-deployment.yaml
+# for CLAUDE_CODE_OAUTH_TOKEN substitution.
 #
-#   claude setup-token
+# CLEANUP(added 2026-08-29): the encrypted object still carries its historical
+# haku-agent-sdk-oauth-token name/namespace because the document MAC covers
+# metadata values — retiring the inner name needs the cluster age key. With it:
+# `sops cluster/k8s/agents/haku-egress-proxy/claude-code-oauth-token.sops.yaml`,
+# set metadata.name=haku-claude-oauth-token and namespace=haku-egress-proxy,
+# then delete the rename patch in kustomization.yaml and this note.
 #
+# To rotate: mint on a trusted interactive workstation where Claude Code is
+# signed into the operator's Claude Pro/Max account, via `claude setup-token`.
 # Complete the browser/login flow if prompted. The command prints the token;
-# copy it into CLAUDE_CODE_OAUTH_TOKEN below using an editor (not a shell
-# argument, command substitution, or anything else that records shell history).
-# Then encrypt this file at its final repository path before committing:
+# copy it into CLAUDE_CODE_OAUTH_TOKEN in a plaintext copy of this Secret using
+# an editor (not a shell argument, command substitution, or anything else that
+# records shell history), then `sops --encrypt --in-place` it at this
+# repository path. Confirm the plaintext is gone: the value must be ENC[...]
+# and the file must have a top-level sops: metadata block. Never paste the
+# token into a PR, terminal transcript, Job manifest, or log.
 #
-#   sops --encrypt --in-place cluster/k8s/haku/agent-sdk/claude-code-oauth-token.sops.yaml
-#
-# Confirm the plaintext is gone: the value must be ENC[...] and the file must
-# have a top-level sops: metadata block. Never paste the token into a PR,
-# terminal transcript, Job manifest, or log.
-#
-# The token is deliberately isolated from the existing Anthropic API and Managed
-# Agents credentials. It is an undocumented Agent SDK authentication experiment,
-# not an interchangeable API key.
+# The token is deliberately isolated from the existing Anthropic API and
+# Managed Agents credentials. (Historical: it began as the Agent SDK
+# authentication experiment; the runner drives the CLI wire directly now.)
 apiVersion: v1
 kind: Secret
 metadata:

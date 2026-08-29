@@ -2,7 +2,9 @@ import { Group, Stack } from "@mantine/core";
 import type { z } from "zod";
 
 import { Field } from "../../field";
+import { AgentName } from "../../agent_names";
 import { mcpToolSchema, type McpToolArgumentsFor } from "../../mcp_tool_schema";
+import type { McpToolResultFor } from "../../mcp_tool_result_schema";
 import { definePreview, type ToolPreview } from "../entry";
 import { GRANTS_SERVER_ID } from "../server_ids";
 import {
@@ -28,28 +30,20 @@ type CreateGrantArgs = z.infer<typeof zCreateGrantArgs>;
 type RevokeGrantsArgs = z.infer<typeof zRevokeGrantsArgs>;
 type CreateGrantItem = CreateGrantArgs["grants"][number];
 
-// Loose structural shapes the widgets render, so both the argument catalog (min-length arrays
-// generate as non-empty tuples) and the result catalog (plain arrays) satisfy them — the generated
-// per-catalog types diverge there, and one grant renders identically from either side. This mirrors
-// the pre-#4918 approach; the shared `domain` tag routes each item to the right shape.
-type KubernetesRule = {
-  api_groups?: readonly string[];
-  resources?: readonly string[];
-  verbs: readonly string[];
-  resource_names?: readonly string[];
-  non_resource_urls?: readonly string[];
-};
-type KubernetesGrantScope =
-  | { kind: "namespaces"; namespaces: readonly string[] }
-  | { kind: "all_namespaces" }
-  | { kind: "cluster" }
-  | { kind: "non_resource" };
-export type KubernetesGrantShape = { scope: KubernetesGrantScope; rules: readonly KubernetesRule[] };
-export type HttpGrantShape = {
-  origin: { scheme: string; host: string; port: number };
-  coverage: { methods: readonly string[]; path_regex?: string | null };
-  credential_handle?: string | null;
-};
+type KubernetesGrantItem = Extract<CreateGrantItem, { domain: "kubernetes" }>;
+type KubernetesGrantResult = Extract<
+  McpToolResultFor<typeof GRANTS_SERVER_ID, "create_grant">[number],
+  { domain: "kubernetes" }
+>["grant"];
+type KubernetesGrantShape = KubernetesGrantItem["spec"] | Pick<KubernetesGrantResult, "scope" | "rules">;
+type KubernetesGrantScope = KubernetesGrantShape["scope"];
+type KubernetesRule = KubernetesGrantShape["rules"][number];
+type HttpGrantItem = Extract<CreateGrantItem, { domain: "http" }>;
+type HttpGrantResult = Extract<
+  McpToolResultFor<typeof GRANTS_SERVER_ID, "create_grant">[number],
+  { domain: "http" }
+>["grant"];
+type HttpGrantShape = HttpGrantItem["spec"] | HttpGrantResult["spec"];
 
 export function scopeLabel(scope: KubernetesGrantScope): string {
   switch (scope.kind) {
@@ -153,9 +147,16 @@ function CreateGrantPreview({ args, variant }: PreviewProps<CreateGrantArgs>) {
         <PreviewTitle>
           {domain} {plural(args.grants.length, "grant")}
         </PreviewTitle>
-        <PreviewBadge variant="outline">for {formatDuration(args.duration_seconds)}</PreviewBadge>
+        <PreviewBadge variant="outline">
+          {args.duration_seconds == null ? "permanent" : `for ${formatDuration(args.duration_seconds)}`}
+        </PreviewBadge>
         <PreviewBadge variant="light">
-          applies to {args.applies_to === "session" ? "this session" : "the Agent"}
+          applies to{" "}
+          {args.principal.kind === "agent"
+            ? "the Agent"
+            : args.principal.kind === "session"
+              ? `session ${args.principal.session_id}`
+              : `access profile ${args.principal.access_profile_id}`}
         </PreviewBadge>
       </Group>
       <Stack gap="xs">
@@ -188,15 +189,15 @@ function RevokeGrantsPreview({ args, variant }: PreviewProps<RevokeGrantsArgs>) 
       <Group gap={6}>
         <PreviewTitle>{plural(args.grant_ids.length, "grant")}</PreviewTitle>
         <PreviewBadge variant="light">{args.domain}</PreviewBadge>
-        <PreviewBadge variant="outline">{args.owner_agent_id ? "revoke" : "release"}</PreviewBadge>
+        <PreviewBadge variant="outline">end</PreviewBadge>
       </Group>
       <GrantIdList ids={args.grant_ids} variant={variant} />
       {args.owner_agent_id && (
-        <Field label="Owner agent" mono>
-          {args.owner_agent_id}
+        <Field label="Owner agent">
+          <AgentName agentId={args.owner_agent_id} />
         </Field>
       )}
-      <Field label="Reason">{args.reason ?? "released"}</Field>
+      <Field label="Reason">{args.reason ?? "None"}</Field>
     </Stack>
   );
 }

@@ -1,8 +1,8 @@
-# Bridge decision record
+# Runner protocol decision record
 
-Constraints and rejected alternatives behind the bridge's shape: how it survives a console roll,
-and where the harness seam sits. Check here before redesigning recovery, replay, bridge
-versioning, or the harness seam. The current frame-log shape is
+Constraints and rejected alternatives behind the runner protocol's shape: how it survives a
+console roll, and where the harness seam sits. Check here before redesigning recovery, replay,
+protocol versioning, or the harness seam. The current frame-log shape is
 <../../console/docs/harness_frame_log_v3.md>; the live protocol invariants are docstrings in
 <../protocol.py>, <../neutral_operations.py> and <../operation_journal.py>.
 
@@ -57,7 +57,7 @@ reproduce it. The constraints that killed identifying frames by their payloads:
 
 ## Rejected: exact-match protocol version + `extra="forbid"`
 
-Right while both bridge ends lived and died together; adoption breaks it. A runner's image is
+Right while both protocol ends lived and died together; adoption breaks it. A runner's image is
 fixed when its claim is created and its process outlives many console releases, while the console
 rolls several times a day — so an exact-match version with no range kills every live session on
 the first release after it ships, and `extra="forbid"` turns every additive field into a

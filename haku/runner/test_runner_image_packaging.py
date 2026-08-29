@@ -47,6 +47,8 @@ def test_runner_image_contains_both_harnesses_and_required_tools() -> None:
         "opt/codex/codex-resources/zsh/bin/zsh",
         "usr/local/bin/kubectl",
         "usr/bin/git",
+        "usr/bin/curl",
+        "usr/bin/wget",
     }
     assert expected_executables <= members.keys()
     assert "etc/ssl/certs/ca-certificates.crt" in members

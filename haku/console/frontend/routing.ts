@@ -27,7 +27,7 @@ const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12
 // A single call, deep-linked — what a push notification's "Details" opens, and what the MCP server
 // advertises to an agent whose call is waiting. It resolves to the ordinary embed view with the
 // approvals drawer opened on that call rather than to the history page, since a pending call is
-// decided in the drawer. Tool call ids are `tc_` + 24 hex (mcp_approval.py), not UUIDs like the
+// decided in the drawer. Tool call ids are `tc_` + 24 hex (mcp/approval.py), not UUIDs like the
 // other id-bearing routes here.
 const TOOL_CALL_PATH = new RegExp(`^${TOOL_CALLS_PATH}/(tc_[0-9a-f]{24})$`, "i");
 

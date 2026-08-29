@@ -1,6 +1,6 @@
 """Tunnel the CLI's newline-delimited JSON protocol over a text WebSocket.
 
-This module only moves that protocol across a WebSocket, inside the bridge envelope `protocol`
+This module only moves that protocol across a WebSocket, inside the runner protocol envelope `protocol`
 defines: one CLI frame travels as one `HarnessFrame`, and Haku's own control frames travel
 beside it without sharing its key namespace. What a native frame means belongs to the selected
 provider adapter, not this transport.
@@ -39,7 +39,7 @@ class WebSocketTransport:
     """A harness client's frame channel backed by an already-authenticated WebSocket.
 
     Structural rather than declared: `FrameChannel` is a Protocol, so this satisfies it by shape.
-    `end_input` and `is_ready` are wider than that Protocol — they exist because the bridge has an
+    `end_input` and `is_ready` are wider than that Protocol — they exist because the runner protocol has an
     `EndInput` frame the runner answers, and today only the tests reach them.
     """
 
