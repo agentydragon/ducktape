@@ -196,7 +196,7 @@ function GrantCard({
   );
 }
 
-export function KubernetesGrantsPanel(): JSX.Element {
+export function GrantsPanel(): JSX.Element {
   const [grants, setGrants] = useState<AgentKubernetesGrant[] | null>(null);
   const [agentNames, setAgentNames] = useState<Map<string, string>>(new Map());
   const [error, setError] = useState<string | null>(null);

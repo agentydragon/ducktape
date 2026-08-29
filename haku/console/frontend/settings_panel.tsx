@@ -17,7 +17,7 @@ import {
   type OperatorConnectionName,
 } from "./client";
 import { useConsoleEvents } from "./console_events";
-import { KubernetesGrantsPanel } from "./kubernetes_grants_panel";
+import { GrantsPanel } from "./grants_panel";
 import { ExternalLink } from "./link";
 import { usePushNotifications, type PushState } from "./push_subscription";
 import {
@@ -832,7 +832,7 @@ export function SettingsPanel(): JSX.Element {
           </ResourcePanel>
         </Tabs.Panel>
         <Tabs.Panel value="kubernetes">
-          <KubernetesGrantsPanel />
+          <GrantsPanel />
         </Tabs.Panel>
         <Tabs.Panel value="notifications">
           <Stack gap="xs" className="haku-page-list">

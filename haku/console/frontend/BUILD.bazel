@@ -712,8 +712,8 @@ ts_library(
 )
 
 ts_library(
-    name = "kubernetes_grants_panel",
-    srcs = ["kubernetes_grants_panel.tsx"],
+    name = "grants_panel",
+    srcs = ["grants_panel.tsx"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
@@ -741,7 +741,7 @@ ts_library(
         ":async_resource",
         ":client",
         ":console_events",
-        ":kubernetes_grants_panel",
+        ":grants_panel",
         ":link",
         ":mcp_status_client",
         ":open_external",
@@ -898,11 +898,11 @@ filegroup(
         "field.tsx",
         "gmail_client.ts",
         "grant_revocation_dialog.tsx",
+        "grants_panel.tsx",
         "grocy_client.ts",
         "haku_ui_embed.tsx",
         "icons.tsx",
         "index.html",
-        "kubernetes_grants_panel.tsx",
         "main.tsx",
         "oauth_result_announcement.ts",
         "oauth_result_page.tsx",
