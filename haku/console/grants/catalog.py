@@ -254,13 +254,7 @@ class GrantCatalog:
             if self._kubernetes_config is not None
             else ()
         )
-        return (
-            *kubernetes,
-            *(
-                self._config_http_grant(grant=grant)
-                for grant in self._http_config_grants
-            ),
-        )
+        return (*kubernetes, *(self._config_http_grant(grant=grant) for grant in self._http_config_grants))
 
     def _config_grants_for_principal(self, *, principal: GrantPrincipal) -> tuple[Grant, ...]:
         kubernetes = (
@@ -312,9 +306,7 @@ class GrantCatalog:
             coverage=HttpCoverage(
                 origins=grant.origins,
                 coverage=grant.coverage,
-                credential_handles=(
-                    frozenset({grant.credential_handle}) if grant.credential_handle else frozenset()
-                ),
+                credential_handles=(frozenset({grant.credential_handle}) if grant.credential_handle else frozenset()),
                 allow_prohibited_address=grant.allow_prohibited_address,
             ),
             source=ConfigFileGrantSource(entry_id=grant.id),

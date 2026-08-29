@@ -40,8 +40,8 @@ py_library(
     srcs = ["decide_config.py"],
     deps = [
         ":models",
-        "//util:env",
         "//haku/console/grants:principal",
+        "//util:env",
         "@pypi//pydantic",
     ],
 )

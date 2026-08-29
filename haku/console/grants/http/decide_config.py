@@ -24,8 +24,8 @@ from ipaddress import IPv4Network, IPv6Network
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from haku.console.grants.http.models import CREDENTIAL_HANDLE_PATTERN, HttpOrigin, HttpRequestCoverage
-from util.env import EnvironmentVariableName
 from haku.console.grants.principal import ConfigGrantPrincipal
+from util.env import EnvironmentVariableName
 
 logger = logging.getLogger(__name__)
 
