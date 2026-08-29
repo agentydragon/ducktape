@@ -99,11 +99,12 @@ over Matrix, and any write surface for the agent beyond its own replies.
   to in is one the operator put it in, since membership required an invite. Only a message from the
   operator triggers adoption, so the authorisation rule is unchanged. Without this, a room joined
   before a binding existed goes quiet permanently with no way to revive it from a Matrix client.
-- **New Matrix rooms use the explicit configured harness route.** Invites and messages do not carry
-  a harness selector, so the adapter uses `matrix.default_harness_kind` from the shared deploy
-  config when it creates a conversation. The value is a creation-time route, not a property of the
-  room-binding store; an existing conversation always keeps its persisted `harness_kind`. Missing
-  or invalid configuration fails closed rather than choosing a harness implicitly.
+- **New Matrix rooms use the explicit configured launch route.** Invites and messages do not carry
+  a harness selector, so the adapter uses `matrix.default_agent_id` and
+  `matrix.default_harness_kind` from the shared deploy config when it creates a conversation. The
+  values are a creation-time route, not properties of the room-binding store; an existing
+  conversation always keeps its persisted Agent and harness identity. Missing or invalid
+  configuration fails closed rather than choosing either implicitly.
 - **Nothing releases a binding.** Moving Haku to a different room is a database edit, not an
   operator gesture. The natural trigger is Haku being removed from the room, which `/sync` reports
   under `rooms.leave` — deferred because the session behind the binding is still running with a live

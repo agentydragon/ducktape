@@ -883,6 +883,7 @@ default_chat_agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
 # Matrix invites/messages have no harness selector. This explicit route applies only when the
 # adapter creates a conversation for a new room; existing conversations retain their own kind.
 matrix:
+  default_agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
   default_harness_kind: claude_code
 operator_connection_providers:
   google_mail:

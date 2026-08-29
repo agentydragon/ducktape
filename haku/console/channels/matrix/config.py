@@ -84,7 +84,12 @@ class Harnesses(BaseModel):
 class MatrixLaunchConfig(BaseModel):
     """The Matrix-only launch route for rooms that do not carry a harness selector."""
 
-    default_harness_kind: HarnessKind
+    default_agent_id: UUID = Field(
+        description="Agent identity to stamp on a new Matrix conversation when the room has no selector."
+    )
+    default_harness_kind: HarnessKind = Field(
+        description="Harness kind to stamp on a new Matrix conversation when the room has no selector."
+    )
 
 
 class AdapterConfigFile(BaseModel):
@@ -92,12 +97,11 @@ class AdapterConfigFile(BaseModel):
     access_profiles: tuple[ConfiguredProfile, ...] = ()
     static_agents: tuple[ConfiguredAgent, ...] = ()
     launchable_agents: tuple[LaunchableEntry, ...] = ()
-    default_chat_agent_id: UUID | None = None
     matrix: MatrixLaunchConfig | None = Field(
         default=None,
         description=(
-            "Explicit harness route for a new Matrix conversation: invites and messages carry no "
-            "harness selector. Existing rooms follow their conversation row."
+            "Explicit Agent and harness route for a new Matrix conversation: invites and messages "
+            "carry no selector. Existing rooms follow their conversation row."
         ),
     )
 

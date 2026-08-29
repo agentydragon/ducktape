@@ -162,8 +162,9 @@ def _launch_wiring(config: AdapterConfigFile) -> LaunchWiring | None:
 
     Mirrors the console's own composition (`app.create_app`): the registered Agent/harness pairs
     come from the configured harnesses, the profile gates from `access_profiles`, and the Matrix
-    creation route from `matrix.default_harness_kind`. None where no harness is configured — a bind
-    then fails closed because the final conversation schema requires an explicit harness identity.
+    creation route from `matrix.default_agent_id` and `matrix.default_harness_kind`. None where no
+    harness is configured — a bind then fails closed because the final conversation schema requires
+    an explicit harness identity.
     """
     if config.harnesses is None:
         if config.matrix is not None:
@@ -181,10 +182,8 @@ def _launch_wiring(config: AdapterConfigFile) -> LaunchWiring | None:
         if config.matrix is not None:
             raise ValueError("matrix.default_harness_kind requires configured harnesses")
         return None
-    if config.default_chat_agent_id is None:
-        raise ValueError("harnesses are configured but default_chat_agent_id is not")
     if config.matrix is None:
-        raise ValueError("harnesses are configured but matrix.default_harness_kind is not")
+        raise ValueError("harnesses are configured but matrix.default_agent_id and matrix.default_harness_kind are not")
     static_by_id = {agent.agent_id: agent for agent in config.static_agents}
     profile_harness_kinds = {profile.id: profile.allowed_harnesses for profile in config.access_profiles}
     authorizer = ChatLaunchAuthorizer(
@@ -193,13 +192,17 @@ def _launch_wiring(config: AdapterConfigFile) -> LaunchWiring | None:
         registered_harness_identities=registered,
         profile_harness_kinds=profile_harness_kinds,
     )
-    default_profile_id = static_by_id[config.default_chat_agent_id].access_profile_id
+    default_agent_id = config.matrix.default_agent_id
+    try:
+        default_profile_id = static_by_id[default_agent_id].access_profile_id
+    except KeyError as error:
+        raise ValueError("matrix.default_agent_id is not a configured static Agent") from error
     selected_harness_kind = config.matrix.default_harness_kind
-    if HarnessKey(config.default_chat_agent_id, selected_harness_kind) not in registered:
-        raise ValueError("matrix.default_harness_kind is not registered for default_chat_agent_id")
+    if HarnessKey(default_agent_id, selected_harness_kind) not in registered:
+        raise ValueError("matrix.default_harness_kind is not registered for matrix.default_agent_id")
     if selected_harness_kind not in profile_harness_kinds[default_profile_id]:
-        raise ValueError("matrix.default_harness_kind is not allowed by the default Agent profile")
-    return LaunchWiring(authorizer, config.default_chat_agent_id, selected_harness_kind)
+        raise ValueError("matrix.default_harness_kind is not allowed by the matrix.default_agent_id Agent profile")
+    return LaunchWiring(authorizer, default_agent_id, selected_harness_kind)
 
 
 async def async_main(settings: AdapterSettings) -> None:

@@ -289,11 +289,11 @@ def test_deployed_config_reads_identically_for_console_and_matrix_adapter() -> N
     assert {agent.agent_id: agent.access_profile_id for agent in adapter.static_agents} == {
         agent.agent_id: agent.access_profile_id for agent in console.static_agents
     }
-    assert adapter.default_chat_agent_id == console.default_chat_agent_id
     assert adapter.matrix is not None
     launch = _launch_wiring(adapter)
     assert launch is not None
-    assert launch.harness_kind is adapter.matrix.default_harness_kind
+    assert launch.default_agent_id == adapter.matrix.default_agent_id
+    assert launch.harness_kind == adapter.matrix.default_harness_kind
     assert console.harnesses is not None
     assert adapter.harnesses is not None
     assert adapter.harnesses.claude_code is not None
