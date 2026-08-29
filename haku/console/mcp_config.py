@@ -407,8 +407,9 @@ class ConsoleConfigFile(BaseModel):
     # Only these durable identities may be selected by the chat API.  Keeping this separate from
     # static_agents makes the launch boundary explicit and leaves room for OAuth Agents later.
     launchable_agents: list[LaunchableAgent] = Field(default_factory=list)
-    # Surface fallback only. Runtime implementations are not Agent identities: an explicit launch
-    # may choose any allowlisted Agent whose profile permits the requested runtime.
+    # Browser chat surface fallback only. Runtime implementations are not Agent identities: an
+    # explicit launch may choose any allowlisted Agent whose profile permits the requested runtime.
+    # Matrix has its own explicit launch route under `matrix.default_agent_id`.
     default_chat_agent_id: UUID | None = None
     # The `hostexec` in-process server's in-scope machines + token-exchange scope. Non-secret deploy
     # topology, so it lives here beside the `hostexec` catalog entry rather than in an env var. Unset
