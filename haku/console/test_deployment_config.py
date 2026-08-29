@@ -70,9 +70,15 @@ def test_deployed_console_config_is_valid() -> None:
     # repeating the pair; both atoms stay individually defined above.
     assert policies["grants_self_introspection"]["type"] == "any_of"
     assert set(policies["grants_self_introspection"]["policies"]) == {"grants_whoami", "grants_own_list"}
+    # An Agent's revoke_grants only ever relinquishes its OWN grants (the tool filters to the caller;
+    # owner_agent_id is operator-only and rejected for an Agent), so it is a narrowing self-service
+    # operation and click-free — its own exact-tools atom, distinct from the widening create_grant.
+    assert policies["grants_own_revoke"]["type"] == "exact_tools"
+    assert policies["grants_own_revoke"]["tools"] == {"grants": ["revoke_grants"]}
     for root in ("haku_v1", "public_coder_safe_reads"):
         assert "kubernetes_reads" in policies[root]["policies"], root
         assert "grants_self_introspection" in policies[root]["policies"], root
+        assert "grants_own_revoke" in policies[root]["policies"], root
 
     # Every Agent may ASK for a grant: the unified `grants` server is exposed to every access profile
     # (operator ruling on #4986). Safe only together with the pin below — nothing in it auto-approves.
@@ -81,12 +87,16 @@ def test_deployed_console_config_is_valid() -> None:
 
     # An auto-approved source ToolCall cannot mint a grant (the repository's provenance check
     # requires approval_policy_id absent), so auto-approving create_grant would make every grant
-    # creation fail after the fact instead of queueing for the Operator. The mutating grant verbs
-    # (create/revoke) never auto-approve — only the reads above do.
+    # creation fail after the fact instead of queueing for the Operator. create_grant (widening —
+    # it issues new temporary authority) therefore never auto-approves in any policy. revoke_grants
+    # (narrowing — an Agent relinquishes only its own grants) is click-free, but ONLY through the
+    # dedicated grants_own_revoke atom; no other exact-tools policy may smuggle either verb in.
     for policy in raw["auto_approval_policies"]:
-        if policy["type"] == "exact_tools":
-            grant_tools = policy["tools"].get("grants", [])
-            assert "create_grant" not in grant_tools, policy["id"]
+        if policy["type"] != "exact_tools":
+            continue
+        grant_tools = policy["tools"].get("grants", [])
+        assert "create_grant" not in grant_tools, policy["id"]
+        if policy["id"] != "grants_own_revoke":
             assert "revoke_grants" not in grant_tools, policy["id"]
 
     # A standing entry's named credential must actually redeem what the entry admits — the decide

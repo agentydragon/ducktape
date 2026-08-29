@@ -763,5 +763,39 @@ async def test_list_grants_auto_approves_only_the_explicit_self_scope() -> None:
         assert manual[0] is None
 
 
+# A registry mirroring production's grants_own_revoke composition: the exact-tools own-revoke atom
+# reached through each agent profile's root any_of. revoke_grants is narrowing (an Agent relinquishes
+# only its OWN grants — owner_agent_id is operator-only and rejected for an Agent) and click-free;
+# create_grant is widening (it mints new temporary authority) and stays manual.
+_OWN_REVOKE_REGISTRY = AutoApprovalPolicyRegistry(
+    ConsoleConfigFile.model_validate(
+        {
+            "mcp": {"servers": [{"id": "grants", "backend": {"kind": "in_process", "credential": {"kind": "none"}}}]},
+            "auto_approval_policies": [
+                {"id": "grants_own_revoke", "type": "exact_tools", "tools": {"grants": ["revoke_grants"]}},
+                {"id": "haku_v1", "type": "any_of", "policies": ["grants_own_revoke"]},
+                {"id": "public_coder_safe_reads", "type": "any_of", "policies": ["grants_own_revoke"]},
+            ],
+            "access_profiles": [
+                {"id": "haku", "auto_approval_policy": "haku_v1"},
+                {"id": "public-coder", "auto_approval_policy": "public_coder_safe_reads"},
+            ],
+            "default_access_profile_id": "haku",
+        }
+    )
+)
+
+
+@pytest.mark.parametrize("actor", [AGENT_ACTOR, PUBLIC_CODER_ACTOR], ids=["haku", "public-coder"])
+def test_revoke_grants_is_click_free_under_both_agent_roots(actor: AgentActor) -> None:
+    # Composed into both agent roots (haku_v1 and public_coder_safe_reads), an Agent's own-relinquish
+    # revoke is unconditionally auto-approved.
+    assert _OWN_REVOKE_REGISTRY.tool_mode(actor, "grants", "revoke_grants") is ToolAutoApprovalMode.ALWAYS_AUTO_APPROVED
+    # create_grant (widening) is never listed, so it stays manual under the same roots.
+    assert (
+        _OWN_REVOKE_REGISTRY.tool_mode(actor, "grants", "create_grant") is ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
+    )
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

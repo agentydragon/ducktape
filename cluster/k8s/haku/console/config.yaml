@@ -293,8 +293,8 @@ auto_approval_policies:
   # grant owned by and applicable to the calling Agent (else not-found), and an Operator cannot call
   # it over MCP at all — so auto-approving it never exposes another principal's grant. `list_grants`
   # is auto-approved separately, only for the explicit own scope (see `grants_own_list`).
-  # `create_grant`/`revoke_grants` stay manual: they change the Agent's temporary
-  # authority or its lifecycle.
+  # `create_grant` (widening — it issues new temporary authority) stays manual; `revoke_grants`
+  # (own-relinquish, narrowing) is click-free via `grants_own_revoke`.
   - id: kubernetes_reads
     type: exact_tools
     tools:
@@ -328,6 +328,15 @@ auto_approval_policies:
     policies:
       - grants_whoami
       - grants_own_list
+  # An Agent's `revoke_grants` only ever relinquishes its OWN grants: the tool filters to the caller
+  # (`release_applicable_grants` on the trusted request principal), and `owner_agent_id` is operator-
+  # only and rejected for an Agent. So it is a narrowing self-service operation — it reduces the
+  # Agent's own temporary authority — and is click-free, while `create_grant` (widening) stays manual.
+  - id: grants_own_revoke
+    type: exact_tools
+    tools:
+      grants:
+        - revoke_grants
   # public-coder's profile already declares recall_index_ids: [ducktape-public] below, but that
   # grant was dead without server access — haku_index wasn't in its in_process_server_ids. This is
   # narrower than haku_recall_reads: haku_index enforces per-call index scoping against the caller's
@@ -358,6 +367,7 @@ auto_approval_policies:
       - public_coder_github_reads
       - kubernetes_reads
       - grants_self_introspection
+      - grants_own_revoke
       - public_coder_recall_reads
       - kubectl_passthrough_redundancy_check
   - id: tana_safe_tools
@@ -461,6 +471,7 @@ auto_approval_policies:
       - managed_gmail_labels
       - kubernetes_reads
       - grants_self_introspection
+      - grants_own_revoke
   - id: manual_review
     type: never
 # Access profiles, not credential bindings, own durable Agent authority. A static bearer and a
@@ -928,10 +939,12 @@ mcp:
     # exercised by the #4943 spike) are evaluated by the egress decide endpoint after standing
     # policy; kubernetes grants are RBAC-like scope/rule coverage. Both ledgers are Console's own
     # Postgres — credential-free. Exposed to EVERY access profile (operator ruling on #4986): any
-    # Agent may ask. The grant verbs are deliberately in NO auto-approval policy: grant creation
-    # requires a manually approved source ToolCall (an auto-approved call cannot mint a grant), and
-    # the reads (which now span both domains) stay behind the same queue until there is a reason to
-    # open them. `kubernetes_can_i` is auto-approved (see `kubernetes_reads`).
+    # Agent may ask. `create_grant` is deliberately in NO auto-approval policy: grant creation
+    # requires a manually approved source ToolCall (an auto-approved call cannot mint a grant).
+    # `revoke_grants` auto-approves for an Agent — which relinquishes only its own grants, a
+    # narrowing self-service operation (`grants_own_revoke`) — and the reads auto-approve per their
+    # atoms (`kubernetes_can_i`/`get_grant` via `kubernetes_reads`, own-scoped `list_grants` via
+    # `grants_own_list`, `whoami` via `grants_whoami`).
     - id: grants
       backend:
         kind: in_process
