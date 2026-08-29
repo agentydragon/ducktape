@@ -14,6 +14,7 @@ import {
   type ConversationSummary,
   type Session,
 } from "../client";
+import { AgentName } from "../agent_names";
 import { useCoalescedRefresh } from "../coalesced_refresh";
 import {
   conversationLaunchOptions,
@@ -47,6 +48,10 @@ function statusColor(status: Session["status"]): string {
   if (status === "responding" || status === "provisioning") return "blue";
   if (status === "failed") return "red";
   return "gray";
+}
+
+function harnessDisplayName(kind: Conversation["harness_kind"]): string {
+  return kind === "claude_code" ? "Claude" : "Codex";
 }
 
 function timestamp(value: string): string {
@@ -504,13 +509,22 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
             <Button variant="subtle" size="compact-sm" onClick={backToConversations}>
               ← Conversations
             </Button>
-            <Title order={1}>Conversation</Title>
+            <Group gap="xs" wrap="wrap" mt={4}>
+              {conversation.agent_id !== null && (
+                <Text fw={600} size="sm">
+                  <AgentName agentId={conversation.agent_id} />
+                </Text>
+              )}
+              <Text c="dimmed" size="sm" title={`Session ID: ${session.session_id}`}>
+                {harnessDisplayName(conversation.harness_kind)} session
+              </Text>
+            </Group>
             <Attachments attachments={conversation.attachments} />
             <Text c="dimmed" size="sm">
               started {timestamp(conversation.created_at)}
             </Text>
           </div>
-          <Group gap="xs" wrap="nowrap" align="center">
+          <Group gap="xs" wrap="wrap" align="center">
             {/* The transcript is a lossy projection of the frame log, so an operator reading one
                 that looks wrong needs the record it was projected from — one click away. */}
             <Button

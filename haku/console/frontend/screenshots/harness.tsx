@@ -8,8 +8,9 @@ import { Notifications } from "@mantine/notifications";
 import { useEffect } from "react";
 import { createRoot } from "react-dom/client";
 
-import { HakuUiEmbed } from "../haku_ui_embed";
+import { AgentNamesProvider } from "../agent_names";
 import { ApprovalsEmbedPage } from "../approvals_embed_page";
+import { HakuUiEmbed } from "../haku_ui_embed";
 import { OAuthResultView } from "../oauth_result_page";
 import type { ConsoleNavigationView, ConsoleView } from "../routing";
 import { ShellChrome, type ShellChromeProps } from "../shell_chrome";
@@ -35,16 +36,18 @@ function ConsoleScene({
   sessionFramesId?: string | null;
 }) {
   return (
-    <HakuUiEmbed
-      uiUrl="https://haku-ui.test/"
-      launchAvailable
-      view={view}
-      agentEnrollmentId={view === "agentEnrollment" ? ENROLLMENT_ID : null}
-      agentEnrollmentInitialChoice={reconnect ? "reconnect" : undefined}
-      conversationId={conversationId}
-      sessionFramesId={sessionFramesId}
-      onNavigate={noopNavigate}
-    />
+    <AgentNamesProvider>
+      <HakuUiEmbed
+        uiUrl="https://haku-ui.test/"
+        launchAvailable
+        view={view}
+        agentEnrollmentId={view === "agentEnrollment" ? ENROLLMENT_ID : null}
+        agentEnrollmentInitialChoice={reconnect ? "reconnect" : undefined}
+        conversationId={conversationId}
+        sessionFramesId={sessionFramesId}
+        onNavigate={noopNavigate}
+      />
+    </AgentNamesProvider>
   );
 }
 

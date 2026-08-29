@@ -171,7 +171,7 @@ const SCENES = [
     name: "conversation-detail",
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,
-    expectVisible: "::-p-text(1 earlier session)",
+    expectVisible: "::-p-text(Claude Desktop)",
     frame: true,
   },
   {

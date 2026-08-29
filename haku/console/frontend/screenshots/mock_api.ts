@@ -332,6 +332,7 @@ const conversationSession = {
 } satisfies Conversation["session"];
 const conversationDetail = {
   conversation_id: conversationId,
+  agent_id: "40000000-0000-4000-8000-000000000004",
   harness_kind: "claude_code",
   created_at: "2026-08-01T03:00:00Z",
   attachments: [{ surface: "matrix", address: "!ops:example.org", attached_at: "2026-08-01T03:00:00Z" }],

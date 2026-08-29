@@ -141,6 +141,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//haku/console/frontend:agent_names",
         "//haku/console/frontend:client",
         "//haku/console/frontend:coalesced_refresh",
         "//haku/console/frontend:console_events",

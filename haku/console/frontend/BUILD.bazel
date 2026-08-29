@@ -983,6 +983,7 @@ ts_library(
     tags = ["no-lint"],
     tsconfig = TSCONFIG,
     deps = [
+        ":agent_names",
         ":approval_state",
         ":approvals_embed_page",
         ":client",

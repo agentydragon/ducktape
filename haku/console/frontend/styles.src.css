@@ -595,11 +595,6 @@
     gap: 0.25rem;
   }
 
-  .haku-conversation-detail-header h1 {
-    font-size: clamp(1.75rem, 9vw, 2.5rem);
-    line-height: 1.15;
-  }
-
   .haku-chat-prompt {
     max-width: 92%;
   }
