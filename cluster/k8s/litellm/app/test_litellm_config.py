@@ -9,6 +9,9 @@ from more_itertools import one
 from cluster.k8s.litellm.app.model_rosters import (
     ANTHROPIC_MODELS,
     CLIPROXY_MODELS,
+    CODEX_CONTEXT_WINDOW,
+    CODEX_MAX_TOKENS,
+    CODEX_MEASURED_MODELS,
     GEMINI_EMBEDDING_MODELS,
     GEMINI_MODELS,
     TANA_MODELS,
@@ -120,6 +123,20 @@ def _tana_entries() -> Iterator[dict]:
         }
 
 
+# model_info token limits for the measured 5.6 models; empty for the rest. litellm's
+# model_cost DB has no window for the anthropic/-prefixed slugs and mis-values the
+# openai/-prefixed twins (~1.05M/922K raw-API), so the probed routes pin the measured
+# CODEX_CONTEXT_WINDOW and the unprobed models are left for litellm to answer.
+def _codex_window(model: str) -> dict[str, int]:
+    if model not in CODEX_MEASURED_MODELS:
+        return {}
+    return {
+        "max_input_tokens": CODEX_CONTEXT_WINDOW,
+        "max_output_tokens": CODEX_MAX_TOKENS,
+        "max_tokens": CODEX_MAX_TOKENS,
+    }
+
+
 # Anthropic Messages surface: the one path that translates Codex tool calls correctly
 # (function_call -> tool_use) for Claude Code — what LiteLLM's own Responses bridge could
 # not do (BerriAI/litellm#25429).
@@ -132,7 +149,7 @@ def _cliproxy_messages_entries() -> Iterator[dict]:
                 "api_base": _CLIPROXY_BASE,
                 "api_key": "os.environ/CLIPROXY_CLIENT_KEY",
             },
-            "model_info": {"mode": "chat", "supports_function_calling": True},
+            "model_info": {"mode": "chat", "supports_function_calling": True} | _codex_window(model),
         }
 
 
@@ -150,7 +167,7 @@ def _cliproxy_responses_entries() -> Iterator[dict]:
                 "api_base": f"{_CLIPROXY_BASE}/v1",
                 "api_key": "os.environ/CLIPROXY_CLIENT_KEY",
             },
-            "model_info": {"mode": "responses", "supports_function_calling": True},
+            "model_info": {"mode": "responses", "supports_function_calling": True} | _codex_window(model),
         }
 
 

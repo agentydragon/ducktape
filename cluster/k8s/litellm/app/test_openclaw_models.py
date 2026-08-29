@@ -5,6 +5,8 @@ import yaml
 from cluster.k8s.litellm.app.model_rosters import (
     ANTHROPIC_MODELS,
     CLIPROXY_MODELS,
+    CODEX_CONTEXT_WINDOW,
+    CODEX_MAX_TOKENS,
     GEMINI_CONTEXT_WINDOW,
     GEMINI_MAX_OUTPUT_TOKENS,
     GEMINI_MODELS,
@@ -16,22 +18,6 @@ from cluster.k8s.litellm.app.model_rosters import (
     exposed_name,
 )
 from util.bazel.runfiles import get_required_path
-
-# Measured, not published, and the published figures are wrong in both
-# directions: the raw models are ~1.05M and Codex product documentation says
-# 272K, while this serving path (OpenClaw -> LiteLLM -> CLIProxyAPI -> upstream)
-# accepts neither. LiteLLM carries no `max_input_tokens` for the
-# Codex-subscription routes, so there is nothing upstream of this file to
-# consult instead.
-#
-# openai_utils/probe_context_window.py binary-searches the live path. On
-# 2026-07-29 all three 5.6 models behaved identically: 370,629 counted tokens
-# accepted, 372,194 rejected. Re-derive with:
-#
-#     kubectl exec -i -n <ns> <pod> -- python3 - --low 350000 --high 400000 \
-#         chatgpt/ant-messages/gpt-5.6-{luna,sol,terra} < openai_utils/probe_context_window.py
-CODEX_CONTEXT_WINDOW = 372_000
-CODEX_MAX_TOKENS = 128_000
 
 _PUBLIC_CODER_AGENT_CONFIG = "ducktape/cluster/k8s/agents/public-coder-agent/app/openclaw.json"
 _HAKU_OPENCLAW_CONFIG = "ducktape/cluster/k8s/agents/haku-openclaw-spike/app/openclaw.json"
@@ -75,7 +61,13 @@ def test_litellm_config_has_a_route_per_declared_codex_model() -> None:
                 "api_base": "http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317",
                 "api_key": "os.environ/CLIPROXY_CLIENT_KEY",
             },
-            "model_info": {"mode": "chat", "supports_function_calling": True},
+            "model_info": {
+                "mode": "chat",
+                "supports_function_calling": True,
+                "max_input_tokens": CODEX_CONTEXT_WINDOW,
+                "max_output_tokens": CODEX_MAX_TOKENS,
+                "max_tokens": CODEX_MAX_TOKENS,
+            },
         }
 
 
