@@ -75,6 +75,14 @@ It removes that header before forwarding upstream. For CONNECT, it carries the
 parsed token from the outer flow to the inner request. Missing or malformed
 proxy credentials receive a local `407` and never reach the upstream.
 
+An authorization denial receives `403` with `X-Haku-Egress-Denied` carrying the
+decision reason, `X-Haku-Egress-Help` carrying stable grant-request guidance,
+and, when the decision identifies a grantable origin, `X-Haku-Grant-Scope`
+carrying its exact `scheme://host:port`. The same guidance is included in the
+response body: headers remain visible when a refused HTTPS `CONNECT` hides its
+body, while the body gives plain-HTTP and intercepted inner requests a readable
+next step.
+
 For every admission, the proxy:
 
 1. resolves the complete bounded address set for the connection target;

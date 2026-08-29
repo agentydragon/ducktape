@@ -59,6 +59,7 @@ from haku.egress.testing.proxy_test_harness import (
     make_proxy,
     pinned_and_decoy_upstreams,
     proxied_get,
+    proxied_get_with_headers,
     proxy_url,
     stub_client,
     stub_console,
@@ -131,11 +132,21 @@ async def test_allow_passes_unscanned_placeholder_through_verbatim(upstream: Rec
 
 
 async def test_deny_refuses_without_upstream_contact(upstream: RecordingUpstream, tmp_path: Path) -> None:
-    decide = StaticDecideClient(HttpAuthorizationDenied(reason="no standing policy or active grant"))
+    reason = "no standing policy or active grant"
+    decide = StaticDecideClient(
+        HttpAuthorizationDenied(
+            reason=reason, grant_scope=GrantScope(scheme="https", host="127.0.0.1", port=upstream.port)
+        )
+    )
     async with make_proxy(decide, tmp_path) as proxy:
-        status, body = await proxied_get(proxy, f"http://127.0.0.1:{upstream.port}/secret")
+        status, headers, body = await proxied_get_with_headers(proxy, f"http://127.0.0.1:{upstream.port}/secret")
     assert status == 403
-    assert "no standing policy or active grant" in body
+    assert headers["X-Haku-Egress-Denied"] == reason
+    assert headers["X-Haku-Grant-Scope"] == f"https://127.0.0.1:{upstream.port}"
+    assert headers["X-Haku-Egress-Help"] in body
+    assert "grants__create_grant" in headers["X-Haku-Egress-Help"]
+    assert reason in body
+    assert f"https://127.0.0.1:{upstream.port}" in body
     assert (upstream.connections, upstream.requests) == (0, [])
 
 
@@ -164,11 +175,17 @@ async def test_malformed_decision_fails_closed(upstream: RecordingUpstream, tmp_
 
 
 async def test_connect_deny_refuses_tunnel(upstream: RecordingUpstream, tmp_path: Path) -> None:
-    decide = StaticDecideClient(HttpAuthorizationDenied(reason="no grant for origin"))
+    reason = "no grant for origin"
+    scope = GrantScope(scheme="https", host="127.0.0.1", port=upstream.port)
+    decide = StaticDecideClient(HttpAuthorizationDenied(reason=reason, grant_scope=scope))
     async with make_proxy(decide, tmp_path) as proxy, aiohttp.ClientSession() as session:
         with pytest.raises(aiohttp.ClientHttpProxyError) as excinfo:
             await session.get(f"https://127.0.0.1:{upstream.port}/", proxy=proxy_url(proxy))
     assert excinfo.value.status == 403
+    assert excinfo.value.headers is not None
+    assert excinfo.value.headers["X-Haku-Egress-Denied"] == reason
+    assert excinfo.value.headers["X-Haku-Grant-Scope"] == f"https://127.0.0.1:{upstream.port}"
+    assert "grants__create_grant" in excinfo.value.headers["X-Haku-Egress-Help"]
     assert (upstream.connections, upstream.requests) == (0, [])
     assert decide.requests == [
         RequestMeta(method="CONNECT", scheme=None, host="127.0.0.1", port=upstream.port, path=None)

@@ -35,13 +35,27 @@ from mitmproxy import connection, http
 from mitmproxy.proxy import server_hooks
 
 from haku.egress.decide_client import DecideClient
-from haku.egress.decision import HttpAuthorizationAllowed, HttpAuthorizationDenied, PlaceholderSubstitution, RequestMeta
+from haku.egress.decision import (
+    GrantScope,
+    HttpAuthorizationAllowed,
+    HttpAuthorizationDenied,
+    PlaceholderSubstitution,
+    RequestMeta,
+)
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_DECIDE_TIMEOUT_SECONDS = 5.0
 
 _FAIL_CLOSED_MESSAGE = "egress decision unavailable; refusing (fail closed)"
+_EGRESS_DENIED_HEADER = "X-Haku-Egress-Denied"
+_GRANT_SCOPE_HEADER = "X-Haku-Grant-Scope"
+_EGRESS_HELP_HEADER = "X-Haku-Egress-Help"
+_EGRESS_HELP = (
+    "No grant covers this origin. Request one: `grants__create_grant` with "
+    "`{origin: {scheme, host, port}, coverage: {methods}}`, a short `duration_seconds`, "
+    "and a rationale for the operator. See your active grants: `grants__list_grants`."
+)
 
 type ResolveAddresses = Callable[[str, int], Awaitable[frozenset[IPv4Address | IPv6Address]]]
 
@@ -52,8 +66,24 @@ async def resolve_addresses(host: str, port: int) -> frozenset[IPv4Address | IPv
     return frozenset(ip_address(sockaddr[0]) for _family, _type, _proto, _canonname, sockaddr in infos)
 
 
-def _refusal(status: int, message: str) -> http.Response:
-    return http.Response.make(status, f"{message}\n".encode(), {"content-type": "text/plain; charset=utf-8"})
+def _refusal(status: int, message: str, headers: dict[str, str] | None = None) -> http.Response:
+    response_headers = {"content-type": "text/plain; charset=utf-8", **(headers or {})}
+    return http.Response.make(status, f"{message}\n".encode(), response_headers)
+
+
+def _grant_scope_origin(scope: GrantScope) -> str:
+    return f"{scope.scheme}://{scope.host}:{scope.port}"
+
+
+def _denial_refusal(decision: HttpAuthorizationDenied) -> http.Response:
+    """Explain an authorization denial in both CONNECT-visible headers and the response body."""
+    headers = {_EGRESS_DENIED_HEADER: decision.reason, _EGRESS_HELP_HEADER: _EGRESS_HELP}
+    body = f"egress denied: {decision.reason}\n{_EGRESS_HELP}"
+    if decision.grant_scope is not None:
+        origin = _grant_scope_origin(decision.grant_scope)
+        headers[_GRANT_SCOPE_HEADER] = origin
+        body += f"\nRequest the covering grant for {origin}."
+    return _refusal(403, body, headers)
 
 
 def _auth_refusal(message: str) -> http.Response:
@@ -257,7 +287,7 @@ class EgressGateAddon:
             match decision:
                 case HttpAuthorizationDenied():
                     logger.info("deny %s %s:%d: %s", meta.method, meta.host, meta.port, decision.reason)
-                    flow.response = _refusal(403, f"egress denied: {decision.reason}")
+                    flow.response = _denial_refusal(decision)
                 case HttpAuthorizationAllowed():
                     self._pinned_upstreams[(meta.host, meta.port)] = upstream_ip
                     applied = sum(

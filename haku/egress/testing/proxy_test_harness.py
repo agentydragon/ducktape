@@ -164,6 +164,20 @@ async def proxied_get(proxy: EgressProxy, url: str, headers: dict[str, str] | No
         return response.status, await response.text()
 
 
+async def proxied_get_with_headers(
+    proxy: EgressProxy, url: str, headers: dict[str, str] | None = None
+) -> tuple[int, dict[str, str], str]:
+    """GET through the proxy, retaining response headers for refusal-contract assertions."""
+    async with (
+        aiohttp.ClientSession() as session,
+        session.get(url, proxy=proxy_url(proxy), headers=headers) as response,
+    ):
+        status = response.status
+        response_headers = dict(response.headers)
+        body = await response.text()
+    return status, response_headers, body
+
+
 async def proxied_get_raw(proxy_port: int, url: str, header_lines: list[tuple[str, str]]) -> tuple[int, str]:
     """Absolute-form plain-HTTP GET through the proxy with hand-built headers.
 

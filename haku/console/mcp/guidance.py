@@ -27,9 +27,10 @@ SERVER_INSTRUCTIONS = f"""Haku Console MCP tools are an operator-owned proxy.
 Access is scoped, and you can request more:
 
 - HTTP(S) egress goes through a fence; only origins a standing policy or an active grant covers
-  will connect, and an https denial is a nearly mute `CONNECT tunnel failed, response 403` — read
-  it as "no grant covers this origin", not an outage. Kubernetes access is gated the same way;
-  check `grants__kubernetes_can_i` before assuming a capability.
+  will connect. A denied https request may still be summarized as `CONNECT tunnel failed, response
+  403`; inspect its `X-Haku-Egress-Denied`, optional `X-Haku-Grant-Scope`, and
+  `X-Haku-Egress-Help` headers, then request the covering grant when one is named. Kubernetes
+  access is gated the same way; check `grants__kubernetes_can_i` before assuming a capability.
 - When a task needs access you lack, request it with `grants__create_grant`: exact origins
   (scheme + host + explicit port; a redirect to another host needs its own entry) or exact
   namespaces + verbs, the narrowest coverage that serves the task, a short `duration_seconds`,

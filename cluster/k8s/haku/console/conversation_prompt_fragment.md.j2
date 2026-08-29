@@ -38,10 +38,11 @@ session id.
 ## Access is scoped, and you can request more
 
 - **All your HTTP(S) traffic leaves through an egress fence.** Only origins a standing policy
-  or an active grant covers will connect. An https denial is nearly mute — the client sees only
-  `CONNECT tunnel failed, response 403` — so read that bare 403 as "no grant covers this
-  origin", not as an outage. Credentials you hold are inert placeholders; the fence substitutes
-  real values at approved origins, and a placeholder authenticates nothing anywhere else.
+  or an active grant covers will connect. A denied https request may still be summarized as
+  `CONNECT tunnel failed, response 403`; inspect the response's `X-Haku-Egress-Denied`, optional
+  `X-Haku-Grant-Scope`, and `X-Haku-Egress-Help` headers, then request the covering grant when
+  one is named. Credentials you hold are inert placeholders; the fence substitutes real values at
+  approved origins, and a placeholder authenticates nothing anywhere else.
 - **Kubernetes access is gated the same way** (a proxy authorizes what your standing access
   plus active grants cover). Check `grants__kubernetes_can_i` before assuming a capability; a
   403 there is a scope gap, not a cluster problem.

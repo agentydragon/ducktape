@@ -14,9 +14,10 @@ PASS/FAIL table. A clean run takes about five minutes including the two approval
 
 Operator notes on expected behavior:
 
-- The fence-negative step _should_ fail with a bare `CONNECT tunnel failed, response 403` — the
-  agent reporting that mute denial and correctly interpreting it is the PASS. Refusals that
-  explain themselves are #5181.
+- The fence-negative step _should_ fail with `CONNECT tunnel failed, response 403`, while exposing
+  `X-Haku-Egress-Denied`, `X-Haku-Grant-Scope`, and `X-Haku-Egress-Help` headers. PASS means the
+  agent reports the denial reason, reads the grant scope/how-to, and correctly explains what it
+  would request; a refusal without that context is #5181.
 - The GitHub-identity step is the substitution's real payoff: it proves the fence swapped the
   inert placeholder for the **real** bot token AND that the token is the intended identity. PASS
   = the API reports `agentydragon-agent`. Anything else (the placeholder echoed back, a 401, a
@@ -54,9 +55,11 @@ anything that surprised you.
    `curl -sS --max-time 8 -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/user`
    and report only the `login` field. The fence substitutes your inert placeholder for the real
    bot token on this origin. PASS = login is `agentydragon-agent`. Never print the token value.
-5. Fence negative: run `curl -sS --max-time 8 https://example.com/`. Expected: a bare
-   "CONNECT tunnel failed, response 403". PASS = you got that denial AND you explain in one
-   sentence what it means and what you would do if a task actually needed that origin.
+5. Fence negative: run `curl -sS -D - --max-time 8 https://example.com/`. Expected: a
+   "CONNECT tunnel failed, response 403" denial with the `X-Haku-Egress-Denied`,
+   `X-Haku-Grant-Scope`, and `X-Haku-Egress-Help` response headers. PASS = you report the denial
+   reason and grant scope/how-to, then explain in one sentence what you would do if a task needed
+   that origin.
 6. HTTP temporary-grant lifecycle: request a grant with the grants server's create_grant —
    grants [{domain: http, spec: {origin: {scheme: https, host: docs.anthropic.com, port: 443},
    coverage: {methods: [GET, HEAD]}}}], duration_seconds 1800, principal {kind: session,
@@ -114,9 +117,11 @@ anything that surprised you.
    `curl -sS --max-time 8 -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/user`
    and report only the `login` field. The fence substitutes your inert placeholder for the real
    bot token on this origin. PASS = login is `agentydragon-agent`. Never print the token value.
-5. Fence negative: run `curl -sS --max-time 8 https://example.com/`. Expected: a bare
-   "CONNECT tunnel failed, response 403". PASS = you got that denial AND you explain in one
-   sentence what it means and what you would do if a task actually needed that origin.
+5. Fence negative: run `curl -sS -D - --max-time 8 https://example.com/`. Expected: a
+   "CONNECT tunnel failed, response 403" denial with the `X-Haku-Egress-Denied`,
+   `X-Haku-Grant-Scope`, and `X-Haku-Egress-Help` response headers. PASS = you report the denial
+   reason and grant scope/how-to, then explain in one sentence what you would do if a task needed
+   that origin.
 6. HTTP temporary-grant lifecycle: request a grant with the grants server's create_grant —
    grants [{domain: http, spec: {origin: {scheme: https, host: docs.github.com, port: 443},
    coverage: {methods: [GET, HEAD]}}}], duration_seconds 1800, principal {kind: session,
