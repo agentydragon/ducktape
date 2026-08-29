@@ -5,8 +5,8 @@ recording either ``released_at`` or ``revoked_at``. That distinction belongs to 
 authorization, not the grant's lifecycle: both make the grant unusable. Keep one ``ended_at``
 fact and an optional audit reason instead.
 
-Revision ID: 0118
-Revises: 0113
+Revision ID: 0119
+Revises: 0118
 """
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0118"
-down_revision: str | None = "0113"
+revision: str = "0119"
+down_revision: str | None = "0118"
 branch_labels: str | None = None
 depends_on: str | None = None
 
@@ -23,8 +23,8 @@ _TABLES = ("kubernetes_grants", "http_grants")
 
 _KUBERNETES_TRIGGER = "trg_haku_0113_kubernetes_grant_source_invariants"
 _KUBERNETES_FUNCTION = "public.haku_0113_kubernetes_grant_source_invariants()"
-_ACCESS_PROFILE_FUNCTION = "public.haku_0118_kubernetes_grant_source_invariants()"
-_ACCESS_PROFILE_TRIGGER = "trg_haku_0118_kubernetes_grant_source_invariants"
+_ACCESS_PROFILE_FUNCTION = "public.haku_0119_kubernetes_grant_source_invariants()"
+_ACCESS_PROFILE_TRIGGER = "trg_haku_0119_kubernetes_grant_source_invariants"
 
 
 def _principal_shape() -> str:
