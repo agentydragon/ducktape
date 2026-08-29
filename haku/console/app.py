@@ -113,6 +113,7 @@ from haku.console.tools import (
     kubernetes as kubernetes_tools,
     routine as routine_tools,
     sandbox as sandbox_tools,
+    workers as workers_tools,
 )
 from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
 from haku.console.x import runtime as console_runtime, runtime_catalog
@@ -597,6 +598,14 @@ def create_app(
                 # tools would reflect an always-empty corpus.
                 conversations=(reader.ConversationReads(session_store) if runtime_registry.configured_kinds else None),
                 sandbox=sandbox_server,
+                # The `workers` server dispatches hosted worker sessions through the same launch
+                # path the console's own createConversation uses, so it needs the executable
+                # SessionService — present only with a launch-capable runtime — and its config entry.
+                sessions=(
+                    session_service
+                    if session_service is not None and workers_tools.WORKERS_SERVER_ID in configured_server_ids
+                    else None
+                ),
                 # One `grants` server fronts both grant domains plus the kubernetes SAR check
                 # (`kubernetes_can_i`, #4918), so it needs the kubernetes authorization service; it
                 # registers only when that is configured (as it always is in the deployed config).

@@ -19,6 +19,7 @@ import haku.console.tools.hostexec as hostexec_tools
 import haku.console.tools.recall_index as recall_index_tools
 import haku.console.tools.routine as routine_tools
 import haku.console.tools.sandbox as sandbox_tools
+import haku.console.tools.workers as workers_tools
 from haku.console.config import HostexecConfig
 from haku.console.conversation_read_access import ConversationReadAccessPolicy
 from haku.console.in_process_server_access import InProcessServerAccessPolicy
@@ -30,6 +31,7 @@ from haku.console.mcp_config import (
     const_in_process_server,
 )
 from haku.console.recall_index_access import RecallIndexAccessPolicy
+from haku.console.session.runtime import SessionService
 from haku.console.tools.hostexec_client import HostexecClient, NodeDaemonBroker
 from haku.console.tools.hostexec_token import HostexecJwtBearerExchanger
 from haku.sandbox.config import SandboxEnvironmentConfig
@@ -77,6 +79,9 @@ class InProcessServerDependencies:
     # The Agent Sandbox lifecycle client and the environment it hands out — set only when
     # `config.yaml` both lists the server and configures `agent_sandbox`.
     sandbox: SandboxServerConfig | None = None
+    # The session runtime the `workers` server dispatches hosted worker sessions through — set only
+    # when a launch-capable chat runtime is configured, since without it there is nothing to launch.
+    sessions: SessionService | None = None
     recall_access_profiles: tuple[AccessProfile, ...] = ()
     configured_recall_index_ids: tuple[str, ...] = ()
 
@@ -135,6 +140,12 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
             builder=lambda _token: sandbox_tools.build_mcp(sandbox.client, sandbox.environment),
             credential_kind=InProcessCredentialKind.NONE,
             authorizer=in_process_access.authorizer_for(sandbox_tools.SANDBOX_SERVER_ID),
+        )
+    if (sessions := dependencies.sessions) is not None:
+        servers[workers_tools.WORKERS_SERVER_ID] = InProcessServerRegistration(
+            builder=lambda _token: workers_tools.build_mcp(sessions),
+            credential_kind=InProcessCredentialKind.NONE,
+            authorizer=in_process_access.authorizer_for(workers_tools.WORKERS_SERVER_ID),
         )
     if (hostexec := dependencies.hostexec) is not None:
         daemon_ids = {host: entry.daemon_id for host, entry in hostexec.config.hosts.items()}

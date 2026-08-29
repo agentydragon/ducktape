@@ -462,6 +462,9 @@ access_profiles:
       - haku_conversations
       - grants
       - sandbox
+      # Haku is the orchestrator that fans subtasks onto workers (#5193). `dispatch_worker` stays
+      # operator-approved per call; this only lets Haku reach the server to ask.
+      - workers
   - id: public-coder
     auto_approval_policy: public_coder_safe_reads
     allowed_chat_runtimes:
@@ -898,6 +901,18 @@ mcp:
     # cache). The `haku_sandbox_control` exact-tools policy above records that reviewed authority;
     # `in_process_server_ids` on the profile is what grants access to the server at all.
     - id: sandbox
+      backend:
+        kind: in_process
+        credential:
+          kind: none
+    # Multi-agent v0 (#5193/#5194): `dispatch_worker` opens a hosted worker session for a launchable
+    # Agent on a harness — reusing the same createConversation launch + session/sandbox allocation the
+    # operator-initiated flow uses — seeds the opening prompt, and returns its session id immediately.
+    # The worker runs under its OWN Agent perimeter (its grants + fence identity), not the caller's;
+    # dispatch never widens its reach. Credential-free (Console's own session runtime). `dispatch_worker`
+    # is in NO auto-approval policy, so every spawn queues for the operator, exactly like `create_grant`.
+    # Granted to the `haku` orchestrator profile below; the intended first worker is public-coder/codex.
+    - id: workers
       backend:
         kind: in_process
         credential:

@@ -36,7 +36,7 @@ def test_deployed_console_config_is_valid() -> None:
     assert "codex_runtime" not in raw["settings"]
 
     profiles = {profile.id: profile for profile in config.access_profiles}
-    assert profiles["haku"].in_process_server_ids == {"haku_conversations", "grants", "sandbox"}
+    assert profiles["haku"].in_process_server_ids == {"haku_conversations", "grants", "sandbox", "workers"}
 
     assert config.kubernetes_authorization is not None
     subjects = config.kubernetes_authorization.subjects_by_access_profile
