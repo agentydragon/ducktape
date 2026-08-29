@@ -148,8 +148,8 @@ ts_library(
         "//haku/console/frontend:coalesced_refresh",
         "//haku/console/frontend:console_events",
         "//haku/console/frontend:conversation_launch",
-        "//haku/console/frontend:routing",
         "//haku/console/frontend:icons",
+        "//haku/console/frontend:routing",
     ],
 )
 
