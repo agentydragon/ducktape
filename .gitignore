@@ -75,6 +75,8 @@ devinfra/nixos_bazel_test/result
 # Project-specific
 **/.claude/settings.local.json
 **/.claude/scheduled_tasks.lock
+# Local hydrated/review worktrees must not be sent in bb remote patches.
+/.worktrees/
 worktrees
 cluster/.git
 cluster/.claude/
