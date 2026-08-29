@@ -24,6 +24,18 @@ SERVER_INSTRUCTIONS = f"""Haku Console MCP tools are an operator-owned proxy.
   `call_mcp_tool(server_id, tool_name, arguments)` with that exact shape. `list_mcp_servers` passively
   reports configured connection state.
 
+Access is scoped, and you can request more:
+
+- HTTP(S) egress goes through a fence; only origins a standing policy or an active grant covers
+  will connect, and an https denial is a nearly mute `CONNECT tunnel failed, response 403` — read
+  it as "no grant covers this origin", not an outage. Kubernetes access is gated the same way;
+  check `grants__kubernetes_can_i` before assuming a capability.
+- When a task needs access you lack, request it with `grants__create_grant`: exact origins
+  (scheme + host + explicit port; a redirect to another host needs its own entry) or exact
+  namespaces + verbs, the narrowest coverage that serves the task, a short `duration_seconds`,
+  and a `rationale` written for the operator deciding it. Batch one task's needs into one call.
+  Prefer the `session` principal for one-task needs; `revoke_grants` what you no longer need.
+
 {_DETAILS_POINTER}"""
 
 
