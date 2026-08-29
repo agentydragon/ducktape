@@ -30,7 +30,7 @@ from aiohttp import web
 from aiohttp.typedefs import Handler
 from more_itertools import one
 
-from haku.egress.proxy_test_harness import (
+from haku.egress.testing.proxy_test_harness import (
     PLACEHOLDER,
     REAL_CREDENTIAL,
     allow,
@@ -38,7 +38,7 @@ from haku.egress.proxy_test_harness import (
     make_proxy,
     proxy_url,
 )
-from haku.egress.static_decide_client import StaticDecideClient
+from haku.egress.testing.static_decide_client import StaticDecideClient
 from haku.egress.tls_test_support import make_self_signed_cert, mitmproxy_ca_path, server_tls_context
 
 GREETING = "hello through the fence\n"
