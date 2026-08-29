@@ -314,7 +314,7 @@ const conversationPage = {
     },
   ],
   // Not the last page, so the keyset's "Load older conversations" control renders.
-  next_cursor: { last_activity_at: "2026-07-29T22:05:00Z", conversation_id: "70000000-0000-4000-8000-0000000000a4" },
+  next_cursor: "2026-07-29T22:05:00Z~70000000-0000-4000-8000-0000000000a4",
 } satisfies ConversationPage;
 // Two exchanges; the second's answer was cut off by the runner dying, which is what
 // `status: "failed"` renders as.
