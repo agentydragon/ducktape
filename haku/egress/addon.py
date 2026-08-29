@@ -56,6 +56,19 @@ def _refusal(status: int, message: str) -> http.Response:
     return http.Response.make(status, f"{message}\n".encode(), {"content-type": "text/plain; charset=utf-8"})
 
 
+def _auth_refusal(message: str) -> http.Response:
+    """407 with the RFC 9110 §11.7.1 challenge, so challenge-response clients can retry.
+
+    git's libcurl (proxy anyauth) sends its first CONNECT bare and picks a scheme from
+    ``Proxy-Authenticate``; without the challenge it aborts instead of retrying with the
+    credentials it already holds from the proxy URL userinfo (#5154). Basic is the scheme
+    those clients send; ``_proxy_client_bearer`` also accepts an explicit Bearer.
+    """
+    response = _refusal(407, message)
+    response.headers["proxy-authenticate"] = 'Basic realm="haku-egress"'
+    return response
+
+
 def _proxy_client_bearer(value: str) -> str | None:
     """Extract the bridge bearer from Bearer or URL-userinfo Basic proxy auth.
 
@@ -229,7 +242,7 @@ class EgressGateAddon:
         flow.response = _refusal(502, _FAIL_CLOSED_MESSAGE)
         if client_credential is None:
             reason = "invalid proxy client bearer" if credential_supplied else "proxy client bearer required"
-            flow.response = _refusal(407, reason)
+            flow.response = _auth_refusal(reason)
             return
         try:
             async with asyncio.timeout(self._decide_timeout_seconds):

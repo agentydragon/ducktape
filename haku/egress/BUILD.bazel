@@ -261,3 +261,20 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_egress_git",
+    size = "small",
+    srcs = ["test_egress_git.py"],
+    deps = [
+        ":conftest",
+        ":proxy_test_harness",
+        ":static_decide_client",
+        ":tls_test_support",
+        "//:conftest",
+        "@pypi//aiohttp",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

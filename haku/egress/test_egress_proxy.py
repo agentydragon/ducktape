@@ -214,7 +214,11 @@ async def test_invalid_proxy_client_bearer_is_refused_without_upstream_contact(
         ) as response,
     ):
         status = response.status
+        challenge = response.headers.get("Proxy-Authenticate")
     assert status == 407
+    # The RFC 9110 challenge is what lets libcurl-shaped clients (git) retry with the
+    # bearer they already hold (#5154); test_egress_git.py drives the full dance.
+    assert challenge == 'Basic realm="haku-egress"'
     assert (upstream.connections, upstream.requests) == (0, [])
 
 
@@ -229,7 +233,9 @@ async def test_missing_proxy_client_bearer_is_refused_without_upstream_contact(
         ) as response,
     ):
         status = response.status
+        challenge = response.headers.get("Proxy-Authenticate")
     assert status == 407
+    assert challenge == 'Basic realm="haku-egress"'
     assert (upstream.connections, upstream.requests) == (0, [])
 
 
