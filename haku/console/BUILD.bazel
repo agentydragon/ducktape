@@ -238,42 +238,7 @@ py_library(
         ":mcp_config",
         ":tool_call_actor",
         "//haku/console/grants:principal",
-    ],
-)
-
-py_library(
-    name = "in_process_server_access",
-    srcs = ["in_process_server_access.py"],
-    deps = [
-        ":mcp_config",
-        ":mcp_execution",
-        ":tool_call_actor",
-        "//haku/console/grants:principal",
-    ],
-)
-
-py_library(
-    name = "in_process_servers",
-    srcs = ["in_process_servers.py"],
-    deps = [
-        ":config",
-        ":conversation_read_access",
-        ":in_process_server_access",
-        ":mcp_config",
-        ":recall_index_access",
-        "//haku/console/mcp:config",
         "//haku/console/mcp:execution",
-        "//haku/console/tools:conversations",
-        "//haku/console/tools:gmail",
-        "//haku/console/tools:google_calendar",
-        "//haku/console/tools:grants",
-        "//haku/console/tools:hostexec",
-        "//haku/console/tools:hostexec_client",
-        "//haku/console/tools:hostexec_token",
-        "//haku/console/tools:recall_index",
-        "//haku/console/tools:routine",
-        "//haku/console/tools:sandbox",
-        "//haku/sandbox:config",
     ],
 )
 

@@ -81,8 +81,6 @@ py_library(
     visibility = ["//haku/console:__subpackages__"],
     deps = [
         "//haku/console:conversation_read_access",
-        "//haku/console:in_process_server_access",
-        "//haku/console:mcp_execution",
         "//haku/console/conversation:item_reads",
         "//haku/console/conversation:reads",
         "//haku/console/mcp:execution",
@@ -158,7 +156,6 @@ py_library(
     visibility = ["//haku/console:__subpackages__"],
     deps = [
         ":kubernetes",
-        "//haku/console:mcp_execution",
         "//haku/console/grants:envelope",
         "//haku/console/grants:principal",
         "//haku/console/grants/http:models",
@@ -167,7 +164,6 @@ py_library(
         "//haku/console/grants/kubernetes:service",
         "//haku/console/identity:enrollment",
         "//haku/console/mcp:execution",
-        "//haku/console/mcp/tools:kubernetes",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],
