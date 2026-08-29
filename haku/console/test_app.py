@@ -20,6 +20,13 @@ def test_healthz(client) -> None:
     assert client.get("/healthz").json() == {"status": "ok"}
 
 
+def test_session_addressed_prompt_route_is_retired(client) -> None:
+    response = client.post(
+        "/api/sessions/00000000-0000-4000-8000-000000000001/messages", json={"text": "use the conversation route"}
+    )
+    assert response.status_code == 404
+
+
 def test_metrics_served_without_operator_session(client) -> None:
     response = client.get("/metrics")
     assert response.status_code == 200

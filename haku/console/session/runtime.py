@@ -18,8 +18,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 
+from haku.console.chat_models import ItemType
 from haku.console.conversation.history import ConversationHistory
-from haku.console.conversation.item_vocabulary import ItemType
 from haku.console.conversation.journal_consumer import JournalConsumer, JournalViolationError
 from haku.console.conversation.prompt_origin import SPA_ORIGIN, PromptOrigin
 from haku.console.harnesses.kind import HarnessKind
@@ -869,33 +869,14 @@ async def abort_session(session_id: UUID, actor: OperatorActorDep, service: Sess
     return {"status": "aborted"}
 
 
-@router.post("/api/sessions/{session_id}/messages")
-async def send_message(
-    session_id: UUID, body: SessionPromptRequest, actor: OperatorActorDep, service: SessionServiceDep
-) -> PromptAccepted:
-    try:
-        # Named rather than left to the default: the console's own surface is a channel like any
-        # other, and a prompt typed here is one every attached room is owed a copy of.
-        return PromptAccepted(
-            prompt_id=await service.enqueue_prompt(actor.operator_id, session_id, body.text, SPA_ORIGIN)
-        )
-    except KeyError as error:
-        raise HTTPException(status_code=404, detail="session not found") from error
-    except PromptRefusedError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
-    except Exception as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
-
-
 @router.post("/api/conversations/{conversation_id}/messages", status_code=202)
 async def send_conversation_message(
     conversation_id: UUID, body: SessionPromptRequest, actor: OperatorActorDep, service: SessionServiceDep
 ) -> PromptAccepted:
     """Offer a prompt to a conversation even while no session is serving it.
 
-    The session-addressed route remains during rollout for older bundles. New surfaces use this
-    route, and the neutral conversation-runtime reconciler creates or reuses the session before the
-    existing sandbox allocator provisions its container.
+    The neutral conversation-runtime reconciler creates or reuses the session before the existing
+    sandbox allocator provisions its container.
     """
     try:
         return PromptAccepted(
