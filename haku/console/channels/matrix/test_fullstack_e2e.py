@@ -31,9 +31,12 @@ import pytest_bazel
 from nio import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from haku.console.channels.matrix.config import MatrixLaunchConfig
 from haku.console.channels.matrix.testing.console_deployment import Deployment
 from haku.console.channels.matrix.testing.operator_room import OperatorRoom, sign_in
 from haku.console.channels.matrix.testing.synapse_container import Synapse, run_synapse
+from haku.console.harnesses.kind import HarnessKind
+from haku.console.session.conftest import TEST_ACCESS_PROFILE_ID, TEST_AGENT_ID
 from haku.console.session.store import Store
 
 PASSWORD = "not-a-secret"
@@ -76,6 +79,8 @@ async def deployment(
         database_url=migrated_db_url,
         sessions=migrated_sessions,
         store=session_store,
+        matrix_launch=MatrixLaunchConfig(default_agent_id=TEST_AGENT_ID, default_harness_kind=HarnessKind.CLAUDE_CODE),
+        matrix_access_profile_id=TEST_ACCESS_PROFILE_ID,
         state=tmp_path,
     )
     try:
