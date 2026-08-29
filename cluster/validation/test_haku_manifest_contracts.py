@@ -34,7 +34,7 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     # Claude Code's inference runs against the in-cluster LiteLLM gateway (-> CLIProxyAPI), never
     # api.anthropic.com. Tie the runner's gateway origin and auth placeholder to the fence entries
     # that admit and substitute them — the whole of #4670 — rather than restating the model roster
-    # (the model + haiku_model slugs are pinned against the served claude/ant-messages/* lane in
+    # (the model + haiku_model slugs are pinned against the served anthropic-max20/ant-messages/* lane in
     # cluster/k8s/litellm/app/test_litellm_config.py).
     implementation = runtime["implementation"]
     assert implementation["kind"] == "claude_code"

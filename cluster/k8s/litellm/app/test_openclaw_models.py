@@ -96,8 +96,9 @@ def test_current_anthropic_roster_matches_haku_openclaw() -> None:
 
     litellm_models = _litellm_models()
     for model_id in ANTHROPIC_MODELS:
-        assert litellm_models[model_id] == {
-            "model_name": model_id,
+        model_name = exposed_name(Provider.ANTHROPIC_API, ApiShape.ANT_MESSAGES, model_id)
+        assert litellm_models[model_name] == {
+            "model_name": model_name,
             "litellm_params": {"model": f"anthropic/{model_id}", "api_key": "os.environ/ANTHROPIC_API_KEY"},
             "model_info": {"mode": "chat", "supports_function_calling": True},
         }

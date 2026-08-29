@@ -7,9 +7,10 @@ upstream model:
 - `chatgpt/ant-messages/*` / `chatgpt/oai-responses/*` — ChatGPT/Codex subscription via
   CLIProxyAPI, on the Anthropic Messages wire (Claude Code clients) and the OpenAI
   Responses wire (Codex clients)
-- `claude/ant-messages/*` — Claude Code subscription via CLIProxyAPI's Claude OAuth
-  session, on the Anthropic Messages wire (a different upstream session on the same pod
-  as `chatgpt/*`, distinct from the direct-API `claude-*` entries)
+- `anthropic-max20/ant-messages/*` — Claude Code subscription via CLIProxyAPI's Claude
+  OAuth session, on the Anthropic Messages wire (a different upstream session on the same
+  pod as `chatgpt/*`, distinct from the direct-API `anthropic-api/ant-messages/*` entries)
+- `anthropic-api/ant-messages/*` — direct Anthropic API on the Anthropic Messages wire
 - `tana/ant-messages/*` — Tana account via tana-litellm, an Anthropic Messages
   passthrough
 - `google/oai-chat/*` / `google/oai-embeddings/*` — Google AI key (Gemini)
@@ -34,11 +35,9 @@ the request body (Claude Code, Codex, OpenClaw), and on this stack a model name 
 rides in a URL path or a Kubernetes resource name.
 
 The provider segment rides in front, not behind, because key allowlists match
-`model_name` prefixes (the `claude-*` wildcard in tf/gitops/litellm-keys/main.tf): a
-suffix-shaped Anthropic name would begin with `claude-` and silently join every
-`claude-*` allowlist. Deliberately not renamed: the direct-API `claude-*` entries
-(Claude Code names those slugs itself, and the client keys' `claude-*` wildcard admits
-them), the groq entries, and the self-hosted Ollama entries, whose
+`model_name` prefixes (the `anthropic-api/ant-messages/*` wildcard in
+tf/gitops/litellm-keys/main.tf). Deliberately not renamed: the raw upstream model slugs
+inside the exposed names, the groq entries, and the self-hosted Ollama entries, whose
 `-openai-chat`/`-ollama-native` wire suffixes have no account to name.
 """
 
@@ -49,7 +48,8 @@ class Provider(StrEnum):
     """First scheme segment: the upstream account/provider an entry spends from."""
 
     CHATGPT = "chatgpt"
-    CLAUDE = "claude"
+    ANTHROPIC_API = "anthropic-api"
+    ANTHROPIC_MAX20 = "anthropic-max20"
     TANA = "tana"
     GOOGLE = "google"
 
@@ -115,7 +115,7 @@ TANA_MODELS: list[tuple[str, str]] = [
 
 # Current-generation Anthropic roster, verified against the authenticated /v1/models
 # endpoint. Mirrored into Haku OpenClaw and Terraform, and reused as the exposed set for
-# the cliproxyapi Claude-subscription `claude/ant-messages/*` route: cliproxyapi's Claude
+# the cliproxyapi Claude-subscription `anthropic-max20/ant-messages/*` route: cliproxyapi's Claude
 # OAuth session serves older generations too, but we expose only this current group — the
 # subscription and the direct API serve the same current models, and sharing one list
 # keeps them in sync ("newest group only", as with the Gemini roster).

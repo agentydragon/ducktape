@@ -68,16 +68,16 @@ harnesses:
     implementation:
       kind: claude_code
       # Claude Code -> in-cluster LiteLLM (Anthropic Messages surface) -> CLIProxyAPI, running the
-      # agent on the flat-rate Claude subscription models (claude/ant-messages/*, #5086) served by
+      # agent on the flat-rate Claude subscription models (anthropic-max20/ant-messages/*, #5086) served by
       # CLIProxyAPI's Claude OAuth session — not the ChatGPT/Codex lane the codex runner uses. Never
       # api.anthropic.com — the subscription OAuth stays in CLIProxyAPI. ANTHROPIC_BASE_URL is the
       # internal LiteLLM host, reached through the fence (see the no_proxy + claude-litellm credential
       # above/below). sonnet-5 is Haku's standing primary (haku/base/agent_shared.yaml); haiku is the
       # cheap background tier. The haku-console-claude key allowlist (tf/gitops/litellm-keys) admits
-      # exactly this claude/ant-messages/* lane.
+      # exactly this anthropic-max20/ant-messages/* lane.
       api_base_url: http://litellm.litellm.svc.cluster.local:4000
-      model: claude/ant-messages/claude-sonnet-5
-      haiku_model: claude/ant-messages/claude-haiku-4-5-20251001
+      model: anthropic-max20/ant-messages/claude-sonnet-5
+      haiku_model: anthropic-max20/ant-messages/claude-haiku-4-5-20251001
       # Inert placeholder the fence swaps for the real haku-console-claude LiteLLM virtual key on the
       # LiteLLM origin only (the `claude-litellm` credential below); the sandbox never holds the key.
       auth_token_placeholder: proxy-litellm-haku-console-claude-placeholder
@@ -538,7 +538,7 @@ egress_decide:
           host: codeload.github.com
           port: 443
     # The Console-launched Claude runner's LiteLLM virtual key: Claude Code's inference reaches the
-    # in-cluster LiteLLM gateway (-> CLIProxyAPI, claude/ant-messages/* Claude-subscription models)
+    # in-cluster LiteLLM gateway (-> CLIProxyAPI, anthropic-max20/ant-messages/* Claude-subscription models)
     # through the fence, which swaps this placeholder for the real haku-console-claude key on the
     # LiteLLM origin only. The runner holds only the inert placeholder. Value reflected from the
     # litellm-keys-tf Terraform mint (deployment.yaml env). Origin is plain http:4000, internal.

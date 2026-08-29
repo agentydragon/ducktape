@@ -40,10 +40,9 @@ spec:
                 secretKeyRef:
                   name: workers-litellm-master-key
                   key: api-key
-            # Classifier calls go through the main LiteLLM with a claude-*-only
-            # virtual key (tf/gitops/litellm-keys, reflected from the litellm
-            # namespace) — Langfuse logging, budget, and kill switch for free;
-            # this service holds no raw provider credential.
+            # Classifier calls go through the configured Anthropic-compatible backend with a
+            # scoped virtual key — logging, budget, and kill switch are provided by that
+            # backend; this service holds no raw provider credential.
             - name: ANTHROPIC_BASE_URL
               value: http://litellm.litellm.svc.cluster.local:4000
             - name: ANTHROPIC_API_KEY

@@ -276,7 +276,7 @@ class ClaudeCodeImplementationConfig(BaseModel):
     # (a LiteLLM virtual key) + ANTHROPIC_MODEL, the same gateway pattern as the codex-claude/
     # tana-claude wrappers (nix/home/claude_code/gateway.nix). The Console runner spends the flat-rate
     # Claude subscription via CLIProxyAPI's Claude OAuth session, so `model`/`haiku_model` are
-    # `claude/ant-messages/*` slugs (#5086); the value is deploy config, not fixed here.
+    # `anthropic-max20/ant-messages/*` slugs (#5086); the value is deploy config, not fixed here.
     api_base_url: UncredentialedHttpUrl
     model: str = Field(min_length=1)
     haiku_model: str = Field(min_length=1)

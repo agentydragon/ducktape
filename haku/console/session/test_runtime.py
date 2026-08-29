@@ -257,8 +257,8 @@ def test_claude_environment_contains_placeholder_proxy_and_ca_only() -> None:
     assert config.environment() == {
         "ANTHROPIC_BASE_URL": "http://litellm.test:4000",
         "ANTHROPIC_AUTH_TOKEN": "not-a-secret",
-        "ANTHROPIC_MODEL": "claude/ant-messages/claude-sonnet-5",
-        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude/ant-messages/claude-haiku-4-5-20251001",
+        "ANTHROPIC_MODEL": "anthropic-max20/ant-messages/claude-sonnet-5",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "anthropic-max20/ant-messages/claude-haiku-4-5-20251001",
         "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1",
         "HTTP_PROXY": "http://proxy.test:8180",
         "HTTPS_PROXY": "http://proxy.test:8180",
@@ -361,8 +361,8 @@ def test_claude_registration_uses_the_shared_discriminated_model() -> None:
     assert wire["implementation"] == {
         "kind": "claude_code",
         "api_base_url": "http://litellm.test:4000",
-        "model": "claude/ant-messages/claude-sonnet-5",
-        "haiku_model": "claude/ant-messages/claude-haiku-4-5-20251001",
+        "model": "anthropic-max20/ant-messages/claude-sonnet-5",
+        "haiku_model": "anthropic-max20/ant-messages/claude-haiku-4-5-20251001",
         "auth_token_placeholder": "not-a-secret",
         "gateway_discovery": True,
     }

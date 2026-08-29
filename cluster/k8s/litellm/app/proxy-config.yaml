@@ -254,7 +254,7 @@ model_list:
     model_info:
       mode: responses
       supports_function_calling: true
-  - model_name: claude/ant-messages/claude-opus-5
+  - model_name: anthropic-max20/ant-messages/claude-opus-5
     litellm_params:
       model: anthropic/claude-opus-5
       api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
@@ -262,7 +262,7 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
-  - model_name: claude/ant-messages/claude-sonnet-5
+  - model_name: anthropic-max20/ant-messages/claude-sonnet-5
     litellm_params:
       model: anthropic/claude-sonnet-5
       api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
@@ -270,7 +270,7 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
-  - model_name: claude/ant-messages/claude-fable-5
+  - model_name: anthropic-max20/ant-messages/claude-fable-5
     litellm_params:
       model: anthropic/claude-fable-5
       api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
@@ -278,7 +278,7 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
-  - model_name: claude/ant-messages/claude-haiku-4-5-20251001
+  - model_name: anthropic-max20/ant-messages/claude-haiku-4-5-20251001
     litellm_params:
       model: anthropic/claude-haiku-4-5-20251001
       api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
@@ -286,28 +286,28 @@ model_list:
     model_info:
       mode: chat
       supports_function_calling: true
-  - model_name: claude-opus-5
+  - model_name: anthropic-api/ant-messages/claude-opus-5
     litellm_params:
       model: anthropic/claude-opus-5
       api_key: os.environ/ANTHROPIC_API_KEY
     model_info:
       mode: chat
       supports_function_calling: true
-  - model_name: claude-sonnet-5
+  - model_name: anthropic-api/ant-messages/claude-sonnet-5
     litellm_params:
       model: anthropic/claude-sonnet-5
       api_key: os.environ/ANTHROPIC_API_KEY
     model_info:
       mode: chat
       supports_function_calling: true
-  - model_name: claude-fable-5
+  - model_name: anthropic-api/ant-messages/claude-fable-5
     litellm_params:
       model: anthropic/claude-fable-5
       api_key: os.environ/ANTHROPIC_API_KEY
     model_info:
       mode: chat
       supports_function_calling: true
-  - model_name: claude-haiku-4-5-20251001
+  - model_name: anthropic-api/ant-messages/claude-haiku-4-5-20251001
     litellm_params:
       model: anthropic/claude-haiku-4-5-20251001
       api_key: os.environ/ANTHROPIC_API_KEY
