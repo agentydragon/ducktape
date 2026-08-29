@@ -143,6 +143,14 @@ the `agent-workspace` image (which bakes both CLIs) and reflect a worker LiteLLM
 namespace. That is the "easier way that doesn't require a haku-console build-out" — reuse the
 existing sandbox tool surface with a worker-flavored template.
 
+**Update (2026-08-29):** two follow-up digs (cluster wiring; codex source at `rust-v0.150.1`) worked
+out how to actually run the fleet as durable pods. Headlines: the `sandbox__*` pool is one of **three**
+sandbox systems; its `exec_sandbox` is **one-shot, `stdin=False`, 5-min-capped** (fine for `codex exec`,
+useless for a live `codex app-server` stdio channel); `codex mcp-server` is a **dead end** (stdio-only,
+deprecated, in-memory-only reply); and the cluster **already runs** a durable `codex app-server` pod as
+the `haku/runner` codex runtime. Full transport matrix, egress/placement facts, and the two-tier plan:
+`codex_orchestration_runbook.md` § "Running the fleet as cluster pods".
+
 ## Real end-to-end drive (real key via hostexec, 2026-08-28)
 
 The operator approved a `hostexec__bash` on `wyrm2` (`run_as agentydragon`) that read the

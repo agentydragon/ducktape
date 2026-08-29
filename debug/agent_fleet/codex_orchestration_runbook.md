@@ -69,13 +69,16 @@ broker — **least durable**; keep it inside one active window or move it to a p
 
 1. **`codex exec` / `codex exec resume`** — turn-based, synchronous, has session memory. The default.
    Simple and robust; the orchestrator drives every turn. Cannot steer or abort mid-turn.
-2. **`codex app-server`** (stdio JSON-RPC) — one long-lived process serving **multiple threads**, with
-   **`turn/steer`** (inject mid-turn), **`turn/interrupt`** (abort), and **server→client approval
-   requests**. This is the only interface with true mid-turn back-and-forth. Heaviest to drive.
-3. **`codex mcp-server`** — Codex exposed as MCP tools (`codex`, `codex_reply`). Request/response,
-   synchronous to turn completion; multi-turn via `codex_reply` on a thread. No mid-turn steer.
-   **Not driven live in this pave** — shape is from `--help` + the app-server schema; treat as
-   unverified until run.
+2. **`codex app-server`** — one long-lived process serving **multiple threads**, with **`turn/steer`**
+   (inject mid-turn), **`turn/interrupt`** (abort), and **server→client approval requests**. The only
+   interface with true mid-turn back-and-forth; heaviest to drive. Transport is `--listen <url>`:
+   `stdio://` (what we drove, and what `haku/runner` uses) **or a network websocket URL** — the latter
+   is the one that survives a pod boundary (§ Running the fleet as cluster pods).
+3. **`codex mcp-server`** — Codex exposed as MCP tools (`codex`, `codex-reply`). **A dead end for a
+   durable fleet**, read from source at `rust-v0.150.1` (not run): it is **stdio-only, deprecated at
+   0.150.1**, and its `codex-reply` resolves the thread from an **in-memory map** — a server restart
+   loses the session even though the rollout is on disk. Use `app-server` (mid-turn) or `exec`/`resume`
+   (durable) instead. Details + tool schemas in § Running the fleet as cluster pods.
 
 ## Recipe A — turn-based back-and-forth (`scripts/codex_turn.sh`)
 
@@ -196,9 +199,70 @@ verified against 0.150.1:
   replies by `resume`-ing the worker or (app-server) `turn/steer`. The mid-turn version of this is
   just `turn/steer` — already demonstrated.
 
+## Running the fleet as cluster pods (design, dug 2026-08-29)
+
+The container-liveness section's durable answer is "run workers as pods." Two investigations (cluster
+wiring; codex source at tag `rust-v0.150.1`) pin down what that takes. **Read from source / manifests,
+not run live** — treat as design, not a paved procedure.
+
+### Which codex interface survives a pod boundary
+
+| Interface               | Transport                          | Mid-turn steer                          | Durable across a process restart                                 | Reachable via today's tools                         |
+| ----------------------- | ---------------------------------- | --------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------- |
+| `codex exec` / `resume` | one-shot                           | no                                      | **yes** — resumes from `CODEX_HOME` on disk (Recipe A, verified) | **yes** — one-shot fits the MCP `exec_sandbox` tool |
+| `codex app-server`      | websocket, or `stdio://`           | **yes** (`turn/steer`,`turn/interrupt`) | `thread/resume` exists (disk-resume not re-verified)             | needs a network path in/out of the pod              |
+| `codex mcp-server`      | **stdio only, deprecated 0.150.1** | no                                      | **no** — `codex-reply` resolves the thread from an in-memory map | dead end                                            |
+
+codex source (`rust-v0.150.1`): mcp-server is stdio-only and prints a deprecation warning
+(`codex-rs/cli/src/main.rs`, `mcp-server/src/lib.rs`); the network `--listen` transport lives in the
+separate `app-server` crate; `codex-reply`'s in-memory-only resolve is
+`mcp-server/src/message_processor.rs` → `core/src/thread_manager.rs`. Its two tools: **`codex`** (`prompt`
+required; optional `cwd`, `model`, `approval-policy` ∈ {`on-request`,`never`}, `sandbox`, and a generic
+`config` map — reasoning effort rides there as `config:{model_reasoning_effort}`, no dedicated field) and
+**`codex-reply`** (continue by `threadId` + `prompt`). **Net: mcp-server is out; `app-server` is the
+live/mid-turn path; `exec`/`resume` is the genuinely-durable turn-based path.**
+
+### The cluster already runs codex app-server in a pod
+
+`haku/runner`'s codex harness (`haku-runtime-sandbox` ns) spawns `codex app-server --listen stdio://`,
+holds the NDJSON stdio channel, and bridges each frame outbound over a WebSocket to haku-console with
+replay across reconnects (`haku/runner/{harness,transport,backend}.py`). `approvalPolicy:never`,
+`danger-full-access`, warm pool `replicas:0` (on-demand). So the durable-stdio-app-server-in-a-pod pattern
+is **built** — but it is a Console chat runtime, not exposed to an external agent. Tier-2 below is "expose
+the existing runtime," not "build it."
+
+### Three sandbox systems — don't conflate them
+
+- **`sandbox__*` MCP tools** (what a web session reaches via haku-console) → `haku-sandbox` ns, image
+  `haku-sandbox-image` (**no codex/node/claude**). `exec_sandbox` is **one-shot `pods/exec` with
+  `stdin=False`, buffered output, 5-min / 100 KB cap** (`haku/sandbox/kubernetes_client.py`) — it cannot
+  hold a live stdio JSON-RPC channel, and a web session has **no** direct `kubectl exec`/attach RBAC. Fine
+  for one-shot `codex exec`; useless for `app-server` stdio.
+- **`haku/runner` runtimes** (`codex_app_server`) → the pod pattern above.
+- **legacy `agent-workspaces`** → image `agent-workspace` bakes claude+codex+node
+  (`cluster/k8s/agents/agent-sandbox/workspace-image/Dockerfile`), region-pinned OVH.
+
+### Egress + placement — already the right posture
+
+Sandbox egress is **namespace-fixed** by a Cilium policy: reaches **in-cluster LiteLLM**
+(`litellm.litellm.svc:4000`) and GitHub through a fenced proxy, **blocked from `api.openai.com`** (workers
+hit LiteLLM in-cluster; no public OpenAI egress; a worker cannot widen it). Pods schedule on any always-on
+node (roaming laptops excluded by taint); only the legacy `agent-workspace` template pins OVH. Claim
+lifetime is a **renew-on-exec deadline** (8h initial, +2h per exec) plus a 7-day Kyverno backstop — no
+idle-timer field, so a claim with no exec activity is reaped.
+
+### Two-tier plan
+
+1. **Turn-based, durable, ~now:** one-shot `codex exec`/`resume` in a codex-image sandbox via
+   `exec_sandbox`. Blockers, both in README § Next steps: point a template the MCP pool serves at a codex
+   image, and reflect a worker LiteLLM key. Costs: 5-min/100 KB per exec, no live stream, no mid-turn.
+2. **Live / mid-turn:** drive `codex app-server` — a network `--listen` reachable via ingress, or expose
+   the existing `haku/runner` runtime to external agents via a haku-console tool. Not mcp-server.
+
 ## Not yet paved / limitations
 
-- `codex mcp-server` shape is documented but not run live.
+- `codex mcp-server` and the two pod-deployment tiers are characterized from source / manifests
+  (§ Running the fleet as cluster pods), not run live.
 - Concurrent (interleaved) turns across app-server threads were not stress-tested; threads were
   driven one at a time.
 - The file-mailbox worker-initiated loop is sketched, not executed end-to-end (app-server `steer`
