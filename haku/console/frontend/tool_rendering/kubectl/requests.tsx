@@ -12,9 +12,16 @@ import { CodeBlock } from "../../code_block";
 import { Field } from "../../field";
 import { definePreview, type ToolPreview } from "../entry";
 import { PreviewText, type PreviewProps } from "../vocabulary";
-import { zPodsDeleteArgs, zPodsLogArgs, zResourcesCreateOrUpdateArgs, zResourcesDeleteArgs } from "./schemas";
+import {
+  zPodsDeleteArgs,
+  zPodsLogArgs,
+  zResourcesCreateOrUpdateArgs,
+  zResourcesDeleteArgs,
+  zResourcesGetArgs,
+} from "./schemas";
 
 type ResourcesCreateOrUpdateArgs = z.infer<typeof zResourcesCreateOrUpdateArgs>;
+type ResourcesGetArgs = z.infer<typeof zResourcesGetArgs>;
 type ResourcesDeleteArgs = z.infer<typeof zResourcesDeleteArgs>;
 type PodsDeleteArgs = z.infer<typeof zPodsDeleteArgs>;
 type PodsLogArgs = z.infer<typeof zPodsLogArgs>;
@@ -30,50 +37,59 @@ function ResourcesApplyPreview({ args, variant }: PreviewProps<ResourcesCreateOr
   );
 }
 
-function DeleteTargetPreview({
+function ResourceTargetPreview({
+  apiVersion,
   kind,
   name,
   namespace,
-  gracePeriodSeconds,
 }: {
+  apiVersion: string;
   kind: string;
   name: string;
   namespace: string | undefined;
-  gracePeriodSeconds: number | undefined;
 }) {
   return (
-    <Stack gap="xs">
-      <Group gap={4} className="haku-shell-mono">
-        <PreviewText span fw={600}>
-          {kind}
+    <Group gap={4} className="haku-shell-mono">
+      <PreviewText span c="dimmed">
+        {apiVersion}
+      </PreviewText>
+      <PreviewText span fw={600}>
+        {kind}
+      </PreviewText>
+      <PreviewText span>{name}</PreviewText>
+      {namespace && (
+        <PreviewText span c="dimmed">
+          in {namespace}
         </PreviewText>
-        <PreviewText span>{name}</PreviewText>
-        {namespace && (
-          <PreviewText span c="dimmed">
-            in {namespace}
-          </PreviewText>
-        )}
-      </Group>
-      {gracePeriodSeconds === 0 && (
+      )}
+    </Group>
+  );
+}
+
+function ResourcesGetPreview({ args }: PreviewProps<ResourcesGetArgs>) {
+  return (
+    <ResourceTargetPreview apiVersion={args.apiVersion} kind={args.kind} name={args.name} namespace={args.namespace} />
+  );
+}
+
+function ResourcesDeletePreview({ args }: PreviewProps<ResourcesDeleteArgs>) {
+  return (
+    <Stack gap="xs">
+      <ResourceTargetPreview
+        apiVersion={args.apiVersion}
+        kind={args.kind}
+        name={args.name}
+        namespace={args.namespace}
+      />
+      {args.gracePeriodSeconds === 0 && (
         <PreviewText c="red">Immediate deletion (grace period 0) — no termination grace.</PreviewText>
       )}
     </Stack>
   );
 }
 
-function ResourcesDeletePreview({ args }: PreviewProps<ResourcesDeleteArgs>) {
-  return (
-    <DeleteTargetPreview
-      kind={args.kind}
-      name={args.name}
-      namespace={args.namespace}
-      gracePeriodSeconds={args.gracePeriodSeconds}
-    />
-  );
-}
-
 function PodsDeletePreview({ args }: PreviewProps<PodsDeleteArgs>) {
-  return <DeleteTargetPreview kind="Pod" name={args.name} namespace={args.namespace} gracePeriodSeconds={undefined} />;
+  return <ResourceTargetPreview apiVersion="v1" kind="Pod" name={args.name} namespace={args.namespace} />;
 }
 
 function PodsLogPreview({ args }: PreviewProps<PodsLogArgs>) {
@@ -91,15 +107,16 @@ function PodsLogPreview({ args }: PreviewProps<PodsLogArgs>) {
   );
 }
 
-/** Per-tool preview widgets for the `kubectl-passthrough-mcp` server's highest-stakes tools
- * (apply and delete). */
+/** Per-tool preview widgets for the `kubectl-passthrough-mcp` server's highest-stakes tools. */
 export const kubectlPreviews: {
   resources_create_or_update: ToolPreview<typeof zResourcesCreateOrUpdateArgs>;
+  resources_get: ToolPreview<typeof zResourcesGetArgs>;
   resources_delete: ToolPreview<typeof zResourcesDeleteArgs>;
   pods_delete: ToolPreview<typeof zPodsDeleteArgs>;
   pods_log: ToolPreview<typeof zPodsLogArgs>;
 } = {
   resources_create_or_update: definePreview(zResourcesCreateOrUpdateArgs, ResourcesApplyPreview),
+  resources_get: definePreview(zResourcesGetArgs, ResourcesGetPreview),
   resources_delete: definePreview(zResourcesDeleteArgs, ResourcesDeletePreview),
   pods_delete: definePreview(zPodsDeleteArgs, PodsDeletePreview),
   pods_log: definePreview(zPodsLogArgs, PodsLogPreview),

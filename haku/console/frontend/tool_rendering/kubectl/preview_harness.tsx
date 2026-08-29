@@ -24,6 +24,12 @@ const PREVIEW_FIXTURES = [
     args: { apiVersion: "v1", kind: "Pod", name: "worker-6f9c2", namespace: "haku-sandbox", gracePeriodSeconds: 0 },
   },
   {
+    title: "Inspect the worker deployment",
+    serverId: "kubectl-passthrough-mcp",
+    toolName: "resources_get",
+    args: { apiVersion: "apps/v1", kind: "Deployment", name: "worker", namespace: "haku-sandbox" },
+  },
+  {
     title: "Restart the failed worker pod",
     serverId: "kubectl-passthrough-mcp",
     toolName: "pods_delete",

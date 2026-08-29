@@ -12,6 +12,20 @@ export const zResourcesCreateOrUpdateArgs: ReturnType<typeof z.object<{ resource
   resource: z.string(),
 });
 
+export const zResourcesGetArgs: ReturnType<
+  typeof z.object<{
+    apiVersion: z.ZodString;
+    kind: z.ZodString;
+    name: z.ZodString;
+    namespace: z.ZodOptional<z.ZodString>;
+  }>
+> = z.object({
+  apiVersion: z.string(),
+  kind: z.string(),
+  name: z.string(),
+  namespace: z.string().optional(),
+});
+
 export const zResourcesDeleteArgs: ReturnType<
   typeof z.object<{
     apiVersion: z.ZodString;

@@ -31,6 +31,14 @@ describe("toolActionDescription", () => {
         name: "old",
       })
     ).toEqual({ text: "kubectl: Delete ConfigMap", destructive: true });
+    expect(
+      toolActionDescription(KUBECTL_SERVER_ID, "resources_get", {
+        apiVersion: "apps/v1",
+        kind: "Deployment",
+        name: "api",
+        namespace: "prod",
+      })
+    ).toEqual({ text: "kubectl: Get Deployment" });
   });
 
   it("flags destructive calls, which a notification must say in words", () => {

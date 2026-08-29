@@ -2,10 +2,13 @@
 // can bundle them (see ../action_entry.ts).
 
 import { type ActionEntry, fixed, fromArgs } from "../action_entry";
-import { zResourcesDeleteArgs } from "./schemas";
+import { zResourcesDeleteArgs, zResourcesGetArgs } from "./schemas";
 
 export const kubectlActions: Record<string, ActionEntry> = {
   resources_create_or_update: fixed("kubectl: Apply resource"),
+  resources_get: fromArgs(zResourcesGetArgs, (a) => ({
+    text: `kubectl: Get ${a.kind}`,
+  })),
   resources_delete: fromArgs(zResourcesDeleteArgs, (a) => ({
     text: `kubectl: Delete ${a.kind}`,
     destructive: true,
