@@ -707,6 +707,7 @@ ts_library(
     deps = [
         ":approval_state",
         ":client",
+        ":code_block",
         ":grant_principal",
         ":link",
         ":routing",
