@@ -1,4 +1,4 @@
-import { Badge, Box, Button, Code, Group, Loader, Paper, Select, Stack, Text, Title } from "@mantine/core";
+import { ActionIcon, Badge, Box, Button, Code, Group, Loader, Paper, Select, Stack, Text } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -31,6 +31,7 @@ import { ToolCallView } from "./tool_call";
 import { ConversationComposer } from "./conversation_composer";
 import { Markdown } from "./markdown";
 import { SandboxProvisioning } from "./sandbox_provisioning";
+import { NewConversationIcon } from "../icons";
 
 /** A session that has ended takes no more prompts, so it gets no composer. */
 const SETTLED = new Set<Session["status"]>(["closing", "closed", "failed"]);
@@ -62,19 +63,15 @@ function timestamp(value: string): string {
 function Attachments({ attachments }: { attachments: ConversationSummary["attachments"] }) {
   if (attachments.length === 0) {
     return (
-      <Text size="sm" c="dimmed">
-        No channel attached
+      <Text size="sm" c="dimmed" title="No channel is attached to this conversation.">
+        No channel
       </Text>
     );
   }
   return (
-    <Group gap={6} wrap="wrap">
-      {attachments.map((attachment) => (
-        <Badge key={`${attachment.surface}:${attachment.address}`} size="sm" variant="outline">
-          {attachment.surface}: {attachment.address}
-        </Badge>
-      ))}
-    </Group>
+    <Text size="xs" c="dimmed">
+      {attachments.map((attachment) => `${attachment.surface}: ${attachment.address}`).join(" · ")}
+    </Text>
   );
 }
 
@@ -283,12 +280,6 @@ function ConversationListPage() {
     <section className="haku-page" aria-label="Conversations">
       <header className="haku-page-header">
         <div className="haku-page-bar haku-conversation-list-header">
-          <div>
-            <Title order={1}>Conversations</Title>
-            <Text c="dimmed" size="sm">
-              Every thread you have with Haku, wherever it is being held.
-            </Text>
-          </div>
           <Group gap="xs" wrap="nowrap" className="haku-conversation-launcher">
             {shouldShowLaunchSelector(launchOptions) && (
               <Select
@@ -304,18 +295,22 @@ function ConversationListPage() {
                 className="haku-conversation-launcher-select"
               />
             )}
-            <Button
+            <ActionIcon
+              size="lg"
+              variant="light"
+              aria-label="New conversation"
+              title="New conversation"
               onClick={() => void start()}
               loading={starting}
               disabled={!launchCatalogLoaded || selectedLaunch === null}
             >
-              New conversation
-            </Button>
+              <NewConversationIcon />
+            </ActionIcon>
           </Group>
         </div>
       </header>
       <div className="haku-page-scroll">
-        <div className="haku-page-list">
+        <div className="haku-page-list haku-conversation-list">
           {error && (
             <Paper withBorder p="sm">
               <Text c="red" size="sm">
@@ -361,17 +356,18 @@ function ConversationListPage() {
                           failed
                         </Badge>
                       ) : (
-                        <Badge size="sm" color="gray" variant="light">
-                          no live session
+                        <Badge size="sm" color="gray" variant="light" title="No live session is attached.">
+                          idle
                         </Badge>
                       )}
                     </Group>
                     <Text size="xs" c="dimmed" mt={4}>
-                      {conversation.item_count} items · active {timestamp(conversation.last_activity_at)}
+                      {conversation.item_count} {conversation.item_count === 1 ? "item" : "items"} · active{" "}
+                      {timestamp(conversation.last_activity_at)}
                     </Text>
                   </Box>
-                  <Text size="sm" c="dimmed" className="haku-conversation-open">
-                    Open →
+                  <Text size="sm" c="dimmed" className="haku-conversation-open" aria-hidden="true">
+                    →
                   </Text>
                 </Group>
               </button>

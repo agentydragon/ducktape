@@ -1,4 +1,4 @@
-import { Badge, Button, Group, Loader, Select, Stack, Tabs, Text } from "@mantine/core";
+import { Badge, Button, Group, Loader, Select, Stack, Table, Tabs, Text } from "@mantine/core";
 import { useCallback, useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 
 import { shortDate } from "./approval_state";
@@ -74,14 +74,26 @@ function VersionLink({ version }: { version: DeploymentVersion }) {
   );
 }
 
-function SectionHeading({ title, description }: { title: string; description: string }) {
+function SectionHeading({ title, description }: { title: string; description?: string }) {
   return (
     <div>
       <Text fw={600}>{title}</Text>
-      <Text size="xs" c="dimmed" mt={4}>
-        {description}
-      </Text>
+      {description && (
+        <Text size="xs" c="dimmed" mt={4}>
+          {description}
+        </Text>
+      )}
     </div>
+  );
+}
+
+function DenseTable({ label, children }: { label: string; children: ReactNode }): JSX.Element {
+  return (
+    <Table.ScrollContainer minWidth={0} className="haku-dense-table-wrap">
+      <Table className="haku-dense-table" aria-label={label} highlightOnHover>
+        {children}
+      </Table>
+    </Table.ScrollContainer>
   );
 }
 
@@ -119,17 +131,17 @@ function ResourcePanel<T>({
         <Loader aria-label={`Loading ${label}`} />
       </Group>
     ) : emptyMessage && (isEmpty ? isEmpty(data) : Array.isArray(data) && data.length === 0) ? (
-      <section className="haku-shell-card">
+      <div className="haku-empty-state">
         <Text size="sm" c="dimmed">
           {emptyMessage}
         </Text>
-      </section>
+      </div>
     ) : (
       children(data)
     );
   return title ? (
     <Stack gap="xs" className="haku-page-list">
-      <SectionHeading title={title} description={description ?? ""} />
+      <SectionHeading title={title} description={description} />
       {errorNotice}
       {body}
     </Stack>
@@ -166,12 +178,11 @@ function refreshFailureSummary({
 }
 
 function connectionSummary(server: McpServerConnection): string {
-  const backend = server.backend.kind === "remote_mcp" ? "Remote MCP" : "In-process";
   const connection = server.connection;
   if (connection === null) {
     return server.backend.kind === "remote_mcp" && server.backend.auth.kind === "static_bearer"
-      ? `${backend} · Console-managed credential`
-      : `${backend} · no operator-linked account`;
+      ? "Console-managed credential"
+      : "No operator-linked account";
   }
   if (isMcpOperatorAuthStatus(connection)) {
     const linkedUntil = shortDate(
@@ -179,27 +190,27 @@ function connectionSummary(server: McpServerConnection): string {
     );
     switch (connection.state.status) {
       case "unconnected":
-        return `${backend} · Not linked for ${connection.username}`;
+        return `Not linked · ${connection.username}`;
       case "degraded":
-        return `${backend} · linked for ${connection.username} · refresh failing${linkedUntil ? ` · token until ${linkedUntil}` : ""}`;
+        return `Linked · ${connection.username} · refresh failing${linkedUntil ? ` · token until ${linkedUntil}` : ""}`;
       case "connected":
-        return `${backend} · linked for ${connection.username}${linkedUntil ? ` until ${linkedUntil}` : ""}`;
+        return `Linked · ${connection.username}${linkedUntil ? ` until ${linkedUntil}` : ""}`;
     }
   }
   const until = shortDate(typeof connection.token_expires_at === "string" ? connection.token_expires_at : null);
   switch (connection.status) {
     case "unprovisioned":
-      return `${backend} · ${connection.display_name} OAuth client is not provisioned`;
+      return `${connection.display_name} OAuth client is not provisioned`;
     case "unconnected":
-      return `${backend} · ${connection.display_name} is not connected`;
+      return `${connection.display_name} is not connected`;
     case "degraded":
-      return `${backend} · ${connection.display_name} refresh failing${until ? ` · token until ${until}` : ""}`;
+      return `${connection.display_name} refresh failing${until ? ` · token until ${until}` : ""}`;
     case "connected":
-      return `${backend} · ${connection.display_name} connected${until ? ` · token until ${until}` : ""}`;
+      return `${connection.display_name} connected${until ? ` · token until ${until}` : ""}`;
   }
 }
 
-function McpServerCard({
+function McpServerRow({
   view,
   onConnectMcp,
   onDisconnectMcp,
@@ -252,29 +263,35 @@ function McpServerCard({
       : null;
 
   return (
-    <section className="haku-shell-card">
-      <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
-        <Stack gap={2} style={{ minWidth: 0 }}>
-          <Text fw={600}>{view.connection.server_id}</Text>
-          <Text size="xs" c="dimmed">
-            {connectionSummary(view.connection)}
+    <Table.Tr>
+      <Table.Td data-slot="primary" className="haku-dense-primary">
+        <Text fw={600} size="sm">
+          {view.connection.server_id}
+        </Text>
+        <Text size="xs" c="dimmed">
+          {view.connection.backend.kind === "remote_mcp" ? "Remote MCP" : "In-process"}
+        </Text>
+      </Table.Td>
+      <Table.Td data-slot="secondary" className="haku-dense-secondary">
+        <Text size="sm">{connectionSummary(view.connection)}</Text>
+        {reason && (
+          <Text size="xs" c="red">
+            {reason}
           </Text>
-          {reason && (
-            <Text size="xs" c="red">
-              {reason}
-            </Text>
-          )}
-        </Stack>
-        <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
+        )}
+      </Table.Td>
+      <Table.Td data-slot="status" className="haku-dense-status">
+        <Group gap={6} wrap="nowrap">
           {view.checking && view.probe && <Loader size={12} aria-label="Checking connection status" />}
           <Badge color={state.color} variant="light">
             {state.label}
           </Badge>
         </Group>
-      </Group>
-      {linkage && !unprovisioned && (
-        <Group justify="flex-end" gap="xs" mt="sm">
-          {linkageStatus === "connected" || linkageStatus === "degraded" ? (
+      </Table.Td>
+      <Table.Td data-slot="action" className="haku-dense-action">
+        {linkage &&
+          !unprovisioned &&
+          (linkageStatus === "connected" || linkageStatus === "degraded" ? (
             <Button size="compact-sm" variant="subtle" color="red" onClick={disconnect ?? undefined}>
               Disconnect
             </Button>
@@ -282,10 +299,9 @@ function McpServerCard({
             <Button size="compact-sm" variant="light" onClick={connect ?? undefined}>
               Connect
             </Button>
-          )}
-        </Group>
-      )}
-    </section>
+          ))}
+      </Table.Td>
+    </Table.Tr>
   );
 }
 
@@ -296,28 +312,36 @@ const DAEMON_STATUS_COLOR: Record<DaemonStatus["status"], string> = {
   offline: "gray",
 };
 
-function DaemonCard({ daemon }: { daemon: DaemonStatus }) {
+function DaemonRow({ daemon }: { daemon: DaemonStatus }) {
   const seen = daemon.last_heartbeat_at ? shortDate(daemon.last_heartbeat_at) : null;
   return (
-    <section className="haku-shell-card">
-      <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
-        <Stack gap={2} style={{ minWidth: 0 }}>
-          <Text fw={600}>{daemon.display_name}</Text>
-          <Text size="xs" c="dimmed">
-            {daemon.version ? `hostexecd ${daemon.version}` : "Never connected"}
-            {seen ? ` · heartbeat ${seen}` : ""}
-          </Text>
-          {daemon.active_execution_id && (
-            <Text size="xs" c="dimmed" ff="monospace">
-              {daemon.active_execution_id}
-            </Text>
-          )}
-        </Stack>
+    <Table.Tr>
+      <Table.Td data-slot="primary" className="haku-dense-primary">
+        <Text fw={600} size="sm">
+          {daemon.display_name}
+        </Text>
+      </Table.Td>
+      <Table.Td data-slot="status" className="haku-dense-status">
         <Badge color={DAEMON_STATUS_COLOR[daemon.status]} variant="light">
           {daemon.status}
         </Badge>
-      </Group>
-    </section>
+      </Table.Td>
+      <Table.Td data-slot="secondary" className="haku-dense-secondary">
+        <Text size="sm">{daemon.version ? `hostexecd ${daemon.version}` : "Never connected"}</Text>
+        <Text size="xs">{seen ? `heartbeat ${seen}` : "No heartbeat"}</Text>
+      </Table.Td>
+      <Table.Td data-slot="action" className="haku-dense-action">
+        {daemon.active_execution_id ? (
+          <Text size="xs" c="dimmed" ff="monospace" title={daemon.active_execution_id}>
+            {daemon.active_execution_id.slice(0, 12)}…
+          </Text>
+        ) : (
+          <Text size="xs" c="dimmed">
+            —
+          </Text>
+        )}
+      </Table.Td>
+    </Table.Tr>
   );
 }
 
@@ -329,7 +353,7 @@ const AGENT_STATUS_COLOR: Record<AgentView["status"], string> = {
   deleted: "gray",
 };
 
-function AgentCard({
+function AgentRow({
   agent,
   accessProfiles,
   saving,
@@ -343,45 +367,48 @@ function AgentCard({
   const lastSeen = shortDate(agent.last_seen_at);
   const activated = shortDate(agent.activated_at);
   return (
-    <section className="haku-shell-card">
-      <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
-        <Stack gap={2} style={{ minWidth: 0 }}>
-          <Text fw={600}>{agent.display_name}</Text>
-          <Text size="xs" c="dimmed">
-            {lastSeen ? `Last seen ${lastSeen}` : "Not seen yet"}
-          </Text>
-          <Text size="xs" c="dimmed">
-            {agent.credential_kind === "oauth" ? "OAuth" : "Static credential"}
-            {activated ? ` · active since ${activated}` : ""}
-          </Text>
-        </Stack>
+    <Table.Tr>
+      <Table.Td data-slot="primary" className="haku-dense-primary">
+        <Text fw={600} size="sm">
+          {agent.display_name}
+        </Text>
+        <Text size="xs" c="dimmed">
+          {agent.credential_kind === "oauth" ? "OAuth" : "Static credential"}
+          {activated ? ` · active since ${activated}` : ""}
+        </Text>
+      </Table.Td>
+      <Table.Td data-slot="status" className="haku-dense-status">
         <Badge color={AGENT_STATUS_COLOR[agent.status]} variant="light">
           {agent.status}
         </Badge>
-      </Group>
-      <Select
-        mt="sm"
-        label="Access profile"
-        description={
-          agent.credential_kind === "static"
-            ? "Managed by deployment configuration."
-            : agent.access_profile_id === null
-              ? "This preexisting Agent has no assignment; all tool calls require approval until you choose one."
-              : "Tool calls outside this profile still require your approval."
-        }
-        data={accessProfiles.map((profile) => ({
-          value: profile,
-          label: profile.replaceAll("_", " "),
-        }))}
-        value={agent.access_profile_id}
-        placeholder="Select an access profile"
-        onChange={(profile) => {
-          if (profile && profile !== agent.access_profile_id) onAccessProfileChange(agent, profile);
-        }}
-        allowDeselect={false}
-        disabled={saving || agent.credential_kind === "static"}
-      />
-    </section>
+      </Table.Td>
+      <Table.Td data-slot="secondary" className="haku-dense-secondary">
+        {lastSeen ? `last seen ${lastSeen}` : "Not seen yet"}
+      </Table.Td>
+      <Table.Td data-slot="action" className="haku-dense-action">
+        {agent.credential_kind === "static" ? (
+          <Text size="xs" c="dimmed" title="Managed by deployment configuration.">
+            deployment
+          </Text>
+        ) : (
+          <Select
+            size="xs"
+            aria-label={`Access profile for ${agent.display_name}`}
+            data={accessProfiles.map((profile) => ({
+              value: profile,
+              label: profile.replaceAll("_", " "),
+            }))}
+            value={agent.access_profile_id}
+            placeholder="Profile"
+            onChange={(profile) => {
+              if (profile && profile !== agent.access_profile_id) onAccessProfileChange(agent, profile);
+            }}
+            allowDeselect={false}
+            disabled={saving}
+          />
+        )}
+      </Table.Td>
+    </Table.Tr>
   );
 }
 
@@ -407,56 +434,77 @@ const PUSH_STATE_DISPLAY: Record<PushState["status"], { label: string; color: st
   failed: { label: "Error", color: "red", description: "Could not read this browser's notification state." },
 };
 
-function PushNotificationCard() {
+function PushNotificationTable() {
   const { state, devices, enable, disable, forget } = usePushNotifications();
   const display = PUSH_STATE_DISPLAY[state.status];
   const actionable = state.status === "on" || state.status === "off" || state.status === "failed";
   const thisEndpoint = state.status === "on" ? state.endpoint : null;
   const others = devices.filter((device) => device.endpoint !== thisEndpoint);
   return (
-    <>
-      <section className="haku-shell-card">
-        <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
-          <Stack gap={2} style={{ minWidth: 0 }}>
-            <Text fw={600}>This browser</Text>
-            <Text size="xs" c="dimmed">
-              {state.status === "failed" ? state.message : display.description}
+    <DenseTable label="Notification devices">
+      <Table.Thead>
+        <Table.Tr>
+          <Table.Th>Device</Table.Th>
+          <Table.Th>Status</Table.Th>
+          <Table.Th>Added</Table.Th>
+          <Table.Th />
+        </Table.Tr>
+      </Table.Thead>
+      <Table.Tbody>
+        <Table.Tr>
+          <Table.Td data-slot="primary" className="haku-dense-primary">
+            <Text fw={600} size="sm">
+              This browser
             </Text>
-          </Stack>
-          <Badge color={display.color} variant="light">
-            {display.label}
-          </Badge>
-        </Group>
-        {actionable && (
-          <Group justify="flex-end" gap="xs" mt="sm">
-            {state.status === "on" ? (
-              <Button size="compact-sm" variant="subtle" color="red" onClick={() => void disable()}>
-                Turn off
-              </Button>
-            ) : (
-              <Button size="compact-sm" variant="light" onClick={() => void enable()}>
-                Turn on
-              </Button>
-            )}
-          </Group>
-        )}
-      </section>
-      {others.map((device) => (
-        <section className="haku-shell-card" key={device.endpoint}>
-          <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
-            <Stack gap={2} style={{ minWidth: 0 }}>
-              <Text fw={600}>{device.userAgent ?? "Unidentified browser"}</Text>
-              <Text size="xs" c="dimmed">
-                Also notified{shortDate(device.createdAt) ? ` · added ${shortDate(device.createdAt)}` : ""}
+            {state.status === "failed" && (
+              <Text size="xs" c="red" title={display.description}>
+                {state.message}
               </Text>
-            </Stack>
-            <Button size="compact-sm" variant="subtle" color="red" onClick={() => void forget(device.endpoint)}>
-              Forget
-            </Button>
-          </Group>
-        </section>
-      ))}
-    </>
+            )}
+          </Table.Td>
+          <Table.Td data-slot="status" className="haku-dense-status">
+            <Badge color={display.color} variant="light" title={display.description}>
+              {display.label}
+            </Badge>
+          </Table.Td>
+          <Table.Td data-slot="secondary" className="haku-dense-secondary">
+            —
+          </Table.Td>
+          <Table.Td data-slot="action" className="haku-dense-action">
+            {actionable &&
+              (state.status === "on" ? (
+                <Button size="compact-sm" variant="subtle" color="red" onClick={() => void disable()}>
+                  Turn off
+                </Button>
+              ) : (
+                <Button size="compact-sm" variant="light" onClick={() => void enable()}>
+                  Turn on
+                </Button>
+              ))}
+          </Table.Td>
+        </Table.Tr>
+        {others.map((device) => (
+          <Table.Tr key={device.endpoint}>
+            <Table.Td data-slot="primary" className="haku-dense-primary">
+              <Text size="sm">{device.userAgent ?? "Unidentified browser"}</Text>
+            </Table.Td>
+            <Table.Td data-slot="status" className="haku-dense-status">
+              <Badge color="teal" variant="light">
+                On
+              </Badge>
+            </Table.Td>
+            <Table.Td data-slot="secondary" className="haku-dense-secondary">
+              {shortDate(device.createdAt) ? `added ${shortDate(device.createdAt)}` : "—"}
+            </Table.Td>
+            <Table.Td data-slot="action" className="haku-dense-action">
+              <Button size="compact-sm" variant="subtle" color="red" onClick={() => void forget(device.endpoint)}>
+                Forget
+              </Button>
+            </Table.Td>
+          </Table.Tr>
+        ))}
+      </Table.Tbody>
+    </DenseTable>
   );
 }
 
@@ -567,39 +615,34 @@ function SandboxTerminationDialog({
   );
 }
 
-function SandboxSessionCard({ session, onTerminate }: { session: ActiveSandbox; onTerminate: () => void }) {
+function SandboxSessionRow({ session, onTerminate }: { session: ActiveSandbox; onTerminate: () => void }) {
   const display = activeSandboxStatusDisplay(session.status);
   const closing = session.status === "closing";
   return (
-    <section className="haku-shell-card">
-      <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
-        <Stack gap={2} style={{ minWidth: 0 }}>
-          <Text fw={600}>{session.harness_kind.replaceAll("_", " ")}</Text>
-          <Text size="xs" c="dimmed" ff="monospace" className="break-all">
-            {session.session_id}
-          </Text>
-        </Stack>
-        <Badge color={display.color} variant="light">
+    <Table.Tr>
+      <Table.Td data-slot="primary" className="haku-dense-primary">
+        <Text fw={600} size="sm">
+          {session.harness_kind.replaceAll("_", " ")}
+        </Text>
+        <Text size="xs" c="dimmed" ff="monospace" className="break-all">
+          {session.session_id}
+        </Text>
+      </Table.Td>
+      <Table.Td data-slot="status" className="haku-dense-status">
+        <Badge color={display.color} variant="light" title={display.description}>
           {display.label}
         </Badge>
-      </Group>
-      <Text size="xs" c="dimmed" mt="sm">
-        {display.description} · {provisioningStepLabel(session.sandbox.step)}
-      </Text>
-      <Group justify="space-between" align="flex-end" gap="sm" mt="sm" wrap="wrap">
-        <Stack gap={2} style={{ minWidth: 0 }}>
-          <Text size="xs" c="dimmed" className="break-all">
-            {session.sandbox.claim_name}
-          </Text>
-          <Text size="xs" c="dimmed">
-            Started {shortDate(session.created_at) ?? "unknown"}
-          </Text>
-        </Stack>
+      </Table.Td>
+      <Table.Td data-slot="secondary" className="haku-dense-secondary">
+        <Text size="sm">{provisioningStepLabel(session.sandbox.step)}</Text>
+        <Text size="xs">started {shortDate(session.created_at) ?? "unknown"}</Text>
+      </Table.Td>
+      <Table.Td data-slot="action" className="haku-dense-action">
         <Button size="compact-sm" color="red" variant="light" disabled={closing} onClick={onTerminate}>
           {closing ? "Closing…" : "Terminate"}
         </Button>
-      </Group>
-    </section>
+      </Table.Td>
+    </Table.Tr>
   );
 }
 
@@ -635,25 +678,34 @@ function SessionsPanel({ resource }: { resource: AsyncResource<ActiveSandbox[]> 
 
   return (
     <Stack gap="xs" className="haku-page-list">
-      <SectionHeading
-        title="Sessions"
-        description="Active Console-launched sandboxes. Provisioning, runner activity, and termination are read from the live claim graph."
-      />
+      <SectionHeading title="Sessions" />
       <ResourcePanel
         resource={resource}
         label="sessions"
         emptyMessage="No active sandbox sessions."
         isEmpty={(sessions) => sessions.length === 0}
       >
-        {(sessions) =>
-          sessions.map((session) => (
-            <SandboxSessionCard
-              key={session.session_id}
-              session={session}
-              onTerminate={() => requestTermination(session)}
-            />
-          ))
-        }
+        {(sessions) => (
+          <DenseTable label="Active sessions">
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Runtime</Table.Th>
+                <Table.Th>Status</Table.Th>
+                <Table.Th>Progress</Table.Th>
+                <Table.Th />
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {sessions.map((session) => (
+                <SandboxSessionRow
+                  key={session.session_id}
+                  session={session}
+                  onTerminate={() => requestTermination(session)}
+                />
+              ))}
+            </Table.Tbody>
+          </DenseTable>
+        )}
       </ResourcePanel>
       <SandboxTerminationDialog
         session={pendingTermination}
@@ -676,7 +728,7 @@ function settingsTabFromLocation(): SettingsTab {
   return settingsTabFromSearch(window.location.search);
 }
 
-function SystemStatusCard({ deployment }: { deployment: DeploymentInfo }) {
+function SystemStatusTable({ deployment }: { deployment: DeploymentInfo }) {
   const versions = deploymentVersions(deployment);
   const serverCommit = deployment.server.source_commit;
   const frontendCommit = deployment.frontend.source_commit;
@@ -693,29 +745,41 @@ function SystemStatusCard({ deployment }: { deployment: DeploymentInfo }) {
       : { label: "Unknown", color: "gray", description: "Complete deployment revision metadata is unavailable." };
 
   return (
-    <section className="haku-shell-card">
-      <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
-        <Stack gap={2} style={{ minWidth: 0 }}>
-          <Text fw={600}>System status</Text>
-          <Text size="xs" c="dimmed">
-            {status.description}
-          </Text>
-        </Stack>
-        <Badge color={status.color} variant="light">
-          {status.label}
-        </Badge>
-      </Group>
-      <Stack gap={4} mt="sm">
+    <DenseTable label="Deployment status">
+      <Table.Thead>
+        <Table.Tr>
+          <Table.Th>Component</Table.Th>
+          <Table.Th>Revision</Table.Th>
+          <Table.Th>Status</Table.Th>
+        </Table.Tr>
+      </Table.Thead>
+      <Table.Tbody>
         {versions.map((version) => (
-          <VersionLink key={version.label} version={version} />
+          <Table.Tr key={version.label}>
+            <Table.Td data-slot="primary" className="haku-dense-primary">
+              <Text size="sm">{version.label}</Text>
+            </Table.Td>
+            <Table.Td data-slot="secondary" className="haku-dense-secondary">
+              <VersionLink version={version} />
+            </Table.Td>
+            <Table.Td data-slot="status" className="haku-dense-status">
+              <Badge color={status.color} variant="light" title={status.description}>
+                {status.label}
+              </Badge>
+            </Table.Td>
+          </Table.Tr>
         ))}
         {versions.length === 0 && (
-          <Text size="xs" c="dimmed">
-            Deployment metadata unavailable.
-          </Text>
+          <Table.Tr>
+            <Table.Td colSpan={3}>
+              <Text size="sm" c="dimmed">
+                Deployment metadata unavailable.
+              </Text>
+            </Table.Td>
+          </Table.Tr>
         )}
-      </Stack>
-    </section>
+      </Table.Tbody>
+    </DenseTable>
   );
 }
 
@@ -744,54 +808,56 @@ function commitLabel(commit: string | null | undefined): string {
   return commit?.slice(0, 12) ?? "none";
 }
 
-function IndexStatusCard({ index }: { index: IndexState }) {
+function IndexStatusRow({ index }: { index: IndexState }) {
   const status = indexStatusDisplay(index);
   const indexedAt = shortDate((index.index_type === "git" ? index.indexed_at : index.last_indexed_at) ?? null);
   return (
-    <section className="haku-shell-card">
-      <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
-        <Stack gap={2} style={{ minWidth: 0 }}>
-          <Text fw={600}>{index.index_id}</Text>
-          <Text size="xs" c="dimmed">
-            {status.description}
-          </Text>
-        </Stack>
-        <Badge color={status.color} variant="light">
+    <Table.Tr>
+      <Table.Td data-slot="primary" className="haku-dense-primary">
+        <Text fw={600} size="sm">
+          {index.index_id}
+        </Text>
+        <Text size="xs" c="dimmed">
+          {index.index_type}
+        </Text>
+      </Table.Td>
+      <Table.Td data-slot="status" className="haku-dense-status">
+        <Badge color={status.color} variant="light" title={status.description}>
           {status.label}
         </Badge>
-      </Group>
-      <Stack gap={4} mt="sm">
+      </Table.Td>
+      <Table.Td data-slot="secondary" className="haku-dense-secondary">
         {index.index_type === "git" ? (
           <>
-            <Text size="xs" c="dimmed">
+            <Text size="sm">
               {index.branch ?? "Git"} · {index.files ?? 0} files · {index.chunks ?? 0} chunks ·{" "}
               {index.embedded_chunks ?? 0} embedded
               {(index.pending_chunks ?? 0) > 0 ? ` · ${index.pending_chunks} pending` : ""}
             </Text>
-            <Text size="xs" c="dimmed" ff="monospace">
+            <Text size="xs" ff="monospace">
               indexed {commitLabel(index.indexed_commit)}
               {index.remote_commit !== index.indexed_commit ? ` · remote ${commitLabel(index.remote_commit)}` : ""}
             </Text>
           </>
         ) : (
           <>
-            <Text size="xs" c="dimmed">
+            <Text size="sm">
               {index.sessions} sessions · {index.chunks} chunks · {index.embedded_chunks} embedded
               {index.pending_chunks > 0 ? ` · ${index.pending_chunks} pending` : ""}
             </Text>
             {(index.stale_sessions > 0 || index.unindexed_messages > 0) && (
-              <Text size="xs" c="dimmed">
+              <Text size="xs">
                 {index.stale_sessions} stale sessions · {index.unindexed_messages} messages pending
               </Text>
             )}
           </>
         )}
-        <Text size="xs" c="dimmed">
-          {indexedAt ? `Last indexed ${indexedAt}` : "Not indexed yet"}
+        <Text size="xs">
+          {indexedAt ? `last indexed ${indexedAt}` : "Not indexed yet"}
           {(index.superseded_chunks ?? 0) > 0 ? ` · ${index.superseded_chunks} superseded chunks` : ""}
         </Text>
-      </Stack>
-    </section>
+      </Table.Td>
+    </Table.Tr>
   );
 }
 
@@ -1002,45 +1068,67 @@ export function SettingsPanel(): JSX.Element {
         <Tabs.Panel value="mcp">
           <ResourcePanel
             title="MCP servers"
-            description="Live availability and account linkage for the tools Haku exposes. Status refreshes automatically and may verify linked credentials."
             resource={mcpResource}
             label="MCP servers"
             emptyMessage="No MCP servers are configured."
           >
-            {(views) =>
-              views.map((view) => (
-                <McpServerCard
-                  key={view.connection.server_id}
-                  view={view}
-                  onConnectMcp={connect}
-                  onDisconnectMcp={disconnect}
-                  onConnectProvider={connectProvider}
-                  onDisconnectProvider={disconnectProvider}
-                />
-              ))
-            }
+            {(views) => (
+              <DenseTable label="MCP servers">
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Server</Table.Th>
+                    <Table.Th>Connection</Table.Th>
+                    <Table.Th>Status</Table.Th>
+                    <Table.Th />
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {views.map((view) => (
+                    <McpServerRow
+                      key={view.connection.server_id}
+                      view={view}
+                      onConnectMcp={connect}
+                      onDisconnectMcp={disconnect}
+                      onConnectProvider={connectProvider}
+                      onDisconnectProvider={disconnectProvider}
+                    />
+                  ))}
+                </Table.Tbody>
+              </DenseTable>
+            )}
           </ResourcePanel>
         </Tabs.Panel>
         <Tabs.Panel value="agents">
           <ResourcePanel
             title="Agents"
-            description="Clients authorized to use Haku. Activity is historical and does not indicate that a client is currently online."
             resource={agentsResource}
             label="Agents"
             emptyMessage="No Agents have been authorized."
             isEmpty={(response) => response.agents.length === 0}
           >
-            {(items) =>
-              items.agents.map((agent) => (
-                <AgentCard
-                  key={agent.agent_id}
-                  agent={agent}
-                  accessProfiles={agentAccessProfiles}
-                  saving={savingAgentId !== null}
-                  onAccessProfileChange={changeAgentAccessProfile}
-                />
-              ))
-            }
+            {(items) => (
+              <DenseTable label="Agents">
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Agent</Table.Th>
+                    <Table.Th>Status</Table.Th>
+                    <Table.Th>Activity</Table.Th>
+                    <Table.Th>Access profile</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {items.agents.map((agent) => (
+                    <AgentRow
+                      key={agent.agent_id}
+                      agent={agent}
+                      accessProfiles={agentAccessProfiles}
+                      saving={savingAgentId !== null}
+                      onAccessProfileChange={changeAgentAccessProfile}
+                    />
+                  ))}
+                </Table.Tbody>
+              </DenseTable>
+            )}
           </ResourcePanel>
         </Tabs.Panel>
         <Tabs.Panel value="grants">
@@ -1051,41 +1139,65 @@ export function SettingsPanel(): JSX.Element {
         </Tabs.Panel>
         <Tabs.Panel value="notifications">
           <Stack gap="xs" className="haku-page-list">
-            <SectionHeading
-              title="Notifications"
-              description="Get notified on this device when a tool call needs approval, even when the console is closed. Enable notifications separately on every browser you want reached."
-            />
-            <PushNotificationCard />
+            <SectionHeading title="Notifications" />
+            <PushNotificationTable />
           </Stack>
         </Tabs.Panel>
         <Tabs.Panel value="nodes">
           <ResourcePanel
             title="Node daemons"
-            description="Outbound execution workers. Heartbeats determine whether approved node work can currently be dispatched."
             resource={daemonsResource}
             label="node daemons"
             emptyMessage="No node daemons are configured."
           >
-            {(items) => items.map((daemon) => <DaemonCard key={daemon.daemon_id} daemon={daemon} />)}
+            {(items) => (
+              <DenseTable label="Node daemons">
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Node</Table.Th>
+                    <Table.Th>Status</Table.Th>
+                    <Table.Th>Version / heartbeat</Table.Th>
+                    <Table.Th>Active work</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {items.map((daemon) => (
+                    <DaemonRow key={daemon.daemon_id} daemon={daemon} />
+                  ))}
+                </Table.Tbody>
+              </DenseTable>
+            )}
           </ResourcePanel>
         </Tabs.Panel>
         <Tabs.Panel value="system">
           <Stack gap="xs" className="haku-page-list">
-            <SectionHeading
-              title="System"
-              description="Deployment status for the Console server and web application, plus semantic recall indexes."
-            />
+            <SectionHeading title="System" />
             <ResourcePanel resource={deploymentResource} label="system status">
-              {(value) => <SystemStatusCard deployment={value} />}
+              {(value) => <SystemStatusTable deployment={value} />}
             </ResourcePanel>
-            <SectionHeading title="Indexes" description="How current each configured semantic recall corpus is." />
+            <SectionHeading title="Indexes" />
             <ResourcePanel
               resource={indexStatusResource}
               label="index status"
               emptyMessage="No semantic recall indexes are configured."
               isEmpty={(value) => value.indexes.length === 0}
             >
-              {(value) => value.indexes.map((index) => <IndexStatusCard key={index.index_id} index={index} />)}
+              {(value) => (
+                <DenseTable label="Semantic recall indexes">
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Index</Table.Th>
+                      <Table.Th>Status</Table.Th>
+                      <Table.Th>Contents / freshness</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {value.indexes.map((index) => (
+                      <IndexStatusRow key={index.index_id} index={index} />
+                    ))}
+                  </Table.Tbody>
+                </DenseTable>
+              )}
             </ResourcePanel>
           </Stack>
         </Tabs.Panel>

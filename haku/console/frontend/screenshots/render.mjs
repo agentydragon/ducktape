@@ -64,7 +64,7 @@ const SCENES = [
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,
     clicks: ['[role="tab"]::-p-text(Agents)'],
-    expectVisible: "::-p-text(Clients authorized to use Haku.)",
+    expectVisible: "::-p-text(Public Coder)",
     frame: true,
   },
   {
@@ -72,7 +72,7 @@ const SCENES = [
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,
     clicks: ['[role="tab"]::-p-text(Grants)'],
-    expectVisible: "::-p-text(Grant sources)",
+    expectVisible: "::-p-text(Namespaces: public-coder-agent)",
     frame: true,
   },
   {
@@ -88,7 +88,7 @@ const SCENES = [
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,
     clicks: ['[role="tab"]::-p-text(Grants)', "button::-p-text(Revoke)"],
-    expectVisible: "::-p-text(Are you sure?)",
+    expectVisible: "::-p-text(Confirm)",
     frame: true,
   },
   {
@@ -96,7 +96,7 @@ const SCENES = [
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,
     clicks: ['[role="tab"]::-p-text(Sessions)'],
-    expectVisible: "::-p-text(Active Console-launched sandboxes.)",
+    expectVisible: "::-p-text(Waiting for Pod readiness)",
     frame: true,
   },
   {
@@ -104,7 +104,7 @@ const SCENES = [
     viewport: { width: 390, height: 760 },
     closeApprovals: true,
     clicks: ['[role="tab"]::-p-text(Sessions)'],
-    expectVisible: "::-p-text(Active Console-launched sandboxes.)",
+    expectVisible: "::-p-text(Waiting for Pod readiness)",
     frame: true,
   },
   {
@@ -120,7 +120,7 @@ const SCENES = [
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,
     clicks: ['[role="tab"]::-p-text(Notifications)'],
-    expectVisible: "::-p-text(Get notified on this device)",
+    expectVisible: "::-p-text(This browser)",
     frame: true,
   },
   {
@@ -128,7 +128,7 @@ const SCENES = [
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,
     clicks: ['[role="tab"]::-p-text(Nodes)'],
-    expectVisible: "::-p-text(Outbound execution workers.)",
+    expectVisible: "::-p-text(wyrm2)",
     frame: true,
   },
   {
@@ -136,7 +136,7 @@ const SCENES = [
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,
     clicks: ['[role="tab"]::-p-text(System)'],
-    expectVisible: "::-p-text(Deployment status for the Console server)",
+    expectVisible: "::-p-text(Mixed revisions)",
     frame: true,
   },
   // A transcript long enough to overflow, so the scroll opens pinned to the newest message.

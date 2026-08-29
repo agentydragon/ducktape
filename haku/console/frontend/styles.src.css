@@ -376,18 +376,22 @@
 
 .haku-conversation-list-item {
   width: 100%;
-  border: 1px solid var(--haku-border);
-  border-radius: 8px;
-  padding: 0.85rem 1rem;
+  border: 0;
+  border-top: 1px solid var(--haku-border);
+  padding: 0.65rem 0.75rem;
   background: var(--haku-panel-bg);
   color: var(--mantine-color-text);
   text-align: left;
   cursor: pointer;
 }
 
+.haku-conversation-list {
+  gap: 0;
+  padding-top: 0.25rem;
+}
+
 .haku-conversation-list-item:hover,
 .haku-conversation-list-item:focus-visible {
-  border-color: var(--mantine-color-teal-5);
   outline: none;
   background: var(--haku-shell-active-bg);
 }
@@ -400,9 +404,9 @@
   white-space: nowrap;
 }
 
-/* The Conversations list header launcher: the harness picker beside the "New conversation" button.
+/* The Conversations list header launcher: the harness picker beside the new-conversation icon.
    Fixed width on desktop; the max-width:768px block below stacks the launcher under the title and
-   lets the picker flex to fill the row, so the button stays on-screen on a narrow phone. */
+   lets the picker flex to fill the row, so the action stays on-screen on a narrow phone. */
 .haku-conversation-launcher-select {
   width: 260px;
 }
@@ -606,9 +610,8 @@
 }
 
 @media (max-width: 768px) {
-  /* Below tablet width the fixed-width picker and button no longer fit beside the title, so stack
-     the launcher under the title and let the picker flex to fill the row. The "New conversation"
-     button must stay reachable without horizontal scroll. */
+  /* Below tablet width let the picker flex to fill the row while keeping the new-conversation
+     action reachable without horizontal scroll. */
   .haku-conversation-list-header {
     flex-direction: column;
     align-items: stretch;
@@ -653,6 +656,153 @@
   background: color-mix(in srgb, var(--haku-panel-bg) 88%, var(--haku-shell-muted-bg));
   box-shadow: 0 10px 32px var(--haku-shell-shadow);
   padding: 0.75rem;
+}
+
+.haku-empty-state {
+  border-block: 1px solid var(--haku-border);
+  padding: 0.75rem;
+  background: var(--haku-panel-bg);
+}
+
+/* Tool calls are the audit stream's rows. Their payloads can still expand below the summary, but
+   the call itself should not look like a dashboard card nested inside another dashboard card. */
+.haku-tool-call {
+  border-block: 1px solid var(--haku-border);
+  padding: 0.7rem 0;
+  background: var(--haku-panel-bg);
+}
+
+.haku-tool-call-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.haku-tool-call-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.haku-tool-call-summary-actions {
+  flex: 0 0 auto;
+}
+
+/* Inventory surfaces are rows, not a stack of miniature cards. Mantine owns the table semantics;
+   these rules only give it Haku's compact rhythm and a readable mobile collapse. */
+.haku-dense-table-wrap {
+  width: 100%;
+  border-block: 1px solid var(--haku-border);
+  background: var(--haku-panel-bg);
+}
+
+.haku-dense-table {
+  min-width: 40rem;
+}
+
+.haku-dense-table thead th {
+  min-height: 2rem;
+  color: var(--mantine-color-dimmed);
+  background: var(--haku-shell-muted-bg);
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.haku-dense-table tbody td {
+  min-width: 0;
+  padding-block: 0.65rem;
+  overflow-wrap: anywhere;
+}
+
+.haku-dense-table .haku-dense-primary {
+  min-width: 10rem;
+}
+
+.haku-dense-table .haku-dense-secondary {
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-xs);
+}
+
+.haku-dense-table .haku-dense-status {
+  min-width: 10rem;
+  white-space: nowrap;
+}
+
+.haku-dense-table .haku-dense-status .mantine-Badge-root {
+  flex-shrink: 0;
+}
+
+.haku-dense-table .haku-dense-action {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.haku-dense-table .haku-dense-action > * {
+  margin-left: auto;
+}
+
+@media (max-width: 700px) {
+  .haku-dense-table {
+    min-width: 0;
+  }
+
+  .haku-dense-table thead {
+    display: none;
+  }
+
+  .haku-dense-table,
+  .haku-dense-table tbody,
+  .haku-dense-table tr,
+  .haku-dense-table td {
+    display: block;
+  }
+
+  .haku-dense-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "primary status"
+      "secondary action"
+      "extra extra";
+    gap: 0.2rem 0.75rem;
+    padding: 0.65rem 0.75rem;
+    border-top: 1px solid var(--haku-border);
+  }
+
+  .haku-dense-table tbody tr:first-child {
+    border-top: 0;
+  }
+
+  .haku-dense-table td {
+    padding: 0;
+    border: 0;
+  }
+
+  .haku-dense-table td[data-slot="primary"] {
+    grid-area: primary;
+  }
+
+  .haku-dense-table td[data-slot="status"] {
+    grid-area: status;
+  }
+
+  .haku-dense-table .haku-dense-status {
+    min-width: 0;
+  }
+
+  .haku-dense-table td[data-slot="secondary"] {
+    grid-area: secondary;
+  }
+
+  .haku-dense-table td[data-slot="action"] {
+    grid-area: action;
+  }
+
+  .haku-dense-table td[data-slot="extra"] {
+    grid-area: extra;
+  }
 }
 
 /* The card's identity header: title + action line + rationale/error subheads. The status badge

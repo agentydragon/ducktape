@@ -1,4 +1,4 @@
-import { Alert, Badge, Button, Code, Group, Loader, SegmentedControl, Select, Stack, Text } from "@mantine/core";
+import { Badge, Button, Code, Group, Loader, SegmentedControl, Select, Stack, Table, Text } from "@mantine/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { displayableError, fetchGrants, revokeGrant, type Grant, type GrantPrincipal } from "./client";
@@ -64,34 +64,23 @@ function GrantFallback({ grant }: { grant: Grant }) {
 function GrantSource({ grant }: { grant: Grant }) {
   switch (grant.source.kind) {
     case "database": {
-      const created = formatTimestamp(grant.source.created_at);
       return (
-        <>
-          <Badge color="violet" variant="light">
-            Database
-          </Badge>
-          <Text size="xs" c="dimmed" ff="monospace" style={{ overflowWrap: "anywhere" }}>
-            {grant.source.id}
-          </Text>
-          <Text size="xs" c="dimmed" title={created.title}>
-            Created {created.text}
-          </Text>
-          <ExternalLink href={toolCallPath(grant.source.tool_call_id)} size="xs" ff="monospace">
-            Source tool call {grant.source.tool_call_id}
+        <Stack gap={2}>
+          <Text size="sm">Database</Text>
+          <ExternalLink href={toolCallPath(grant.source.tool_call_id)} size="xs" ff="monospace" title={grant.source.id}>
+            tool call {grant.source.tool_call_id.slice(0, 12)}…
           </ExternalLink>
-        </>
+        </Stack>
       );
     }
     case "config_file":
       return (
-        <>
-          <Badge color="blue" variant="light">
-            Configuration file
-          </Badge>
+        <Stack gap={2}>
+          <Text size="sm">Configuration</Text>
           <Text size="xs" c="dimmed" ff="monospace">
             {grant.source.entry_id}
           </Text>
-        </>
+        </Stack>
       );
   }
   return <GrantFallback grant={grant} />;
@@ -99,8 +88,8 @@ function GrantSource({ grant }: { grant: Grant }) {
 
 function GrantSubject({ grant }: { grant: Grant }) {
   return (
-    <Text size="xs">
-      Applies to <GrantPrincipalLabel principal={grant.subject} />
+    <Text size="sm">
+      <GrantPrincipalLabel principal={grant.subject} />
     </Text>
   );
 }
@@ -124,23 +113,29 @@ function GrantCoverage({ grant }: { grant: Grant }) {
   switch (grant.coverage.kind) {
     case "kubernetes_rules":
       return (
-        <>
-          <Text size="sm">{scopeLabel(grant.coverage.scope)}</Text>
-          <Stack gap={4}>
+        <Stack gap={2}>
+          <Text size="sm" fw={600}>
+            {scopeLabel(grant.coverage.scope)}
+          </Text>
+          <Stack gap={2}>
             {grant.coverage.rules.map((rule, index) => (
               <RuleLine key={index} rule={rule} />
             ))}
           </Stack>
-        </>
+        </Stack>
       );
     case "kubernetes_sar":
-      return <Text size="sm">Kubernetes SubjectAccessReview identity: {grant.coverage.subject.username}</Text>;
+      return <Text size="sm">SubjectAccessReview · {grant.coverage.subject.username}</Text>;
     case "http":
       return (
-        <Text size="sm">
-          HTTP {grant.coverage.origins.map((origin) => `${origin.scheme}://${origin.host}:${origin.port}`).join(", ")} ·{" "}
-          {grant.coverage.coverage.methods.join(", ")} {grant.coverage.coverage.path_regex ?? "all paths"}
-        </Text>
+        <Stack gap={2}>
+          <Text size="sm" fw={600}>
+            {grant.coverage.origins.map((origin) => `${origin.scheme}://${origin.host}:${origin.port}`).join(", ")}
+          </Text>
+          <Text size="xs">
+            {grant.coverage.coverage.methods.join(", ")} {grant.coverage.coverage.path_regex ?? "all paths"}
+          </Text>
+        </Stack>
       );
   }
   return <GrantFallback grant={grant} />;
@@ -152,17 +147,17 @@ function GrantValidity({ grant }: { grant: Grant }) {
   const endedAt = grant.validity.ended_at ? formatTimestamp(grant.validity.ended_at) : null;
   return (
     <Stack gap={2}>
-      <Badge size="xs" color={status.color} variant="light" style={{ alignSelf: "flex-start" }}>
+      <Badge size="sm" color={status.color} variant="light" style={{ alignSelf: "flex-start" }}>
         {status.label}
       </Badge>
       {endsAt && (
         <Text size="xs" c="dimmed" title={endsAt.title}>
-          Expires {endsAt.text}
+          until {endsAt.text}
         </Text>
       )}
       {endedAt && (
         <Text size="xs" c="dimmed" title={endedAt.title}>
-          Ended {endedAt.text}
+          ended {endedAt.text}
           {grant.validity.end_reason ? ` · ${grant.validity.end_reason}` : ""}
         </Text>
       )}
@@ -170,7 +165,7 @@ function GrantValidity({ grant }: { grant: Grant }) {
   );
 }
 
-function GrantCard({
+function GrantRow({
   grant,
   revokePending,
   revokeBusy,
@@ -187,26 +182,31 @@ function GrantCard({
 }) {
   const databaseSource = grant.source.kind === "database" ? grant.source : null;
   return (
-    <section className="haku-shell-card">
-      <Stack gap="xs">
-        <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
-          <GrantSubject grant={grant} />
-          <GrantValidity grant={grant} />
-        </Group>
-        <GrantSource grant={grant} />
+    <Table.Tr>
+      <Table.Td data-slot="primary" className="haku-dense-primary">
+        <GrantSubject grant={grant} />
+      </Table.Td>
+      <Table.Td data-slot="secondary" className="haku-dense-secondary">
         <GrantCoverage grant={grant} />
+      </Table.Td>
+      <Table.Td data-slot="extra" className="haku-dense-secondary">
+        <GrantSource grant={grant} />
+      </Table.Td>
+      <Table.Td data-slot="status" className="haku-dense-status">
+        <GrantValidity grant={grant} />
+      </Table.Td>
+      <Table.Td data-slot="action" className="haku-dense-action">
         {databaseSource !== null &&
           grant.validity.status === "active" &&
           (revokePending ? (
-            <Group gap="xs">
-              <Text size="sm">Are you sure?</Text>
+            <Group gap="xs" wrap="nowrap">
               <Button
                 size="compact-sm"
                 color="red"
                 onClick={() => onConfirmRevoke(databaseSource.id)}
                 loading={revokeBusy}
               >
-                Yes, revoke
+                Confirm
               </Button>
               <Button size="compact-sm" color="gray" variant="subtle" onClick={onCancelRevoke} disabled={revokeBusy}>
                 Cancel
@@ -217,8 +217,8 @@ function GrantCard({
               Revoke
             </Button>
           ))}
-      </Stack>
-    </section>
+      </Table.Td>
+    </Table.Tr>
   );
 }
 
@@ -314,10 +314,6 @@ export function GrantsPanel(): JSX.Element {
       <Group justify="space-between" align="flex-start" gap="sm" wrap="wrap">
         <div>
           <Text fw={600}>Grants</Text>
-          <Text size="xs" c="dimmed" mt={4}>
-            Configuration-file and database authority, with exact principals, scope, rules, provenance, and lifecycle
-            history.
-          </Text>
         </div>
         <Button
           size="xs"
@@ -329,10 +325,6 @@ export function GrantsPanel(): JSX.Element {
           Refresh
         </Button>
       </Group>
-      <Alert color="blue" variant="light" title="Grant sources">
-        Configuration-file access is durable and changes through reviewed deployment configuration. Database grants are
-        operator-approved and may end at a deadline or by operator action. Denied requests create neither.
-      </Alert>
       <Group gap="sm" align="flex-end" wrap="wrap">
         <Stack gap={4}>
           <Text size="xs" fw={500}>
@@ -379,26 +371,43 @@ export function GrantsPanel(): JSX.Element {
         </Group>
       )}
       {grants && visible.length === 0 && (
-        <section className="haku-shell-card">
+        <div className="haku-empty-state">
           <Text size="sm" c="dimmed">
             No {historyFilter === "all" ? "" : `${historyFilter} `}grants match these filters.
           </Text>
-        </section>
+        </div>
       )}
-      {visible.map((grant) => {
-        const sourceId = grant.source.kind === "database" ? grant.source.id : grant.source.entry_id;
-        return (
-          <GrantCard
-            key={`${principalKey(grant.subject)}:${sourceId}`}
-            grant={grant}
-            revokePending={grant.source.kind === "database" && revokingGrantId === grant.source.id}
-            revokeBusy={revokeBusy}
-            onRequestRevoke={setRevokingGrantId}
-            onCancelRevoke={() => setRevokingGrantId(null)}
-            onConfirmRevoke={confirmRevoke}
-          />
-        );
-      })}
+      {visible.length > 0 && (
+        <Table.ScrollContainer minWidth={0} className="haku-dense-table-wrap">
+          <Table className="haku-dense-table" aria-label="Grants" highlightOnHover>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Principal</Table.Th>
+                <Table.Th>Scope / rules</Table.Th>
+                <Table.Th>Source</Table.Th>
+                <Table.Th>Validity</Table.Th>
+                <Table.Th aria-label="Actions" />
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {visible.map((grant) => {
+                const sourceId = grant.source.kind === "database" ? grant.source.id : grant.source.entry_id;
+                return (
+                  <GrantRow
+                    key={`${principalKey(grant.subject)}:${sourceId}`}
+                    grant={grant}
+                    revokePending={grant.source.kind === "database" && revokingGrantId === grant.source.id}
+                    revokeBusy={revokeBusy}
+                    onRequestRevoke={setRevokingGrantId}
+                    onCancelRevoke={() => setRevokingGrantId(null)}
+                    onConfirmRevoke={confirmRevoke}
+                  />
+                );
+              })}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
+      )}
     </Stack>
   );
 }

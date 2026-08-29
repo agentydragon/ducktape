@@ -3,9 +3,9 @@ import type { ReactNode, Ref } from "react";
 
 import { showsAutoApprovalEvaluation, type ApprovalDisplayFields } from "./approval_state";
 import { ToolCallAgentProvider } from "./agent_names";
-import { ToolActionLine } from "./tool_action_line";
 import { RawArgumentsDisclosure, ToolArgumentsField } from "./tool_arguments_field";
 import { ToolCallMeta } from "./tool_call_meta";
+import { toolActionDescription } from "./tool_rendering/actions";
 import { toolCallPreview } from "./tool_rendering/index";
 import type { PreviewVariant } from "./tool_rendering/vocabulary";
 import { RawResultDisclosure, ToolResultField } from "./tool_result_field";
@@ -47,26 +47,23 @@ export function ToolCallCard({
 }): JSX.Element {
   const detailed = variant === "detailed";
   const combined = toolCallPreview(fields.serverId, fields.toolName, args, result, variant);
+  const action = toolActionDescription(fields.serverId, fields.toolName, args);
   return (
     <ToolCallAgentProvider agentId={fields.callerAgentId} displayName={fields.callerDisplayName}>
-      <section className="haku-shell-card" ref={containerRef}>
+      <section className="haku-tool-call" ref={containerRef}>
         <Stack gap="sm">
-          {/* The badge + Brief/Full selector float to the top-right so the title and subheads wrap
-            under them on the first line(s) and reclaim the full width below, instead of the whole
-            text column being narrowed for every line. Anchored top so detail expands below and the
-            selector stays put under the pointer. Block flow (not a flex Stack) so text wraps
-            around the float; `haku-card-head` supplies the tight inter-line rhythm. */}
-          <div className="haku-card-head">
-            <Group className="haku-card-head-actions" gap="xs" align="center" wrap="nowrap">
+          <div className="haku-tool-call-summary">
+            <Text fw={600} size="sm" className="haku-tool-call-title" c={action?.destructive ? "red" : undefined}>
+              {fields.title}
+            </Text>
+            <Group className="haku-tool-call-summary-actions" gap="xs" align="center" wrap="nowrap">
               <Badge color={status.color} variant="light">
                 {status.label}
               </Badge>
               <VariantControl variant={variant} onChange={onVariantChange} />
             </Group>
-            <Text fw={600} size="sm">
-              {fields.title}
-            </Text>
-            <ToolActionLine serverId={fields.serverId} toolName={fields.toolName} args={args} />
+          </div>
+          <div className="haku-card-head">
             {fields.rationale && <Text size="xs">{fields.rationale}</Text>}
             {fields.denialReason && (
               <Text size="xs" c="dimmed">
