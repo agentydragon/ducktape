@@ -23,6 +23,7 @@ py_library(
     srcs = ["config.py"],
     deps = [
         ":http_url",
+        "//haku/console/harnesses:environment",
         "//haku/console/harnesses:kind",
         "//haku/console/x/codex_app_server:config",
         "//haku/recall_index:config",
@@ -47,6 +48,7 @@ py_library(
         "//haku/recall_index:config",
         "//haku/sandbox:config",
         "//mcp_infra:prefix",
+        "//util:env",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
         "@pypi//pyyaml",

@@ -5,11 +5,13 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_validator
 
+from haku.console.harnesses.environment import EnvironmentPassthrough
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.http_url import UncredentialedHttpUrl
 from haku.runner.backend import LEGACY_SESSION_TOKEN_VARIABLE, SESSION_TOKEN_VARIABLE
+from util.env import EnvironmentVariableName
 
 
 class ReasoningEffort(StrEnum):
@@ -58,7 +60,7 @@ class SandboxMode(StrEnum):
     DANGER_FULL_ACCESS = "danger-full-access"
 
 
-class CodexAppServerImplementationConfig(BaseModel):
+class CodexAppServerImplementationConfig(EnvironmentPassthrough):
     """The settings that belong specifically to the Codex app-server implementation."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -72,7 +74,7 @@ class CodexAppServerImplementationConfig(BaseModel):
     provider_id: str = Field(min_length=1)
     provider_name: str = Field(min_length=1)
     api_base_url: UncredentialedHttpUrl
-    api_key_env_var: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
+    api_key_env_var: EnvironmentVariableName
     github_token_placeholder: str
 
     @field_validator("api_key_env_var")

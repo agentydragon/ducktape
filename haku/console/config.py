@@ -13,6 +13,7 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
+from haku.console.harnesses.environment import EnvironmentPassthrough
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.http_url import UncredentialedHttpUrl
 from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
@@ -265,7 +266,7 @@ class RuntimeExecutionConfig(BaseModel):
         return _proxy_environment(proxy_url=self.https_proxy, no_proxy=self.no_proxy, ca_bundle=self.ca_bundle, pip=pip)
 
 
-class ClaudeCodeImplementationConfig(BaseModel):
+class ClaudeCodeImplementationConfig(EnvironmentPassthrough):
     """The settings that belong specifically to the Claude CLI implementation."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -282,16 +283,6 @@ class ClaudeCodeImplementationConfig(BaseModel):
     haiku_model: str = Field(min_length=1)
     auth_token_placeholder: str = Field(min_length=1)
     gateway_discovery: bool = True
-    tool_search: str | None = Field(
-        default=None,
-        pattern=r"^(true|false|auto(:[0-9]{1,3})?)$",
-        description=(
-            "ENABLE_TOOL_SEARCH for the CLI, verbatim. The CLI hard-disables MCP tool search "
-            "for any non-first-party ANTHROPIC_BASE_URL and never probes the gateway, so a "
-            "gateway that does pass the tool-search betas through must be asserted here "
-            "(#5155). None leaves the CLI's own host heuristic in place."
-        ),
-    )
 
 
 type RuntimeImplementationConfig = Annotated[
@@ -322,8 +313,6 @@ class RuntimeRegistrationConfig(RuntimeExecutionConfig):
             }
             if implementation.gateway_discovery:
                 provider_environment["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] = "1"
-            if implementation.tool_search is not None:
-                provider_environment["ENABLE_TOOL_SEARCH"] = implementation.tool_search
         else:
             provider_environment = {
                 "GH_PAT": implementation.github_token_placeholder,
@@ -332,6 +321,7 @@ class RuntimeRegistrationConfig(RuntimeExecutionConfig):
         return {
             **self.proxy_environment(pip=isinstance(implementation, CodexAppServerImplementationConfig)),
             **provider_environment,
+            **implementation.environment,
         }
 
 

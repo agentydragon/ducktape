@@ -40,6 +40,7 @@ py_library(
     srcs = ["decide_config.py"],
     deps = [
         ":models",
+        "//util:env",
         "@pypi//pydantic",
     ],
 )

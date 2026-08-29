@@ -38,6 +38,7 @@ from haku.console.tool_call_actor import RuntimeActor
 from haku.recall_index.config import ConfiguredRecallIndex, GitRecallIndexDefinition
 from haku.sandbox.config import SandboxEnvironmentConfig
 from mcp_infra.prefix import MCPMountPrefix
+from util.env import EnvironmentVariableName
 
 
 class McpServerNotFoundError(LookupError):
@@ -50,8 +51,8 @@ class OperatorConnectionProviderDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     kind: ProviderConnectionKind
-    client_id_env_var: str = Field(min_length=1, pattern=r"^[A-Z][A-Z0-9_]*$")
-    client_secret_env_var: str = Field(min_length=1, pattern=r"^[A-Z][A-Z0-9_]*$")
+    client_id_env_var: EnvironmentVariableName
+    client_secret_env_var: EnvironmentVariableName
 
 
 class OperatorConnectionDefinition(BaseModel):
@@ -117,8 +118,8 @@ class PreregisteredOAuthClient(BaseModel):
     # client_id is the same for all. A public client normally declares this directly; a
     # confidential client can source it from an injected Secret instead.
     client_id: str | None = Field(default=None, min_length=1)
-    client_id_env_var: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]*$")
-    client_secret_env_var: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]*$")
+    client_id_env_var: EnvironmentVariableName | None = None
+    client_secret_env_var: EnvironmentVariableName | None = None
     token_endpoint_auth_method: Literal["client_secret_basic", "client_secret_post"] | None = None
 
     @model_validator(mode="after")

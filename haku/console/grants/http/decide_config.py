@@ -25,11 +25,11 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from haku.console.grants.http.models import CREDENTIAL_HANDLE_PATTERN, HttpOrigin, HttpRequestCoverage
+from util.env import EnvironmentVariableName
 
 logger = logging.getLogger(__name__)
 
 _HEADER_NAME = re.compile(r"[a-z0-9-]+")
-_ENV_VAR_PATTERN = r"^[A-Z][A-Z0-9_]*$"
 
 
 class EgressCredentialEntry(BaseModel):
@@ -67,10 +67,8 @@ class EgressCredentialEntry(BaseModel):
             "way it is inert — committable and loggable; only the redeemed value is secret."
         ),
     )
-    value_env_var: str = Field(
-        min_length=1,
-        pattern=_ENV_VAR_PATTERN,
-        description="Env reference holding the real value; two presentations of one credential share it.",
+    value_env_var: EnvironmentVariableName = Field(
+        description="Env reference holding the real value; two presentations of one credential share it."
     )
     match_headers: frozenset[str] = Field(
         min_length=1,
@@ -156,7 +154,7 @@ class EgressDecideConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    fence_credential_env_var: str = Field(min_length=1, pattern=_ENV_VAR_PATTERN)
+    fence_credential_env_var: EnvironmentVariableName
     credentials: list[EgressCredentialEntry] = Field(default_factory=list)
     standing_policies: list[EgressStandingPolicyEntry] = Field(default_factory=list)
     prohibited_cidrs: frozenset[IPv4Network | IPv6Network] = Field(
