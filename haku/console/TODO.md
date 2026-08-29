@@ -210,9 +210,9 @@ Two traps for whoever picks this up:
   last-known lookup belongs in `get_mcp_server_status`, above the dispatcher — not inside
   `McpServerDispatcher.metadata`.
 - **`_exposed_metadata` early-returns on `DegradedServerState`.** Stale tools must go through the
-  same projection, or a caller gets raw upstream schemas with no `approval_mode` and sends the
-  wrong payload shape to `call_mcp_tool` — the exact failure the exposed reflection exists to
-  prevent.
+  same projection, or a caller gets raw upstream schemas with no `input_schema_mode` or
+  `approval_policy` and sends the wrong payload shape to `call_mcp_tool` — the exact failure the
+  exposed reflection exists to prevent.
 
 ## Operator browser auth — parked remainders
 
@@ -401,8 +401,3 @@ changing session Agent identity.
 - `HistorySender.ASSISTANT` (`session/system_prompt.py`) reads like the provider-LLM-API `assistant`
   role; it records harness-side provenance of a recorded message. Rename to say so (e.g.
   `HARNESS`) once the in-flight StrEnum PRs land.
-- `approval_mode` (`ApprovalMode` in `haku/shared/haku/console/tool_calls.py`, mirrored on
-  `mcp_approval.ToolMetadata`) conflates "which input-schema shape does the proxy tool advertise"
-  (enveloped vs raw) with "does a call auto-approve". They happen to map roughly 1-1 today, but
-  the interface should not encode that coupling — split the schema-shape signal from the
-  approval-policy signal.

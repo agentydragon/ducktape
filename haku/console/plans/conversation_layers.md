@@ -765,7 +765,7 @@ function from <../../plans/information_trust_tiers.md> exists at the one console
 meant to live at. Until then, moving an operator-scoped browser read onto a deliberately unscoped
 tool either widens what the console shows or forces scoping into the surface designed not to have
 it. Three costs a plan should state rather than discover: the browser's argument shape would be
-downstream of an agent policy file (`_is_passthrough` reads the auto-approval registry, so dropping
+downstream of an agent policy file (`_approval_policy` reads the auto-approval registry, so dropping
 a tool from Haku's policy silently makes the console page need the `{input, rationale}` envelope);
 the MCP surface's prose is written for an LLM reader; and a page moving to MCP trades a typed
 404/409 for a joined-text error blob and loses the generated `paths` typing.

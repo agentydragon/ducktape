@@ -98,7 +98,8 @@ from haku.console.tool_call_service import (
 from haku.console.tool_calls import (
     MCP_TOOL_CALL_META_KEY,
     MCP_TOOL_META_KEY,
-    ApprovalMode,
+    ApprovalPolicy,
+    InputSchemaMode,
     McpProxyToolMetadata,
     McpToolCallMetadata,
     SubmitToolCallRequest,
@@ -350,8 +351,14 @@ async def _passive_server_connection_statuses(
     return McpServerConnectionStatusResponse(servers=result)
 
 
-def _is_passthrough(policies: AutoApprovalPolicyRegistry, actor: RuntimeActor, server_id: str, tool_name: str) -> bool:
-    return policies.tool_mode(actor, server_id, tool_name) is ToolAutoApprovalMode.ALWAYS_AUTO_APPROVED
+def _approval_policy(
+    policies: AutoApprovalPolicyRegistry, actor: RuntimeActor, server_id: str, tool_name: str
+) -> ApprovalPolicy:
+    return {
+        ToolAutoApprovalMode.ALWAYS_AUTO_APPROVED: ApprovalPolicy.ALWAYS_AUTO_APPROVED,
+        ToolAutoApprovalMode.CONDITIONALLY_AUTO_APPROVED: ApprovalPolicy.CONDITIONALLY_AUTO_APPROVED,
+        ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED: ApprovalPolicy.MANUAL_APPROVAL_REQUIRED,
+    }[policies.tool_mode(actor, server_id, tool_name)]
 
 
 def _exposed_metadata(
@@ -365,9 +372,11 @@ def _exposed_metadata(
     """Report each tool as *this proxy* exposes it to this caller, not as the upstream declares it.
 
     ``input_schema`` is therefore the schema a caller actually sends — enveloped where the policy
-    requires approval — and ``approval_mode`` names which of the two shapes that is. The upstream
-    schema is not reported separately: for an enveloped tool it is already nested under ``input``,
-    so returning both would be the same schema twice.
+    does not unconditionally auto-approve — and ``input_schema_mode`` names which of the two shapes
+    that is. ``approval_policy`` independently reports the effective policy, including the
+    conditional mode whose calls still use the envelope. The upstream schema is not reported
+    separately: for an enveloped tool it is already nested under ``input``, so returning both would
+    be the same schema twice.
 
     This is what makes `call_mcp_tool` usable. Its whole reason to exist is a caller whose tool list
     lacks the generated proxy, and such a caller has no other way to learn whether the tool it wants
@@ -377,7 +386,8 @@ def _exposed_metadata(
         return metadata
 
     def exposed(tool: ToolMetadata) -> ToolMetadata:
-        passthrough = _is_passthrough(policies, actor, metadata.server_id, tool.name)
+        approval_policy = _approval_policy(policies, actor, metadata.server_id, tool.name)
+        passthrough = approval_policy is ApprovalPolicy.ALWAYS_AUTO_APPROVED
         # Mirror `_build_proxy_tool`'s treatment of a missing/degenerate upstream schema, so the
         # reported envelope is exactly the one the generated tool would advertise.
         schema = (
@@ -387,7 +397,8 @@ def _exposed_metadata(
         )
         return tool.model_copy(
             update={
-                "approval_mode": ApprovalMode.PASSTHROUGH if passthrough else ApprovalMode.APPROVAL_REQUIRED,
+                "input_schema_mode": InputSchemaMode.UPSTREAM if passthrough else InputSchemaMode.APPROVAL_ENVELOPE,
+                "approval_policy": approval_policy,
                 "input_schema": schema if include_schemas else None,
                 "output_schema": tool.output_schema if include_schemas else None,
             }
@@ -566,12 +577,18 @@ class ProxyTool(Tool):
 
 
 def _build_proxy_tool(
-    context: ConsoleMcpContext, server_id: str, tool: mcp_types.Tool, *, passthrough: bool, actor: RuntimeActor
+    context: ConsoleMcpContext,
+    server_id: str,
+    tool: mcp_types.Tool,
+    *,
+    approval_policy: ApprovalPolicy,
+    actor: RuntimeActor,
 ) -> ProxyTool:
     # `inputSchema` is a required field on the real upstream type, but treat a degenerate empty
     # dict the same as "no schema" — an empty object schema is a worse minimal schema than the
     # canonical one.
     schema = tool.inputSchema or {"type": "object"}
+    passthrough = approval_policy is ApprovalPolicy.ALWAYS_AUTO_APPROVED
     # One uniform name format for both buckets — approval semantics live in the schema and
     # description, never in the name (operator decision 2026-07-13).
     name = f"{server_tool_prefix(server_id)}{TOOL_NAME_SEPARATOR}{tool.name}"
@@ -617,7 +634,8 @@ def _build_proxy_tool(
             MCP_TOOL_META_KEY: McpProxyToolMetadata(
                 server_id=server_id,
                 upstream_tool_name=tool.name,
-                approval_mode=ApprovalMode.PASSTHROUGH if passthrough else ApprovalMode.APPROVAL_REQUIRED,
+                input_schema_mode=InputSchemaMode.UPSTREAM if passthrough else InputSchemaMode.APPROVAL_ENVELOPE,
+                approval_policy=approval_policy,
             ).model_dump(mode="json")
         },
     )
@@ -676,9 +694,6 @@ class OperatorToolProvider(Provider):
             load_console_config(context.settings.config_file)
         )
 
-    def _is_passthrough(self, actor: RuntimeActor, server_id: str, tool_name: str) -> bool:
-        return _is_passthrough(self._auto_approval_policies, actor, server_id, tool_name)
-
     async def _server_tools(self, server: McpServerEntry, actor: RuntimeActor) -> list[Tool]:
         try:
             meta = await self._catalog.metadata(server, actor)
@@ -700,7 +715,7 @@ class OperatorToolProvider(Provider):
                 self._context,
                 server.id,
                 tool,
-                passthrough=self._is_passthrough(actor, server.id, tool.name),
+                approval_policy=_approval_policy(self._auto_approval_policies, actor, server.id, tool.name),
                 actor=actor,
             )
             for tool in meta.tools
@@ -728,7 +743,7 @@ class OperatorToolProvider(Provider):
                 self._context,
                 server.id,
                 upstream_tool,
-                passthrough=self._is_passthrough(actor, server.id, upstream_tool.name),
+                approval_policy=_approval_policy(self._auto_approval_policies, actor, server.id, upstream_tool.name),
                 actor=actor,
             )
             if tool.name == name and (version is None or version.matches(tool.version)):
@@ -874,7 +889,8 @@ def build_console_mcp(
                 f"unknown configured MCP server {server_id!r}; configured servers: {known}. "
                 "Use list_mcp_servers to inspect them."
             )
-        passthrough = _is_passthrough(policies, actor, server_id, tool_name)
+        approval_policy = _approval_policy(policies, actor, server_id, tool_name)
+        passthrough = approval_policy is ApprovalPolicy.ALWAYS_AUTO_APPROVED
         try:
             return await _dispatch(
                 context,

@@ -74,7 +74,8 @@ from haku.console.tool_call_service import (
 from haku.console.tool_calls import (
     AgentToolCallCaller,
     ApprovalDecisionRequest,
-    ApprovalMode,
+    ApprovalPolicy,
+    InputSchemaMode,
     OperatorToolCallCaller,
     SubmitToolCallRequest,
     ToolCallCaller,
@@ -125,16 +126,24 @@ class ToolMetadata(BaseModel):
         default=None,
         description=(
             "The schema this proxy accepts for the tool, not the upstream tool's own schema: "
-            "enveloped when `approval_mode` is `approval_required`, in which case the upstream "
+            "enveloped when `input_schema_mode` is `approval_envelope`, in which case the upstream "
             "schema is nested under `input`. This is the shape to send to `call_mcp_tool`."
         ),
     )
     output_schema: dict[str, Any] | None = None
-    approval_mode: ApprovalMode | None = Field(
+    input_schema_mode: InputSchemaMode | None = Field(
         default=None,
         description=(
-            "Which payload shape `input_schema` is, for the caller this reflection was performed "
-            "for. Null only where the reflection did not resolve a caller (a degraded projection)."
+            "Which payload shape `input_schema` is for the caller this reflection was performed for: "
+            "the upstream schema or the approval envelope. Null only where the reflection did not "
+            "resolve a caller (a degraded projection)."
+        ),
+    )
+    approval_policy: ApprovalPolicy | None = Field(
+        default=None,
+        description=(
+            "The effective auto-approval policy for this caller and tool. Null only where the "
+            "reflection did not resolve a caller (a degraded projection)."
         ),
     )
     annotations: mcp_types.ToolAnnotations | None = None
