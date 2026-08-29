@@ -50,10 +50,6 @@ function statusColor(status: Session["status"]): string {
   return "gray";
 }
 
-function harnessDisplayName(kind: Conversation["harness_kind"]): string {
-  return kind === "claude_code" ? "Claude" : "Codex";
-}
-
 function timestamp(value: string): string {
   return `${value.slice(0, 16).replace("T", " ")} UTC`;
 }
@@ -516,7 +512,7 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
                 </Text>
               )}
               <Text c="dimmed" size="sm" title={`Session ID: ${session.session_id}`}>
-                {harnessDisplayName(conversation.harness_kind)} session
+                {conversation.harness_kind} session
               </Text>
             </Group>
             <Attachments attachments={conversation.attachments} />
