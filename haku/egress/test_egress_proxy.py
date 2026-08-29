@@ -39,7 +39,7 @@ from mitmproxy.proxy.server_hooks import ServerConnectionHookData
 from more_itertools import one
 
 from haku.egress.addon import EgressGateAddon
-from haku.egress.decision import DecideDenied, GrantScope, RequestMeta
+from haku.egress.decision import GrantScope, HttpAuthorizationDenied, RequestMeta
 from haku.egress.localhost_decide_client import DEFAULT_TIMEOUT_SECONDS
 from haku.egress.proxy_test_harness import (
     BRIDGE_BEARER,
@@ -131,7 +131,7 @@ async def test_allow_passes_unscanned_placeholder_through_verbatim(upstream: Rec
 
 
 async def test_deny_refuses_without_upstream_contact(upstream: RecordingUpstream, tmp_path: Path) -> None:
-    decide = StaticDecideClient(DecideDenied(reason="no standing policy or active grant"))
+    decide = StaticDecideClient(HttpAuthorizationDenied(reason="no standing policy or active grant"))
     async with make_proxy(decide, tmp_path) as proxy:
         status, body = await proxied_get(proxy, f"http://127.0.0.1:{upstream.port}/secret")
     assert status == 403
@@ -164,7 +164,7 @@ async def test_malformed_decision_fails_closed(upstream: RecordingUpstream, tmp_
 
 
 async def test_connect_deny_refuses_tunnel(upstream: RecordingUpstream, tmp_path: Path) -> None:
-    decide = StaticDecideClient(DecideDenied(reason="no grant for origin"))
+    decide = StaticDecideClient(HttpAuthorizationDenied(reason="no grant for origin"))
     async with make_proxy(decide, tmp_path) as proxy, aiohttp.ClientSession() as session:
         with pytest.raises(aiohttp.ClientHttpProxyError) as excinfo:
             await session.get(f"https://127.0.0.1:{upstream.port}/", proxy=proxy_url(proxy))
@@ -242,7 +242,7 @@ async def test_missing_proxy_client_bearer_is_refused_without_upstream_contact(
 async def test_localhost_decide_deny_refuses_without_upstream_contact(
     upstream: RecordingUpstream, tmp_path: Path
 ) -> None:
-    denied = DecideDenied(
+    denied = HttpAuthorizationDenied(
         reason="no standing policy or active grant",
         grant_scope=GrantScope(scheme="http", host="127.0.0.1", port=upstream.port),
     )
@@ -259,7 +259,7 @@ async def test_localhost_decide_deny_refuses_without_upstream_contact(
 
 async def test_localhost_decide_connect_deny_refuses_tunnel(upstream: RecordingUpstream, tmp_path: Path) -> None:
     async with (
-        stub_console(DecideDenied(reason="no grant for origin")) as stub,
+        stub_console(HttpAuthorizationDenied(reason="no grant for origin")) as stub,
         aclosing(stub_client(stub)) as decide,
         make_proxy(decide, tmp_path) as proxy,
         aiohttp.ClientSession() as session,
@@ -366,7 +366,7 @@ async def test_unpinned_upstream_dial_is_killed() -> None:
     Every gated flow pins its destination before mitmproxy dials, so this only triggers for a
     dial that never passed the gate — which must die rather than resolve.
     """
-    addon = EgressGateAddon(StaticDecideClient(DecideDenied(reason="unreached")))
+    addon = EgressGateAddon(StaticDecideClient(HttpAuthorizationDenied(reason="unreached")))
     server = Server(address=("evil.example", 443))
     addon.server_connect(
         ServerConnectionHookData(

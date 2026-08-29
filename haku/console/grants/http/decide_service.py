@@ -41,10 +41,10 @@ from haku.console.grants.http.models import HttpMethod, HttpOrigin, HttpScheme
 from haku.console.grants.principal import RequestPrincipal
 from haku.console.identity.agent_bearer_authority import AgentBearerAuthority
 from haku.egress.decision import (
-    DecideAllowed,
-    DecideDenied,
     DecideRequest,
     GrantScope,
+    HttpAuthorizationAllowed,
+    HttpAuthorizationDenied,
     PlaceholderSubstitution,
     RequestMeta,
 )
@@ -94,7 +94,7 @@ class _InnerRequest:
     path: str
 
 
-def _canonicalize(meta: RequestMeta) -> _Tunnel | _InnerRequest | DecideDenied:
+def _canonicalize(meta: RequestMeta) -> _Tunnel | _InnerRequest | HttpAuthorizationDenied:
     """Project wire metadata onto the grant vocabulary, or deny what that vocabulary cannot admit.
 
     Canonicalization failures are policy denials, not server errors: an IP-literal host, an
@@ -103,23 +103,23 @@ def _canonicalize(meta: RequestMeta) -> _Tunnel | _InnerRequest | DecideDenied:
     """
     if meta.method == CONNECT_METHOD:
         if meta.scheme is not None or meta.path is not None:
-            return DecideDenied(reason="malformed CONNECT metadata")
+            return HttpAuthorizationDenied(reason="malformed CONNECT metadata")
         # An opaque tunnel transports TLS, so only https-origin grants can admit it; interception
         # yields inner requests that are each decided individually.
         try:
             return _Tunnel(origin=HttpOrigin(scheme=HttpScheme.HTTPS, host=meta.host, port=meta.port))
         except ValueError:
-            return DecideDenied(reason="origin is not grantable")
+            return HttpAuthorizationDenied(reason="origin is not grantable")
     if meta.scheme is None or meta.path is None or not meta.path.startswith("/"):
-        return DecideDenied(reason="malformed request metadata")
+        return HttpAuthorizationDenied(reason="malformed request metadata")
     try:
         method = HttpMethod(meta.method)
     except ValueError:
-        return DecideDenied(reason="method is not grantable")
+        return HttpAuthorizationDenied(reason="method is not grantable")
     try:
         origin = HttpOrigin(scheme=HttpScheme(meta.scheme), host=meta.host, port=meta.port)
     except ValueError:
-        return DecideDenied(reason="origin is not grantable")
+        return HttpAuthorizationDenied(reason="origin is not grantable")
     return _InnerRequest(origin=origin, method=method, path=meta.path)
 
 
@@ -187,7 +187,7 @@ class HttpDecideService:
         override. A mixed answer is not, so its rebinding refusal stands whatever the flag says."""
         return all(self._prohibited_label(address) is not None for address in request.resolved_ips)
 
-    async def decide(self, request: DecideRequest) -> DecideAllowed | DecideDenied:
+    async def decide(self, request: DecideRequest) -> HttpAuthorizationAllowed | HttpAuthorizationDenied:
         meta = request.request
         try:
             resolved = await self._agent_bearer_authority.resolve(request.proxy_client_credential.get_secret_value())
@@ -198,7 +198,7 @@ class HttpDecideService:
             logger.info(
                 "egress decision deny %s %s:%d: unknown proxy client credential", meta.method, meta.host, meta.port
             )
-            return DecideDenied(reason="unknown proxy client credential")
+            return HttpAuthorizationDenied(reason="unknown proxy client credential")
         principal = RequestPrincipal.from_source(resolved.actor)
         prohibited_reason = self._prohibited_answer_reason(request)
         # A fully-internal answer is overridable by an allowance carrying allow_prohibited_address;
@@ -215,9 +215,9 @@ class HttpDecideService:
             )
             # No grant_scope: a mixed public+prohibited answer is a rebinding signature, never a
             # grantable origin.
-            return DecideDenied(reason=prohibited_reason)
+            return HttpAuthorizationDenied(reason=prohibited_reason)
         canonical = _canonicalize(meta)
-        if isinstance(canonical, DecideDenied):
+        if isinstance(canonical, HttpAuthorizationDenied):
             logger.info(
                 "egress decision deny agent=%s %s %s:%d: %s",
                 principal.agent_id,
@@ -264,7 +264,7 @@ class HttpDecideService:
                 decision.valid_until.isoformat() if decision.valid_until is not None else None,
                 sorted(decision.credential_handles),
             )
-            return DecideAllowed(
+            return HttpAuthorizationAllowed(
                 source=decision.source,
                 decision_id=decision.decision_id,
                 reason=decision.reason,
@@ -284,7 +284,7 @@ class HttpDecideService:
                 origin.port,
                 prohibited_reason,
             )
-            return DecideDenied(reason=prohibited_reason)
+            return HttpAuthorizationDenied(reason=prohibited_reason)
         logger.info(
             "egress decision deny agent=%s %s %s://%s:%d: %s",
             principal.agent_id,
@@ -294,7 +294,7 @@ class HttpDecideService:
             origin.port,
             decision.reason,
         )
-        return DecideDenied(
+        return HttpAuthorizationDenied(
             reason=decision.reason, grant_scope=GrantScope(scheme=origin.scheme, host=origin.host, port=origin.port)
         )
 

@@ -34,10 +34,10 @@ from pydantic import SecretStr
 from haku.egress.addon import DEFAULT_DECIDE_TIMEOUT_SECONDS, ResolveAddresses, resolve_addresses
 from haku.egress.decide_client import DecideClient
 from haku.egress.decision import (
-    DecideAllowed,
-    DecideDenied,
     DecideRequest,
-    DecideResponse,
+    HttpAuthorizationAllowed,
+    HttpAuthorizationDecision,
+    HttpAuthorizationDenied,
     PlaceholderSubstitution,
     RequestMeta,
 )
@@ -51,9 +51,9 @@ FENCE_CREDENTIAL = "shared-fence-credential"
 BRIDGE_BEARER = "bridge-session-bearer"
 
 
-def allow(*substitutions: PlaceholderSubstitution) -> DecideAllowed:
+def allow(*substitutions: PlaceholderSubstitution) -> HttpAuthorizationAllowed:
     """An allow verdict carrying ``substitutions``, valid five minutes out."""
-    return DecideAllowed(
+    return HttpAuthorizationAllowed(
         source=GrantSourceKind.DATABASE,
         decision_id="database:50000000-0000-4000-8000-000000000005",
         valid_until=datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=5),
@@ -68,7 +68,7 @@ def bearer_substitution() -> PlaceholderSubstitution:
     )
 
 
-def allow_with_substitution() -> DecideAllowed:
+def allow_with_substitution() -> HttpAuthorizationAllowed:
     return allow(bearer_substitution())
 
 
@@ -200,7 +200,7 @@ class RaisingDecideClient(DecideClient):
         resolved_ips: frozenset[IPv4Address | IPv6Address],
         upstream_ip: IPv4Address | IPv6Address,
         proxy_client_credential: str,
-    ) -> DecideResponse:
+    ) -> HttpAuthorizationDecision:
         del resolved_ips, upstream_ip, proxy_client_credential
         raise RuntimeError("decide transport exploded")
 
@@ -213,7 +213,7 @@ class HangingDecideClient(DecideClient):
         resolved_ips: frozenset[IPv4Address | IPv6Address],
         upstream_ip: IPv4Address | IPv6Address,
         proxy_client_credential: str,
-    ) -> DecideResponse:
+    ) -> HttpAuthorizationDecision:
         del resolved_ips, upstream_ip, proxy_client_credential
         await asyncio.Event().wait()
         raise AssertionError("unreachable: the event is never set")
@@ -227,9 +227,9 @@ class MalformedDecideClient(DecideClient):
         resolved_ips: frozenset[IPv4Address | IPv6Address],
         upstream_ip: IPv4Address | IPv6Address,
         proxy_client_credential: str,
-    ) -> DecideResponse:
+    ) -> HttpAuthorizationDecision:
         del request, resolved_ips, upstream_ip, proxy_client_credential
-        return cast(DecideResponse, {"allowed": True, "substitutions": []})
+        return cast(HttpAuthorizationDecision, {"allowed": True, "substitutions": []})
 
 
 @dataclass(frozen=True)
@@ -244,7 +244,7 @@ class Hang:
 
 @dataclass(frozen=True)
 class GarbageBody:
-    """200 whose body is not a ``DecideResponse``."""
+    """200 whose body is not an ``HttpAuthorizationDecision``."""
 
 
 @dataclass(frozen=True)
@@ -254,7 +254,7 @@ class ServerError:
     status: int = 500
 
 
-type StubBehavior = DecideAllowed | DecideDenied | Unconfigured | Hang | GarbageBody | ServerError
+type StubBehavior = HttpAuthorizationAllowed | HttpAuthorizationDenied | Unconfigured | Hang | GarbageBody | ServerError
 
 
 @dataclass
@@ -277,7 +277,7 @@ class StubConsole:
             return web.json_response({"detail": "fence credential was rejected"}, status=401)
         self.requests.append(DecideRequest.model_validate_json(await request.read()))
         match behavior:
-            case DecideAllowed() | DecideDenied() as verdict:
+            case HttpAuthorizationAllowed() | HttpAuthorizationDenied() as verdict:
                 return web.Response(text=verdict.model_dump_json(), content_type="application/json")
             case Hang():
                 await asyncio.Event().wait()

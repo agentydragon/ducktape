@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from ipaddress import IPv4Address, IPv6Address
 
-from haku.egress.decision import DecideResponse, RequestMeta
+from haku.egress.decision import HttpAuthorizationDecision, RequestMeta
 
 
 class DecideClient(ABC):
@@ -25,4 +25,4 @@ class DecideClient(ABC):
         resolved_ips: frozenset[IPv4Address | IPv6Address],
         upstream_ip: IPv4Address | IPv6Address,
         proxy_client_credential: str,
-    ) -> DecideResponse: ...
+    ) -> HttpAuthorizationDecision: ...

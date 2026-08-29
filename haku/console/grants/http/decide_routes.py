@@ -7,15 +7,17 @@ from typing import Annotated, cast
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from haku.console.grants.http.decide_service import HttpDecideService, HttpDecideUnavailableError
-from haku.egress.decision import DecideAllowed, DecideDenied, DecideRequest
+from haku.egress.decision import DecideRequest, HttpAuthorizationAllowed, HttpAuthorizationDenied
 
 router = APIRouter(prefix="/api/internal/http", tags=["http-egress"])
 
 
-@router.post("/decide", response_model=DecideAllowed | DecideDenied, response_model_exclude_none=True)
+@router.post(
+    "/decide", response_model=HttpAuthorizationAllowed | HttpAuthorizationDenied, response_model_exclude_none=True
+)
 async def decide_http_request(
     request: Request, body: DecideRequest, authorization: Annotated[str | None, Header()] = None
-) -> DecideAllowed | DecideDenied:
+) -> HttpAuthorizationAllowed | HttpAuthorizationDenied:
     """Decide one admission for the colocated egress proxy: verdict plus substitutions.
 
     The endpoint is intentionally not operator-session protected: it is the machine-to-machine

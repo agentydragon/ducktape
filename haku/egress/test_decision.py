@@ -10,7 +10,13 @@ import pytest
 import pytest_bazel
 from pydantic import SecretStr, TypeAdapter, ValidationError
 
-from haku.egress.decision import DecideAllowed, DecideDenied, DecideRequest, DecideResponse, RequestMeta
+from haku.egress.decision import (
+    DecideRequest,
+    HttpAuthorizationAllowed,
+    HttpAuthorizationDecision,
+    HttpAuthorizationDenied,
+    RequestMeta,
+)
 from haku.grants.authorization import GrantSourceKind
 
 _BRIDGE = "bridge-session-bearer"
@@ -84,7 +90,7 @@ def test_resolution_must_be_present_and_bounded() -> None:
 
 
 def test_verdicts_parse_by_their_allowed_discriminant() -> None:
-    adapter: TypeAdapter[DecideResponse] = TypeAdapter(DecideResponse)
+    adapter: TypeAdapter[HttpAuthorizationDecision] = TypeAdapter(HttpAuthorizationDecision)
 
     allowed = adapter.validate_json(
         json.dumps(
@@ -103,7 +109,7 @@ def test_verdicts_parse_by_their_allowed_discriminant() -> None:
             }
         )
     )
-    assert isinstance(allowed, DecideAllowed)
+    assert isinstance(allowed, HttpAuthorizationAllowed)
     assert allowed.source is GrantSourceKind.DATABASE
     assert allowed.valid_until == datetime.datetime(2026, 8, 27, 12, 30, tzinfo=datetime.UTC)
     (substitution,) = allowed.substitutions
@@ -114,21 +120,21 @@ def test_verdicts_parse_by_their_allowed_discriminant() -> None:
     standing = adapter.validate_json(
         json.dumps({"allowed": True, "source": "config_file", "decision_id": "config_file:haku-github-api"})
     )
-    assert isinstance(standing, DecideAllowed)
+    assert isinstance(standing, HttpAuthorizationAllowed)
     assert standing.source is GrantSourceKind.CONFIG_FILE
     assert standing.valid_until is None
     assert standing.substitutions == []
 
     denied = adapter.validate_json(json.dumps({"allowed": False, "reason": "no grant"}))
-    assert isinstance(denied, DecideDenied)
+    assert isinstance(denied, HttpAuthorizationDenied)
     assert denied.grant_scope is None
 
 
 def test_denials_never_claim_an_admitting_source() -> None:
     with pytest.raises(ValidationError):
-        DecideDenied.model_validate({"allowed": False, "source": "database", "reason": "contradiction"})
+        HttpAuthorizationDenied.model_validate({"allowed": False, "source": "database", "reason": "contradiction"})
     with pytest.raises(ValidationError):
-        DecideAllowed.model_validate(
+        HttpAuthorizationAllowed.model_validate(
             {"allowed": True, "source": "none", "decision_id": "x", "valid_until": "2026-08-27T12:30:00Z"}
         )
 

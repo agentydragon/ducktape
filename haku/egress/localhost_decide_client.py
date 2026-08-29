@@ -17,12 +17,12 @@ import httpx
 from pydantic import SecretStr, TypeAdapter
 
 from haku.egress.decide_client import DecideClient
-from haku.egress.decision import DecideRequest, DecideResponse, RequestMeta
+from haku.egress.decision import DecideRequest, HttpAuthorizationDecision, RequestMeta
 
 DECIDE_PATH = "/api/internal/http/decide"
 DEFAULT_TIMEOUT_SECONDS = 5.0
 
-_RESPONSE_ADAPTER: TypeAdapter[DecideResponse] = TypeAdapter(DecideResponse)
+_RESPONSE_ADAPTER: TypeAdapter[HttpAuthorizationDecision] = TypeAdapter(HttpAuthorizationDecision)
 
 
 class LocalhostDecideClient(DecideClient):
@@ -47,7 +47,7 @@ class LocalhostDecideClient(DecideClient):
         resolved_ips: frozenset[IPv4Address | IPv6Address],
         upstream_ip: IPv4Address | IPv6Address,
         proxy_client_credential: str,
-    ) -> DecideResponse:
+    ) -> HttpAuthorizationDecision:
         decide_request = DecideRequest(
             proxy_client_credential=SecretStr(proxy_client_credential),
             request=request,

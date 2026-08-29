@@ -28,7 +28,7 @@ from aiohttp import web
 from more_itertools import one
 
 from haku.egress.decide_client import DecideClient
-from haku.egress.decision import DecideDenied, DecideResponse, RequestMeta
+from haku.egress.decision import HttpAuthorizationDecision, HttpAuthorizationDenied, RequestMeta
 from haku.egress.proxy_test_harness import RecordingUpstream, allow, make_proxy, proxy_url, tunneled_get
 from haku.egress.static_decide_client import StaticDecideClient
 from haku.egress.tls_test_support import client_tls_context, make_self_signed_cert, server_tls_context
@@ -48,12 +48,12 @@ class MethodGatingDecideClient(DecideClient):
         resolved_ips: frozenset[IPv4Address | IPv6Address],
         upstream_ip: IPv4Address | IPv6Address,
         proxy_client_credential: str,
-    ) -> DecideResponse:
+    ) -> HttpAuthorizationDecision:
         del resolved_ips, upstream_ip, proxy_client_credential
         self.requests.append(request)
         if request.method in self.allowed_methods:
             return allow()
-        return DecideDenied(reason=f"{request.method} is not admitted in this tunnel")
+        return HttpAuthorizationDenied(reason=f"{request.method} is not admitted in this tunnel")
 
 
 async def test_connect_admitted_but_inner_request_denied(upstream: RecordingUpstream, tmp_path: Path) -> None:
@@ -123,7 +123,7 @@ async def test_websocket_upgrade_on_allowed_host(tmp_path: Path) -> None:
 async def test_websocket_upgrade_on_denied_host_refused(tmp_path: Path) -> None:
     """A denied wss:// upgrade is refused at the tunnel; the upstream is never contacted."""
     cert_path, key_path = make_self_signed_cert("localhost", tmp_path)
-    decide = StaticDecideClient(DecideDenied(reason="no grant for this websocket origin"))
+    decide = StaticDecideClient(HttpAuthorizationDenied(reason="no grant for this websocket origin"))
     async with (
         websocket_upstream(cert_path, key_path) as up,
         make_proxy(decide, tmp_path, extra_options={"ssl_insecure": True}) as proxy,

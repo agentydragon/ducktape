@@ -12,6 +12,7 @@ because their coverage is semantically different (`grants.kubernetes` scope/rule
 from __future__ import annotations
 
 import datetime
+from enum import StrEnum
 from typing import Annotated, Literal, assert_never
 from uuid import UUID
 
@@ -39,7 +40,11 @@ from haku.grants.authorization import AuthorizationDecision
 
 GRANTS_SERVER_ID = "grants"
 
-GrantDomain = Literal["kubernetes", "http"]
+
+class GrantDomain(StrEnum):
+    KUBERNETES = "kubernetes"
+    HTTP = "http"
+
 
 # The declared read scope for `list_grants`. Only `self` (the caller's own grants) is served today,
 # and it is the value the argument-conditional auto-approval policy keys on; a broader nameable
@@ -53,7 +58,7 @@ class KubernetesGrantRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    domain: Literal["kubernetes"]
+    domain: Literal[GrantDomain.KUBERNETES]
     spec: kubernetes_models.GrantSpec
 
 
@@ -62,7 +67,7 @@ class HttpGrantRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    domain: Literal["http"]
+    domain: Literal[GrantDomain.HTTP]
     spec: http_models.GrantSpec
 
 
@@ -74,7 +79,7 @@ class KubernetesGrantView(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    domain: Literal["kubernetes"] = "kubernetes"
+    domain: Literal[GrantDomain.KUBERNETES] = GrantDomain.KUBERNETES
     grant: kubernetes_models.Grant
 
 
@@ -83,7 +88,7 @@ class HttpGrantView(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    domain: Literal["http"] = "http"
+    domain: Literal[GrantDomain.HTTP] = GrantDomain.HTTP
     grant: http_models.Grant
 
 
@@ -162,7 +167,7 @@ class GrantsToolsService:
         return list(await self._catalog.list_applicable(request_principal=context.request_principal))
 
     async def get_grant(self, *, context: McpExecutionContext, domain: GrantDomain, grant_id: UUID) -> Grant:
-        if domain == "kubernetes":
+        if domain is GrantDomain.KUBERNETES:
             return await self._catalog.get_kubernetes_grant(
                 request_principal=context.request_principal, grant_id=grant_id
             )
@@ -191,7 +196,7 @@ class GrantsToolsService:
                 owned = await self._agents.list_agents(operator_id=operator_id)
                 if owner_agent_id not in {agent.agent_id for agent in owned}:
                     raise GrantNotFoundError(str(owner_agent_id))
-                if domain == "kubernetes":
+                if domain is GrantDomain.KUBERNETES:
                     revoked = await self._kubernetes.revoke_grants(
                         owner_agent_id=owner_agent_id, grant_ids=grant_ids, reason=reason
                     )
@@ -203,7 +208,7 @@ class GrantsToolsService:
             case AgentMcpExecutionCaller(principal=principal):
                 if owner_agent_id is not None:
                     raise PermissionError("an Agent relinquishes only its own grants and may not name owner_agent_id")
-                if domain == "kubernetes":
+                if domain is GrantDomain.KUBERNETES:
                     released = await self._kubernetes.release_applicable_grants(
                         request_principal=principal, grant_ids=grant_ids, reason=reason
                     )

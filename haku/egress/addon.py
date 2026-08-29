@@ -35,7 +35,7 @@ from mitmproxy import connection, http
 from mitmproxy.proxy import server_hooks
 
 from haku.egress.decide_client import DecideClient
-from haku.egress.decision import DecideAllowed, DecideDenied, PlaceholderSubstitution, RequestMeta
+from haku.egress.decision import HttpAuthorizationAllowed, HttpAuthorizationDenied, PlaceholderSubstitution, RequestMeta
 
 logger = logging.getLogger(__name__)
 
@@ -255,10 +255,10 @@ class EgressGateAddon:
                     meta, resolved_ips=resolved, upstream_ip=upstream_ip, proxy_client_credential=client_credential
                 )
             match decision:
-                case DecideDenied():
+                case HttpAuthorizationDenied():
                     logger.info("deny %s %s:%d: %s", meta.method, meta.host, meta.port, decision.reason)
                     flow.response = _refusal(403, f"egress denied: {decision.reason}")
-                case DecideAllowed():
+                case HttpAuthorizationAllowed():
                     self._pinned_upstreams[(meta.host, meta.port)] = upstream_ip
                     applied = sum(
                         _apply_substitution(flow.request, substitution) for substitution in decision.substitutions

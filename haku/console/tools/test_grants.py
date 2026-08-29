@@ -85,11 +85,11 @@ _HTTP_SPEC = http_models.GrantSpec(
 
 
 def _kubernetes(spec: kubernetes_models.GrantSpec) -> KubernetesGrantRequest:
-    return KubernetesGrantRequest(domain="kubernetes", spec=spec)
+    return KubernetesGrantRequest(domain=GrantDomain.KUBERNETES, spec=spec)
 
 
 def _http(spec: http_models.GrantSpec) -> HttpGrantRequest:
-    return HttpGrantRequest(domain="http", spec=spec)
+    return HttpGrantRequest(domain=GrantDomain.HTTP, spec=spec)
 
 
 _CAN_I_REQUEST = RequestAttributes(
@@ -339,14 +339,14 @@ def test_create_routes_each_domain_and_tags_the_returned_envelope(console: _Cons
             context=context, requests=[_http(_HTTP_SPEC)], duration_seconds=600, applies_to=GrantPrincipalKind.AGENT
         )
         assert isinstance(kubernetes_view, KubernetesGrantView)
-        assert kubernetes_view.domain == "kubernetes"
+        assert kubernetes_view.domain is GrantDomain.KUBERNETES
         assert kubernetes_view.grant.scope == _K8S_SPEC.scope
         assert kubernetes_view.grant.rules == _K8S_SPEC.rules
         assert kubernetes_view.grant.owner_agent_id == console.agent_id
         assert kubernetes_view.grant.principal == AgentGrantPrincipal(agent_id=console.agent_id)
         assert kubernetes_view.grant.source_tool_call_id == context.tool_call_id
         assert isinstance(http_view, HttpGrantView)
-        assert http_view.domain == "http"
+        assert http_view.domain is GrantDomain.HTTP
         assert http_view.grant.spec == _HTTP_SPEC
         assert http_view.grant.status is GrantStatus.ACTIVE
 
@@ -356,9 +356,11 @@ def test_create_routes_each_domain_and_tags_the_returned_envelope(console: _Cons
             (view.coverage.kind, view.source.id) for view in listed if isinstance(view.source, DatabaseGrantSource)
         } == {("kubernetes_rules", kubernetes_view.grant.grant_id), ("http", http_view.grant.grant_id)}
         kubernetes_grant = await console.service.get_grant(
-            context=context, domain="kubernetes", grant_id=kubernetes_view.grant.grant_id
+            context=context, domain=GrantDomain.KUBERNETES, grant_id=kubernetes_view.grant.grant_id
         )
-        http_grant = await console.service.get_grant(context=context, domain="http", grant_id=http_view.grant.grant_id)
+        http_grant = await console.service.get_grant(
+            context=context, domain=GrantDomain.HTTP, grant_id=http_view.grant.grant_id
+        )
         assert kubernetes_grant in listed
         assert http_grant in listed
 
@@ -399,13 +401,15 @@ def test_release_routes_by_domain_and_ends_in_the_supplied_order(console: _Conso
         # An Agent caller's revoke_grants relinquishes its own grants: the recorded fact is a release.
         released = await console.service.revoke_grants(
             context=context,
-            domain="kubernetes",
+            domain=GrantDomain.KUBERNETES,
             grant_ids=[second.grant.grant_id, first.grant.grant_id],
             reason="probe complete",
         )
         assert [view.grant.grant_id for view in released] == [second.grant.grant_id, first.grant.grant_id]
         assert all(view.grant.status is GrantStatus.RELEASED for view in released)
-        refetched = await console.service.get_grant(context=context, domain="kubernetes", grant_id=first.grant.grant_id)
+        refetched = await console.service.get_grant(
+            context=context, domain=GrantDomain.KUBERNETES, grant_id=first.grant.grant_id
+        )
         assert refetched.validity.status is GrantStatus.RELEASED
 
     console.call(exercise)
@@ -414,8 +418,8 @@ def test_release_routes_by_domain_and_ends_in_the_supplied_order(console: _Conso
 @pytest.mark.parametrize(
     ("domain", "request_factory"),
     [
-        pytest.param("kubernetes", lambda: _kubernetes(_K8S_SPEC), id="kubernetes"),
-        pytest.param("http", lambda: _http(_HTTP_SPEC), id="http"),
+        pytest.param(GrantDomain.KUBERNETES, lambda: _kubernetes(_K8S_SPEC), id="kubernetes"),
+        pytest.param(GrantDomain.HTTP, lambda: _http(_HTTP_SPEC), id="http"),
     ],
 )
 def test_revoke_is_operator_direct_and_scoped_to_owned_agents(
@@ -475,7 +479,9 @@ def test_revoke_is_operator_direct_and_scoped_to_owned_agents(
         ),
         pytest.param(lambda service: service.list_grants(context=_foreign_operator_context()), id="list"),
         pytest.param(
-            lambda service: service.get_grant(context=_foreign_operator_context(), domain="http", grant_id=UUID(int=2)),
+            lambda service: service.get_grant(
+                context=_foreign_operator_context(), domain=GrantDomain.HTTP, grant_id=UUID(int=2)
+            ),
             id="get",
         ),
     ],

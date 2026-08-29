@@ -2,7 +2,7 @@
 
 One decision call carries both the reachability verdict and the request-specific
 credential-substitution operations (github.com/agentydragon/ducktape/issues/4670).
-The wire models below (``DecideRequest``/``DecideResponse``) are the schema of
+The wire models below (``DecideRequest``/``HttpAuthorizationDecision``) are the schema of
 Console's ``POST /api/internal/http/decide``, shared with the proxy adapter as an
 internal same-release contract: proxy and Console deploy from one commit, so
 there is no version negotiation and no versioning.
@@ -128,7 +128,7 @@ class GrantScope(BaseModel):
     port: int
 
 
-class DecideAllowed(AuthorizationAllowed):
+class HttpAuthorizationAllowed(AuthorizationAllowed):
     """Forward after applying the substitutions; a new admission needs a new decision."""
 
     valid_until: AwareDatetime | None = Field(
@@ -144,7 +144,7 @@ class DecideAllowed(AuthorizationAllowed):
     )
 
 
-class DecideDenied(AuthorizationDenied):
+class HttpAuthorizationDenied(AuthorizationDenied):
     """Refuse without contacting the upstream."""
 
     grant_scope: GrantScope | None = Field(
@@ -156,4 +156,4 @@ class DecideDenied(AuthorizationDenied):
     )
 
 
-type DecideResponse = DecideAllowed | DecideDenied
+type HttpAuthorizationDecision = HttpAuthorizationAllowed | HttpAuthorizationDenied
