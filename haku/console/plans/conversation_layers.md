@@ -204,7 +204,8 @@ lands inside it is redacted on observation. The standing guarantees are
   — replays are suppressed, duplicates repaired, an operator redaction respected. What no reader
   does yet is compare the copy's _content_ against the fold's desired body (the tag carries ids,
   never text), so an edit the homeserver lost stays stale until the next state change or takeover
-  sweep; step 2 of § 9 is where a content check would live if it earns its cost.
+  sweep; a content check to catch that is the open item in § 8 (_What is missing_), if it earns its
+  cost.
 - **The token cannot live in the room**, because it is what reads the room. So the channel keeps a
   private store whatever else moves; the only question is what else is in it.
 
@@ -484,52 +485,26 @@ operator invite creates a second conversation and starts its reconciler beside t
 
 ## 9. The order
 
-Each step is independently reviewable. The dependency order below is the channel stack; the
-backend-neutral harness/Agent-selection work in #4431 is a parallel review track and must not be
-mixed into these PRs.
+Each remaining step is independently reviewable. The backend-neutral harness/Agent-selection work
+in #4431 is a parallel review track and must not be mixed into these PRs.
 
-1. **Completed — Matrix's own copy is read** (§ 3). The own-sender `/sync` projection feeds
-   `matrix_room_copy` without admitting anything as a prompt; reconciliation finds an existing
-   source before sending, the deterministic transaction id covers only the send-to-echo window, and
-   a duplicate that lands inside it is redacted on observation. The editable copy stays unread
-   until step 2 gives it a durable subject.
+1. **Add Matrix commands.** Abort first, then new/close session semantics as conversation
+   operations — session supervision behind the conversation already makes them so. Commands are
+   ingress interception, never agent tools or approval gestures. Use a namespace Element does not
+   consume (for example `!haku stop`).
 
-2. **Completed — turn notices are spans** (§ 4). The fold (`channels/matrix/spans.py`) produces
-   bounded bodies under stable turn/session subjects — the opening event's position — and closes
-   each span by sealing scrollback facts and redacting spent live state; the subscriber reconciles
-   it beside the sealed notices, off one cursor, with a takeover sweep for lines nothing open
-   accounts for. The pure fold and the Matrix effect are tested separately.
-
-3. **Completed — session supervision is behind the conversation.** `conversation.harness.Harness` owns
-   global lease expiry, terminal-claim cleanup and exactly-once idle-session creation under the
-   conversation row lock. Web and Matrix admit prompts by conversation; Matrix has no session
-   supervisor, lifecycle latch or `MXSE` lock. The harness identity seam from #4431 may later inform
-   which session implementation is created, but no provider choice leaks into the channel.
-
-4. **Completed — reconciliation is attachment-scoped, and rooms are served in parallel.** One
-   Matrix `/sync` owner keeps the user-wide token and dispatches its room events by attachment; the
-   sync leader sweeps one reconciler per live attachment
-   (`channels/matrix/attachment_reconciler.py`) owning that room's conversation cursor, reply
-   outbox, revisions and send budget, so an operator invite creates another conversation and
-   starts another reconciler. `bound_room()` and the process-global pacer state are gone;
-   `RoomPacers` addresses the budgets by attachment.
-
-5. **Add Matrix commands.** Abort first, then new/close session semantics once step 3 makes them
-   conversation operations. Commands are ingress interception, never agent tools or approval
-   gestures. Use a namespace Element does not consume (for example `!haku stop`).
-
-6. **Interlink the channels.** Matrix events link to durable console routes; the console links back
+2. **Interlink the channels.** Matrix events link to durable console routes; the console links back
    with `matrix.to`; sessions and tool calls link both ways. This is independent of the others once
    the route names are chosen to survive permanent, federated events.
 
-**Dependencies.** Steps 5 and 6 are independent of each other. The
+**Dependencies.** The two steps are independent of each other. The
 channel-neutral allocator is already complete and is not a step in this plan.
 
 **Independent harness work.** The `provisioning` refinement (§ 10) and the read-surface work
 (§ 13) are not channel dependencies. Bridge v3 already made the frame payload harness-neutral; any remaining
 numbering/contract cleanup stays in that harness stack. The
-`session_runtime.py` split and its abort wait can land with #4431 or step 5 on their own merits, not
-as incidental channel-reconciler edits.
+`session_runtime.py` split and its abort wait can land with #4431 or the Matrix-commands step on
+their own merits, not as incidental channel-reconciler edits.
 
 ## 10. `provisioning` is lossy
 
@@ -670,7 +645,7 @@ silently:
 
 ## 12. How this executes
 
-§ 9 is the dependency order. This is how it is worked: what fans out, what cannot, and where the
+§ 9 is the remaining work. This is how it is worked: what fans out, what cannot, and where the
 position is kept so a session that dies mid-flight loses nothing but its own context.
 
 ### The bottleneck is migrations, and it is narrower than the step list suggests
