@@ -50,13 +50,13 @@ from haku.console.session.store import (
 )
 from haku.console.session.system_prompt import HistoryMessage, HistorySender, SessionIntroduction
 from haku.console.x.runtime import (
-    ConfiguredRuntime,
+    ConfiguredHarness,
     HarnessKey,
-    RuntimeLaunch,
-    RuntimeMcpServer,
-    RuntimeNotConfiguredError,
-    RuntimeRegistry,
-    UnsupportedRuntimeError,
+    HarnessLaunchSpec,
+    HarnessMcpServer,
+    HarnessNotConfiguredError,
+    HarnessRegistry,
+    UnsupportedHarnessError,
 )
 from haku.runner.backend import LEGACY_SESSION_TOKEN_VARIABLE
 from haku.runner.client import RecordedFrame
@@ -78,7 +78,7 @@ from haku.runner.protocol import (
 )
 
 router = APIRouter(tags=["sessions"])
-internal_router = APIRouter(tags=["session-runtime-internal"])
+internal_router = APIRouter(tags=["session-harness-internal"])
 logger = logging.getLogger(__name__)
 
 # How long one session's observed provisioning state is reused before the cluster is read again.
@@ -147,7 +147,7 @@ class ConversationCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     agent_id: UUID
-    runtime: HarnessKind
+    harness: HarnessKind
 
 
 class PromptAccepted(BaseModel):
@@ -236,14 +236,14 @@ class RolloutRecorder:
 class SessionService:
     def __init__(
         self,
-        runtimes: RuntimeRegistry,
+        harnesses: HarnessRegistry,
         store: Store,
         notifications: SessionWakes,
         *,
         conversation_history: ConversationHistory | None = None,
         launch_authorizer: LaunchAuthorizer | None = None,
     ):
-        self._runtimes = runtimes
+        self._harnesses = harnesses
         self._store = store
         self._notifications = notifications
         self._conversation_history = conversation_history
@@ -259,11 +259,11 @@ class SessionService:
         """Drop cluster observations after a Kubernetes watch reports a lifecycle change."""
         self._observations.clear()
 
-    async def _configured(self, session_id: UUID) -> ConfiguredRuntime:
+    async def _configured(self, session_id: UUID) -> ConfiguredHarness:
         identity = await self._store.session_identity(session_id)
         if identity.agent_id is None:
-            raise RuntimeNotConfiguredError("session has no pinned Agent/harness identity")
-        return self._runtimes.configured(
+            raise HarnessNotConfiguredError("session has no pinned Agent/harness identity")
+        return self._harnesses.configured(
             HarnessKey(identity.agent_id, identity.harness_kind), access_profile_id=identity.access_profile_id
         )
 
@@ -307,9 +307,9 @@ class SessionService:
                     raise RuntimeError("chat launch requires a selected Agent")
                 if harness_kind is None:
                     raise RuntimeError("chat launch requires a selected harness")
-                access_profile_id = self._runtimes.resources_for(HarnessKey(agent_id, harness_kind)).access_profile_id
+                access_profile_id = self._harnesses.resources_for(HarnessKey(agent_id, harness_kind)).access_profile_id
                 if access_profile_id is None:
-                    raise RuntimeNotConfiguredError("selected Agent has no configured access profile")
+                    raise HarnessNotConfiguredError("selected Agent has no configured access profile")
             view, token = await self._store.create_idle(
                 operator_id,
                 conversation_id=conversation_id,
@@ -514,7 +514,7 @@ class SessionService:
         except Exception as error:
             # Leave `claim_cleaned_at` NULL so another replica or a later restart retries.
             # Kubernetes deletion is idempotent, so a redundant retry costs a 404.
-            logger.warning("runtime claim cleanup failed for session %s: %s", session_id, error)
+            logger.warning("harness claim cleanup failed for session %s: %s", session_id, error)
             return False
         await self._store.complete_claim_cleanup(session_id)
         return True
@@ -576,9 +576,9 @@ class SessionService:
         """
         try:
             configured = await self._configured(session_id)
-        except (RuntimeNotConfiguredError, UnsupportedRuntimeError):
+        except (HarnessNotConfiguredError, UnsupportedHarnessError):
             await websocket.send_denial_response(
-                Response(status_code=503, content=b"session runtime is not configured on this replica")
+                Response(status_code=503, content=b"session harness is not configured on this replica")
             )
             return
         except KeyError:
@@ -600,18 +600,18 @@ class SessionService:
             return
 
         resources = configured.adapter, configured.resources
-        runtime, agent_resources = resources
+        harness, agent_resources = resources
         try:
             appended = await self._appended_prompt(session_id)
         except Exception as error:
-            logger.exception("runtime system prompt failed to render for session %s", session_id)
+            logger.exception("harness system prompt failed to render for session %s", session_id)
             await self._store.fail(session_id, f"system prompt failed to render: {error}")
             await self._cleanup_terminal_claim(session_id)
             await websocket.close(code=1011, reason="system prompt failed to render")
             return
         try:
-            harness_launch = runtime.build_launch(
-                RuntimeLaunch(
+            harness_launch = harness.build_launch(
+                HarnessLaunchSpec(
                     cwd=agent_resources.cwd,
                     environment=agent_resources.environment,
                     mcp_servers={
@@ -619,7 +619,7 @@ class SessionService:
                         # carries only the legacy variable, so the launch must reference the name
                         # every live pod has. Flip to SESSION_TOKEN_VARIABLE once no live sandbox
                         # predates the HAKU_SESSION_TOKEN rename — one release after it deploys.
-                        name: RuntimeMcpServer(url=url, bearer_environment_variable=LEGACY_SESSION_TOKEN_VARIABLE)
+                        name: HarnessMcpServer(url=url, bearer_environment_variable=LEGACY_SESSION_TOKEN_VARIABLE)
                         for name, url in agent_resources.mcp_server_urls.items()
                     },
                     appended_system_prompt=appended,
@@ -627,10 +627,10 @@ class SessionService:
                 )
             )
         except Exception as error:
-            logger.exception("runtime launch preparation failed for session %s", session_id)
-            await self._store.fail(session_id, f"runtime launch preparation failed: {error}")
+            logger.exception("harness launch preparation failed for session %s", session_id)
+            await self._store.fail(session_id, f"harness launch preparation failed: {error}")
             await self._cleanup_terminal_claim(session_id)
-            await websocket.close(code=1011, reason="runtime launch preparation failed")
+            await websocket.close(code=1011, reason="harness launch preparation failed")
             return
 
         await websocket.accept()
@@ -661,8 +661,8 @@ class SessionService:
                 keep_sandbox = True
                 await self._store.release_lease(session_id)
             except* Exception as errors:
-                logger.exception("%s journal runtime failed for session %s", runtime.display_name, session_id)
-                await self._store.fail(session_id, f"{runtime.display_name} runtime failed: {_first_message(errors)}")
+                logger.exception("%s journal harness failed for session %s", harness.display_name, session_id)
+                await self._store.fail(session_id, f"{harness.display_name} harness failed: {_first_message(errors)}")
         except asyncio.CancelledError:
             keep_sandbox = True
             await self._store.release_lease(session_id)
@@ -801,27 +801,27 @@ class SessionService:
         released = await self._store.release_held_leases()
         if released:
             logger.info("Released %d held session lease(s) on shutdown", released)
-        await self._runtimes.aclose()
+        await self._harnesses.aclose()
 
 
 def _service(request: Request) -> SessionService:
     service = cast(SessionService | None, request.app.state.session_service)
     if service is None:
-        raise HTTPException(status_code=503, detail="the session runtime is not configured")
+        raise HTTPException(status_code=503, detail="the session harness is not configured")
     return service
 
 
 def _store(request: Request) -> Store:
     store = cast(Store | None, request.app.state.session_store)
     if store is None:
-        raise HTTPException(status_code=503, detail="the session runtime is not configured")
+        raise HTTPException(status_code=503, detail="the session harness is not configured")
     return store
 
 
 def _session_wakes(request: Request) -> SessionWakes:
     session_wakes = cast(SessionWakes | None, request.app.state.session_wakes)
     if session_wakes is None:
-        raise HTTPException(status_code=503, detail="the session runtime is not configured")
+        raise HTTPException(status_code=503, detail="the session harness is not configured")
     return session_wakes
 
 
@@ -860,10 +860,10 @@ async def create_conversation(
     """Open a new thread and the first session to run it.
 
     One call, because a conversation with no session is a thread nothing can be said to. Agent and
-    runtime are an atomic required pair; there is no server-default launch endpoint.
+    harness are an atomic required pair; there is no server-default launch endpoint.
     """
     try:
-        return await service.create_conversation(actor.operator_id, agent_id=body.agent_id, harness_kind=body.runtime)
+        return await service.create_conversation(actor.operator_id, agent_id=body.agent_id, harness_kind=body.harness)
     except LaunchAgentRejectedError:
         raise HTTPException(status_code=403, detail="chat launch is not authorized")
     except KeyError as error:
@@ -946,7 +946,7 @@ async def send_conversation_message(
 ) -> PromptAccepted:
     """Offer a prompt to a conversation even while no session is serving it.
 
-    The neutral conversation-runtime reconciler creates or reuses the session before the existing
+    The neutral conversation-harness reconciler creates or reuses the session before the existing
     sandbox allocator provisions its container.
     """
     try:

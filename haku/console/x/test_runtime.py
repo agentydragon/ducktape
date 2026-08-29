@@ -1,4 +1,4 @@
-"""Focused contracts for Console runtime selection."""
+"""Focused contracts for Console harness selection."""
 
 from __future__ import annotations
 
@@ -11,11 +11,11 @@ import pytest_bazel
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.x.runtime import (
-    AgentRuntimeResources,
+    AgentHarnessResources,
     HarnessKey,
-    RuntimeNotConfiguredError,
-    RuntimeRegistry,
-    UnsupportedRuntimeError,
+    HarnessNotConfiguredError,
+    HarnessRegistry,
+    UnsupportedHarnessError,
 )
 from haku.console.x.runtime_catalog import projection_registry
 
@@ -31,7 +31,7 @@ def test_projection_registry_exposes_each_linked_provider_adapter() -> None:
 def test_registry_fails_closed_for_a_harness_kind_that_is_not_registered() -> None:
     registry = projection_registry()
 
-    with pytest.raises(UnsupportedRuntimeError, match="not registered"):
+    with pytest.raises(UnsupportedHarnessError, match="not registered"):
         registry[cast(HarnessKind, "future_runtime")]
 
 
@@ -41,7 +41,7 @@ def test_execution_resources_are_selected_by_agent_harness_and_pinned_profile() 
     second_agent = uuid4()
 
     def resource(agent_id, profile, cwd):
-        return AgentRuntimeResources(
+        return AgentHarnessResources(
             claims=cast(Any, object()),
             session_ttl_seconds=300,
             cwd=cwd,
@@ -52,7 +52,7 @@ def test_execution_resources_are_selected_by_agent_harness_and_pinned_profile() 
             access_profile_id=profile,
         )
 
-    registry = RuntimeRegistry(
+    registry = HarnessRegistry(
         {HarnessKind.CLAUDE_CODE: adapter},
         {
             HarnessKey(first_agent, HarnessKind.CLAUDE_CODE): resource(first_agent, "haku", "/haku"),
@@ -70,7 +70,7 @@ def test_execution_resources_are_selected_by_agent_harness_and_pinned_profile() 
         ).resources.cwd
         == "/coder"
     )
-    with pytest.raises(RuntimeNotConfiguredError, match="access profile"):
+    with pytest.raises(HarnessNotConfiguredError, match="access profile"):
         registry.configured(HarnessKey(first_agent, HarnessKind.CLAUDE_CODE), access_profile_id="coder")
 
 

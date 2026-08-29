@@ -1,4 +1,4 @@
-"""Neutral launch identity types shared by channel and runtime stores."""
+"""Neutral launch identity types shared by channel and harness stores."""
 
 from __future__ import annotations
 
@@ -50,8 +50,8 @@ class LaunchAuthority(Protocol):
     ) -> LaunchAuthorization: ...
 
 
-class ChatLaunchAuthorizer:
-    """Compose deploy-time runtime gates with the durable Agent authority.
+class HarnessLaunchAuthorizer:
+    """Compose deploy-time harness gates with the durable Agent authority.
 
     The authority supplies the current profile for a new launch, or validates the pinned profile
     for a replacement.  Keeping the composition here makes the exact production callable usable

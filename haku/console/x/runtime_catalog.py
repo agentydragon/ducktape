@@ -1,32 +1,32 @@
-"""Application composition for the runtime implementations linked into Console."""
+"""Application composition for the harness implementations linked into Console."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from haku.console.config import ClaudeCodeImplementationConfig, RuntimeRegistrationConfig
+from haku.console.config import ClaudeCodeImplementationConfig, HarnessRegistrationConfig
 from haku.console.session.sandbox_claims import SandboxClaims
 from haku.console.session.system_prompt import SystemPromptTemplate
-from haku.console.x.claude_code.runtime import ClaudeRuntimeAdapter
+from haku.console.x.claude_code.runtime import ClaudeHarnessAdapter
 from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
-from haku.console.x.codex_app_server.runtime import CodexRuntimeAdapter
-from haku.console.x.runtime import AgentRuntimeResources, HarnessKey, RuntimeAdapter, RuntimeRegistry
+from haku.console.x.codex_app_server.runtime import CodexHarnessAdapter
+from haku.console.x.runtime import AgentHarnessResources, HarnessKey, HarnessAdapter, HarnessRegistry
 from haku.runner.codex.options import CodexModelProvider
 
 
-def projection_registry() -> RuntimeRegistry:
+def projection_registry() -> HarnessRegistry:
     """All linked provider interpreters, without execution credentials or sandbox resources."""
-    adapters = (ClaudeRuntimeAdapter(), CodexRuntimeAdapter())
-    return RuntimeRegistry({adapter.kind: adapter for adapter in adapters})
+    adapters = (ClaudeHarnessAdapter(), CodexHarnessAdapter())
+    return HarnessRegistry({adapter.kind: adapter for adapter in adapters})
 
 
 @dataclass(frozen=True, slots=True)
-class RuntimeRegistration:
+class HarnessRegistration:
     """One adapter plus the deploy-owned resources that make it launchable."""
 
-    adapter: RuntimeAdapter
-    resources: AgentRuntimeResources
+    adapter: HarnessAdapter
+    resources: AgentHarnessResources
 
     @property
     def key(self) -> HarnessKey:
@@ -34,29 +34,29 @@ class RuntimeRegistration:
         return HarnessKey(self.resources.agent_id, self.adapter.kind)
 
 
-def execution_registry(*registrations: RuntimeRegistration) -> RuntimeRegistry:
-    """Compose every runtime this replica is deliberately configured to execute."""
+def execution_registry(*registrations: HarnessRegistration) -> HarnessRegistry:
+    """Compose every harness this replica is deliberately configured to execute."""
     adapters = {registration.adapter.kind: registration.adapter for registration in registrations}
     resources = {registration.key: registration.resources for registration in registrations}
     if len(resources) != len(registrations):
         raise ValueError("duplicate configured Agent/harness resource")
-    return RuntimeRegistry(adapters, resources)
+    return HarnessRegistry(adapters, resources)
 
 
-def runtime_registration(
-    config: RuntimeRegistrationConfig,
+def harness_registration(
+    config: HarnessRegistrationConfig,
     claims: SandboxClaims,
     *,
     system_prompt: SystemPromptTemplate,
     access_profile_id: str | None = None,
     execution_environment: Mapping[str, str] | None = None,
-) -> RuntimeRegistration:
-    """Build one runtime from shared resources and its discriminated implementation."""
+) -> HarnessRegistration:
+    """Build one harness from shared resources and its discriminated implementation."""
     implementation = config.implementation
     if isinstance(implementation, ClaudeCodeImplementationConfig):
-        adapter: RuntimeAdapter = ClaudeRuntimeAdapter()
+        adapter: HarnessAdapter = ClaudeHarnessAdapter()
     elif isinstance(implementation, CodexAppServerImplementationConfig):
-        adapter = CodexRuntimeAdapter(
+        adapter = CodexHarnessAdapter(
             model=implementation.model,
             reasoning_effort=implementation.reasoning_effort,
             model_provider=CodexModelProvider(
@@ -67,10 +67,10 @@ def runtime_registration(
             ),
         )
     else:
-        raise AssertionError(f"unhandled runtime implementation: {type(implementation).__name__}")
-    return RuntimeRegistration(
+        raise AssertionError(f"unhandled harness implementation: {type(implementation).__name__}")
+    return HarnessRegistration(
         adapter=adapter,
-        resources=AgentRuntimeResources(
+        resources=AgentHarnessResources(
             claims=claims,
             session_ttl_seconds=config.session_ttl_seconds,
             cwd=config.cwd,

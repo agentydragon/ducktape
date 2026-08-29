@@ -1,4 +1,4 @@
-"""Shared setup for the runtime's tests — sessions, turns, frames, sandboxes.
+"""Shared setup for the harness registration's tests — sessions, turns, frames, sandboxes.
 
 Fixtures more than one module needs, stand-ins for what is genuinely outside the process (the
 stand-ins themselves live in `../x/testing/`, so a non-pytest process can reach them too), and the
@@ -21,7 +21,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import ChannelSurface
-from haku.console.config import RuntimeRegistrationConfig
+from haku.console.config import HarnessRegistrationConfig
 from haku.console.conftest import console_sessions
 from haku.console.conversation.item_vocabulary import ItemStatus, ItemType
 from haku.console.database_schema import ChannelAttachmentRow, ConversationItem, Session
@@ -36,8 +36,8 @@ from haku.console.session.runtime import SessionService
 from haku.console.session.sandbox_allocation import SandboxAllocator
 from haku.console.session.store import Store
 from haku.console.session.system_prompt import SystemPromptTemplate
-from haku.console.x.runtime import RuntimeRegistry
-from haku.console.x.runtime_catalog import execution_registry, runtime_registration
+from haku.console.x.runtime import HarnessRegistry
+from haku.console.x.runtime_catalog import execution_registry, harness_registration
 from haku.console.x.testing.recording_claims import RecordingClaims
 
 OPERATOR_SUBJECT = "authentik-user-id"
@@ -45,7 +45,7 @@ TEST_AGENT_ID = UUID("00000000-0000-4000-8000-000000000001")
 TEST_ACCESS_PROFILE_ID = "no_auto_approval"
 
 
-def runtime_config(**overrides: object) -> RuntimeRegistrationConfig:
+def runtime_config(**overrides: object) -> HarnessRegistrationConfig:
     values: dict[str, object] = {
         "agent_id": str(TEST_AGENT_ID),
         "namespace": "haku-claude-sandbox",
@@ -67,17 +67,17 @@ def runtime_config(**overrides: object) -> RuntimeRegistrationConfig:
         },
     }
     values.update(overrides)
-    return RuntimeRegistrationConfig(**values)
+    return HarnessRegistrationConfig(**values)
 
 
-def configured_runtimes(
+def configured_harnesses(
     claims: RecordingClaims,
     *,
-    config: RuntimeRegistrationConfig | None = None,
+    config: HarnessRegistrationConfig | None = None,
     system_prompt: SystemPromptTemplate | None = None,
-) -> RuntimeRegistry:
+) -> HarnessRegistry:
     return execution_registry(
-        runtime_registration(
+        harness_registration(
             config or runtime_config(),
             claims,
             system_prompt=system_prompt or SystemPromptTemplate(""),
@@ -181,7 +181,7 @@ async def conversation_wakes(migrated_db_url: str) -> AsyncIterator[Conversation
 def chat_service(
     session_store: Store, recording_claims: RecordingClaims, session_wakes: SessionWakes
 ) -> SessionService:
-    return SessionService(configured_runtimes(recording_claims), session_store, session_wakes)
+    return SessionService(configured_harnesses(recording_claims), session_store, session_wakes)
 
 
 @pytest.fixture

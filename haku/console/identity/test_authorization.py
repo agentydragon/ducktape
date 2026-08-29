@@ -69,7 +69,7 @@ from haku.console.identity.operator_identity import (
     VerifiedExternalIdentity,
 )
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.session.launch_identity import ChatLaunchAuthorizer, LaunchAgentRejectedError, LaunchIdentity
+from haku.console.session.launch_identity import HarnessLaunchAuthorizer, LaunchAgentRejectedError, LaunchIdentity
 from haku.console.x.runtime import HarnessKey
 from mcp_infra.authentik_auth.oidc_principal import VerifiedOidcPrincipal
 from third_party.containers.rlocations import PGVECTOR_PG18
@@ -817,8 +817,8 @@ def _launch_authorizer(
     launchable: bool = True,
     registered: tuple[HarnessKind, ...] = (HarnessKind.CLAUDE_CODE,),
     profile_harness_kinds: dict[str, tuple[HarnessKind, ...]] | None = None,
-) -> ChatLaunchAuthorizer:
-    return ChatLaunchAuthorizer(
+) -> HarnessLaunchAuthorizer:
+    return HarnessLaunchAuthorizer(
         harness.authority,
         launchable_agent_ids={agent_id} if launchable else set(),
         registered_harness_identities={HarnessKey(agent_id, kind) for kind in registered},
@@ -832,7 +832,7 @@ def _launch_authorizer(
     )
 
 
-async def _authorize_launch(harness: Harness, authorizer: ChatLaunchAuthorizer, agent_id: UUID) -> LaunchIdentity:
+async def _authorize_launch(harness: Harness, authorizer: HarnessLaunchAuthorizer, agent_id: UUID) -> LaunchIdentity:
     async with harness.sessions.begin() as db:
         return await authorizer(db, harness.browser.operator_id, agent_id, HarnessKind.CLAUDE_CODE)
 
@@ -1012,7 +1012,7 @@ async def test_chat_launch_authorizer_rejects_an_unregistered_agent_runtime_pair
         access_profile_id="no_auto_approval",
     )
     await harness.authority.reconcile_static_agents([first, second])
-    authorizer = ChatLaunchAuthorizer(
+    authorizer = HarnessLaunchAuthorizer(
         harness.authority,
         launchable_agent_ids={first.agent_id, second.agent_id},
         registered_harness_identities={HarnessKey(first.agent_id, HarnessKind.CLAUDE_CODE)},

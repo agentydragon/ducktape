@@ -1,4 +1,4 @@
-"""Runtime settings for the Haku console (env-driven, prefix ``HAKU_CONSOLE_``)."""
+"""Harness settings for the Haku console (env-driven, prefix ``HAKU_CONSOLE_``)."""
 
 from __future__ import annotations
 
@@ -244,7 +244,7 @@ class ProviderOAuthClientConfig(BaseModel):
     client_secret: SecretStr
 
 
-class RuntimeExecutionConfig(BaseModel):
+class HarnessExecutionConfig(BaseModel):
     """Provider-neutral placement, session, and network wiring.
 
     Deliberately no prompt here: prompts belong to launchable Agents
@@ -285,18 +285,18 @@ class ClaudeCodeImplementationConfig(EnvironmentPassthrough):
     gateway_discovery: bool = True
 
 
-type RuntimeImplementationConfig = Annotated[
+type HarnessImplementationConfig = Annotated[
     ClaudeCodeImplementationConfig | CodexAppServerImplementationConfig, Field(discriminator="kind")
 ]
 
 
-class RuntimeRegistrationConfig(RuntimeExecutionConfig):
-    """One Agent's shared execution wiring plus its native runtime implementation."""
+class HarnessRegistrationConfig(HarnessExecutionConfig):
+    """One Agent's shared execution wiring plus its native harness implementation."""
 
     agent_id: UUID
     claim_prefix: str = Field(min_length=1)
     runtime_label: str = Field(min_length=1)
-    implementation: RuntimeImplementationConfig
+    implementation: HarnessImplementationConfig
 
     @property
     def kind(self) -> HarnessKind:
@@ -325,22 +325,22 @@ class RuntimeRegistrationConfig(RuntimeExecutionConfig):
         }
 
 
-class ChatRuntimesConfig(BaseModel):
-    """The closed catalog of chat-runtime implementations this deployment can launch.
+class HarnessesConfig(BaseModel):
+    """The closed catalog of harness implementations this deployment can launch.
 
-    A field is an implementation kind, not an arbitrary runtime-instance id. There is exactly one
+    A field is an implementation kind, not an arbitrary harness-instance id. There is exactly one
     configuration per implementation until a concrete need for several instances of one kind
     exists; adding another implementation therefore extends this model with another named field.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    claude_code: RuntimeRegistrationConfig
-    codex_app_server: RuntimeRegistrationConfig | None = None
+    claude_code: HarnessRegistrationConfig
+    codex_app_server: HarnessRegistrationConfig | None = None
 
     @field_validator("claude_code")
     @classmethod
-    def _claude_slot_accepts_only_claude(cls, value: RuntimeRegistrationConfig) -> RuntimeRegistrationConfig:
+    def _claude_slot_accepts_only_claude(cls, value: HarnessRegistrationConfig) -> HarnessRegistrationConfig:
         if value.kind is not HarnessKind.CLAUDE_CODE:
             raise ValueError("harnesses.claude_code must select the claude_code implementation")
         return value
@@ -348,16 +348,16 @@ class ChatRuntimesConfig(BaseModel):
     @field_validator("codex_app_server")
     @classmethod
     def _codex_slot_accepts_only_codex(
-        cls, value: RuntimeRegistrationConfig | None
-    ) -> RuntimeRegistrationConfig | None:
+        cls, value: HarnessRegistrationConfig | None
+    ) -> HarnessRegistrationConfig | None:
         if value is not None and value.kind is not HarnessKind.CODEX_APP_SERVER:
             raise ValueError("harnesses.codex_app_server must select the codex_app_server implementation")
         return value
 
     @property
-    def registrations(self) -> tuple[RuntimeRegistrationConfig, ...]:
-        """Agent/runtime registrations represented by this closed deploy catalog."""
-        return tuple(runtime for runtime in (self.claude_code, self.codex_app_server) if runtime is not None)
+    def registrations(self) -> tuple[HarnessRegistrationConfig, ...]:
+        """Agent/harness registrations represented by this closed deploy catalog."""
+        return tuple(harness for harness in (self.claude_code, self.codex_app_server) if harness is not None)
 
 
 class WebPushConfig(BaseModel):
@@ -489,14 +489,14 @@ class Settings(BaseSettings):
     haku_ui_url: str
     auth_origin: str
     # Canonical public console origin used for OAuth redirects, secure-cookie policy, and
-    # WebSocket origin checks. Required: there is no unauthenticated runtime mode.
+    # WebSocket origin checks. Required: there is no unauthenticated harness mode.
     public_base_url: str
 
     # YAML file for required deploy-time console configuration that does not belong
     # in env vars. Secret values stay in env/Kubernetes Secret references; this file
     # names connected MCP servers, their env-backed credential slots, composable auto-approval
     # policies, static machine `agents` (id + env-referenced bearer + operator subject + policy),
-    # Claude runtime wiring, and the `hostexec` host map (in-scope machines + exec URLs/audiences).
+    # Claude harness wiring, and the `hostexec` host map (in-scope machines + exec URLs/audiences).
     config_file: Path
 
     # Non-secret runner topology selected by Console for every launched Agent. The runner turns
@@ -544,9 +544,9 @@ class Settings(BaseSettings):
     # OAuth, and therefore no OAuth store).
     mcp_oauth: McpOAuthConfig | None = None
     # Operator browser login (Authentik OIDC), replacing the proxy outpost. Required in every
-    # runtime, including development; tests use the repo's hermetic OIDC fixture.
+    # harness, including development; tests use the repo's hermetic OIDC fixture.
     operator_oidc: OperatorOidcConfig
-    # Canonical Operator identity trust contract. Required in every runtime; see
+    # Canonical Operator identity trust contract. Required in every harness; see
     # ``OperatorIdentityConfig`` for why this is distinct from either OIDC client.
     operator_identity: OperatorIdentityConfig
     # Optional standing Kubernetes authorization policy. Absent means the

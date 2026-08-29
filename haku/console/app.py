@@ -35,7 +35,7 @@ from haku.console import capabilities
 from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
 from haku.console.config import MCP_PATH, Settings
 
-# Aliased: bare `runtime` exists in three sibling packages, and `create_app` has a local `follow`.
+# Aliased: bare `harness` exists in three sibling packages, and `create_app` has a local `follow`.
 from haku.console.conversation import follow as conversation_follow, reader, runtime as conversation_runtime
 from haku.console.conversation.history import ConversationHistory
 from haku.console.conversation.live_updates import ConversationLiveUpdates
@@ -95,7 +95,7 @@ from haku.console.notifications.session_wakes import SessionWakes
 from haku.console.oauth import association_maintenance, connection_result, provider_connection, token_state
 from haku.console.recall_index_reader import PostgresIndexSearcher
 from haku.console.session import runtime as session_runtime, sandbox_allocation, sandbox_claims, sandbox_observer
-from haku.console.session.launch_identity import ChatLaunchAuthorizer
+from haku.console.session.launch_identity import HarnessLaunchAuthorizer
 from haku.console.session.store import Store
 from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.tools import (
@@ -212,8 +212,8 @@ def create_app(
         db_sessions, operator_identity_store=operator_identity_store
     )
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
-    claude_runtime = console_config.harnesses.claude_code if console_config.harnesses is not None else None
-    codex_runtime = console_config.harnesses.codex_app_server if console_config.harnesses is not None else None
+    claude_harness = console_config.harnesses.claude_code if console_config.harnesses is not None else None
+    codex_harness = console_config.harnesses.codex_app_server if console_config.harnesses is not None else None
     static_by_id = {agent.agent_id: agent for agent in console_config.static_agents}
     profile_harness_kinds = {profile.id: set(profile.allowed_harnesses) for profile in console_config.access_profiles}
     launchable_agent_ids = {entry.agent_id for entry in console_config.launchable_agents}
@@ -225,7 +225,7 @@ def create_app(
     # Conversation changes reach open tabs over the console socket the shell already holds,
     # coalesced per conversation. Constructed unconditionally: it listens on the conversation
     # channel and sends on the console one, neither of which depends on this replica running a
-    # Claude runtime.
+    # Claude harness.
     conversation_live_updates = ConversationLiveUpdates(conversation_wakes, console_event_hub, db_sessions)
     tool_call_ledger = approval.PostgresToolCallLedger(db_sessions)
     mcp_operator_oauth_store = operator_oauth.PostgresMcpOperatorOAuthStore(
@@ -300,15 +300,15 @@ def create_app(
             loaded_static_agents if loaded_static_agents is not None else load_static_agents(settings)
         )
 
-    runtime_registry: console_runtime.RuntimeRegistry
-    registrations: list[runtime_catalog.RuntimeRegistration] = []
+    harness_registry: console_runtime.HarnessRegistry
+    registrations: list[runtime_catalog.HarnessRegistration] = []
     session_claims: list[sandbox_claims.SandboxClaims] = []
     runner_environment = (
         {}
         if settings.runner_kubernetes_proxy_url is None
         else {KUBERNETES_PROXY_URL_ENV: settings.runner_kubernetes_proxy_url}
     )
-    # Prompts belong to launchable Agents: each runtime registration loads its Agent's identity
+    # Prompts belong to launchable Agents: each harness registration loads its Agent's identity
     # template, whose own `{% include %}` pulls in the shared attached-chat fragment. Rendered here
     # at startup for every launchable Agent, so a broken include or name prevents readiness rather
     # than failing the first attached chat session hours later.
@@ -319,26 +319,26 @@ def create_app(
         template.verify_renders()
         return template
 
-    if claude_runtime is not None:
+    if claude_harness is not None:
         try:
-            claude_profile_id = static_by_id[claude_runtime.agent_id].access_profile_id
+            claude_profile_id = static_by_id[claude_harness.agent_id].access_profile_id
         except KeyError as error:
             raise ValueError("configured Claude Agent must be a static Agent") from error
         claude_claims = sandbox_claims.KubernetesSandboxClaims(
             sandbox_claims.SandboxClaimSpec(
-                namespace=claude_runtime.namespace,
-                warm_pool=claude_runtime.warm_pool,
-                claim_prefix=claude_runtime.claim_prefix,
-                runtime_label=claude_runtime.runtime_label,
+                namespace=claude_harness.namespace,
+                warm_pool=claude_harness.warm_pool,
+                claim_prefix=claude_harness.claim_prefix,
+                runtime_label=claude_harness.runtime_label,
                 runner_environment={},
             )
         )
         session_claims.append(claude_claims)
         registrations.append(
-            runtime_catalog.runtime_registration(
-                claude_runtime,
+            runtime_catalog.harness_registration(
+                claude_harness,
                 claude_claims,
-                system_prompt=agent_system_prompt(claude_runtime.agent_id),
+                system_prompt=agent_system_prompt(claude_harness.agent_id),
                 access_profile_id=claude_profile_id,
                 execution_environment={
                     **runner_environment,
@@ -350,26 +350,26 @@ def create_app(
                 },
             )
         )
-    if codex_runtime is not None:
+    if codex_harness is not None:
         try:
-            codex_profile_id = static_by_id[codex_runtime.agent_id].access_profile_id
+            codex_profile_id = static_by_id[codex_harness.agent_id].access_profile_id
         except KeyError as error:
             raise ValueError("configured Codex Agent must be a static Agent") from error
         codex_claims = sandbox_claims.KubernetesSandboxClaims(
             sandbox_claims.SandboxClaimSpec(
-                namespace=codex_runtime.namespace,
-                warm_pool=codex_runtime.warm_pool,
-                claim_prefix=codex_runtime.claim_prefix,
-                runtime_label=codex_runtime.runtime_label,
+                namespace=codex_harness.namespace,
+                warm_pool=codex_harness.warm_pool,
+                claim_prefix=codex_harness.claim_prefix,
+                runtime_label=codex_harness.runtime_label,
                 runner_environment={},
             )
         )
         session_claims.append(codex_claims)
         registrations.append(
-            runtime_catalog.runtime_registration(
-                codex_runtime,
+            runtime_catalog.harness_registration(
+                codex_harness,
                 codex_claims,
-                system_prompt=agent_system_prompt(codex_runtime.agent_id),
+                system_prompt=agent_system_prompt(codex_harness.agent_id),
                 access_profile_id=codex_profile_id,
                 # The public-coder SandboxTemplate already owns the explicit empty-workspace
                 # setup policy. Registration contributes only Console-selected shared topology.
@@ -377,17 +377,17 @@ def create_app(
             )
         )
     if registrations:
-        runtime_registry = runtime_catalog.execution_registry(*registrations)
+        harness_registry = runtime_catalog.execution_registry(*registrations)
     else:
-        # Runtime-disabled replicas can still inspect every linked durable harness kind. This
+        # Harness-disabled replicas can still inspect every linked durable harness kind. This
         # registry has projection only: no claims, credentials, or launcher.
-        runtime_registry = runtime_catalog.projection_registry()
-    if codex_runtime is not None:
-        codex_profile_id = static_by_id[codex_runtime.agent_id].access_profile_id
+        harness_registry = runtime_catalog.projection_registry()
+    if codex_harness is not None:
+        codex_profile_id = static_by_id[codex_harness.agent_id].access_profile_id
         profile_agents = {
             agent_id for agent_id, agent in static_by_id.items() if agent.access_profile_id == codex_profile_id
         }
-        if profile_agents != {codex_runtime.agent_id}:
+        if profile_agents != {codex_harness.agent_id}:
             raise ValueError("configured Codex Agent must have a dedicated access profile")
     # Projection-only composition may link dormant adapters, while launch-capable production
     # composition includes only deliberately supported adapters and resources.
@@ -411,21 +411,21 @@ def create_app(
         return tuple([await resolve_agent(agent) for agent in loaded_static_agents])
 
     # Execution exists only when a launch-capable adapter was configured. Read-only replicas keep
-    # the same registry in their store above but expose no session-creation runtime service.
-    if runtime_registry.configured_kinds:
-        authorize_chat_launch = ChatLaunchAuthorizer(
+    # the same registry in their store above but expose no session-creation harness service.
+    if harness_registry.configured_kinds:
+        authorize_harness_launch = HarnessLaunchAuthorizer(
             agent_authority,
             launchable_agent_ids=launchable_agent_ids,
-            registered_harness_identities=runtime_registry.configured_identities,
+            registered_harness_identities=harness_registry.configured_identities,
             profile_harness_kinds=profile_harness_kinds,
         )
 
         session_service = session_runtime.SessionService(
-            runtime_registry,
+            harness_registry,
             session_store,
             session_wakes,
             conversation_history=ConversationHistory(db_sessions),
-            launch_authorizer=authorize_chat_launch,
+            launch_authorizer=authorize_harness_launch,
         )
     else:
         session_service = None
@@ -435,11 +435,11 @@ def create_app(
         else None
     )
     runtime_supervisor = (
-        conversation_runtime.Runtime(session_service, session_store, conversation_wakes, db_engine)
+        conversation_runtime.Harness(session_service, session_store, conversation_wakes, db_engine)
         if session_service is not None
         else None
     )
-    # A followed conversation's own socket. Keep it behind executable runtime composition because
+    # A followed conversation's own socket. Keep it behind executable harness composition because
     # a follower opens on the same read `GET /api/conversations/{id}` serves; a projection-only
     # replica answers neither.
     follow = (
@@ -577,9 +577,9 @@ def create_app(
                 index=index_searcher,
                 recall_access_profiles=tuple(console_config.access_profiles),
                 configured_recall_index_ids=tuple(index.index_id for index in console_config.recall_indexes),
-                # Only with an executable runtime: otherwise nothing writes sessions, so the read
+                # Only with an executable harness: otherwise nothing writes sessions, so the read
                 # tools would reflect an always-empty corpus.
-                conversations=(reader.ConversationReads(session_store) if runtime_registry.configured_kinds else None),
+                conversations=(reader.ConversationReads(session_store) if harness_registry.configured_kinds else None),
                 sandbox=sandbox_server,
                 session_sandboxes=(
                     session_service
@@ -827,14 +827,14 @@ def create_app(
             ChatLaunchOption(
                 agent_id=identity.agent_id,
                 agent_display_name=static_by_id[identity.agent_id].display_name,
-                runtime=identity.harness_kind,
-                runtime_display_name=runtime_registry[identity.harness_kind].display_name,
+                harness=identity.harness_kind,
+                runtime_display_name=harness_registry[identity.harness_kind].display_name,
             )
-            for identity in runtime_registry.configured_identities
+            for identity in harness_registry.configured_identities
             if identity.agent_id in launchable_agent_ids
             and identity.harness_kind in profile_harness_kinds[static_by_id[identity.agent_id].access_profile_id]
         ]
-        launch_options.sort(key=lambda option: (option.agent_display_name, option.runtime.value))
+        launch_options.sort(key=lambda option: (option.agent_display_name, option.harness.value))
         return ConfigResponse(
             launch_routine_url=launch.page_url if launch else None,
             haku_ui_url=settings.haku_ui_url,

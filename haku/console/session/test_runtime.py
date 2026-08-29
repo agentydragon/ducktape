@@ -1,4 +1,4 @@
-"""Focused contracts for the Agent Sandbox Claude chat runtime.
+"""Focused contracts for the Agent Sandbox Claude chat harness.
 
 **No channel is imported here, deliberately.** An attachment only selects whether the conversation
 gets the shared direct-chat system prompt; setup, answers, silence and live state are durable facts
@@ -24,7 +24,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.config import ChatRuntimesConfig, ClaudeCodeImplementationConfig, RuntimeRegistrationConfig
+from haku.console.config import HarnessesConfig, ClaudeCodeImplementationConfig, HarnessRegistrationConfig
 from haku.console.conftest import console_sessions
 from haku.console.conversation.history import ConversationHistory
 from haku.console.conversation.prompt_origin import SPA_ORIGIN
@@ -38,10 +38,10 @@ from haku.console.session.conftest import (
     TEST_AGENT_ID,
     age_lease,
     attach_channel,
-    configured_runtimes,
+    configured_harnesses,
     runtime_config,
 )
-from haku.console.session.launch_identity import ChatLaunchAuthorizer, LaunchAgentRejectedError, LaunchIdentity
+from haku.console.session.launch_identity import HarnessLaunchAuthorizer, LaunchAgentRejectedError, LaunchIdentity
 from haku.console.session.runtime import (
     ConversationCreateRequest,
     SessionService,
@@ -53,27 +53,27 @@ from haku.console.session.status import OPEN_SESSION_STATUSES, SessionStatus
 from haku.console.session.store import ADOPTION_GRACE, ActiveSessionRecord, RunnerConnectionAuthentication, Store
 from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
-from haku.console.x.runtime import HarnessKey, RuntimeLaunch
-from haku.console.x.runtime_catalog import runtime_registration
+from haku.console.x.runtime import HarnessKey, HarnessLaunchSpec
+from haku.console.x.runtime_catalog import harness_registration
 from haku.console.x.testing.recording_claims import RecordingClaims
 from haku.runner.codex.options import CODEX_MODEL_ENV, CODEX_REASONING_EFFORT_ENV
 
 
 def test_runtime_deployment_wiring_has_no_application_defaults() -> None:
-    assert all(field.is_required() for field in RuntimeRegistrationConfig.model_fields.values())
-    assert ChatRuntimesConfig.model_fields["claude_code"].is_required()
-    assert not ChatRuntimesConfig.model_fields["codex_app_server"].is_required()
+    assert all(field.is_required() for field in HarnessRegistrationConfig.model_fields.values())
+    assert HarnessesConfig.model_fields["claude_code"].is_required()
+    assert not HarnessesConfig.model_fields["codex_app_server"].is_required()
     assert not ConsoleConfigFile.model_fields["harnesses"].is_required()
 
 
 def test_new_conversation_request_rejects_client_supplied_access_profile() -> None:
     with pytest.raises(ValidationError, match="extra_forbidden"):
         ConversationCreateRequest.model_validate(
-            {"agent_id": str(uuid4()), "runtime": HarnessKind.CLAUDE_CODE, "access_profile_id": "admin"}
+            {"agent_id": str(uuid4()), "harness": HarnessKind.CLAUDE_CODE, "access_profile_id": "admin"}
         )
 
 
-@pytest.mark.parametrize("body", [{"agent_id": str(uuid4())}, {"runtime": HarnessKind.CLAUDE_CODE}])
+@pytest.mark.parametrize("body", [{"agent_id": str(uuid4())}, {"harness": HarnessKind.CLAUDE_CODE}])
 def test_new_conversation_request_requires_the_complete_launch_pair(body: dict[str, object]) -> None:
     with pytest.raises(ValidationError, match="Field required"):
         ConversationCreateRequest.model_validate(body)
@@ -94,7 +94,7 @@ async def test_post_conversation_launch_rejection_is_generic_403() -> None:
     actor = type("Actor", (), {"operator_id": uuid4()})()
     with pytest.raises(HTTPException) as error:
         await create_conversation(
-            ConversationCreateRequest(agent_id=uuid4(), runtime=HarnessKind.CLAUDE_CODE),
+            ConversationCreateRequest(agent_id=uuid4(), harness=HarnessKind.CLAUDE_CODE),
             actor,
             cast(SessionService, RejectingService()),
         )
@@ -105,7 +105,7 @@ async def test_post_conversation_launch_rejection_is_generic_403() -> None:
 
 
 class _RecordingLaunchAuthorizer:
-    def __init__(self, delegate: ChatLaunchAuthorizer) -> None:
+    def __init__(self, delegate: HarnessLaunchAuthorizer) -> None:
         self._delegate = delegate
         self.calls: list[tuple[UUID, str | None, AsyncSession, bool]] = []
 
@@ -143,25 +143,25 @@ async def test_replacement_pins_identity_after_agent_profile_change_and_shares_s
         [
             StaticAgentDefinition(
                 agent_id=agent_id,
-                display_name="Pinned Runtime Agent",
+                display_name="Pinned Harness Agent",
                 operator_id=operator_id,
                 secret_reference="env:PINNED_RUNTIME_AGENT",
-                token_fingerprint=fingerprint_static_token("pinned-runtime-token"),
+                token_fingerprint=fingerprint_static_token("pinned-harness-token"),
                 access_profile_id="pinned",
             )
         ]
     )
     authorizer = _RecordingLaunchAuthorizer(
-        ChatLaunchAuthorizer(
+        HarnessLaunchAuthorizer(
             authority,
             launchable_agent_ids={agent_id},
             registered_harness_identities={HarnessKey(agent_id, HarnessKind.CLAUDE_CODE)},
             profile_harness_kinds={"pinned": {HarnessKind.CLAUDE_CODE}, "current": {HarnessKind.CLAUDE_CODE}},
         )
     )
-    runtimes = configured_runtimes(recording_claims)
+    harnesses = configured_harnesses(recording_claims)
     store = Store(migrated_sessions)
-    service = SessionService(runtimes, store, session_wakes, launch_authorizer=authorizer)
+    service = SessionService(harnesses, store, session_wakes, launch_authorizer=authorizer)
 
     first = await service.create(operator_id, agent_id=agent_id, harness_kind=HarnessKind.CLAUDE_CODE)
     conversation_id = await store.conversation_of(first.session_id)
@@ -229,11 +229,11 @@ def test_chat_runtime_config_is_closed_and_rejects_the_retired_shape() -> None:
 
     with pytest.raises(ValidationError, match="claude_code must select the claude_code implementation"):
         ConsoleConfigFile.model_validate(
-            _console_config(harnesses={"claude_code": _codex_runtime_config().model_dump(mode="json")})
+            _console_config(harnesses={"claude_code": _codex_harness_config().model_dump(mode="json")})
         )
 
-    with pytest.raises(ValidationError, match="claude_runtime was replaced"):
-        ConsoleConfigFile.model_validate(_console_config(claude_runtime=runtime_config().model_dump(mode="json")))
+    with pytest.raises(ValidationError, match="claude_harness was replaced"):
+        ConsoleConfigFile.model_validate(_console_config(claude_harness=runtime_config().model_dump(mode="json")))
 
     assert ConsoleConfigFile.model_validate(_console_config(harnesses=None)).harnesses is None
 
@@ -293,7 +293,7 @@ def test_claude_environment_merges_configured_extra_environment_last() -> None:
         runtime_config(implementation=implementation | {"environment": {"not a name": "x"}})
 
 
-def _codex_runtime_config(**overrides: Any) -> RuntimeRegistrationConfig:
+def _codex_harness_config(**overrides: Any) -> HarnessRegistrationConfig:
     implementation: dict[str, Any] = {
         "kind": "codex_app_server",
         "model": "codex-gpt-5.6-sol",
@@ -308,7 +308,7 @@ def _codex_runtime_config(**overrides: Any) -> RuntimeRegistrationConfig:
             implementation[field] = overrides.pop(field)
     values: dict[str, Any] = {
         "agent_id": "00000000-0000-4000-8000-000000000002",
-        "namespace": "haku-runtime-sandbox",
+        "namespace": "haku-harness-sandbox",
         "warm_pool": "haku-public-coder-codex",
         "claim_prefix": "codex",
         "runtime_label": "codex-chat",
@@ -321,11 +321,11 @@ def _codex_runtime_config(**overrides: Any) -> RuntimeRegistrationConfig:
         "implementation": implementation,
     }
     values.update(overrides)
-    return RuntimeRegistrationConfig(**values)
+    return HarnessRegistrationConfig(**values)
 
 
 def test_codex_environment_keeps_provider_auth_in_the_sandbox_template() -> None:
-    config = _codex_runtime_config()
+    config = _codex_harness_config()
 
     assert isinstance(config.implementation, CodexAppServerImplementationConfig)
     assert config.environment() == {
@@ -344,18 +344,18 @@ def test_codex_environment_keeps_provider_auth_in_the_sandbox_template() -> None
     assert "OPENAI_API_KEY" not in config.environment()
 
 
-def test_runtime_registration_threads_the_codex_model_and_effort_into_the_launch(
+def test_harness_registration_threads_the_codex_model_and_effort_into_the_launch(
     recording_claims: RecordingClaims,
 ) -> None:
     # The console reads implementation.model/reasoning_effort into the launch environment the runner
     # reads for thread/start (haku/runner/codex/test_harness.py) -- the missing frame that let a codex
     # session fall back to its bare sandbox default and 403 at LiteLLM.
-    config = _codex_runtime_config()
+    config = _codex_harness_config()
     assert isinstance(config.implementation, CodexAppServerImplementationConfig)
-    registration = runtime_registration(config, recording_claims, system_prompt=SystemPromptTemplate(""))
+    registration = harness_registration(config, recording_claims, system_prompt=SystemPromptTemplate(""))
 
     launch = registration.adapter.build_launch(
-        RuntimeLaunch(cwd="/workspace", environment={}, mcp_servers={}, appended_system_prompt=None, resume_from=None)
+        HarnessLaunchSpec(cwd="/workspace", environment={}, mcp_servers={}, appended_system_prompt=None, resume_from=None)
     )
 
     assert launch.environment[CODEX_MODEL_ENV] == config.implementation.model
@@ -389,7 +389,7 @@ def test_claude_registration_uses_the_shared_discriminated_model() -> None:
         "gateway_discovery": True,
         "environment": {},
     }
-    assert RuntimeRegistrationConfig.model_validate(wire) == config
+    assert HarnessRegistrationConfig.model_validate(wire) == config
     assert isinstance(config.implementation, ClaudeCodeImplementationConfig)
     assert config.kind is HarnessKind.CLAUDE_CODE
     assert (config.agent_id, config.claim_prefix, config.runtime_label) == (
@@ -399,18 +399,18 @@ def test_claude_registration_uses_the_shared_discriminated_model() -> None:
     )
 
 
-def test_runtime_registration_requires_an_explicit_implementation_discriminator() -> None:
-    raw = _codex_runtime_config().model_dump(mode="json")
+def test_harness_registration_requires_an_explicit_implementation_discriminator() -> None:
+    raw = _codex_harness_config().model_dump(mode="json")
     implementation = raw["implementation"]
     assert isinstance(implementation, dict)
     implementation.pop("kind")
 
     with pytest.raises(ValidationError, match="union_tag_not_found"):
-        RuntimeRegistrationConfig.model_validate(raw)
+        HarnessRegistrationConfig.model_validate(raw)
 
 
-def test_runtime_registration_schema_exposes_the_implementation_discriminator() -> None:
-    schema = RuntimeRegistrationConfig.model_json_schema()
+def test_harness_registration_schema_exposes_the_implementation_discriminator() -> None:
+    schema = HarnessRegistrationConfig.model_json_schema()
     implementation = schema["properties"]["implementation"]
     if reference := implementation.get("$ref"):
         implementation = schema["$defs"][reference.rsplit("/", 1)[-1]]
@@ -426,15 +426,15 @@ def test_runtime_registration_schema_exposes_the_implementation_discriminator() 
 
 
 @pytest.mark.parametrize("variable", ["HAKU_SESSION_TOKEN", "HAKU_RUNNER_TOKEN"])
-def test_codex_runtime_rejects_session_authority_as_the_provider_key(variable: str) -> None:
+def test_codex_harness_rejects_session_authority_as_the_provider_key(variable: str) -> None:
     with pytest.raises(ValidationError, match="session token"):
-        _codex_runtime_config(api_key_env_var=variable)
+        _codex_harness_config(api_key_env_var=variable)
 
 
 @pytest.mark.parametrize("field", ["api_base_url", "mcp_url"])
-def test_runtime_registration_rejects_credentials_in_control_plane_urls(field: str) -> None:
+def test_harness_registration_rejects_credentials_in_control_plane_urls(field: str) -> None:
     with pytest.raises(ValidationError, match=field):
-        _codex_runtime_config(**{field: "http://durable-secret@example.test/path"})
+        _codex_harness_config(**{field: "http://durable-secret@example.test/path"})
 
 
 async def _allocated_session(chat_service: SessionService, recording_claims: RecordingClaims, operator_id: UUID):
@@ -579,7 +579,7 @@ async def test_only_an_attached_chat_conversation_gets_the_chat_prompt(
 ) -> None:
     """The conversation selects chat context; the session never receives a channel object."""
     service = SessionService(
-        configured_runtimes(
+        configured_harnesses(
             recording_claims, system_prompt=SystemPromptTemplate("{{ session_id }} {{ recent_messages | length }}")
         ),
         session_store,

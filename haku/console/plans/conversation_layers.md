@@ -1,4 +1,4 @@
-# The chat runtime: sessions, conversations, channels
+# The chat harness: sessions, conversations, channels
 
 The model, set by the operator on 2026-08-17:
 
@@ -10,7 +10,7 @@ with the cardinality settled in the same breath:
 > - **conversation**: can span over multiple sessions; only one session holds it at a time
 > - **matrix room**: I think we can assume that 1 matrix room == 1 conversation
 
-This is the chat runtime's one plan: the invariant the layering is aiming at (§ 1), the protocols
+This is the chat harness registration's one plan: the invariant the layering is aiming at (§ 1), the protocols
 that follow from it, and § 9's ordered list of what is left to build. Design that is still true is
 stated in the present tense; work that has landed is deleted rather than ticked off, so what remains
 here is what remains to do.
@@ -37,7 +37,7 @@ rule leaves this plan with the last step that achieves it.
 
 ### The edges that are bugs
 
-Every line here is an edge the invariant still forbids after neutral runtime supervision landed.
+Every line here is an edge the invariant still forbids after neutral harness supervision landed.
 
 **A channel that knows a session.**
 
@@ -321,7 +321,7 @@ Matrix queue to know how far Matrix has got.
 
 ### A session has no frontend
 
-This boundary is now enforced: the turn runtime records conversation facts and holds no channel
+This boundary is now enforced: the turn harness records conversation facts and holds no channel
 object. An attachment only selects the shared direct-chat system prompt; channel subscribers render
 setup, answers, silence and live state from the conversation stream. Address and delivery state stay
 inside the channel.
@@ -485,7 +485,7 @@ operator invite creates a second conversation and starts its reconciler beside t
 ## 9. The order
 
 Each step is independently reviewable. The dependency order below is the channel stack; the
-backend-neutral runtime/Agent-selection work in #4431 is a parallel review track and must not be
+backend-neutral harness/Agent-selection work in #4431 is a parallel review track and must not be
 mixed into these PRs.
 
 1. **Completed — Matrix's own copy is read** (§ 3). The own-sender `/sync` projection feeds
@@ -500,10 +500,10 @@ mixed into these PRs.
    it beside the sealed notices, off one cursor, with a takeover sweep for lines nothing open
    accounts for. The pure fold and the Matrix effect are tested separately.
 
-3. **Completed — session supervision is behind the conversation.** `conversation.runtime.Runtime` owns
+3. **Completed — session supervision is behind the conversation.** `conversation.harness.Harness` owns
    global lease expiry, terminal-claim cleanup and exactly-once idle-session creation under the
    conversation row lock. Web and Matrix admit prompts by conversation; Matrix has no session
-   supervisor, lifecycle latch or `MXSE` lock. The runtime identity seam from #4431 may later inform
+   supervisor, lifecycle latch or `MXSE` lock. The harness identity seam from #4431 may later inform
    which session implementation is created, but no provider choice leaks into the channel.
 
 4. **Completed — reconciliation is attachment-scoped, and rooms are served in parallel.** One
@@ -525,9 +525,9 @@ mixed into these PRs.
 **Dependencies.** Steps 5 and 6 are independent of each other. The
 channel-neutral allocator is already complete and is not a step in this plan.
 
-**Independent runtime work.** The `provisioning` refinement (§ 10) and the read-surface work
+**Independent harness work.** The `provisioning` refinement (§ 10) and the read-surface work
 (§ 13) are not channel dependencies. Bridge v3 already made the frame payload harness-neutral; any remaining
-numbering/contract cleanup stays in that runtime stack. The
+numbering/contract cleanup stays in that harness stack. The
 `session_runtime.py` split and its abort wait can land with #4431 or step 5 on their own merits, not
 as incidental channel-reconciler edits.
 
@@ -614,7 +614,7 @@ tests and little else. That chain is gone with the fold-backed read; `unprojecte
 surface either, and the adapter's count of frame classes it could not map is asserted by the
 capture tests and shown to nobody.
 
-**The runtime seam now enforces the rule.** `RuntimeAdapter.turn_handler()` returns a provider-owned,
+**The harness seam now enforces the rule.** `HarnessAdapter.turn_handler()` returns a provider-owned,
 typed stateful reducer, and each native frame crosses back into generic Console code only as neutral
 `FrameEffects`. The turn loop, adoption and reprojection all drive that interface; no generic layer
 selects a branch from the native JSON. Exact payloads remain separately addressable in the raw-frame

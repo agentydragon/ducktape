@@ -8,17 +8,17 @@ import pytest_bazel
 
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.x.codex_app_server.config import ReasoningEffort
-from haku.console.x.codex_app_server.runtime import CodexRuntimeAdapter
-from haku.console.x.runtime import RuntimeLaunch, RuntimeMcpServer
+from haku.console.x.codex_app_server.runtime import CodexHarnessAdapter
+from haku.console.x.runtime import HarnessLaunchSpec, HarnessMcpServer
 from haku.runner.codex.options import CodexModelProvider
 
 
-def _launch(**overrides: Any) -> RuntimeLaunch:
+def _launch(**overrides: Any) -> HarnessLaunchSpec:
     values: dict[str, Any] = {
         "cwd": "/workspace",
         "environment": {"CODEX_HOME": "/codex-home"},
         "mcp_servers": {
-            "haku-console": RuntimeMcpServer(
+            "haku-console": HarnessMcpServer(
                 url="https://console.test/mcp", bearer_environment_variable="HAKU_SESSION_TOKEN"
             )
         },
@@ -26,11 +26,11 @@ def _launch(**overrides: Any) -> RuntimeLaunch:
         "resume_from": 29,
     }
     values.update(overrides)
-    return RuntimeLaunch(**values)
+    return HarnessLaunchSpec(**values)
 
 
 def test_codex_launch_carries_the_provider_argv_and_the_runner_thread_params() -> None:
-    adapter = CodexRuntimeAdapter(
+    adapter = CodexHarnessAdapter(
         model="codex-gpt-5.6-sol",
         reasoning_effort=ReasoningEffort.LOW,
         model_provider=CodexModelProvider(
@@ -68,7 +68,7 @@ def test_codex_launch_carries_the_provider_argv_and_the_runner_thread_params() -
 
 
 def test_adapter_identity_is_codex_without_making_it_a_configured_runtime() -> None:
-    adapter = CodexRuntimeAdapter()
+    adapter = CodexHarnessAdapter()
     assert adapter.kind is HarnessKind.CODEX_APP_SERVER
     assert adapter.display_name == "Codex"
 

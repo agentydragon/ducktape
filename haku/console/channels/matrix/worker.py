@@ -64,7 +64,7 @@ from haku.console.identity.launch_authority import StaticLaunchAuthority
 from haku.console.identity.operator_identity import OperatorIdentityTrust
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.notifications.conversation_wakes import ConversationWakes
-from haku.console.session.launch_identity import ChatLaunchAuthorizer
+from haku.console.session.launch_identity import HarnessLaunchAuthorizer
 from haku.console.session.store import Store
 from haku.console.session.subscription import ConversationStream
 from haku.console.x.runtime import HarnessKey
@@ -152,7 +152,7 @@ def verify_worker_schema(database_url: str) -> None:
 class LaunchWiring:
     """What a first bind stamps: the authorizer and its explicitly selected identity."""
 
-    authorizer: ChatLaunchAuthorizer
+    authorizer: HarnessLaunchAuthorizer
     default_agent_id: UUID
     harness_kind: HarnessKind
 
@@ -186,7 +186,7 @@ def _launch_wiring(config: AdapterConfigFile) -> LaunchWiring | None:
         raise ValueError("harnesses are configured but matrix.default_agent_id and matrix.default_harness_kind are not")
     static_by_id = {agent.agent_id: agent for agent in config.static_agents}
     profile_harness_kinds = {profile.id: profile.allowed_harnesses for profile in config.access_profiles}
-    authorizer = ChatLaunchAuthorizer(
+    authorizer = HarnessLaunchAuthorizer(
         StaticLaunchAuthority(),
         launchable_agent_ids={entry.agent_id for entry in config.launchable_agents},
         registered_harness_identities=registered,

@@ -36,7 +36,7 @@ from haku.console.conversation.prompt_origin import SPA_ORIGIN, MatrixOrigin
 from haku.console.database_schema import Conversation, ConversationEventRow, ConversationItem, Session, SubmittedPrompt
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
-from haku.console.session.launch_identity import ChatLaunchAuthorizer, LaunchIdentity
+from haku.console.session.launch_identity import HarnessLaunchAuthorizer, LaunchIdentity
 from haku.console.session.store import RunnerConnectionAuthentication, Store
 from haku.console.x.conversation_events import (
     ConversationEvent as FoldedEvent,
@@ -71,7 +71,7 @@ async def test_first_matrix_bind_pins_complete_identity_with_production_authoriz
             )
         ]
     )
-    production = ChatLaunchAuthorizer(
+    production = HarnessLaunchAuthorizer(
         authority,
         launchable_agent_ids={agent_id},
         registered_harness_identities={HarnessKey(agent_id, HarnessKind.CLAUDE_CODE)},
