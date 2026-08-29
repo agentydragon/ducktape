@@ -23,6 +23,7 @@ import pytest_bazel
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.http11 import Request, Response
 
+from haku.runner.backend import BRIDGE_CREDENTIAL_VARIABLE, child_environment
 from haku.runner.claude.harness import claude_harness
 from haku.runner.claude.options import ClaudeSession, HttpMcpServer, build_claude_launch
 from haku.runner.neutral_operations import (
@@ -117,20 +118,35 @@ def test_the_runner_runs_the_launch_the_console_sent(tmp_path: Path) -> None:
 
 def test_environment_exposes_the_claim_owned_session_credential(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CLAUDECODE", "parent")
-    monkeypatch.setenv("HAKU_AGENT_SDK_RUNNER_TOKEN", "session-secret")
+    monkeypatch.setenv("HAKU_RUNNER_TOKEN", "session-secret")
+    launch = HarnessLaunch(
+        arguments=(),
+        cwd="/workspace",
+        environment={"CLAUDECODE": "injected-parent", "HAKU_RUNNER_TOKEN": "injected-secret", "SAFE": "value"},
+    )
+    environment = claude_harness(Path("/usr/local/bin/claude")).resolve(launch).environment
+    assert environment["CLAUDECODE"] == "injected-parent"
+    assert environment["HAKU_RUNNER_TOKEN"] == "session-secret"
+    assert environment["SAFE"] == "value"
+
+
+def test_environment_uses_the_bridge_bearer_for_proxy_authentication(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(BRIDGE_CREDENTIAL_VARIABLE, "session bearer/with spaces")
     launch = HarnessLaunch(
         arguments=(),
         cwd="/workspace",
         environment={
-            "CLAUDECODE": "injected-parent",
-            "HAKU_AGENT_SDK_RUNNER_TOKEN": "injected-secret",
-            "SAFE": "value",
+            "HTTP_PROXY": "http://egress-proxy.test:8888",
+            "HTTPS_PROXY": "https://egress-proxy.test:8443",
+            "NO_PROXY": "localhost",
         },
     )
-    environment = claude_harness(Path("/usr/local/bin/claude")).resolve(launch).environment
-    assert environment["CLAUDECODE"] == "injected-parent"
-    assert environment["HAKU_AGENT_SDK_RUNNER_TOKEN"] == "session-secret"
-    assert environment["SAFE"] == "value"
+
+    environment = child_environment(launch)
+
+    assert environment["HTTP_PROXY"] == "http://:session%20bearer%2Fwith%20spaces@egress-proxy.test:8888"
+    assert environment["HTTPS_PROXY"] == "https://:session%20bearer%2Fwith%20spaces@egress-proxy.test:8443"
+    assert environment["NO_PROXY"] == "localhost"
 
 
 def test_the_harness_names_the_binary_its_own_image_set(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -189,7 +205,7 @@ def test_proxy_kubeconfig_uses_claim_owned_bearer_not_launch_environment(
         cwd=str(tmp_path),
         environment={
             KUBERNETES_PROXY_URL_ENV: "https://haku-kube-api-proxy.haku-console:8443",
-            "HAKU_AGENT_SDK_RUNNER_TOKEN": "launch-selected-secret",
+            "HAKU_RUNNER_TOKEN": "launch-selected-secret",
         },
     )
     _materialize_proxy_kubeconfig(launch, "claim-owned-secret")

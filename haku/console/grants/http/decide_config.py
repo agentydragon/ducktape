@@ -1,7 +1,7 @@
 """Deploy-time credentials and standing policy of the internal HTTP egress decide endpoint (#4670).
 
 The ``egress_decide`` section of the console config file declares which bearer the colocated
-egress proxy presents, which Agent-bound fence credentials the endpoint resolves, the
+egress proxy presents, which shared-fence credentials the endpoint accepts, the
 Console-owned egress credential registry (#4885): per handle, the inert placeholder a sandbox
 presents, the headers the proxy scans for it, the Agents allowed to redeem it, and the exact
 origins it may be redeemed at — and the deploy-managed standing HTTP policy (#4941): the durable
@@ -33,15 +33,16 @@ _ENV_VAR_PATTERN = r"^[A-Z][A-Z0-9_]*$"
 
 
 class EgressFenceCredentialEntry(BaseModel):
-    """One Agent-bound fence credential the internal HTTP egress decide endpoint accepts.
+    """One endpoint-scoped shared-fence credential accepted by the decide endpoint.
 
-    Endpoint-scoped by construction: the referenced secret is resolved only by the decide service,
-    never registered with the general Agent bearer authority, so it is invalid for MCP, session,
-    and operator APIs. Deploy config binds each env-referenced secret to its Agent until minted
-    per-claim fence credentials (#4670's fence-credential work item) replace this static wiring.
+    The referenced secret authenticates the colocated fence only. It is resolved only by the decide
+    service, never registered with the general Agent bearer authority, and is invalid for MCP,
+    session, and operator APIs. The caller's Agent and live session must arrive separately in the
+    sandbox bridge bearer.
     """
 
-    agent_id: UUID
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
     token_env_var: str = Field(min_length=1, pattern=_ENV_VAR_PATTERN)
 
 
@@ -162,8 +163,8 @@ class EgressStandingPolicyEntry(BaseModel):
 
 class EgressDecideConfig(BaseModel):
     """Wiring for ``POST /api/internal/http/decide``: the bearer the colocated egress proxy
-    presents, the Agent-bound fence credentials the endpoint resolves, the egress credential
-    registry grants and standing entries redeem from, and the standing HTTP policy itself.
+    presents, the shared-fence credentials it accepts, the egress credential registry grants and
+    standing entries redeem from, and the standing HTTP policy itself.
     ``None`` on ``ConsoleConfigFile`` is the production-safe default — the endpoint stays 503
     and the proxy fails closed until a deploy deliberately wires it."""
 
@@ -225,9 +226,8 @@ class EgressDecideConfig(BaseModel):
 
 
 class LoadedFenceCredential(BaseModel):
-    """A fence credential entry after reading its env reference."""
+    """A shared-fence endpoint-authentication entry after reading its env reference."""
 
-    agent_id: UUID
     token: SecretStr
 
 
@@ -258,17 +258,17 @@ class LoadedEgressDecide(BaseModel):
 def load_egress_decide(config: EgressDecideConfig) -> LoadedEgressDecide:
     """Read the decide endpoint's env-referenced secrets.
 
-    The identity secrets fail loud at startup: an unset proxy-token or fence-credential var raises,
-    because without the proxy token no decide call authenticates and each fence credential binds a
-    named Agent. A registry credential (``config.credentials``) whose value var is unset is instead
+    The endpoint authentication secrets fail loud at startup: an unset proxy-token or
+    fence-credential var raises, because without them the colocated fence cannot authenticate. A
+    registry credential (``config.credentials``) whose value var is unset is instead
     skipped with a warning, and the endpoint still serves reachability verdicts and every other
     credential. This is fail-safe, not fail-open: a fenced sandbox only ever holds the inert
     placeholder, so a request whose credential was skipped simply sends the placeholder upstream —
     which the upstream rejects — and nothing leaks.
 
-    A duplicate identity-secret value would make one secret authenticate two identities — the
-    proxy and an Agent, or two Agents — so those duplicates are refused, without echoing values,
-    and a present egress credential value may not equal any of them. Egress credential values may
+    A duplicate endpoint-authentication secret would make one value authenticate two slots, so
+    those duplicates are refused, without echoing values, and a present egress credential value
+    may not equal any of them. Egress credential values may
     repeat among themselves (two presentations of one credential), but a value equal to any
     configured placeholder would make the "inert" placeholder itself the secret, so that is
     refused the same way.
@@ -281,11 +281,11 @@ def load_egress_decide(config: EgressDecideConfig) -> LoadedEgressDecide:
     for entry in config.fence_credentials:
         token = os.environ.get(entry.token_env_var)
         if not token:
-            raise RuntimeError(f"missing fence credential env var {entry.token_env_var} for Agent {entry.agent_id}")
+            raise RuntimeError(f"missing fence credential env var {entry.token_env_var}")
         if token in identity_tokens:
             raise RuntimeError("duplicate egress decide credential values")
         identity_tokens.add(token)
-        loaded.append(LoadedFenceCredential(agent_id=entry.agent_id, token=SecretStr(token)))
+        loaded.append(LoadedFenceCredential(token=SecretStr(token)))
     placeholders = {entry.placeholder for entry in config.credentials}
     loaded_credentials: list[LoadedEgressCredential] = []
     for credential in config.credentials:

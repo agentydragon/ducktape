@@ -130,7 +130,7 @@ async def test_the_cut_stack_answers_a_prompt_with_a_tool_call_over_the_journal(
         | {
             "HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL": f"ws://127.0.0.1:{port}/internal/claude/runner",
             "HAKU_RUNNER_SESSION_ID": str(session_id),
-            "HAKU_AGENT_SDK_RUNNER_TOKEN": token,
+            "HAKU_RUNNER_TOKEN": token,
             "HAKU_CLAUDE_PATH": str(get_required_path(STUB_CLAUDE)),
             "HAKU_STUB_STATE": str(stub_state),
         },

@@ -15,6 +15,7 @@ than each re-deriving the harness.
 from __future__ import annotations
 
 import asyncio
+import base64
 import datetime
 import logging
 import socket
@@ -48,6 +49,7 @@ PLACEHOLDER = "proxy-github-placeholder"
 REAL_CREDENTIAL = "real-redeemed-credential"
 PROXY_BEARER = "proxy-identity-bearer"
 FENCE_CREDENTIAL = "agent-fence-credential"
+BRIDGE_BEARER = "bridge-session-bearer"
 
 
 def allow(*substitutions: PlaceholderSubstitution) -> DecideAllowed:
@@ -150,7 +152,9 @@ def make_proxy(
 
 
 def proxy_url(proxy: EgressProxy) -> str:
-    return f"http://127.0.0.1:{proxy.listen_port}"
+    # URL userinfo makes aiohttp send the same Basic proxy credential ordinary runner-launched
+    # clients use. The addon decodes it and the upstream never sees Proxy-Authorization.
+    return f"http://:{BRIDGE_BEARER}@127.0.0.1:{proxy.listen_port}"
 
 
 async def proxied_get(proxy: EgressProxy, url: str, headers: dict[str, str] | None = None) -> tuple[int, str]:
@@ -169,7 +173,13 @@ async def proxied_get_raw(proxy_port: int, url: str, header_lines: list[tuple[st
     need. ``url`` is the absolute request target (``http://host:port/path``).
     """
     authority = url.split("//", 1)[1].split("/", 1)[0]
-    lines = [f"GET {url} HTTP/1.1", f"Host: {authority}", "Connection: close"]
+    proxy_auth = base64.b64encode(f":{BRIDGE_BEARER}".encode()).decode()
+    lines = [
+        f"GET {url} HTTP/1.1",
+        f"Host: {authority}",
+        "Connection: close",
+        f"Proxy-Authorization: Basic {proxy_auth}",
+    ]
     lines += [f"{name}: {value}" for name, value in header_lines]
     reader, writer = await asyncio.open_connection("127.0.0.1", proxy_port)
     try:
@@ -190,7 +200,9 @@ class RaisingDecideClient(DecideClient):
         *,
         resolved_ips: frozenset[IPv4Address | IPv6Address],
         upstream_ip: IPv4Address | IPv6Address,
+        proxy_client_credential: str | None = None,
     ) -> DecideResponse:
+        del resolved_ips, upstream_ip, proxy_client_credential
         raise RuntimeError("decide transport exploded")
 
 
@@ -201,7 +213,9 @@ class HangingDecideClient(DecideClient):
         *,
         resolved_ips: frozenset[IPv4Address | IPv6Address],
         upstream_ip: IPv4Address | IPv6Address,
+        proxy_client_credential: str | None = None,
     ) -> DecideResponse:
+        del resolved_ips, upstream_ip, proxy_client_credential
         await asyncio.Event().wait()
         raise AssertionError("unreachable: the event is never set")
 
@@ -213,7 +227,9 @@ class MalformedDecideClient(DecideClient):
         *,
         resolved_ips: frozenset[IPv4Address | IPv6Address],
         upstream_ip: IPv4Address | IPv6Address,
+        proxy_client_credential: str | None = None,
     ) -> DecideResponse:
+        del request, resolved_ips, upstream_ip, proxy_client_credential
         return cast(DecideResponse, {"allowed": True, "substitutions": []})
 
 
@@ -362,7 +378,11 @@ async def tunneled_get(proxy_port: int, authority: str, path: str) -> tuple[int,
     """
     reader, writer = await asyncio.open_connection("127.0.0.1", proxy_port)
     try:
-        writer.write(f"CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n\r\n".encode())
+        proxy_auth = base64.b64encode(f":{BRIDGE_BEARER}".encode()).decode()
+        writer.write(
+            f"CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n"
+            f"Proxy-Authorization: Basic {proxy_auth}\r\n\r\n".encode()
+        )
         await writer.drain()
         connect_head = await reader.readuntil(b"\r\n\r\n")
         connect_status = int(connect_head.split(b" ", 2)[1])

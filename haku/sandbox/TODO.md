@@ -1,5 +1,22 @@
 # TODO — Agent Sandbox client
 
+## Rename the shared HTTP decision-endpoint credential
+
+`HAKU_EGRESS_FENCE_CREDENTIAL` and the Secret key currently call the bearer a “fence”
+credential, which invites the wrong inference that it identifies the sandbox Agent. Rename the
+wire/config/Secret names to a role-based name such as `HAKU_HTTP_DECISION_ENDPOINT_TOKEN` in a
+follow-up, keeping clear that this token authenticates the shared sidecar endpoint only and the
+live bridge bearer supplies Agent/session identity.
+
+## Bind the session bearer from a Secret
+
+When the upstream Agent Sandbox `SandboxClaim.spec.env` API supports Secret-backed
+`valueFrom`/`secretKeyRef` injection, stop putting the per-session bridge bearer in the claim
+spec as a literal. Bind it from a claim-scoped Secret or equivalent, then re-audit every
+`SandboxClaim` reader and its RBAC before enabling the new path. Until that upstream capability
+exists, the literal `spec.env` handoff is intentional and the claim-read boundary documented in
+<../console/session/README.md> is load-bearing.
+
 ## Say what the bootstrap actually did
 
 `bootstrap_state: succeeded` does not say _what_ succeeded. The claim already stores the

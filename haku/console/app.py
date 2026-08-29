@@ -499,6 +499,7 @@ def create_app(
             grants=http_grants,
             credentials=load_egress_decide(console_config.egress_decide),
             prohibited_cidrs=console_config.egress_decide.prohibited_cidrs,
+            agent_bearer_authority=bearer_authority,
         )
         if console_config.egress_decide is not None
         else None

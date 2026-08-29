@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_DECIDE_TIMEOUT_SECONDS = 5.0
 
 _FAIL_CLOSED_MESSAGE = "egress decision unavailable; refusing (fail closed)"
+_FLOW_PROXY_CLIENT_CREDENTIAL = "haku.egress.proxy_client_credential"
 
 type ResolveAddresses = Callable[[str, int], Awaitable[frozenset[IPv4Address | IPv6Address]]]
 
@@ -54,6 +55,50 @@ async def resolve_addresses(host: str, port: int) -> frozenset[IPv4Address | IPv
 
 def _refusal(status: int, message: str) -> http.Response:
     return http.Response.make(status, f"{message}\n".encode(), {"content-type": "text/plain; charset=utf-8"})
+
+
+def _proxy_client_bearer(value: str) -> str | None:
+    """Extract the bridge bearer from Bearer or URL-userinfo Basic proxy auth.
+
+    Runner-launched clients get credentials through ``http://:<token>@proxy`` because that is
+    understood by ordinary HTTP clients. A caller may also send an explicit Bearer header. Basic
+    userinfo is deliberately accepted only with an empty username: the proxy credential is one
+    bearer, not a username/password pair.
+    """
+    scheme, header_separator, payload = value.partition(" ")
+    if not header_separator or not payload.strip():
+        return None
+    payload = payload.strip()
+    if scheme.lower() == "bearer":
+        return payload
+    if scheme.lower() != "basic":
+        return None
+    try:
+        decoded = base64.b64decode(payload, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    username, credential_separator, password = decoded.partition(b":")
+    if credential_separator != b":" or username or not password:
+        return None
+    try:
+        return password.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
+def _take_proxy_client_bearer(flow: http.HTTPFlow) -> tuple[str | None, bool]:
+    """Consume proxy auth and retain it across CONNECT's later intercepted inner requests."""
+    header = flow.request.headers.get("proxy-authorization")
+    if header is not None:
+        # Proxy-Authorization is for this listener, never for the upstream server. Remove it even
+        # when malformed so a failed attempt cannot accidentally cross the fence.
+        del flow.request.headers["proxy-authorization"]
+        credential = _proxy_client_bearer(header)
+        flow.metadata[_FLOW_PROXY_CLIENT_CREDENTIAL] = credential
+        return credential, True
+    if _FLOW_PROXY_CLIENT_CREDENTIAL in flow.metadata:
+        return flow.metadata[_FLOW_PROXY_CLIENT_CREDENTIAL], True
+    return None, False
 
 
 def _swap_placeholder(header_value: str, substitution: PlaceholderSubstitution) -> str:
@@ -105,17 +150,19 @@ class EgressGateAddon:
 
     async def http_connect(self, flow: http.HTTPFlow) -> None:
         # A non-2xx response on a CONNECT flow makes mitmproxy refuse the tunnel.
+        client_credential, supplied = _take_proxy_client_bearer(flow)
         meta = RequestMeta(
             method=flow.request.method, scheme=None, host=flow.request.host, port=flow.request.port, path=None
         )
-        await self._gate(flow, meta)
+        await self._gate(flow, meta, client_credential=client_credential, credential_supplied=supplied)
 
     async def request(self, flow: http.HTTPFlow) -> None:
         request = flow.request
+        client_credential, supplied = _take_proxy_client_bearer(flow)
         meta = RequestMeta(
             method=request.method, scheme=request.scheme, host=request.host, port=request.port, path=request.path
         )
-        await self._gate(flow, meta)
+        await self._gate(flow, meta, client_credential=client_credential, credential_supplied=supplied)
 
     def responseheaders(self, flow: http.HTTPFlow) -> None:
         """Stream the upstream response body to the client instead of buffering it whole.
@@ -165,8 +212,13 @@ class EgressGateAddon:
             return
         data.server.address = (str(pinned), port)
 
-    async def _gate(self, flow: http.HTTPFlow, meta: RequestMeta) -> None:
+    async def _gate(
+        self, flow: http.HTTPFlow, meta: RequestMeta, *, client_credential: str | None, credential_supplied: bool
+    ) -> None:
         flow.response = _refusal(502, _FAIL_CLOSED_MESSAGE)
+        if credential_supplied and client_credential is None:
+            flow.response = _refusal(407, "invalid proxy client bearer")
+            return
         try:
             async with asyncio.timeout(self._decide_timeout_seconds):
                 # One resolution per admission: the decision validates this complete answer,
@@ -174,7 +226,9 @@ class EgressGateAddon:
                 # then numeric) is the address server_connect will dial verbatim.
                 resolved = await self._resolve(meta.host, meta.port)
                 upstream_ip = min(resolved, key=lambda address: (address.version, int(address)))
-                decision = await self._decide.decide(meta, resolved_ips=resolved, upstream_ip=upstream_ip)
+                decision = await self._decide.decide(
+                    meta, resolved_ips=resolved, upstream_ip=upstream_ip, proxy_client_credential=client_credential
+                )
             match decision:
                 case DecideDenied():
                     logger.info("deny %s %s:%d: %s", meta.method, meta.host, meta.port, decision.reason)

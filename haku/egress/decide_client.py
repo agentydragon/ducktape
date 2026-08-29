@@ -24,4 +24,5 @@ class DecideClient(ABC):
         *,
         resolved_ips: frozenset[IPv4Address | IPv6Address],
         upstream_ip: IPv4Address | IPv6Address,
+        proxy_client_credential: str | None = None,
     ) -> DecideResponse: ...

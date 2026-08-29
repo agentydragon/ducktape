@@ -21,6 +21,7 @@ from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
+from urllib.parse import quote, urlsplit, urlunsplit
 
 import anyio
 
@@ -30,7 +31,8 @@ from haku.runner.session_api import SessionApi
 # The exact-session credential used by the runner bridge and by the Agent at Console MCP. The
 # runner keeps the claim-owned value out of launch overlays, and the console's deploy config
 # refuses the name as a provider API-key variable.
-BRIDGE_CREDENTIAL_VARIABLE = "HAKU_AGENT_SDK_RUNNER_TOKEN"
+BRIDGE_CREDENTIAL_VARIABLE = "HAKU_RUNNER_TOKEN"
+_PROXY_ENVIRONMENT_VARIABLES = ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy")
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,11 +55,38 @@ class ProcessLaunch:
 
 
 def child_environment(launch: HarnessLaunch) -> dict[str, str]:
-    """Overlay launch values while retaining the claim-owned exact-session credential."""
-    return {
+    """Overlay launch values while retaining the claim-owned exact-session credential.
+
+    The Console sends proxy topology in the launch, while the claim-owned bridge bearer remains
+    in the runner Pod environment. URL userinfo is used only in the child process environment so
+    ordinary HTTP clients send ``Proxy-Authorization`` without a second secret or a launch-frame
+    credential.
+    """
+    environment = {
         **os.environ,
         **{key: value for key, value in launch.environment.items() if key != BRIDGE_CREDENTIAL_VARIABLE},
     }
+    if proxy_variables := set(launch.environment) & set(_PROXY_ENVIRONMENT_VARIABLES):
+        bearer = os.environ.get(BRIDGE_CREDENTIAL_VARIABLE)
+        if not bearer:
+            raise RuntimeError("proxy environment requires a bridge bearer")
+        for variable in proxy_variables:
+            environment[variable] = _proxy_url_with_bearer(environment[variable], bearer)
+    return environment
+
+
+def _proxy_url_with_bearer(proxy_url: str, bearer: str) -> str:
+    """Put *bearer* in proxy URL userinfo, rejecting deploy URLs with another credential."""
+    parsed = urlsplit(proxy_url)
+    try:
+        hostname = parsed.hostname
+    except ValueError as error:
+        raise RuntimeError("proxy URL has an invalid host") from error
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc or hostname is None:
+        raise RuntimeError("proxy URL must be an absolute HTTP(S) URL")
+    if parsed.username is not None or parsed.password is not None:
+        raise RuntimeError("proxy URL must not already contain credentials")
+    return urlunsplit(parsed._replace(netloc=f":{quote(bearer, safe='')}@{parsed.netloc}"))
 
 
 class Harness(Protocol):

@@ -108,7 +108,7 @@ async def test_claim_injects_the_session_credential(sandbox_claims, custom_objec
     assert body["spec"]["warmPoolRef"] == {"name": "haku-claude"}
     assert body["spec"]["env"] == [
         {"name": "HAKU_RUNNER_SESSION_ID", "value": str(session_id)},
-        {"name": "HAKU_AGENT_SDK_RUNNER_TOKEN", "value": "session-secret"},
+        {"name": "HAKU_RUNNER_TOKEN", "value": "session-secret"},
     ]
     assert body["spec"]["lifecycle"] == {"shutdownPolicy": "DeleteForeground", "shutdownTime": "2026-08-01T05:00:00Z"}
 

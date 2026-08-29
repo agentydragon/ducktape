@@ -2,14 +2,18 @@
 
 The decision endpoint is the oracle of the egress fence: it converts an authenticated caller
 identity plus concrete request metadata into a reachability verdict and the request-specific
-credential substitutions. Two credentials arrive with every call and neither is a general
-Agent/Operator credential:
+credential substitutions. The proxy identity and shared-fence credentials arrive with every call,
+and neither is a general Agent/Operator credential. A Console-launched sandbox also supplies its
+bridge bearer:
 
 - the **proxy identity bearer** in ``Authorization`` — the console-side static bearer the
   colocated proxy holds; rejected calls never reach evaluation;
-- the **Agent-bound fence credential** in the body — endpoint-scoped by construction: resolved
-  only here, never registered with ``AgentBearerAuthority``, so it is invalid for MCP, session,
-  and operator APIs, and those bearers are invalid here.
+- the **shared-fence credential** in the body — endpoint-scoped by construction and resolved only
+  here; it authenticates the shared fence, but does not identify an Agent;
+- the required **sandbox bridge bearer** in the body — resolved through ``AgentBearerAuthority``
+  and accepted only for a live session, then used as the exact data-plane Agent identity. It is
+  the same bearer used by the runner bridge and Console MCP. A missing or non-session bearer is
+  denied; there is no static Agent fallback.
 
 Every error path denies: an unknown fence credential, ungrantable metadata, or a grant-authority
 failure never admits, and the proxy fails closed on any non-2xx response.
@@ -39,6 +43,7 @@ from haku.console.grants.http.decide_config import LoadedEgressDecide
 from haku.console.grants.http.models import HttpMethod, HttpOrigin, HttpRequestAllowed, HttpScheme
 from haku.console.grants.http.service import GrantService
 from haku.console.grants.principal import RequestPrincipal
+from haku.console.identity.agent_bearer_authority import AgentBearerAuthority
 from haku.egress.decision import (
     DecideAllowed,
     DecideDenied,
@@ -124,7 +129,7 @@ def _canonicalize(meta: RequestMeta) -> _Tunnel | _InnerRequest | DecideDenied:
 
 
 class HttpDecideService:
-    """Authenticate the proxy, bind the fence credential to its Agent, evaluate, fail closed.
+    """Authenticate the fence, resolve the live-session Agent, evaluate, fail closed.
 
     The resolved answer is validated alongside the authorities: an answer touching prohibited
     address space — the always-on classes of ``_prohibited_address_class`` or a deploy-configured
@@ -145,9 +150,11 @@ class HttpDecideService:
         grants: GrantService,
         credentials: LoadedEgressDecide,
         prohibited_cidrs: frozenset[IPv4Network | IPv6Network],
+        agent_bearer_authority: AgentBearerAuthority,
     ) -> None:
         self._grants = grants
         self._credentials = credentials
+        self._agent_bearer_authority = agent_bearer_authority
         self._egress_credentials = {credential.handle: credential for credential in credentials.credentials}
         self._standing_policies = credentials.standing_policies
         self._prohibited_cidrs = sorted(prohibited_cidrs, key=str)
@@ -157,14 +164,12 @@ class HttpDecideService:
         token = _bearer_token(authorization)
         return token is not None and secrets.compare_digest(token, self._credentials.proxy_token.get_secret_value())
 
-    def _resolve_fence_credential(self, fence_credential: SecretStr) -> RequestPrincipal | None:
+    def _authenticate_fence_credential(self, fence_credential: SecretStr) -> bool:
         presented = fence_credential.get_secret_value()
         for credential in self._credentials.fence_credentials:
             if secrets.compare_digest(presented, credential.token.get_secret_value()):
-                # Configured fence credentials are static: no live-session identity, so
-                # exact-session grants are not exercisable through them (grants/principal.py).
-                return RequestPrincipal(agent_id=credential.agent_id, session_id=None, access_profile_id=None)
-        return None
+                return True
+        return False
 
     def _prohibited_label(self, address: IPv4Address | IPv6Address) -> str | None:
         """The always-on class or deploy-CIDR label prohibiting ``address``, or None if it is public."""
@@ -196,10 +201,25 @@ class HttpDecideService:
 
     async def decide(self, request: DecideRequest) -> DecideAllowed | DecideDenied:
         meta = request.request
-        principal = self._resolve_fence_credential(request.fence_credential)
-        if principal is None:
+        if not self._authenticate_fence_credential(request.fence_credential):
             logger.info("egress decision deny %s %s:%d: unknown fence credential", meta.method, meta.host, meta.port)
             return DecideDenied(reason="unknown fence credential")
+        if request.proxy_client_credential is None:
+            logger.info(
+                "egress decision deny %s %s:%d: proxy client credential required", meta.method, meta.host, meta.port
+            )
+            return DecideDenied(reason="proxy client credential required")
+        try:
+            resolved = await self._agent_bearer_authority.resolve(request.proxy_client_credential.get_secret_value())
+        except Exception as error:
+            logger.exception("egress proxy client authority failure")
+            raise HttpDecideUnavailableError("HTTP proxy client authority is unavailable") from error
+        if resolved is None or resolved.actor.session_id is None:
+            logger.info(
+                "egress decision deny %s %s:%d: unknown proxy client credential", meta.method, meta.host, meta.port
+            )
+            return DecideDenied(reason="unknown proxy client credential")
+        principal = RequestPrincipal.from_source(resolved.actor)
         prohibited_reason = self._prohibited_answer_reason(request)
         # A fully-internal answer is overridable by an allowance carrying allow_prohibited_address;
         # a mixed public+prohibited answer is the rebinding signature and is never overridable.

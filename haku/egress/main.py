@@ -14,8 +14,9 @@ deploy:
   e.g. ``http://127.0.0.1:8079``.
 - ``HAKU_EGRESS_PROXY_TOKEN`` — the static proxy-identity bearer Console accepts
   (its ``egress_decide.proxy_token_env_var`` resolves the same value).
-- ``HAKU_EGRESS_FENCE_CREDENTIAL`` — the Agent-bound fence credential this proxy
-  presents; Console derives the caller Agent from authenticating it.
+- ``HAKU_EGRESS_FENCE_CREDENTIAL`` — the shared-fence credential this proxy presents
+  to Console. It authenticates the shared fence only; it is not the sandbox-to-proxy
+  credential or an Agent identity.
 - ``HAKU_EGRESS_CONFDIR`` — mitmproxy confdir holding the shared interception CA
   (``mitmproxy-ca.pem``); an init container assembles it from the deploy CA.
 - ``HAKU_EGRESS_LISTEN_HOST`` / ``HAKU_EGRESS_LISTEN_PORT`` — the fenced-workload

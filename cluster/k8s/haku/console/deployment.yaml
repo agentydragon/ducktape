@@ -391,13 +391,13 @@ spec:
                 secretKeyRef:
                   name: haku-egress-proxy-identity
                   key: proxy-token
-            #   - the haku Agent's fence credential the endpoint resolves to that Agent
-            #     (egress_decide.fence_credentials[].token_env_var)
-            - name: HAKU_EGRESS_FENCE_HAKU
+            #   - the shared-fence credential; it authenticates the sidecar only and carries no
+            #     Agent identity (egress_decide.fence_credentials[].token_env_var)
+            - name: HAKU_EGRESS_FENCE_CREDENTIAL
               valueFrom:
                 secretKeyRef:
                   name: haku-egress-proxy-identity
-                  key: fence-credential-haku
+                  key: fence-credential
             #   - the github-bot registry credential's real value (#4951 EgressCredentialEntry
             #     value_env_var). The Console holds it and substitutes it into decide responses;
             #     the sandbox only ever presents the inert `github-token-placeholder`. Synced from
@@ -507,8 +507,8 @@ spec:
               value: "8888"
             - name: HAKU_EGRESS_CONFDIR
               value: /egress-proxy-confdir
-            # The proxy-identity bearer Console authenticates, and the haku Agent's fence credential
-            # Console resolves to that Agent — the same two values the server container reads above.
+            # The proxy-identity bearer Console authenticates, and the shared-fence credential
+            # authenticates the sidecar only — the same two values the server container reads above.
             - name: HAKU_EGRESS_PROXY_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -518,7 +518,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: haku-egress-proxy-identity
-                  key: fence-credential-haku
+                  key: fence-credential
           ports:
             - name: proxy
               containerPort: 8888

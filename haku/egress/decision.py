@@ -79,6 +79,10 @@ def _sorted_addresses(addresses: Iterable[IPv4Address | IPv6Address]) -> list[st
     return [str(address) for address in sorted(addresses, key=lambda address: (address.version, int(address)))]
 
 
+def _secret_value_or_none(value: SecretStr | None) -> str | None:
+    return None if value is None else value.get_secret_value()
+
+
 type ResolvedAddresses = Annotated[
     frozenset[IPv4Address | IPv6Address],
     # Bounded complete resolution: the proxy authorizes every address the answer contained, and an
@@ -94,16 +98,19 @@ class DecideRequest(BaseModel):
 
     Header values and bodies stay out of the call: the placeholder the sandbox holds is inert, so
     nothing about it needs to travel inward — grant evaluation alone decides which substitutions
-    come back — and Console sits on the request-decision path, never the body path (#4670).
+    come back — and Console sits on the request-decision path, never the body path (#4670). The
+    ``proxy_client_credential`` is the required sandbox-to-proxy credential. Console-launched
+    sandboxes use their existing bridge bearer here, so MCP and HTTP share one session credential;
+    it is the sole source of Agent/session identity for this decision.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     fence_credential: Annotated[SecretStr, PlainSerializer(SecretStr.get_secret_value, when_used="json")] = Field(
         description=(
-            "The Agent-bound fence credential the sandbox workload presented to the proxy. Console "
-            "derives the Agent from authenticating it; the request carries no caller-asserted "
-            "identity. Serialized in full on the wire, masked everywhere else — never log it."
+            "The shared-fence credential the proxy presents to Console. It authenticates the shared "
+            "fence but does not identify an Agent. Serialized in full on the wire, masked everywhere "
+            "else — never log it."
         )
     )
     request: RequestMeta
@@ -112,6 +119,15 @@ class DecideRequest(BaseModel):
     )
     upstream_ip: IPv4Address | IPv6Address = Field(
         description="The one resolved address the proxy pinned for the actual upstream connection."
+    )
+    proxy_client_credential: Annotated[SecretStr | None, PlainSerializer(_secret_value_or_none, when_used="json")] = (
+        Field(
+            default=None,
+            description=(
+                "The sandbox-to-proxy bearer, normally the same HAKU_RUNNER_TOKEN used by "
+                "the MCP bridge. Console resolves it to a live Agent session when present."
+            ),
+        )
     )
 
     @model_validator(mode="after")

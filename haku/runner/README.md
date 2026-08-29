@@ -70,10 +70,12 @@ direction, and timestamps.
 `--harness claude` (or `codex-app-server`) is required by the deployed SandboxTemplate. The
 selected harness is resolved once at runner startup and cannot change for the lifetime of the process.
 The claim gives
-the sandbox one exact-session bearer, `HAKU_AGENT_SDK_RUNNER_TOKEN`. The runner uses it for the
+the sandbox one exact-session bearer, `HAKU_RUNNER_TOKEN`. The runner uses it for the
 bridge and the Agent intentionally inherits it for Console MCP, so native MCP support and ordinary
-HTTP clients such as `curl` exercise the same pinned Agent/profile/binding authority. It is not the
-Claude OAuth credential, which never enters the sandbox.
+HTTP clients such as `curl` exercise the same pinned Agent/profile/binding authority. When a launch
+selects an `HTTP_PROXY` or `HTTPS_PROXY`, the runner embeds this same bearer in the proxy URL so
+standard HTTP clients send proxy authentication without another credential or a launch-frame copy.
+It is not the Claude OAuth credential, which never enters the sandbox.
 
 When the Console launch environment contains `HAKU_KUBERNETES_PROXY_URL`, the runner creates
 `$HOME/.kube/config` and a mode-0600 `$HOME/.kube/haku-agent-token`. The config points only at that

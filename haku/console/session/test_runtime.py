@@ -404,7 +404,7 @@ def test_runtime_registration_schema_exposes_the_implementation_discriminator() 
 
 def test_codex_runtime_rejects_session_authority_as_the_provider_key() -> None:
     with pytest.raises(ValidationError, match="exact-session credential"):
-        _codex_runtime_config(api_key_env_var="HAKU_AGENT_SDK_RUNNER_TOKEN")
+        _codex_runtime_config(api_key_env_var="HAKU_RUNNER_TOKEN")
 
 
 @pytest.mark.parametrize("field", ["api_base_url", "mcp_url"])

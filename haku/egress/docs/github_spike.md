@@ -17,14 +17,17 @@ mutation is approving/releasing one temporary grant.
 
 ## Identity: who the fence sees
 
-The sidecar presents one static fence credential (`HAKU_EGRESS_FENCE_CREDENTIAL`), so the decide
-service resolves **every** fenced request to the **haku Agent**, whichever pod sent it. Driving
-the spike from public-coder's pod therefore proves routing, admission, substitution, and the
-grant lifecycle — not per-agent attribution: through the fence this pod authenticates to GitHub
-as the haku bot, and a grant covering fenced traffic must belong to the haku Agent. Per-agent
-fence identity (public-coder reaching GitHub as `agentydragon-agent` through the fence, with its
-own credential substituted) is #4670's minted per-claim fence credential work. Until then the
-iron proxy remains the agent's production GitHub path, untouched by this exercise.
+The sidecar presents one static shared-fence credential (`HAKU_EGRESS_FENCE_CREDENTIAL`). A
+Console-launched runtime sandbox additionally presents its exact-session bridge bearer, the same
+token used for the runner bridge and Console MCP; the decide service resolves that bearer through
+the live-session authority and uses the session's Agent/profile/binding for HTTP egress. Callers
+without the bridge bearer are denied; there is no static Agent identity fallback.
+
+This OpenClaw spike uses the separate iron proxy for its production path. It does not carry a
+Console session bridge bearer, so pointing it at the colocated fence would be denied; it cannot
+exercise the colocated decision/grant path until it is given a live session identity. The
+shared-fence credential is the sidecar-to-Console credential; it is not the sandbox-to-proxy
+credential.
 
 ## What the spike PR deployed
 
@@ -42,14 +45,13 @@ iron proxy remains the agent's production GitHub path, untouched by this exercis
   interception leaves.
 - **`egress_decide.standing_policies`** (`cluster/k8s/haku/console/config.yaml`):
   `haku-github-api` (api.github.com, API methods) and `haku-github-git` (github.com, GET+POST
-  for smart HTTP), both redeeming `github-bot` — authored against the **haku** agent id, the
-  identity fenced traffic actually presents (see above). `codeload.github.com` is deliberately
-  _not_ standing — it is the temporary-grant leg's target.
+  for smart HTTP), both redeeming `github-bot` for a live haku session. `codeload.github.com` is
+  deliberately _not_ standing — it is the temporary-grant leg's target.
 - **`grants`** in-process MCP server (HTTP-egress domain), exposed to every access profile (operator ruling on
   #4986): any Agent may ask for egress. Deliberately in no auto-approval policy: `create_grant`
   must be manually approved (auto-approved calls cannot mint grants), so every call here queues
-  for the operator. The identity constraint above still binds the spike: only a grant owned by
-  the haku Agent matches fenced traffic today, so the grant leg below runs as haku.
+  for the operator. A Console-launched haku session carrying its live bridge bearer is the
+  intended caller for this colocated path.
 
 ## Pre-checks (read-only)
 

@@ -44,12 +44,17 @@ def test_egress_decide_config_requires_distinct_env_references() -> None:
     with pytest.raises(ValueError, match="distinct"):
         EgressDecideConfig(
             proxy_token_env_var="EGRESS_TOKEN",
-            fence_credentials=[EgressFenceCredentialEntry(agent_id=_AGENT, token_env_var="EGRESS_TOKEN")],
+            fence_credentials=[EgressFenceCredentialEntry(token_env_var="EGRESS_TOKEN")],
         )
     with pytest.raises(ValueError, match="identity secrets"):
         EgressDecideConfig(
             proxy_token_env_var="EGRESS_TOKEN", credentials=[_credential_entry(value_env_var="EGRESS_TOKEN")]
         )
+
+
+def test_fence_credential_entry_cannot_carry_agent_identity() -> None:
+    with pytest.raises(ValidationError, match="agent_id"):
+        EgressFenceCredentialEntry.model_validate({"agent_id": str(_AGENT), "token_env_var": "EGRESS_FENCE"})
 
 
 def test_credential_entry_canonicalizes_and_validates_match_headers() -> None:
@@ -91,7 +96,7 @@ def test_prohibited_cidrs_parse_as_networks_and_default_empty() -> None:
 def test_load_egress_decide_reads_env_references_and_fails_loud(monkeypatch: pytest.MonkeyPatch) -> None:
     config = EgressDecideConfig(
         proxy_token_env_var="EGRESS_PROXY_TOKEN",
-        fence_credentials=[EgressFenceCredentialEntry(agent_id=_AGENT, token_env_var="EGRESS_FENCE_A")],
+        fence_credentials=[EgressFenceCredentialEntry(token_env_var="EGRESS_FENCE_A")],
     )
     monkeypatch.delenv("EGRESS_PROXY_TOKEN", raising=False)
     with pytest.raises(RuntimeError, match="EGRESS_PROXY_TOKEN"):
@@ -109,7 +114,6 @@ def test_load_egress_decide_reads_env_references_and_fails_loud(monkeypatch: pyt
     loaded = load_egress_decide(config)
     assert loaded.proxy_token.get_secret_value() == _PROXY_TOKEN
     (credential,) = loaded.fence_credentials
-    assert credential.agent_id == _AGENT
     assert credential.token.get_secret_value() == _FENCE
 
 
@@ -230,8 +234,7 @@ def test_github_spike_standing_config(monkeypatch: pytest.MonkeyPatch) -> None:
                 """
                 proxy_token_env_var: HAKU_EGRESS_PROXY_TOKEN
                 fence_credentials:
-                  - agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
-                    token_env_var: HAKU_EGRESS_FENCE_HAKU
+                  - token_env_var: HAKU_EGRESS_FENCE_CREDENTIAL
                 credentials:
                   - handle: github-bot
                     placeholder: github-token-placeholder
@@ -261,7 +264,7 @@ def test_github_spike_standing_config(monkeypatch: pytest.MonkeyPatch) -> None:
         )
     )
     monkeypatch.setenv("HAKU_EGRESS_PROXY_TOKEN", _PROXY_TOKEN)
-    monkeypatch.setenv("HAKU_EGRESS_FENCE_HAKU", _FENCE)
+    monkeypatch.setenv("HAKU_EGRESS_FENCE_CREDENTIAL", _FENCE)
     monkeypatch.setenv("HAKU_EGRESS_CREDENTIAL_GITHUB_BOT", "ghp-real-value")
     loaded = load_egress_decide(config)
 
