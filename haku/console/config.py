@@ -295,8 +295,23 @@ class HarnessRegistrationConfig(HarnessExecutionConfig):
 
     agent_id: UUID
     claim_prefix: str = Field(min_length=1)
-    runtime_label: str = Field(min_length=1)
+    harness_label: str = Field(min_length=1)
     implementation: HarnessImplementationConfig
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_runtime_label_alias(cls, value: object) -> object:
+        # CLEANUP(added 2026-08-29): remove the runtime_label alias once the deployed
+        #   haku-console-config ConfigMap carries `harness_label` and no older image that reads
+        #   only `runtime_label` is deployable (contract step of #4772 C16d).
+        if isinstance(value, dict) and "runtime_label" in value:
+            if "harness_label" in value:
+                raise ValueError(
+                    "harness_label and its deprecated alias runtime_label are both set; keep only harness_label"
+                )
+            value = dict(value)
+            value["harness_label"] = value.pop("runtime_label")
+        return value
 
     @property
     def kind(self) -> HarnessKind:

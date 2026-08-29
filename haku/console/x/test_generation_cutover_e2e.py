@@ -34,7 +34,7 @@ from haku.console.conversation_read_access import UnrestrictedReads
 from haku.console.database_schema import Session, SubmittedPrompt
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.notifications.session_wakes import SessionWakes
-from haku.console.session.conftest import TEST_ACCESS_PROFILE_ID, TEST_AGENT_ID, configured_runtimes, runtime_config
+from haku.console.session.conftest import TEST_ACCESS_PROFILE_ID, TEST_AGENT_ID, configured_harnesses, runtime_config
 from haku.console.session.runtime import SessionService, internal_router
 from haku.console.session.status import SessionStatus
 from haku.console.session.store import Store
@@ -55,9 +55,9 @@ def _console_app(database_url: str, workspace: Path) -> FastAPI:
         engine = create_async_engine(database_url, pool_pre_ping=True)
         session_wakes = SessionWakes(database_url)
         await session_wakes.start()
-        runtimes = configured_runtimes(RecordingClaims(), config=runtime_config(cwd=str(workspace)))
+        harnesses = configured_harnesses(RecordingClaims(), config=runtime_config(cwd=str(workspace)))
         store = Store(async_sessionmaker(engine, expire_on_commit=False))
-        app.state.session_service = SessionService(runtimes, store, session_wakes)
+        app.state.session_service = SessionService(harnesses, store, session_wakes)
         try:
             yield
         finally:

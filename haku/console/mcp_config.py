@@ -440,10 +440,10 @@ class ConsoleConfigFile(BaseModel):
         # shared YAML, so it cannot globally forbid extras. Reject retired siblings explicitly
         # rather than silently accepting stale deployment wiring.
         if isinstance(value, dict):
-            if "claude_harness" in value:
-                raise ValueError("claude_harness was replaced by harnesses.claude_code")
-            if "chat_harnesses" in value:
-                raise ValueError("chat_harnesses was renamed to harnesses")
+            if "claude_runtime" in value:
+                raise ValueError("claude_runtime was replaced by harnesses.claude_code")
+            if "chat_runtimes" in value:
+                raise ValueError("chat_runtimes was renamed to harnesses")
         return value
 
     @model_validator(mode="after")

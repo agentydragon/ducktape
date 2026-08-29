@@ -147,7 +147,7 @@ class ConversationCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     agent_id: UUID
-    harness: HarnessKind
+    runtime: HarnessKind
 
 
 class PromptAccepted(BaseModel):
@@ -860,10 +860,10 @@ async def create_conversation(
     """Open a new thread and the first session to run it.
 
     One call, because a conversation with no session is a thread nothing can be said to. Agent and
-    harness are an atomic required pair; there is no server-default launch endpoint.
+    runtime is an atomic required pair; there is no server-default launch endpoint.
     """
     try:
-        return await service.create_conversation(actor.operator_id, agent_id=body.agent_id, harness_kind=body.harness)
+        return await service.create_conversation(actor.operator_id, agent_id=body.agent_id, harness_kind=body.runtime)
     except LaunchAgentRejectedError:
         raise HTTPException(status_code=403, detail="chat launch is not authorized")
     except KeyError as error:

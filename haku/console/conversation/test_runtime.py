@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.console.conftest import console_sessions
 from haku.console.conversation.prompt_origin import SPA_ORIGIN
-from haku.console.conversation.runtime import Harness
+from haku.console.conversation.runtime import Runtime
 from haku.console.database_schema import ConversationItem, Session
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
@@ -46,10 +46,10 @@ async def test_first_conversation_prompt_creates_one_session_then_one_sandbox(
         await db.delete(await db.get(Session, view.session_id))
 
     item_id = await session_store.enqueue_conversation_prompt(operator_id, conversation_id, "start", SPA_ORIGIN)
-    harness = Harness(chat_service, session_store, conversation_wakes, migrated_engine)
+    runtime = Runtime(chat_service, session_store, conversation_wakes, migrated_engine)
 
-    await harness.reconcile_once()
-    await harness.reconcile_once()
+    await runtime.reconcile_once()
+    await runtime.reconcile_once()
 
     async with migrated_sessions() as db:
         sessions = list(await db.scalars(select(Session).where(Session.conversation_id == conversation_id)))
@@ -126,7 +126,7 @@ async def test_demanded_replacement_reauthorizes_pinned_identity_in_creation_tra
         await db.delete(await db.get(Session, first.session_id))
     await store.enqueue_conversation_prompt(operator_id, conversation_id, "replace", SPA_ORIGIN)
 
-    await Harness(service, store, conversation_wakes, migrated_engine).reconcile_once()
+    await Runtime(service, store, conversation_wakes, migrated_engine).reconcile_once()
 
     async with migrated_sessions() as db:
         replacements = list(await db.scalars(select(Session).where(Session.conversation_id == conversation_id)))
@@ -148,8 +148,8 @@ async def test_new_runtime_and_rolling_old_creator_converge_on_one_session(
     async with migrated_sessions.begin() as db:
         await db.delete(await db.get(Session, view.session_id))
     await session_store.enqueue_conversation_prompt(operator_id, conversation_id, "once", SPA_ORIGIN)
-    first = Harness(chat_service, session_store, conversation_wakes, migrated_engine)
-    second = Harness(chat_service, session_store, conversation_wakes, migrated_engine)
+    first = Runtime(chat_service, session_store, conversation_wakes, migrated_engine)
+    second = Runtime(chat_service, session_store, conversation_wakes, migrated_engine)
 
     await asyncio.gather(
         first.reconcile_once(),
@@ -186,7 +186,7 @@ async def test_unclaimed_prompt_moves_to_replacement_after_a_stale_lease(
         assert row is not None
         row.lease_expires_at = datetime.now(UTC) - ADOPTION_GRACE - timedelta(seconds=1)
 
-    await Harness(chat_service, session_store, conversation_wakes, migrated_engine).reconcile_once()
+    await Runtime(chat_service, session_store, conversation_wakes, migrated_engine).reconcile_once()
 
     async with migrated_sessions() as db:
         sessions = list(

@@ -26,12 +26,12 @@ def test_deployed_console_config_is_valid() -> None:
     assert config.harnesses is not None
     claude = config.harnesses.claude_code
     assert claude.claim_prefix == "claude"
-    assert claude.runtime_label == "claude-chat"
+    assert claude.harness_label == "claude-chat"
     assert isinstance(claude.implementation, ClaudeCodeImplementationConfig)
     codex = config.harnesses.codex_app_server
     assert codex is not None
     assert codex.claim_prefix == "codex"
-    assert codex.runtime_label == "codex-chat"
+    assert codex.harness_label == "codex-chat"
     assert isinstance(codex.implementation, CodexAppServerImplementationConfig)
     assert "codex_runtime" not in raw["settings"]
 

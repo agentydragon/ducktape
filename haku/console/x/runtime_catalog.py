@@ -11,7 +11,7 @@ from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.x.claude_code.runtime import ClaudeHarnessAdapter
 from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
 from haku.console.x.codex_app_server.runtime import CodexHarnessAdapter
-from haku.console.x.runtime import AgentHarnessResources, HarnessKey, HarnessAdapter, HarnessRegistry
+from haku.console.x.runtime import AgentHarnessResources, HarnessAdapter, HarnessKey, HarnessRegistry
 from haku.runner.codex.options import CodexModelProvider
 
 

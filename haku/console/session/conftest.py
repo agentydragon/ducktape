@@ -51,7 +51,7 @@ def runtime_config(**overrides: object) -> HarnessRegistrationConfig:
         "namespace": "haku-claude-sandbox",
         "warm_pool": "haku-claude",
         "claim_prefix": "claude",
-        "runtime_label": "claude-chat",
+        "harness_label": "claude-chat",
         "cwd": "/workspace",
         "session_ttl_seconds": 7200,
         "https_proxy": "http://proxy.test:8180",

@@ -51,7 +51,7 @@ from haku.console.channels.matrix.room_copy import RoomCopy
 from haku.console.channels.matrix.sync import SyncService, SyncStore
 from haku.console.config import HarnessRegistrationConfig
 from haku.console.conversation.history import ConversationHistory
-from haku.console.conversation.runtime import Harness
+from haku.console.conversation.runtime import Runtime
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.identity.launch_authority import StaticLaunchAuthority
 from haku.console.identity.operator_identity import OperatorIdentityTrust
@@ -176,7 +176,7 @@ async def _serve() -> None:
         namespace="haku-claude-sandbox",
         warm_pool="haku-claude",
         claim_prefix="claude",
-        runtime_label="claude-chat",
+        harness_label="claude-chat",
         cwd=_environment("HAKU_E2E_WORKSPACE"),
         session_ttl_seconds=7200,
         https_proxy="http://proxy.test:8180",
@@ -248,7 +248,7 @@ async def _serve() -> None:
         conversation_history=ConversationHistory(sessions),
         launch_authorizer=launch_authorizer,
     )
-    supervisor = Harness(
+    supervisor = Runtime(
         service, store, conversation_wakes, engine, sweep_interval=_seconds("HAKU_E2E_SWEEP_INTERVAL_SECONDS")
     )
     allocator = SandboxAllocator(service, store, session_wakes, engine)

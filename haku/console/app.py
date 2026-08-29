@@ -35,7 +35,7 @@ from haku.console import capabilities
 from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
 from haku.console.config import MCP_PATH, Settings
 
-# Aliased: bare `harness` exists in three sibling packages, and `create_app` has a local `follow`.
+# Aliased: bare `runtime` exists in three sibling packages, and `create_app` has a local `follow`.
 from haku.console.conversation import follow as conversation_follow, reader, runtime as conversation_runtime
 from haku.console.conversation.history import ConversationHistory
 from haku.console.conversation.live_updates import ConversationLiveUpdates
@@ -329,7 +329,7 @@ def create_app(
                 namespace=claude_harness.namespace,
                 warm_pool=claude_harness.warm_pool,
                 claim_prefix=claude_harness.claim_prefix,
-                runtime_label=claude_harness.runtime_label,
+                harness_label=claude_harness.harness_label,
                 runner_environment={},
             )
         )
@@ -360,7 +360,7 @@ def create_app(
                 namespace=codex_harness.namespace,
                 warm_pool=codex_harness.warm_pool,
                 claim_prefix=codex_harness.claim_prefix,
-                runtime_label=codex_harness.runtime_label,
+                harness_label=codex_harness.harness_label,
                 runner_environment={},
             )
         )
@@ -435,7 +435,7 @@ def create_app(
         else None
     )
     runtime_supervisor = (
-        conversation_runtime.Harness(session_service, session_store, conversation_wakes, db_engine)
+        conversation_runtime.Runtime(session_service, session_store, conversation_wakes, db_engine)
         if session_service is not None
         else None
     )
@@ -827,14 +827,14 @@ def create_app(
             ChatLaunchOption(
                 agent_id=identity.agent_id,
                 agent_display_name=static_by_id[identity.agent_id].display_name,
-                harness=identity.harness_kind,
+                runtime=identity.harness_kind,
                 runtime_display_name=harness_registry[identity.harness_kind].display_name,
             )
             for identity in harness_registry.configured_identities
             if identity.agent_id in launchable_agent_ids
             and identity.harness_kind in profile_harness_kinds[static_by_id[identity.agent_id].access_profile_id]
         ]
-        launch_options.sort(key=lambda option: (option.agent_display_name, option.harness.value))
+        launch_options.sort(key=lambda option: (option.agent_display_name, option.runtime.value))
         return ConfigResponse(
             launch_routine_url=launch.page_url if launch else None,
             haku_ui_url=settings.haku_ui_url,

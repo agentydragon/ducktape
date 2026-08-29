@@ -21,7 +21,7 @@ def _runtime() -> dict[str, object]:
         "namespace": "sandbox",
         "warm_pool": "pool",
         "claim_prefix": "claude",
-        "runtime_label": "claude-chat",
+        "harness_label": "claude-chat",
         "cwd": "/workspace",
         "session_ttl_seconds": 300,
         "https_proxy": "https://proxy.example",
@@ -116,6 +116,20 @@ def test_configured_runtime_requires_launchable_agents_and_runtime_enabled_profi
             _config(
                 harnesses={"claude_code": runtime}, access_profiles=[{"id": "chat", "auto_approval_policy": "manual"}]
             )
+        )
+
+
+def test_runtime_label_is_a_deprecated_alias_of_harness_label() -> None:
+    registration = _runtime()
+    registration["runtime_label"] = registration.pop("harness_label")
+    aliased = ConsoleConfigFile.model_validate(_config(harnesses={"claude_code": registration}))
+    assert aliased.harnesses is not None
+    assert aliased.harnesses.claude_code is not None
+    assert aliased.harnesses.claude_code.harness_label == "claude-chat"
+
+    with pytest.raises(ValidationError, match="deprecated alias runtime_label"):
+        ConsoleConfigFile.model_validate(
+            _config(harnesses={"claude_code": {**_runtime(), "runtime_label": "claude-chat"}})
         )
 
 

@@ -24,7 +24,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.config import HarnessesConfig, ClaudeCodeImplementationConfig, HarnessRegistrationConfig
+from haku.console.config import ClaudeCodeImplementationConfig, HarnessesConfig, HarnessRegistrationConfig
 from haku.console.conftest import console_sessions
 from haku.console.conversation.history import ConversationHistory
 from haku.console.conversation.prompt_origin import SPA_ORIGIN
@@ -94,7 +94,7 @@ async def test_post_conversation_launch_rejection_is_generic_403() -> None:
     actor = type("Actor", (), {"operator_id": uuid4()})()
     with pytest.raises(HTTPException) as error:
         await create_conversation(
-            ConversationCreateRequest(agent_id=uuid4(), harness=HarnessKind.CLAUDE_CODE),
+            ConversationCreateRequest(agent_id=uuid4(), runtime=HarnessKind.CLAUDE_CODE),
             actor,
             cast(SessionService, RejectingService()),
         )
@@ -232,8 +232,8 @@ def test_chat_runtime_config_is_closed_and_rejects_the_retired_shape() -> None:
             _console_config(harnesses={"claude_code": _codex_harness_config().model_dump(mode="json")})
         )
 
-    with pytest.raises(ValidationError, match="claude_harness was replaced"):
-        ConsoleConfigFile.model_validate(_console_config(claude_harness=runtime_config().model_dump(mode="json")))
+    with pytest.raises(ValidationError, match="claude_runtime was replaced"):
+        ConsoleConfigFile.model_validate(_console_config(claude_runtime=runtime_config().model_dump(mode="json")))
 
     assert ConsoleConfigFile.model_validate(_console_config(harnesses=None)).harnesses is None
 
@@ -253,7 +253,7 @@ def test_chat_runtime_config_fails_closed_when_malformed() -> None:
     flat["auth_token_placeholder"] = flat.pop("implementation")["auth_token_placeholder"]
     flat["mcp_static_agent_id"] = flat.pop("agent_id")
     flat.pop("claim_prefix")
-    flat.pop("runtime_label")
+    flat.pop("harness_label")
     with pytest.raises(ValidationError, match="implementation"):
         ConsoleConfigFile.model_validate(_console_config(harnesses={"claude_code": flat}))
 
@@ -311,7 +311,7 @@ def _codex_harness_config(**overrides: Any) -> HarnessRegistrationConfig:
         "namespace": "haku-harness-sandbox",
         "warm_pool": "haku-public-coder-codex",
         "claim_prefix": "codex",
-        "runtime_label": "codex-chat",
+        "harness_label": "codex-chat",
         "cwd": "/workspace",
         "session_ttl_seconds": 7200,
         "https_proxy": "http://public-coder-codex-runner-proxy:8080",
@@ -355,7 +355,9 @@ def test_harness_registration_threads_the_codex_model_and_effort_into_the_launch
     registration = harness_registration(config, recording_claims, system_prompt=SystemPromptTemplate(""))
 
     launch = registration.adapter.build_launch(
-        HarnessLaunchSpec(cwd="/workspace", environment={}, mcp_servers={}, appended_system_prompt=None, resume_from=None)
+        HarnessLaunchSpec(
+            cwd="/workspace", environment={}, mcp_servers={}, appended_system_prompt=None, resume_from=None
+        )
     )
 
     assert launch.environment[CODEX_MODEL_ENV] == config.implementation.model
@@ -371,7 +373,7 @@ def test_claude_registration_uses_the_shared_discriminated_model() -> None:
         "namespace",
         "warm_pool",
         "claim_prefix",
-        "runtime_label",
+        "harness_label",
         "cwd",
         "session_ttl_seconds",
         "https_proxy",
@@ -392,7 +394,7 @@ def test_claude_registration_uses_the_shared_discriminated_model() -> None:
     assert HarnessRegistrationConfig.model_validate(wire) == config
     assert isinstance(config.implementation, ClaudeCodeImplementationConfig)
     assert config.kind is HarnessKind.CLAUDE_CODE
-    assert (config.agent_id, config.claim_prefix, config.runtime_label) == (
+    assert (config.agent_id, config.claim_prefix, config.harness_label) == (
         UUID("00000000-0000-4000-8000-000000000001"),
         "claude",
         "claude-chat",

@@ -82,7 +82,7 @@ def sandbox_claims(custom_objects_api, core_v1_api) -> KubernetesSandboxClaims:
             namespace="haku-claude-sandbox",
             warm_pool="haku-claude",
             claim_prefix="claude",
-            runtime_label="claude-chat",
+            harness_label="claude-chat",
             runner_environment={},
         ),
         KubernetesClients(

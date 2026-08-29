@@ -92,16 +92,16 @@ class KubernetesClients:
 
 @dataclass(frozen=True, slots=True)
 class SandboxClaimSpec:
-    """Generic desired state for one runtime's session claims.
+    """Generic desired state for one harness's session claims.
 
     The claim implementation knows Kubernetes and the shared runner bootstrap only. Which native
-    harness image/pool is selected and how claims are labelled is deploy-time runtime composition.
+    harness image/pool is selected and how claims are labelled is deploy-time harness composition.
     """
 
     namespace: str
     warm_pool: str
     claim_prefix: str
-    runtime_label: str
+    harness_label: str
     runner_environment: Mapping[str, str]
 
 
@@ -159,7 +159,7 @@ class KubernetesSandboxClaims:
                 "name": self._claim_name(session_id),
                 "labels": {
                     "app.kubernetes.io/managed-by": "haku-console",
-                    "haku.allegedly.works/runtime": self._spec.runtime_label,
+                    "haku.allegedly.works/harness": self._spec.harness_label,
                 },
             },
             "spec": {
@@ -369,10 +369,10 @@ class KubernetesSandboxClaims:
                         plural=_CLAIMS_PLURAL,
                         label_selector=(
                             "app.kubernetes.io/managed-by=haku-console,"
-                            f"haku.allegedly.works/runtime={self._spec.runtime_label}"
+                            f"haku.allegedly.works/harness={self._spec.harness_label}"
                         ),
                     ),
-                    name=f"sandbox-claim-watch-{self._spec.runtime_label}",
+                    name=f"sandbox-claim-watch-{self._spec.harness_label}",
                 ),
                 asyncio.create_task(
                     watch_source(
@@ -382,11 +382,11 @@ class KubernetesSandboxClaims:
                         namespace=self._spec.namespace,
                         plural="sandboxes",
                     ),
-                    name=f"sandbox-watch-{self._spec.runtime_label}",
+                    name=f"sandbox-watch-{self._spec.harness_label}",
                 ),
                 asyncio.create_task(
                     watch_source(clients.core_v1.list_namespaced_pod, namespace=self._spec.namespace),
-                    name=f"sandbox-pod-watch-{self._spec.runtime_label}",
+                    name=f"sandbox-pod-watch-{self._spec.harness_label}",
                 ),
             ]
             try:
