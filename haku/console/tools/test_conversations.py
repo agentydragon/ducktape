@@ -23,6 +23,8 @@ from haku.console.conversation.reads import (
     SessionRecord,
     TurnCursor,
     TurnRecord,
+    WorkerResult,
+    WorkerStatus,
 )
 from haku.console.conversation_read_access import (
     ConversationAccessDeniedError,
@@ -194,6 +196,11 @@ class _Reader:
         selected = self._items if cursor is None else [item for item in self._items if item.opened_seq >= cursor]
         return selected[:limit]
 
+    async def get_worker_result(self, session_id: UUID, *, scope: ConversationReadScope) -> WorkerResult:
+        self._point_read(scope)
+        self.queries.append({"session_id": session_id})
+        return WorkerResult(status=WorkerStatus.RUNNING)
+
 
 def _mcp(reader: _Reader):
     return build_mcp(reader, access=ACCESS, conversation_reads=READS)
@@ -222,7 +229,13 @@ async def test_tool_surface() -> None:
     async with Client(_mcp(_Reader())) as client:
         tools = {tool.name for tool in await client.list_tools()}
 
-    assert tools == {"list_sessions", "list_turns", "read_conversation_items", "read_session_frames"}
+    assert tools == {
+        "list_sessions",
+        "list_turns",
+        "read_conversation_items",
+        "read_session_frames",
+        "get_worker_result",
+    }
 
 
 async def test_harness_kind_is_a_required_closed_identity_field_on_a_session() -> None:

@@ -348,6 +348,22 @@ class SessionOutcome:
 
 
 @dataclass(frozen=True, slots=True)
+class WorkerOutcome:
+    """The facts `get_worker_result` maps to a `WorkerResult` (haku/console/conversation/reader.py).
+
+    Read together in one transaction so the status and the answer it reports cannot come from
+    different points in time: the session's derived lifecycle and its failure surface, how the
+    session's most recent turn ended (`None` while one is in flight, or before any has run), and the
+    session's last complete assistant message — the answer, once there is one.
+    """
+
+    session_status: SessionStatus
+    error: str | None
+    latest_turn_end: conversation_event.TurnEnd | None
+    final_message: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class OperatorSessionIdentity:
     """The conversation identity needed by a session-addressed operator inspection."""
 
@@ -1784,6 +1800,54 @@ class Store:
         async with self._sessions() as db:
             await _require_readable_conversation(db, conversation_id, scope)
             return await _item_page_rows(db, conversation_id, after_seq=after_seq, limit=limit)
+
+    async def worker_outcome(self, session_id: UUID, *, scope: ConversationReadScope) -> WorkerOutcome:
+        """The `get_worker_result` facts for one worker session, read together under one scope.
+
+        Refuses the way the other `haku_conversations` reads do: a session whose conversation is
+        pinned to a profile outside *scope* is `conversation access denied` rather than reported, and
+        a session that does not exist is a `KeyError` — the two kept apart so a readable session that
+        has produced nothing is never mistaken for one the caller may not see.
+
+        Turn and message are this session's own, not the conversation's: a caller polling one
+        dispatched session is asking about that session's exchange, and a conversation-keyed read
+        would fold in whatever a replacement session went on to do.
+        """
+        async with self._sessions() as db:
+            row = (
+                await db.execute(
+                    select(Session, Conversation.access_profile_id)
+                    .join(Conversation, Conversation.conversation_id == Session.conversation_id)
+                    .where(Session.session_id == session_id)
+                )
+            ).one_or_none()
+            if row is None:
+                raise KeyError(session_id)
+            session, access_profile_id = row
+            if not scope.allows(access_profile_id):
+                raise ConversationAccessDeniedError(f"{session_id=}")
+            latest_turn = await db.scalar(
+                select(ConversationTurn)
+                .where(ConversationTurn.session_id == session_id)
+                .order_by(ConversationTurn.started_at.desc(), ConversationTurn.turn_id.desc())
+                .limit(1)
+            )
+            final_message = await db.scalar(
+                select(ConversationItem.item_text)
+                .where(
+                    ConversationItem.session_id == session_id,
+                    ConversationItem.item_type == ItemType.MESSAGE,
+                    ConversationItem.status == ItemStatus.COMPLETE,
+                )
+                .order_by(ConversationItem.opened_seq.desc())
+                .limit(1)
+            )
+        return WorkerOutcome(
+            session_status=session.status,
+            error=session.error,
+            latest_turn_end=turn_end_of(latest_turn) if latest_turn is not None else None,
+            final_message=final_message,
+        )
 
     async def read_operator_frames(
         self,

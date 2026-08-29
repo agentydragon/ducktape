@@ -68,7 +68,14 @@ from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, Field
 
 from haku.console.conversation.item_reads import Item
-from haku.console.conversation.reads import FrameRecord, SessionCursor, SessionRecord, TurnCursor, TurnRecord
+from haku.console.conversation.reads import (
+    FrameRecord,
+    SessionCursor,
+    SessionRecord,
+    TurnCursor,
+    TurnRecord,
+    WorkerResult,
+)
 from haku.console.conversation_read_access import (
     ConversationAccessDeniedError,
     ConversationReadAccessPolicy,
@@ -160,6 +167,8 @@ class ConversationReader(Protocol):
         self, conversation_id: UUID, *, cursor: int | None, limit: int, scope: ConversationReadScope
     ) -> list[Item]: ...
 
+    async def get_worker_result(self, session_id: UUID, *, scope: ConversationReadScope) -> WorkerResult: ...
+
 
 def split_page[ItemT](rows: Sequence[ItemT], *, limit: int) -> tuple[list[ItemT], ItemT | None]:
     """The page, and the first row it did not return — which is what every cursor here names.
@@ -179,7 +188,8 @@ def build_mcp(
             "Read Haku's past conversations: start with `list_sessions`, then `list_turns`, then "
             "`read_conversation_items`. Follow an item's `provenance` into `read_session_frames` when normalization "
             "needs checking. Every listing returns `items` and `next_cursor`; pass the cursor back "
-            "as `cursor`. Read-only."
+            "as `cursor`. To poll a worker you dispatched, `get_worker_result(session_id)` returns its "
+            "status and, once it has answered, its final message. Read-only."
         ),
     )
 
@@ -297,5 +307,29 @@ def build_mcp(
             raise ToolError("conversation access denied") from None
         frames, more = split_page(rows, limit=limit)
         return FramePage(items=frames, next_cursor=more.frame_seq if more is not None else None)
+
+    @mcp.tool
+    async def get_worker_result(
+        session_id: Annotated[
+            UUID, Field(description="The worker session `dispatch_worker` returned, whose result to poll.")
+        ],
+        execution: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
+    ) -> WorkerResult:
+        """Poll a dispatched worker: its `status`, and once it has answered, its final message.
+
+        `running` while the worker is still working, `done` with the worker's final assistant message
+        once its turn has answered, `failed` with the failure surface if the session or its turn
+        died. The worker runs under its own perimeter; this only reads the session it produced, and
+        only a session in your read scope — another operator's or agent's is `conversation access
+        denied`. Read-only, so it is not queued for approval. Final-message text and status only: a
+        structured outcome (PR links, files touched) is out of scope for now.
+        """
+        scope = read_scope(execution)
+        try:
+            return await reader.get_worker_result(session_id, scope=scope)
+        except ConversationAccessDeniedError:
+            raise ToolError("conversation access denied") from None
+        except KeyError:
+            raise ToolError("worker session not found") from None
 
     return mcp

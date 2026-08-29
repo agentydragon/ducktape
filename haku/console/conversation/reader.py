@@ -11,11 +11,21 @@ from __future__ import annotations
 from collections.abc import Sequence
 from uuid import UUID
 
+from haku.console.conversation.conversation_event import TurnAborted, TurnAnswered, TurnFailed
 from haku.console.conversation.item_reads import Item, item_of
-from haku.console.conversation.reads import FrameRecord, SessionCursor, SessionRecord, TurnCursor, TurnRecord
+from haku.console.conversation.reads import (
+    FrameRecord,
+    SessionCursor,
+    SessionRecord,
+    TurnCursor,
+    TurnRecord,
+    WorkerResult,
+    WorkerStatus,
+)
 from haku.console.conversation_read_access import ConversationReadScope
 from haku.console.session.session_frames import BridgeFrameKind
-from haku.console.session.store import Store
+from haku.console.session.status import SessionStatus
+from haku.console.session.store import Store, WorkerOutcome
 
 
 class ConversationReads:
@@ -48,3 +58,31 @@ class ConversationReads:
     ) -> list[Item]:
         rows = await self._store.read_item_rows(conversation_id, after_seq=cursor, limit=limit, scope=scope)
         return [item_of(row) for row in rows]
+
+    async def get_worker_result(self, session_id: UUID, *, scope: ConversationReadScope) -> WorkerResult:
+        """A dispatched worker's status and, once it has answered, its final message (#5193)."""
+        return _worker_result_of(await self._store.worker_outcome(session_id, scope=scope))
+
+
+def _worker_result_of(outcome: WorkerOutcome) -> WorkerResult:
+    """Coarsen one worker session's lifecycle to the three states a polling orchestrator acts on.
+
+    A `failed` session has died whatever its last turn managed, so the session's own failure surface
+    wins over the turn. Otherwise the session's most recent turn decides: an answered turn is `done`
+    with that answer even though the session itself stays open between turns (a one-shot worker does
+    not close on answering), a failed or aborted turn is `failed`, and a turn still in flight — or a
+    session that ended cleanly without one — is `running` until it settles (or `done` once closed).
+    """
+    if outcome.session_status == SessionStatus.FAILED:
+        return WorkerResult(status=WorkerStatus.FAILED, result=outcome.error)
+    match outcome.latest_turn_end:
+        case TurnAnswered():
+            return WorkerResult(status=WorkerStatus.DONE, result=outcome.final_message)
+        case TurnFailed(failure=failure):
+            return WorkerResult(status=WorkerStatus.FAILED, result=failure)
+        case TurnAborted():
+            return WorkerResult(status=WorkerStatus.FAILED, result=None)
+        case None:
+            if outcome.session_status == SessionStatus.CLOSED:
+                return WorkerResult(status=WorkerStatus.DONE, result=outcome.final_message)
+            return WorkerResult(status=WorkerStatus.RUNNING, result=None)

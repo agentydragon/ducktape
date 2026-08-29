@@ -17,6 +17,7 @@ back as a tool argument and is parsed out of the wire.
 from __future__ import annotations
 
 import datetime
+from enum import StrEnum
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
@@ -141,3 +142,36 @@ class TurnCursor(BaseModel):
     @classmethod
     def of(cls, turn: TurnRecord) -> TurnCursor:
         return cls(started_at=turn.started_at, turn_id=turn.turn_id)
+
+
+class WorkerStatus(StrEnum):
+    """Where a dispatched worker's one-shot run has got to, as `get_worker_result` reports it.
+
+    A three-way coarsening of the session lifecycle for the orchestrator that fanned the work out
+    (#5193): the finer session/turn vocabulary is the console's own, not what a caller polling for
+    an answer needs.
+    """
+
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
+
+
+class WorkerResult(BaseModel):
+    """A dispatched worker's progress and, once it has answered, its output (#5193).
+
+    The v0 loop-closer, deliberately minimal: a status off the worker session's own lifecycle plus
+    the worker's final assistant message when it answered, or its failure surface when it died. A
+    structured outcome — typed artifacts, PR links, files touched — is explicitly out of scope for
+    v0; it needs a worker-output contract the harness does not emit yet.
+    """
+
+    status: WorkerStatus = Field(
+        description="`running` while the worker is still working, `done` once its turn has answered, "
+        "`failed` if the session or its turn died."
+    )
+    result: str | None = Field(
+        default=None,
+        description="The worker's final assistant message when `done`, the failure surface when "
+        "`failed`; absent while `running` (and when a finished worker produced no message at all).",
+    )
