@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import json
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
 from functools import partial
@@ -140,15 +141,14 @@ def _wire(instant: datetime.datetime) -> str:
     return instant.isoformat().replace("+00:00", "Z")
 
 
-def test_lists_only_the_authenticated_operators_agents_with_provenance(console: _Console) -> None:
+def test_lists_direct_catalog_grants_with_provenance(console: _Console) -> None:
     grant = _seed_grant(console)
 
     response = console.client.get("/api/grants")
 
     assert response.status_code == 200
-    record, config_record = response.json()["grants"]
-    assert record["agent_id"] == str(console.agent_id)
-    assert record["grant"] == {
+    record = next(record for record in response.json()["grants"] if record["source"]["kind"] == "database")
+    assert record == {
         "source": {
             "kind": "database",
             "id": str(grant.grant_id),
@@ -171,17 +171,12 @@ def test_lists_only_the_authenticated_operators_agents_with_provenance(console: 
         },
         "validity": {"ends_at": _wire(grant.expires_at), "status": "active", "ended_at": None, "end_reason": None},
     }
-    assert config_record["agent_id"] == str(console.agent_id)
-    assert config_record["grant"]["source"] == {
+    config_record = next(record for record in response.json()["grants"] if record["source"]["kind"] == "config_file")
+    assert config_record["source"] == {
         "kind": "config_file",
         "entry_id": f"kubernetes-profile:{DEFAULT_ACCESS_PROFILE_ID}",
     }
-    assert config_record["grant"]["validity"] == {
-        "ends_at": None,
-        "status": "active",
-        "ended_at": None,
-        "end_reason": None,
-    }
+    assert config_record["validity"] == {"ends_at": None, "status": "active", "ended_at": None, "end_reason": None}
 
 
 def test_revoke_accepts_a_blank_reason(console: _Console) -> None:
@@ -211,10 +206,27 @@ def test_lists_http_database_grants_through_the_generic_route(console: _Console)
 
     assert response.status_code == 200
     assert {
-        record["grant"]["source"]["id"]
+        record["source"]["id"]
         for record in response.json()["grants"]
-        if record["grant"]["source"]["kind"] == "database" and record["grant"]["coverage"]["kind"] == "http"
+        if record["source"]["kind"] == "database" and record["coverage"]["kind"] == "http"
     } == {str(grant_id)}
+
+
+def test_lists_one_exact_declared_principal_when_requested(console: _Console) -> None:
+    grant = _seed_grant(console)
+
+    response = console.client.get(
+        "/api/grants", params={"principal": json.dumps({"kind": "agent", "agent_id": str(console.agent_id)})}
+    )
+
+    assert response.status_code == 200
+    assert [record["source"]["id"] for record in response.json()["grants"]] == [str(grant.grant_id)]
+
+
+def test_rejects_a_non_principal_list_filter(console: _Console) -> None:
+    response = console.client.get("/api/grants", params={"principal": json.dumps({"kind": "agent"})})
+
+    assert response.status_code == 422
 
 
 def test_revoke_grants_uses_durable_grant_ids(console: _Console) -> None:

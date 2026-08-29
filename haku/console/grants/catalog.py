@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+from collections.abc import Sequence
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -157,12 +158,18 @@ class GrantCatalog:
         self._sar_client = sar_client
         self._http_config_policies = http_config_policies
 
-    async def list_applicable(self, *, request_principal: RequestPrincipal) -> tuple[Grant, ...]:
-        """List every current authority the authenticated principal may exercise."""
+    async def list_applicable(
+        self, *, request_principal: RequestPrincipal, include_inactive: bool = False
+    ) -> tuple[Grant, ...]:
+        """List current authority the authenticated principal may exercise, optionally including database history."""
 
         kubernetes, http = await asyncio.gather(
-            self._kubernetes_grants.list_applicable_grants(request_principal=request_principal),
-            self._http_grants.list_applicable_grants(request_principal=request_principal),
+            self._kubernetes_grants.list_applicable_grants(
+                request_principal=request_principal, include_inactive=include_inactive
+            ),
+            self._http_grants.list_applicable_grants(
+                request_principal=request_principal, include_inactive=include_inactive
+            ),
         )
         entries: list[Grant] = [
             *(self._database_kubernetes_grant(grant) for grant in kubernetes),
@@ -171,11 +178,14 @@ class GrantCatalog:
         entries.extend(self._config_grants(request_principal=request_principal))
         return tuple(entries)
 
-    async def list(self, *, principal: GrantPrincipal | None = None) -> tuple[Grant, ...]:
-        """List every declared authority, optionally limited to one exact subject."""
+    async def list(
+        self, *, principal: GrantPrincipal | None = None, include_inactive: bool = False
+    ) -> tuple[Grant, ...]:
+        """List declared authority, optionally for one subject and with database history."""
 
         kubernetes, http = await asyncio.gather(
-            self._kubernetes_grants.list(principal=principal), self._http_grants.list(principal=principal)
+            self._kubernetes_grants.list(principal=principal, include_inactive=include_inactive),
+            self._http_grants.list(principal=principal, include_inactive=include_inactive),
         )
         return (
             *(
@@ -183,20 +193,6 @@ class GrantCatalog:
                 if principal is None
                 else self._config_grants_for_principal(principal=principal)
             ),
-            *(self._database_kubernetes_grant(grant) for grant in kubernetes),
-            *(self._database_http_grant(grant) for grant in http),
-        )
-
-    async def list_for_agent(self, *, agent_id: UUID, access_profile_id: str | None) -> tuple[Grant, ...]:
-        """List one Agent's configuration and database authority across every domain."""
-
-        request_principal = RequestPrincipal(agent_id=agent_id, session_id=None, access_profile_id=access_profile_id)
-        kubernetes, http = await asyncio.gather(
-            self._kubernetes_grants.list_for_owner(owner_agent_id=agent_id, include_terminal=True),
-            self._http_grants.list_for_owner(owner_agent_id=agent_id, include_terminal=True),
-        )
-        return (
-            *self._config_grants(request_principal=request_principal),
             *(self._database_kubernetes_grant(grant) for grant in kubernetes),
             *(self._database_http_grant(grant) for grant in http),
         )
@@ -470,7 +466,7 @@ class GrantCatalog:
         method: HttpMethod | None,
         path: str | None,
         require_prohibited_address_allowance: bool,
-    ) -> list[EgressStandingPolicyEntry]:
+    ) -> Sequence[EgressStandingPolicyEntry]:
         return [
             policy
             for policy in self._http_config_policies

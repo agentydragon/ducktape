@@ -1,7 +1,7 @@
 import { Alert, Badge, Button, Code, Group, Loader, SegmentedControl, Select, Stack, Text } from "@mantine/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { displayableError, fetchGrants, listAgents, revokeGrant, type AgentGrant } from "./client";
+import { displayableError, fetchGrants, revokeGrant, type Grant, type GrantPrincipal } from "./client";
 import { formatTimestamp } from "./approval_state";
 import { CodeBlock } from "./code_block";
 import { GrantPrincipalLabel } from "./grant_principal";
@@ -11,7 +11,6 @@ import { toastError, toastSuccess } from "./toast";
 
 export type GrantHistoryFilter = "active" | "history" | "all";
 
-type Grant = AgentGrant["grant"];
 type KubernetesRulesCoverage = Extract<Grant["coverage"], { kind: "kubernetes_rules" }>;
 type KubernetesGrantScope = KubernetesRulesCoverage["scope"];
 type KubernetesRule = KubernetesRulesCoverage["rules"][number];
@@ -106,6 +105,21 @@ function GrantSubject({ grant }: { grant: Grant }) {
   );
 }
 
+function principalKey(principal: GrantPrincipal): string {
+  return JSON.stringify(principal);
+}
+
+function principalLabel(principal: GrantPrincipal): string {
+  switch (principal.kind) {
+    case "agent":
+      return `Agent ${principal.agent_id}`;
+    case "session":
+      return `Session ${principal.session_id}`;
+    case "access_profile":
+      return `Access profile ${principal.access_profile_id}`;
+  }
+}
+
 function GrantCoverage({ grant }: { grant: Grant }) {
   switch (grant.coverage.kind) {
     case "kubernetes_rules":
@@ -157,33 +171,29 @@ function GrantValidity({ grant }: { grant: Grant }) {
 }
 
 function GrantCard({
-  item,
-  agentDisplayName,
+  grant,
   revokePending,
   revokeBusy,
   onRequestRevoke,
   onCancelRevoke,
   onConfirmRevoke,
 }: {
-  item: AgentGrant;
-  agentDisplayName: string;
+  grant: Grant;
   revokePending: boolean;
   revokeBusy: boolean;
   onRequestRevoke: (grantId: string) => void;
   onCancelRevoke: () => void;
   onConfirmRevoke: (grantId: string) => void;
 }) {
-  const { grant } = item;
   const databaseSource = grant.source.kind === "database" ? grant.source : null;
   return (
     <section className="haku-shell-card">
       <Stack gap="xs">
         <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
-          <Text fw={600}>{agentDisplayName}</Text>
+          <GrantSubject grant={grant} />
           <GrantValidity grant={grant} />
         </Group>
         <GrantSource grant={grant} />
-        <GrantSubject grant={grant} />
         <GrantCoverage grant={grant} />
         {databaseSource !== null &&
           grant.validity.status === "active" &&
@@ -213,21 +223,21 @@ function GrantCard({
 }
 
 export function GrantsPanel(): JSX.Element {
-  const [grants, setGrants] = useState<AgentGrant[] | null>(null);
-  const [agentNames, setAgentNames] = useState<Map<string, string>>(new Map());
+  const [allGrants, setAllGrants] = useState<Grant[] | null>(null);
+  const [grants, setGrants] = useState<Grant[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [historyFilter, setHistoryFilter] = useState<GrantHistoryFilter>("active");
-  const [agentId, setAgentId] = useState<string | null>(null);
+  const [selectedPrincipal, setSelectedPrincipal] = useState<string | null>(null);
   const [revokingGrantId, setRevokingGrantId] = useState<string | null>(null);
   const [revokeBusy, setRevokeBusy] = useState(false);
 
-  const load = useCallback(() => {
+  const load = useCallback((principal?: GrantPrincipal) => {
     setLoading(true);
-    void Promise.all([fetchGrants(), listAgents()]).then(
-      ([grantResponse, agentResponse]) => {
+    void fetchGrants(principal).then(
+      (grantResponse) => {
         setGrants(grantResponse.grants);
-        setAgentNames(new Map(agentResponse.agents.map((agent) => [agent.agent_id, agent.display_name])));
+        if (principal === undefined) setAllGrants(grantResponse.grants);
         setError(null);
         setLoading(false);
       },
@@ -241,21 +251,26 @@ export function GrantsPanel(): JSX.Element {
   // This panel is mounted only while its Settings tab is active.
   useEffect(load, [load]);
 
-  const agents = useMemo(() => {
-    return [...agentNames].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
-  }, [agentNames]);
+  const principals = useMemo(() => {
+    const byKey = new Map((allGrants ?? []).map((grant) => [principalKey(grant.subject), grant.subject]));
+    return [...byKey.entries()]
+      .map(([value, principal]) => ({ value, label: principalLabel(principal) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [allGrants]);
+
+  const principalsByKey = useMemo(
+    () => new Map((allGrants ?? []).map((grant) => [principalKey(grant.subject), grant.subject])),
+    [allGrants]
+  );
 
   const visible = useMemo(
     () =>
       (grants ?? []).filter(
         (item) =>
-          (agentId === null || item.agent_id === agentId) &&
-          (historyFilter === "all" ||
-            (historyFilter === "active"
-              ? item.grant.validity.status === "active"
-              : item.grant.validity.status !== "active"))
+          historyFilter === "all" ||
+          (historyFilter === "active" ? item.validity.status === "active" : item.validity.status !== "active")
       ),
-    [agentId, grants, historyFilter]
+    [grants, historyFilter]
   );
 
   function confirmRevoke(grantId: string) {
@@ -269,10 +284,18 @@ export function GrantsPanel(): JSX.Element {
         );
         setGrants(
           (current) =>
-            current?.map((item) =>
-              item.grant.source.kind === "database" && updates.has(item.grant.source.id)
-                ? { ...item, grant: { ...item.grant, validity: updates.get(item.grant.source.id)! } }
-                : item
+            current?.map((grant) =>
+              grant.source.kind === "database" && updates.has(grant.source.id)
+                ? { ...grant, validity: updates.get(grant.source.id)! }
+                : grant
+            ) ?? null
+        );
+        setAllGrants(
+          (current) =>
+            current?.map((grant) =>
+              grant.source.kind === "database" && updates.has(grant.source.id)
+                ? { ...grant, validity: updates.get(grant.source.id)! }
+                : grant
             ) ?? null
         );
         setRevokeBusy(false);
@@ -292,11 +315,17 @@ export function GrantsPanel(): JSX.Element {
         <div>
           <Text fw={600}>Grants</Text>
           <Text size="xs" c="dimmed" mt={4}>
-            Configuration-file and database authority for your Agents, with exact scope, rules, provenance, and
-            lifecycle history.
+            Configuration-file and database authority, with exact principals, scope, rules, provenance, and lifecycle
+            history.
           </Text>
         </div>
-        <Button size="xs" variant="light" color="gray" loading={loading} onClick={load}>
+        <Button
+          size="xs"
+          variant="light"
+          color="gray"
+          loading={loading}
+          onClick={() => load(selectedPrincipal === null ? undefined : principalsByKey.get(selectedPrincipal))}
+        >
           Refresh
         </Button>
       </Group>
@@ -322,11 +351,19 @@ export function GrantsPanel(): JSX.Element {
         </Stack>
         <Select
           size="xs"
-          label="Agent"
-          placeholder="All Agents"
-          data={agents}
-          value={agentId}
-          onChange={setAgentId}
+          label="Principal"
+          placeholder="All principals"
+          data={principals}
+          value={selectedPrincipal}
+          onChange={(value) => {
+            setSelectedPrincipal(value);
+            if (value === null) {
+              setGrants(allGrants);
+              return;
+            }
+            const principal = principalsByKey.get(value);
+            if (principal) load(principal);
+          }}
           clearable
           style={{ minWidth: 190 }}
         />
@@ -348,14 +385,12 @@ export function GrantsPanel(): JSX.Element {
           </Text>
         </section>
       )}
-      {visible.map((item) => {
-        const { grant } = item;
+      {visible.map((grant) => {
         const sourceId = grant.source.kind === "database" ? grant.source.id : grant.source.entry_id;
         return (
           <GrantCard
-            key={`${item.agent_id}:${sourceId}`}
-            item={item}
-            agentDisplayName={agentNames.get(item.agent_id) ?? item.agent_id}
+            key={`${principalKey(grant.subject)}:${sourceId}`}
+            grant={grant}
             revokePending={grant.source.kind === "database" && revokingGrantId === grant.source.id}
             revokeBusy={revokeBusy}
             onRequestRevoke={setRevokingGrantId}

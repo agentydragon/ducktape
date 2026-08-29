@@ -52,7 +52,8 @@ export type ConversationUpdate = components["schemas"]["ConversationUpdate"];
 export type SessionFrame = components["schemas"]["SessionFrameView"];
 export type SessionFramePage = components["schemas"]["SessionFramePage"];
 export type AgentListResponse = components["schemas"]["AgentListResponse"];
-export type AgentGrant = components["schemas"]["AgentGrant"];
+export type Grant = components["schemas"]["Grant"];
+export type GrantPrincipal = Grant["subject"];
 export type GrantListResponse = components["schemas"]["GrantListResponse"];
 export type RevokeGrantResponse = components["schemas"]["RevokeGrantResponse"];
 export type EnrollmentView = components["schemas"]["EnrollmentView"];
@@ -209,8 +210,11 @@ export async function updateAgentAccessProfile(agentId: string, accessProfileId:
   return data;
 }
 
-export async function fetchGrants(): Promise<GrantListResponse> {
-  const { data, error } = await api.GET("/api/grants");
+/** List every grant, or only grants declared for one exact principal. */
+export async function fetchGrants(principal?: GrantPrincipal): Promise<GrantListResponse> {
+  const { data, error } = await api.GET("/api/grants", {
+    params: { query: principal ? { principal: JSON.stringify(principal) } : {} },
+  });
   if (error || !data) throw new Error(errorDetail(error, "Failed to load grants"));
   return data;
 }

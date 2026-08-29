@@ -264,7 +264,10 @@ class AutoApprovalPolicyRegistry:
                     return
                 if arguments.get("principal") == _OWN_GRANT_SCOPE:
                     evaluation.record(
-                        current_path, AutoApproved("list_grants is scoped to the caller's own grants (principal=self)")
+                        current_path,
+                        AutoApproved(
+                            "list_grants is scoped to the caller's own grants (principal=self), including history when requested"
+                        ),
                     )
                 else:
                     evaluation.record(

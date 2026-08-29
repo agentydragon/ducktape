@@ -59,6 +59,7 @@ from haku.console.mcp.execution import (
 )
 from haku.console.tools.grants import (
     GrantDomain,
+    GrantReadScope,
     GrantsToolsService,
     HttpGrantRequest,
     HttpGrantView,
@@ -234,8 +235,7 @@ def test_server_exposes_exact_stable_tool_set_without_context_argument(console: 
     # whoami is a pure identity read: no arguments beyond the hidden execution context.
     assert tools["whoami"].inputSchema.get("properties", {}) == {}
     assert set(tools["create_grant"].inputSchema["properties"]) == {"grants", "duration_seconds", "principal"}
-    # `list_grants` exposes only its optional principal selector.
-    assert set(tools["list_grants"].inputSchema["properties"]) == {"principal"}
+    assert set(tools["list_grants"].inputSchema["properties"]) == {"principal", "include_inactive"}
     assert set(tools["get_grant"].inputSchema["properties"]) == {"domain", "grant_id"}
     # One end-grants tool: an Agent omits owner_agent_id (relinquishes its own); an Operator names it.
     assert set(tools["revoke_grants"].inputSchema["properties"]) == {"domain", "grant_ids", "reason", "owner_agent_id"}
@@ -277,6 +277,41 @@ def test_list_grants_resolves_self_and_named_subjects(console: _Console) -> None
         )
         assert [
             grant.source.entry_id for grant in profile_grants if isinstance(grant.source, ConfigFileGrantSource)
+        ] == [f"kubernetes-profile:{DEFAULT_ACCESS_PROFILE_ID}"]
+
+    console.call(exercise)
+
+
+def test_list_grants_includes_database_history_only_when_requested(console: _Console) -> None:
+    context = console.agent_context()
+
+    async def exercise() -> None:
+        (view,) = await console.service.create_grants(
+            context=context,
+            requests=[_kubernetes(_K8S_SPEC)],
+            duration_seconds=600,
+            principal=AgentGrantPrincipal(agent_id=console.agent_id),
+        )
+        await console.service.revoke_grants(
+            context=context, domain=GrantDomain.KUBERNETES, grant_ids=[view.grant.grant_id], reason=None
+        )
+        scopes: tuple[GrantReadScope | None, ...] = ("self", None, AgentGrantPrincipal(agent_id=console.agent_id))
+        for principal in scopes:
+            current = await console.service.list_grants(context=context, principal=principal)
+            history = await console.service.list_grants(context=context, principal=principal, include_inactive=True)
+            assert not [grant for grant in current if isinstance(grant.source, DatabaseGrantSource)]
+            assert [grant.source.id for grant in history if isinstance(grant.source, DatabaseGrantSource)] == [
+                view.grant.grant_id
+            ]
+        assert [
+            grant.source.entry_id
+            for grant in await console.service.list_grants(context=context)
+            if isinstance(grant.source, ConfigFileGrantSource)
+        ] == [f"kubernetes-profile:{DEFAULT_ACCESS_PROFILE_ID}"]
+        assert [
+            grant.source.entry_id
+            for grant in await console.service.list_grants(context=context, include_inactive=True)
+            if isinstance(grant.source, ConfigFileGrantSource)
         ] == [f"kubernetes-profile:{DEFAULT_ACCESS_PROFILE_ID}"]
 
     console.call(exercise)

@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
 
-from haku.console.grants.catalog import DatabaseGrantSource, Grant
+from haku.console.grants.catalog import Grant
 from haku.console.grants.dependencies import GrantCatalogDep
 from haku.console.grants.envelope import GRANT_SET_LIMIT, GrantNotFoundError, GrantOwnershipError
+from haku.console.grants.principal import GrantPrincipal
 from haku.console.identity.operator_agents import AgentEnrollmentServiceDep, owned_agents
 from haku.console.identity.operator_auth import OperatorActorDep
 
@@ -22,44 +24,32 @@ class RevokeGrantResponse(BaseModel):
     grants: tuple[Grant, ...]
 
 
-class AgentGrant(BaseModel):
-    """One effective grant and the Agent it belongs to."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    grant: Grant
-    agent_id: UUID
-
-
 class GrantListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    grants: tuple[AgentGrant, ...]
+    grants: tuple[Grant, ...]
+
+
+_GRANT_PRINCIPAL: TypeAdapter[GrantPrincipal] = TypeAdapter(GrantPrincipal)
 
 
 @router.get("", response_model=GrantListResponse)
 async def list_grants(
-    actor: OperatorActorDep, catalog: GrantCatalogDep, agents: AgentEnrollmentServiceDep
-) -> GrantListResponse:
-    """List configuration and database authority across every grant domain."""
-
-    owned = await owned_agents(actor=actor, agents=agents)
-    records = [
-        AgentGrant(grant=grant, agent_id=agent.agent_id)
-        for agent in owned
-        for grant in await catalog.list_for_agent(agent_id=agent.agent_id, access_profile_id=agent.access_profile_id)
-    ]
-    records.sort(
-        key=lambda item: (
-            isinstance(item.grant.source, DatabaseGrantSource),
-            item.grant.source.created_at if isinstance(item.grant.source, DatabaseGrantSource) else None,
-            str(item.grant.source.id)
-            if isinstance(item.grant.source, DatabaseGrantSource)
-            else item.grant.source.entry_id,
+    catalog: GrantCatalogDep,
+    principal: Annotated[
+        str | None,
+        Query(
+            description="Optional JSON GrantPrincipal. Omit to list the full catalog; supply one exact declared principal."
         ),
-        reverse=True,
-    )
-    return GrantListResponse(grants=tuple(records))
+    ] = None,
+) -> GrantListResponse:
+    """List every declared configuration-file and database grant, optionally for one principal."""
+
+    try:
+        declared_principal = _GRANT_PRINCIPAL.validate_json(principal) if principal is not None else None
+    except ValidationError as error:
+        raise HTTPException(status_code=422, detail="principal must be a JSON GrantPrincipal") from error
+    return GrantListResponse(grants=await catalog.list(principal=declared_principal, include_inactive=True))
 
 
 class RevokeGrantRequest(BaseModel):

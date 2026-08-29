@@ -134,26 +134,14 @@ class PostgresGrantRepository:
             await session.flush()
             return tuple(_row_to_model(row) for row in rows)
 
-    async def list_for_owner(
-        self, *, owner_agent_id: UUID, now: datetime.datetime, include_terminal: bool = True
-    ) -> tuple[Grant, ...]:
-        async with self._sessions() as session:
-            statement = select(HttpGrantRow).where(HttpGrantRow.owner_agent_id == owner_agent_id)
-            if not include_terminal:
-                statement = statement.where(_not_ended(), HttpGrantRow.expires_at > now)
-            rows = (
-                await session.scalars(statement.order_by(HttpGrantRow.created_at.desc(), HttpGrantRow.grant_id))
-            ).all()
-            return tuple(_row_to_model(row) for row in rows)
-
     async def list(
-        self, *, principal: GrantPrincipal | None, now: datetime.datetime, include_terminal: bool = True
+        self, *, principal: GrantPrincipal | None, now: datetime.datetime, include_inactive: bool = False
     ) -> tuple[Grant, ...]:
         async with self._sessions() as session:
             statement = select(HttpGrantRow)
             if principal is not None:
                 statement = statement.where(grant_principal_clause(HttpGrantRow, principal))
-            if not include_terminal:
+            if not include_inactive:
                 statement = statement.where(_not_ended(), HttpGrantRow.expires_at > now)
             rows = (
                 await session.scalars(statement.order_by(HttpGrantRow.created_at.desc(), HttpGrantRow.grant_id))
@@ -187,11 +175,11 @@ class PostgresGrantRepository:
             return _row_to_model(row)
 
     async def list_for_request_principal(
-        self, *, request_principal: RequestPrincipal, now: datetime.datetime, include_terminal: bool = True
+        self, *, request_principal: RequestPrincipal, now: datetime.datetime, include_inactive: bool = False
     ) -> tuple[Grant, ...]:
         async with self._sessions() as session:
             statement = select(HttpGrantRow).where(request_principal_clause(HttpGrantRow, request_principal))
-            if not include_terminal:
+            if not include_inactive:
                 statement = statement.where(_not_ended(), HttpGrantRow.expires_at > now)
             rows = (
                 await session.scalars(statement.order_by(HttpGrantRow.created_at.desc(), HttpGrantRow.grant_id))

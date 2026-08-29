@@ -1,7 +1,7 @@
 import { AgentName, useToolCallAgent } from "./agent_names";
-import type { AgentGrant } from "./client";
+import type { GrantPrincipal } from "./client";
 
-export type GrantPrincipal = AgentGrant["grant"]["subject"];
+export type { GrantPrincipal } from "./client";
 
 /** Render a grant principal by Agent name, retaining IDs only where they are the useful identity. */
 export function GrantPrincipalLabel({ principal }: { principal: GrantPrincipal }): JSX.Element {

@@ -271,6 +271,7 @@ class GrantSelfListAutoApprovalPolicy(AutoApprovalPolicyBase):
     Only the explicit own-scope read auto-approves; omitting `principal` or naming a principal stays
     manual. The omitted form lists every declared grant, the named-principal form returns authority
     declared for that exact subject, and `self` resolves the caller's trusted request principal.
+    ``include_inactive`` does not widen that principal scope.
     """
 
     type: Literal["grant_self_list"] = "grant_self_list"
