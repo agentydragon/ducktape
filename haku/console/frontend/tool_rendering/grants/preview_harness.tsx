@@ -27,6 +27,8 @@ const HTTP_ITEM: CreateGrantItem = {
   },
 };
 
+// Keep these timestamps inside the shared visual clock's relative-date window. The screenshot
+// driver freezes now at 2025-02-01T12:00:00Z before this harness runs.
 const KUBERNETES_VIEW: GrantView = {
   domain: "kubernetes" as const,
   grant: {
@@ -37,8 +39,8 @@ const KUBERNETES_VIEW: GrantView = {
     scope: KUBERNETES_ITEM.spec.scope,
     rules: KUBERNETES_ITEM.spec.rules,
     status: "active" as const,
-    created_at: "2026-08-23T10:00:00Z",
-    expires_at: "2026-08-23T11:00:00Z",
+    created_at: "2025-01-27T10:00:00Z",
+    expires_at: "2025-01-27T11:00:00Z",
   },
 };
 
@@ -65,8 +67,8 @@ const PREVIEW_FIXTURES = [
           source_tool_call_id: "tc_create_grant",
           spec: HTTP_ITEM.spec,
           status: "active" as const,
-          created_at: "2026-08-23T10:00:00Z",
-          expires_at: "2026-08-23T10:30:00Z",
+          created_at: "2025-01-27T10:00:00Z",
+          expires_at: "2025-01-27T10:30:00Z",
         },
       },
     ],
@@ -86,7 +88,7 @@ const PREVIEW_FIXTURES = [
         grant: {
           ...KUBERNETES_VIEW.grant,
           status: "released" as const,
-          released_at: "2026-08-23T10:15:00Z",
+          released_at: "2025-01-27T10:15:00Z",
           revoked_at: null,
           end_reason: "probe complete",
         },
@@ -113,10 +115,10 @@ const PREVIEW_FIXTURES = [
           source_tool_call_id: "tc_create_grant",
           spec: HTTP_ITEM.spec,
           status: "revoked" as const,
-          created_at: "2026-08-23T10:00:00Z",
-          expires_at: "2026-08-23T11:00:00Z",
+          created_at: "2025-01-27T10:00:00Z",
+          expires_at: "2025-01-27T11:00:00Z",
           released_at: null,
-          revoked_at: "2026-08-23T10:20:00Z",
+          revoked_at: "2025-01-27T10:20:00Z",
           end_reason: "operator revoked",
         },
       },

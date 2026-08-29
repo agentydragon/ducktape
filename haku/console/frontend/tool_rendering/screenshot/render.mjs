@@ -61,7 +61,9 @@ function readInput(envName, ...fallback) {
 function pageHtml(css, harnessJs, colorScheme, globals = {}) {
   // The <base href> gives the origin-less setContent page a URL against which the SPA's relative
   // "/api/…" requests parse (the harness stubs the actual fetch). Globals are set before the
-  // harness IIFE runs so it renders the requested fixture/variant.
+  // harness IIFE runs so it renders the requested fixture/variant. `setContent` writes into the
+  // existing document instead of navigating to a new one, so `evaluateOnNewDocument` does not run
+  // here; the clock bootstrap must be in the HTML before the harness reads Date.now().
   const injectGlobals = Object.entries(globals)
     .map(([key, value]) => `window.${key}=${JSON.stringify(value)};`)
     .join("");
@@ -69,6 +71,7 @@ function pageHtml(css, harnessJs, colorScheme, globals = {}) {
     "<!doctype html><html><head><meta charset='utf-8'>",
     "<base href='https://haku-console.test/'>",
     `<style>${css}${DISABLE_ANIMATIONS_CSS}</style></head><body><div id='app'></div>`,
+    `<script>${frozenClockScript(FROZEN_NOW_MS)}</script>`,
     `<script>window.__SCENE__="preview";</script>`,
     `<script>window.__COLOR_SCHEME__=${JSON.stringify(colorScheme)};</script>`,
     `<script>${injectGlobals}</script>`,
@@ -95,7 +98,6 @@ try {
   // page per fixture × variant × scheme. Each page renders a single card in isolation, at its real
   // approvals-panel width (card.tsx's `.haku-shell-panels` wrapper) — no shared gallery.
   const discover = await browser.newPage();
-  await discover.evaluateOnNewDocument(frozenClockScript(FROZEN_NOW_MS));
   // Fenced like the capture pages; not asserted, because this page only reads the fixture
   // manifest and the same widget code runs — and is asserted — on every captured page.
   await abortUnexpectedRequests(discover, () => false);
