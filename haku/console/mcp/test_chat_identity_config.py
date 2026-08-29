@@ -61,7 +61,6 @@ def _config(**overrides: object) -> dict[str, object]:
             }
         ],
         "launchable_agents": [{"agent_id": str(_AGENT), "system_prompt_template": "/prompt"}],
-        "default_chat_agent_id": str(_AGENT),
     }
     value.update(overrides)
     return value
@@ -108,9 +107,9 @@ def test_launchable_agent_must_be_a_configured_static_agent() -> None:
         )
 
 
-def test_configured_runtime_requires_a_launchable_default_and_runtime_enabled_profiles() -> None:
+def test_configured_runtime_requires_launchable_agents_and_runtime_enabled_profiles() -> None:
     runtime = _runtime()
-    with pytest.raises(ValidationError, match="default chat Agent must be launchable"):
+    with pytest.raises(ValidationError, match="harness Agents are not launchable"):
         ConsoleConfigFile.model_validate(_config(harnesses={"claude_code": runtime}, launchable_agents=[]))
     with pytest.raises(ValidationError, match="profile disallows claude_code"):
         ConsoleConfigFile.model_validate(

@@ -21,7 +21,6 @@ class ChatLaunchOption(BaseModel):
     agent_display_name: str
     runtime: HarnessKind
     runtime_display_name: str
-    is_default: bool = False
 
 
 class ConfigResponse(BaseModel):

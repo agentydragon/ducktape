@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { ChatLaunchOption } from "./client";
 import {
   conversationLaunchOptions,
-  defaultLaunchKey,
+  initialLaunchKey,
   launchKey,
   shouldShowLaunchSelector,
 } from "./conversation_launch";
@@ -13,7 +13,6 @@ const haku = {
   agent_display_name: "Haku",
   runtime: "claude_code",
   runtime_display_name: "Claude Code",
-  is_default: true,
 } satisfies ChatLaunchOption;
 
 const coder = {
@@ -21,26 +20,20 @@ const coder = {
   agent_display_name: "public-coder-agent",
   runtime: "codex_app_server",
   runtime_display_name: "Codex",
-  is_default: false,
 } satisfies ChatLaunchOption;
 
 describe("conversation launch choices", () => {
   it("tolerates an older API replica with no launch catalog", () => {
     expect(conversationLaunchOptions({})).toEqual([]);
-    expect(defaultLaunchKey(conversationLaunchOptions({}))).toBeNull();
+    expect(initialLaunchKey(conversationLaunchOptions({}))).toBeNull();
   });
 
-  it("chooses the declared default rather than relying on catalog order", () => {
-    expect(defaultLaunchKey([coder, haku])).toBe(launchKey(haku));
+  it("selects the sole launch choice without inventing a default", () => {
+    expect(initialLaunchKey([coder])).toBe(launchKey(coder));
   });
 
-  it("falls back to the first choice when no option is marked default", () => {
-    expect(
-      defaultLaunchKey([
-        { ...coder, is_default: false },
-        { ...haku, is_default: false },
-      ])
-    ).toBe(launchKey(coder));
+  it("requires an explicit choice when multiple launches are available", () => {
+    expect(initialLaunchKey([coder, haku])).toBeNull();
   });
 
   it("only needs a selector when multiple launches are available", () => {

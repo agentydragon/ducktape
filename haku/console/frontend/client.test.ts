@@ -7,7 +7,6 @@ const selection = {
   agent_display_name: "public-coder-agent",
   runtime: "codex_app_server",
   runtime_display_name: "Codex",
-  is_default: false,
 } satisfies ChatLaunchOption;
 
 const conversation = {

@@ -17,7 +17,7 @@ import {
 import { useCoalescedRefresh } from "../coalesced_refresh";
 import {
   conversationLaunchOptions,
-  defaultLaunchKey,
+  initialLaunchKey,
   launchKey,
   shouldShowLaunchSelector,
 } from "../conversation_launch";
@@ -210,7 +210,7 @@ function ConversationListPage() {
         if (!alive) return;
         const options = conversationLaunchOptions(config);
         setLaunchOptions(options);
-        setSelectedLaunch(defaultLaunchKey(options));
+        setSelectedLaunch(initialLaunchKey(options));
         setLaunchCatalogLoaded(true);
       },
       (reason: unknown) => {
@@ -294,6 +294,7 @@ function ConversationListPage() {
                 aria-label="Conversation Agent and runtime"
                 value={selectedLaunch}
                 onChange={setSelectedLaunch}
+                placeholder="Select Agent and runtime"
                 data={launchOptions.map((option) => ({
                   value: launchKey(option),
                   label: `${option.agent_display_name} · ${option.runtime_display_name}`,

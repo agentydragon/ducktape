@@ -119,10 +119,8 @@ async def test_demanded_replacement_reauthorizes_pinned_identity_in_creation_tra
 
     runtimes = configured_runtimes(recording_claims)
     store = Store(migrated_sessions)
-    service = SessionService(
-        runtimes, store, session_wakes, launch_authorizer=authorize, default_agent_id=expected_agent_id
-    )
-    first = await service.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
+    service = SessionService(runtimes, store, session_wakes, launch_authorizer=authorize)
+    first = await service.create(operator_id, agent_id=expected_agent_id, harness_kind=HarnessKind.CLAUDE_CODE)
     conversation_id = await store.conversation_of(first.session_id)
     async with migrated_sessions.begin() as db:
         await db.delete(await db.get(Session, first.session_id))

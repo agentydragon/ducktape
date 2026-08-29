@@ -229,14 +229,12 @@ class SessionService:
         *,
         conversation_history: ConversationHistory | None = None,
         launch_authorizer: LaunchAuthorizer | None = None,
-        default_agent_id: UUID | None = None,
     ):
         self._runtimes = runtimes
         self._store = store
         self._notifications = notifications
         self._conversation_history = conversation_history
         self._launch_authorizer = launch_authorizer
-        self._default_agent_id = default_agent_id
         # The neutral-operation journal's commit/ACK/resume side (#4667). Its commits are the
         # store's transactions by another name, so it takes the same session factory.
         self._journal = JournalConsumer(store.sessionmaker)
@@ -270,8 +268,7 @@ class SessionService:
         harness_kind: HarnessKind | None = None,
     ) -> SessionView:
         if self._launch_authorizer is not None:
-            selected_agent = agent_id or self._default_agent_id
-            if conversation_id is None and selected_agent is None:
+            if conversation_id is None and agent_id is None:
                 raise RuntimeError("chat launch requires a selected Agent")
             if conversation_id is None and harness_kind is None:
                 raise RuntimeError("chat launch requires a selected harness")
@@ -281,7 +278,7 @@ class SessionService:
             view, token = await self._store.create_idle(
                 operator_id,
                 conversation_id=conversation_id,
-                agent_id=selected_agent if conversation_id is None else None,
+                agent_id=agent_id if conversation_id is None else None,
                 harness_kind=harness_kind,
                 launch_authorizer=self._launch_authorizer,
             )

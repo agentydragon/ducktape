@@ -161,9 +161,9 @@ async def test_replacement_pins_identity_after_agent_profile_change_and_shares_s
     )
     runtimes = configured_runtimes(recording_claims)
     store = Store(migrated_sessions)
-    service = SessionService(runtimes, store, session_wakes, launch_authorizer=authorizer, default_agent_id=agent_id)
+    service = SessionService(runtimes, store, session_wakes, launch_authorizer=authorizer)
 
-    first = await service.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
+    first = await service.create(operator_id, agent_id=agent_id, harness_kind=HarnessKind.CLAUDE_CODE)
     conversation_id = await store.conversation_of(first.session_id)
     async with migrated_sessions.begin() as db:
         agent = await db.get(Agent, agent_id)
@@ -208,7 +208,6 @@ def _console_config(**overrides: object) -> dict[str, object]:
         "launchable_agents": [
             {"agent_id": "00000000-0000-4000-8000-000000000001", "system_prompt_template": "/prompt"}
         ],
-        "default_chat_agent_id": "00000000-0000-4000-8000-000000000001",
     }
     config.update(overrides)
     return config
@@ -218,12 +217,6 @@ def test_chat_runtime_config_is_closed_and_rejects_the_retired_shape() -> None:
     parsed = ConsoleConfigFile.model_validate(_console_config())
     assert parsed.harnesses is not None
     assert parsed.harnesses.claude_code == runtime_config()
-
-    old_shared_config = _console_config()
-    old_shared_config.pop("launchable_agents")
-    old_shared_config.pop("default_chat_agent_id")
-    with pytest.raises(ValidationError, match="default chat Agent"):
-        ConsoleConfigFile.model_validate(old_shared_config)
 
     with pytest.raises(ValidationError, match="extra_forbidden"):
         ConsoleConfigFile.model_validate(

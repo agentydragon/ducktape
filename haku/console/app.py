@@ -58,7 +58,6 @@ from haku.console.grants.kubernetes.authorization import (
 )
 from haku.console.grants.kubernetes.repository import PostgresGrantRepository as PostgresKubernetesGrantRepository
 from haku.console.grants.kubernetes.service import GrantService as KubernetesGrantService
-from haku.console.harnesses.kind import HarnessKind
 from haku.console.hostexecd import service
 from haku.console.identity import (
     agent_bearer_authority,
@@ -407,7 +406,6 @@ def create_app(
 
     # Execution exists only when a launch-capable adapter was configured. Read-only replicas keep
     # the same registry in their store above but expose no session-creation runtime service.
-    selected_harness_kind: HarnessKind | None = None
     if runtime_registry.configured_kinds:
         authorize_chat_launch = ChatLaunchAuthorizer(
             agent_authority,
@@ -416,26 +414,12 @@ def create_app(
             profile_harness_kinds=profile_harness_kinds,
         )
 
-        default_chat_agent_id = console_config.default_chat_agent_id
-        assert default_chat_agent_id is not None
-        default_profile_id = static_by_id[default_chat_agent_id].access_profile_id
-        selected_harnesses = {
-            identity.harness_kind
-            for identity in runtime_registry.configured_identities
-            if identity.agent_id == default_chat_agent_id
-            and identity.harness_kind in profile_harness_kinds[default_profile_id]
-        }
-        if len(selected_harnesses) != 1:
-            raise ValueError("default chat Agent must select exactly one configured harness")
-        selected_harness_kind = next(iter(selected_harnesses))
-
         session_service = session_runtime.SessionService(
             runtime_registry,
             session_store,
             session_wakes,
             conversation_history=ConversationHistory(db_sessions),
             launch_authorizer=authorize_chat_launch,
-            default_agent_id=default_chat_agent_id,
         )
     else:
         session_service = None
@@ -812,20 +796,18 @@ def create_app(
     async def config() -> ConfigResponse:
         """Static config for the SPA, including deploy-authorized Web chat launch pairs."""
         launch = settings.launch_routine
-        default_agent_id = console_config.default_chat_agent_id
         launch_options = [
             ChatLaunchOption(
                 agent_id=identity.agent_id,
                 agent_display_name=static_by_id[identity.agent_id].display_name,
                 runtime=identity.harness_kind,
                 runtime_display_name=runtime_registry[identity.harness_kind].display_name,
-                is_default=identity.agent_id == default_agent_id and identity.harness_kind is selected_harness_kind,
             )
             for identity in runtime_registry.configured_identities
             if identity.agent_id in launchable_agent_ids
             and identity.harness_kind in profile_harness_kinds[static_by_id[identity.agent_id].access_profile_id]
         ]
-        launch_options.sort(key=lambda option: (not option.is_default, option.agent_display_name, option.runtime.value))
+        launch_options.sort(key=lambda option: (option.agent_display_name, option.runtime.value))
         return ConfigResponse(
             launch_routine_url=launch.page_url if launch else None,
             haku_ui_url=settings.haku_ui_url,

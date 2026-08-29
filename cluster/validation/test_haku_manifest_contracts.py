@@ -882,7 +882,6 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
     assert codex["claim_prefix"] == "codex"
     assert codex["runtime_label"] == "codex-chat"
     assert codex["agent_id"] in {entry["agent_id"] for entry in shared_config["launchable_agents"]}
-    assert shared_config["default_chat_agent_id"] == "8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2"
     implementation = codex["implementation"]
     assert implementation["kind"] == "codex_app_server"
     assert implementation["provider_id"] == "haku"

@@ -407,10 +407,6 @@ class ConsoleConfigFile(BaseModel):
     # Only these durable identities may be selected by the chat API.  Keeping this separate from
     # static_agents makes the launch boundary explicit and leaves room for OAuth Agents later.
     launchable_agents: list[LaunchableAgent] = Field(default_factory=list)
-    # Browser chat surface fallback only. Runtime implementations are not Agent identities: an
-    # explicit launch may choose any allowlisted Agent whose profile permits the requested runtime.
-    # Matrix has its own explicit launch route under `matrix.default_agent_id`.
-    default_chat_agent_id: UUID | None = None
     # The `hostexec` in-process server's in-scope machines + token-exchange scope. Non-secret deploy
     # topology, so it lives here beside the `hostexec` catalog entry rather than in an env var. Unset
     # → the server is not offered, no offline_access is requested at operator login, and no operator
@@ -612,12 +608,7 @@ class ConsoleConfigFile(BaseModel):
         unknown_launchable = launchable_ids - static_ids
         if unknown_launchable:
             raise ValueError(f"launchable Agents are not configured static Agents: {sorted(unknown_launchable)!r}")
-        default_chat_agent_id = self.default_chat_agent_id
-        if default_chat_agent_id is not None and default_chat_agent_id not in launchable_ids:
-            raise ValueError("default chat Agent must be launchable")
         if self.harnesses is not None:
-            if default_chat_agent_id is None:
-                raise ValueError("configured harnesses require a default chat Agent")
             static_by_id = {agent.agent_id: agent for agent in self.static_agents}
             configured_identities = {(runtime.agent_id, runtime.kind) for runtime in self.harnesses.registrations}
             runtime_agent_ids = {agent_id for agent_id, _kind in configured_identities}

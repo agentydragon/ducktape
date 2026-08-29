@@ -11,9 +11,9 @@ export function launchKey(option: ChatLaunchOption): string {
   return `${option.agent_id}:${option.runtime}`;
 }
 
-export function defaultLaunchKey(options: ChatLaunchOption[]): string | null {
-  const selected = options.find((option) => option.is_default) ?? options[0];
-  return selected ? launchKey(selected) : null;
+export function initialLaunchKey(options: ChatLaunchOption[]): string | null {
+  // A sole authorized pair is unambiguous; multiple pairs require the operator to choose.
+  return options.length === 1 ? launchKey(options[0]) : null;
 }
 
 export function shouldShowLaunchSelector(options: ChatLaunchOption[]): boolean {

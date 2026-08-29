@@ -143,16 +143,16 @@ def test_config_advertises_codex_and_explicit_launch_preserves_public_coder_isol
             {"agent_id": haku_id, "system_prompt_template": str(claude_prompt)},
             {"agent_id": coder_id, "system_prompt_template": str(coder_prompt)},
         ],
-        "default_chat_agent_id": haku_id,
     }
     config_file = write_config(tmp_path / "console.yaml", shared_config)
 
     with make_operator_client(config_file=config_file) as client:
         options = client.get("/api/config").json()["chat_launch_options"]
-        assert [(option["agent_id"], option["runtime"], option["is_default"]) for option in options] == [
-            (haku_id, "claude_code", True),
-            (coder_id, "codex_app_server", False),
+        assert [(option["agent_id"], option["runtime"]) for option in options] == [
+            (haku_id, "claude_code"),
+            (coder_id, "codex_app_server"),
         ]
+        assert all("is_default" not in option for option in options)
         assert [(option["agent_display_name"], option["runtime_display_name"]) for option in options] == [
             ("Haku", "Claude"),
             ("public-coder-agent", "Codex"),
@@ -169,20 +169,6 @@ def test_config_advertises_codex_and_explicit_launch_preserves_public_coder_isol
         assert client.post("/api/conversations").status_code == 422
         assert client.post("/api/conversations", json={"agent_id": haku_id}).status_code == 422
         assert client.post("/api/conversations", json={"runtime": "claude_code"}).status_code == 422
-
-    codex_default_config = copy.deepcopy(shared_config)
-    codex_default_config["default_chat_agent_id"] = coder_id
-    codex_default_file = write_config(tmp_path / "console-codex-default.yaml", codex_default_config)
-    with make_operator_client(config_file=codex_default_file) as client:
-        options = client.get("/api/config").json()["chat_launch_options"]
-        assert [(option["agent_id"], option["runtime"], option["is_default"]) for option in options] == [
-            (coder_id, "codex_app_server", True),
-            (haku_id, "claude_code", False),
-        ]
-        selected_default = client.post("/api/conversations", json={"agent_id": coder_id, "runtime": "codex_app_server"})
-        assert selected_default.status_code == 201
-        assert selected_default.json()["agent_id"] == coder_id
-        assert selected_default.json()["harness_kind"] == "codex_app_server"
 
     wrong_codex_slot = copy.deepcopy(shared_config)
     wrong_codex_slot["harnesses"]["codex_app_server"]["implementation"] = {
