@@ -17,7 +17,7 @@ here is what remains to do.
 
 **Nothing in code cites this file, and nothing should.** A plan empties out as its work lands, so
 every identifier in it is transient by construction and a comment pointing at one goes stale
-without anything noticing. How the layers work once this plan is spent is <../docs/chat_layers.md>,
+without anything noticing. How the layers work once this plan is spent is <../docs/conversation_layers.md>,
 a contract several call sites depend on belongs in <../x/README.md> or a `SPEC.md`
 (<../channels/matrix/SPEC.md> is where the Matrix channel's own guarantees live), and an invariant
 one call site depends on belongs in that call site's own words.
@@ -31,7 +31,7 @@ The layering is two forbidden edges (operator, 2026-08-18):
 > A **session** listens to and sends to the **conversation**, never to a channel.
 
 The conversation is the only thing either side talks to. **How the three layers work when this
-holds is <../docs/chat_layers.md>** — what each owns, the two routes a fact takes into the record,
+holds is <../docs/conversation_layers.md>** — what each owns, the two routes a fact takes into the record,
 and where a new table, port or event kind belongs. Every step below is checked against it, and the
 rule leaves this plan with the last step that achieves it.
 
@@ -351,7 +351,7 @@ attachment rows. That is what an SPA session is, and it costs one row and no dec
 
 **Where events live.** On the conversation. "This session's sandbox died", "this replica adopted
 it", "the lease lapsed" are _caused_ by a session and are things the operator is told in a room, so
-they are conversation facts (<../docs/chat_layers.md>); the session they name is a field, not the
+they are conversation facts (<../docs/conversation_layers.md>); the session they name is a field, not the
 key. Identity-only is a statement about the `conversation` row, not about the record: the log is
 keyed to the conversation and the conversation table still holds nothing but an id.
 

@@ -17,7 +17,7 @@ What remains is what is still being restructured:
 | `conftest.py`                           | Fixture re-registrations for the tests below this directory; the definitions live in <../session/conftest.py>.                                                         |
 
 How to place a module — the replace-the-other-axis test and the boundary cases — is
-<../docs/chat_layers.md> § Placing something new.
+<../docs/conversation_layers.md> § Placing something new.
 
 ## Harness adapters
 
@@ -45,10 +45,10 @@ channel e2e tiers live with the channel (<../channels/matrix/README.md>).
 
 The code keeps the invariant; the evidence behind it is linked rather than restated.
 
-- <../docs/chat_layers.md> — what a session, a conversation and a channel each own, the two
+- <../docs/conversation_layers.md> — what a session, a conversation and a channel each own, the two
   edges between them, and where a new module, table, port or event kind goes. Read it before
   adding one.
-- <../docs/chat_runtime_facts.md> — behaviours of Synapse, nio, uvicorn and the CLI that this
+- <../docs/conversation_runtime_facts.md> — behaviours of Synapse, nio, uvicorn and the CLI that this
   surface depends on, with where each was checked. Read it before changing anything that looks
   like belt and braces.
 - <../plans/conversation_layers.md> — what is still wrong and the order to fix it.

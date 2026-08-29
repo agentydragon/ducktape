@@ -7,7 +7,7 @@ import {
   displayableError,
   fetchConfig,
   fetchConversations,
-  type ChatLaunchOption,
+  type LaunchOption,
   type Conversation,
   type ConversationCursor,
   type Item,
@@ -120,16 +120,16 @@ function BootstrapNarrationPanel({ narration, starting }: { narration: Bootstrap
 function Thinking({ text, open }: { text: string; open: boolean }) {
   if (!text.trim()) {
     return (
-      <Text c="dimmed" size="xs" className="haku-chat-thinking">
+      <Text c="dimmed" size="xs" className="haku-conversation-thinking">
         Thinking{open ? "…" : ""}
       </Text>
     );
   }
   return (
-    <details className="haku-shell-disclosure haku-chat-thinking">
+    <details className="haku-shell-disclosure haku-conversation-thinking">
       <summary>Thinking</summary>
       <div className="haku-shell-disclosure-body">
-        <Markdown source={text.trim()} className="haku-chat-markdown" />
+        <Markdown source={text.trim()} className="haku-conversation-markdown" />
       </div>
     </details>
   );
@@ -153,27 +153,27 @@ function ItemView({ item }: { item: Item }) {
       // a scheduled wakeup — so it renders as a note in the margin, never as the operator's bubble.
       if (item.origin === "harness") {
         return (
-          <Text c="dimmed" size="xs" fs="italic" className="haku-chat-wake">
+          <Text c="dimmed" size="xs" fs="italic" className="haku-conversation-wake">
             {text}
           </Text>
         );
       }
       return (
-        <div className="haku-chat-prompt">
-          <Markdown source={text} className="haku-chat-markdown" />
+        <div className="haku-conversation-prompt">
+          <Markdown source={text} className="haku-conversation-markdown" />
         </div>
       );
     }
     case "message": {
       const text = item.text.trim();
       return (
-        <div className="haku-chat-assistant">
+        <div className="haku-conversation-assistant">
           {item.status === "failed" && (
             <Badge size="xs" variant="light" color="red" mb={4}>
               cut off
             </Badge>
           )}
-          <Markdown source={text || (item.status === "open" ? "…" : "")} className="haku-chat-markdown" />
+          <Markdown source={text || (item.status === "open" ? "…" : "")} className="haku-conversation-markdown" />
           {!text && item.status === "complete" && (
             <Text c="dimmed" size="xs">
               Nothing was captured for this.
@@ -200,7 +200,7 @@ function ConversationListPage() {
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
-  const [launchOptions, setLaunchOptions] = useState<ChatLaunchOption[]>([]);
+  const [launchOptions, setLaunchOptions] = useState<LaunchOption[]>([]);
   const [selectedLaunch, setSelectedLaunch] = useState<string | null>(null);
   const [launchCatalogLoaded, setLaunchCatalogLoaded] = useState(false);
 
@@ -270,7 +270,7 @@ function ConversationListPage() {
     setError(null);
     try {
       const selection = launchOptions.find((option) => launchKey(option) === selectedLaunch);
-      if (!selection) throw new Error("No authorized Agent/runtime launch is available");
+      if (!selection) throw new Error("No authorized Agent/harness launch is available");
       openConversation((await createConversation(selection)).conversation_id);
     } catch (reason: unknown) {
       setError(displayableError(reason));
@@ -292,13 +292,13 @@ function ConversationListPage() {
           <Group gap="xs" wrap="nowrap" className="haku-conversation-launcher">
             {shouldShowLaunchSelector(launchOptions) && (
               <Select
-                aria-label="Conversation Agent and runtime"
+                aria-label="Conversation Agent and harness"
                 value={selectedLaunch}
                 onChange={setSelectedLaunch}
                 placeholder="Select Agent and runtime"
                 data={launchOptions.map((option) => ({
                   value: launchKey(option),
-                  label: `${option.agent_display_name} · ${option.runtime_display_name}`,
+                  label: `${option.agent_display_name} · ${option.harness_display_name}`,
                 }))}
                 allowDeselect={false}
                 className="haku-conversation-launcher-select"
@@ -563,7 +563,7 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
             stickToBottomRef.current = isNearChatBottom(event.currentTarget);
           }}
         >
-          <div className="haku-page-list haku-chat-messages">
+          <div className="haku-page-list haku-conversation-messages">
             {conversation.earlier_sessions.length > 0 && <EarlierSessions sessions={conversation.earlier_sessions} />}
             {conversation.provisioning && <SandboxProvisioning provisioning={conversation.provisioning} />}
             {narration && (

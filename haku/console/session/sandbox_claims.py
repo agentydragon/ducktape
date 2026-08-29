@@ -1,4 +1,4 @@
-"""The narrow declarative `SandboxClaim` one chat session runs in, and how it is inspected.
+"""The narrow declarative `SandboxClaim` one session runs in, and how it is inspected.
 
 Creates a claim, deletes it, and turns the CR graph underneath — claim, Sandbox, Pod, runner
 container — into the one progress view the SPA renders.
@@ -122,7 +122,7 @@ class SandboxClaims(Protocol):
 
 
 class KubernetesSandboxClaims:
-    """Create the narrow declarative SandboxClaim used by one chat session."""
+    """Create the narrow declarative SandboxClaim used by one session."""
 
     def __init__(self, spec: SandboxClaimSpec, clients: KubernetesClients | None = None):
         self._spec = spec

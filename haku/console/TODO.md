@@ -250,7 +250,7 @@ genuinely operational knobs should move onto the config model:
 
 **Not everything here is a knob, and the split is the point.** `TYPING_TIMEOUT_MS` and
 `SYNC_TIMEOUT_MS` are the homeserver's own semantics, `MAX_RATE_LIMIT_RETRIES` exists to bound a
-nio behaviour (<docs/chat_runtime_facts.md>), and the `*_FRAME_KIND` strings are wire vocabulary.
+nio behaviour (<docs/conversation_runtime_facts.md>), and the `*_FRAME_KIND` strings are wire vocabulary.
 Making those configurable would invite a deploy that contradicts a protocol. Move the timings;
 leave the facts where the code that depends on them can be read beside them.
 
@@ -340,7 +340,7 @@ Through the Codex app server, or directly against the Responses API, either way 
 in-cluster LiteLLM — <../../cluster/k8s/litellm/app/proxy-config.yaml> already carries
 `chatgpt/oai-responses/*` models on the `openai/` provider. Today `x/claude_code/` is the only runner, reached over the
 bridge; the frame log and its adapter are what keep a runner's shape below the conversation layer
-(<docs/chat_layers.md>).
+(<docs/conversation_layers.md>).
 
 **This is the first real test of the neutrality the conversation layer claims.**
 `ConversationEventKind` and the frame adapter exist so that a second backend is possible, and

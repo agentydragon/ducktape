@@ -163,7 +163,7 @@ over Matrix, and any write surface for the agent beyond its own replies.
 - **A produced reply is never lost silently.** `matrix_outbox` holds it from the moment the room's
   subscriber reads the message complete, and the drain retries until the homeserver takes it. Each row is sent under its own
   stable transaction id, so a late redelivery inside Synapse's dedup window is refused rather than
-  duplicated (<../../docs/chat_runtime_facts.md>).
+  duplicated (<../../docs/conversation_runtime_facts.md>).
 - **A reply arrives formatted.** The event carries both forms — `body` stays the Markdown, which is
   the spec's fallback and what a plain-text client should show, and `format:
 "org.matrix.custom.html"` plus `formatted_body` carries the rendering. Lifecycle notices stay

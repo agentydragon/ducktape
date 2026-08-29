@@ -20,7 +20,7 @@ api.use({
 });
 
 export type ConfigResponse = components["schemas"]["ConfigResponse"];
-export type ChatLaunchOption = components["schemas"]["ChatLaunchOption"];
+export type LaunchOption = components["schemas"]["LaunchOption"];
 export type OperatorResponse = components["schemas"]["OperatorResponse"];
 export type DeploymentInfo = components["schemas"]["DeploymentInfo"];
 export type LaunchRoutineResult = components["schemas"]["LaunchRoutineResult"];
@@ -97,9 +97,9 @@ export async function fetchOperator(): Promise<OperatorResponse> {
 }
 
 /** Mint a Web conversation with its explicit deploy-authorized Agent/harness pair. */
-export async function createConversation(selection: ChatLaunchOption): Promise<Conversation> {
+export async function createConversation(selection: LaunchOption): Promise<Conversation> {
   const response = await api.POST("/api/conversations", {
-    body: { agent_id: selection.agent_id, runtime: selection.runtime },
+    body: { agent_id: selection.agent_id, harness_kind: selection.harness_kind },
   });
   const { data, error } = response;
   if (error || !data) throw new Error(errorDetail(error, "Failed to start a conversation"));

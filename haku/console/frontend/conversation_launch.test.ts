@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ChatLaunchOption } from "./client";
+import type { LaunchOption } from "./client";
 import {
   conversationLaunchOptions,
   initialLaunchKey,
@@ -11,16 +11,16 @@ import {
 const haku = {
   agent_id: "00000000-0000-4000-8000-000000000001",
   agent_display_name: "Haku",
-  runtime: "claude_code",
-  runtime_display_name: "Claude Code",
-} satisfies ChatLaunchOption;
+  harness_kind: "claude_code",
+  harness_display_name: "Claude Code",
+} satisfies LaunchOption;
 
 const coder = {
   agent_id: "00000000-0000-4000-8000-000000000002",
   agent_display_name: "public-coder-agent",
-  runtime: "codex_app_server",
-  runtime_display_name: "Codex",
-} satisfies ChatLaunchOption;
+  harness_kind: "codex_app_server",
+  harness_display_name: "Codex",
+} satisfies LaunchOption;
 
 describe("conversation launch choices", () => {
   it("tolerates an older API replica with no launch catalog", () => {

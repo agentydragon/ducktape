@@ -59,7 +59,7 @@ from haku.console.x.testing.recording_claims import RecordingClaims
 from haku.runner.codex.options import CODEX_MODEL_ENV, CODEX_REASONING_EFFORT_ENV
 
 
-def test_runtime_deployment_wiring_has_no_application_defaults() -> None:
+def test_harness_deployment_wiring_has_no_application_defaults() -> None:
     assert all(field.is_required() for field in HarnessRegistrationConfig.model_fields.values())
     assert HarnessesConfig.model_fields["claude_code"].is_required()
     assert not HarnessesConfig.model_fields["codex_app_server"].is_required()
@@ -69,11 +69,11 @@ def test_runtime_deployment_wiring_has_no_application_defaults() -> None:
 def test_new_conversation_request_rejects_client_supplied_access_profile() -> None:
     with pytest.raises(ValidationError, match="extra_forbidden"):
         ConversationCreateRequest.model_validate(
-            {"agent_id": str(uuid4()), "harness": HarnessKind.CLAUDE_CODE, "access_profile_id": "admin"}
+            {"agent_id": str(uuid4()), "harness_kind": HarnessKind.CLAUDE_CODE, "access_profile_id": "admin"}
         )
 
 
-@pytest.mark.parametrize("body", [{"agent_id": str(uuid4())}, {"harness": HarnessKind.CLAUDE_CODE}])
+@pytest.mark.parametrize("body", [{"agent_id": str(uuid4())}, {"harness_kind": HarnessKind.CLAUDE_CODE}])
 def test_new_conversation_request_requires_the_complete_launch_pair(body: dict[str, object]) -> None:
     with pytest.raises(ValidationError, match="Field required"):
         ConversationCreateRequest.model_validate(body)
@@ -94,13 +94,13 @@ async def test_post_conversation_launch_rejection_is_generic_403() -> None:
     actor = type("Actor", (), {"operator_id": uuid4()})()
     with pytest.raises(HTTPException) as error:
         await create_conversation(
-            ConversationCreateRequest(agent_id=uuid4(), runtime=HarnessKind.CLAUDE_CODE),
+            ConversationCreateRequest(agent_id=uuid4(), harness_kind=HarnessKind.CLAUDE_CODE),
             actor,
             cast(SessionService, RejectingService()),
         )
 
     assert error.value.status_code == 403
-    assert error.value.detail == "chat launch is not authorized"
+    assert error.value.detail == "launch is not authorized"
     assert "durable internal reason" not in str(error.value)
 
 

@@ -108,8 +108,8 @@ filegroup(
         "haku-ci/namespace.yaml",
         "haku-ci/scaledjob.yaml",
         "haku/console/agent-diagnostics-rbac.yaml",
-        "haku/console/chat_prompt_fragment.md.j2",
         "haku/console/config.yaml",
+        "haku/console/conversation_prompt_fragment.md.j2",
         "haku/console/db/indexer-role-secret.yaml",
         "haku/console/db/matrix-adapter-role-secret.yaml",
         "haku/console/db/postgres-cluster.yaml",
@@ -292,7 +292,7 @@ filegroup(
 filegroup(
     name = "haku_console_system_prompt",
     srcs = [
-        "haku/console/chat_prompt_fragment.md.j2",
+        "haku/console/conversation_prompt_fragment.md.j2",
         "haku/console/haku_system_prompt.md.j2",
         "haku/console/public_coder_system_prompt.md.j2",
     ],

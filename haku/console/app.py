@@ -88,7 +88,7 @@ from haku.console.mcp_config import (
     load_static_agents,
     validate_in_process_server_bindings,
 )
-from haku.console.models import ChatLaunchOption, ConfigResponse
+from haku.console.models import ConfigResponse, LaunchOption
 from haku.console.notifications import connection_metrics, console_events, push, push_routes
 from haku.console.notifications.conversation_wakes import ConversationWakes
 from haku.console.notifications.session_wakes import SessionWakes
@@ -821,24 +821,24 @@ def create_app(
 
     @app.get("/api/config", dependencies=operator_only)
     async def config() -> ConfigResponse:
-        """Static config for the SPA, including deploy-authorized Web chat launch pairs."""
+        """Static config for the SPA, including deploy-authorized Web launch pairs."""
         launch = settings.launch_routine
         launch_options = [
-            ChatLaunchOption(
+            LaunchOption(
                 agent_id=identity.agent_id,
                 agent_display_name=static_by_id[identity.agent_id].display_name,
-                runtime=identity.harness_kind,
-                runtime_display_name=harness_registry[identity.harness_kind].display_name,
+                harness_kind=identity.harness_kind,
+                harness_display_name=harness_registry[identity.harness_kind].display_name,
             )
             for identity in harness_registry.configured_identities
             if identity.agent_id in launchable_agent_ids
             and identity.harness_kind in profile_harness_kinds[static_by_id[identity.agent_id].access_profile_id]
         ]
-        launch_options.sort(key=lambda option: (option.agent_display_name, option.runtime.value))
+        launch_options.sort(key=lambda option: (option.agent_display_name, option.harness_kind.value))
         return ConfigResponse(
             launch_routine_url=launch.page_url if launch else None,
             haku_ui_url=settings.haku_ui_url,
-            chat_launch_options=launch_options,
+            launch_options=launch_options,
         )
 
     # Operator browser auth is mandatory. SessionMiddleware establishes request.session, which the

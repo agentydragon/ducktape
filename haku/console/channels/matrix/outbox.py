@@ -58,7 +58,7 @@ MAX_SEND_ATTEMPTS = 8
 
 # The retry curve for a refused reply: five seconds after the first failure, doubling to five
 # minutes. The whole budget — roughly ten minutes across `MAX_SEND_ATTEMPTS` — stays inside the
-# 30-to-60 minutes Synapse keeps a transaction id for (<../../docs/chat_runtime_facts.md>); past
+# 30-to-60 minutes Synapse keeps a transaction id for (<../../docs/conversation_runtime_facts.md>); past
 # that window a redrive stops being deduplicated and starts being a second message.
 _RETRY_CURVE = wait_exponential(multiplier=5, max=datetime.timedelta(seconds=300))
 

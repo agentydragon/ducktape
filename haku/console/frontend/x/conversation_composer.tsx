@@ -71,8 +71,8 @@ export function ConversationComposer({
   }
 
   return (
-    <div className="haku-chat-composer">
-      <Stack gap="xs" className="haku-chat-composer-inner">
+    <div className="haku-conversation-composer">
+      <Stack gap="xs" className="haku-conversation-composer-inner">
         {refusal && (
           <Alert color="orange" variant="light" title="Not sent" role="status">
             <Text size="sm">{refusal}</Text>

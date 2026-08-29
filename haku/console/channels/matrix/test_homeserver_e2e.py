@@ -8,7 +8,7 @@ would agree with whatever the code did:
   recovery — the property this module exists for);
 - a `/sync` watermark really is accepted as a `/messages` pagination token, at both ends;
 - a repeated transaction id really is refused as a second event
-  (<../../docs/chat_runtime_facts.md>);
+  (<../../docs/conversation_runtime_facts.md>);
 - `works.allegedly.haku` really does survive a round trip through the homeserver, including the
   copy that rides inside `m.new_content` — and the correspondence reader really does get our own
   sends, edits and redactions back off the same `/sync`.
@@ -258,7 +258,7 @@ async def test_the_own_copy_reader_sees_sends_edits_and_redactions(bot: Bot, joi
 
 
 async def test_the_same_outbox_row_cannot_post_twice(bot: Bot, joined_room: OperatorRoom) -> None:
-    """<../../docs/chat_runtime_facts.md> — Synapse deduplicates a transaction per device.
+    """<../../docs/conversation_runtime_facts.md> — Synapse deduplicates a transaction per device.
 
     A reply is sent under its outbox row's id (`PendingReply.transaction_id`), so a replacement
     replica redriving the same row is refused rather than posting it twice. The device is what the

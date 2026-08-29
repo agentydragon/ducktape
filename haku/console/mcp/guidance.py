@@ -1,7 +1,7 @@
 """Canonical guidance for agents using Haku Console's MCP surface.
 
 Second copy on purpose: the chat prompts carry the same guidance as template text
-(cluster/k8s/haku/console/chat_prompt_fragment.md.j2 § Haku Console MCP), because some MCP
+(cluster/k8s/haku/console/conversation_prompt_fragment.md.j2 § Haku Console MCP), because some MCP
 clients never show server instructions to the model. Edit both together.
 """
 

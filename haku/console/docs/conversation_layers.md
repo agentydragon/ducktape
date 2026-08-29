@@ -1,13 +1,13 @@
-# The chat runtime's three layers
+# The conversation runtime's three layers
 
-The console's chat runtime has three layers — session, conversation, channel — and the conversation
-is the only thing the other two talk to:
+The console's conversation runtime has three layers — session, conversation, channel — and the
+conversation is the only thing the other two talk to:
 
 > A **channel** listens to and sends to the **conversation**, never to a session.
 >
 > A **session** listens to and sends to the **conversation**, never to a channel.
 
-The tables that realise this are the chat half of <../database_schema.py>; the evidence that their
+The tables that realise this are the conversation half of <../database_schema.py>; the evidence that their
 vocabulary belongs to no one backend, and the invariants spanning them, are in
 <conversation_schema.md>.
 

@@ -400,7 +400,7 @@
   white-space: nowrap;
 }
 
-/* The Conversations list header launcher: the runtime picker beside the "New conversation" button.
+/* The Conversations list header launcher: the harness picker beside the "New conversation" button.
    Fixed width on desktop; the max-width:768px block below stacks the launcher under the title and
    lets the picker flex to fill the row, so the button stays on-screen on a narrow phone. */
 .haku-conversation-launcher-select {
@@ -441,7 +441,7 @@
    page with one thing on it. Undo the transcript's bottom-anchoring (`> :first-child` below)
    for that case only, or a provisioning session shows a screenful of blank above its own
    progress. With a transcript underneath, the anchoring is still right and stays. */
-.haku-chat-messages > .haku-conversation-narration:only-child {
+.haku-conversation-messages > .haku-conversation-narration:only-child {
   margin-top: 0;
 }
 
@@ -455,16 +455,16 @@
   overflow-wrap: anywhere;
 }
 
-.haku-chat-messages {
+.haku-conversation-messages {
   min-height: 100%;
 }
 
-.haku-chat-messages > :first-child {
+.haku-conversation-messages > :first-child {
   margin-top: auto;
 }
 
 /* The operator's prompt, as a messenger-style bubble on the right; its text stays left-aligned. */
-.haku-chat-prompt {
+.haku-conversation-prompt {
   align-self: flex-end;
   max-width: min(80%, 40rem);
   background: var(--haku-shell-active-bg);
@@ -474,18 +474,18 @@
 
 /* The agent's prose sits flush left with no chrome of its own — the transcript is mostly this,
  * so it gets the page rather than a card on it. */
-.haku-chat-assistant {
+.haku-conversation-assistant {
   align-self: flex-start;
   width: min(100%, 46rem);
 }
 
-.haku-chat-thinking {
+.haku-conversation-thinking {
   align-self: flex-start;
   width: min(100%, 46rem);
 }
 
 /* The session waking itself: a margin note between exchanges, not anyone speaking. */
-.haku-chat-wake {
+.haku-conversation-wake {
   align-self: flex-start;
   width: min(100%, 46rem);
 }
@@ -493,24 +493,24 @@
 /* No card of its own: while folded a call is one plain line, so consecutive calls read as a run of
  * working notes rather than a stack of boxes. The negative margins pull adjacent working lines
  * back through the list's gap. */
-.haku-chat-tool-call {
+.haku-conversation-tool-call {
   align-self: flex-start;
   width: min(100%, 46rem);
 }
 
-.haku-chat-tool-call + .haku-chat-tool-call,
-.haku-chat-thinking + .haku-chat-tool-call,
-.haku-chat-tool-call + .haku-chat-thinking {
+.haku-conversation-tool-call + .haku-conversation-tool-call,
+.haku-conversation-thinking + .haku-conversation-tool-call,
+.haku-conversation-tool-call + .haku-conversation-thinking {
   margin-top: -0.55rem;
 }
 
-.haku-chat-tool-call-name {
+.haku-conversation-tool-call-name {
   font-size: var(--mantine-font-size-sm);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
 
-.haku-chat-tool-call-summary {
+.haku-conversation-tool-call-summary {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -519,22 +519,22 @@
   list-style: none;
 }
 
-.haku-chat-tool-call-summary::-webkit-details-marker {
+.haku-conversation-tool-call-summary::-webkit-details-marker {
   display: none;
 }
 
-.haku-chat-tool-call-summary::before {
+.haku-conversation-tool-call-summary::before {
   content: "▸";
   color: var(--mantine-color-dimmed);
   flex: 0 0 auto;
 }
 
-.haku-chat-tool-call[open] > .haku-chat-tool-call-summary::before {
+.haku-conversation-tool-call[open] > .haku-conversation-tool-call-summary::before {
   content: "▾";
 }
 
 /* One line while folded: the snippet takes what the badges leave and ellipsizes. */
-.haku-chat-tool-call-snippet {
+.haku-conversation-tool-call-snippet {
   color: var(--mantine-color-dimmed);
   font-size: var(--mantine-font-size-xs);
   white-space: nowrap;
@@ -546,42 +546,42 @@
 
 /* Code identifies itself as code — a command, a path, a pattern — while a prose description reads
  * as prose. */
-.haku-chat-tool-call-snippet-mono {
+.haku-conversation-tool-call-snippet-mono {
   font-family: var(--mantine-font-family-monospace);
 }
 
 /* Expanded content indents under the chevron so it visibly belongs to its line, since there is no
  * box to group it. */
-.haku-chat-tool-call-body {
+.haku-conversation-tool-call-body {
   margin-top: 0.5rem;
   margin-left: 0.35rem;
   padding-left: 0.75rem;
   border-left: 2px solid var(--haku-border);
 }
 
-.haku-chat-markdown {
+.haku-conversation-markdown {
   font-size: var(--mantine-font-size-sm);
   line-height: 1.45;
 }
 
-.haku-chat-markdown h1,
-.haku-chat-markdown h2,
-.haku-chat-markdown h3,
-.haku-chat-markdown h4,
-.haku-chat-markdown h5,
-.haku-chat-markdown h6 {
+.haku-conversation-markdown h1,
+.haku-conversation-markdown h2,
+.haku-conversation-markdown h3,
+.haku-conversation-markdown h4,
+.haku-conversation-markdown h5,
+.haku-conversation-markdown h6 {
   margin: 0.65rem 0 0.35rem;
   font-size: 1em;
   line-height: 1.35;
 }
 
-.haku-chat-composer {
+.haku-conversation-composer {
   flex: 0 0 auto;
   border-top: 1px solid var(--haku-border);
   background: var(--haku-panel-bg);
 }
 
-.haku-chat-composer-inner {
+.haku-conversation-composer-inner {
   width: 100%;
   max-width: 56rem;
   margin: 0 auto;
@@ -595,7 +595,12 @@
     gap: 0.25rem;
   }
 
-  .haku-chat-prompt {
+  .haku-conversation-detail-header h1 {
+    font-size: clamp(1.75rem, 9vw, 2.5rem);
+    line-height: 1.15;
+  }
+
+  .haku-conversation-prompt {
     max-width: 92%;
   }
 }

@@ -24,7 +24,7 @@ class LaunchIdentity:
 
 
 class LaunchAgentRejectedError(Exception):
-    """A chat launch selected an Agent that is not durably authorized."""
+    """A launch selected an Agent that is not durably authorized."""
 
 
 class LaunchAuthorization(Protocol):

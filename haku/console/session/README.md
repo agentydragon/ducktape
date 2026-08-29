@@ -2,7 +2,7 @@
 
 A session is one runner's life: its sandbox, its lease, its turns, and the wire frames it
 exchanged. What a session may never do is name a channel — the layer contract is
-<../docs/chat_layers.md>. Graduated from `../x/` under #4772; the target layout is
+<../docs/conversation_layers.md>. Graduated from `../x/` under #4772; the target layout is
 <../docs/naming_and_layout.md> § 2.
 
 The shared substrate is two files, and the line between them is the transaction: `store.py`

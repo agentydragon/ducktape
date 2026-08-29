@@ -880,7 +880,7 @@ static_agents:
     access_profile_id: public-coder
 # Prompts belong to Agents (#4431 stage 6): each launchable Agent names its identity template,
 # mounted from this same ConfigMap. A template `{% include %}`s siblings from the same directory —
-# that is how the shared chat_prompt_fragment.md.j2 rides along without being a config key. Haku's
+# that is how the shared conversation_prompt_fragment.md.j2 rides along without being a config key. Haku's
 # identity and what only Haku is told stay in its template; the craft it authors for itself lives
 # in haku-state, which it can write and these it cannot.
 launchable_agents:

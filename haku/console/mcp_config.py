@@ -397,7 +397,7 @@ class ConsoleConfigFile(BaseModel):
     # trust store explicitly before any HTTPS recall source is cloned or fetched.
     git_ca_bundle: Path = Path("/etc/ssl/certs/ca-certificates.crt")
     # Closed implementation kinds, not deploy-chosen harness instance ids. Absent config preserves
-    # the existing console-without-chat mode. Real provider credentials remain outside sandboxes.
+    # the existing console-without-conversation mode. Real provider credentials remain outside sandboxes.
     harnesses: HarnessesConfig | None = None
     auto_approval_policies: list[AutoApprovalPolicy] = Field(min_length=1)
     access_profiles: list[AccessProfile] = Field(min_length=1)
@@ -405,7 +405,7 @@ class ConsoleConfigFile(BaseModel):
     operator_connection_providers: dict[str, OperatorConnectionProviderDefinition] = Field(default_factory=dict)
     operator_connections: dict[str, OperatorConnectionDefinition] = Field(default_factory=dict)
     static_agents: list[StaticAgentEntry] = Field(default_factory=list)
-    # Only these durable identities may be selected by the chat API.  Keeping this separate from
+    # Only these durable identities may be selected by the launch API.  Keeping this separate from
     # static_agents makes the launch boundary explicit and leaves room for OAuth Agents later.
     launchable_agents: list[LaunchableAgent] = Field(default_factory=list)
     # The `hostexec` in-process server's in-scope machines + token-exchange scope. Non-secret deploy

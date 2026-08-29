@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { api, createConversation, type ChatLaunchOption, type Conversation } from "./client";
+import { api, createConversation, type LaunchOption, type Conversation } from "./client";
 
 const selection = {
   agent_id: "00000000-0000-4000-8000-000000000002",
   agent_display_name: "public-coder-agent",
-  runtime: "codex_app_server",
-  runtime_display_name: "Codex",
-} satisfies ChatLaunchOption;
+  harness_kind: "codex_app_server",
+  harness_display_name: "Codex",
+} satisfies LaunchOption;
 
 const conversation = {
   conversation_id: "00000000-0000-4000-8000-000000000099",
@@ -28,7 +28,7 @@ describe("createConversation", () => {
     expect(post).toHaveBeenCalledWith("/api/conversations", {
       body: {
         agent_id: selection.agent_id,
-        runtime: "codex_app_server",
+        harness_kind: "codex_app_server",
       },
     });
   });

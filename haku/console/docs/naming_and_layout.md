@@ -312,32 +312,24 @@ canonical terms above.
   and must not be. Keep `claude_agent_sdk` only where it is literally the build source for the
   bundled Claude executable; SDK design/provenance documents stay historical rather than current
   runtime guidance.
-- **Harness/backend family:** `RuntimeExecutionConfig`, `RuntimeImplementationConfig`,
-  `RuntimeRegistrationConfig`, `ChatRuntimesConfig`, `RuntimeLaunch`, `RuntimeMcpServer`,
-  `RuntimeKey`, `RuntimeAdapter`, `RuntimeRegistry`, `ConfiguredRuntime`, `AgentRuntimeResources`,
-  `UnsupportedRuntimeError`, `RuntimeNotConfiguredError`, `ClaudeRuntimeAdapter`,
-  `CodexRuntimeAdapter`, `runtime_label`, `profile_runtime_kinds`,
-  `registered_runtime_identities`, `ChatLaunchOption.runtime`, `runtime_display_name`, and
-  backend-facing `runtime` prose. The planned mapping is
-  `HarnessExecutionConfig`, `HarnessImplementationConfig`, `HarnessRegistrationConfig`,
-  `HarnessesConfig`, `HarnessLaunchSpec`, `HarnessMcpServer`, `HarnessKey`, `HarnessAdapter`,
-  `HarnessRegistry`, `ConfiguredHarness`, `AgentHarnessResources`, `UnsupportedHarnessError`,
-  `HarnessNotConfiguredError`, `ClaudeHarnessAdapter`, `CodexHarnessAdapter`, `harness_label`,
-  `profile_harness_kinds`, `registered_harness_identities`, `LaunchOption.harness_kind`, and
-  `LaunchOption.harness_display_name`. `session/runtime.py` and
+- **Harness/backend family:** the `Runtime*` → `Harness*` entity mapping and the
+  `LaunchOption.harness_kind`/`harness_display_name` wire fields are landed (C16d); the tracked
+  residue is the deployed-config contract for `runtime_label` → `harness_label` (the expand aliases
+  carry the old spelling until the ConfigMap flips) and the `runtime_kind` attribute spellings that
+  ride C4d's stored-column contract. `session/runtime.py` and
   `conversation/runtime.py` may retain `runtime` where they name live lifecycle/reconciliation, not
   a backend implementation.
-- **Chat family:** `chat_models.py`, `ChatLaunchOption`, `chat_launch_options`, `ChatRuntimesConfig`,
-  `chat_runtimes`, `allowed_chat_runtimes`, `default_chat_agent_id`, `ChatLaunchAuthorizer`,
-  `chat_layers.md`, `chat_runtime_facts.md`, `chat_prompt_fragment.md.j2`, “chat runtime,” “chat
-  surface,” “chat session,” “chat records,” `haku-chat-*` CSS/client names, and `claude-chat`/
-  `codex-chat` labels. `ChatLaunchOption`/`chat_launch_options` become
-  `LaunchOption`/`launch_options`, with the option's `runtime` fields becoming `harness` fields.
-  Rename current concepts to their actual session, conversation,
-  channel, Agent, harness, or frontend names; keep `chat` only where it is a genuinely separate recall-index/data kind
-  (`ChatSource`/`ChatIndexStatus` and the literal `index_type: chat`) or a historical database/migration
-  identifier. The prompt fragment and CSS/client names still need a deliberate, atomic rename; do not
-  silently leave them out because they are presentation code.
+- **Chat family:** the named artifacts are landed (C16d): `LaunchOption`/`launch_options` with
+  `harness` fields, `HarnessLaunchAuthorizer`, `HarnessesConfig`, the `conversation_layers.md`/
+  `conversation_runtime_facts.md`/`conversation_prompt_fragment.md.j2` renames, and the
+  `haku-conversation-*` CSS names. Tracked residue: the deployed `default_chat_agent_id` key and the
+  `claude-chat`/`codex-chat` label values (flipped by the C16d config contract); `chat_models.py`
+  (deleted once `ChannelSurface` moves with the C4 channels packaging); the derived audit id
+  `haku-chat-session:` (session-token family, C16a); and remaining “chat runtime”/“chat surface”/
+  “chat session”/“chat records” prose, swept by the C16f gate. Rename current concepts to their
+  actual session, conversation, channel, Agent, harness, or frontend names; keep `chat` only where
+  it is a genuinely separate recall-index/data kind (`ChatSource`/`ChatIndexStatus` and the literal
+  `index_type: chat`) or a historical database/migration identifier.
 - **Item/failure wording:** “entry” when it means the conversation item read model, and “reason” when
   it means a failed turn. Use `Item`/`Item…` and `TurnFailed.failure`. Keep `McpServerEntry`,
   `EgressCredentialEntry`, registry/policy entries, prompt-rejection reasons, lease-expiry reasons,
@@ -571,24 +563,21 @@ quiet gap.
     `frontend/bridge.ts` as coordinated cross-repository package/path work with the haku-state
     consumer. This is a separate protocol from the runner protocol; do not use its exception to
     preserve “bridge” for runner or credential names.
-  - **C16d · Harness\* and chat removal:** finish the backend/configuration rename with this explicit
-    mapping: `RuntimeExecutionConfig` → `HarnessExecutionConfig`, `RuntimeImplementationConfig` →
-    `HarnessImplementationConfig`, `RuntimeRegistrationConfig` → `HarnessRegistrationConfig`,
-    `ChatRuntimesConfig` → `HarnessesConfig`, `RuntimeLaunch` → `HarnessLaunchSpec`,
-    `RuntimeMcpServer` → `HarnessMcpServer`, `RuntimeKey` → `HarnessKey`, `RuntimeAdapter` →
-    `HarnessAdapter`, `RuntimeRegistry` → `HarnessRegistry`, `ConfiguredRuntime` → `ConfiguredHarness`,
-    `AgentRuntimeResources` → `AgentHarnessResources`, `UnsupportedRuntimeError` →
-    `UnsupportedHarnessError`, `RuntimeNotConfiguredError` → `HarnessNotConfiguredError`, and the
-    provider adapter names to `ClaudeHarnessAdapter`/`CodexHarnessAdapter`. Rename `runtime_label`,
-    `profile_runtime_kinds`, and `registered_runtime_identities` to their `harness_*` counterparts;
-    map `ChatLaunchOption.runtime`/`runtime_display_name` to `LaunchOption.harness_kind`/
-    `harness_display_name`, and remove `-chat` from harness labels. Rename
-    `default_chat_agent_id` to `default_agent_id`, rename the concrete `ChatLaunchAuthorizer` to
-    `HarnessLaunchAuthorizer` rather than colliding with the existing `LaunchAuthorizer` protocol, and
-    rename the current `chat_layers.md`, `chat_runtime_facts.md`,
-    `chat_prompt_fragment.md.j2`, and `haku-chat-*` presentation names to the layer, fact, prompt, or
-    component they actually describe. Delete transitional `chat_models.py` once its last enum has
-    moved. Keep `runtime` for live session/conversation lifecycle only.
+  - **C16d · Harness\* and chat removal:** **Landed**: the `Runtime*` → `Harness*` entity mapping
+    (`HarnessExecutionConfig`, `HarnessImplementationConfig`, `HarnessRegistrationConfig`,
+    `HarnessesConfig`, `HarnessLaunchSpec`, `HarnessMcpServer`, `HarnessKey`, `HarnessAdapter`,
+    `HarnessRegistry`, `ConfiguredHarness`, `AgentHarnessResources`, `UnsupportedHarnessError`,
+    `HarnessNotConfiguredError`, `ClaudeHarnessAdapter`/`CodexHarnessAdapter`,
+    `HarnessLaunchAuthorizer`, `profile_harness_kinds`, `registered_harness_identities`); the
+    `LaunchOption.harness_kind`/`harness_display_name` wire shape (`launch_options` on
+    `ConfigResponse`, `harness_kind` on the create request); and the presentation renames
+    (`conversation_layers.md`, `conversation_runtime_facts.md`, `conversation_prompt_fragment.md.j2`,
+    `haku-conversation-*` CSS). Remaining, in order: the deployed-config **contract** — after the
+    expand image (accepting both spellings) has converged, flip the ConfigMap's `runtime_label` →
+    `harness_label` and `default_chat_agent_id` → `default_agent_id`, drop `-chat` from the harness
+    label values, and remove both aliases; `chat_models.py` deletion stays gated on `ChannelSurface`
+    moving out with the C4 channels packaging; the `runtime_kind` attribute spellings ride C4d's
+    stored-column contract. Keep `runtime` for live session/conversation lifecycle only.
   - **C16e · HTTP decision endpoint token:** adopt the existing `haku/sandbox/TODO.md` direction:
     rename `HAKU_EGRESS_FENCE_CREDENTIAL`, `fence_credential_env_var`, `fence_credential`,
     `FENCE_CREDENTIAL`, and the `fence-credential` Secret key to the HTTP decision endpoint token

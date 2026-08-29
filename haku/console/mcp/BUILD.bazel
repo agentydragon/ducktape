@@ -192,8 +192,8 @@ py_binary(
 )
 
 py_test(
-    name = "test_chat_identity_config",
-    srcs = ["test_chat_identity_config.py"],
+    name = "test_launch_identity_config",
+    srcs = ["test_launch_identity_config.py"],
     deps = [
         "//:conftest",
         "//haku/console:conftest",

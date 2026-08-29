@@ -147,30 +147,31 @@ def test_config_advertises_codex_and_explicit_launch_preserves_public_coder_isol
     config_file = write_config(tmp_path / "console.yaml", shared_config)
 
     with make_operator_client(config_file=config_file) as client:
-        options = client.get("/api/config").json()["chat_launch_options"]
-        assert [(option["agent_id"], option["runtime"]) for option in options] == [
+        options = client.get("/api/config").json()["launch_options"]
+        assert [(option["agent_id"], option["harness_kind"]) for option in options] == [
             (haku_id, "claude_code"),
             (coder_id, "codex_app_server"),
         ]
         assert all(
-            set(option) == {"agent_id", "agent_display_name", "runtime", "runtime_display_name"} for option in options
+            set(option) == {"agent_id", "agent_display_name", "harness_kind", "harness_display_name"}
+            for option in options
         )
-        assert [(option["agent_display_name"], option["runtime_display_name"]) for option in options] == [
+        assert [(option["agent_display_name"], option["harness_display_name"]) for option in options] == [
             ("Haku", "Claude"),
             ("public-coder-agent", "Codex"),
         ]
 
-        codex = client.post("/api/conversations", json={"agent_id": coder_id, "runtime": "codex_app_server"})
+        codex = client.post("/api/conversations", json={"agent_id": coder_id, "harness_kind": "codex_app_server"})
         assert codex.status_code == 201
         assert codex.json()["agent_id"] == coder_id
         assert codex.json()["harness_kind"] == "codex_app_server"
 
-        forbidden = client.post("/api/conversations", json={"agent_id": coder_id, "runtime": "claude_code"})
+        forbidden = client.post("/api/conversations", json={"agent_id": coder_id, "harness_kind": "claude_code"})
         assert forbidden.status_code == 403
 
         assert client.post("/api/conversations").status_code == 422
         assert client.post("/api/conversations", json={"agent_id": haku_id}).status_code == 422
-        assert client.post("/api/conversations", json={"runtime": "claude_code"}).status_code == 422
+        assert client.post("/api/conversations", json={"harness_kind": "claude_code"}).status_code == 422
 
     wrong_codex_slot = copy.deepcopy(shared_config)
     wrong_codex_slot["harnesses"]["codex_app_server"]["implementation"] = {

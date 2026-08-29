@@ -73,7 +73,7 @@ _AUTH_ERRCODES = frozenset({"M_UNKNOWN_TOKEN", "M_MISSING_TOKEN"})
 # How many times nio may absorb a 429 inside one request before the error reaches us.
 #
 # **Gotcha: nio's default is unlimited, not off** — a rate-limited send stopped returning rather
-# than erroring (<../../docs/chat_runtime_facts.md>). Two retries keep a single burst invisible
+# than erroring (<../../docs/conversation_runtime_facts.md>). Two retries keep a single burst invisible
 # while letting a sustained one reach `pacer`, the only place the room's real budget is learned.
 MAX_RATE_LIMIT_RETRIES = 2
 
@@ -127,7 +127,7 @@ class EventTag(BaseModel):
 
     **Conversation ids, never a session's.** A room event is permanent and federated, so an id in
     its tag outlives every session it could name — and the thread a room holds a copy of is the
-    conversation (<../../docs/chat_layers.md>).
+    conversation (<../../docs/conversation_layers.md>).
     """
 
     model_config = ConfigDict(frozen=True, extra="ignore")
@@ -156,7 +156,7 @@ class EventTag(BaseModel):
         (`outbox.PendingReply.transaction_id`).
 
         Rests on how Synapse keys and expires its transaction cache
-        (<../../docs/chat_runtime_facts.md>).
+        (<../../docs/conversation_runtime_facts.md>).
         """
         if self.source is not None:
             return uuid5(

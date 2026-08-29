@@ -1,4 +1,4 @@
-"""Deploy-time chat launch identity and profile graph validation."""
+"""Deploy-time launch identity and profile graph validation."""
 
 from __future__ import annotations
 

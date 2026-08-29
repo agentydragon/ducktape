@@ -1,6 +1,6 @@
-"""Operator chat sessions dispatched by immutable conversation harness kind.
+"""Operator sessions dispatched by their conversation's immutable harness kind.
 
-The turn loop, the runner's websocket bridge, the sandbox lifecycle and the SPA chat surface's own
+The turn loop, the runner's websocket bridge, the sandbox lifecycle and the SPA conversation surface's own
 routes. The rows underneath, and every transaction that moves them, are `session_store.py`.
 
 """
@@ -147,7 +147,7 @@ class ConversationCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     agent_id: UUID
-    runtime: HarnessKind
+    harness_kind: HarnessKind
 
 
 class PromptAccepted(BaseModel):
@@ -286,9 +286,9 @@ class SessionService:
     ) -> SessionView:
         if self._launch_authorizer is not None:
             if conversation_id is None and agent_id is None:
-                raise RuntimeError("chat launch requires a selected Agent")
+                raise RuntimeError("launch requires a selected Agent")
             if conversation_id is None and harness_kind is None:
-                raise RuntimeError("chat launch requires a selected harness")
+                raise RuntimeError("launch requires a selected harness")
             # Store owns the transaction.  It derives a replacement's pinned identity under
             # the conversation row lock and passes the same AsyncSession to the authorizer, so the
             # authorization decision and durable rows cannot be separated by a concurrent disable.
@@ -520,9 +520,9 @@ class SessionService:
         return True
 
     async def _appended_prompt(self, session_id: UUID) -> str | None:
-        """Who this session is, when its conversation has an attached chat surface.
+        """Who this session is, when its conversation has an attached channel.
 
-        The conversation decides whether chat context applies; no channel object is handed to the
+        The conversation decides whether that context applies; no channel object is handed to the
         session. The selected adapter decides how this addition is expressed without replacing the
         harness's own tool-driving preset.
         """
@@ -860,12 +860,14 @@ async def create_conversation(
     """Open a new thread and the first session to run it.
 
     One call, because a conversation with no session is a thread nothing can be said to. Agent and
-    runtime is an atomic required pair; there is no server-default launch endpoint.
+    harness is an atomic required pair; there is no server-default launch endpoint.
     """
     try:
-        return await service.create_conversation(actor.operator_id, agent_id=body.agent_id, harness_kind=body.runtime)
+        return await service.create_conversation(
+            actor.operator_id, agent_id=body.agent_id, harness_kind=body.harness_kind
+        )
     except LaunchAgentRejectedError:
-        raise HTTPException(status_code=403, detail="chat launch is not authorized")
+        raise HTTPException(status_code=403, detail="launch is not authorized")
     except KeyError as error:
         raise HTTPException(status_code=404, detail="Conversation not found") from error
     except Exception:

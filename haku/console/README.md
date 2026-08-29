@@ -17,7 +17,7 @@ This README is the component map, not a second copy of every contract:
 - <docs/containment.md> — iframe isolation, trusted chrome, bridge verbs, consent, and browser-side
   exfiltration bounds.
 - <docs/oauth_browser_surfaces.md> — account-link and Agent-enrollment browser boundaries.
-- <docs/chat_layers.md>, <docs/conversation_schema.md>, and <x/README.md> — the experimental chat
+- <docs/conversation_layers.md>, <docs/conversation_schema.md>, and <x/README.md> — the experimental conversation
   runtime, its durable records, and channel/harness boundaries.
 - <../docs/security.md> — threat model and security invariants.
 - <../../cluster/k8s/haku/console/README.md> — deployment topology, migration release work, routing,
@@ -126,7 +126,7 @@ The canonical contract is <docs/agent_authority.md>. In short: `Operator`, `Agen
 bindings, grants, names, profiles, and tool-call principals are durable local identities; every
 Agent call records exact binding provenance; and browser enrollment must converge with the MCP-side
 principal before a binding becomes active. Access profiles independently own auto-approval,
-Recall-index, in-process-server, and chat-runtime launch grants; missing assignments fail closed.
+Recall-index, in-process-server, and harness launch grants; missing assignments fail closed.
 Agents submit/read only their own calls and never approve themselves.
 
 ### In-process MCP servers — no second deployment
@@ -157,7 +157,7 @@ Built-ins are assembled in `mcp/in_process_servers.py`:
   sharing is temporary: once the indexer gains its own read-only Forgejo credential the API pod need
   not hold `haku-forgejo-git` (TODO in `test_haku_indexer_worker_contract`).
   <../recall_index/README.md> owns the index design.
-- `haku_conversations` exposes actor-scoped reads over the console's chat records; the runtime and
+- `haku_conversations` exposes actor-scoped reads over the console's conversation records; the runtime and
   record vocabulary are documented under <x/README.md>.
 - `haku_routine` launches the reviewed routine through ordinary approval.
 - `hostexec` exchanges the acting Operator's login authority only during approved execution; its

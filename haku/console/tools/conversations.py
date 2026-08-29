@@ -7,7 +7,7 @@ two durable records: the conversation — neutral events folded into items as ea
 and `session_frames`, the verbatim wire they were read off. A tool call and the result it got
 are in both — which the room is not.
 
-**Each read is named and keyed by the layer it reads** (<../docs/chat_layers.md>): a session has
+**Each read is named and keyed by the layer it reads** (<../docs/conversation_layers.md>): a session has
 frames; a conversation has events, which fold into items. `read_conversation_items` is what a conversation
 *meant* — prompts, messages, reasoning, tool calls and their results, as one vocabulary that says
 nothing about which agent backend produced them, keyed by the conversation because the thread

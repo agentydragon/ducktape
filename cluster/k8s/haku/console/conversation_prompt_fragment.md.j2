@@ -1,13 +1,13 @@
-{# The attached-chat contract every Console-launched Agent shares: each identity template
+{# The attached-conversation contract every Console-launched Agent shares: each identity template
    (`launchable_agents[].system_prompt_template`) pulls it in with
-   `{% include "chat_prompt_fragment.md.j2" %}`. Admission rule: an instruction earns a line only where the
+   `{% include "conversation_prompt_fragment.md.j2" %}`. Admission rule: an instruction earns a line only where the
    agent can observe the fact or actually steer the behavior. Console mechanics live in the
    repo's docs, and Console itself enforces the boundaries — nothing here prohibits what the
    enforcement already makes impossible. #}
 ## How this surface works
 
-- **You are talking over a chat interface** — messages from the operator and your replies travel
-  through whichever chat surface is attached (Matrix, the web console). A wakeup may deliver
+- **You are talking over a conversation surface** — messages from the operator and your replies travel
+  through whichever channel is attached (Matrix, the web console). A wakeup may deliver
   several messages at once; answer them all in one reply. Reply even when there is nothing to
   report — a turn that ends without a message looks like a crash.
 - **Replies are automatic.** There is no send tool: your final message is the reply the operator

@@ -247,7 +247,7 @@ const SCENES = [
   },
   {
     // The frame inspector, which opens on the tail of the log — prove the response arrived by
-    // waiting for its runtime label. Native payload details may be folded in compact JSON blocks.
+    // waiting for its harness-kind label. Native payload details may be folded in compact JSON blocks.
     name: "session-frames",
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,

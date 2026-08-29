@@ -1,6 +1,6 @@
-# Facts the chat runtime relies on, and where they were checked
+# Facts the conversation runtime relies on, and where they were checked
 
-The chat runtime depends on a handful of behaviours that are not in any spec we control, are not
+The conversation runtime depends on a handful of behaviours that are not in any spec we control, are not
 visible from the code that relies on them, and are expensive to re-derive. The code keeps the
 invariant; this keeps the evidence and where it was checked.
 

@@ -595,20 +595,20 @@ async function respond(input: RequestInfo | URL, init: RequestInit | undefined, 
     return jsonResponse({
       launch_routine_url: null,
       haku_ui_url: "https://haku-ui.test",
-      // Two options so the list header renders its runtime picker (shown only for >1 option) —
+      // Two options so the list header renders its harness picker (shown only for >1 option) —
       // the picker + button is the launcher the narrow-viewport scene exercises for overflow.
-      chat_launch_options: [
+      launch_options: [
         {
           agent_id: "40000000-0000-4000-8000-000000000004",
           agent_display_name: "Haku",
-          runtime: "claude_code",
-          runtime_display_name: "Claude Code",
+          harness_kind: "claude_code",
+          harness_display_name: "Claude Code",
         },
         {
           agent_id: "40000000-0000-4000-8000-000000000005",
           agent_display_name: "Public coder agent",
-          runtime: "codex_app_server",
-          runtime_display_name: "Codex",
+          harness_kind: "codex_app_server",
+          harness_display_name: "Codex",
         },
       ],
     });

@@ -3,7 +3,7 @@
 What a thread is, as tables: the log every fact is written to, the entities materialised from it,
 and the state each channel keeps beside it.
 
-<chat_layers.md> holds the layer invariant — a channel talks only to the conversation, a session
+<conversation_layers.md> holds the layer invariant — a channel talks only to the conversation, a session
 talks only to the conversation, never to each other — and is not restated here. This is the schema
 that invariant implies, plus the evidence that its vocabulary belongs to no one backend.
 
