@@ -1,6 +1,6 @@
 # Claude Code runtime for the Console chat vertical slice. Session identity and its exact-session
 # Console bearer arrive declaratively through SandboxClaim.spec.env. The bearer is the Agent's own
-# delegated authority for both the runner bridge and MCP, so Claude and its child commands
+# delegated authority for both the runner protocol and MCP, so Claude and its child commands
 # intentionally inherit it. The real Claude OAuth token remains outside this namespace.
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
@@ -38,7 +38,7 @@ spec:
           image: ghcr.io/agentydragon/haku-harness-runner:devel-20260829090849-62a373f # {"$imagepolicy": "flux-system:haku-harness-runner"}
           imagePullPolicy: Always
           # Harness selection is immutable for the runner lifetime. It is not inferred from the
-          # native payload, which stays opaque inside the bridge envelope.
+          # native payload, which stays opaque inside the runner protocol envelope.
           args: ["--harness", "claude"]
           workingDir: /workspace
           env:

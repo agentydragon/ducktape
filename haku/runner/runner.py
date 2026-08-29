@@ -295,7 +295,7 @@ def _optional_path(value: str | None) -> Path | None:
 
 
 def parse_args(harnesses: Mapping[str, HarnessFactory]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Bridge a Haku Console WebSocket to an agent CLI's stdio.")
+    parser = argparse.ArgumentParser(description="Connect a Haku Console WebSocket to an agent CLI's stdio.")
     # CLEANUP(added 2026-08-29): drop the HAKU_AGENT_SDK_RUNNER_WEBSOCKET_URL fallback once the
     # SandboxTemplates set only HAKU_RUNNER_WEBSOCKET_URL and no live sandbox predates that
     # manifest change — one release after the templates converge.

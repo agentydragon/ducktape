@@ -58,7 +58,7 @@ from haku.console.identity.agent import (
 from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.oauth.provider_connection_registry import ProviderConnectionKind
 from haku.console.pydantic_column import PydanticColumn
-from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
+from haku.console.session.session_frames import FrameDirection, SessionFrameKind
 from haku.console.session.status import SessionStatus
 from haku.console.tool_calls import ToolCallStatus
 from util.enum_vocab import UnknownValue
@@ -1656,7 +1656,7 @@ class SubmittedPrompt(Base):
 
 
 class SessionFrame(Base):
-    """The bridge's opaque wire log for one session.
+    """The runner protocol's opaque wire log for one session.
 
     The rollout — what the agent *did*, tool calls with their results — exists nowhere else.
     `conversation_item` keeps a tool call's arguments and not the frames carrying the results, so
@@ -1666,7 +1666,7 @@ class SessionFrame(Base):
     would silently inherit whatever the reader unpacks — thinking blocks are on the wire and
     are dropped by the turn loop's extraction, as is a result's cost and usage.
 
-    ``kind`` is only the bridge class (``harness_frame`` or ``setup_output``). For harness rows,
+    ``kind`` is only the outer frame class (``harness_frame`` or ``setup_output``). For harness rows,
     ``payload`` stores the complete native frame exactly as the selected harness emitted or
     received it, including its own ``type`` or JSON-RPC method when it has one; none is copied into
     this column and no provider wrapper is added.
@@ -1681,10 +1681,10 @@ class SessionFrame(Base):
         PGUUID(as_uuid=True), ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False
     )
     direction: Mapped[FrameDirection] = mapped_column(TextBackedStrEnumColumn(FrameDirection), nullable=False)
-    # The outer bridge discriminator, never the native payload's `type` or JSON-RPC method.
-    kind: Mapped[BridgeFrameKind] = mapped_column(TextBackedStrEnumColumn(BridgeFrameKind), nullable=False)
+    # The outer frame discriminator, never the native payload's `type` or JSON-RPC method.
+    kind: Mapped[SessionFrameKind] = mapped_column(TextBackedStrEnumColumn(SessionFrameKind), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    # The **runner's** number for this frame, off the bridge envelope (`HarnessFrame.seq`), where
+    # The **runner's** number for this frame, off the runner protocol envelope (`HarnessFrame.seq`), where
     # the runner gave one. Dense and monotonic over everything one runner process sent, which
     # `frame_seq` above is deliberately not — so this is the number a reconnect is computed from:
     # the console hands back the highest it holds and the runner replays only what is above it.

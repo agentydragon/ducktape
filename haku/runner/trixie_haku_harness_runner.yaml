@@ -1,7 +1,7 @@
 # Deb packages for the haku-harness-runner image, on debian:trixie-slim.
 # `git` lets the runner check out haku-state before launching a harness; `curl` and `wget` are the
 # fetch utilities agents expect in the interactive shell they run inside this image. The generated
-# CA bundle, Python interpreter, bridge, Claude CLI, Codex CLI and kubectl use separate layers.
+# CA bundle, Python interpreter, runner, Claude CLI, Codex CLI and kubectl use separate layers.
 #
 # Regenerate the lock file after any change:
 #   bazel run @trixie_haku_harness_runner//:lock

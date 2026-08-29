@@ -225,7 +225,7 @@ class Deployment:
             await db.execute(update(MatrixSyncWatermark).values(next_batch=position))
 
     async def serving(self, *, after: UUID | None = None) -> UUID:
-        """Wait until the room has a sandbox behind it with the bridge up, and say which session.
+        """Wait until the room has a sandbox behind it with its runner connected, and say which session.
 
         Lazy sessions have no sandbox before their first prompt, so this cannot be the pre-prompt
         sync barrier. Full-stack callers first wait for the room-joined notice, then send the
@@ -239,7 +239,7 @@ class Deployment:
         """
         await self._wait_until("a session to be provisioned", lambda: self._provisioned(after))
         session_id = self._session_ids[-1]
-        await self._wait_until("the bridge to connect", lambda: self._ready(session_id))
+        await self._wait_until("the runner to connect", lambda: self._ready(session_id))
         return session_id
 
     async def wait_until_recorded(self, session_id: UUID, text: str) -> None:

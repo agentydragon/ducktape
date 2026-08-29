@@ -157,7 +157,7 @@ the reader's trust tier. The RLS alternative and read-surface inventory remain i
 
 **The session machinery is already there.** Concurrent sessions work today: the SPA surface and the
 Matrix surface run as ordinary separate sessions, separate rows, separate sandboxes. Nothing about
-several agents needs the turn loop, the store or the bridge to change.
+several agents needs the turn loop, the store or the runner protocol to change.
 
 Nothing enforces "one Matrix session, one room" any more: **two rooms on one bot account — what
 the operator asked for — work today.** `channel_attachment` admits a live row per address, ingress

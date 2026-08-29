@@ -1,11 +1,11 @@
-"""Envelope framing for the incompatible v4 bridge between Console and a harness runner.
+"""Envelope framing for the incompatible v4 runner protocol between Console and a harness runner.
 
 Two protocols share this socket: the CLI's own newline-delimited JSON
 (<../cli_protocol/README.md>), and the small control protocol Haku needs around it — what
 to launch, when input ends, and what the sandbox is doing before a harness exists to say anything.
 Native harness frames are opaque to this module and always travel in ``HarnessFrame.frame``. The
 outer ``kind`` is backend-neutral: the complete inner frame (including its own discriminator) is
-never flattened into the bridge vocabulary or the database's ``kind`` column.
+never flattened into the envelope vocabulary or the database's ``kind`` column.
 
 **v4 is the neutral-operation generation** (#4667). The runner interprets native frames and the
 conversation crosses this envelope as the acknowledged journal of <neutral_operations.py>, ridden
@@ -109,7 +109,7 @@ class HarnessFrame(_Frame):
     """One opaque native harness frame, in either direction, passed through untouched."""
 
     kind: Literal["harness_frame"] = "harness_frame"
-    # The exact JSON object emitted by or sent to the selected harness. The bridge adds no inner
+    # The exact JSON object emitted by or sent to the selected harness. The runner protocol adds no inner
     # wrapper and does not interpret a provider discriminator such as Claude's ``type`` or a
     # JSON-RPC ``method``.
     frame: dict[str, Any]
@@ -184,7 +184,7 @@ class SetupOutput(_Frame):
 
 
 class RunnerJournal(_Frame):
-    """Runner → console: one message of the neutral-operation journal, in the bridge envelope.
+    """Runner → console: one message of the neutral-operation journal, in the runner protocol envelope.
 
     A wrapper kind rather than flattening the journal's own messages into this union, because the
     two vocabularies collide (`RunnerHello` and `Hello` both discriminate on ``hello``) and because
@@ -266,7 +266,7 @@ def decode_object(data: str) -> dict[str, Any]:
     """
     value = json.loads(data)
     if not isinstance(value, dict):
-        raise ValueError("bridge frames must contain one JSON object")
+        raise ValueError("runner protocol frames must contain one JSON object")
     return value
 
 

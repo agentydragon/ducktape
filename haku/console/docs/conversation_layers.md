@@ -93,7 +93,7 @@ that re-derived everything would silently delete every fact no frame carries.
   second channel writes its own fold; `session/sandbox_claims.py` mints `claude-`-prefixed claim names
   but is Kubernetes provisioning any harness uses, so it is runtime. A vocabulary genuinely owned
   by two axes is two modules: the CLI's own top-level `type` values are `x/claude_code/frames.py`,
-  and the bridge envelope's `kind` with the row the console authors under it is `session/setup_output.py`.
+  and the runner protocol envelope's `kind` with the row the console authors under it is `session/setup_output.py`.
 - **A table** goes to the layer that outlives what it holds. State only one messaging service can
   interpret — retry budgets, transport ids, an addressable copy's revision — is that channel's own,
   lives below the channel boundary and is named after the channel. State that must survive a runner

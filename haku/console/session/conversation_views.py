@@ -24,7 +24,7 @@ from haku.console.conversation.reads import ChannelAttachment, SetupOutputRecord
 from haku.console.database_schema import Session, SessionFrame
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.sandbox_claims import SandboxProvisioningView
-from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
+from haku.console.session.session_frames import FrameDirection, SessionFrameKind
 from haku.console.session.setup_output import SETUP_OUTPUT_KIND
 from haku.console.session.status import SessionStatus
 
@@ -269,7 +269,7 @@ class SessionFrameView(BaseModel):
 
     frame_seq: int
     direction: FrameDirection
-    kind: BridgeFrameKind
+    kind: SessionFrameKind
     created_at: datetime
     payload: dict[str, Any]
 

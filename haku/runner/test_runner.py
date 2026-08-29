@@ -1,10 +1,10 @@
-"""The sandbox bridge at the neutral-operation generation: launch resolution, the session's
+"""The sandbox runner at the neutral-operation generation: launch resolution, the session's
 numbering/journal/retention, and the Claude harness's process-level round trip.
 
 The projection itself is `claude/test_projection.py` and the journal state machine is
 `test_operation_journal.py`; here `SessionApi` is tested for what it adds on top — one dense
 sequence over everything this end sends, native-input injection echoed into the record, the journal
-batches riding the bridge envelope — and `ClaudeHarness.run` for starting the CLI, handshaking it,
+batches riding the runner protocol envelope — and `ClaudeHarness.run` for starting the CLI, handshaking it,
 and folding its echoes through the session.
 """
 

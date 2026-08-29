@@ -22,7 +22,7 @@ How to place a module — the replace-the-other-axis test and the boundary cases
 ## Harness adapters
 
 `claude_code/` and `codex_app_server/` are launch-only (#4667): each names the CLI whose binary it
-launches, and the runner (<../../runtime/x/bridge/>) owns that CLI's native protocol, projection and
+launches, and the runner (<../../runner/>) owns that CLI's native protocol, projection and
 fixture capture.
 
 - `claude_code/`: `frames.py` (Claude Code's own `type` vocabulary and the readers that pick a value

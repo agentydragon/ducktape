@@ -553,9 +553,8 @@ quiet gap.
     come due, and the stored-column contract steps after the expand converges — switch reads to
     `session_token_fingerprint`/`runner_connected_at` (move the CHECKs/unique/partial-index),
     stop writing the old columns, then drop them, one converged release apart.
-  - **C16b · frame vocabulary:** rename `BridgeFrameKind` and bridge-specific current prose to
-    `SessionFrameKind`/runner-protocol terminology, preserving `SessionFrame`, `HarnessFrame`, and
-    the opaque native payload boundary. Keep `Bridge v3` and old migration names only in historical
+  - **C16b · frame vocabulary:** landed — `SessionFrameKind` is the vocabulary name and current
+    prose says runner protocol; `Bridge v3` and old migration names remain only in historical
     compatibility documentation.
   - **C16c · frontend bridge:** keep “frontend bridge” as the canonical name for the iframe ↔ trusted
     outer-shell JavaScript channel. Normalize “bridge verb”/“bridge action”/request-id prose under

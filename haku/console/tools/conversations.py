@@ -76,7 +76,7 @@ from haku.console.conversation_read_access import (
 )
 from haku.console.mcp.execution import EXECUTION_CONTEXT_DEPENDENCY, McpExecutionContext
 from haku.console.mcp.in_process_server_access import InProcessServerAccessPolicy
-from haku.console.session.session_frames import BridgeFrameKind
+from haku.console.session.session_frames import SessionFrameKind
 
 # Wire-frozen id: named by cluster/k8s/haku/console/config.yaml and persisted in
 # ledger `server_id` rows — renaming is a config + data migration.
@@ -149,7 +149,7 @@ class ConversationReader(Protocol):
         cursor: int | None,
         limit: int,
         scope: ConversationReadScope,
-        kinds: Sequence[BridgeFrameKind] | None = None,
+        kinds: Sequence[SessionFrameKind] | None = None,
     ) -> list[FrameRecord]: ...
 
     async def list_turns(
@@ -291,7 +291,7 @@ def build_mcp(
                 cursor=cursor,
                 limit=limit + 1,
                 scope=scope,
-                kinds=None if kinds is None else [BridgeFrameKind(kind) for kind in kinds],
+                kinds=None if kinds is None else [SessionFrameKind(kind) for kind in kinds],
             )
         except ConversationAccessDeniedError:
             raise ToolError("conversation access denied") from None

@@ -59,12 +59,12 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, TypeAdapter, 
 
 # The transport generation this build belongs to. Set globally by the cutover migration and
 # presented by both peers on the handshake: an exact match admits, anything else fails closed —
-# the gate that keeps an old bridge peer and a new one from ever serving one conversation.
+# the gate that keeps an old runner-protocol peer and a new one from ever serving one conversation.
 GENERATION: Final = "runner_projection_v1"
 
 NEUTRAL_PROTOCOL_VERSION: Final = 1
 
-# Every version this image can speak, not the one it prefers. As on the v3 bridge: a runner's
+# Every version this image can speak, not the one it prefers. As on Bridge v3: a runner's
 # image is fixed when its claim is created and a live session may outlast several Console
 # releases, so the two ends sit on different numbers for hours at a time.
 SUPPORTED_NEUTRAL_VERSIONS: Final = (1,)
@@ -395,7 +395,7 @@ class OperationBatch(_Message):
 class RunnerHello(_Message):
     """Runner → Console, once, before anything else: what this runner image is.
 
-    The runner speaks first, as on the v3 bridge: negotiation needs a fixed point and the runner
+    The runner speaks first, as on Bridge v3: negotiation needs a fixed point and the runner
     is the end that cannot adapt — its image is fixed when its claim is created. The Console
     refuses a `generation` other than its own active one outright, and otherwise settles on the
     highest version both ends have.

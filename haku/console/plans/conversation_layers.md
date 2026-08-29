@@ -399,8 +399,8 @@ room binds beside the others, which was **the point rather than the cost** (§ 7
   be refused. Measured to work (<../../cli_protocol/probes/steering.py>): a prompt written mid-turn
   is absorbed at the next tool boundary and the model acts on it, in one turn with one `result`
   frame — and a turn generating continuous prose has no boundary to absorb at, so it falls back to
-  next-turn delivery. That is a runner-protocol capability rather than queueing, and the bridge
-  already has an unused input path in that direction. It wants the layering first, because it is
+  next-turn delivery. That is a runner-protocol capability rather than queueing, and the runner
+  protocol already has an unused input path in that direction. It wants the layering first, because it is
   about what the conversation admits and admission is answered today inside a channel's sync loop.
 
 - **Channel state lives in Postgres, not in the room.** The watermark stays a row; `m.fully_read`

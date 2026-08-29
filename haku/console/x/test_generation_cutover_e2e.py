@@ -146,7 +146,7 @@ async def test_the_cut_stack_answers_a_prompt_with_a_tool_call_over_the_journal(
         turns = await session_store.list_turns(session_id, cursor=None, limit=10, scope=UnrestrictedReads())
         return [turn.end for turn in sorted(turns, key=lambda turn: turn.started_at) if turn.ended_at]
 
-    async def bridge_ready() -> bool:
+    async def runner_connected() -> bool:
         return await session_store.status(session_id) == SessionStatus.READY
 
     async def first_turn_finished() -> bool:
@@ -154,7 +154,7 @@ async def test_the_cut_stack_answers_a_prompt_with_a_tool_call_over_the_journal(
 
     try:
         async with serve_app(_console_app(migrated_db_url, workspace), port=port):
-            await _wait_until("the runner's journal handshake", bridge_ready, runner=runner)
+            await _wait_until("the runner's journal handshake", runner_connected, runner=runner)
             # Submit through the inbox and let the runner dispatch/admit it — the whole prompt path.
             await session_store.submit_prompt(operator_id, conversation_id, "hello [tool=echo]", SPA_ORIGIN)
             await _wait_until("the first turn to finish", first_turn_finished, runner=runner)
@@ -179,7 +179,7 @@ async def test_the_cut_stack_answers_a_prompt_with_a_tool_call_over_the_journal(
         # depends on.
         assert await session_store.status(session_id) in {SessionStatus.READY, SessionStatus.PROVISIONING}
         async with serve_app(_console_app(migrated_db_url, workspace), port=port):
-            await _wait_until("the runner to redial the new console", bridge_ready, runner=runner)
+            await _wait_until("the runner to redial the new console", runner_connected, runner=runner)
             await session_store.submit_prompt(operator_id, conversation_id, "again", SPA_ORIGIN)
             await _wait_until(
                 "the second turn to finish", lambda: _has_n_finished(session_store, session_id, 2), runner=runner

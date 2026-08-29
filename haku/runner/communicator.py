@@ -45,7 +45,7 @@ class ClientWebSocketAdapter(TextWebSocket):
     async def receive_text(self) -> str:
         data = await self._connection.recv()
         if not isinstance(data, str):
-            raise ValueError("the bridge requires text WebSocket frames")
+            raise ValueError("the runner protocol requires text WebSocket frames")
         return data
 
     async def close(self) -> None:
@@ -77,7 +77,7 @@ async def _receive_launch(websocket: TextWebSocket) -> HarnessLaunch:
     """
     await websocket.send_text(Hello().model_dump_json())
     if not isinstance(launch := CONSOLE_TO_RUNNER.validate_json(await websocket.receive_text()), HarnessLaunch):
-        raise ValueError(f"first bridge frame must be a launch, got {type(launch).__name__}")
+        raise ValueError(f"first runner protocol frame must be a launch, got {type(launch).__name__}")
     return launch
 
 

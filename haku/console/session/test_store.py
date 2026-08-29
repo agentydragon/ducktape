@@ -57,7 +57,7 @@ from haku.console.grants.principal import GrantPrincipalKind
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.notifications.session_wakes import SessionEvent, SessionEventKind
 from haku.console.session.conftest import age_lease, answers, attach_channel, lease_of, make_idle
-from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
+from haku.console.session.session_frames import FrameDirection, SessionFrameKind
 from haku.console.session.setup_output import SETUP_OUTPUT_KIND
 from haku.console.session.status import OPEN_SESSION_STATUSES, LeaseExpiryReason, SessionStatus
 from haku.console.session.store import (
@@ -465,7 +465,7 @@ async def test_the_rollout_reads_back_in_wire_order_with_a_keyset_cursor(session
     session, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     for kind in ("user", "assistant", "result"):
         await session_store.record_frame(
-            session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": kind}
+            session.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": kind}
         )
 
     first = await session_store.read_session_frames(
@@ -480,23 +480,27 @@ async def test_the_rollout_reads_back_in_wire_order_with_a_keyset_cursor(session
     assert [frame.payload["type"] for frame in _harness(rest)] == ["result"]
 
 
-async def test_the_kinds_filter_uses_only_hakus_outer_bridge_class(session_store, operator_id) -> None:
+async def test_the_kinds_filter_uses_only_hakus_outer_frame_class(session_store, operator_id) -> None:
     session, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     await session_store.record_frame(
         session.session_id, FrameDirection.FROM_AGENT, SETUP_OUTPUT_KIND, {"text": "booting"}
     )
     await session_store.record_frame(
-        session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"阶段": "最终"}
+        session.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, {"阶段": "最终"}
     )
 
     default = await session_store.read_session_frames(
         str(session.session_id), cursor=None, limit=25, scope=UnrestrictedReads()
     )
     setup = await session_store.read_session_frames(
-        str(session.session_id), cursor=None, limit=25, kinds=[BridgeFrameKind.SETUP_OUTPUT], scope=UnrestrictedReads()
+        str(session.session_id), cursor=None, limit=25, kinds=[SessionFrameKind.SETUP_OUTPUT], scope=UnrestrictedReads()
     )
     harness = await session_store.read_session_frames(
-        str(session.session_id), cursor=None, limit=25, kinds=[BridgeFrameKind.HARNESS_FRAME], scope=UnrestrictedReads()
+        str(session.session_id),
+        cursor=None,
+        limit=25,
+        kinds=[SessionFrameKind.HARNESS_FRAME],
+        scope=UnrestrictedReads(),
     )
 
     assert [(frame.kind, frame.payload) for frame in _harness(default)] == [("harness_frame", {"阶段": "最终"})]
@@ -509,7 +513,7 @@ async def test_method_only_native_frames_are_visible_and_filterable(session_stor
     payload = {"jsonrpc": "2.0", "method": "codex/event/unknown", "params": {"opaque": True}}
     inner = payload
     recorded = await session_store.record_frame(
-        session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, inner
+        session.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, inner
     )
 
     default = await session_store.read_session_frames(
@@ -530,7 +534,7 @@ async def test_native_frames_without_a_known_discriminator_remain_in_the_default
     payload = {"jsonrpc": "2.0", "id": 7, "result": {"opaque": True}}
     inner = payload
     recorded = await session_store.record_frame(
-        session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, inner
+        session.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, inner
     )
 
     default = await session_store.read_session_frames(
@@ -553,12 +557,12 @@ async def test_a_replayed_frame_is_recorded_once(session_store, operator_id) -> 
 
     assert (
         await session_store.record_frame(
-            session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, frame, runner_seq=1
+            session.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, frame, runner_seq=1
         )
     ).fresh
     assert not (
         await session_store.record_frame(
-            session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, frame, runner_seq=1
+            session.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, frame, runner_seq=1
         )
     ).fresh
 
@@ -582,19 +586,19 @@ async def test_the_resume_cursor_is_the_highest_number_a_runner_gave_this_sessio
     await session_store.record_frame(
         session.session_id,
         FrameDirection.FROM_AGENT,
-        BridgeFrameKind.HARNESS_FRAME,
+        SessionFrameKind.HARNESS_FRAME,
         {"type": "assistant"},
         runner_seq=4,
     )
     await session_store.record_frame(
-        session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "result"}, runner_seq=9
+        session.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "result"}, runner_seq=9
     )
     await session_store.record_frame(
-        session.session_id, FrameDirection.TO_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "user"}
+        session.session_id, FrameDirection.TO_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "user"}
     )
     # A neighbouring session's numbering is its own runner's and says nothing about this one.
     await session_store.record_frame(
-        other.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "result"}, runner_seq=99
+        other.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "result"}, runner_seq=99
     )
 
     assert await session_store.highest_runner_seq(session.session_id) == 9
@@ -609,12 +613,12 @@ async def test_two_sessions_may_hold_the_same_agent_id(session_store, operator_i
 
     assert (
         await session_store.record_frame(
-            mine.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, frame
+            mine.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, frame
         )
     ).fresh
     assert (
         await session_store.record_frame(
-            theirs.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, frame
+            theirs.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, frame
         )
     ).fresh
 
@@ -627,12 +631,12 @@ async def test_frames_with_no_identity_are_never_collapsed(session_store, operat
 
     assert (
         await session_store.record_frame(
-            session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, delta
+            session.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, delta
         )
     ).fresh
     assert (
         await session_store.record_frame(
-            session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, delta
+            session.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, delta
         )
     ).fresh
 
@@ -646,10 +650,10 @@ async def test_the_raw_log_returns_every_native_frame_without_classifying_it(ses
     session, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     session_id = session.session_id
     await session_store.record_frame(
-        session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "stream_event", "event": {}}
+        session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "stream_event", "event": {}}
     )
     await session_store.record_frame(
-        session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "result", "uuid": "r1"}
+        session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "result", "uuid": "r1"}
     )
 
     default = await session_store.read_session_frames(str(session_id), cursor=None, limit=25, scope=UnrestrictedReads())
@@ -662,10 +666,10 @@ async def test_one_session_never_reads_another_session_frames(session_store, ope
     mine, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     theirs, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     await session_store.record_frame(
-        mine.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "assistant"}
+        mine.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "assistant"}
     )
     await session_store.record_frame(
-        theirs.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "result"}
+        theirs.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "result"}
     )
 
     frames = await session_store.read_session_frames(
@@ -684,7 +688,7 @@ async def test_the_frame_inspector_opens_on_the_end_of_the_log_and_walks_back(se
     session, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     for kind in ("system", "user", "assistant", "result"):
         await session_store.record_frame(
-            session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": kind}
+            session.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": kind}
         )
 
     newest = await session_store.read_operator_frames(
@@ -706,10 +710,10 @@ async def test_the_frame_inspector_dumps_native_frames_without_classifying_them(
     session, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     session_id = session.session_id
     await session_store.record_frame(
-        session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "stream_event", "event": {}}
+        session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "stream_event", "event": {}}
     )
     await session_store.record_frame(
-        session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "result"}
+        session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "result"}
     )
 
     default = await session_store.read_operator_frames(operator_id, session_id, before_seq=None, limit=25)
@@ -723,7 +727,7 @@ async def test_the_frame_inspector_refuses_a_session_another_operator_owns(sessi
     """The MCP reader is deliberately unscoped; a browser surface must never be."""
     session, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
     await session_store.record_frame(
-        session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "result"}
+        session.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "result"}
     )
 
     with pytest.raises(KeyError):
@@ -742,7 +746,7 @@ async def test_a_frame_reaches_the_inspector_with_its_payload_whole(session_stor
         "message": {"content": [{"type": "tool_result", "content": "x" * 20_000}]},
     }
     await session_store.record_frame(
-        session.session_id, FrameDirection.TO_AGENT, BridgeFrameKind.HARNESS_FRAME, payload
+        session.session_id, FrameDirection.TO_AGENT, SessionFrameKind.HARNESS_FRAME, payload
     )
 
     page = await session_store.read_operator_frames(
@@ -944,10 +948,10 @@ async def test_a_turn_ends_at_the_frame_it_names_rather_than_at_the_head_of_the_
     turn = await session_store.next_prompt(view.session_id)
     assert turn is not None
     ending = await session_store.record_frame(
-        view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, result(uuid="r1")
+        view.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, result(uuid="r1")
     )
     await session_store.record_frame(
-        view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "command_lifecycle"}
+        view.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "command_lifecycle"}
     )
 
     await session_store.end_turn(turn.turn_id, TurnAnswered(), last_frame_seq=ending.frame_seq)
@@ -966,7 +970,7 @@ async def test_a_turn_that_ended_on_no_frame_is_bounded_by_the_ones_it_recorded(
         == RunnerConnectionAuthentication.ACCEPTED
     )
     await session_store.record_frame(
-        view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "system"}
+        view.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "system"}
     )
     await session_store.enqueue_prompt(operator_id, view.session_id, "first", SPA_ORIGIN)
     silent = await session_store.next_prompt(view.session_id)
@@ -978,7 +982,7 @@ async def test_a_turn_that_ended_on_no_frame_is_bounded_by_the_ones_it_recorded(
     answer = await session_store.record_frame(
         view.session_id,
         FrameDirection.FROM_AGENT,
-        BridgeFrameKind.HARNESS_FRAME,
+        SessionFrameKind.HARNESS_FRAME,
         assistant(text_block("half an answer")),
     )
 
@@ -1016,7 +1020,7 @@ async def test_the_items_read_as_the_conversation_rather_than_the_protocol(sessi
     spoke = await session_store.record_frame(
         view.session_id,
         FrameDirection.FROM_AGENT,
-        BridgeFrameKind.HARNESS_FRAME,
+        SessionFrameKind.HARNESS_FRAME,
         assistant(text_block("a bad config"), message_id="msg_1"),
     )
     where = FrameRange(spoke.frame_seq, spoke.frame_seq)
@@ -1104,7 +1108,7 @@ async def test_a_frame_the_fold_never_committed_is_not_an_item(session_store, op
         == RunnerConnectionAuthentication.ACCEPTED
     )
     await session_store.record_frame(
-        view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, text_delta("h")
+        view.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, text_delta("h")
     )
 
     items = await _conversation_items(session_store, conversation_id, limit=10)
@@ -1129,7 +1133,7 @@ async def test_a_call_and_its_answer_are_one_item(session_store, operator_id) ->
     started = await session_store.next_prompt(view.session_id)
     assert started is not None
     asked = await session_store.record_frame(
-        view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "assistant"}
+        view.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "assistant"}
     )
     await session_store.apply_frame(
         view.session_id,
@@ -1145,7 +1149,7 @@ async def test_a_call_and_its_answer_are_one_item(session_store, operator_id) ->
         ],
     )
     answered = await session_store.record_frame(
-        view.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "user"}
+        view.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "user"}
     )
     await session_store.apply_frame(
         view.session_id,
@@ -1531,7 +1535,7 @@ async def test_abort_is_refused_until_a_turn_is_actually_running(session_store, 
     which does not exist until the prompt is handed to the model.
     """
     view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
-    # The bridge handshake is what takes a session from provisioning to ready, and only a
+    # The runner-connection handshake is what takes a session from provisioning to ready, and only a
     # ready session accepts a prompt.
     assert (
         await session_store.authenticate_runner_connection(view.session_id, token)
@@ -1555,7 +1559,7 @@ async def test_abort_reaches_the_replica_running_the_turn(
     migrated_db_url, session_store, session_wakes, operator_id
 ) -> None:
     """The two ends of an abort are on different pods, so it has to cross the database: the abort
-    event belongs to whichever replica holds the runner's bridge websocket, while `POST .../abort`
+    event belongs to whichever replica holds the runner connection, while `POST .../abort`
     is balanced across all of them. Two stores over two engines is what reproduces that; a single
     store would pass on an in-process path.
     """
@@ -2157,10 +2161,10 @@ async def _exchange(session_store, operator_id, session_id: UUID, prompt: str, a
     turn = await session_store.next_prompt(session_id)
     assert turn is not None
     await session_store.record_frame(
-        session_id, FrameDirection.TO_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "user"}
+        session_id, FrameDirection.TO_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "user"}
     )
     spoke = await session_store.record_frame(
-        session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "assistant"}
+        session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "assistant"}
     )
     await session_store.apply_frame(
         session_id,

@@ -15,7 +15,7 @@ from haku.console.conversation.prompt_origin import SPA_ORIGIN
 from haku.console.database_schema import SessionFrame
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.session import conversation_views
-from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
+from haku.console.session.session_frames import FrameDirection, SessionFrameKind
 from haku.console.session.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
 from haku.console.session.store import RunnerConnectionAuthentication
 from haku.console.x.conversation_events import CallRef, ItemSegment, ToolCallCompleted, ToolCallStarted
@@ -60,7 +60,7 @@ async def test_narration_carries_only_this_session_and_only_setup_output(session
     await session_store.narrate(session.session_id, "mine")
     await session_store.narrate(other.session_id, "theirs")
     await session_store.record_frame(
-        session.session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "result", "uuid": "r1"}
+        session.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "result", "uuid": "r1"}
     )
 
     detail = await _detail(session_store, operator_id, session.session_id)
@@ -111,7 +111,7 @@ async def test_a_calls_output_reads_back_as_the_items_text(session_store, operat
     assert {item.call_id: item.content for item in calls} == {"toolu_text": "a.py\nb.py", "toolu_empty": ""}
 
 
-def _frame(frame_seq: int, kind: BridgeFrameKind, payload: dict[str, Any]) -> SessionFrame:
+def _frame(frame_seq: int, kind: SessionFrameKind, payload: dict[str, Any]) -> SessionFrame:
     now = datetime.now(UTC)
     return SessionFrame(
         frame_seq=frame_seq,
@@ -126,12 +126,12 @@ def _frame(frame_seq: int, kind: BridgeFrameKind, payload: dict[str, Any]) -> Se
 
 _INSPECTED = [
     _frame(1, SETUP_OUTPUT_KIND, setup_output_frame("cloning haku-state")),
-    _frame(2, BridgeFrameKind.HARNESS_FRAME, {"type": "system", "subtype": "status"}),
-    _frame(3, BridgeFrameKind.HARNESS_FRAME, {"type": "system", "subtype": "vcs_state_changed"}),
+    _frame(2, SessionFrameKind.HARNESS_FRAME, {"type": "system", "subtype": "status"}),
+    _frame(3, SessionFrameKind.HARNESS_FRAME, {"type": "system", "subtype": "vcs_state_changed"}),
     _frame(
-        4, BridgeFrameKind.HARNESS_FRAME, {"type": "user", "message": {"content": [{"type": "text", "text": "hi"}]}}
+        4, SessionFrameKind.HARNESS_FRAME, {"type": "user", "message": {"content": [{"type": "text", "text": "hi"}]}}
     ),
-    _frame(5, BridgeFrameKind.HARNESS_FRAME, {"type": "result", "subtype": "success"}),
+    _frame(5, SessionFrameKind.HARNESS_FRAME, {"type": "result", "subtype": "success"}),
 ]
 
 

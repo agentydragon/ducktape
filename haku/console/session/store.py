@@ -77,7 +77,7 @@ from haku.console.session.conversation_views import (
     setup_narration,
 )
 from haku.console.session.launch_identity import LaunchAgentRejectedError, LaunchAuthorizer
-from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
+from haku.console.session.session_frames import FrameDirection, SessionFrameKind
 from haku.console.session.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
 from haku.console.session.status import (
     ENDED_SESSION_STATUSES,
@@ -111,16 +111,16 @@ ADOPTION_GRACE = timedelta(seconds=45)
 REPLICA = os.environ.get("HOSTNAME", "unknown")
 
 
-def _bridge_frames(
-    query: Select[tuple[SessionFrame]], kinds: Sequence[BridgeFrameKind] | None = None
+def _restrict_frame_kinds(
+    query: Select[tuple[SessionFrame]], kinds: Sequence[SessionFrameKind] | None = None
 ) -> Select[tuple[SessionFrame]]:
-    """Restrict a frame query using only Haku's outer bridge discriminator.
+    """Restrict a frame query using only Haku's outer frame discriminator.
 
     The default rollout is the selected harness's native wire. Console-authored setup narration is
     available when explicitly requested, and through its dedicated narration view, but is not a
     native harness frame merely because it shares the append-only table.
     """
-    selected = [BridgeFrameKind.HARNESS_FRAME] if kinds is None else list(kinds)
+    selected = [SessionFrameKind.HARNESS_FRAME] if kinds is None else list(kinds)
     return query.where(SessionFrame.kind.in_(selected))
 
 
@@ -1341,7 +1341,7 @@ class Store:
             if records is not None:
                 await records(db, row.prompt_id)
             # RUNTIME_DEMAND provisions a session for a conversation that has none; PROMPT wakes the
-            # runner bridge of a live one to dispatch what it now owes.
+            # runner connection of a live one to dispatch what it now owes.
             await notify_conversation(db, ConversationWakeKind.RUNTIME_DEMAND, conversation_id)
             if chat is not None:
                 await notify(db, SessionEventKind.PROMPT, chat.session_id)
@@ -1592,7 +1592,7 @@ class Store:
         self,
         session_id: UUID,
         direction: FrameDirection,
-        kind: BridgeFrameKind,
+        kind: SessionFrameKind,
         payload: dict[str, Any],
         *,
         runner_seq: int | None = None,
@@ -1604,8 +1604,8 @@ class Store:
         a replay** — the same runner position already exists in this log — and the caller must not
         act on it again. Console-authored records have no runner position and are always appended.
 
-        *kind* is passed rather than read out of the payload: it is the bridge record class, while
-        the native harness discriminator stays inside the opaque payload.
+        *kind* is passed rather than read out of the payload: it is the outer session-frame class,
+        while the native harness discriminator stays inside the opaque payload.
 
         *runner_seq* is the runner's own number for the frame, where one came from a runner that
         numbers. Nothing here orders by it; what reads it is `highest_runner_seq`. Default None
@@ -1623,7 +1623,7 @@ class Store:
         db: AsyncSession,
         session_id: UUID,
         direction: FrameDirection,
-        kind: BridgeFrameKind,
+        kind: SessionFrameKind,
         payload: dict[str, Any],
         *,
         runner_seq: int | None,
@@ -1815,7 +1815,7 @@ class Store:
         cursor: int | None,
         limit: int,
         scope: ConversationReadScope,
-        kinds: Sequence[BridgeFrameKind] | None = None,
+        kinds: Sequence[SessionFrameKind] | None = None,
     ) -> list[FrameRecord]:
         """One page of a session's frame log, in wire order, from the start of the log onwards.
 
@@ -1824,7 +1824,7 @@ class Store:
         The cursor names the first frame to return rather than the last one already returned, so
         an item's `first_frame_seq` is a cursor as it stands.
         """
-        query = _bridge_frames(select(SessionFrame).where(SessionFrame.session_id == session_id), kinds)
+        query = _restrict_frame_kinds(select(SessionFrame).where(SessionFrame.session_id == session_id), kinds)
         if cursor is not None:
             query = query.where(SessionFrame.frame_seq >= cursor)
         async with self._sessions() as db:
@@ -1864,7 +1864,7 @@ class Store:
         *,
         before_seq: int | None,
         limit: int,
-        kinds: Sequence[BridgeFrameKind] | None = None,
+        kinds: Sequence[SessionFrameKind] | None = None,
     ) -> SessionFramePage:
         """The tail of an Operator-owned session's rollout, for the console's frame inspector.
 
@@ -1890,7 +1890,7 @@ class Store:
             if owned is None:
                 raise KeyError(session_id)
             harness_kind = owned[1]
-            query = _bridge_frames(select(SessionFrame).where(SessionFrame.session_id == session_id), kinds)
+            query = _restrict_frame_kinds(select(SessionFrame).where(SessionFrame.session_id == session_id), kinds)
             if before is not None:
                 query = query.where(SessionFrame.frame_seq < before)
             rows = (await db.scalars(query.order_by(SessionFrame.frame_seq.desc()).limit(limit))).all()
@@ -2303,7 +2303,7 @@ class Store:
 
         Returns False when no turn is in flight. Over NOTIFY rather than an in-process registry
         because the two ends land on different replicas: the abort event belongs to the pod holding
-        the runner's bridge websocket, while the operator's HTTP request is balanced across all.
+        the runner connection, while the operator's HTTP request is balanced across all.
         """
         async with self._sessions.begin() as db:
             chat = await db.get(Session, session_id)
@@ -2327,11 +2327,11 @@ def _expiry_detail(reason: LeaseExpiryReason, holder: str | None) -> str:
 def _frame_record(row: SessionFrame) -> FrameRecord:
     """One stored frame as its wire variant, told apart by the row's own kind."""
     match row.kind:
-        case BridgeFrameKind.HARNESS_FRAME:
+        case SessionFrameKind.HARNESS_FRAME:
             return HarnessFrameRecord(
                 frame_seq=row.frame_seq, direction=row.direction, created_at=row.created_at, payload=row.payload
             )
-        case BridgeFrameKind.SETUP_OUTPUT:
+        case SessionFrameKind.SETUP_OUTPUT:
             text = row.payload.get("text")
             if not isinstance(text, str):
                 # Console-authored, so the shape is ours; a row without its line is corruption.

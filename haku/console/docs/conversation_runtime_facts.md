@@ -66,7 +66,7 @@ what makes the prompt reachable by `interrupt`'s `cancel_queued`. Measured in
 
 ## The runner replays every native frame by wire position
 
-Bridge v3 gives every outbound native harness frame a dense runner sequence and retains it without
+The runner protocol gives every outbound native harness frame a dense runner sequence and retains it without
 classifying the inner JSON. On reconnect, the console supplies the highest runner sequence it has
 durably recorded and the runner offers every later frame again with its original position. The
 console's unique `(session_id, runner_seq)` record then makes replay idempotent, including deltas.

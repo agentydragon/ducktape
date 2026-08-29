@@ -40,7 +40,7 @@ from haku.console.mcp.execution import (
 )
 from haku.console.mcp.in_process_server_access import InProcessServerAccessPolicy
 from haku.console.mcp_config import AccessProfile
-from haku.console.session.session_frames import BridgeFrameKind
+from haku.console.session.session_frames import SessionFrameKind
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tools.conversations import FramePage, ItemPage, SessionPage, build_mcp
 
@@ -166,7 +166,7 @@ class _Reader:
         cursor: int | None,
         limit: int,
         scope: ConversationReadScope,
-        kinds: Sequence[BridgeFrameKind] | None = None,
+        kinds: Sequence[SessionFrameKind] | None = None,
     ) -> list[FrameRecord]:
         self._point_read(scope)
         self.queries.append({"session_id": session_id, "cursor": cursor, "limit": limit, "kinds": kinds})
@@ -389,7 +389,7 @@ async def test_the_cursor_reaches_the_store_rather_than_being_filtered_here() ->
 
     # 26 rather than 25: the extra row is how the page tells "exactly full" from "more to come".
     assert reader.queries == [
-        {"session_id": SESSION, "cursor": 2, "limit": 26, "kinds": [BridgeFrameKind.HARNESS_FRAME]}
+        {"session_id": SESSION, "cursor": 2, "limit": 26, "kinds": [SessionFrameKind.HARNESS_FRAME]}
     ]
 
 

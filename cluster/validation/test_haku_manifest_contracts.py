@@ -84,13 +84,13 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     assert "kube-apiserver" not in agent_egress_text
 
     service = yaml.safe_load((k8s_dir / "haku/console/service.yaml").read_text())
-    bridge_service_port = next(port for port in service["spec"]["ports"] if port["port"] == 9090)
+    runner_protocol_service_port = next(port for port in service["spec"]["ports"] if port["port"] == 9090)
     deployment = yaml.safe_load((k8s_dir / "haku/console/deployment.yaml").read_text())
     server = next(
         container for container in deployment["spec"]["template"]["spec"]["containers"] if container["name"] == "server"
     )
-    bridge_target_port = next(
-        port["containerPort"] for port in server["ports"] if port["name"] == bridge_service_port["targetPort"]
+    runner_protocol_target_port = next(
+        port["containerPort"] for port in server["ports"] if port["name"] == runner_protocol_service_port["targetPort"]
     )
     agent_egress = yaml.safe_load(agent_egress_text)
     console_rules = [
@@ -99,10 +99,10 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
         if rule.get("toEndpoints", [{}])[0].get("matchLabels", {}).get("k8s:app.kubernetes.io/name") == "haku-console"
     ]
     console_ports = {port["port"] for rule in console_rules for port in rule["toPorts"][0]["ports"]}
-    # Two rules select the shared Console pod label: the runner bridge (9090 Service -> the server's
-    # own port) and the colocated egress fence sidecar's listener (8888, #4670), which the runner's
-    # HTTPS_PROXY now points at for both inference and GitHub.
-    assert console_ports == {str(bridge_target_port), "8888"}
+    # Two rules select the shared Console pod label: the runner protocol (9090 Service -> the
+    # server's own port) and the colocated egress fence sidecar's listener (8888, #4670), which the
+    # runner's HTTPS_PROXY now points at for both inference and GitHub.
+    assert console_ports == {str(runner_protocol_target_port), "8888"}
 
     kube_proxy_rule = next(
         rule

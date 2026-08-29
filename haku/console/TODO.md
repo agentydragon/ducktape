@@ -339,7 +339,7 @@ session runs as is also what says which runner implementation to launch for it.
 Through the Codex app server, or directly against the Responses API, either way routed at the
 in-cluster LiteLLM — <../../cluster/k8s/litellm/app/proxy-config.yaml> already carries
 `chatgpt/oai-responses/*` models on the `openai/` provider. Today `x/claude_code/` is the only runner, reached over the
-bridge; the frame log and its adapter are what keep a runner's shape below the conversation layer
+runner protocol; the frame log and its adapter are what keep a runner's shape below the conversation layer
 (<docs/conversation_layers.md>).
 
 **This is the first real test of the neutrality the conversation layer claims.**

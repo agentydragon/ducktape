@@ -46,9 +46,9 @@ InboundHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any] | None]]
 class SubprocessChannel:
     """The CLI's own frames off a local process, for the probes in this directory.
 
-    Shaped like the runner bridge's `FrameChannel` (`haku.runtime.x.bridge`) but not one: that
-    port yields the bridge envelope, and there is no runner here to number these frames. Importing
-    the envelope to say so would point this package at one built on top of it.
+    Shaped like the runner's frame channel (`haku.runner.transport`) but not one: that port
+    yields the runner protocol envelope, and there is no runner here to number these frames.
+    Importing the envelope to say so would point this package at one built on top of it.
     """
 
     def __init__(self, *args: str, env: dict[str, str] | None = None, on_text: Callable[[str], None] | None = None):

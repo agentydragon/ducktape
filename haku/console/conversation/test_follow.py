@@ -33,7 +33,7 @@ from haku.console.session.conversation_views import (
     ConversationView,
 )
 from haku.console.session.runtime import SessionService
-from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
+from haku.console.session.session_frames import FrameDirection, SessionFrameKind
 from haku.console.session.status import SessionStatus
 from haku.console.session.store import Store
 from haku.console.x.conversation_events import ItemSegment, MessageCompleted, MessageStarted, OpenRef
@@ -89,10 +89,10 @@ async def _exchange(session_store: Store, operator_id: UUID, session_id: UUID, p
     turn = await session_store.next_prompt(session_id)
     assert turn is not None
     await session_store.record_frame(
-        session_id, FrameDirection.TO_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "user"}
+        session_id, FrameDirection.TO_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "user"}
     )
     spoke = await session_store.record_frame(
-        session_id, FrameDirection.FROM_AGENT, BridgeFrameKind.HARNESS_FRAME, {"type": "assistant"}
+        session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "assistant"}
     )
     where = FrameRange(spoke.frame_seq, spoke.frame_seq)
     await session_store.apply_frame(

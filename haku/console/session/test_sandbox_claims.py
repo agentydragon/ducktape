@@ -202,7 +202,7 @@ async def test_inspect_reports_each_underlying_provisioning_layer(
     assert info.runner_state == "waiting: ContainerCreating"
 
 
-async def test_inspect_distinguishes_ready_pod_from_runner_bridge_wait(
+async def test_inspect_distinguishes_ready_pod_from_runner_connection_wait(
     sandbox_claims, custom_objects_api, core_v1_api
 ) -> None:
     session_id = UUID("10000000-0000-4000-8000-000000000001")

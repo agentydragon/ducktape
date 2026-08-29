@@ -2,7 +2,8 @@
 
 The sandbox and runner lifecycle is Haku infrastructure.  A harness registration pairs that generic
 infrastructure with the one harness adapter that knows how to launch and speak a provider's native
-protocol.  The runner itself remains one Pydantic-envelope process bridge for every harness.
+protocol.  The runner itself remains one process speaking the Pydantic-envelope runner protocol
+for every harness.
 """
 
 from __future__ import annotations

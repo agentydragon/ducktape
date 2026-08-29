@@ -1,7 +1,7 @@
-# Haku bridge v3 frame log
+# Haku harness frame log (v3 cutover)
 
-The v3 cutover makes `session_frames` a forensic log of the bridge, not a projection of one
-harness vocabulary.
+The v3 cutover makes `session_frames` a forensic log of the runner protocol, not a projection of
+one harness vocabulary.
 
 - `kind` is only `harness_frame` or `setup_output`.
 - `payload` is exactly the native harness JSON object. Claude `type` values, Codex JSON-RPC
@@ -22,5 +22,5 @@ conversations, and Matrix room attachments. The Matrix supervisor creates replac
 against the preserved conversation/room association.
 
 The frame inspector derives the native frame type as a presentation detail, while filtering and
-storage continue to use the bridge class. Exports include `bridge_kind` and `wire_seq` alongside the
-redacted, otherwise unchanged native `frame`.
+storage continue to use the outer frame class (`SessionFrameKind`) beside the redacted, otherwise
+unchanged native `frame`.

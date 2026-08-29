@@ -1,6 +1,6 @@
 """Operator sessions dispatched by their conversation's immutable harness kind.
 
-The turn loop, the runner's websocket bridge, the sandbox lifecycle and the SPA conversation surface's own
+The turn loop, the runner connection, the sandbox lifecycle and the SPA conversation surface's own
 routes. The rows underneath, and every transaction that moves them, are `session_store.py`.
 
 """
@@ -38,7 +38,7 @@ from haku.console.session.conversation_views import (
 )
 from haku.console.session.launch_identity import LaunchAgentRejectedError, LaunchAuthorizer
 from haku.console.session.sandbox_claims import ProvisioningStep, SandboxProvisioningView
-from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
+from haku.console.session.session_frames import FrameDirection, SessionFrameKind
 from haku.console.session.status import SessionStatus
 from haku.console.session.store import (
     LEASE_RENEW_INTERVAL,
@@ -196,7 +196,7 @@ class RolloutRecorder:
         self._session_id = session_id
 
     async def sent(self, frame: HarnessFrame) -> int:
-        return (await self._record(FrameDirection.TO_AGENT, frame.frame, kind=BridgeFrameKind.HARNESS_FRAME)).frame_seq
+        return (await self._record(FrameDirection.TO_AGENT, frame.frame, kind=SessionFrameKind.HARNESS_FRAME)).frame_seq
 
     async def runner_frame(self, frame: HarnessFrame) -> RecordedFrame:
         """Record one journal-generation native frame the runner numbered (#4667).
@@ -207,10 +207,10 @@ class RolloutRecorder:
         runner seq, deduplicated by it on replay exactly as the v3 output stream was.
         """
         direction = FrameDirection.TO_AGENT if frame.injected else FrameDirection.FROM_AGENT
-        return await self._record(direction, frame.frame, runner_seq=frame.seq, kind=BridgeFrameKind.HARNESS_FRAME)
+        return await self._record(direction, frame.frame, runner_seq=frame.seq, kind=SessionFrameKind.HARNESS_FRAME)
 
     async def received(self, frame: HarnessFrame) -> RecordedFrame:
-        """Record the complete native harness frame and its bridge-owned position.
+        """Record the complete native harness frame and its runner-assigned position.
 
         All native frames, including deltas and opaque JSON-RPC notifications, are replayed and
         deduplicated by *runner_seq*. Their contents never participate in replay identity.
@@ -219,7 +219,7 @@ class RolloutRecorder:
         cursor. Nothing orders by it.
         """
         return await self._record(
-            FrameDirection.FROM_AGENT, frame.frame, runner_seq=frame.seq, kind=BridgeFrameKind.HARNESS_FRAME
+            FrameDirection.FROM_AGENT, frame.frame, runner_seq=frame.seq, kind=SessionFrameKind.HARNESS_FRAME
         )
 
     async def _record(
@@ -228,7 +228,7 @@ class RolloutRecorder:
         payload: dict[str, Any],
         *,
         runner_seq: int | None = None,
-        kind: BridgeFrameKind = BridgeFrameKind.HARNESS_FRAME,
+        kind: SessionFrameKind = SessionFrameKind.HARNESS_FRAME,
     ) -> RecordedFrame:
         return await self._store.record_frame(self._session_id, direction, kind, payload, runner_seq=runner_seq)
 
@@ -892,7 +892,7 @@ async def read_session_frames(
     store: StoreDep,
     before_seq: Annotated[int | None, Query(ge=1)] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_FRAME_PAGE)] = DEFAULT_FRAME_PAGE,
-    kind: Annotated[list[BridgeFrameKind] | None, Query()] = None,
+    kind: Annotated[list[SessionFrameKind] | None, Query()] = None,
 ) -> SessionFramePage:
     """The native harness protocol frames behind one session, newest page first.
 
