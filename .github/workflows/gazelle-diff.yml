@@ -2,12 +2,14 @@
 # so a run over a converged tree is a no-op and any diff or unresolvable import
 # here means the PR hand-edited managed rules or skipped the gazelle run.
 #
-# Deliberately its own workflow on a plain runner: `nix profile install
-# .#gazelle` puts the released binary on PATH — the flake's `artifacts.gazelle`
-# fetchurl carries the pin's sha256 (nix/artifact-pins.json), so nix is the
-# download and the digest check in one, with no secrets and no substituter
-# beyond cache.nixos.org — no Bazel, no BuildBuddy, and a red drift check
-# neither blocks nor delays bazel-ci.
+# Deliberately its own workflow on a plain runner, run unconditionally like the
+# pre-commit checks: `nix profile install .#gazelle` puts the released binary on
+# PATH — the flake's `artifacts.gazelle` fetchurl carries the pin's sha256
+# (nix/artifact-pins.json), so nix is the download and the digest check in one,
+# with no secrets and no substituter beyond cache.nixos.org — no Bazel, no
+# BuildBuddy, and a red drift check neither blocks nor delays bazel-ci. A PR
+# that changes the binary itself (plugin bump, patch) is still checked with the
+# released binary; the devel run after merge is the authoritative one.
 name: Gazelle diff
 "on":
   pull_request: {}
@@ -26,28 +28,17 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-        with:
-          # Depth 2 so the synthetic merge's base parent is available for the
-          # stale-binary guard's PR delta (see gazelle_diff_check.py).
-          fetch-depth: 2
-
-      - name: Decide whether the check applies
-        id: gate
-        run: python3 devinfra/ci/gazelle_diff_check.py
 
       - name: Install Nix
-        if: steps.gate.outputs.skip == ''
         uses: cachix/install-nix-action@v31
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
       - name: Install pinned gazelle
-        if: steps.gate.outputs.skip == ''
         run: nix profile install .#gazelle
 
       - name: Gazelle --mode=diff
-        if: steps.gate.outputs.skip == ''
         run: |
           if ! gazelle --mode=diff; then
             echo "::error::BUILD files drifted from gazelle; run: gazelle (devshell) or bb run //devinfra:gazelle"

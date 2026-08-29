@@ -64,19 +64,18 @@ Import validation is on; every escape is explicit and local:
 ## Drift check
 
 `.github/workflows/gazelle-diff.yml` runs the released gazelle binary in
-`--mode=diff` on every PR and devel push. It is deliberately its own signal on a
-plain runner: at check time gazelle needs only the checkout and the checked-in
-manifest — no Bazel, no BuildBuddy — and a red drift check neither blocks nor
-delays bazel-ci.
+`--mode=diff` on every PR and devel push, unconditionally — like the pre-commit
+checks. It is deliberately its own signal on a plain runner:
+`nix profile install .#gazelle` puts the pinned binary on PATH (the flake's
+`artifacts.gazelle` fetchurl verifies its digest) — no Bazel, no BuildBuddy —
+and a red drift check neither blocks nor delays bazel-ci.
 
-The binary is the ordinary artifact pipeline: `//devinfra:gazelle_python_binary` is
-a row in <../ci/artifact_targets.json>, released from devel pushes and pinned into
-`nix/artifact-pins.json` by sync-pins. The workflow puts it on PATH with
-`nix profile install .#gazelle`, where the flake's `artifacts.gazelle` fetchurl
-verifies the pin's digest. Two cases skip the check (<../ci/gazelle_diff_check.py>): no pin in
-the tree yet (bootstrap), and a PR that changes the binary-defining files (plugin
-version, patch, binary composition) — there the released binary may disagree with
-the PR's own tree, and the devel push after merge validates it instead.
+The binary is the ordinary artifact pipeline: `//devinfra:gazelle_python_binary`
+is a row in <../ci/artifact*targets.json>, released from devel pushes and pinned
+into `nix/artifact-pins.json` by sync-pins. A PR that changes the binary itself
+(plugin version, patch, binary composition) is still checked with the \_released*
+binary, which may disagree with that PR's tree — the devel run after merge is
+the authoritative one.
 
 ## Known limitations
 
