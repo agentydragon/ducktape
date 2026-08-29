@@ -79,8 +79,18 @@ class ConversationChangedEvent(BaseModel):
     conversation_id: UUID
 
 
+class SandboxSessionsChangedEvent(BaseModel):
+    """The active sandbox inventory changed; clients re-read it through MCP."""
+
+    event_type: Literal["sandbox_sessions_changed"] = "sandbox_sessions_changed"
+
+
 type ConsoleEvent = (
-    ToolCallsChangedEvent | ConversationChangedEvent | McpOperatorAuthChangedEvent | OperatorConnectionChangedEvent
+    ToolCallsChangedEvent
+    | ConversationChangedEvent
+    | SandboxSessionsChangedEvent
+    | McpOperatorAuthChangedEvent
+    | OperatorConnectionChangedEvent
 )
 type ConsoleEventListener = Callable[[UUID, ConsoleEvent], None]
 

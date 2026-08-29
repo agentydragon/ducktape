@@ -109,6 +109,14 @@ class FileSandboxClaims:
     def observation_error(self, *, session_id: UUID, error: str) -> SandboxProvisioningView:
         return fixed_provisioning_view(session_id).model_copy(update={"observation_error": error})
 
+    def watch_changes(self, stop: asyncio.Event) -> AsyncIterator[None]:
+        async def empty() -> AsyncIterator[None]:
+            await stop.wait()
+            return
+            yield
+
+        return empty()
+
     async def aclose(self) -> None:
         return None
 

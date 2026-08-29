@@ -11,13 +11,13 @@ metadata:
 rules:
   - apiGroups: ["extensions.agents.x-k8s.io"]
     resources: ["sandboxclaims"]
-    verbs: ["create", "get", "list", "patch", "delete"]
+    verbs: ["create", "get", "list", "watch", "patch", "delete"]
   - apiGroups: ["agents.x-k8s.io"]
     resources: ["sandboxes"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["get"]
+    verbs: ["get", "list", "watch"]
   # `get` (not just `create`) is required: Console execs via kubernetes_asyncio,
   # whose helper (connect_get_namespaced_pod_exec) opens the stream with an HTTP
   # GET, so the apiserver authorizes it as `get pods/exec`. kubectl/client-go POST

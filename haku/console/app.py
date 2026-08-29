@@ -94,7 +94,7 @@ from haku.console.notifications.conversation_wakes import ConversationWakes
 from haku.console.notifications.session_wakes import SessionWakes
 from haku.console.oauth import association_maintenance, connection_result, provider_connection, token_state
 from haku.console.recall_index_reader import PostgresIndexSearcher
-from haku.console.session import runtime as session_runtime, sandbox_allocation, sandbox_claims
+from haku.console.session import runtime as session_runtime, sandbox_allocation, sandbox_claims, sandbox_observer
 from haku.console.session.launch_identity import ChatLaunchAuthorizer
 from haku.console.session.store import Store
 from haku.console.session.system_prompt import SystemPromptTemplate
@@ -104,6 +104,7 @@ from haku.console.tools import (
     kubernetes as kubernetes_tools,
     routine as routine_tools,
     sandbox as sandbox_tools,
+    session_sandboxes as session_sandboxes_tools,
 )
 from haku.console.tools.recall_index import HAKU_INDEX_SERVER_ID
 from haku.console.x import runtime as console_runtime, runtime_catalog
@@ -301,6 +302,7 @@ def create_app(
 
     runtime_registry: console_runtime.RuntimeRegistry
     registrations: list[runtime_catalog.RuntimeRegistration] = []
+    session_claims: list[sandbox_claims.SandboxClaims] = []
     runner_environment = (
         {}
         if settings.runner_kubernetes_proxy_url is None
@@ -322,18 +324,20 @@ def create_app(
             claude_profile_id = static_by_id[claude_runtime.agent_id].access_profile_id
         except KeyError as error:
             raise ValueError("configured Claude Agent must be a static Agent") from error
+        claude_claims = sandbox_claims.KubernetesSandboxClaims(
+            sandbox_claims.SandboxClaimSpec(
+                namespace=claude_runtime.namespace,
+                warm_pool=claude_runtime.warm_pool,
+                claim_prefix=claude_runtime.claim_prefix,
+                runtime_label=claude_runtime.runtime_label,
+                runner_environment={},
+            )
+        )
+        session_claims.append(claude_claims)
         registrations.append(
             runtime_catalog.runtime_registration(
                 claude_runtime,
-                sandbox_claims.KubernetesSandboxClaims(
-                    sandbox_claims.SandboxClaimSpec(
-                        namespace=claude_runtime.namespace,
-                        warm_pool=claude_runtime.warm_pool,
-                        claim_prefix=claude_runtime.claim_prefix,
-                        runtime_label=claude_runtime.runtime_label,
-                        runner_environment={},
-                    )
-                ),
+                claude_claims,
                 system_prompt=agent_system_prompt(claude_runtime.agent_id),
                 access_profile_id=claude_profile_id,
                 execution_environment={
@@ -351,18 +355,20 @@ def create_app(
             codex_profile_id = static_by_id[codex_runtime.agent_id].access_profile_id
         except KeyError as error:
             raise ValueError("configured Codex Agent must be a static Agent") from error
+        codex_claims = sandbox_claims.KubernetesSandboxClaims(
+            sandbox_claims.SandboxClaimSpec(
+                namespace=codex_runtime.namespace,
+                warm_pool=codex_runtime.warm_pool,
+                claim_prefix=codex_runtime.claim_prefix,
+                runtime_label=codex_runtime.runtime_label,
+                runner_environment={},
+            )
+        )
+        session_claims.append(codex_claims)
         registrations.append(
             runtime_catalog.runtime_registration(
                 codex_runtime,
-                sandbox_claims.KubernetesSandboxClaims(
-                    sandbox_claims.SandboxClaimSpec(
-                        namespace=codex_runtime.namespace,
-                        warm_pool=codex_runtime.warm_pool,
-                        claim_prefix=codex_runtime.claim_prefix,
-                        runtime_label=codex_runtime.runtime_label,
-                        runner_environment={},
-                    )
-                ),
+                codex_claims,
                 system_prompt=agent_system_prompt(codex_runtime.agent_id),
                 access_profile_id=codex_profile_id,
                 # The public-coder SandboxTemplate already owns the explicit empty-workspace
@@ -520,6 +526,7 @@ def create_app(
     # `launch_routine` config/secret; independent of the Google connection above.
     routine_launcher = routine_tools.RoutineLauncher(settings.launch_routine) if settings.launch_routine else None
     sandbox_server: SandboxServerConfig | None = None
+    sandbox_session_observer: sandbox_observer.SandboxSessionObserver | None = None
     if in_process_servers is None:
         # hostexec being configured implies a real Authentik operator OIDC, so deriving the token
         # endpoint here (only in this branch) is safe.
@@ -574,6 +581,12 @@ def create_app(
                 # tools would reflect an always-empty corpus.
                 conversations=(reader.ConversationReads(session_store) if runtime_registry.configured_kinds else None),
                 sandbox=sandbox_server,
+                session_sandboxes=(
+                    session_service
+                    if session_service is not None
+                    and session_sandboxes_tools.HAKU_SESSION_SANDBOXES_SERVER_ID in configured_server_ids
+                    else None
+                ),
                 # One `grants` server fronts both grant domains plus the kubernetes SAR check
                 # (`kubernetes_can_i`, #4918), so it needs the kubernetes authorization service; it
                 # registers only when that is configured (as it always is in the deployed config).
@@ -590,6 +603,14 @@ def create_app(
                 ),
             )
         )
+        if session_service is not None and session_sandboxes_tools.HAKU_SESSION_SANDBOXES_SERVER_ID in configured_server_ids:
+            sandbox_session_observer = sandbox_observer.SandboxSessionObserver(
+                session_service,
+                session_claims,
+                db_engine,
+                console_event_hub,
+                operator_identity_store.list_active_ids,
+            )
     validate_in_process_server_bindings(console_config, in_process_servers)
     # The console's one path out to its configured MCP servers. Executing a tool and reflecting a
     # catalog are the same dispatch over the same transports, so they are one object: executing and
@@ -660,6 +681,7 @@ def create_app(
         # Prompt demand is channel-neutral and durable. Start its elected reconciler only after
         # the notification listener is live; the first sweep is also the restart backstop.
         allocating = sandbox_allocator.run() if sandbox_allocator is not None else contextlib.nullcontext()
+        observing = sandbox_session_observer.run() if sandbox_session_observer is not None else contextlib.nullcontext()
         async with agent_authority.expiry_maintenance(), oauth_maintenance.run(), catalogs.run():
             await console_event_hub.start()
             await session_wakes.start()
@@ -670,7 +692,7 @@ def create_app(
                 # a concrete shared store; the static-only variant has no OAuth subsystem to initialize.
                 if isinstance(mcp_auth, mcp_agent_auth.OAuthMcpAuth):
                     await mcp_auth.storage.setup()
-                async with conversation_live_updates.run(), supervising, allocating, mcp_asgi.lifespan(app):
+                async with conversation_live_updates.run(), supervising, allocating, observing, mcp_asgi.lifespan(app):
                     yield
             finally:
                 # Cancel in-flight approved-call executions (each marks its row cancelled) before the

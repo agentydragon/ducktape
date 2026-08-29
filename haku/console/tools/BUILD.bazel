@@ -490,3 +490,39 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "session_sandboxes",
+    srcs = ["session_sandboxes.py"],
+    deps = [
+        "//haku/console/harnesses:kind",
+        "//haku/console/mcp:execution",
+        "//haku/console/mcp:in_process_server_access",
+        "//haku/console/session:runtime",
+        "//haku/console/session:sandbox_claims",
+        "//haku/console/session:status",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_session_sandboxes",
+    srcs = ["test_session_sandboxes.py"],
+    deps = [
+        ":session_sandboxes",
+        "//:conftest",
+        "//haku/console:mcp_config",
+        "//haku/console/grants:principal",
+        "//haku/console/harnesses:kind",
+        "//haku/console/mcp:execution",
+        "//haku/console/mcp:in_process_server_access",
+        "//haku/console/session:runtime",
+        "//haku/console/session:sandbox_claims",
+        "//haku/console/session:status",
+        "@pypi//fastmcp_slim",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)

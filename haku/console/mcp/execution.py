@@ -42,6 +42,10 @@ class AgentMcpExecutionCaller(BaseModel):
     # only when the ToolCall was submitted with a session bearer — static credentials omit it and
     # therefore cannot mint or use session principals.
     principal: RequestPrincipal
+    # Some Console-owned tools operate on resources owned by the approving Operator. This trusted
+    # accountability identity is carried beside the Agent principal and is never accepted as a tool
+    # argument; legacy callers that do not need operator scoping may omit it.
+    operator_id: UUID | None = None
 
 
 class OperatorMcpExecutionCaller(BaseModel):
@@ -77,6 +81,15 @@ class McpExecutionContext(BaseModel):
         if not isinstance(self.caller, AgentMcpExecutionCaller):
             raise PermissionError("an Agent caller is required")
         return self.caller.principal
+
+    @property
+    def operator_id(self) -> UUID:
+        """The trusted Operator whose resources an execution may address."""
+        if isinstance(self.caller, OperatorMcpExecutionCaller):
+            return self.caller.operator_id
+        if self.caller.operator_id is None:
+            raise PermissionError("an Operator-scoped execution identity is required")
+        return self.caller.operator_id
 
 
 def mcp_execution_request_meta(context: McpExecutionContext) -> dict[str, object]:

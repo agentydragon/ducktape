@@ -1,5 +1,5 @@
 import { Badge, Button, Group, Loader, Select, Stack, Tabs, Text } from "@mantine/core";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 
 import { shortDate } from "./approval_state";
 import { useAsyncResource, type AsyncResource, type AsyncResourceLoader } from "./async_resource";
@@ -33,6 +33,7 @@ import {
   type McpServerProbe,
 } from "./mcp_status_client";
 import { openExternal, POPUP_HINT } from "./open_external";
+import { listActiveSandboxes, terminateSandbox, type ActiveSandbox } from "./session_sandboxes_client";
 import { toastError, toastSuccess } from "./toast";
 
 type DeploymentVersion = {
@@ -459,7 +460,211 @@ function PushNotificationCard() {
   );
 }
 
-const SETTINGS_TABS = ["mcp", "agents", "grants", "notifications", "nodes", "system"] as const;
+type SessionStatusDisplay = { label: string; color: string; description: string };
+
+export function activeSandboxStatusDisplay(status: ActiveSandbox["status"]): SessionStatusDisplay {
+  switch (status) {
+    case "provisioning":
+      return { label: "Provisioning", color: "blue", description: "The sandbox claim is being handed to a runner." };
+    case "ready":
+      return { label: "Ready", color: "teal", description: "The sandbox is ready for the next turn." };
+    case "responding":
+      return { label: "Responding", color: "blue", description: "The runner is handling an open turn." };
+    case "closing":
+      return { label: "Closing", color: "orange", description: "Termination is deleting the sandbox claim." };
+    case "idle":
+      return { label: "Idle", color: "gray", description: "The session has not allocated a sandbox yet." };
+    case "closed":
+      return { label: "Closed", color: "gray", description: "The session is closed." };
+    case "failed":
+      return { label: "Failed", color: "red", description: "The session ended with an error." };
+  }
+}
+
+export function provisioningStepLabel(step: ActiveSandbox["sandbox"]["step"]): string {
+  switch (step) {
+    case "claim_created":
+      return "Claim created";
+    case "waiting_for_sandbox":
+      return "Waiting for Sandbox";
+    case "waiting_for_pod":
+      return "Waiting for Pod";
+    case "waiting_for_pod_ready":
+      return "Waiting for Pod readiness";
+    case "waiting_for_runner":
+      return "Waiting for runner";
+    case "claim_absent":
+      return "Claim absent";
+  }
+}
+
+function pointerDownOutsideDialog(e: PointerEvent<HTMLDialogElement>): boolean {
+  const rect = e.currentTarget.getBoundingClientRect();
+  return e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom;
+}
+
+function SandboxTerminationDialog({
+  session,
+  onApprove,
+  onCancel,
+}: {
+  session: ActiveSandbox | null;
+  onApprove: () => void;
+  onCancel: () => void;
+}): JSX.Element {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [armed, setArmed] = useState(false);
+  const sessionId = session?.session_id ?? null;
+
+  useEffect(() => {
+    const dialog = ref.current;
+    if (!dialog) return;
+    if (!sessionId) {
+      setArmed(false);
+      if (dialog.open) dialog.close();
+      return;
+    }
+    setArmed(false);
+    if (!dialog.open) dialog.showModal();
+    const timer = window.setTimeout(() => setArmed(true), 400);
+    return () => window.clearTimeout(timer);
+  }, [sessionId]);
+
+  return (
+    <dialog
+      ref={ref}
+      aria-label="Terminate sandbox confirmation"
+      onPointerDown={(event) => {
+        if (pointerDownOutsideDialog(event)) onCancel();
+      }}
+      onCancel={(event) => {
+        event.preventDefault();
+        onCancel();
+      }}
+      className="haku-confirm-dialog max-w-md rounded-lg p-5 shadow-xl"
+    >
+      {session && (
+        <Stack gap="sm">
+          <Text fw={600}>Terminate sandbox session?</Text>
+          <Text size="sm">
+            This permanently deletes the SandboxClaim and its container. Session history remains available.
+          </Text>
+          <Text size="sm" className="haku-url-preview rounded p-2 font-mono break-all">
+            {session.session_id}
+            {session.sandbox.claim_name ? ` · ${session.sandbox.claim_name}` : ""}
+          </Text>
+          <Group justify="flex-end" gap="sm" mt="xs">
+            <Button variant="default" size="xs" onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button color="red" size="xs" disabled={!armed} onClick={onApprove}>
+              Terminate
+            </Button>
+          </Group>
+        </Stack>
+      )}
+    </dialog>
+  );
+}
+
+function SandboxSessionCard({ session, onTerminate }: { session: ActiveSandbox; onTerminate: () => void }) {
+  const display = activeSandboxStatusDisplay(session.status);
+  const closing = session.status === "closing";
+  return (
+    <section className="haku-shell-card">
+      <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap">
+        <Stack gap={2} style={{ minWidth: 0 }}>
+          <Text fw={600}>{session.harness_kind.replaceAll("_", " ")}</Text>
+          <Text size="xs" c="dimmed" ff="monospace" className="break-all">
+            {session.session_id}
+          </Text>
+        </Stack>
+        <Badge color={display.color} variant="light">
+          {display.label}
+        </Badge>
+      </Group>
+      <Text size="xs" c="dimmed" mt="sm">
+        {display.description} · {provisioningStepLabel(session.sandbox.step)}
+      </Text>
+      <Group justify="space-between" align="flex-end" gap="sm" mt="sm" wrap="wrap">
+        <Stack gap={2} style={{ minWidth: 0 }}>
+          <Text size="xs" c="dimmed" className="break-all">
+            {session.sandbox.claim_name}
+          </Text>
+          <Text size="xs" c="dimmed">
+            Started {shortDate(session.created_at) ?? "unknown"}
+          </Text>
+        </Stack>
+        <Button size="compact-sm" color="red" variant="light" disabled={closing} onClick={onTerminate}>
+          {closing ? "Closing…" : "Terminate"}
+        </Button>
+      </Group>
+    </section>
+  );
+}
+
+function SessionsPanel({ resource }: { resource: AsyncResource<ActiveSandbox[]> }) {
+  const [pendingTermination, setPendingTermination] = useState<ActiveSandbox | null>(null);
+
+  function requestTermination(session: ActiveSandbox) {
+    if (session.status === "closing") return;
+    setPendingTermination(session);
+  }
+
+  function approveTermination() {
+    const session = pendingTermination;
+    setPendingTermination(null);
+    if (!session) return;
+    resource.update(
+      (current) =>
+        current?.map((item) =>
+          item.session_id === session.session_id ? { ...item, status: "closing" as const } : item
+        ) ?? null
+    );
+    void terminateSandbox(session.session_id).then(
+      () => {
+        toastSuccess("Sandbox termination started", "The active session will disappear when its claim is gone.");
+        resource.refresh();
+      },
+      (error: unknown) => {
+        toastError("Couldn't terminate sandbox", error);
+        resource.refresh();
+      }
+    );
+  }
+
+  return (
+    <Stack gap="xs" className="haku-page-list">
+      <SectionHeading
+        title="Sessions"
+        description="Active Console-launched sandboxes. Provisioning, runner activity, and termination are read from the live claim graph."
+      />
+      <ResourcePanel
+        resource={resource}
+        label="sessions"
+        emptyMessage="No active sandbox sessions."
+        isEmpty={(sessions) => sessions.length === 0}
+      >
+        {(sessions) =>
+          sessions.map((session) => (
+            <SandboxSessionCard
+              key={session.session_id}
+              session={session}
+              onTerminate={() => requestTermination(session)}
+            />
+          ))
+        }
+      </ResourcePanel>
+      <SandboxTerminationDialog
+        session={pendingTermination}
+        onApprove={approveTermination}
+        onCancel={() => setPendingTermination(null)}
+      />
+    </Stack>
+  );
+}
+
+const SETTINGS_TABS = ["mcp", "agents", "grants", "sessions", "notifications", "nodes", "system"] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 export function settingsTabFromSearch(search: string): SettingsTab {
@@ -633,21 +838,24 @@ export function SettingsPanel(): JSX.Element {
   const deploymentResource = useAsyncResource(fetchDeploymentInfo, resourceOptions("system"));
   const indexStatusResource = useAsyncResource(getIndexStatus, resourceOptions("system"));
   const daemonsResource = useAsyncResource(listNodeDaemons, resourceOptions("nodes", 10_000));
+  const sessionsResource = useAsyncResource(listActiveSandboxes, resourceOptions("sessions", 10_000));
   const refreshMcp = mcpResource.refresh;
   const refreshAgents = agentsResource.refresh;
   const refreshDeployment = deploymentResource.refresh;
   const refreshIndexStatus = indexStatusResource.refresh;
   const refreshDaemons = daemonsResource.refresh;
+  const refreshSessions = sessionsResource.refresh;
   const agentAccessProfiles = agentsResource.data?.access_profiles ?? [];
   const refreshActiveTab = useCallback(() => {
     if (activeTab === "mcp") return refreshMcp();
     if (activeTab === "agents") return refreshAgents();
     if (activeTab === "nodes") return refreshDaemons();
+    if (activeTab === "sessions") return refreshSessions();
     if (activeTab === "system") {
       refreshDeployment();
       refreshIndexStatus();
     }
-  }, [activeTab, refreshAgents, refreshDaemons, refreshDeployment, refreshIndexStatus, refreshMcp]);
+  }, [activeTab, refreshAgents, refreshDaemons, refreshDeployment, refreshIndexStatus, refreshMcp, refreshSessions]);
   useEffect(() => {
     const restoreTab = () => setActiveTab(settingsTabFromLocation());
     window.addEventListener("popstate", restoreTab);
@@ -662,6 +870,7 @@ export function SettingsPanel(): JSX.Element {
       (event.event_type === "mcp_operator_auth_changed" || event.event_type === "operator_connection_changed")
     )
       refreshMcp();
+    if (activeTab === "sessions" && event.event_type === "sandbox_sessions_changed") refreshSessions();
   });
   function selectTab(value: string | null) {
     if (!value || !SETTINGS_TABS.includes(value as SettingsTab)) return;
@@ -744,11 +953,13 @@ export function SettingsPanel(): JSX.Element {
       ? mcpResource.loading
       : activeTab === "agents"
         ? agentsResource.loading
-        : activeTab === "nodes"
-          ? daemonsResource.loading
-          : activeTab === "system"
-            ? deploymentResource.loading || indexStatusResource.loading
-            : false;
+        : activeTab === "sessions"
+          ? sessionsResource.loading
+          : activeTab === "nodes"
+            ? daemonsResource.loading
+            : activeTab === "system"
+              ? deploymentResource.loading || indexStatusResource.loading
+              : false;
 
   return (
     <Tabs
@@ -778,6 +989,7 @@ export function SettingsPanel(): JSX.Element {
             <span className="haku-settings-tab-long">Grants</span>
             <span className="haku-settings-tab-short">Grants</span>
           </Tabs.Tab>
+          <Tabs.Tab value="sessions">Sessions</Tabs.Tab>
           <Tabs.Tab value="notifications">
             <span className="haku-settings-tab-long">Notifications</span>
             <span className="haku-settings-tab-short">Alerts</span>
@@ -833,6 +1045,9 @@ export function SettingsPanel(): JSX.Element {
         </Tabs.Panel>
         <Tabs.Panel value="grants">
           <GrantsPanel />
+        </Tabs.Panel>
+        <Tabs.Panel value="sessions">
+          <SessionsPanel resource={sessionsResource} />
         </Tabs.Panel>
         <Tabs.Panel value="notifications">
           <Stack gap="xs" className="haku-page-list">

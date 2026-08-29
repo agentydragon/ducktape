@@ -12,7 +12,7 @@ import asyncio
 import contextlib
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
 import pytest
@@ -50,7 +50,7 @@ from haku.console.session.runtime import (
 )
 from haku.console.session.sandbox_claims import ProvisioningStep, provisioning_view
 from haku.console.session.status import OPEN_SESSION_STATUSES, SessionStatus
-from haku.console.session.store import ADOPTION_GRACE, RunnerConnectionAuthentication, Store
+from haku.console.session.store import ADOPTION_GRACE, ActiveSessionRecord, RunnerConnectionAuthentication, Store
 from haku.console.session.system_prompt import SystemPromptTemplate
 from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
 from haku.console.x.runtime import HarnessKey, RuntimeLaunch
@@ -503,6 +503,56 @@ async def test_startup_reconciliation_retries_terminal_claim_cleanup(
 
     assert sorted(recording_claims.deleted) == sorted(session_ids)
     assert await session_store.claim_cleanup_candidates() == []
+
+
+async def test_active_sandbox_inventory_skips_absent_claims_and_fills_the_page(
+    chat_service, recording_claims, operator_id
+) -> None:
+    first = await _allocated_session(chat_service, recording_claims, operator_id)
+    second = await _allocated_session(chat_service, recording_claims, operator_id)
+    third = await _allocated_session(chat_service, recording_claims, operator_id)
+    now = datetime.now(UTC)
+    rows = [
+        ActiveSessionRecord(
+            session_id=first.session_id,
+            runtime_kind=HarnessKind.CLAUDE_CODE,
+            status=SessionStatus.PROVISIONING,
+            created_at=now,
+            updated_at=now,
+        ),
+        ActiveSessionRecord(
+            session_id=second.session_id,
+            runtime_kind=HarnessKind.CLAUDE_CODE,
+            status=SessionStatus.PROVISIONING,
+            created_at=now - timedelta(seconds=1),
+            updated_at=now,
+        ),
+        ActiveSessionRecord(
+            session_id=third.session_id,
+            runtime_kind=HarnessKind.CLAUDE_CODE,
+            status=SessionStatus.PROVISIONING,
+            created_at=now - timedelta(seconds=2),
+            updated_at=now,
+        ),
+    ]
+    chat_service._store.list_active_sessions = AsyncMock(side_effect=[rows[:2], [rows[1], rows[2]]])
+    views = {
+        first.session_id: provisioning_view(f"claude-{first.session_id.hex}", step=ProvisioningStep.CLAIM_ABSENT),
+        second.session_id: provisioning_view(f"claude-{second.session_id.hex}", step=ProvisioningStep.CLAIM_CREATED),
+        third.session_id: provisioning_view(f"claude-{third.session_id.hex}", step=ProvisioningStep.CLAIM_CREATED),
+    }
+
+    async def observe(session_id: UUID):
+        return views[session_id]
+
+    chat_service._observed = AsyncMock(side_effect=observe)
+
+    result = await chat_service.list_active_sandboxes(
+        operator_id, before_created_at=None, before_session_id=None, limit=2
+    )
+
+    assert [record.session_id for record in result] == [second.session_id, third.session_id]
+    assert [call.kwargs["limit"] for call in chat_service._store.list_active_sessions.await_args_list] == [2, 2]
 
 
 ROOM = "!room:example.org"

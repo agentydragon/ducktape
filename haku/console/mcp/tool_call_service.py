@@ -59,11 +59,11 @@ TERMINAL_STATUSES = {ToolCallStatus.OK, ToolCallStatus.ERROR, ToolCallStatus.DEN
 _CURSOR_SEPARATOR = "~"
 
 
-def _execution_caller(actor: RuntimeActor) -> McpExecutionCaller:
+def _execution_caller(actor: RuntimeActor, *, operator_id: UUID | None = None) -> McpExecutionCaller:
     """The trusted execution identity one revalidated actor executes as."""
     match actor:
         case AgentActor() as agent:
-            return AgentMcpExecutionCaller(principal=RequestPrincipal.from_source(agent))
+            return AgentMcpExecutionCaller(principal=RequestPrincipal.from_source(agent), operator_id=operator_id)
         case OperatorActor(operator_id=operator_id):
             return OperatorMcpExecutionCaller(operator_id=operator_id)
 
@@ -576,7 +576,7 @@ class ToolCallApplicationService:
         """Build trusted explicit execution identity after the repository revalidates the caller."""
 
         return McpExecutionContext(
-            caller=_execution_caller(execution.caller),
+            caller=_execution_caller(execution.caller, operator_id=execution.operator_id),
             tool_call_id=record.tool_call_id,
             approving_operator_id=deciding_actor.operator_id if isinstance(deciding_actor, OperatorActor) else None,
             approval_policy_id=record.approval_policy_id,

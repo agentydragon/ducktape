@@ -61,11 +61,20 @@ _EXPECTED_TOOLS = {
     ),
     "haku_index": ("index_status", "search"),
     "haku_routine": ("launch_routine",),
+    "haku_session_sandboxes": ("list_active", "terminate"),
     "hostexec": ("bash",),
 }
 _SERVER_IDS = list(_EXPECTED_TOOLS)
 _RESULT_SERVER_IDS = [*_SERVER_IDS, "haku-console"]
-_RESULT_TOOLS_MATCH_ARGUMENTS = ("google_calendar", "grants", "grocy-sf", "haku_index", "haku_routine", "hostexec")
+_RESULT_TOOLS_MATCH_ARGUMENTS = (
+    "google_calendar",
+    "grants",
+    "grocy-sf",
+    "haku_index",
+    "haku_routine",
+    "hostexec",
+    "haku_session_sandboxes",
+)
 
 
 def _assert_catalog_shape(schema: dict[str, object], title: str, server_ids: list[str] = _SERVER_IDS) -> None:

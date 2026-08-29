@@ -36,7 +36,13 @@ def test_deployed_console_config_is_valid() -> None:
     assert "codex_runtime" not in raw["settings"]
 
     profiles = {profile.id: profile for profile in config.access_profiles}
-    assert profiles["haku"].in_process_server_ids == {"haku_conversations", "grants", "sandbox"}
+    assert profiles["haku"].in_process_server_ids == {
+        "haku_conversations",
+        "grants",
+        "sandbox",
+        "haku_session_sandboxes",
+    }
+    assert "haku_session_sandboxes" in profiles["public-coder"].in_process_server_ids
 
     assert config.kubernetes_authorization is not None
     subjects = config.kubernetes_authorization.subjects_by_access_profile
@@ -79,6 +85,10 @@ def test_deployed_console_config_is_valid() -> None:
         assert "kubernetes_reads" in policies[root]["policies"], root
         assert "grants_self_introspection" in policies[root]["policies"], root
         assert "grants_own_revoke" in policies[root]["policies"], root
+    assert all(
+        "haku_session_sandboxes" not in (policy.get("server"), *policy.get("tools", {}))
+        for policy in raw["auto_approval_policies"]
+    )
 
     # Every Agent may ASK for a grant: the unified `grants` server is exposed to every access profile
     # (operator ruling on #4986). Safe only together with the pin below — nothing in it auto-approves.

@@ -148,6 +148,7 @@ py_library(
         "//haku/console:conversation_read_access",
         "//haku/console:mcp_config",
         "//haku/console:recall_index_access",
+        "//haku/console/session:runtime",
         "//haku/console/tools:conversations",
         "//haku/console/tools:gmail",
         "//haku/console/tools:google_calendar",
@@ -158,6 +159,7 @@ py_library(
         "//haku/console/tools:recall_index",
         "//haku/console/tools:routine",
         "//haku/console/tools:sandbox",
+        "//haku/console/tools:session_sandboxes",
         "//haku/sandbox:config",
     ],
 )

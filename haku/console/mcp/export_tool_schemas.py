@@ -164,6 +164,7 @@ def build_schema_servers() -> dict[str, FastMCP]:
                     agents=dependency,
                     can_i=KubernetesToolsService(authorization=dependency),
                 ),
+                session_sandboxes=dependency,
             )
         ).items()
     }

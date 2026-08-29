@@ -493,6 +493,7 @@ access_profiles:
       - haku_conversations
       - grants
       - sandbox
+      - haku_session_sandboxes
   - id: public-coder
     auto_approval_policy: public_coder_safe_reads
     allowed_harnesses:
@@ -503,6 +504,7 @@ access_profiles:
     in_process_server_ids:
       - grants
       - haku_index
+      - haku_session_sandboxes
   - id: manual-review
     auto_approval_policy: manual_review
     allowed_harnesses: []
@@ -964,6 +966,14 @@ mcp:
     # cache). The `haku_sandbox_control` exact-tools policy above records that reviewed authority;
     # `in_process_server_ids` on the profile is what grants access to the server at all.
     - id: sandbox
+      backend:
+        kind: in_process
+        credential:
+          kind: none
+    # The Console-launched session inventory is a separate lifecycle from the Agent Sandbox
+    # workbox server above. Its terminate tool remains explicitly approval-gated: no
+    # auto-approval policy names this server.
+    - id: haku_session_sandboxes
       backend:
         kind: in_process
         credential:

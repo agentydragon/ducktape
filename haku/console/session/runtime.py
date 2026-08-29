@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, cast
 from uuid import UUID
@@ -36,7 +37,7 @@ from haku.console.session.conversation_views import (
     SessionView,
 )
 from haku.console.session.launch_identity import LaunchAgentRejectedError, LaunchAuthorizer
-from haku.console.session.sandbox_claims import SandboxProvisioningView
+from haku.console.session.sandbox_claims import ProvisioningStep, SandboxProvisioningView
 from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
 from haku.console.session.status import SessionStatus
 from haku.console.session.store import (
@@ -108,6 +109,18 @@ def _transient_database_error(error: BaseException) -> bool:
         or isinstance(error, (InterfaceError, OperationalError))
         or getattr(error.orig, "sqlstate", None) in _RERUNNABLE_SQLSTATES
     )
+
+
+@dataclass(frozen=True, slots=True)
+class ActiveSandboxRecord:
+    """The operator-facing projection of one allocated session and its live claim graph."""
+
+    session_id: UUID
+    runtime_kind: HarnessKind
+    status: SessionStatus
+    created_at: datetime
+    updated_at: datetime
+    sandbox: SandboxProvisioningView
 
 
 def _first_message(errors: BaseExceptionGroup[Exception]) -> str:
@@ -241,6 +254,10 @@ class SessionService:
         # Per session, the last view read off the cluster; `_observed` drops entries older than
         # `OBSERVATION_TTL` as it goes.
         self._observations: dict[UUID, SandboxProvisioningView] = {}
+
+    def invalidate_sandbox_observations(self) -> None:
+        """Drop cluster observations after a Kubernetes watch reports a lifecycle change."""
+        self._observations.clear()
 
     async def _configured(self, session_id: UUID) -> ConfiguredRuntime:
         identity = await self._store.session_identity(session_id)
@@ -394,6 +411,55 @@ class SessionService:
             sandbox=None if identity.status == SessionStatus.IDLE else await self._observed(session_id),
         )
 
+    async def list_active_sandboxes(
+        self,
+        operator_id: UUID,
+        *,
+        before_created_at: datetime | None,
+        before_session_id: UUID | None,
+        limit: int,
+    ) -> list["ActiveSandboxRecord"]:
+        """Project the operator's allocated sessions with their current claim observations."""
+        records: list[ActiveSandboxRecord] = []
+        cursor_created_at = before_created_at
+        cursor_session_id = before_session_id
+        excluded_session_id: UUID | None = None
+        while len(records) < limit:
+            requested = limit - len(records)
+            sessions = await self._store.list_active_sessions(
+                operator_id,
+                before_created_at=cursor_created_at,
+                before_session_id=cursor_session_id,
+                limit=requested + (1 if excluded_session_id is not None else 0),
+            )
+            if excluded_session_id is not None:
+                sessions = [session for session in sessions if session.session_id != excluded_session_id]
+            if not sessions:
+                break
+            for session in sessions:
+                sandbox = await self._observed(session.session_id)
+                if sandbox.step is ProvisioningStep.CLAIM_ABSENT:
+                    continue
+                records.append(
+                    ActiveSandboxRecord(
+                        session_id=session.session_id,
+                        runtime_kind=session.runtime_kind,
+                        status=session.status,
+                        created_at=session.created_at,
+                        updated_at=session.updated_at,
+                        sandbox=sandbox,
+                    )
+                )
+                if len(records) >= limit:
+                    break
+            if len(sessions) < requested:
+                break
+            last = sessions[-1]
+            cursor_created_at = last.created_at
+            cursor_session_id = last.session_id
+            excluded_session_id = last.session_id
+        return records
+
     async def provisioning_of(self, session_id: UUID, status: SessionStatus) -> SandboxProvisioningView | None:
         """What Kubernetes says about a sandbox still coming up, for a session still waiting on one.
 
@@ -436,6 +502,7 @@ class SessionService:
 
     async def dispose(self, operator_id: UUID, session_id: UUID) -> None:
         await self._store.request_close(operator_id, session_id)
+        self.invalidate_sandbox_observations()
         await (await self._configured(session_id)).resources.claims.delete(session_id=session_id)
         await self._store.complete_claim_cleanup(session_id)
 

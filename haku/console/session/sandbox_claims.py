@@ -12,14 +12,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Protocol, cast
 from uuid import UUID
 
-from kubernetes_asyncio import client as k8s_client, config as k8s_config
+from kubernetes_asyncio import client as k8s_client, config as k8s_config, watch as k8s_watch
 from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 from kubernetes_asyncio.config.config_exception import ConfigException
 from pydantic import BaseModel, ConfigDict
@@ -114,6 +114,8 @@ class SandboxClaims(Protocol):
     async def inspect(self, *, session_id: UUID) -> SandboxProvisioningView: ...
 
     def observation_error(self, *, session_id: UUID, error: str) -> SandboxProvisioningView: ...
+
+    def watch_changes(self, stop: asyncio.Event) -> AsyncIterator[None]: ...
 
     async def aclose(self) -> None: ...
 
@@ -326,6 +328,91 @@ class KubernetesSandboxClaims:
         if self._clients is not None:
             await self._clients.api.close()
             self._clients = None
+
+    def watch_changes(self, stop: asyncio.Event) -> AsyncIterator[None]:
+        """Yield invalidations for claims and the resources beneath them.
+
+        The observer deliberately receives no manifests. It only needs a wake to invalidate the
+        short-lived projection cache; the next MCP read performs the authoritative, scoped graph
+        inspection through ``inspect``.
+        """
+
+        async def stream() -> AsyncIterator[None]:
+            clients = await self._connected()
+            queue: asyncio.Queue[None] = asyncio.Queue()
+
+            async def watch_source(method: Any, **kwargs: Any) -> None:
+                while not stop.is_set():
+                    watcher = k8s_watch.Watch()
+                    try:
+                        async for _event in watcher.stream(method, **kwargs, timeout_seconds=300):
+                            if stop.is_set():
+                                return
+                            await queue.put(None)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        logger.warning("Kubernetes sandbox watch failed; retrying", exc_info=True)
+                        try:
+                            await asyncio.wait_for(stop.wait(), timeout=1)
+                        except asyncio.TimeoutError:
+                            pass
+                    finally:
+                        watcher.stop()
+
+            tasks = [
+                asyncio.create_task(
+                    watch_source(
+                        clients.custom_objects.list_namespaced_custom_object,
+                        group=_CLAIM_API[0],
+                        version=_CLAIM_API[1],
+                        namespace=self._spec.namespace,
+                        plural=_CLAIMS_PLURAL,
+                        label_selector=(
+                            "app.kubernetes.io/managed-by=haku-console,"
+                            f"haku.allegedly.works/runtime={self._spec.runtime_label}"
+                        ),
+                    ),
+                    name=f"sandbox-claim-watch-{self._spec.runtime_label}",
+                ),
+                asyncio.create_task(
+                    watch_source(
+                        clients.custom_objects.list_namespaced_custom_object,
+                        group="agents.x-k8s.io",
+                        version="v1beta1",
+                        namespace=self._spec.namespace,
+                        plural="sandboxes",
+                    ),
+                    name=f"sandbox-watch-{self._spec.runtime_label}",
+                ),
+                asyncio.create_task(
+                    watch_source(
+                        clients.core_v1.list_namespaced_pod,
+                        namespace=self._spec.namespace,
+                    ),
+                    name=f"sandbox-pod-watch-{self._spec.runtime_label}",
+                ),
+            ]
+            try:
+                while not stop.is_set():
+                    get_event = asyncio.create_task(queue.get())
+                    stop_wait = asyncio.create_task(stop.wait())
+                    done, pending = await asyncio.wait(
+                        (get_event, stop_wait), return_when=asyncio.FIRST_COMPLETED
+                    )
+                    for task in pending:
+                        task.cancel()
+                    await asyncio.gather(*pending, return_exceptions=True)
+                    if stop_wait in done:
+                        return
+                    if get_event in done:
+                        yield None
+            finally:
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+        return stream()
 
     def observation_error(self, *, session_id: UUID, error: str) -> SandboxProvisioningView:
         return provisioning_view(

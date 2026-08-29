@@ -128,6 +128,9 @@ function sceneElement(scene: string) {
     case "settings-grants":
     case "settings-grants-history":
     case "settings-grants-revoke":
+    case "settings-sessions":
+    case "settings-sessions-mobile":
+    case "settings-sessions-terminate":
     case "settings-notifications":
     case "settings-nodes":
     case "settings-system":

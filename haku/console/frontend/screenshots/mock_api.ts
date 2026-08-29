@@ -6,6 +6,7 @@
 import {
   SAMPLE_DAEMONS,
   SAMPLE_DEPLOYMENT,
+  SAMPLE_ACTIVE_SANDBOXES,
   SAMPLE_INDEX_STATUS,
   SAMPLE_GRANTS,
   SAMPLE_MCP_PROBES,
@@ -656,6 +657,8 @@ async function respond(input: RequestInfo | URL, init: RequestInit | undefined, 
     },
     list_node_daemons: () => ({ daemons: SAMPLE_DAEMONS }),
     haku_index__index_status: () => SAMPLE_INDEX_STATUS,
+    haku_session_sandboxes__list_active: () => ({ items: SAMPLE_ACTIVE_SANDBOXES, next_cursor: null }),
+    haku_session_sandboxes__terminate: (args) => ({ session_id: String(args.session_id), status: "terminated" }),
   });
   if (mcpResponse !== null) return mcpResponse;
   if (url.includes("/api/tool-calls")) {

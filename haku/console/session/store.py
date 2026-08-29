@@ -72,6 +72,7 @@ from haku.console.session.conversation_views import (
     SessionFramePage,
     SessionView,
     frame_page,
+    live_status,
     session_view,
     setup_narration,
 )
@@ -355,6 +356,17 @@ class OperatorSessionIdentity:
     agent_id: UUID | None
     access_profile_id: str | None
     harness_kind: HarnessKind
+
+
+@dataclass(frozen=True, slots=True)
+class ActiveSessionRecord:
+    """One operator-owned allocated session that still has a sandbox claim to account for."""
+
+    session_id: UUID
+    runtime_kind: HarnessKind
+    status: SessionStatus
+    created_at: datetime
+    updated_at: datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -1729,6 +1741,65 @@ class Store:
                 error=row.error,
             )
             for row, agent_id, access_profile_id, harness_kind in sessions
+        ]
+
+    async def list_active_sessions(
+        self,
+        operator_id: UUID,
+        *,
+        before_created_at: datetime | None,
+        before_session_id: UUID | None,
+        limit: int,
+    ) -> list[ActiveSessionRecord]:
+        """List allocated, not-yet-ended sessions owned by one Operator.
+
+        ``bridge_token_fingerprint`` is the durable allocation fact: idle sessions have no claim,
+        while provisioning, ready, responding, and closing sessions do. The status is projected
+        with the same open-turn rule as conversation reads, so this inventory cannot grow a second
+        notion of a running session.
+        """
+        query = (
+            select(Session, Conversation.runtime_kind)
+            .join(Conversation, Conversation.conversation_id == Session.conversation_id)
+            .where(
+                Session.operator_id == operator_id,
+                Session.ended_at.is_(None),
+                Session.bridge_token_fingerprint.is_not(None),
+            )
+            .order_by(Session.created_at.desc(), Session.session_id.desc())
+        )
+        if before_created_at is not None or before_session_id is not None:
+            if before_created_at is None or before_session_id is None:
+                raise ValueError("active-session cursor must include created_at and session_id")
+            query = query.where(
+                tuple_(Session.created_at, Session.session_id)
+                <= tuple_(literal(before_created_at), literal(before_session_id))
+            )
+        async with self._sessions() as db:
+            rows = (await db.execute(query.limit(limit))).all()
+            session_ids = {row.session_id for row, _runtime_kind in rows}
+            if session_ids:
+                responding = set(
+                    (
+                        await db.scalars(
+                            select(ConversationTurn.session_id).where(
+                                ConversationTurn.session_id.in_(session_ids),
+                                ConversationTurn.ended_at.is_(None),
+                            )
+                        )
+                    ).all()
+                )
+            else:
+                responding = set()
+        return [
+            ActiveSessionRecord(
+                session_id=row.session_id,
+                runtime_kind=runtime_kind,
+                status=live_status(row, responding=row.session_id in responding),
+                created_at=row.created_at,
+                updated_at=row.updated_at,
+            )
+            for row, runtime_kind in rows
         ]
 
     async def read_session_frames(

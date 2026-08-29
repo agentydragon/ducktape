@@ -21,6 +21,7 @@ test about the *real* step derivation needs `../test_sandbox_claims.py`, not thi
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from datetime import datetime
 from uuid import UUID
 
@@ -87,6 +88,14 @@ class RecordingClaims:
         return provisioning_view(
             f"claude-{session_id.hex}", step=ProvisioningStep.CLAIM_CREATED, observation_error=error
         )
+
+    def watch_changes(self, stop: asyncio.Event) -> AsyncIterator[None]:
+        async def empty() -> AsyncIterator[None]:
+            await stop.wait()
+            return
+            yield
+
+        return empty()
 
     async def aclose(self) -> None:
         return None

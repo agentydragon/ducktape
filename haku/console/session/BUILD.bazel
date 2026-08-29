@@ -172,6 +172,21 @@ py_library(
 )
 
 py_test(
+    name = "test_sandbox_observer",
+    srcs = ["test_sandbox_observer.py"],
+    deps = [
+        ":runtime",
+        ":sandbox_claims",
+        ":sandbox_observer",
+        "//:conftest",
+        "//haku/console/notifications:console_events",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
     name = "test_conversation_views",
     size = "medium",  # provisions a Postgres database per test
     srcs = ["test_conversation_views.py"],
@@ -330,5 +345,17 @@ py_test(
         "@pypi//jinja2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "sandbox_observer",
+    srcs = ["sandbox_observer.py"],
+    deps = [
+        ":runtime",
+        ":sandbox_claims",
+        ":store",
+        "//haku/console/notifications:console_events",
+        "@pypi//sqlalchemy",
     ],
 )
