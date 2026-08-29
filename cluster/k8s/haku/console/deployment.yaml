@@ -1,12 +1,16 @@
 # The Haku Console API: reviewed FastAPI code behind the separately deployed static frontend.
 # The console is the trusted outer shell — it serves config + the capability tier
 # (launch-routine) and frames Haku's own UI (haku-ui) as a sandboxed cross-origin
-# iframe. It writes nothing to haku-state (feedback/trace writes moved into haku-ui)
-# and holds no Git credential: recall-index maintenance — and the Forgejo credential
-# it needs — lives in the separate haku-indexer Deployment, while this pod only reads
-# the committed index state for `haku_index.search`/`index_status`. It likewise runs
-# no Matrix client and holds no Matrix credential: the channel adapter is the
-# separate haku-matrix-adapter Deployment.
+# iframe. It writes nothing to haku-state (feedback/trace writes moved into haku-ui);
+# recall-index maintenance lives in the separate haku-indexer Deployment, so this pod
+# only READS the committed index state for `haku_index.search`/`index_status` and holds
+# no *index* Git credential. It does hold the haku Forgejo write credential
+# (haku-forgejo-git) for a different reason: the colocated egress decide endpoint
+# substitutes it into the hosted haku agent's fenced Forgejo egress, so that agent uses
+# its full Forgejo user (read/write/push) through the fence — deliberate and accepted,
+# the write exposure bounded by haku-state `main` branch protection (force-push/delete
+# blocked). It likewise runs no Matrix client and holds no Matrix credential: the channel
+# adapter is the separate haku-matrix-adapter Deployment.
 # The haku-console-static Deployment serves the bundled SPA and proxies public backend requests
 # here through this Service. Keeping it out of this pod means a frontend-only image update does
 # not restart the API, MCP streams, or background workers.
@@ -38,7 +42,7 @@ metadata:
     # do NOT use reloader's blanket auto mode: the projected static-image metadata
     # changes on every frontend release and must not restart API/MCP/background work.
     configmap.reloader.stakater.com/reload: haku-console-config
-    secret.reloader.stakater.com/reload: haku-routine-launch-token,haku-console-oidc,haku-console-web-push-vapid,tana-agentydragon-gmail-com-account-pat,ha-mcp-bearer,haku-console-db-app,haku-console-agent-api,haku-console-public-coder-agent,haku-console-node-daemon-wyrm2,haku-console-node-daemon-rugged,haku-console-google-client-credentials,haku-console-google-calendar-client-credentials,haku-console-github-mcp-client-credentials,haku-egress-proxy-identity,haku-egress-github-token,litellm-key-public-coder-agent,litellm-key-haku-console-claude
+    secret.reloader.stakater.com/reload: haku-routine-launch-token,haku-console-oidc,haku-console-web-push-vapid,tana-agentydragon-gmail-com-account-pat,ha-mcp-bearer,haku-console-db-app,haku-console-agent-api,haku-console-public-coder-agent,haku-console-node-daemon-wyrm2,haku-console-node-daemon-rugged,haku-console-google-client-credentials,haku-console-google-calendar-client-credentials,haku-console-github-mcp-client-credentials,haku-egress-proxy-identity,haku-egress-github-token,litellm-key-public-coder-agent,litellm-key-haku-console-claude,haku-forgejo-git
 spec:
   replicas: 2
   strategy:
@@ -446,6 +450,24 @@ spec:
             #     above stay Secret-backed and fail-loud.
             - name: HAKU_EGRESS_CREDENTIAL_SUBSTITUTION_SMOKE
               value: EXAMPLE-EGRESS-SMOKE-SUBSTITUTED
+            #   - the forgejo registry credential's real value: Haku's own in-cluster Forgejo account
+            #     password, which the Console substitutes into the haku Agent's Forgejo egress
+            #     (git-over-HTTP Basic + the REST API) at the internal forgejo-http.forgejo origin; the
+            #     sandbox holds only `forgejo-token-placeholder`. This is the SAME haku-forgejo-git
+            #     Secret the haku-state indexer chunk pod mounts — the full haku Forgejo credential,
+            #     deliberately: the hosted haku agent uses its whole Forgejo user (read/write/push)
+            #     through the fence, so the write credential lands on this API pod for substitution
+            #     regardless of packaging. That the API server now shares this one secret with the
+            #     indexer chunk pod is an accepted trade (test_haku_indexer_worker_contract carves out
+            #     exactly this handle); the write exposure is bounded by haku-state `main` branch
+            #     protection (force-push/delete blocked). Optional (#4970): an unset Secret degrades the
+            #     forgejo handle (placeholder 401s) rather than crash-looping the console.
+            - name: HAKU_EGRESS_CREDENTIAL_FORGEJO
+              valueFrom:
+                secretKeyRef:
+                  name: haku-forgejo-git
+                  key: password
+                  optional: true
           resources:
             requests:
               cpu: 50m

@@ -1152,12 +1152,18 @@ def test_haku_indexer_worker_contract(k8s_dir: Path) -> None:
         assert chunk_raw.count('# {"$imagepolicy": "flux-system:haku-indexer"}') == 1
         assert chunk["spec"]["strategy"]["rollingUpdate"]["maxUnavailable"] == 0
 
-        # Narrow identity: no ServiceAccount token, no secret shared with the console API pod (the
-        # API holds no index Git credential). Between chunk and embed exactly the narrow database
-        # role is shared.
+        # Narrow identity: no ServiceAccount token. The console API pod shares no secret with the
+        # indexer chunk pod EXCEPT haku-forgejo-git: the colocated egress decide endpoint runs on the
+        # API server and must hold the haku Forgejo credential to substitute it into the hosted haku
+        # agent's fenced Forgejo egress, so the "API pod holds no index Git credential" boundary is
+        # deliberately traded for that agent using its full Forgejo user (read/write/push) through the
+        # fence — the write exposure bounded by haku-state `main` branch protection
+        # (forgejo_branch_protection: force-push/delete blocked). Every other secret stays unshared.
+        # Between chunk and embed exactly the narrow database role is shared.
+        forgejo_git_egress_secret = "haku-forgejo-git"
         assert chunk_pod["automountServiceAccountToken"] is False
         assert chunk_env["HAKU_INDEXER_DATABASE_URL"]["valueFrom"]["secretKeyRef"]["name"] == db_secret
-        assert _secret_refs(server).isdisjoint(_secret_refs(chunk_container))
+        assert _secret_refs(server).isdisjoint(_secret_refs(chunk_container) - {forgejo_git_egress_secret})
         assert _secret_refs(chunk_container) & _secret_refs(embed_container) == {db_secret}
 
         # Credential minimization by index: the registry names Git-read slots only for the indexes

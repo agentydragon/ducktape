@@ -146,11 +146,15 @@ Built-ins are assembled in `mcp/in_process_servers.py`:
   index state (`recall_index_reader.py`). Source materialization and embedding are the separate
   maintenance stages of `recall_index_sync.py`, run by the independently deployed `haku-indexer`
   worker (`indexer.py`) as role-flagged Deployments: one chunk Deployment per logical index, each
-  mounting only its own index's config slice, plus one shared embed Deployment. Only the
-  `haku-state` chunk pod holds the `haku-state` Git credential (Haku's Forgejo account, capable of
-  writes but used read-only; public Ducktape is anonymous), the embed role the batch embedder
-  endpoint — so this API pod carries no Git credential. <../recall_index/README.md> owns the index
-  design.
+  mounting only its own index's config slice, plus one shared embed Deployment. Among the indexer
+  roles only the `haku-state` chunk pod holds the `haku-state` Git credential (Haku's Forgejo
+  account, capable of writes but used read-only for indexing; public Ducktape is anonymous), the
+  embed role the batch embedder endpoint. The API pod holds that same Forgejo credential
+  (`haku-forgejo-git`) too, but for egress substitution rather than indexing: the colocated egress
+  decide endpoint substitutes it into the hosted haku agent's fenced Forgejo egress, so that agent
+  uses its full Forgejo user (read/write/push) through the fence — deliberate and accepted, the
+  write exposure bounded by `haku-state` `main` branch protection (force-push/delete blocked).
+  <../recall_index/README.md> owns the index design.
 - `haku_conversations` exposes actor-scoped reads over the console's chat records; the runtime and
   record vocabulary are documented under <x/README.md>.
 - `haku_routine` launches the reviewed routine through ordinary approval.
