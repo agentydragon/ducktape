@@ -19,18 +19,26 @@ MCP_TOOL_META_KEY = "works.allegedly.haku/tool"
 MCP_TOOL_CALL_META_KEY = "works.allegedly.haku/tool-call"
 
 
-# Conflates "which input-schema shape does the proxy tool advertise" (enveloped vs raw)
-# with "does a call auto-approve" — roughly 1-1 today, a coupling the interface should not
-# encode. Split tracked in haku/console/TODO.md § Small cleanups.
-class ApprovalMode(StrEnum):
-    PASSTHROUGH = "passthrough"
-    APPROVAL_REQUIRED = "approval_required"
+class InputSchemaMode(StrEnum):
+    """Which input shape the proxy advertises to this caller."""
+
+    UPSTREAM = "upstream"
+    APPROVAL_ENVELOPE = "approval_envelope"
+
+
+class ApprovalPolicy(StrEnum):
+    """The effective auto-approval policy for this caller and tool."""
+
+    ALWAYS_AUTO_APPROVED = "always_auto_approved"
+    CONDITIONALLY_AUTO_APPROVED = "conditionally_auto_approved"
+    MANUAL_APPROVAL_REQUIRED = "manual_approval_required"
 
 
 class McpProxyToolMetadata(BaseModel):
     server_id: str
     upstream_tool_name: str
-    approval_mode: ApprovalMode
+    input_schema_mode: InputSchemaMode
+    approval_policy: ApprovalPolicy
 
 
 class McpToolCallMetadata(BaseModel):

@@ -97,7 +97,7 @@ refresh or downstream call. `get_mcp_server_status` actively resolves credential
 server, returning degraded stage/reason data instead of erasing the server. Status never includes
 access/refresh tokens, client secrets, or static-bearer secret references; a configured connection
 whose deploy-time client is absent reports `unprovisioned` rather than disappearing. Reflected
-`approval_mode` and `input_schema` describe the caller-visible proxy shape. Upstream
+`input_schema_mode`, `approval_policy`, and `input_schema` describe the caller-visible proxy shape. Upstream
 `initialize.instructions` pass through rather than being restated here; tool descriptions carry the
 stub semantics because many clients do not display server instructions.
 

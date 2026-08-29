@@ -331,7 +331,8 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
     assert gmail_read_meta[MCP_TOOL_META_KEY] == {
         "server_id": "gmail",
         "upstream_tool_name": "labels_list",
-        "approval_mode": "passthrough",
+        "input_schema_mode": "upstream",
+        "approval_policy": "always_auto_approved",
     }
     # Read tools advertise read-only; the write tool stays unannotated (defaults describe mutating).
     gmail_read_ann = tools["gmail__labels_list"].annotations
@@ -362,7 +363,18 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
     assert gmail_write_meta[MCP_TOOL_META_KEY] == {
         "server_id": "gmail",
         "upstream_tool_name": "drafts_create",
-        "approval_mode": "approval_required",
+        "input_schema_mode": "approval_envelope",
+        "approval_policy": "manual_approval_required",
+    }
+    # A conditionally auto-approved tool still uses the approval envelope; the policy signal is
+    # deliberately separate from the input-shape signal.
+    gmail_conditional_meta = tools["gmail__labels_delete"].meta
+    assert gmail_conditional_meta is not None
+    assert gmail_conditional_meta[MCP_TOOL_META_KEY] == {
+        "server_id": "gmail",
+        "upstream_tool_name": "labels_delete",
+        "input_schema_mode": "approval_envelope",
+        "approval_policy": "conditionally_auto_approved",
     }
     # The read tools are present.
     assert {
@@ -463,7 +475,12 @@ async def test_tool_surface_is_specific_to_the_authenticated_agent(harness: _Har
     labels_list = tools["gmail__labels_list"]
     assert set(labels_list.inputSchema["required"]) == {"input", "rationale"}
     assert labels_list.meta is not None
-    assert labels_list.meta[MCP_TOOL_META_KEY]["approval_mode"] == "approval_required"
+    assert labels_list.meta[MCP_TOOL_META_KEY] == {
+        "server_id": "gmail",
+        "upstream_tool_name": "labels_list",
+        "input_schema_mode": "approval_envelope",
+        "approval_policy": "manual_approval_required",
+    }
 
 
 async def test_mcp_transport_is_stateless_across_replicas(harness: _Harness) -> None:
@@ -885,11 +902,13 @@ async def test_reflected_schema_is_the_one_call_mcp_tool_accepts(agent_client: C
     tools = {tool["name"]: tool for tool in status.structured_content["server"]["state"]["tools"]}
 
     # An auto-approved read reports raw upstream arguments...
-    assert tools["labels_list"]["approval_mode"] == "passthrough"
+    assert tools["labels_list"]["input_schema_mode"] == "upstream"
+    assert tools["labels_list"]["approval_policy"] == "always_auto_approved"
     assert "input" not in tools["labels_list"]["input_schema"].get("properties", {})
     # ...and a write reports the envelope, with the upstream schema nested under `input`.
     create = tools["drafts_create"]
-    assert create["approval_mode"] == "approval_required"
+    assert create["input_schema_mode"] == "approval_envelope"
+    assert create["approval_policy"] == "manual_approval_required"
     assert set(create["input_schema"]["required"]) == {"input", "rationale"}
     assert "subject" in create["input_schema"]["properties"]["input"]["properties"]
     reflected_wait = create["input_schema"]["properties"]["wait_for_result_ms"]
@@ -1562,7 +1581,8 @@ async def test_get_mcp_server_status_includes_schemas_only_when_requested(
         "output_schema": None,
         # No policy auto-approves `standin`, so this tool is reported as taking the envelope even
         # though its own schema is bare — that is the shape a caller must actually send.
-        "approval_mode": "approval_required",
+        "input_schema_mode": "approval_envelope",
+        "approval_policy": "manual_approval_required",
         "annotations": None,
         "icons": None,
     }
