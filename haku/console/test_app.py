@@ -152,7 +152,9 @@ def test_config_advertises_codex_and_explicit_launch_preserves_public_coder_isol
             (haku_id, "claude_code"),
             (coder_id, "codex_app_server"),
         ]
-        assert all("is_default" not in option for option in options)
+        assert all(
+            set(option) == {"agent_id", "agent_display_name", "runtime", "runtime_display_name"} for option in options
+        )
         assert [(option["agent_display_name"], option["runtime_display_name"]) for option in options] == [
             ("Haku", "Claude"),
             ("public-coder-agent", "Codex"),
