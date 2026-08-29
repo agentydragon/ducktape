@@ -46,7 +46,7 @@ from haku.console.mcp.reflection_cache import ReflectedCatalog
 from haku.console.mcp.tool_call_service import ToolCallApplicationService, ToolCallNotFoundError
 from haku.console.mcp_config import ConsoleConfigFile, const_in_process_server
 from haku.console.oauth.provider_connection import ProviderConnected, ProviderConnectionStatusResponse
-from haku.console.tool_call_actor import AgentActor, RuntimeActor
+from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_calls import (
     MCP_TOOL_CALL_META_KEY,
     MCP_TOOL_META_KEY,
@@ -1103,7 +1103,8 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, migra
                 assert result.structured_content["status"] == ToolCallStatus.PENDING_APPROVAL
                 tool_call_id = result.structured_content["tool_call_id"]
 
-            # The operator approves via the exact-Origin-gated decision endpoint -> the real upstream runs.
+            # The Operator uses the upstream tool's native shape and the exact-Origin-gated MCP
+            # request executes directly, without entering the approval queue.
             async with httpx.AsyncClient(
                 base_url=base,
                 cookies={
@@ -1118,10 +1119,7 @@ async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, migra
                     "jsonrpc": "2.0",
                     "id": 10,
                     "method": "tools/call",
-                    "params": {
-                        "name": "standin__echo",
-                        "arguments": {"input": {"text": "operator"}, "rationale": "render an operator preview"},
-                    },
+                    "params": {"name": "standin__echo", "arguments": {"text": "operator"}},
                 }
                 mcp_headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
 
@@ -1697,6 +1695,60 @@ async def test_tool_dispatch_reads_only_target_server_snapshot(migrated_db_url: 
     assert tool.name == "beta__echo"
     assert tool.actor == actor
     assert reflected == ["beta"]
+
+
+async def test_operator_proxy_advertises_and_dispatches_native_arguments(migrated_db_url: str, tmp_path: Path) -> None:
+    config_file = _write_console_config(
+        tmp_path / "operator-input-shape.yaml",
+        {
+            "static_agents": _STATIC_AGENTS,
+            "mcp": {
+                "servers": [{"id": "beta", "backend": _remote_backend("https://beta.invalid/mcp", {"kind": "none"})}]
+            },
+        },
+    )
+    settings = console_settings(migrated_db_url, config_file=config_file)
+    app = create_app(settings)
+    execute_direct = AsyncMock(return_value={"content": [{"type": "text", "text": "listed"}]})
+    app.state.tool_call_service.execute_direct = execute_direct
+    catalogs = Mock()
+    catalogs.metadata.return_value = ReflectedCatalog(
+        tools=[
+            Tool(
+                name="list_active",
+                description="List active sessions",
+                inputSchema={"type": "object", "properties": {"limit": {"type": "integer"}}},
+            )
+        ]
+    )
+    actor = OperatorActor(operator_id=UUID("10000000-0000-4000-8000-000000000001"))
+    actor_resolver = Mock(spec=mcp_server_module.HakuMcpActorResolver)
+    actor_resolver.resolve = AsyncMock(return_value=actor)
+    provider = mcp_server_module.OperatorToolProvider(
+        mcp_server_module.ConsoleMcpContext(
+            settings=settings,
+            tool_calls=app.state.tool_call_service,
+            oauth_store=app.state.mcp_operator_oauth_store,
+            provider_store=app.state.provider_connection_store,
+            dispatcher=app.state.mcp_dispatcher,
+            catalogs=catalogs,
+        ),
+        actor_resolver,
+    )
+
+    tool = await provider._get_tool("beta__list_active")
+
+    assert isinstance(tool, mcp_server_module.ProxyTool)
+    advertised = tool.to_mcp_tool()
+    assert advertised.inputSchema == {"type": "object", "properties": {"limit": {"type": "integer"}}}
+    result = await tool.run({"limit": 100})
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "listed"
+    call = execute_direct.await_args
+    assert call is not None
+    request = call.kwargs["req"]
+    assert request.arguments == {"limit": 100}
+    assert call.kwargs["actor"] == actor
 
 
 async def test_targeted_dispatch_reports_a_known_degraded_server(migrated_db_url: str, tmp_path: Path) -> None:

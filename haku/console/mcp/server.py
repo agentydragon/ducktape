@@ -351,7 +351,12 @@ async def _passive_server_connection_statuses(
 
 
 def _is_passthrough(policies: AutoApprovalPolicyRegistry, actor: RuntimeActor, server_id: str, tool_name: str) -> bool:
-    return policies.tool_mode(actor, server_id, tool_name) is ToolAutoApprovalMode.ALWAYS_AUTO_APPROVED
+    # Operators bypass the approval lifecycle entirely, so they use the upstream tool's native
+    # argument shape regardless of the Agent policy for this server/tool. The same shape decision
+    # feeds tools/list, the generic call_mcp_tool fallback, and dispatch below.
+    return isinstance(actor, OperatorActor) or (
+        policies.tool_mode(actor, server_id, tool_name) is ToolAutoApprovalMode.ALWAYS_AUTO_APPROVED
+    )
 
 
 def _exposed_metadata(
@@ -508,7 +513,10 @@ async def _dispatch(
     parse or a second dispatch is how an approval bypass gets built by accident, since the policy
     decision lives inside ``submit_and_wait``.
     """
-    if passthrough:
+    # A browser Operator is always a direct caller, even if a stale or hand-built proxy supplied
+    # the approval-required flag. Keep the caller-dependent wire contract true at the dispatch
+    # boundary rather than allowing envelope validation to run before execute_direct.
+    if isinstance(actor, OperatorActor) or passthrough:
         call_args, rationale, title, wait_ms = arguments, "", None, DEFAULT_WAIT_MS
     else:
         env = _approval_request_envelope_model(max_wait_ms=context.settings.max_wait_for_result_ms).model_validate(
