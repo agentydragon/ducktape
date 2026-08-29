@@ -634,9 +634,9 @@ egress_decide:
     # The haku Forgejo credential (the existing haku-forgejo-git Secret — the full haku Forgejo user)
     # substituted into the haku Agent's Forgejo egress (git-over-HTTP + REST API), reachable at the
     # internal forgejo-http.forgejo service and the public git.allegedly.works. The sandbox only ever
-    # holds `forgejo-token-placeholder`.
-    - handle: forgejo
-      placeholder: forgejo-token-placeholder
+    # holds `haku-forgejo-token-placeholder`.
+    - handle: haku-forgejo-token
+      placeholder: haku-forgejo-token-placeholder
       value_env_var: HAKU_EGRESS_CREDENTIAL_FORGEJO
       match_headers: [authorization]
       agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
@@ -803,8 +803,9 @@ egress_decide:
       coverage:
         methods: [GET, HEAD]
     # The haku Agent's in-cluster + public Forgejo egress (git-over-HTTP + the REST API), redeeming
-    # the `forgejo` credential. allow_prohibited_address lifts the private-address denial for the
-    # internal http origins (#5073, as the *-litellm entries do); it is a no-op for the public host.
+    # the `haku-forgejo-token` credential. allow_prohibited_address lifts the private-address denial
+    # for the internal http origins (#5073, as the *-litellm entries do); it is a no-op for the
+    # public host.
     - id: haku-forgejo
       agent_ids: [8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2]
       origins:
@@ -819,7 +820,7 @@ egress_decide:
           port: 443
       coverage:
         methods: [DELETE, GET, HEAD, PATCH, POST, PUT]
-      credential_handle: forgejo
+      credential_handle: haku-forgejo-token
       allow_prohibited_address: true
   # Cluster pod + service CIDRs, denied in resolved answers on top of the always-prohibited classes
   # (loopback, link-local, multicast, private/RFC1918/ULA — which already cover 10/8). Named per the
