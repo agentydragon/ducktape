@@ -7,8 +7,11 @@ Speaks streamable-HTTP MCP with a static Agent bearer (the reflected
 this is only the client that builds and fires those requests from a shell.
 
 The bearer comes from ``$HAKU_AGENT_TOKEN`` (never a flag, so it stays out of
-shell history and ``ps``); the endpoint URL from ``--url`` / ``$HAKU_MCP_URL``,
-defaulting to the deployed console.
+shell history and ``ps``), falling back — when that is unset — to the same token
+reflected into the cluster as the ``haku-sandbox/haku-console-agent-api`` secret,
+read via ``kubectl`` for agents that carry a kubeconfig but no exported bearer;
+the endpoint URL from ``--url`` / ``$HAKU_MCP_URL``, defaulting to the deployed
+console.
 
 TLS/proxy trust is left to the environment: ``fastmcp.Client`` builds an
 ``httpx.AsyncClient`` with ``trust_env`` on, so it honors ``HTTPS_PROXY`` and
@@ -19,8 +22,10 @@ verification is never disabled.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
+import subprocess
 from typing import Any
 
 import typer
@@ -35,6 +40,12 @@ from util.typer import async_run
 DEFAULT_URL = "https://haku.allegedly.works/mcp"
 TOKEN_ENV = "HAKU_AGENT_TOKEN"
 URL_ENV = "HAKU_MCP_URL"
+
+# Kubernetes fallback for the Agent bearer when $HAKU_AGENT_TOKEN is unset: the
+# same static token, reflected into the cluster as this secret.
+_TOKEN_SECRET_NAMESPACE = "haku-sandbox"
+_TOKEN_SECRET_NAME = "haku-console-agent-api"
+_TOKEN_SECRET_KEY = "token"
 
 app = typer.Typer(help="MCP client for the Haku console (/mcp).", no_args_is_help=True)
 _out = Console()
@@ -54,10 +65,49 @@ def build_client(url: str, token: str) -> Client:
     return Client(StreamableHttpTransport(url, auth=token))
 
 
+def _token_from_kubernetes() -> str | None:
+    """The Agent bearer read from the ``haku-sandbox/haku-console-agent-api`` secret via ``kubectl``.
+
+    ``None`` when kubectl is absent (the plain local-dev case) or the read fails
+    (no kubeconfig, RBAC denied, secret missing). A failure that *ran* kubectl is
+    logged to stderr so the reason isn't swallowed; the base64 value is only ever
+    read from stdout, never placed on argv.
+    """
+    argv = [
+        "kubectl",
+        "-n",
+        _TOKEN_SECRET_NAMESPACE,
+        "get",
+        "secret",
+        _TOKEN_SECRET_NAME,
+        "-o",
+        f"jsonpath={{.data.{_TOKEN_SECRET_KEY}}}",
+    ]
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True, check=False)
+    except FileNotFoundError:
+        return None
+    if proc.returncode != 0:
+        lines = proc.stderr.strip().splitlines()
+        detail = lines[-1] if lines else f"kubectl exited {proc.returncode}"
+        _err.print(
+            f"[yellow]warning:[/] could not read {_TOKEN_SECRET_NAMESPACE}/{_TOKEN_SECRET_NAME} "
+            f"for the Agent bearer: {detail}"
+        )
+        return None
+    encoded = proc.stdout.strip()
+    if not encoded:
+        return None
+    return base64.b64decode(encoded).decode().strip()
+
+
 def _client(url: str) -> Client:
-    token = os.environ.get(TOKEN_ENV)
+    token = os.environ.get(TOKEN_ENV) or _token_from_kubernetes()
     if not token:
-        _err.print(f"[red]error:[/] set ${TOKEN_ENV} to the haku-console Agent bearer")
+        _err.print(
+            f"[red]error:[/] no Agent bearer: set ${TOKEN_ENV}, or make the "
+            f"{_TOKEN_SECRET_NAMESPACE}/{_TOKEN_SECRET_NAME} secret readable via kubectl"
+        )
         raise typer.Exit(2)
     return build_client(url, token)
 
