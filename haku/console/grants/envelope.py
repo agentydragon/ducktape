@@ -41,6 +41,7 @@ from haku.console.grants.principal import (
     GrantPrincipal,
     GrantPrincipalKind,
     RequestPrincipal,
+    grant_principal_column_values,
     grant_principal_from_columns,
 )
 from util.sqlalchemy_types import TextBackedStrEnumColumn
@@ -222,6 +223,22 @@ def request_principal_clause(
             )
         )
     return or_(*grant_principals)
+
+
+def grant_principal_clause(row: type[GrantEnvelopeColumns], grant_principal: GrantPrincipal) -> ColumnElement[bool]:
+    """Filter ``row`` to grants whose declared subject is exactly ``grant_principal``."""
+
+    agent_id, session_id, access_profile_id = grant_principal_column_values(grant_principal)
+    return and_(
+        row.principal_kind == grant_principal.kind,
+        row.principal_agent_id == agent_id if agent_id is not None else row.principal_agent_id.is_(None),
+        row.principal_session_id == session_id if session_id is not None else row.principal_session_id.is_(None),
+        (
+            row.principal_access_profile_id == access_profile_id
+            if access_profile_id is not None
+            else row.principal_access_profile_id.is_(None)
+        ),
+    )
 
 
 def match_replayed_grant_set[RowT: GrantEnvelopeColumns](

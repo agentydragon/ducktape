@@ -46,11 +46,9 @@ class GrantDomain(StrEnum):
     HTTP = "http"
 
 
-# The declared read scope for `list_grants`. Only `self` (the caller's own grants) is served today,
-# and it is the value the argument-conditional auto-approval policy keys on; a broader nameable
-# principal is an Operator-reviewed follow-up. Absent means the (reserved) broader read, which stays
-# manual.
-GrantReadScope = Literal["self"]
+# Only the explicit `self` read auto-approves. A named principal is an Operator-reviewed broader
+# read; omitted principal retains the caller's own effective-authority view but stays manual.
+type GrantReadScope = Literal["self"] | GrantPrincipal
 
 
 class KubernetesGrantRequest(BaseModel):
@@ -159,12 +157,10 @@ class GrantsToolsService:
     async def list_grants(
         self, *, context: McpExecutionContext, principal: GrantReadScope | None = None
     ) -> list[Grant]:
-        # The read is actor-scoped regardless: `list_applicable_grants` filters to the caller's own
-        # grants via the trusted request principal. `principal` is the caller's declared scope,
-        # carried for argument-conditional auto-approval; only `self` is served today and it equals
-        # that own-scoped read.
-        del principal
-        return list(await self._catalog.list_applicable(request_principal=context.request_principal))
+        request_principal = context.request_principal
+        if principal is None or principal == "self":
+            return list(await self._catalog.list_applicable(request_principal=request_principal))
+        return list(await self._catalog.list_for_principal(principal=principal))
 
     async def get_grant(self, *, context: McpExecutionContext, domain: GrantDomain, grant_id: UUID) -> Grant:
         if domain is GrantDomain.KUBERNETES:
@@ -302,8 +298,9 @@ def build_mcp(service: GrantsToolsService) -> FastMCP:
             GrantReadScope | None,
             Field(
                 description=(
-                    "Read scope. 'self' returns only this Agent's own grants (the only scope served "
-                    "today) and is the click-free path; omit it for the Operator-reviewed broader read."
+                    "Grant subject to list. 'self' resolves the caller's trusted request principal and is "
+                    "the click-free path. A named principal returns grants declared for exactly that subject; "
+                    "it requires Operator approval. Omit it to list the caller's effective authority."
                 )
             ),
         ] = None,

@@ -65,6 +65,10 @@ class GrantRepository(Protocol):
         self, *, request_principal: RequestPrincipal, now: datetime.datetime, include_terminal: bool = True
     ) -> tuple[Grant, ...]: ...
 
+    async def list_for_principal(
+        self, *, principal: GrantPrincipal, now: datetime.datetime, include_terminal: bool = True
+    ) -> tuple[Grant, ...]: ...
+
     async def active_for_request_principal(
         self, *, request_principal: RequestPrincipal, now: datetime.datetime
     ) -> tuple[Grant, ...]: ...
@@ -229,6 +233,15 @@ class GrantService:
 
         return await self._repository.list_for_request_principal(
             request_principal=request_principal, now=self._now(), include_terminal=include_terminal
+        )
+
+    async def list_for_principal(
+        self, *, principal: GrantPrincipal, include_terminal: bool = True
+    ) -> tuple[Grant, ...]:
+        """List grants whose declared subject is exactly ``principal``."""
+
+        return await self._repository.list_for_principal(
+            principal=principal, now=self._now(), include_terminal=include_terminal
         )
 
     async def get_grant(self, *, owner_agent_id: UUID, grant_id: UUID) -> Grant:

@@ -13,6 +13,7 @@ from haku.console.database_schema import KubernetesGrantRow
 from haku.console.grants.envelope import (
     GrantNotFoundError,
     GrantOwnershipError,
+    grant_principal_clause,
     match_replayed_grant_set,
     request_principal_clause,
 )
@@ -199,6 +200,20 @@ class PostgresGrantRepository:
             statement = select(KubernetesGrantRow).where(
                 request_principal_clause(KubernetesGrantRow, request_principal)
             )
+            if not include_terminal:
+                statement = statement.where(_not_ended(), KubernetesGrantRow.expires_at > now)
+            rows = (
+                await session.scalars(
+                    statement.order_by(KubernetesGrantRow.created_at.desc(), KubernetesGrantRow.grant_id)
+                )
+            ).all()
+            return tuple(self._row_to_model(row) for row in rows)
+
+    async def list_for_principal(
+        self, *, principal: GrantPrincipal, now: datetime.datetime, include_terminal: bool = True
+    ) -> tuple[Grant, ...]:
+        async with self._sessions() as session:
+            statement = select(KubernetesGrantRow).where(grant_principal_clause(KubernetesGrantRow, principal))
             if not include_terminal:
                 statement = statement.where(_not_ended(), KubernetesGrantRow.expires_at > now)
             rows = (

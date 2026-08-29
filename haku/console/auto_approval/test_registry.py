@@ -754,8 +754,8 @@ async def test_list_grants_auto_approves_only_the_explicit_self_scope() -> None:
     )
     assert not isinstance(approved, PolicyDenial)
     assert approved[0] == AGENT_AUTO_APPROVAL_ID
-    # The omitted principal (the reserved broader read) and any non-self value stay manual.
-    for arguments in ({}, {"principal": None}):
+    # Omission and a named principal stay manual.
+    for arguments in ({}, {"principal": None}, {"principal": {"kind": "agent", "agent_id": str(AGENT_ACTOR.agent_id)}}):
         manual = await _GRANT_READS_REGISTRY.evaluate(
             actor=AGENT_ACTOR, server_id="grants", tool_name="list_grants", arguments=arguments, gmail=None
         )

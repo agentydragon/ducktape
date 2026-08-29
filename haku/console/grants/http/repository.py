@@ -13,6 +13,7 @@ from haku.console.database_schema import HttpGrantRow
 from haku.console.grants.envelope import (
     GrantNotFoundError,
     GrantOwnershipError,
+    grant_principal_clause,
     match_replayed_grant_set,
     request_principal_clause,
 )
@@ -176,6 +177,18 @@ class PostgresGrantRepository:
     ) -> tuple[Grant, ...]:
         async with self._sessions() as session:
             statement = select(HttpGrantRow).where(request_principal_clause(HttpGrantRow, request_principal))
+            if not include_terminal:
+                statement = statement.where(_not_ended(), HttpGrantRow.expires_at > now)
+            rows = (
+                await session.scalars(statement.order_by(HttpGrantRow.created_at.desc(), HttpGrantRow.grant_id))
+            ).all()
+            return tuple(_row_to_model(row) for row in rows)
+
+    async def list_for_principal(
+        self, *, principal: GrantPrincipal, now: datetime.datetime, include_terminal: bool = True
+    ) -> tuple[Grant, ...]:
+        async with self._sessions() as session:
+            statement = select(HttpGrantRow).where(grant_principal_clause(HttpGrantRow, principal))
             if not include_terminal:
                 statement = statement.where(_not_ended(), HttpGrantRow.expires_at > now)
             rows = (

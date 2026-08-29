@@ -270,7 +270,7 @@ class AutoApprovalPolicyRegistry:
                     evaluation.record(
                         current_path,
                         NotAutoApproved(
-                            "list_grants auto-approves only with principal=self; the broader read is manual"
+                            "list_grants auto-approves only with principal=self; omitted and named reads are manual"
                         ),
                     )
             case KubernetesPassthroughAutoApprovalPolicy(server=server):

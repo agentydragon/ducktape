@@ -268,10 +268,9 @@ class GitHubPublicRepositoryAutoApprovalPolicy(AutoApprovalPolicyBase):
 class GrantSelfListAutoApprovalPolicy(AutoApprovalPolicyBase):
     """Conditionally auto-approve an Agent listing its OWN grants (`list_grants(principal='self')`).
 
-    Only the explicit own-scope read auto-approves; omitting `principal` (the reserved broader read)
-    or naming another principal stays manual. The `list_grants` read is actor-scoped regardless — the
-    grant service filters to the caller's own grants by the trusted request principal — so this only
-    removes the click for the safe scope, never widens what the tool can return.
+    Only the explicit own-scope read auto-approves; omitting `principal` or naming a principal stays
+    manual. The named-principal form returns authority declared for that exact subject, while `self`
+    resolves the caller's trusted request principal.
     """
 
     type: Literal["grant_self_list"] = "grant_self_list"
