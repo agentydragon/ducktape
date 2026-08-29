@@ -506,7 +506,7 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
               ← Conversations
             </Button>
             <Group gap="xs" wrap="wrap" mt={4}>
-              {conversation.agent_id !== null && (
+              {conversation.agent_id != null && (
                 <Text fw={600} size="sm">
                   <AgentName agentId={conversation.agent_id} />
                 </Text>
