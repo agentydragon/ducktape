@@ -46,8 +46,7 @@ class Settings(BaseSettings):
         description="Classifier calls go through the configured Anthropic-compatible backend.",
     )
     anthropic_api_key: str = Field(
-        validation_alias="ANTHROPIC_API_KEY",
-        description="Credential accepted by the configured classifier backend.",
+        validation_alias="ANTHROPIC_API_KEY", description="Credential accepted by the configured classifier backend."
     )
     haku_api_token: str = Field(validation_alias="HAKU_API_TOKEN")
     result_token_secret: str = Field(validation_alias="RESULT_TOKEN_SECRET")
