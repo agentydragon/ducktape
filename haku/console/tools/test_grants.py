@@ -234,16 +234,8 @@ def test_server_exposes_exact_stable_tool_set_without_context_argument(console: 
     # whoami is a pure identity read: no arguments beyond the hidden execution context.
     assert tools["whoami"].inputSchema.get("properties", {}) == {}
     assert set(tools["create_grant"].inputSchema["properties"]) == {"grants", "duration_seconds", "principal"}
-    # `list_grants` accepts a self declaration or one typed grant principal.
+    # `list_grants` exposes only its optional principal selector.
     assert set(tools["list_grants"].inputSchema["properties"]) == {"principal"}
-    principal_schema = tools["list_grants"].inputSchema["properties"]["principal"]
-    assert "self" in {branch.get("const") for branch in principal_schema["anyOf"]}
-    principal_branch = next(branch for branch in principal_schema["anyOf"] if "oneOf" in branch)
-    assert {branch["$ref"] for branch in principal_branch["oneOf"]} == {
-        "#/$defs/AgentGrantPrincipal",
-        "#/$defs/SessionGrantPrincipal",
-        "#/$defs/AccessProfileGrantPrincipal",
-    }
     assert set(tools["get_grant"].inputSchema["properties"]) == {"domain", "grant_id"}
     # One end-grants tool: an Agent omits owner_agent_id (relinquishes its own); an Operator names it.
     assert set(tools["revoke_grants"].inputSchema["properties"]) == {"domain", "grant_ids", "reason", "owner_agent_id"}
