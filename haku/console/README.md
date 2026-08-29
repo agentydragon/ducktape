@@ -153,7 +153,9 @@ Built-ins are assembled in `mcp/in_process_servers.py`:
   (`haku-forgejo-git`) too, but for egress substitution rather than indexing: the colocated egress
   decide endpoint substitutes it into the hosted haku agent's fenced Forgejo egress, so that agent
   uses its full Forgejo user (read/write/push) through the fence — deliberate and accepted, the
-  write exposure bounded by `haku-state` `main` branch protection (force-push/delete blocked).
+  write exposure bounded by `haku-state` `main` branch protection (force-push/delete blocked). This
+  sharing is temporary: once the indexer gains its own read-only Forgejo credential the API pod need
+  not hold `haku-forgejo-git` (TODO in `test_haku_indexer_worker_contract`).
   <../recall_index/README.md> owns the index design.
 - `haku_conversations` exposes actor-scoped reads over the console's chat records; the runtime and
   record vocabulary are documented under <x/README.md>.

@@ -9,8 +9,10 @@
 # substitutes it into the hosted haku agent's fenced Forgejo egress, so that agent uses
 # its full Forgejo user (read/write/push) through the fence — deliberate and accepted,
 # the write exposure bounded by haku-state `main` branch protection (force-push/delete
-# blocked). It likewise runs no Matrix client and holds no Matrix credential: the channel
-# adapter is the separate haku-matrix-adapter Deployment.
+# blocked). Temporary: once the indexer gains its own read-only Forgejo credential this
+# pod need not share haku-forgejo-git with it (TODO in test_haku_indexer_worker_contract).
+# It likewise runs no Matrix client and holds no Matrix credential: the channel adapter is
+# the separate haku-matrix-adapter Deployment.
 # The haku-console-static Deployment serves the bundled SPA and proxies public backend requests
 # here through this Service. Keeping it out of this pod means a frontend-only image update does
 # not restart the API, MCP streams, or background workers.

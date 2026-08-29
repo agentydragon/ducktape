@@ -1160,6 +1160,10 @@ def test_haku_indexer_worker_contract(k8s_dir: Path) -> None:
         # fence — the write exposure bounded by haku-state `main` branch protection
         # (forgejo_branch_protection: force-push/delete blocked). Every other secret stays unshared.
         # Between chunk and embed exactly the narrow database role is shared.
+        # TODO(indexer-forgejo-read-cred): give the haku-state indexer its OWN read-only Forgejo
+        # credential (distinct from the shared `haku` write password), then drop this carve-out and
+        # restore full server<->chunk secret disjointness — the API server would no longer need to
+        # share haku-forgejo-git with the chunk pod.
         forgejo_git_egress_secret = "haku-forgejo-git"
         assert chunk_pod["automountServiceAccountToken"] is False
         assert chunk_env["HAKU_INDEXER_DATABASE_URL"]["valueFrom"]["secretKeyRef"]["name"] == db_secret
