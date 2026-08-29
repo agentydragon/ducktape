@@ -20,7 +20,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.channels.matrix.client import Error
-from haku.console.channels.matrix.conftest import MATRIX_ROOM
+from haku.console.channels.matrix.conftest import MATRIX_ROOM, MATRIX_TEST_HARNESS_KIND
 from haku.console.channels.matrix.conversation import ConversationStore, RoomAttachment
 from haku.console.channels.matrix.outbox import MAX_SEND_ATTEMPTS, PendingReply, RoomOutbox, RoomOutboxDrain
 from haku.console.channels.matrix.outbox_wake import OutboxWakes
@@ -29,7 +29,7 @@ from haku.console.conversation.conversation_event import FrameRange
 from haku.console.conversation.item_vocabulary import ItemStatus, ItemType
 from haku.console.conversation.prompt_origin import SPA_ORIGIN
 from haku.console.database_schema import ConversationItem, MatrixOutbox
-from haku.console.session.store import BridgeAuthentication, Store
+from haku.console.session.store import RunnerConnectionAuthentication, Store
 from haku.console.x.conversation_events import ItemSegment, MessageCompleted, MessageStarted, OpenRef
 
 
@@ -41,7 +41,7 @@ def outbox(migrated_sessions: async_sessionmaker[AsyncSession]) -> RoomOutbox:
 @pytest.fixture
 async def binding(conversations: ConversationStore, operator_id: UUID) -> RoomAttachment:
     """The room's live binding, whose attachment is what a sent reply is recorded against."""
-    return await conversations.bind_room(MATRIX_ROOM, operator_id)
+    return await conversations.bind_room(MATRIX_ROOM, operator_id, harness_kind=MATRIX_TEST_HARNESS_KIND)
 
 
 @pytest.fixture
@@ -56,7 +56,10 @@ async def session_id(session_store: Store, binding: RoomAttachment, operator_id:
     Started on the conversation the room is attached to, the way the supervisor starts one.
     """
     view, token = await session_store.create(operator_id, conversation_id=binding.conversation_id)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     return view.session_id
 
 

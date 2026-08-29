@@ -6,15 +6,18 @@ metadata:
 rules:
   # `patch` so the console can slide a live session's `shutdownTime` forward on its lease
   # heartbeat (haku/console/session/sandbox_claims.py `renew`) — the sandbox is a renewed lease, not a
-  # fixed timer. `get` reads the resourceVersion the patch tests against.
+  # fixed timer. `get` reads the resourceVersion the patch tests against. `list` + `watch` feed the
+  # active-session observer's invalidation stream; its label selector limits claims to Console
+  # sessions, while this dedicated namespace keeps the Role's namespaced read scope narrow.
   - apiGroups: ["extensions.agents.x-k8s.io"]
     resources: ["sandboxclaims"]
-    verbs: ["create", "delete", "get", "patch"]
-  # Read-only runtime inspection powers the Operator-facing provisioning details.
-  # The Console still cannot list arbitrary resources, read logs/Secrets, or exec.
+    verbs: ["create", "delete", "get", "list", "patch", "watch"]
+  # Read-only runtime inspection powers the Operator-facing provisioning details and the
+  # active-session observer's invalidation stream. The Console still cannot read logs/Secrets or
+  # exec in this namespace.
   - apiGroups: ["agents.x-k8s.io"]
     resources: ["sandboxes"]
-    verbs: ["get"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["get"]
+    verbs: ["get", "list", "watch"]

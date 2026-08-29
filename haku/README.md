@@ -25,6 +25,8 @@ Current work is iterating that method until what it surfaces is genuinely good.
 - The trusted console (capability tier + iframe shell): `console/README.md`;
   containment contract: `console/docs/containment.md`. Alternative runtimes
   (Managed Agents): `runtime/managed_agent/` + `plans/`.
+- The current colocated HTTP egress and bridge-bearer contract: `egress/SPEC.md`;
+  research, alternatives, and decision history: `../cluster/docs/plans/agent_egress_proxy_options.md`.
 - Cluster wiring (RBAC, egress proxy, secrets): `cluster/k8s/haku/` and
   `cluster/k8s/agents/haku-egress-proxy/`.
 - The **actionable build checklist is `TODO.md`.**

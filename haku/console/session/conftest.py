@@ -1,4 +1,4 @@
-"""Shared setup for the runtime's tests — sessions, turns, frames, sandboxes.
+"""Shared setup for the harness registration's tests — sessions, turns, frames, sandboxes.
 
 Fixtures more than one module needs, stand-ins for what is genuinely outside the process (the
 stand-ins themselves live in `../x/testing/`, so a non-pytest process can reach them too), and the
@@ -21,10 +21,12 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.chat_models import ChannelSurface
-from haku.console.config import RuntimeRegistrationConfig
+from haku.console.config import HarnessRegistrationConfig
+from haku.console.conftest import console_sessions
 from haku.console.conversation.item_vocabulary import ItemStatus, ItemType
 from haku.console.database_schema import ChannelAttachmentRow, ConversationItem, Session
 from haku.console.harnesses.kind import HarnessKind
+from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.notifications.conversation_wakes import ConversationWakes
 from haku.console.notifications.session_wakes import SessionWakes
@@ -34,20 +36,22 @@ from haku.console.session.runtime import SessionService
 from haku.console.session.sandbox_allocation import SandboxAllocator
 from haku.console.session.store import Store
 from haku.console.session.system_prompt import SystemPromptTemplate
-from haku.console.x.runtime import RuntimeRegistry
-from haku.console.x.runtime_catalog import execution_registry, runtime_registration
+from haku.console.x.runtime import HarnessRegistry
+from haku.console.x.runtime_catalog import execution_registry, harness_registration
 from haku.console.x.testing.recording_claims import RecordingClaims
 
 OPERATOR_SUBJECT = "authentik-user-id"
+TEST_AGENT_ID = UUID("00000000-0000-4000-8000-000000000001")
+TEST_ACCESS_PROFILE_ID = "no_auto_approval"
 
 
-def runtime_config(**overrides: object) -> RuntimeRegistrationConfig:
+def runtime_config(**overrides: object) -> HarnessRegistrationConfig:
     values: dict[str, object] = {
-        "agent_id": "00000000-0000-4000-8000-000000000001",
+        "agent_id": str(TEST_AGENT_ID),
         "namespace": "haku-claude-sandbox",
         "warm_pool": "haku-claude",
         "claim_prefix": "claude",
-        "runtime_label": "claude-chat",
+        "harness_label": "claude",
         "cwd": "/workspace",
         "session_ttl_seconds": 7200,
         "https_proxy": "http://proxy.test:8180",
@@ -57,24 +61,27 @@ def runtime_config(**overrides: object) -> RuntimeRegistrationConfig:
         "implementation": {
             "kind": "claude_code",
             "api_base_url": "http://litellm.test:4000",
-            "model": "claude/ant-messages/claude-sonnet-5",
-            "haiku_model": "claude/ant-messages/claude-haiku-4-5-20251001",
+            "model": "anthropic-max20/ant-messages/claude-sonnet-5",
+            "haiku_model": "anthropic-max20/ant-messages/claude-haiku-4-5-20251001",
             "auth_token_placeholder": "not-a-secret",
         },
     }
     values.update(overrides)
-    return RuntimeRegistrationConfig(**values)
+    return HarnessRegistrationConfig(**values)
 
 
-def configured_runtimes(
+def configured_harnesses(
     claims: RecordingClaims,
     *,
-    config: RuntimeRegistrationConfig | None = None,
+    config: HarnessRegistrationConfig | None = None,
     system_prompt: SystemPromptTemplate | None = None,
-) -> RuntimeRegistry:
+) -> HarnessRegistry:
     return execution_registry(
-        runtime_registration(
-            config or runtime_config(), claims, system_prompt=system_prompt or SystemPromptTemplate("")
+        harness_registration(
+            config or runtime_config(),
+            claims,
+            system_prompt=system_prompt or SystemPromptTemplate(""),
+            access_profile_id=TEST_ACCESS_PROFILE_ID,
         )
     )
 
@@ -82,6 +89,32 @@ def configured_runtimes(
 @pytest.fixture
 def recording_claims() -> RecordingClaims:
     return RecordingClaims()
+
+
+@pytest.fixture
+async def test_agent(
+    migrated_db_url: str, migrated_identity_store: PostgresOperatorIdentityStore, operator_id: UUID
+) -> None:
+    """Seed the explicit Agent identity used by the channel-neutral session fixtures."""
+    authority = PostgresAgentAuthority(
+        console_sessions(migrated_db_url),
+        public_base_url="https://haku.test",
+        operator_identity_store=migrated_identity_store,
+        access_profiles=(TEST_ACCESS_PROFILE_ID,),
+        default_access_profile_id=TEST_ACCESS_PROFILE_ID,
+    )
+    await authority.reconcile_static_agents(
+        [
+            StaticAgentDefinition(
+                agent_id=TEST_AGENT_ID,
+                display_name="Session Test Agent",
+                operator_id=operator_id,
+                secret_reference="env:SESSION_TEST_AGENT",
+                token_fingerprint=fingerprint_static_token("session-test-agent-token"),
+                access_profile_id=TEST_ACCESS_PROFILE_ID,
+            )
+        ]
+    )
 
 
 class _ProvisioningTestStore(Store):
@@ -94,7 +127,7 @@ class _ProvisioningTestStore(Store):
         conversation_id: UUID | None = None,
         agent_id: UUID | None = None,
         access_profile_id: str | None = None,
-        runtime_kind: HarnessKind | None = None,
+        harness_kind: HarnessKind | None = None,
         launch_authorizer: LaunchAuthorizer | None = None,
     ) -> tuple[SessionView, str]:
         if launch_authorizer is not None:
@@ -103,7 +136,7 @@ class _ProvisioningTestStore(Store):
                 conversation_id=conversation_id,
                 agent_id=agent_id,
                 access_profile_id=access_profile_id,
-                runtime_kind=runtime_kind,
+                harness_kind=harness_kind,
                 launch_authorizer=launch_authorizer,
             )
         return await self._create_provisioning_for_test(
@@ -111,12 +144,14 @@ class _ProvisioningTestStore(Store):
             conversation_id=conversation_id,
             agent_id=agent_id,
             access_profile_id=access_profile_id,
-            runtime_kind=runtime_kind,
+            harness_kind=harness_kind,
         )
 
 
 @pytest.fixture
-def session_store(migrated_sessions: async_sessionmaker[AsyncSession]) -> _ProvisioningTestStore:
+async def session_store(
+    migrated_sessions: async_sessionmaker[AsyncSession], test_agent: None
+) -> _ProvisioningTestStore:
     return _ProvisioningTestStore(migrated_sessions)
 
 
@@ -146,7 +181,7 @@ async def conversation_wakes(migrated_db_url: str) -> AsyncIterator[Conversation
 def chat_service(
     session_store: Store, recording_claims: RecordingClaims, session_wakes: SessionWakes
 ) -> SessionService:
-    return SessionService(configured_runtimes(recording_claims), session_store, session_wakes)
+    return SessionService(configured_harnesses(recording_claims), session_store, session_wakes)
 
 
 @pytest.fixture
@@ -172,7 +207,7 @@ async def make_idle(sessions: async_sessionmaker[AsyncSession], session_id: UUID
         await db.execute(
             update(Session)
             .where(Session.session_id == session_id)
-            .values(bridge_token_fingerprint=None, lease_expires_at=None)
+            .values(bridge_token_fingerprint=None, session_token_fingerprint=None, lease_expires_at=None)
         )
 
 

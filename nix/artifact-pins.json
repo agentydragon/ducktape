@@ -21,12 +21,12 @@
       "sha256": "0hCLIpgGUB520y35/NUeFzhXyyEjM1JK1gE6HpDZcrI="
     },
     "ducktape-util": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-util-06b615368df0/ducktape_util-0.1.0-py3-none-any.whl",
-      "sha256": "BrYVNo3wtvwc3rsfLVYm1YOAJ1ebkFbduAO8j7oQ+hg="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-util-65d8428f3202/ducktape_util-0.1.0-py3-none-any.whl",
+      "sha256": "ZdhCjzICYKr81LJ1qP0zp7U7PAmS8MvU/Pi+CU6V+As="
     },
     "ducktape": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-77727b1fb701/ducktape-0.1.0-py3-none-any.whl",
-      "sha256": "d3J7H7cBy12zCFrdnEWhM4M4ZdbYo21XiJdW/ccCBcw="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-47fb2b04da60/ducktape-0.1.0-py3-none-any.whl",
+      "sha256": "R/srBNpg148aXPt2Sr5KbqxZ5mFzfhmtFMLxHxyZ6Og="
     },
     "gterm-theme": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-9d9992c2da1d/gterm_theme-0.1.0-py3-none-any.whl",
@@ -49,8 +49,8 @@
       "sha256": "7N7Jq4YzxGNFp2ShQvGqy4Bj7CN7i4DCFDjDblBbWkc="
     },
     "haku-approvals": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/haku-approvals-6f1e9ea5e707/haku-approvals.zip",
-      "sha256": "bx6epecH04/soMILzsnUB9pmdkvnHdLGhi5kZUlNWe0="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/haku-approvals-3b4a69f4c16d/haku-approvals.zip",
+      "sha256": "O0pp9MFtXy2UA3qwLlyq+PlcHweMrOfwNwp5X+brK9E="
     },
     "debundle": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-5d1eedc70973/debundle",
@@ -221,8 +221,8 @@
       "sha256": "PbrQcBaSry3T2Epz47/FsCSn+M4pdUiXX5cbhp2DtKw="
     },
     "hakuctl": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/hakuctl-53f31973bd02/hakuctl-0.1.0-py3-none-any.whl",
-      "sha256": "U/MZc70C+nBN61GHXCUyzV212LvwD+yMDzzAtKPi5rc="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/hakuctl-19245dcb58ca/hakuctl-0.1.0-py3-none-any.whl",
+      "sha256": "GSRdy1jKf+0SGEctZzmDNY24gHwAyzr10qKeOBfA9/g="
     }
   }
 }

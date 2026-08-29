@@ -7,6 +7,13 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Annotated
+
+from pydantic import Field
+
+# Config fields that NAME an environment variable rather than carry its value: one shared
+# uppercase-POSIX vocabulary, so every site validates identically.
+EnvironmentVariableName = Annotated[str, Field(pattern=r"^[A-Z][A-Z0-9_]*$")]
 
 
 def get_required_env(name: str) -> str:

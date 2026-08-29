@@ -19,7 +19,7 @@ keep the hostname (asserted below), so mitmproxy's upstream verification still c
 the real hostname against the real certificate.
 
 The reusable harness (recording upstream, stub console, decide-client doubles, pinned
-dial helpers) lives in ``proxy_test_harness.py``; the #4914 integration suites build on
+dial helpers) lives in ``testing/proxy_test_harness.py``; the #4914 integration suites build on
 the same module.
 """
 
@@ -39,13 +39,13 @@ from mitmproxy.proxy.server_hooks import ServerConnectionHookData
 from more_itertools import one
 
 from haku.egress.addon import EgressGateAddon
-from haku.egress.decision import DecideDenied, GrantScope, RequestMeta
+from haku.egress.decision import GrantScope, HttpAuthorizationDenied, RequestMeta
 from haku.egress.localhost_decide_client import DEFAULT_TIMEOUT_SECONDS
-from haku.egress.proxy_test_harness import (
+from haku.egress.testing.proxy_test_harness import (
     FENCE_CREDENTIAL,
     PLACEHOLDER,
-    PROXY_BEARER,
     REAL_CREDENTIAL,
+    SESSION_TOKEN,
     GarbageBody,
     Hang,
     HangingDecideClient,
@@ -59,11 +59,13 @@ from haku.egress.proxy_test_harness import (
     make_proxy,
     pinned_and_decoy_upstreams,
     proxied_get,
+    proxied_get_with_headers,
+    proxy_url,
     stub_client,
     stub_console,
     tunneled_get,
 )
-from haku.egress.static_decide_client import StaticDecideClient
+from haku.egress.testing.static_decide_client import StaticDecideClient
 
 
 async def test_allow_substitutes_presented_placeholder(upstream: RecordingUpstream, tmp_path: Path) -> None:
@@ -130,11 +132,21 @@ async def test_allow_passes_unscanned_placeholder_through_verbatim(upstream: Rec
 
 
 async def test_deny_refuses_without_upstream_contact(upstream: RecordingUpstream, tmp_path: Path) -> None:
-    decide = StaticDecideClient(DecideDenied(reason="no standing policy or active grant"))
+    reason = "no configuration grant or active database grant"
+    decide = StaticDecideClient(
+        HttpAuthorizationDenied(
+            reason=reason, grant_scope=GrantScope(scheme="https", host="127.0.0.1", port=upstream.port)
+        )
+    )
     async with make_proxy(decide, tmp_path) as proxy:
-        status, body = await proxied_get(proxy, f"http://127.0.0.1:{upstream.port}/secret")
+        status, headers, body = await proxied_get_with_headers(proxy, f"http://127.0.0.1:{upstream.port}/secret")
     assert status == 403
-    assert "no standing policy or active grant" in body
+    assert headers["X-Haku-Egress-Denied"] == reason
+    assert headers["X-Haku-Grant-Scope"] == f"https://127.0.0.1:{upstream.port}"
+    assert headers["X-Haku-Egress-Help"] in body
+    assert "grants__create_grant" in headers["X-Haku-Egress-Help"]
+    assert reason in body
+    assert f"https://127.0.0.1:{upstream.port}" in body
     assert (upstream.connections, upstream.requests) == (0, [])
 
 
@@ -163,11 +175,17 @@ async def test_malformed_decision_fails_closed(upstream: RecordingUpstream, tmp_
 
 
 async def test_connect_deny_refuses_tunnel(upstream: RecordingUpstream, tmp_path: Path) -> None:
-    decide = StaticDecideClient(DecideDenied(reason="no grant for origin"))
+    reason = "no grant for origin"
+    scope = GrantScope(scheme="https", host="127.0.0.1", port=upstream.port)
+    decide = StaticDecideClient(HttpAuthorizationDenied(reason=reason, grant_scope=scope))
     async with make_proxy(decide, tmp_path) as proxy, aiohttp.ClientSession() as session:
         with pytest.raises(aiohttp.ClientHttpProxyError) as excinfo:
-            await session.get(f"https://127.0.0.1:{upstream.port}/", proxy=f"http://127.0.0.1:{proxy.listen_port}")
+            await session.get(f"https://127.0.0.1:{upstream.port}/", proxy=proxy_url(proxy))
     assert excinfo.value.status == 403
+    assert excinfo.value.headers is not None
+    assert excinfo.value.headers["X-Haku-Egress-Denied"] == reason
+    assert excinfo.value.headers["X-Haku-Grant-Scope"] == f"https://127.0.0.1:{upstream.port}"
+    assert "grants__create_grant" in excinfo.value.headers["X-Haku-Egress-Help"]
     assert (upstream.connections, upstream.requests) == (0, [])
     assert decide.requests == [
         RequestMeta(method="CONNECT", scheme=None, host="127.0.0.1", port=upstream.port, path=None)
@@ -177,7 +195,7 @@ async def test_connect_deny_refuses_tunnel(upstream: RecordingUpstream, tmp_path
 async def test_connect_decide_exception_fails_closed(upstream: RecordingUpstream, tmp_path: Path) -> None:
     async with make_proxy(RaisingDecideClient(), tmp_path) as proxy, aiohttp.ClientSession() as session:
         with pytest.raises(aiohttp.ClientHttpProxyError) as excinfo:
-            await session.get(f"https://127.0.0.1:{upstream.port}/", proxy=f"http://127.0.0.1:{proxy.listen_port}")
+            await session.get(f"https://127.0.0.1:{upstream.port}/", proxy=proxy_url(proxy))
     assert excinfo.value.status == 502
     assert (upstream.connections, upstream.requests) == (0, [])
 
@@ -195,15 +213,54 @@ async def test_localhost_decide_allow_flows_end_to_end(upstream: RecordingUpstre
     assert one(upstream.requests).headers["authorization"] == f"Bearer {REAL_CREDENTIAL}"
     sent = one(stub.requests)
     assert sent.request == RequestMeta(method="GET", scheme="http", host="127.0.0.1", port=upstream.port, path="/hello")
-    assert sent.fence_credential.get_secret_value() == FENCE_CREDENTIAL
+    assert sent.session_token.get_secret_value() == SESSION_TOKEN
+    assert "proxy-authorization" not in one(upstream.requests).headers
     assert (sent.resolved_ips, sent.upstream_ip) == (frozenset({IPv4Address("127.0.0.1")}), IPv4Address("127.0.0.1"))
+
+
+async def test_invalid_session_token_is_refused_without_upstream_contact(
+    upstream: RecordingUpstream, tmp_path: Path
+) -> None:
+    async with (
+        make_proxy(StaticDecideClient(allow_with_substitution()), tmp_path) as proxy,
+        aiohttp.ClientSession() as session,
+        session.get(
+            f"http://127.0.0.1:{upstream.port}/unauthenticated",
+            proxy=f"http://127.0.0.1:{proxy.listen_port}",
+            proxy_auth=aiohttp.BasicAuth("not-the-bearer", "wrong"),
+        ) as response,
+    ):
+        status = response.status
+        challenge = response.headers.get("Proxy-Authenticate")
+    assert status == 407
+    # The RFC 9110 challenge is what lets libcurl-shaped clients (git) retry with the
+    # bearer they already hold (#5154); test_egress_git.py drives the full dance.
+    assert challenge == 'Basic realm="haku-egress"'
+    assert (upstream.connections, upstream.requests) == (0, [])
+
+
+async def test_missing_session_token_is_refused_without_upstream_contact(
+    upstream: RecordingUpstream, tmp_path: Path
+) -> None:
+    async with (
+        make_proxy(StaticDecideClient(allow_with_substitution()), tmp_path) as proxy,
+        aiohttp.ClientSession() as session,
+        session.get(
+            f"http://127.0.0.1:{upstream.port}/unauthenticated", proxy=f"http://127.0.0.1:{proxy.listen_port}"
+        ) as response,
+    ):
+        status = response.status
+        challenge = response.headers.get("Proxy-Authenticate")
+    assert status == 407
+    assert challenge == 'Basic realm="haku-egress"'
+    assert (upstream.connections, upstream.requests) == (0, [])
 
 
 async def test_localhost_decide_deny_refuses_without_upstream_contact(
     upstream: RecordingUpstream, tmp_path: Path
 ) -> None:
-    denied = DecideDenied(
-        reason="no standing policy or active grant",
+    denied = HttpAuthorizationDenied(
+        reason="no configuration grant or active database grant",
         grant_scope=GrantScope(scheme="http", host="127.0.0.1", port=upstream.port),
     )
     async with (
@@ -213,19 +270,19 @@ async def test_localhost_decide_deny_refuses_without_upstream_contact(
     ):
         status, body = await proxied_get(proxy, f"http://127.0.0.1:{upstream.port}/secret")
     assert status == 403
-    assert "no standing policy or active grant" in body
+    assert "no configuration grant or active database grant" in body
     assert (upstream.connections, upstream.requests) == (0, [])
 
 
 async def test_localhost_decide_connect_deny_refuses_tunnel(upstream: RecordingUpstream, tmp_path: Path) -> None:
     async with (
-        stub_console(DecideDenied(reason="no grant for origin")) as stub,
+        stub_console(HttpAuthorizationDenied(reason="no grant for origin")) as stub,
         aclosing(stub_client(stub)) as decide,
         make_proxy(decide, tmp_path) as proxy,
         aiohttp.ClientSession() as session,
     ):
         with pytest.raises(aiohttp.ClientHttpProxyError) as excinfo:
-            await session.get(f"https://127.0.0.1:{upstream.port}/", proxy=f"http://127.0.0.1:{proxy.listen_port}")
+            await session.get(f"https://127.0.0.1:{upstream.port}/", proxy=proxy_url(proxy))
     assert excinfo.value.status == 403
     assert (upstream.connections, upstream.requests) == (0, [])
     assert one(stub.requests).request == RequestMeta(
@@ -238,14 +295,14 @@ class EndpointFailure:
     """One way the decide hop fails; each must refuse with zero upstream contact."""
 
     behavior: StubBehavior
-    proxy_bearer: str = PROXY_BEARER
+    fence_credential: str = FENCE_CREDENTIAL
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
 
 
 ENDPOINT_FAILURES = [
     pytest.param(
-        EndpointFailure(behavior=allow_with_substitution(), proxy_bearer="not-the-proxy-bearer"),
-        id="rejected-bearer-401",
+        EndpointFailure(behavior=allow_with_substitution(), fence_credential="not-the-fence-credential"),
+        id="rejected-fence-credential-401",
     ),
     pytest.param(EndpointFailure(behavior=Unconfigured()), id="unconfigured-503"),
     pytest.param(EndpointFailure(behavior=Hang(), timeout_seconds=0.2), id="endpoint-timeout"),
@@ -260,7 +317,7 @@ async def test_localhost_decide_endpoint_failure_fails_closed(
     async with (
         stub_console(failure.behavior) as stub,
         aclosing(
-            stub_client(stub, proxy_bearer=failure.proxy_bearer, timeout_seconds=failure.timeout_seconds)
+            stub_client(stub, fence_credential=failure.fence_credential, timeout_seconds=failure.timeout_seconds)
         ) as decide,
         make_proxy(decide, tmp_path) as proxy,
     ):
@@ -326,7 +383,7 @@ async def test_unpinned_upstream_dial_is_killed() -> None:
     Every gated flow pins its destination before mitmproxy dials, so this only triggers for a
     dial that never passed the gate — which must die rather than resolve.
     """
-    addon = EgressGateAddon(StaticDecideClient(DecideDenied(reason="unreached")))
+    addon = EgressGateAddon(StaticDecideClient(HttpAuthorizationDenied(reason="unreached")))
     server = Server(address=("evil.example", 443))
     addon.server_connect(
         ServerConnectionHookData(

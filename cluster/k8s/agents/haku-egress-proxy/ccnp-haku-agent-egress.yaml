@@ -1,5 +1,5 @@
 # Console-owned Haku Agent runners are isolated from Haku's general sandbox namespace.
-# They can reach Haku Console's runner bridge, the OAuth-substituting proxy, the in-cluster
+# They can reach Haku Console's runner-protocol endpoint, the OAuth-substituting proxy, the in-cluster
 # Forgejo they check haku-state out of, and the Console's authorization proxy — but
 # have no direct internet, general cluster access, or general-purpose proxy.
 apiVersion: cilium.io/v2

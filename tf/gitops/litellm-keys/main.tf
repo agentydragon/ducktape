@@ -30,7 +30,7 @@ terraform {
 # Datastore".
 #
 # Deliberately NOT minted yet: a Haku (orchestrator) key — Haku receives its
-# own claude-* allowlist when its LLM path moves behind LiteLLM.
+# own Anthropic API model allowlist when its LLM path moves behind LiteLLM.
 
 data "kubernetes_secret" "litellm_master_key" {
   metadata {
@@ -83,12 +83,12 @@ locals {
   # Claude-subscription models on the Anthropic Messages surface, fronted through CLIProxyAPI's
   # Claude OAuth session (_cliproxy_claude_entries, ANTHROPIC_MODELS in model_rosters.py) -- the
   # Console-launched Claude runner. A different upstream session on the same pod as the codex lane
-  # above; distinct from the direct-API claude-* entries the `claude-*` wildcard admits.
+  # above; distinct from the direct-API anthropic-api/ant-messages/* entries.
   claude_client_models = [
-    "claude/ant-messages/claude-opus-5",
-    "claude/ant-messages/claude-sonnet-5",
-    "claude/ant-messages/claude-fable-5",
-    "claude/ant-messages/claude-haiku-4-5-20251001",
+    "anthropic-max20/ant-messages/claude-opus-5",
+    "anthropic-max20/ant-messages/claude-sonnet-5",
+    "anthropic-max20/ant-messages/claude-fable-5",
+    "anthropic-max20/ant-messages/claude-haiku-4-5-20251001",
   ]
   # Gemini embeddings (GEMINI_EMBEDDING_MODELS in test_litellm_config.py). Granted to
   # agents whose egress cannot reach api.openai.com: the main openclaw gateway holds
@@ -205,11 +205,11 @@ resource "kubernetes_secret" "public_coder_agent" {
 # haku-console-claude — Console-launched Claude runner, via the colocated egress fence
 # ============================================================================
 # Claude Code's inference runs on the flat-rate Claude subscription models on the Anthropic Messages
-# surface (claude/ant-messages/*, #5086), fronted by CLIProxyAPI's Claude OAuth session -- the same
+# surface (anthropic-max20/ant-messages/*, #5086), fronted by CLIProxyAPI's Claude OAuth session -- the same
 # /v1/messages passthrough as the codex lane but a different upstream session. The Console colocated
 # egress fence (#4670) substitutes this key for the runner's inert placeholder on the internal
-# LiteLLM origin; the runner never holds it. Scoped to only the claude/ant-messages lane -- the slash
-# matters, as the `claude-*` wildcard elsewhere would NOT match `claude/...` (model_rosters.py). The
+# LiteLLM origin; the runner never holds it. Scoped to only the anthropic-max20/ant-messages lane.
+# The direct-API lane is separately exposed as anthropic-api/ant-messages/* (model_rosters.py). The
 # key does not admit the Codex, Gemini, or embedding models. Deleting this key is the runner's
 # provider kill switch. Reflected into haku-console, where the Console pod resolves it for substitution.
 
@@ -226,7 +226,7 @@ resource "kubernetes_secret" "haku_console_claude" {
     name      = "litellm-key-haku-console-claude"
     namespace = "litellm"
     annotations = {
-      description                                                     = "LiteLLM virtual key for the Console-launched Claude runner (claude/ant-messages/* Claude-subscription models via CLIProxyAPI); reflected into haku-console, substituted by the colocated egress fence for the runner's inert placeholder"
+      description                                                     = "LiteLLM virtual key for the Console-launched Claude runner (anthropic-max20/ant-messages/* Claude-subscription models via CLIProxyAPI); reflected into haku-console, substituted by the colocated egress fence for the runner's inert placeholder"
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
       "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "haku-console"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
@@ -255,7 +255,7 @@ data "sops_file" "tana_clients_key" {
 resource "litellm_team" "tana_clients" {
   team_alias = "tana-clients"
   router_settings = {
-    # Claude Code background claude-* slugs fall back to the cheap tana haiku tier.
+    # Claude Code background Anthropic API slugs fall back to the cheap tana haiku tier.
     fallbacks = [
       {
         model           = "*"
@@ -268,7 +268,7 @@ resource "litellm_team" "tana_clients" {
 resource "litellm_key" "tana_clients" {
   key_alias = "tana-clients"
   key       = data.sops_file.tana_clients_key.data["litellm_tana_key"]
-  models    = concat(["claude-*"], local.tana_client_models)
+  models    = concat(["anthropic-api/ant-messages/*"], local.tana_client_models)
   team_id   = litellm_team.tana_clients.id
   metadata = {
     consumer = "laptop-tana-claude"
@@ -302,7 +302,7 @@ resource "litellm_team" "codex_clients" {
 resource "litellm_key" "codex_clients" {
   key_alias = "codex-clients"
   key       = data.sops_file.codex_clients_key.data["litellm_codex_key"]
-  models    = concat(["claude-*"], local.codex_client_models)
+  models    = concat(["anthropic-api/ant-messages/*"], local.codex_client_models)
   team_id   = litellm_team.codex_clients.id
   metadata = {
     consumer = "laptop-codex-claude, agent-box-codex, codex-pod"
@@ -358,7 +358,7 @@ resource "litellm_team" "gemini_clients" {
 resource "litellm_key" "gemini_clients" {
   key_alias = "gemini-clients"
   key       = data.sops_file.gemini_clients_key.data["litellm_gemini_key"]
-  models    = concat(["claude-*"], local.gemini_client_models)
+  models    = concat(["anthropic-api/ant-messages/*"], local.gemini_client_models)
   team_id   = litellm_team.gemini_clients.id
   metadata = {
     consumer = "laptop-gemini-claude"

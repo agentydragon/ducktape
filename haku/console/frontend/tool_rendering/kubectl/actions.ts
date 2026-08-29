@@ -2,14 +2,23 @@
 // can bundle them (see ../action_entry.ts).
 
 import { type ActionEntry, fixed, fromArgs } from "../action_entry";
-import { zResourcesDeleteArgs } from "./schemas";
+import { zPodsExecArgs, zPodsListInNamespaceArgs, zResourcesDeleteArgs, zResourcesGetArgs } from "./schemas";
 
 export const kubectlActions: Record<string, ActionEntry> = {
   resources_create_or_update: fixed("kubectl: Apply resource"),
+  resources_get: fromArgs(zResourcesGetArgs, (a) => ({
+    text: `kubectl: Get ${a.kind}`,
+  })),
   resources_delete: fromArgs(zResourcesDeleteArgs, (a) => ({
     text: `kubectl: Delete ${a.kind}`,
     destructive: true,
   })),
   pods_delete: fixed("kubectl: Delete Pod", true),
+  pods_list_in_namespace: fromArgs(zPodsListInNamespaceArgs, (a) => ({
+    text: `kubectl: List Pods in ${a.namespace}`,
+  })),
+  pods_exec: fromArgs(zPodsExecArgs, (a) => ({
+    text: `kubectl: Exec in ${a.namespace ? `${a.namespace}/` : ""}${a.name}`,
+  })),
   pods_log: fixed("kubectl: View Pod logs"),
 };

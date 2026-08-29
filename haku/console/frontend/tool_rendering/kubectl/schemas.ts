@@ -12,6 +12,20 @@ export const zResourcesCreateOrUpdateArgs: ReturnType<typeof z.object<{ resource
   resource: z.string(),
 });
 
+export const zResourcesGetArgs: ReturnType<
+  typeof z.object<{
+    apiVersion: z.ZodString;
+    kind: z.ZodString;
+    name: z.ZodString;
+    namespace: z.ZodOptional<z.ZodString>;
+  }>
+> = z.object({
+  apiVersion: z.string(),
+  kind: z.string(),
+  name: z.string(),
+  namespace: z.string().optional(),
+});
+
 export const zResourcesDeleteArgs: ReturnType<
   typeof z.object<{
     apiVersion: z.ZodString;
@@ -31,6 +45,30 @@ export const zResourcesDeleteArgs: ReturnType<
 export const zPodsDeleteArgs: ReturnType<
   typeof z.object<{ name: z.ZodString; namespace: z.ZodOptional<z.ZodString> }>
 > = z.object({
+  name: z.string(),
+  namespace: z.string().optional(),
+});
+export const zPodsListInNamespaceArgs: ReturnType<
+  typeof z.object<{
+    fieldSelector: z.ZodOptional<z.ZodString>;
+    labelSelector: z.ZodOptional<z.ZodString>;
+    namespace: z.ZodString;
+  }>
+> = z.object({
+  fieldSelector: z.string().optional(),
+  labelSelector: z.string().optional(),
+  namespace: z.string(),
+});
+export const zPodsExecArgs: ReturnType<
+  typeof z.object<{
+    command: z.ZodArray<z.ZodString>;
+    container: z.ZodOptional<z.ZodString>;
+    name: z.ZodString;
+    namespace: z.ZodOptional<z.ZodString>;
+  }>
+> = z.object({
+  command: z.array(z.string()),
+  container: z.string().optional(),
   name: z.string(),
   namespace: z.string().optional(),
 });

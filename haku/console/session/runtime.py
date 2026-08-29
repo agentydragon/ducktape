@@ -1,6 +1,6 @@
-"""Operator chat sessions dispatched by immutable conversation runtime kind.
+"""Operator sessions dispatched by their conversation's immutable harness kind.
 
-The turn loop, the runner's websocket bridge, the sandbox lifecycle and the SPA chat surface's own
+The turn loop, the runner connection, the sandbox lifecycle and the SPA conversation surface's own
 routes. The rows underneath, and every transaction that moves them, are `session_store.py`.
 
 """
@@ -10,18 +10,19 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 
 from haku.console.conversation.history import ConversationHistory
 from haku.console.conversation.item_vocabulary import ItemType
 from haku.console.conversation.journal_consumer import JournalConsumer, JournalViolationError
 from haku.console.conversation.prompt_origin import SPA_ORIGIN, PromptOrigin
+from haku.console.database_retry import transient_database_error
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.identity.operator_auth import OperatorActorDep
 from haku.console.notifications.session_wakes import SessionEvent, SessionEventKind, SessionWakes
@@ -36,27 +37,28 @@ from haku.console.session.conversation_views import (
     SessionView,
 )
 from haku.console.session.launch_identity import LaunchAgentRejectedError, LaunchAuthorizer
-from haku.console.session.sandbox_claims import SandboxProvisioningView
-from haku.console.session.session_frames import BridgeFrameKind, FrameDirection
+from haku.console.session.sandbox_claims import ProvisioningStep, SandboxProvisioningView
+from haku.console.session.session_frames import FrameDirection, SessionFrameKind
 from haku.console.session.status import SessionStatus
 from haku.console.session.store import (
     LEASE_RENEW_INTERVAL,
-    BridgeAuthentication,
     PromptRecords,
     PromptRefusedError,
+    RunnerConnectionAuthentication,
     SandboxDemand,
     Store,
 )
 from haku.console.session.system_prompt import HistoryMessage, HistorySender, SessionIntroduction
 from haku.console.x.runtime import (
-    ConfiguredRuntime,
-    RuntimeLaunch,
-    RuntimeMcpServer,
-    RuntimeNotConfiguredError,
-    RuntimeRegistry,
-    UnsupportedRuntimeError,
+    ConfiguredHarness,
+    HarnessKey,
+    HarnessLaunchSpec,
+    HarnessMcpServer,
+    HarnessNotConfiguredError,
+    HarnessRegistry,
+    UnsupportedHarnessError,
 )
-from haku.runner.backend import BRIDGE_CREDENTIAL_VARIABLE
+from haku.runner.backend import LEGACY_SESSION_TOKEN_VARIABLE
 from haku.runner.client import RecordedFrame
 from haku.runner.neutral_operations import OperationBatch, RunnerHello
 from haku.runner.protocol import (
@@ -76,7 +78,7 @@ from haku.runner.protocol import (
 )
 
 router = APIRouter(tags=["sessions"])
-internal_router = APIRouter(tags=["session-runtime-internal"])
+internal_router = APIRouter(tags=["session-harness-internal"])
 logger = logging.getLogger(__name__)
 
 # How long one session's observed provisioning state is reused before the cluster is read again.
@@ -88,25 +90,23 @@ OBSERVATION_TTL = timedelta(seconds=2)
 RE_AWAKENING_MESSAGES = 20
 
 
-# Aborts Postgres resolves by choosing a loser it expects to re-run: deadlock and serialization
-# failure. The statements were not wrong; the interleaving was.
-_RERUNNABLE_SQLSTATES = frozenset({"40001", "40P01"})
+@dataclass(frozen=True, slots=True)
+class ActiveSandboxRecord:
+    """The operator-facing projection of one allocated session and its live claim graph."""
+
+    session_id: UUID
+    runtime_kind: HarnessKind
+    status: SessionStatus
+    created_at: datetime
+    updated_at: datetime
+    sandbox: SandboxProvisioningView
 
 
-def _transient_database_error(error: BaseException) -> bool:
-    """A database error that says nothing about the turn: the transaction never committed, and the
-    same statements succeed on a healthy connection — a dropped connection (a CNPG failover or
-    restart), or an abort Postgres asks the loser to re-run. Never an IntegrityError or a
-    programming error, which fail identically on retry and so are the turn's own."""
-    if not isinstance(error, DBAPIError):
-        return False
-    # `orig` is the dialect-adapted DBAPI error; the asyncpg adapter stamps the server's SQLSTATE
-    # onto it as `sqlstate`, and `DBAPIError` offers no typed accessor for it.
-    return (
-        error.connection_invalidated
-        or isinstance(error, (InterfaceError, OperationalError))
-        or getattr(error.orig, "sqlstate", None) in _RERUNNABLE_SQLSTATES
-    )
+def _leaves(errors: BaseException) -> tuple[BaseException, ...]:
+    """Every leaf of a possibly-nested `except*` group, flattened in order."""
+    if isinstance(errors, BaseExceptionGroup):
+        return tuple(leaf for exc in errors.exceptions for leaf in _leaves(exc))
+    return (errors,)
 
 
 def _first_message(errors: BaseExceptionGroup[Exception]) -> str:
@@ -115,10 +115,16 @@ def _first_message(errors: BaseExceptionGroup[Exception]) -> str:
     `except*` hands back a group even for a single failure, and a group's own `str` is a count
     ("1 sub-exception").
     """
-    leaves = errors.exceptions
-    while leaves and isinstance(leaves[0], BaseExceptionGroup):
-        leaves = leaves[0].exceptions
+    leaves = _leaves(errors)
     return str(leaves[0]) if leaves else str(errors)
+
+
+def _all_transient(errors: BaseExceptionGroup[Exception]) -> bool:
+    """Whether every leaf is a transient database abort — a deadlock or serialization failure the
+    runner will resume past on reconnect, or a dropped connection. Such a group leaves the session
+    for adoption instead of failing it; a group with any other fault is the session's own."""
+    leaves = _leaves(errors)
+    return bool(leaves) and all(transient_database_error(leaf) for leaf in leaves)
 
 
 class SessionPromptRequest(BaseModel):
@@ -133,7 +139,7 @@ class ConversationCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     agent_id: UUID
-    runtime: HarnessKind
+    harness_kind: HarnessKind
 
 
 class PromptAccepted(BaseModel):
@@ -182,7 +188,7 @@ class RolloutRecorder:
         self._session_id = session_id
 
     async def sent(self, frame: HarnessFrame) -> int:
-        return (await self._record(FrameDirection.TO_AGENT, frame.frame, kind=BridgeFrameKind.HARNESS_FRAME)).frame_seq
+        return (await self._record(FrameDirection.TO_AGENT, frame.frame, kind=SessionFrameKind.HARNESS_FRAME)).frame_seq
 
     async def runner_frame(self, frame: HarnessFrame) -> RecordedFrame:
         """Record one journal-generation native frame the runner numbered (#4667).
@@ -193,10 +199,10 @@ class RolloutRecorder:
         runner seq, deduplicated by it on replay exactly as the v3 output stream was.
         """
         direction = FrameDirection.TO_AGENT if frame.injected else FrameDirection.FROM_AGENT
-        return await self._record(direction, frame.frame, runner_seq=frame.seq, kind=BridgeFrameKind.HARNESS_FRAME)
+        return await self._record(direction, frame.frame, runner_seq=frame.seq, kind=SessionFrameKind.HARNESS_FRAME)
 
     async def received(self, frame: HarnessFrame) -> RecordedFrame:
-        """Record the complete native harness frame and its bridge-owned position.
+        """Record the complete native harness frame and its runner-assigned position.
 
         All native frames, including deltas and opaque JSON-RPC notifications, are replayed and
         deduplicated by *runner_seq*. Their contents never participate in replay identity.
@@ -205,7 +211,7 @@ class RolloutRecorder:
         cursor. Nothing orders by it.
         """
         return await self._record(
-            FrameDirection.FROM_AGENT, frame.frame, runner_seq=frame.seq, kind=BridgeFrameKind.HARNESS_FRAME
+            FrameDirection.FROM_AGENT, frame.frame, runner_seq=frame.seq, kind=SessionFrameKind.HARNESS_FRAME
         )
 
     async def _record(
@@ -214,7 +220,7 @@ class RolloutRecorder:
         payload: dict[str, Any],
         *,
         runner_seq: int | None = None,
-        kind: BridgeFrameKind = BridgeFrameKind.HARNESS_FRAME,
+        kind: SessionFrameKind = SessionFrameKind.HARNESS_FRAME,
     ) -> RecordedFrame:
         return await self._store.record_frame(self._session_id, direction, kind, payload, runner_seq=runner_seq)
 
@@ -222,22 +228,18 @@ class RolloutRecorder:
 class SessionService:
     def __init__(
         self,
-        runtimes: RuntimeRegistry,
+        harnesses: HarnessRegistry,
         store: Store,
         notifications: SessionWakes,
         *,
         conversation_history: ConversationHistory | None = None,
         launch_authorizer: LaunchAuthorizer | None = None,
-        default_agent_id: UUID | None = None,
-        default_runtime_kind: HarnessKind = HarnessKind.CLAUDE_CODE,
     ):
-        self._runtimes = runtimes
+        self._harnesses = harnesses
         self._store = store
         self._notifications = notifications
         self._conversation_history = conversation_history
         self._launch_authorizer = launch_authorizer
-        self._default_agent_id = default_agent_id
-        self._default_runtime_kind = default_runtime_kind
         # The neutral-operation journal's commit/ACK/resume side (#4667). Its commits are the
         # store's transactions by another name, so it takes the same session factory.
         self._journal = JournalConsumer(store.sessionmaker)
@@ -245,15 +247,16 @@ class SessionService:
         # `OBSERVATION_TTL` as it goes.
         self._observations: dict[UUID, SandboxProvisioningView] = {}
 
-    async def _configured(self, session_id: UUID) -> ConfiguredRuntime:
+    def invalidate_sandbox_observations(self) -> None:
+        """Drop cluster observations after a Kubernetes watch reports a lifecycle change."""
+        self._observations.clear()
+
+    async def _configured(self, session_id: UUID) -> ConfiguredHarness:
         identity = await self._store.session_identity(session_id)
         if identity.agent_id is None:
-            # Nullable identity rows are retained during rolling migration.  They can still be
-            # inspected/projected by runtime kind, but execution uses the legacy registration only
-            # until the row is replaced by a pinned conversation.
-            return self._runtimes.configured(identity.runtime_kind)
-        return self._runtimes.configured(
-            identity.agent_id, identity.runtime_kind, access_profile_id=identity.access_profile_id
+            raise HarnessNotConfiguredError("session has no pinned Agent/harness identity")
+        return self._harnesses.configured(
+            HarnessKey(identity.agent_id, identity.harness_kind), access_profile_id=identity.access_profile_id
         )
 
     async def request_abort(self, operator_id: UUID, session_id: UUID) -> bool:
@@ -271,29 +274,40 @@ class SessionService:
         *,
         conversation_id: UUID | None = None,
         agent_id: UUID | None = None,
-        runtime_kind: HarnessKind | None = None,
+        harness_kind: HarnessKind | None = None,
     ) -> SessionView:
         if self._launch_authorizer is not None:
-            selected_agent = agent_id or self._default_agent_id
-            if conversation_id is None and selected_agent is None:
-                raise RuntimeError("chat launch requires a selected Agent")
+            if conversation_id is None and agent_id is None:
+                raise RuntimeError("launch requires a selected Agent")
+            if conversation_id is None and harness_kind is None:
+                raise RuntimeError("launch requires a selected harness")
             # Store owns the transaction.  It derives a replacement's pinned identity under
             # the conversation row lock and passes the same AsyncSession to the authorizer, so the
             # authorization decision and durable rows cannot be separated by a concurrent disable.
             view, token = await self._store.create_idle(
                 operator_id,
                 conversation_id=conversation_id,
-                agent_id=selected_agent if conversation_id is None else None,
-                runtime_kind=runtime_kind or self._default_runtime_kind,
+                agent_id=agent_id if conversation_id is None else None,
+                harness_kind=harness_kind,
                 launch_authorizer=self._launch_authorizer,
             )
         else:
-            # Compatibility for direct unit-test callers and pre-identity local integrations.
+            # Direct callers must provide the harness explicitly; there is no server default.
+            access_profile_id = None
+            if conversation_id is None:
+                if agent_id is None:
+                    raise RuntimeError("chat launch requires a selected Agent")
+                if harness_kind is None:
+                    raise RuntimeError("chat launch requires a selected harness")
+                access_profile_id = self._harnesses.resources_for(HarnessKey(agent_id, harness_kind)).access_profile_id
+                if access_profile_id is None:
+                    raise HarnessNotConfiguredError("selected Agent has no configured access profile")
             view, token = await self._store.create_idle(
                 operator_id,
                 conversation_id=conversation_id,
                 agent_id=agent_id,
-                runtime_kind=runtime_kind or HarnessKind.CLAUDE_CODE,
+                access_profile_id=access_profile_id,
+                harness_kind=harness_kind,
             )
         assert not token, "an idle session must not expose a runner credential"
         return view
@@ -336,16 +350,16 @@ class SessionService:
         allocation = await self._store.allocate(operator_id, session_id)
         if allocation is None:
             return False
-        await self._create_claim(allocation.session_id, allocation.bridge_token)
+        await self._create_claim(allocation.session_id, allocation.session_token)
         return True
 
-    async def _create_claim(self, session_id: UUID, bridge_token: str) -> None:
+    async def _create_claim(self, session_id: UUID, session_token: str) -> None:
         try:
             configured = await self._configured(session_id)
             resources = configured.resources
             await resources.claims.create(
                 session_id=session_id,
-                bridge_token=bridge_token,
+                session_token=session_token,
                 expires_at=datetime.now(UTC) + timedelta(seconds=resources.session_ttl_seconds),
             )
         except Exception as error:
@@ -357,10 +371,10 @@ class SessionService:
             raise
 
     async def create_conversation(
-        self, operator_id: UUID, *, agent_id: UUID | None = None, runtime_kind: HarnessKind | None = None
+        self, operator_id: UUID, *, agent_id: UUID | None = None, harness_kind: HarnessKind | None = None
     ) -> ConversationView:
         """Open a thread and the session that runs it, and read the thread back."""
-        view = await self.create(operator_id, agent_id=agent_id, runtime_kind=runtime_kind)
+        view = await self.create(operator_id, agent_id=agent_id, harness_kind=harness_kind)
         return await self.conversation(operator_id, await self._store.conversation_of(view.session_id))
 
     async def conversation(self, operator_id: UUID, conversation_id: UUID) -> ConversationView:
@@ -384,10 +398,54 @@ class SessionService:
         identity = await self._store.operator_session_identity(operator_id, session_id)
         return SessionProvisioningView(
             session_id=session_id,
-            harness_kind=identity.runtime_kind,
+            harness_kind=identity.harness_kind,
             status=identity.status,
             sandbox=None if identity.status == SessionStatus.IDLE else await self._observed(session_id),
         )
+
+    async def list_active_sandboxes(
+        self, operator_id: UUID, *, before_created_at: datetime | None, before_session_id: UUID | None, limit: int
+    ) -> list[ActiveSandboxRecord]:
+        """Project the operator's allocated sessions with their current claim observations."""
+        records: list[ActiveSandboxRecord] = []
+        cursor_created_at = before_created_at
+        cursor_session_id = before_session_id
+        excluded_session_id: UUID | None = None
+        while len(records) < limit:
+            requested = limit - len(records)
+            sessions = await self._store.list_active_sessions(
+                operator_id,
+                before_created_at=cursor_created_at,
+                before_session_id=cursor_session_id,
+                limit=requested + (1 if excluded_session_id is not None else 0),
+            )
+            if excluded_session_id is not None:
+                sessions = [session for session in sessions if session.session_id != excluded_session_id]
+            if not sessions:
+                break
+            for session in sessions:
+                sandbox = await self._observed(session.session_id)
+                if sandbox.step is ProvisioningStep.CLAIM_ABSENT:
+                    continue
+                records.append(
+                    ActiveSandboxRecord(
+                        session_id=session.session_id,
+                        runtime_kind=session.runtime_kind,
+                        status=session.status,
+                        created_at=session.created_at,
+                        updated_at=session.updated_at,
+                        sandbox=sandbox,
+                    )
+                )
+                if len(records) >= limit:
+                    break
+            if len(sessions) < requested:
+                break
+            last = sessions[-1]
+            cursor_created_at = last.created_at
+            cursor_session_id = last.session_id
+            excluded_session_id = last.session_id
+        return records
 
     async def provisioning_of(self, session_id: UUID, status: SessionStatus) -> SandboxProvisioningView | None:
         """What Kubernetes says about a sandbox still coming up, for a session still waiting on one.
@@ -431,6 +489,7 @@ class SessionService:
 
     async def dispose(self, operator_id: UUID, session_id: UUID) -> None:
         await self._store.request_close(operator_id, session_id)
+        self.invalidate_sandbox_observations()
         await (await self._configured(session_id)).resources.claims.delete(session_id=session_id)
         await self._store.complete_claim_cleanup(session_id)
 
@@ -447,15 +506,15 @@ class SessionService:
         except Exception as error:
             # Leave `claim_cleaned_at` NULL so another replica or a later restart retries.
             # Kubernetes deletion is idempotent, so a redundant retry costs a 404.
-            logger.warning("runtime claim cleanup failed for session %s: %s", session_id, error)
+            logger.warning("harness claim cleanup failed for session %s: %s", session_id, error)
             return False
         await self._store.complete_claim_cleanup(session_id)
         return True
 
     async def _appended_prompt(self, session_id: UUID) -> str | None:
-        """Who this session is, when its conversation has an attached chat surface.
+        """Who this session is, when its conversation has an attached channel.
 
-        The conversation decides whether chat context applies; no channel object is handed to the
+        The conversation decides whether that context applies; no channel object is handed to the
         session. The selected adapter decides how this addition is expressed without replacing the
         harness's own tool-driving preset.
         """
@@ -494,7 +553,7 @@ class SessionService:
             )
         )
 
-    async def handle_journal_runner(self, websocket: WebSocket, session_id: UUID, bearer: str) -> None:
+    async def handle_journal_runner(self, websocket: WebSocket, session_id: UUID, session_token: str) -> None:
         """Serve one runner at the neutral-operation generation (#4667 stage 4).
 
         The Console parses no native frames here: the runner interprets them and sends the
@@ -509,46 +568,50 @@ class SessionService:
         """
         try:
             configured = await self._configured(session_id)
-        except (RuntimeNotConfiguredError, UnsupportedRuntimeError):
+        except (HarnessNotConfiguredError, UnsupportedHarnessError):
             await websocket.send_denial_response(
-                Response(status_code=503, content=b"session runtime is not configured on this replica")
+                Response(status_code=503, content=b"session harness is not configured on this replica")
             )
             return
         except KeyError:
             await websocket.close(code=NOT_ADMITTED_CODE, reason="invalid or consumed runner credential")
             return
 
-        authentication = await self._store.authenticate_bridge(session_id, bearer)
-        if authentication == BridgeAuthentication.HELD:
+        authentication = await self._store.authenticate_runner_connection(session_id, session_token)
+        if authentication == RunnerConnectionAuthentication.HELD:
             await websocket.send_denial_response(
                 Response(status_code=503, content=b"session is held by another replica")
             )
             return
-        if authentication == BridgeAuthentication.TERMINAL:
+        if authentication == RunnerConnectionAuthentication.TERMINAL:
             await self._cleanup_terminal_claim(session_id)
             await websocket.close(code=NOT_ADMITTED_CODE, reason="runner session is already terminal")
             return
-        if authentication == BridgeAuthentication.REJECTED:
+        if authentication == RunnerConnectionAuthentication.REJECTED:
             await websocket.close(code=NOT_ADMITTED_CODE, reason="invalid or consumed runner credential")
             return
 
         resources = configured.adapter, configured.resources
-        runtime, agent_resources = resources
+        harness, agent_resources = resources
         try:
             appended = await self._appended_prompt(session_id)
         except Exception as error:
-            logger.exception("runtime system prompt failed to render for session %s", session_id)
+            logger.exception("harness system prompt failed to render for session %s", session_id)
             await self._store.fail(session_id, f"system prompt failed to render: {error}")
             await self._cleanup_terminal_claim(session_id)
             await websocket.close(code=1011, reason="system prompt failed to render")
             return
         try:
-            harness_launch = runtime.build_launch(
-                RuntimeLaunch(
+            harness_launch = harness.build_launch(
+                HarnessLaunchSpec(
                     cwd=agent_resources.cwd,
                     environment=agent_resources.environment,
                     mcp_servers={
-                        name: RuntimeMcpServer(url=url, bearer_environment_variable=BRIDGE_CREDENTIAL_VARIABLE)
+                        # CLEANUP(added 2026-08-29): a sandbox claimed by a pre-rename console
+                        # carries only the legacy variable, so the launch must reference the name
+                        # every live pod has. Flip to SESSION_TOKEN_VARIABLE once no live sandbox
+                        # predates the HAKU_SESSION_TOKEN rename — one release after it deploys.
+                        name: HarnessMcpServer(url=url, bearer_environment_variable=LEGACY_SESSION_TOKEN_VARIABLE)
                         for name, url in agent_resources.mcp_server_urls.items()
                     },
                     appended_system_prompt=appended,
@@ -556,10 +619,10 @@ class SessionService:
                 )
             )
         except Exception as error:
-            logger.exception("runtime launch preparation failed for session %s", session_id)
-            await self._store.fail(session_id, f"runtime launch preparation failed: {error}")
+            logger.exception("harness launch preparation failed for session %s", session_id)
+            await self._store.fail(session_id, f"harness launch preparation failed: {error}")
             await self._cleanup_terminal_claim(session_id)
-            await websocket.close(code=1011, reason="runtime launch preparation failed")
+            await websocket.close(code=1011, reason="harness launch preparation failed")
             return
 
         await websocket.accept()
@@ -590,8 +653,23 @@ class SessionService:
                 keep_sandbox = True
                 await self._store.release_lease(session_id)
             except* Exception as errors:
-                logger.exception("%s journal runtime failed for session %s", runtime.display_name, session_id)
-                await self._store.fail(session_id, f"{runtime.display_name} runtime failed: {_first_message(errors)}")
+                if _all_transient(errors):
+                    # A transient database abort (a deadlock or serialization failure Postgres asked
+                    # the loser to re-run, or a connection dropped under a failover) says nothing
+                    # about the session: the batch's transaction rolled back and the runner resumes
+                    # from the durable cursor on reconnect. `JournalConsumer.commit` retries these
+                    # itself; one that still surfaces here leaves the session for adoption rather
+                    # than failing the whole harness on an interleaving the next run will not hit.
+                    logger.warning(
+                        "session %s survived a transient database error: %s", session_id, _first_message(errors)
+                    )
+                    keep_sandbox = True
+                    await self._store.release_lease(session_id)
+                else:
+                    logger.exception("%s journal harness failed for session %s", harness.display_name, session_id)
+                    await self._store.fail(
+                        session_id, f"{harness.display_name} harness failed: {_first_message(errors)}"
+                    )
         except asyncio.CancelledError:
             keep_sandbox = True
             await self._store.release_lease(session_id)
@@ -730,27 +808,27 @@ class SessionService:
         released = await self._store.release_held_leases()
         if released:
             logger.info("Released %d held session lease(s) on shutdown", released)
-        await self._runtimes.aclose()
+        await self._harnesses.aclose()
 
 
 def _service(request: Request) -> SessionService:
     service = cast(SessionService | None, request.app.state.session_service)
     if service is None:
-        raise HTTPException(status_code=503, detail="the session runtime is not configured")
+        raise HTTPException(status_code=503, detail="the session harness is not configured")
     return service
 
 
 def _store(request: Request) -> Store:
     store = cast(Store | None, request.app.state.session_store)
     if store is None:
-        raise HTTPException(status_code=503, detail="the session runtime is not configured")
+        raise HTTPException(status_code=503, detail="the session harness is not configured")
     return store
 
 
 def _session_wakes(request: Request) -> SessionWakes:
     session_wakes = cast(SessionWakes | None, request.app.state.session_wakes)
     if session_wakes is None:
-        raise HTTPException(status_code=503, detail="the session runtime is not configured")
+        raise HTTPException(status_code=503, detail="the session harness is not configured")
     return session_wakes
 
 
@@ -789,12 +867,14 @@ async def create_conversation(
     """Open a new thread and the first session to run it.
 
     One call, because a conversation with no session is a thread nothing can be said to. Agent and
-    runtime are an atomic required pair; there is no server-default launch endpoint.
+    harness is an atomic required pair; there is no server-default launch endpoint.
     """
     try:
-        return await service.create_conversation(actor.operator_id, agent_id=body.agent_id, runtime_kind=body.runtime)
+        return await service.create_conversation(
+            actor.operator_id, agent_id=body.agent_id, harness_kind=body.harness_kind
+        )
     except LaunchAgentRejectedError:
-        raise HTTPException(status_code=403, detail="chat launch is not authorized")
+        raise HTTPException(status_code=403, detail="launch is not authorized")
     except KeyError as error:
         raise HTTPException(status_code=404, detail="Conversation not found") from error
     except Exception:
@@ -819,7 +899,7 @@ async def read_session_frames(
     store: StoreDep,
     before_seq: Annotated[int | None, Query(ge=1)] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_FRAME_PAGE)] = DEFAULT_FRAME_PAGE,
-    kind: Annotated[list[BridgeFrameKind] | None, Query()] = None,
+    kind: Annotated[list[SessionFrameKind] | None, Query()] = None,
 ) -> SessionFramePage:
     """The native harness protocol frames behind one session, newest page first.
 
@@ -869,33 +949,14 @@ async def abort_session(session_id: UUID, actor: OperatorActorDep, service: Sess
     return {"status": "aborted"}
 
 
-@router.post("/api/sessions/{session_id}/messages")
-async def send_message(
-    session_id: UUID, body: SessionPromptRequest, actor: OperatorActorDep, service: SessionServiceDep
-) -> PromptAccepted:
-    try:
-        # Named rather than left to the default: the console's own surface is a channel like any
-        # other, and a prompt typed here is one every attached room is owed a copy of.
-        return PromptAccepted(
-            prompt_id=await service.enqueue_prompt(actor.operator_id, session_id, body.text, SPA_ORIGIN)
-        )
-    except KeyError as error:
-        raise HTTPException(status_code=404, detail="session not found") from error
-    except PromptRefusedError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
-    except Exception as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
-
-
 @router.post("/api/conversations/{conversation_id}/messages", status_code=202)
 async def send_conversation_message(
     conversation_id: UUID, body: SessionPromptRequest, actor: OperatorActorDep, service: SessionServiceDep
 ) -> PromptAccepted:
     """Offer a prompt to a conversation even while no session is serving it.
 
-    The session-addressed route remains during rollout for older bundles. New surfaces use this
-    route, and the neutral conversation-runtime reconciler creates or reuses the session before the
-    existing sandbox allocator provisions its container.
+    The neutral conversation-harness reconciler creates or reuses the session before the existing
+    sandbox allocator provisions its container.
     """
     try:
         return PromptAccepted(
@@ -923,8 +984,8 @@ async def delete_session(session_id: UUID, actor: OperatorActorDep, service: Ses
 async def runner_websocket(websocket: WebSocket, session_id: UUID) -> None:
     service = cast(SessionService | None, websocket.app.state.session_service)
     authorization = websocket.headers.get("authorization", "")
-    scheme, _, bearer = authorization.partition(" ")
-    if service is None or scheme.lower() != "bearer" or not bearer:
+    scheme, _, session_token = authorization.partition(" ")
+    if service is None or scheme.lower() != "bearer" or not session_token:
         await websocket.close(code=NOT_ADMITTED_CODE, reason="runner authentication required")
         return
-    await service.handle_journal_runner(websocket, session_id, bearer)
+    await service.handle_journal_runner(websocket, session_id, session_token)

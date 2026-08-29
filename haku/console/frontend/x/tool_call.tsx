@@ -134,7 +134,7 @@ function snippet(value: string): string {
 /** A code-valued fragment of a folded line: a command, a path, a pattern. */
 function mono(value: unknown): ReactNode | null {
   if (typeof value !== "string" || !value.trim()) return null;
-  return <span className="haku-chat-tool-call-snippet-mono">{snippet(value)}</span>;
+  return <span className="haku-conversation-tool-call-snippet-mono">{snippet(value)}</span>;
 }
 
 /** A prose-valued fragment of a folded line: a description, a query. */
@@ -203,10 +203,10 @@ function toolCallSummary(call: ToolCallItem): ReactNode {
  */
 export function ToolCallView({ call }: { call: ToolCallItem }): JSX.Element {
   return (
-    <details className="haku-chat-tool-call">
-      <summary className="haku-chat-tool-call-summary">
-        <span className="haku-chat-tool-call-name">{call.tool_name}</span>
-        <span className="haku-chat-tool-call-snippet">{toolCallSummary(call)}</span>
+    <details className="haku-conversation-tool-call">
+      <summary className="haku-conversation-tool-call-summary">
+        <span className="haku-conversation-tool-call-name">{call.tool_name}</span>
+        <span className="haku-conversation-tool-call-snippet">{toolCallSummary(call)}</span>
         {(call.outcome === "failed" || call.status === "failed") && (
           <Badge variant="light" color="red">
             failed
@@ -218,7 +218,7 @@ export function ToolCallView({ call }: { call: ToolCallItem }): JSX.Element {
           </Badge>
         )}
       </summary>
-      <Stack gap="xs" className="haku-chat-tool-call-body">
+      <Stack gap="xs" className="haku-conversation-tool-call-body">
         <ToolPayload label="Arguments" value={call.arguments} emptyLabel="No arguments." emptyWhenNoKeys />
         {call.outcome !== null ? (
           <>

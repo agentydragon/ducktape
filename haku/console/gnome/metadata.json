@@ -1,8 +1,0 @@
-{
-  "name": "Haku Approvals",
-  "description": "Opens Haku Console's pending tool approvals in a small desktop window",
-  "uuid": "haku-approvals@allegedly.works",
-  "version": 1,
-  "shell-version": ["50"],
-  "url": "https://github.com/agentydragon/ducktape"
-}

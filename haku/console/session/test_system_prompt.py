@@ -112,7 +112,7 @@ def test_deployed_template_includes_mcp_guidance_for_clients_that_hide_server_in
     deployed: SystemPromptTemplate,
 ):
     """The template owns the guidance prose (a deliberate second copy of the MCP server's own
-    instructions, `haku/console/mcp_guidance.py`), so the render is asserted on its load-bearing
+    instructions, `haku/console/mcp/guidance.py`), so the render is asserted on its load-bearing
     content rather than on string identity with the server constant."""
     rendered = deployed.render(introduction())
     assert "Haku Console MCP" in rendered

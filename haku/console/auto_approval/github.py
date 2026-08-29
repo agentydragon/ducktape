@@ -88,7 +88,7 @@ class _CachedVisibility:
 
 
 class GitHubRepositoryVisibilityService:
-    """Per-replica TTL cache with single-flight, mirroring ``mcp_reflection_cache.ReflectionCache``.
+    """Per-replica TTL cache with single-flight, mirroring ``reflection_cache.ReflectionCache``.
 
     Only a successful check (public or confirmed-not-public) is cached; a failure propagates
     uncached so a transient outage does not wedge a repository as unknown for the full TTL.

@@ -34,7 +34,7 @@ import {
 } from "../vocabulary";
 
 // Argument validators generated from grocy_mcp's own Pydantic models (`grocy_mcp/mcp_types.py`):
-// the batch tools are reflected at build time (haku/console/export_mcp_tool_schemas.py) so these
+// the batch tools are reflected at build time (haku/console/mcp/export_tool_schemas.py) so these
 // stay in lockstep with the server instead of being hand-copied. `int | str` name-or-ID fields
 // come through as `string | number`; a `date` field as `string`; a `set` as an array.
 const zStockAddArgs: z.ZodType<McpToolArgumentsFor<typeof GROCY_SERVER_ID, "stock_add">> = mcpToolSchema(

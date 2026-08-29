@@ -274,7 +274,7 @@ async def test_session_bearer_resolves_the_pinned_agent_profile_and_session(
                 operator_id=resolved_operator_id,
                 agent_id=agent_id,
                 access_profile_id="pinned",
-                runtime_kind=HarnessKind.CLAUDE_CODE,
+                harness_kind=HarnessKind.CLAUDE_CODE,
                 created_at=now,
             )
         )
@@ -306,7 +306,7 @@ async def test_session_bearer_resolves_the_pinned_agent_profile_and_session(
     assert isinstance(auth, StaticMcpAuth)
     access = await auth.provider.verify_token(session_token)
     assert access is not None
-    assert access.client_id == f"haku-chat-session:{session_id}"
+    assert access.client_id == f"haku-session:{session_id}"
     assert await auth.static_actor_resolver.resolve_static_actor(access) == AgentActor(
         agent_id=agent_id,
         operator_id=resolved_operator_id,
@@ -427,7 +427,7 @@ async def test_session_bearer_is_rejected_after_its_session_ends(
                 operator_id=resolved_operator_id,
                 agent_id=agent_id,
                 access_profile_id="pinned",
-                runtime_kind=HarnessKind.CLAUDE_CODE,
+                harness_kind=HarnessKind.CLAUDE_CODE,
                 created_at=now,
             )
         )

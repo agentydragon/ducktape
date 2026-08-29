@@ -6,6 +6,7 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 py_library(
     name = "addon",
     srcs = ["addon.py"],
+    visibility = ["//haku/egress/testing:__pkg__"],
     deps = [
         ":decide_client",
         ":decision",
@@ -16,6 +17,7 @@ py_library(
 py_library(
     name = "decide_client",
     srcs = ["decide_client.py"],
+    visibility = ["//haku/egress/testing:__pkg__"],
     deps = [":decision"],
 )
 
@@ -25,13 +27,18 @@ py_library(
     visibility = [
         "//haku/console:__pkg__",
         "//haku/console/grants/http:__pkg__",
+        "//haku/egress/testing:__pkg__",
     ],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        "//haku/grants:authorization",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
     name = "localhost_decide_client",
     srcs = ["localhost_decide_client.py"],
+    visibility = ["//haku/egress/testing:__pkg__"],
     deps = [
         ":decide_client",
         ":decision",
@@ -43,20 +50,11 @@ py_library(
 py_library(
     name = "runner",
     srcs = ["runner.py"],
+    visibility = ["//haku/egress/testing:__pkg__"],
     deps = [
         ":addon",
         ":decide_client",
         "@pypi//mitmproxy",
-    ],
-)
-
-py_library(
-    name = "static_decide_client",
-    testonly = True,
-    srcs = ["static_decide_client.py"],
-    deps = [
-        ":decide_client",
-        ":decision",
     ],
 )
 
@@ -113,22 +111,6 @@ oci_load(
 )
 
 py_library(
-    name = "proxy_test_harness",
-    testonly = True,
-    srcs = ["proxy_test_harness.py"],
-    deps = [
-        ":addon",
-        ":decide_client",
-        ":decision",
-        ":localhost_decide_client",
-        ":runner",
-        "@pypi//aiohttp",
-        "@pypi//more_itertools",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "tls_test_support",
     testonly = True,
     srcs = ["tls_test_support.py"],
@@ -140,7 +122,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
-        ":proxy_test_harness",
+        "//haku/egress/testing:proxy_test_harness",
         "@pypi//pytest",
     ],
 )
@@ -152,6 +134,7 @@ py_test(
         ":conftest",
         ":decision",
         "//:conftest",
+        "//haku/grants:authorization",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -160,7 +143,7 @@ py_test(
 
 # The integration suites below (this target and the test_egress_* targets) drive a real
 # in-process mitmproxy — the embedded runner — toward a local upstream, so they need no
-# Docker; they extend the fail-closed conformance harness in proxy_test_harness.py (#4914).
+# Docker; they extend the fail-closed conformance harness in testing/proxy_test_harness.py (#4914).
 py_test(
     name = "test_egress_proxy",
     srcs = ["test_egress_proxy.py"],
@@ -169,9 +152,9 @@ py_test(
         ":conftest",
         ":decision",
         ":localhost_decide_client",
-        ":proxy_test_harness",
-        ":static_decide_client",
         "//:conftest",
+        "//haku/egress/testing:proxy_test_harness",
+        "//haku/egress/testing:static_decide_client",
         "@pypi//aiohttp",
         "@pypi//mitmproxy",
         "@pypi//more_itertools",
@@ -187,9 +170,9 @@ py_test(
     deps = [
         ":conftest",
         ":decision",
-        ":proxy_test_harness",
-        ":static_decide_client",
         "//:conftest",
+        "//haku/egress/testing:proxy_test_harness",
+        "//haku/egress/testing:static_decide_client",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
     ],
@@ -202,9 +185,9 @@ py_test(
     deps = [
         ":conftest",
         ":decision",
-        ":proxy_test_harness",
-        ":static_decide_client",
         "//:conftest",
+        "//haku/egress/testing:proxy_test_harness",
+        "//haku/egress/testing:static_decide_client",
         "@pypi//aiohttp",
         "@pypi//more_itertools",
         "@pypi//pytest",
@@ -218,9 +201,9 @@ py_test(
     srcs = ["test_egress_streaming.py"],
     deps = [
         ":conftest",
-        ":proxy_test_harness",
-        ":static_decide_client",
         "//:conftest",
+        "//haku/egress/testing:proxy_test_harness",
+        "//haku/egress/testing:static_decide_client",
         "@pypi//aiohttp",
         "@pypi//pytest_bazel",
     ],
@@ -234,10 +217,10 @@ py_test(
         ":conftest",
         ":decide_client",
         ":decision",
-        ":proxy_test_harness",
-        ":static_decide_client",
         ":tls_test_support",
         "//:conftest",
+        "//haku/egress/testing:proxy_test_harness",
+        "//haku/egress/testing:static_decide_client",
         "@pypi//aiohttp",
         "@pypi//more_itertools",
         "@pypi//pytest",
@@ -251,13 +234,30 @@ py_test(
     srcs = ["test_egress_http2.py"],
     deps = [
         ":conftest",
-        ":proxy_test_harness",
-        ":static_decide_client",
         ":tls_test_support",
         "//:conftest",
+        "//haku/egress/testing:proxy_test_harness",
+        "//haku/egress/testing:static_decide_client",
         "@pypi//h2",
         "@pypi//httpx",
         "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_egress_git",
+    size = "small",
+    srcs = ["test_egress_git.py"],
+    deps = [
+        ":conftest",
+        ":tls_test_support",
+        "//:conftest",
+        "//haku/egress/testing:proxy_test_harness",
+        "//haku/egress/testing:static_decide_client",
+        "@pypi//aiohttp",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

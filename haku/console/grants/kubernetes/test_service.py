@@ -13,6 +13,7 @@ from haku.console.grants.kubernetes.models import Grant, GrantSpec, NamespacesGr
 from haku.console.grants.kubernetes.service import GrantService
 from haku.console.grants.principal import (
     AgentGrantPrincipal,
+    GrantPrincipal,
     RequestPrincipal,
     SessionGrantPrincipal,
     grant_principal_applies_to,
@@ -35,17 +36,11 @@ class FakeRepository:
 
     def __init__(self) -> None:
         self.grants: dict[UUID, Grant] = {}
-        self.release_calls: list[tuple[UUID, UUID, str, datetime]] = []
-        self.revoke_source_calls: list[tuple[UUID, str, str, datetime]] = []
+        self.end_calls: list[tuple[frozenset[UUID], UUID, str | None, datetime]] = []
 
     @staticmethod
     def _active(grant: Grant, now: datetime) -> bool:
-        return (
-            derive_status(
-                released_at=grant.released_at, revoked_at=grant.revoked_at, expires_at=grant.expires_at, now=now
-            )
-            is GrantStatus.ACTIVE
-        )
+        return derive_status(ended_at=grant.ended_at, expires_at=grant.expires_at, now=now) is GrantStatus.ACTIVE
 
     async def create(
         self, *, owner_agent_id, grant_principal, source_tool_call_id, scope, rules, created_at, expires_at
@@ -79,15 +74,19 @@ class FakeRepository:
         self.grants.update((grant.grant_id, grant) for grant in created)
         return created
 
-    async def list(self, *, owner_agent_id, now, include_terminal=True):
-        return tuple(g for g in self.grants.values() if g.owner_agent_id == owner_agent_id)
+    async def list(self, *, principal: GrantPrincipal | None = None, now, include_inactive=False):
+        return tuple(
+            grant
+            for grant in self.grants.values()
+            if (principal is None or grant.principal == principal) and (include_inactive or self._active(grant, now))
+        )
 
-    async def list_for_request_principal(self, *, request_principal, now, include_terminal=True):
+    async def list_for_request_principal(self, *, request_principal, now, include_inactive=False):
         return tuple(
             grant
             for grant in self.grants.values()
             if grant_principal_applies_to(grant.principal, request_principal)
-            and (include_terminal or self._active(grant, now))
+            and (include_inactive or self._active(grant, now))
         )
 
     async def get(self, *, owner_agent_id, grant_id):
@@ -102,24 +101,13 @@ class FakeRepository:
             if grant_principal_applies_to(g.principal, request_principal) and self._active(g, now)
         )
 
-    async def release(self, *, owner_agent_id, grant_id, reason, now):
-        self.release_calls.append((owner_agent_id, grant_id, reason, now))
+    async def end(self, *, owner_agent_ids, grant_id, reason, now):
+        self.end_calls.append((owner_agent_ids, grant_id, reason, now))
         grant = self.grants[grant_id]
-        assert grant.owner_agent_id == owner_agent_id
-        released = grant.model_copy(update={"released_at": now, "end_reason": reason})
-        self.grants[grant_id] = released
-        return released
-
-    async def revoke(self, **kwargs):
-        raise AssertionError("not used by this test")
-
-    async def revoke_source(self, *, owner_agent_id, source_tool_call_id, reason, now):
-        self.revoke_source_calls.append((owner_agent_id, source_tool_call_id, reason, now))
-        return tuple(
-            grant
-            for grant in self.grants.values()
-            if grant.owner_agent_id == owner_agent_id and grant.source_tool_call_id == source_tool_call_id
-        )
+        assert grant.owner_agent_id in owner_agent_ids
+        ended = grant.model_copy(update={"ended_at": now, "end_reason": reason})
+        self.grants[grant_id] = ended
+        return ended
 
 
 @pytest.mark.asyncio
@@ -151,6 +139,32 @@ async def test_create_and_match_require_the_explicit_agent_id() -> None:
             required_rules=(_rule(),),
         )
     ).allowed
+
+
+@pytest.mark.asyncio
+async def test_permanent_grant_has_no_expiry_and_can_be_ended() -> None:
+    repo = FakeRepository()
+    service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+    grant = await service.create_grant(
+        owner_agent_id=_AGENT,
+        grant_principal=_GRANT_PRINCIPAL,
+        source_tool_call_id="tool-call-permanent",
+        scope=_SCOPE,
+        rules=(_rule(),),
+        expires_at=None,
+    )
+
+    assert grant.expires_at is None
+    decision = await service.match_request(
+        request_principal=RequestPrincipal(agent_id=_AGENT, session_id=None, access_profile_id=None),
+        required_scope=_DEFAULT_SCOPE,
+        required_rules=(_rule(),),
+    )
+    assert decision.allowed is True
+    assert decision.expires_at is None
+
+    (ended,) = await service.end_grants(owner_agent_id=_AGENT, grant_ids=(grant.grant_id,))
+    assert ended.status is GrantStatus.ENDED
 
 
 @pytest.mark.asyncio
@@ -233,7 +247,7 @@ async def test_create_many_enforces_the_tool_batch_limit_in_the_service() -> Non
 
 
 @pytest.mark.asyncio
-async def test_release_many_is_bounded_sequential_and_uses_one_timestamp() -> None:
+async def test_end_many_is_bounded_sequential_and_uses_one_timestamp() -> None:
     repo = FakeRepository()
     service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
     grants = await service.create_grants(
@@ -244,14 +258,14 @@ async def test_release_many_is_bounded_sequential_and_uses_one_timestamp() -> No
         expires_at=_NOW + timedelta(minutes=5),
     )
 
-    released = await service.release_grants(
+    ended = await service.end_grants(
         owner_agent_id=_AGENT, grant_ids=[grants[1].grant_id, grants[0].grant_id], reason="probe complete"
     )
 
-    assert [grant.grant_id for grant in released] == [grants[1].grant_id, grants[0].grant_id]
-    assert repo.release_calls == [
-        (_AGENT, grants[1].grant_id, "probe complete", _NOW),
-        (_AGENT, grants[0].grant_id, "probe complete", _NOW),
+    assert [grant.grant_id for grant in ended] == [grants[1].grant_id, grants[0].grant_id]
+    assert repo.end_calls == [
+        (frozenset({_AGENT}), grants[1].grant_id, "probe complete", _NOW),
+        (frozenset({_AGENT}), grants[0].grant_id, "probe complete", _NOW),
     ]
 
 
@@ -264,23 +278,25 @@ async def test_release_many_is_bounded_sequential_and_uses_one_timestamp() -> No
         (tuple(UUID(int=value) for value in range(1, 34)), "at most 32 grants"),
     ],
 )
-async def test_release_many_rejects_invalid_lists(grant_ids, message) -> None:
+async def test_end_many_rejects_invalid_lists(grant_ids, message) -> None:
     service = GrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
 
     with pytest.raises(ValueError, match=message):
-        await service.release_grants(owner_agent_id=_AGENT, grant_ids=grant_ids)
+        await service.end_grants(owner_agent_id=_AGENT, grant_ids=grant_ids)
 
 
 @pytest.mark.asyncio
-async def test_release_many_rejects_a_blank_reason_before_mutating() -> None:
-    service = GrantService(FakeRepository(), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
+async def test_end_many_normalizes_a_blank_reason() -> None:
+    repo = FakeRepository()
+    service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
 
-    with pytest.raises(ValueError, match="reason must not be empty"):
-        await service.release_grants(owner_agent_id=_AGENT, grant_ids=[UUID(int=1)], reason="   ")
+    with pytest.raises(KeyError):
+        await service.end_grants(owner_agent_id=_AGENT, grant_ids=[UUID(int=1)], reason="   ")
+    assert repo.end_calls == [(frozenset({_AGENT}), UUID(int=1), None, _NOW)]
 
 
 @pytest.mark.asyncio
-async def test_release_many_keeps_earlier_releases_when_a_later_item_fails() -> None:
+async def test_end_many_keeps_earlier_ends_when_a_later_item_fails() -> None:
     repo = FakeRepository()
     service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
     grant = await service.create_grant(
@@ -293,21 +309,9 @@ async def test_release_many_keeps_earlier_releases_when_a_later_item_fails() -> 
     )
 
     with pytest.raises(KeyError):
-        await service.release_grants(owner_agent_id=_AGENT, grant_ids=[grant.grant_id, UUID(int=9)])
+        await service.end_grants(owner_agent_id=_AGENT, grant_ids=[grant.grant_id, UUID(int=9)])
 
-    assert repo.grants[grant.grant_id].status is GrantStatus.RELEASED
-
-
-@pytest.mark.asyncio
-async def test_revoke_grant_set_uses_source_tool_call_as_lifecycle_unit() -> None:
-    repo = FakeRepository()
-    service = GrantService(repo, max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
-
-    await service.revoke_grant_set(
-        owner_agent_id=_AGENT, source_tool_call_id="tool-call-1", reason="operator ended probe"
-    )
-
-    assert repo.revoke_source_calls == [(_AGENT, "tool-call-1", "operator ended probe", _NOW)]
+    assert repo.grants[grant.grant_id].status is GrantStatus.ENDED
 
 
 @pytest.mark.asyncio

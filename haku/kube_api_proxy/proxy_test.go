@@ -545,7 +545,7 @@ func TestMissingBearerIsRejectedBeforeAuthority(t *testing.T) {
 }
 
 func TestDeniedRequestIsNotForwarded(t *testing.T) {
-	authority := &recordingAuthority{decision: AuthorizationResponse{Allowed: false, Reason: "standing policy denied secrets"}}
+	authority := &recordingAuthority{decision: AuthorizationResponse{Allowed: false, Reason: "configured SAR denied secrets"}}
 	proxy := newTestProxy(t, authority, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Error("upstream called")
 	}), nil)

@@ -3,6 +3,7 @@ import type { z } from "zod";
 
 import { formatTimestamp } from "../../approval_state";
 import { Field } from "../../field";
+import { GrantPrincipalLabel } from "../../grant_principal";
 import { mcpToolResultSchema, type McpToolResultFor } from "../../mcp_tool_result_schema";
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry";
 import { GRANTS_SERVER_ID } from "../server_ids";
@@ -27,16 +28,13 @@ const zRevokeGrantsResult: z.ZodType<McpToolResultFor<typeof GRANTS_SERVER_ID, "
 );
 
 type GrantView = McpToolResultFor<typeof GRANTS_SERVER_ID, "revoke_grants">[number];
-type GrantPrincipal = GrantView["grant"]["principal"];
 
 function statusColor(status: string): string {
   switch (status) {
     case "active":
       return "teal";
-    case "released":
-      return "blue";
-    case "revoked":
-      return "red";
+    case "ended":
+      return "gray";
     default:
       return "gray";
   }
@@ -51,15 +49,6 @@ function Timestamp({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function principalText(principal: GrantPrincipal): string {
-  switch (principal.kind) {
-    case "agent":
-      return `Agent ${principal.agent_id}`;
-    case "session":
-      return `Session ${principal.session_id}`;
-  }
-}
-
 function GrantCoverage({ view, variant }: { view: GrantView; variant: PreviewVariant }): JSX.Element {
   if (view.domain === "kubernetes") {
     return (
@@ -71,7 +60,7 @@ function GrantCoverage({ view, variant }: { view: GrantView; variant: PreviewVar
 
 function GrantResult({ view, variant }: { view: GrantView; variant: PreviewVariant }) {
   const grant = view.grant;
-  const endedAt = grant.released_at ?? grant.revoked_at;
+  const endedAt = grant.ended_at;
   return (
     <Stack gap="xs">
       <Group gap={6}>
@@ -84,9 +73,15 @@ function GrantResult({ view, variant }: { view: GrantView; variant: PreviewVaria
       <GrantCoverage view={view} variant={variant} />
       {variant === "detailed" && (
         <Stack gap={2}>
-          <Field label="Applies to">{principalText(grant.principal)}</Field>
+          <Field label="Applies to">
+            <GrantPrincipalLabel principal={grant.principal} />
+          </Field>
           <Timestamp label="Created" value={grant.created_at} />
-          <Timestamp label="Expires" value={grant.expires_at} />
+          {grant.expires_at ? (
+            <Timestamp label="Expires" value={grant.expires_at} />
+          ) : (
+            <Field label="Expires">Never</Field>
+          )}
           {endedAt && <Timestamp label="Ended" value={endedAt} />}
           {grant.end_reason && <Field label="End reason">{grant.end_reason}</Field>}
         </Stack>

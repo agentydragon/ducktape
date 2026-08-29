@@ -60,8 +60,8 @@ spec:
     # Job/Secret stamping into zone namespaces.
     - toEntities:
         - kube-apiserver
-    # Classifier calls — the main LiteLLM (claude-*-allowlisted virtual key);
-    # no direct provider egress from this pod.
+    # Classifier calls — the configured Anthropic-compatible backend; no direct provider egress
+    # from this pod.
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: litellm

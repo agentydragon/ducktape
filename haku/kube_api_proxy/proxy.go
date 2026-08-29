@@ -212,7 +212,7 @@ func serve(config Config, resolver RequestInfoResolver, upstream http.Handler, w
 	if !decision.Allowed {
 		reason := decision.Reason
 		if reason == "" {
-			reason = "Kubernetes standing policy denied this request"
+			reason = "Kubernetes configured SAR authorization denied this request"
 		}
 		config.Logger.Warn(
 			"Kubernetes request denied",

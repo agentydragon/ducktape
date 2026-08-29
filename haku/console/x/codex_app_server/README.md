@@ -6,5 +6,4 @@ journal bridge sends the runner. It adds no deploy runtime selection, sandbox na
 credentials, or conversation writer of its own beyond what a registration supplies.
 
 The app-server protocol, its projection into neutral operations, and the sanitized fixture capture
-live runner-ward in <../../../runtime/x/bridge/> (`codex_protocol.py`, `codex_projection.py`,
-`codex_harness.py`).
+live runner-ward in <../../../runner/codex/> (`protocol.py`, `projection.py`, `harness.py`).

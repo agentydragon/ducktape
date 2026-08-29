@@ -2,7 +2,7 @@
 
 The runner interprets Codex's stream and drives its turns at the neutral-operation generation
 (#4667): the Console composes no native protocol and projects no native frames for Codex. This
-adapter owns only launch -- turning the shared runtime's neutral launch facts into Codex's process
+adapter owns only launch -- turning the shared harness registration's neutral launch facts into Codex's process
 launch, with the thread/start params (model, reasoning effort, developer instructions) riding the
 launch environment for the runner's CodexHarness to read.
 """
@@ -14,13 +14,13 @@ from pathlib import Path
 
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.x.codex_app_server.config import ReasoningEffort
-from haku.console.x.runtime import RuntimeLaunch
+from haku.console.x.runtime import HarnessLaunchSpec
 from haku.runner.codex.options import CodexAppServerSession, CodexModelProvider, HttpMcpServer, build_codex_launch
 from haku.runner.protocol import HarnessLaunch
 
 
 @dataclass(frozen=True, slots=True)
-class CodexRuntimeAdapter:
+class CodexHarnessAdapter:
     """Codex launch behavior, with no sandbox lifecycle state and no console projection."""
 
     model: str | None = None
@@ -35,7 +35,7 @@ class CodexRuntimeAdapter:
     def display_name(self) -> str:
         return "Codex"
 
-    def build_launch(self, launch: RuntimeLaunch) -> HarnessLaunch:
+    def build_launch(self, launch: HarnessLaunchSpec) -> HarnessLaunch:
         native_servers = {
             name: HttpMcpServer(url=server.url, bearer_token_env_var=server.bearer_environment_variable)
             for name, server in launch.mcp_servers.items()

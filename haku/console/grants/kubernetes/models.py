@@ -14,6 +14,7 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import (
+    AwareDatetime,
     BaseModel,
     ConfigDict,
     Field,
@@ -161,23 +162,13 @@ class Grant(GrantEnvelope):
         validate_grant_scope_rules(self.scope, self.rules)
         return self
 
-    @model_validator(mode="after")
-    def validate_end_reason(self) -> Grant:
-        ended = self.released_at is not None or self.revoked_at is not None
-        if ended != (self.end_reason is not None and bool(self.end_reason.strip())):
-            raise ValueError("end_reason travels exactly with a recorded end action")
-        return self
-
     # The ignore is pydantic's documented mypy accommodation for computed_field-on-property
     # (mypy's prop-decorator limitation), not a silenced finding.
     @computed_field  # type: ignore[prop-decorator]
     @property
     def status(self) -> GrantStatus:
         return derive_status(
-            released_at=self.released_at,
-            revoked_at=self.revoked_at,
-            expires_at=self.expires_at,
-            now=datetime.datetime.now(datetime.UTC),
+            ended_at=self.ended_at, expires_at=self.expires_at, now=datetime.datetime.now(datetime.UTC)
         )
 
 
@@ -202,5 +193,5 @@ class GrantDecision(BaseModel):
 
     allowed: bool
     grant_id: UUID | None = None
-    expires_at: datetime.datetime | None = None
+    expires_at: AwareDatetime | None = None
     reason: str | None = None

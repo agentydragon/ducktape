@@ -52,6 +52,7 @@ py_library(
     deps = [
         ":conversation_event",
         ":log",
+        "//haku/console:database_retry",
         "//haku/console:database_schema",
         "//haku/console/notifications:conversation_wakes",
         "//haku/runner:neutral_operations",
@@ -202,6 +203,24 @@ py_test(
         "//haku/runner:neutral_operations",
         "//util/bazel:runfiles",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_log_concurrency",
+    size = "medium",  # provisions a Postgres database per test
+    srcs = ["test_log_concurrency.py"],
+    deps = [
+        ":conftest",
+        ":conversation_event",
+        ":log",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "//haku/console/session:conftest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

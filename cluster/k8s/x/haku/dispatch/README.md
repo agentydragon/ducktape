@@ -41,9 +41,8 @@ comes from **reachability**, not secrecy:
   output is worthless anywhere Haku could reach it, and per-job keys can't be minted on
   the cluster-wide-reachable main LiteLLM for the same reason.
 
-The dispatcher's **classifier** calls go the other way — out to the _main_ LiteLLM with a
-`claude-*`-only virtual key (`litellm-key-dispatcher-classifier`, minted in
-`tf/gitops/litellm-keys`, reflected in). The dispatcher holds no raw provider key at all.
+The dispatcher's **classifier** calls go to the configured Anthropic-compatible backend with a
+scoped virtual key. The dispatcher holds no raw provider key at all.
 
 > **Deviation (Flux layering):** the zone-key Terraform lives **downstream** of the
 > serving LiteLLM (`cluster/k8s/litellm/keys-tf/` `dependsOn` the litellm app), because the

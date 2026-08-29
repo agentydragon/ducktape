@@ -17,7 +17,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.console.channels.matrix.client import InboundMessage, UnmappableEvent
-from haku.console.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM
+from haku.console.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_TEST_HARNESS_KIND
 from haku.console.channels.matrix.conversation import (
     ConversationFacts,
     ConversationStore,
@@ -36,8 +36,8 @@ from haku.console.conversation.prompt_origin import SPA_ORIGIN, MatrixOrigin
 from haku.console.database_schema import Conversation, ConversationEventRow, ConversationItem, Session, SubmittedPrompt
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
-from haku.console.session.launch_identity import ChatLaunchAuthorizer, LaunchIdentity
-from haku.console.session.store import BridgeAuthentication, Store
+from haku.console.session.launch_identity import HarnessLaunchAuthorizer, LaunchIdentity
+from haku.console.session.store import RunnerConnectionAuthentication, Store
 from haku.console.x.conversation_events import (
     ConversationEvent as FoldedEvent,
     ItemSegment,
@@ -45,7 +45,7 @@ from haku.console.x.conversation_events import (
     MessageStarted,
     OpenRef,
 )
-from haku.console.x.runtime import RuntimeKey
+from haku.console.x.runtime import HarnessKey
 
 
 async def test_first_matrix_bind_pins_complete_identity_with_production_authorizer(
@@ -71,11 +71,11 @@ async def test_first_matrix_bind_pins_complete_identity_with_production_authoriz
             )
         ]
     )
-    production = ChatLaunchAuthorizer(
+    production = HarnessLaunchAuthorizer(
         authority,
         launchable_agent_ids={agent_id},
-        registered_runtime_identities={RuntimeKey(agent_id, HarnessKind.CLAUDE_CODE)},
-        profile_runtime_kinds={"chat": {HarnessKind.CLAUDE_CODE}},
+        registered_harness_identities={HarnessKey(agent_id, HarnessKind.CLAUDE_CODE)},
+        profile_harness_kinds={"chat": {HarnessKind.CLAUDE_CODE}},
     )
     calls: list[bool] = []
 
@@ -83,16 +83,16 @@ async def test_first_matrix_bind_pins_complete_identity_with_production_authoriz
         db: AsyncSession,
         operator_id: UUID,
         agent_id: UUID,
-        runtime_kind: HarnessKind,
+        harness_kind: HarnessKind,
         *,
         expected_profile_id: str | None = None,
     ) -> LaunchIdentity:
         assert db.in_transaction()
         calls.append(db.in_transaction())
-        return await production(db, operator_id, agent_id, runtime_kind, expected_profile_id=expected_profile_id)
+        return await production(db, operator_id, agent_id, harness_kind, expected_profile_id=expected_profile_id)
 
     conversations = ConversationStore(migrated_sessions, launch_authorizer=authorize, default_agent_id=agent_id)
-    bound = await conversations.bind_room(MATRIX_ROOM, operator_id)
+    bound = await conversations.bind_room(MATRIX_ROOM, operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
 
     async with migrated_sessions() as db:
         conversation = await db.get(Conversation, bound.conversation_id)
@@ -102,8 +102,15 @@ async def test_first_matrix_bind_pins_complete_identity_with_production_authoriz
         agent_id,
         "chat",
     )
-    assert conversation.runtime_kind is HarnessKind.CLAUDE_CODE
+    assert conversation.harness_kind is HarnessKind.CLAUDE_CODE
     assert calls == [True]
+
+
+async def test_new_matrix_bind_requires_an_explicit_harness_kind(migrated_sessions, operator_id) -> None:
+    conversations = ConversationStore(migrated_sessions)
+
+    with pytest.raises(RuntimeError, match="Matrix harness kind is not configured"):
+        await conversations.bind_room(MATRIX_ROOM, operator_id, harness_kind=None)
 
 
 @pytest.fixture
@@ -114,7 +121,7 @@ def transcript(migrated_sessions) -> ConversationHistory:
 @pytest.fixture
 async def binding(conversations: ConversationStore, operator_id: UUID) -> RoomAttachment:
     """The room's live binding, made the way an invite makes it."""
-    return await conversations.bind_room(MATRIX_ROOM, operator_id)
+    return await conversations.bind_room(MATRIX_ROOM, operator_id, harness_kind=MATRIX_TEST_HARNESS_KIND)
 
 
 @pytest.fixture
@@ -125,14 +132,19 @@ def thread(binding: RoomAttachment) -> UUID:
 
 async def another_thread(conversations: ConversationStore, operator_id: UUID) -> UUID:
     """A second conversation, bound the way a second invited room binds one."""
-    return (await conversations.bind_room("!second:allegedly.works", operator_id)).conversation_id
+    return (
+        await conversations.bind_room("!second:allegedly.works", operator_id, harness_kind=MATRIX_TEST_HARNESS_KIND)
+    ).conversation_id
 
 
 async def serving_session(session_store: Store, operator_id: UUID, conversation_id: UUID) -> UUID:
     """A Matrix session ready to take prompts, made the way the supervisor and a runner make one."""
     view, token = await session_store.create(operator_id, conversation_id=conversation_id)
     assert token is not None
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     return view.session_id
 
 
@@ -299,15 +311,26 @@ def turns(session_store: Store, migrated_identity_store, ledger: IngressLedger) 
 
 
 async def test_each_room_binds_its_own_conversation(
-    conversations: ConversationStore, operator_id: UUID, binding: RoomAttachment
+    conversations: ConversationStore, operator_id: UUID, binding: RoomAttachment, migrated_sessions
 ) -> None:
     """One bot serves many rooms: a second room binds beside the first, and re-binding a room is
-    idempotent rather than a refusal."""
-    second = await conversations.bind_room("!second:allegedly.works", operator_id)
+    idempotent rather than a refusal. The store does not impose one harness on both conversations.
+    """
+    second = await conversations.bind_room(
+        "!second:allegedly.works", operator_id, harness_kind=HarnessKind.CODEX_APP_SERVER
+    )
 
     assert second.conversation_id != binding.conversation_id
-    assert await conversations.bind_room(MATRIX_ROOM, operator_id) == binding
+    assert await conversations.bind_room(MATRIX_ROOM, operator_id, harness_kind=MATRIX_TEST_HARNESS_KIND) == binding
     assert await conversations.live_attachments() == (binding, second)
+
+    async with migrated_sessions() as db:
+        first_row = await db.get(Conversation, binding.conversation_id)
+        second_row = await db.get(Conversation, second.conversation_id)
+    assert first_row is not None
+    assert first_row.harness_kind is HarnessKind.CLAUDE_CODE
+    assert second_row is not None
+    assert second_row.harness_kind is HarnessKind.CODEX_APP_SERVER
 
 
 def operator_message(body: str, *, event_id: str, at: int) -> InboundMessage:

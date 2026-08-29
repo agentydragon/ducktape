@@ -1,4 +1,4 @@
-"""The narrow declarative `SandboxClaim` one chat session runs in, and how it is inspected.
+"""The narrow declarative `SandboxClaim` one session runs in, and how it is inspected.
 
 Creates a claim, deletes it, and turns the CR graph underneath — claim, Sandbox, Pod, runner
 container — into the one progress view the SPA renders.
@@ -11,20 +11,21 @@ more than an exception that replaces the whole view.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Protocol, cast
 from uuid import UUID
 
-from kubernetes_asyncio import client as k8s_client, config as k8s_config
+from kubernetes_asyncio import client as k8s_client, config as k8s_config, watch as k8s_watch
 from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 from kubernetes_asyncio.config.config_exception import ConfigException
 from pydantic import BaseModel, ConfigDict
 
-from haku.runner.backend import BRIDGE_CREDENTIAL_VARIABLE
+from haku.runner.backend import LEGACY_SESSION_TOKEN_VARIABLE, SESSION_TOKEN_VARIABLE
 from util.kubernetes import CustomObjectsClient
 
 logger = logging.getLogger(__name__)
@@ -91,21 +92,21 @@ class KubernetesClients:
 
 @dataclass(frozen=True, slots=True)
 class SandboxClaimSpec:
-    """Generic desired state for one runtime's session claims.
+    """Generic desired state for one harness's session claims.
 
     The claim implementation knows Kubernetes and the shared runner bootstrap only. Which native
-    harness image/pool is selected and how claims are labelled is deploy-time runtime composition.
+    harness image/pool is selected and how claims are labelled is deploy-time harness composition.
     """
 
     namespace: str
     warm_pool: str
     claim_prefix: str
-    runtime_label: str
+    harness_label: str
     runner_environment: Mapping[str, str]
 
 
 class SandboxClaims(Protocol):
-    async def create(self, *, session_id: UUID, bridge_token: str, expires_at: datetime) -> None: ...
+    async def create(self, *, session_id: UUID, session_token: str, expires_at: datetime) -> None: ...
 
     async def renew(self, *, session_id: UUID, expires_at: datetime) -> None: ...
 
@@ -115,11 +116,13 @@ class SandboxClaims(Protocol):
 
     def observation_error(self, *, session_id: UUID, error: str) -> SandboxProvisioningView: ...
 
+    def watch_changes(self, stop: asyncio.Event) -> AsyncIterator[None]: ...
+
     async def aclose(self) -> None: ...
 
 
 class KubernetesSandboxClaims:
-    """Create the narrow declarative SandboxClaim used by one chat session."""
+    """Create the narrow declarative SandboxClaim used by one session."""
 
     def __init__(self, spec: SandboxClaimSpec, clients: KubernetesClients | None = None):
         self._spec = spec
@@ -148,7 +151,7 @@ class KubernetesSandboxClaims:
     def _claim_name(self, session_id: UUID) -> str:
         return f"{self._spec.claim_prefix}-{session_id.hex}"
 
-    async def create(self, *, session_id: UUID, bridge_token: str, expires_at: datetime) -> None:
+    async def create(self, *, session_id: UUID, session_token: str, expires_at: datetime) -> None:
         body = {
             "apiVersion": "extensions.agents.x-k8s.io/v1beta1",
             "kind": "SandboxClaim",
@@ -156,7 +159,7 @@ class KubernetesSandboxClaims:
                 "name": self._claim_name(session_id),
                 "labels": {
                     "app.kubernetes.io/managed-by": "haku-console",
-                    "haku.allegedly.works/runtime": self._spec.runtime_label,
+                    "haku.allegedly.works/harness": self._spec.harness_label,
                 },
             },
             "spec": {
@@ -165,7 +168,12 @@ class KubernetesSandboxClaims:
                 "env": [
                     *({"name": name, "value": value} for name, value in self._spec.runner_environment.items()),
                     {"name": "HAKU_RUNNER_SESSION_ID", "value": str(session_id)},
-                    {"name": BRIDGE_CREDENTIAL_VARIABLE, "value": bridge_token},
+                    {"name": SESSION_TOKEN_VARIABLE, "value": session_token},
+                    # CLEANUP(added 2026-08-29): dual mint while runner images that read only the
+                    # legacy name may still serve claims; drop with the fallback in
+                    # haku/runner/backend.py once the deployed runner image reads
+                    # HAKU_SESSION_TOKEN — one release after both images converge.
+                    {"name": LEGACY_SESSION_TOKEN_VARIABLE, "value": session_token},
                 ],
             },
         }
@@ -321,6 +329,84 @@ class KubernetesSandboxClaims:
         if self._clients is not None:
             await self._clients.api.close()
             self._clients = None
+
+    def watch_changes(self, stop: asyncio.Event) -> AsyncIterator[None]:
+        """Yield invalidations for claims and the resources beneath them.
+
+        The observer deliberately receives no manifests. It only needs a wake to invalidate the
+        short-lived projection cache; the next MCP read performs the authoritative, scoped graph
+        inspection through ``inspect``.
+        """
+
+        async def stream() -> AsyncIterator[None]:
+            clients = await self._connected()
+            queue: asyncio.Queue[None] = asyncio.Queue()
+
+            async def watch_source(method: Any, **kwargs: Any) -> None:
+                while not stop.is_set():
+                    watcher = k8s_watch.Watch()
+                    try:
+                        async for _event in watcher.stream(method, **kwargs, timeout_seconds=300):
+                            if stop.is_set():
+                                return
+                            await queue.put(None)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        logger.warning("Kubernetes sandbox watch failed; retrying", exc_info=True)
+                        with contextlib.suppress(TimeoutError):
+                            await asyncio.wait_for(stop.wait(), timeout=1)
+                    finally:
+                        watcher.stop()
+
+            tasks = [
+                asyncio.create_task(
+                    watch_source(
+                        clients.custom_objects.list_namespaced_custom_object,
+                        group=_CLAIM_API[0],
+                        version=_CLAIM_API[1],
+                        namespace=self._spec.namespace,
+                        plural=_CLAIMS_PLURAL,
+                        label_selector=(
+                            "app.kubernetes.io/managed-by=haku-console,"
+                            f"haku.allegedly.works/harness={self._spec.harness_label}"
+                        ),
+                    ),
+                    name=f"sandbox-claim-watch-{self._spec.harness_label}",
+                ),
+                asyncio.create_task(
+                    watch_source(
+                        clients.custom_objects.list_namespaced_custom_object,
+                        group="agents.x-k8s.io",
+                        version="v1beta1",
+                        namespace=self._spec.namespace,
+                        plural="sandboxes",
+                    ),
+                    name=f"sandbox-watch-{self._spec.harness_label}",
+                ),
+                asyncio.create_task(
+                    watch_source(clients.core_v1.list_namespaced_pod, namespace=self._spec.namespace),
+                    name=f"sandbox-pod-watch-{self._spec.harness_label}",
+                ),
+            ]
+            try:
+                while not stop.is_set():
+                    get_event = asyncio.create_task(queue.get())
+                    stop_wait = asyncio.create_task(stop.wait())
+                    done, pending = await asyncio.wait((get_event, stop_wait), return_when=asyncio.FIRST_COMPLETED)
+                    for task in pending:
+                        task.cancel()
+                    await asyncio.gather(*pending, return_exceptions=True)
+                    if stop_wait in done:
+                        return
+                    if get_event in done:
+                        yield None
+            finally:
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+        return stream()
 
     def observation_error(self, *, session_id: UUID, error: str) -> SandboxProvisioningView:
         return provisioning_view(

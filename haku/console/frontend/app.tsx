@@ -2,6 +2,7 @@ import { Loader, Text } from "@mantine/core";
 import { useEffect, useState } from "react";
 
 import { type ConfigResponse, displayableError, fetchConfig } from "./client";
+import { AgentNamesProvider } from "./agent_names";
 import { HakuUiEmbed } from "./haku_ui_embed";
 import { ApprovalsEmbedPage } from "./approvals_embed_page";
 import { OAuthResultPage } from "./oauth_result_page";
@@ -37,7 +38,12 @@ export default function App(): JSX.Element {
   if (view === "oauthResult" && oauthResultId !== null)
     return <OAuthResultPage key={oauthResultId} resultId={oauthResultId} />;
 
-  if (view === "approvalsEmbed") return <ApprovalsEmbedPage />;
+  if (view === "approvalsEmbed")
+    return (
+      <AgentNamesProvider>
+        <ApprovalsEmbedPage />
+      </AgentNamesProvider>
+    );
 
   // The initial config load is the one thing rendered by the shell itself; a failure
   // leaves nothing to frame, so it gets a persistent page-level message — except while the
@@ -58,15 +64,17 @@ export default function App(): JSX.Element {
   // launch_routine_url is set iff the launch capability is configured (it's the routine's
   // page URL); pass that as whether the shell can honor a requestLaunch from the iframe.
   return (
-    <HakuUiEmbed
-      uiUrl={config.haku_ui_url}
-      launchAvailable={config.launch_routine_url != null}
-      view={view}
-      agentEnrollmentId={agentEnrollmentId}
-      toolCallId={toolCallId}
-      conversationId={conversationId}
-      sessionFramesId={sessionFramesId}
-      onNavigate={navigate}
-    />
+    <AgentNamesProvider>
+      <HakuUiEmbed
+        uiUrl={config.haku_ui_url}
+        launchAvailable={config.launch_routine_url != null}
+        view={view}
+        agentEnrollmentId={agentEnrollmentId}
+        toolCallId={toolCallId}
+        conversationId={conversationId}
+        sessionFramesId={sessionFramesId}
+        onNavigate={navigate}
+      />
+    </AgentNamesProvider>
   );
 }

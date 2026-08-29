@@ -1,0 +1,397 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "execution",
+    srcs = ["execution.py"],
+    deps = [
+        "//haku/console/grants:principal",
+        "@pypi//fastmcp_slim",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "guidance",
+    srcs = ["guidance.py"],
+)
+
+py_library(
+    name = "mount",
+    srcs = ["mount.py"],
+    deps = ["@pypi//starlette"],
+)
+
+py_library(
+    name = "reflection_cache",
+    srcs = ["reflection_cache.py"],
+    deps = ["@pypi//mcp"],
+)
+
+py_library(
+    name = "operator_oauth",
+    srcs = ["operator_oauth.py"],
+    deps = [
+        "//haku/console:database_schema",
+        "//haku/console:deps",
+        "//haku/console:mcp_config",
+        "//haku/console/identity:operator_auth",
+        "//haku/console/identity:operator_identity_store",
+        "//haku/console/notifications:console_events",
+        "//haku/console/oauth:connection_result",
+        "//haku/console/oauth:token_state",
+        "//haku/console/oauth:token_support",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//mcp",
+        "@pypi//prometheus_client",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "tool_call_service",
+    srcs = ["tool_call_service.py"],
+    deps = [
+        ":execution",
+        "//haku/console:config",
+        "//haku/console:mcp_config",
+        "//haku/console:tool_call_actor",
+        "//haku/console/auto_approval:github",
+        "//haku/console/auto_approval:registry",
+        "//haku/console/grants:principal",
+        "//haku/console/grants/kubernetes:authorization_service",
+        "//haku/console/tools:gmail_client",
+        "@ducktape_haku//haku/console:tool_calls",
+    ],
+)
+
+py_library(
+    name = "approval",
+    srcs = ["approval.py"],
+    deps = [
+        ":execution",
+        ":operator_oauth",
+        ":reflection_cache",
+        ":tool_call_service",
+        "//haku/console:database_schema",
+        "//haku/console:mcp_config",
+        "//haku/console:tool_call_actor",
+        "//haku/console/identity:agent",
+        "//haku/console/identity:operator_auth",
+        "//haku/console/identity:operator_identity",
+        "//haku/console/session:status",
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//fastapi",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "catalog_reconciler",
+    srcs = ["catalog_reconciler.py"],
+    deps = [
+        ":approval",
+        ":operator_oauth",
+        ":reflection_cache",
+        ":tool_call_service",
+        "//haku/console:mcp_config",
+        "//haku/console/notifications:console_events",
+    ],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    deps = [
+        ":approval",
+        ":catalog_reconciler",
+        ":guidance",
+        ":operator_oauth",
+        ":tool_call_service",
+        "//haku/console:config",
+        "//haku/console:mcp_config",
+        "//haku/console:tool_call_actor",
+        "//haku/console/auto_approval:registry",
+        "//haku/console/hostexecd:service",
+        "//haku/console/identity:fastmcp_adapter",
+        "//haku/console/oauth:provider_connection",
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "in_process_server_access",
+    srcs = ["in_process_server_access.py"],
+    deps = [
+        ":execution",
+        "//haku/console:mcp_config",
+        "//haku/console:tool_call_actor",
+        "//haku/console/grants:principal",
+    ],
+)
+
+py_library(
+    name = "in_process_servers",
+    srcs = ["in_process_servers.py"],
+    deps = [
+        ":in_process_server_access",
+        "//haku/console:config",
+        "//haku/console:conversation_read_access",
+        "//haku/console:mcp_config",
+        "//haku/console:recall_index_access",
+        "//haku/console/session:runtime",
+        "//haku/console/tools:conversations",
+        "//haku/console/tools:gmail",
+        "//haku/console/tools:google_calendar",
+        "//haku/console/tools:grants",
+        "//haku/console/tools:hostexec",
+        "//haku/console/tools:hostexec_client",
+        "//haku/console/tools:hostexec_token",
+        "//haku/console/tools:recall_index",
+        "//haku/console/tools:routine",
+        "//haku/console/tools:sandbox",
+        "//haku/console/tools:session_sandboxes",
+        "//haku/console/tools:workers",
+        "//haku/sandbox:config",
+    ],
+)
+
+py_library(
+    name = "export_tool_schemas",
+    srcs = ["export_tool_schemas.py"],
+    deps = [
+        ":in_process_servers",
+        ":server",
+        "//grocy_mcp:batch_tools",
+        "//grocy_mcp:client",
+        "//grocy_mcp:mcp_types",
+        "//haku/console:config",
+        "//haku/console/hostexecd:service",
+        "//haku/console/tools:grants",
+        "//haku/console/tools:kubernetes",
+        "//mcp_infra:request_scoped_openapi",
+        "@pypi//fastmcp_slim",
+        "@pypi//pydantic",
+    ],
+)
+
+# Prints the exact tools/list input schemas for the frontend's generated MCP
+# argument validators and types.
+py_binary(
+    name = "export_tool_schemas_bin",
+    main_module = "haku.console.mcp.export_tool_schemas",
+    deps = [":export_tool_schemas"],
+)
+
+py_test(
+    name = "test_launch_identity_config",
+    srcs = ["test_launch_identity_config.py"],
+    deps = [
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console:mcp_config",
+        "//haku/console/harnesses:kind",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_reflection_cache",
+    srcs = ["test_reflection_cache.py"],
+    deps = [
+        ":reflection_cache",
+        "//:conftest",
+        "//haku/console:conftest",
+        "@pypi//mcp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_catalog_reconciler",
+    srcs = ["test_catalog_reconciler.py"],
+    deps = [
+        ":approval",
+        ":catalog_reconciler",
+        ":reflection_cache",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console:mcp_config",
+        "//haku/console/notifications:console_events",
+        "@pypi//mcp",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_operator_oauth",
+    size = "medium",
+    srcs = ["test_operator_oauth.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":operator_oauth",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "//haku/console:mcp_config",
+        "//haku/console/identity:operator_identity",
+        "//haku/console/oauth:token_state",
+        "@pypi//httpx",
+        "@pypi//mcp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_tool_call_service",
+    size = "medium",
+    srcs = ["test_tool_call_service.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":approval",
+        ":execution",
+        ":tool_call_service",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console:database_schema",
+        "//haku/console:mcp_config",
+        "//haku/console:recall_index_access",
+        "//haku/console:tool_call_actor",
+        "//haku/console/grants:principal",
+        "//haku/console/identity:agent",
+        "//haku/console/identity:authentik_operator_token",
+        "//haku/console/identity:operator_identity_store",
+        "//haku/console/oauth:provider_connection",
+        "//haku/console/oauth:token_state",
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_approval",
+    size = "medium",
+    srcs = ["test_approval.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":approval",
+        ":execution",
+        ":operator_oauth",
+        ":reflection_cache",
+        ":tool_call_service",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console:database_migrate",
+        "//haku/console:database_schema",
+        "//haku/console:mcp_config",
+        "//haku/console:tool_call_actor",
+        "//haku/console/harnesses:kind",
+        "//haku/console/hostexecd:models",
+        "//haku/console/identity:agent",
+        "//haku/console/identity:authorization",
+        "//haku/console/identity:operator_auth",
+        "//haku/console/identity:operator_identity",
+        "//haku/console/notifications:console_events",
+        "//haku/console/oauth:token_state",
+        "//haku/console/tools:gmail",
+        "//util:net",
+        "//util/testing:asgi",
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//fastapi",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+        "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "test_server",
+    size = "medium",
+    srcs = ["test_server.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":approval",
+        ":catalog_reconciler",
+        ":guidance",
+        ":operator_oauth",
+        ":reflection_cache",
+        ":server",
+        ":tool_call_service",
+        "//:conftest",
+        "//haku/console:app",
+        "//haku/console:config",
+        "//haku/console:conftest",
+        "//haku/console:mcp_config",
+        "//haku/console:tool_call_actor",
+        "//haku/console/identity:operator_identity",
+        "//haku/console/oauth:provider_connection",
+        "//haku/console/tools:gmail",
+        "//haku/console/tools:google_calendar",
+        "//haku/console/tools:google_calendar_client",
+        "//mcp_infra:persistence",
+        "//util:net",
+        "//util/testing:asgi",
+        "//util/testing:mock_oidc",
+        "@ducktape_haku//haku/console:tool_calls",
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx",
+        "@pypi//jsonschema",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//referencing",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_export_tool_schemas",
+    size = "medium",
+    srcs = ["test_export_tool_schemas.py"],
+    deps = [
+        ":export_tool_schemas",
+        "//:conftest",
+        "//haku/console:conftest",
+        "@pypi//jsonschema",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//referencing",
+    ],
+)

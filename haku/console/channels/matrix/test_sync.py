@@ -29,7 +29,13 @@ from haku.console.channels.matrix.client import (
     SyncResult,
     UnmappableEvent,
 )
-from haku.console.channels.matrix.conftest import MATRIX_CONFIG, MATRIX_OPERATOR, MATRIX_ROOM, MATRIX_USER
+from haku.console.channels.matrix.conftest import (
+    MATRIX_CONFIG,
+    MATRIX_OPERATOR,
+    MATRIX_ROOM,
+    MATRIX_TEST_HARNESS_KIND,
+    MATRIX_USER,
+)
 from haku.console.channels.matrix.conversation import (
     Admission,
     ConversationFacts,
@@ -54,7 +60,8 @@ from haku.console.conversation.conversation_event import (
 )
 from haku.console.conversation.prompt_origin import MatrixOrigin
 from haku.console.database_schema import ConversationEventRow
-from haku.console.session.store import BridgeAuthentication, Store
+from haku.console.harnesses.kind import HarnessKind
+from haku.console.session.store import RunnerConnectionAuthentication, Store
 from haku.console.session.subscription import ConversationStream
 
 
@@ -186,6 +193,7 @@ def _replica(sync_store, conversations, identities, turns, matrix, migrated_sess
         stream=ConversationStream(migrated_sessions),
         # Consumed only by the reconcilers' subscribers, which these single-pass tests never start.
         notifications=cast(Any, None),
+        new_conversation_harness_kind=MATRIX_TEST_HARNESS_KIND,
     )
     service._client = cast(Any, matrix)
     service.pacers = RoomPacers(sends_per_second=1e6, burst=1_000)
@@ -211,7 +219,7 @@ async def bound_room(conversations: ConversationStore, operator_id: UUID) -> str
 
     Binding is what attaches it, so this is also the row the status line's own event id hangs off.
     """
-    return (await conversations.bind_room(MATRIX_ROOM, operator_id)).room_id
+    return (await conversations.bind_room(MATRIX_ROOM, operator_id, harness_kind=MATRIX_TEST_HARNESS_KIND)).room_id
 
 
 async def watermark(store: SyncStore) -> str | None:
@@ -272,8 +280,11 @@ async def carried_prompt(
     session_store: Store, operator_id: UUID, ledger: IngressLedger, event_id: str, body: str
 ) -> UUID:
     """A prompt in the record carrying *event_id*, as an accepted batch leaves one behind."""
-    view, token = await session_store.create(operator_id)
-    assert await session_store.authenticate_bridge(view.session_id, token) == BridgeAuthentication.ACCEPTED
+    view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
     await session_store.submit_prompt(
         operator_id,
         await session_store.conversation_of(view.session_id),
@@ -558,7 +569,9 @@ async def test_each_rooms_messages_are_offered_to_its_own_conversation(
 ):
     """The dispatch itself: one batch carrying two rooms' messages becomes one offer per room, each
     against the conversation its attachment names, in the order the rooms appear in the batch."""
-    other = (await conversations.bind_room("!other:allegedly.works", operator_id)).room_id
+    other = (
+        await conversations.bind_room("!other:allegedly.works", operator_id, harness_kind=MATRIX_TEST_HARNESS_KIND)
+    ).room_id
     matrix.result = SyncResult(
         "s2",
         (
@@ -896,7 +909,7 @@ def _projected(
 @pytest.fixture
 async def attached(conversations: ConversationStore, operator_id: UUID, bound_room: str) -> tuple[UUID, UUID]:
     """The bound room's conversation and attachment, which its own events' tags name."""
-    binding = await conversations.bind_room(bound_room, operator_id)
+    binding = await conversations.bind_room(bound_room, operator_id, harness_kind=MATRIX_TEST_HARNESS_KIND)
     return binding.conversation_id, binding.attachment_id
 
 

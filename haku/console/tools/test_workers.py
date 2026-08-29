@@ -42,8 +42,9 @@ from haku.console.harnesses.kind import HarnessKind
 from haku.console.identity.authorization import PostgresAgentAuthority, fingerprint_static_token
 from haku.console.identity.operator_identity import OperatorIdentityTrust
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.in_process_server_access import InProcessServerAccessPolicy
-from haku.console.in_process_servers import InProcessServerDependencies, build_in_process_servers
+from haku.console.mcp.in_process_server_access import InProcessServerAccessPolicy
+from haku.console.mcp.in_process_servers import InProcessServerDependencies, build_in_process_servers
+from haku.console.mcp.tool_call_service import ToolCallApplicationService
 from haku.console.mcp_config import (
     ConsoleConfigFile,
     InProcessCredentialKind,
@@ -51,14 +52,13 @@ from haku.console.mcp_config import (
     InProcessServers,
 )
 from haku.console.notifications.session_wakes import SessionWakes
-from haku.console.session.launch_identity import ChatLaunchAuthorizer
+from haku.console.session.launch_identity import HarnessLaunchAuthorizer
 from haku.console.session.runtime import SessionService
 from haku.console.session.store import Store
 from haku.console.tool_call_actor import AgentActor
-from haku.console.tool_call_service import ToolCallApplicationService
 from haku.console.tool_calls import SubmitToolCallRequest, ToolCallStatus
 from haku.console.tools import workers as workers_tools
-from haku.console.x.runtime import RuntimeKey
+from haku.console.x.runtime import HarnessKey
 from haku.console.x.runtime_catalog import execution_registry
 
 # One operator owns the orchestrator, the worker, and approves the dispatch — the v0 single-operator
@@ -121,11 +121,11 @@ def _session_runtime(
         access_profiles=(_ORCHESTRATOR_PROFILE, _WORKER_PROFILE),
         default_access_profile_id=_WORKER_PROFILE,
     )
-    launch_authorizer = ChatLaunchAuthorizer(
+    launch_authorizer = HarnessLaunchAuthorizer(
         authority,
         launchable_agent_ids={_WORKER_AGENT_ID},
-        registered_runtime_identities={RuntimeKey(_WORKER_AGENT_ID, HarnessKind.CODEX_APP_SERVER)},
-        profile_runtime_kinds={_WORKER_PROFILE: {HarnessKind.CODEX_APP_SERVER}},
+        registered_harness_identities={HarnessKey(_WORKER_AGENT_ID, HarnessKind.CODEX_APP_SERVER)},
+        profile_harness_kinds={_WORKER_PROFILE: {HarnessKind.CODEX_APP_SERVER}},
     )
     return SessionService(
         execution_registry(), Store(sessions), SessionWakes(db_url), launch_authorizer=launch_authorizer
@@ -287,7 +287,7 @@ def test_approved_dispatch_opens_the_worker_session_and_seeds_the_prompt(workers
 
     conversation = one(workers_console.conversations())
     assert conversation.agent_id == _WORKER_AGENT_ID
-    assert conversation.runtime_kind == HarnessKind.CODEX_APP_SERVER
+    assert conversation.harness_kind == HarnessKind.CODEX_APP_SERVER
 
     # The tool returns {session_id}: the created session's id round-trips through the MCP result.
     session = workers_console.call(partial(_session_of, workers_console.sessions, conversation.conversation_id))

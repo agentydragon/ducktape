@@ -6,8 +6,9 @@
 import {
   SAMPLE_DAEMONS,
   SAMPLE_DEPLOYMENT,
+  SAMPLE_ACTIVE_SANDBOXES,
   SAMPLE_INDEX_STATUS,
-  SAMPLE_KUBERNETES_GRANTS,
+  SAMPLE_GRANTS,
   SAMPLE_MCP_PROBES,
   SAMPLE_MCP_SERVERS,
   SAMPLE_PENDING,
@@ -332,6 +333,7 @@ const conversationSession = {
 } satisfies Conversation["session"];
 const conversationDetail = {
   conversation_id: conversationId,
+  agent_id: "40000000-0000-4000-8000-000000000004",
   harness_kind: "claude_code",
   created_at: "2026-08-01T03:00:00Z",
   attachments: [{ surface: "matrix", address: "!ops:example.org", attached_at: "2026-08-01T03:00:00Z" }],
@@ -514,7 +516,7 @@ const mcpServers =
     : SAMPLE_MCP_SERVERS;
 
 async function respond(input: RequestInfo | URL, init: RequestInit | undefined, url: string): Promise<Response | null> {
-  if (url.includes("/api/kubernetes-grants")) return jsonResponse(SAMPLE_KUBERNETES_GRANTS);
+  if (url.includes("/api/grants")) return jsonResponse(SAMPLE_GRANTS);
   if (url.includes("/api/agent-enrollment/agents/") && init?.method === "PUT") {
     const body = JSON.parse(String(init.body)) as { access_profile_id: string };
     return jsonResponse({
@@ -533,6 +535,17 @@ async function respond(input: RequestInfo | URL, init: RequestInit | undefined, 
     return jsonResponse({
       access_profiles: ["manual_review", "haku_v1"],
       agents: [
+        {
+          agent_id: "30000000-0000-4000-8000-000000000003",
+          display_name: "Public Coder",
+          status: "active",
+          credential_kind: "static",
+          credential_status: "active",
+          created_at: "2026-07-18T12:00:00Z",
+          activated_at: "2026-07-18T12:00:00Z",
+          last_seen_at: "2026-07-20T19:30:00Z",
+          access_profile_id: "manual_review",
+        },
         {
           agent_id: "40000000-0000-4000-8000-000000000004",
           display_name: "Claude Desktop",
@@ -582,22 +595,20 @@ async function respond(input: RequestInfo | URL, init: RequestInit | undefined, 
     return jsonResponse({
       launch_routine_url: null,
       haku_ui_url: "https://haku-ui.test",
-      // Two options so the list header renders its runtime picker (shown only for >1 option) —
+      // Two options so the list header renders its harness picker (shown only for >1 option) —
       // the picker + button is the launcher the narrow-viewport scene exercises for overflow.
-      chat_launch_options: [
+      launch_options: [
         {
           agent_id: "40000000-0000-4000-8000-000000000004",
           agent_display_name: "Haku",
-          runtime: "claude_code",
-          runtime_display_name: "Claude Code",
-          is_default: true,
+          harness_kind: "claude_code",
+          harness_display_name: "Claude Code",
         },
         {
           agent_id: "40000000-0000-4000-8000-000000000005",
           agent_display_name: "Public coder agent",
-          runtime: "codex_app_server",
-          runtime_display_name: "Codex",
-          is_default: false,
+          harness_kind: "codex_app_server",
+          harness_display_name: "Codex",
         },
       ],
     });
@@ -646,10 +657,12 @@ async function respond(input: RequestInfo | URL, init: RequestInit | undefined, 
     },
     list_node_daemons: () => ({ daemons: SAMPLE_DAEMONS }),
     haku_index__index_status: () => SAMPLE_INDEX_STATUS,
+    haku_session_sandboxes__list_active: () => ({ items: SAMPLE_ACTIVE_SANDBOXES, next_cursor: null }),
+    haku_session_sandboxes__terminate: (args) => ({ session_id: String(args.session_id), status: "terminated" }),
   });
   if (mcpResponse !== null) return mcpResponse;
   if (url.includes("/api/tool-calls")) {
-    // Mirrors the real GET /api/tool-calls's `auto_approved` server-side filter (mcp_approval.py)
+    // Mirrors the real GET /api/tool-calls's `auto_approved` server-side filter (mcp/approval.py)
     // so the history screenshot scenes exercise the same request the frontend actually sends.
     const autoApproved = new URLSearchParams(url.split("?")[1] ?? "").get("auto_approved");
     const matching =
@@ -667,7 +680,7 @@ async function respond(input: RequestInfo | URL, init: RequestInit | undefined, 
             tool_call_id: `tc_paged_${index}`,
           }))
         : matching;
-    // Mirrors the real endpoint's keyset paging (mcp_approval.py): `cursor` is the opaque position
+    // Mirrors the real endpoint's keyset paging (mcp/approval.py): `cursor` is the opaque position
     // handed out as `next_cursor`, and a full page always offers one.
     const query = new URLSearchParams(url.split("?")[1] ?? "");
     const limit = Number(query.get("limit") ?? 100);

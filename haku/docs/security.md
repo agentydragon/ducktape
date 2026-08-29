@@ -116,7 +116,7 @@ Operator's context and deliberately create no tool-call row. The refresh tokens 
 only in the `haku-console` Postgres; Haku never holds them, and they are never reflected
 into `haku-sandbox`.
 Source of truth: <../console/auto_approval/>, <../../cluster/k8s/haku/console/config.yaml>,
-<../console/mcp_agent_auth.py>, <../console/tool_call_service.py>,
+<../console/mcp_agent_auth.py>, <../console/mcp/tool_call_service.py>,
 <../console/tools/gmail.py>, <../console/tools/google_calendar.py>.
 
 ### `kubectl-passthrough-mcp` server entry
@@ -183,7 +183,7 @@ attempt out of the operator's approval queue before it is scrutinised, but canno
 the record of it, and approval and withdrawal serialise under the row lock, so a
 withdrawal cannot cancel a call the operator already approved. Detail:
 <../console/README.md> § _MCP approval queue_.
-Source of truth: <../console/mcp_server.py>, <../console/tool_call_service.py>,
+Source of truth: <../console/mcp/server.py>, <../console/mcp/tool_call_service.py>,
 <../console/README.md>.
 
 ### Operator-owned base vs. canonical autonomous-write inventory

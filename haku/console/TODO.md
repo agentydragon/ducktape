@@ -11,7 +11,7 @@ covers it, redirecting the Agent to its direct path instead of the operator's br
 credential. It's scoped to `public_coder_safe_reads` only. A hard auto-deny is only safe when the
 redirect target is reliably reachable — otherwise it's a denial with nowhere to go.
 
-`haku_v1` spans three runtime contexts, and their _local_ kubectl setups are not equivalent:
+`haku_v1` spans three harness contexts, and their _local_ kubectl setups are not equivalent:
 
 - **`haku-sandbox`** (Haku's own pod): kubelet-projected ServiceAccount token, talks straight to
   `kubernetes.default.svc` in-cluster. No proxy, no OIDC round-trip. Robust.
@@ -28,17 +28,17 @@ redirect target is reliably reachable — otherwise it's a denial with nowhere t
   (permissions match), but the transport can degrade independently. These sessions also pick
   `kubectl` vs `kubectl-passthrough-mcp` per call at will — a passthrough call is not itself
   evidence the direct path is down.
-- **Console-launched `haku-runtime-sandbox` chat sessions**: per its namespace annotation, "no
+- **Console-launched `haku-harness-sandbox` chat sessions**: per its namespace annotation, "no
   ServiceAccount identity" — no local path at all.
 
-But the redirect target doesn't have to be each runtime's own local kubectl. All three already
+But the redirect target doesn't have to be each harness registration's own local kubectl. All three already
 share `sandbox_mcp.exec_sandbox` (policy `haku_sandbox_control`, unconditionally in `haku_v1`'s
 `any_of` — not something to add, already live). It runs bash inside a pod that uses the real
 `haku` ServiceAccount (`sandboxtemplate-haku.yaml`: `serviceAccountName: haku`, bound to
 `haku-sandbox-admin` — the same identity `haku-sandbox`'s own pod runs as), reached as an MCP call
 through the same `/mcp` connection every context already needs for anything else — so it doesn't
 depend on the caller's own local kubectl or JWT setup, and it's just as reachable for the
-runtime-sandbox context (no local path) as for the other two.
+harness-sandbox context (no local path) as for the other two.
 
 What that path isn't is free. The first `exec_sandbox` call in a session provisions/adopts a
 `SandboxClaim` (`provisioning_timeout_seconds: 600` in the `haku-sandbox-mcp` app config), which
@@ -62,7 +62,7 @@ conversation record; projecting that record consistently onto both channels is w
 Design, the parity gaps it closes, and the traps in each:
 <plans/conversation_layers.md>.
 
-The channel-neutral allocator and conversation-runtime supervision are complete. Web and Matrix
+The channel-neutral allocator and conversation-harness supervision are complete. Web and Matrix
 offer prompts by conversation; Matrix no longer creates, replaces or tends sessions. Delivery is
 attachment-scoped: each bound room's subscriber reads its own conversation for replies, sealed
 notices — relayed prompts and silent turns included — and the two editable span lines, all off its
@@ -159,7 +159,7 @@ deferred:
 
 ## MCP server (`/mcp`) — deferred follow-ups
 
-The `/mcp` server (`mcp_server.py`) now resolves canonical Operators, Agents, grants, and
+The `/mcp` server (`mcp/server.py`) now resolves canonical Operators, Agents, grants, and
 credential bindings through one authority, and derives each request's tool surface from that
 Agent's Operator connections. Settings lists the Operator's Agents and lets an OAuth Agent's
 auto-approval policy be reassigned among the roots `config.yaml` defines. The architecture is
@@ -228,10 +228,10 @@ The browser login flow is fixed in #3516/#3519 except for:
   nothing in the SPA calls it, and it clears only the console session — not Authentik's — so a
   manual logout silently re-logs-in on the next 401. Needs RP-initiated logout to be meaningful.
 
-## The chat runtime's timings are module constants, not configuration
+## The chat harness registration's timings are module constants, not configuration
 
-`RuntimeRegistrationConfig` carries the deploy wiring (namespace, warm pool, proxy, MCP URL) and
-exactly one timing — `session_ttl_seconds`. Every other number the runtime's behaviour depends on is a
+`HarnessRegistrationConfig` carries the deploy wiring (namespace, warm pool, proxy, MCP URL) and
+exactly one timing — `session_ttl_seconds`. Every other number the harness registration's behaviour depends on is a
 module-level constant, so changing one is a code edit, a CI build and a roll. The ones that are
 genuinely operational knobs should move onto the config model:
 
@@ -250,7 +250,7 @@ genuinely operational knobs should move onto the config model:
 
 **Not everything here is a knob, and the split is the point.** `TYPING_TIMEOUT_MS` and
 `SYNC_TIMEOUT_MS` are the homeserver's own semantics, `MAX_RATE_LIMIT_RETRIES` exists to bound a
-nio behaviour (<docs/chat_runtime_facts.md>), and the `*_FRAME_KIND` strings are wire vocabulary.
+nio behaviour (<docs/conversation_runtime_facts.md>), and the `*_FRAME_KIND` strings are wire vocabulary.
 Making those configurable would invite a deploy that contradicts a protocol. Move the timings;
 leave the facts where the code that depends on them can be read beside them.
 
@@ -339,8 +339,8 @@ session runs as is also what says which runner implementation to launch for it.
 Through the Codex app server, or directly against the Responses API, either way routed at the
 in-cluster LiteLLM — <../../cluster/k8s/litellm/app/proxy-config.yaml> already carries
 `chatgpt/oai-responses/*` models on the `openai/` provider. Today `x/claude_code/` is the only runner, reached over the
-bridge; the frame log and its adapter are what keep a runner's shape below the conversation layer
-(<docs/chat_layers.md>).
+runner protocol; the frame log and its adapter are what keep a runner's shape below the conversation layer
+(<docs/conversation_layers.md>).
 
 **This is the first real test of the neutrality the conversation layer claims.**
 `ConversationEventKind` and the frame adapter exist so that a second backend is possible, and
@@ -375,12 +375,12 @@ or dynamic client registration exactly as now. This adds a way to _be_ an Agent 
 launches — beside the way an Agent arrives from outside, and replaces neither.
 
 **The permission machinery is now wired through the session.** `agents/` holds the canonical Agent
-domain and enrollment selects the Agent's access profile. A conversation pins Agent/profile/runtime;
+domain and enrollment selects the Agent's access profile. A conversation pins Agent/profile/harness;
 each session pins the credential binding that authorized that sandbox. Allocation mints one
-exact-session bearer for the runner websocket and direct `/mcp` calls. It arrives through the
+session token for the runner websocket and direct `/mcp` calls. It arrives through the
 SandboxClaim environment and is intentionally available to the provider CLI and its child commands;
-Console resolves it back to that specific session and pinned identity. Runtime configuration
-therefore holds an MCP endpoint, not a static Agent credential. Each configured runtime pins the
+Console resolves it back to that specific session and pinned identity. Harness configuration
+therefore holds an MCP endpoint, not a static Agent credential. Each configured harness pins the
 Agent/profile whose sandbox pool, prompt, environment, and MCP endpoint it owns.
 
 The claim carries that same bearer under the runner variable and an MCP alias. This is rollout
@@ -390,14 +390,14 @@ Claude but passes the unknown alias, while the new runner preserves both.
 **The remaining runner half is independently extensible.** A new frame-speaking implementation still
 needs its own adapter and deploy configuration. Each implementation remains singular in namespace,
 warm pool, provider placeholder, system-prompt template and MCP URL; a concrete need for multiple
-instances of one implementation kind would replace that with keyed runtime instances without
+instances of one implementation kind would replace that with keyed harness instances without
 changing session Agent identity.
 
 ## Small cleanups
 
 - The comment above `_operator_auth_requires_canonical_public_origin` (`config.py`) describes an
   optional standing Kubernetes authorization policy field that is not on `Settings` —
-  `kubernetes_authorization` is on `ConsoleConfigFile` in `mcp_config.py`. Delete the comment.
+  `kubernetes_authorization` is on `ConsoleConfigFile` in `mcp/config.py`. Delete the comment.
 - `HistorySender.ASSISTANT` (`session/system_prompt.py`) reads like the provider-LLM-API `assistant`
   role; it records harness-side provenance of a recorded message. Rename to say so (e.g.
   `HARNESS`) once the in-flight StrEnum PRs land.

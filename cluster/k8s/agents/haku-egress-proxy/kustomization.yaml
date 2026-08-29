@@ -43,9 +43,9 @@ configMapGenerator:
       - iron.yaml=openclaw-spike-iron.yaml
 
 patches:
-  # The encrypted object was moved byte-for-byte from the compatibility spike so no plaintext
-  # credential is needed during this refactor. Kustomize can relocate its plaintext metadata;
-  # Flux decrypts the value only after the rendered manifest is built.
+  # CLEANUP(added 2026-08-29): the encrypted object keeps its historical inner name because the
+  # SOPS document MAC covers metadata values — see the note in claude-code-oauth-token.sops.yaml.
+  # Delete this patch once that file is re-encrypted under the rendered name below.
   - target:
       kind: Secret
       name: haku-agent-sdk-oauth-token

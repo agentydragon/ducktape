@@ -5,7 +5,7 @@ conversation subscribers — the follow socket, the Matrix subscriber, the runti
 console-tab fan-out. Nothing session-shaped travels here or reaches a consumer: a conversation and
 a session sit at different layers, so their wakes do not share a wire, a connection, or a module. A
 consumer handed this surface names a conversation-shaped type that can reach nothing
-session-shaped — <../docs/chat_layers.md>'s grep test made structural rather than reviewed.
+session-shaped — <../docs/conversation_layers.md>'s grep test made structural rather than reviewed.
 
 The channel is named `conversation_wakes`, not `conversation_events`: what travels on it is a
 level-triggered wake, while `conversation_event` is the durable record's own vocabulary, and one

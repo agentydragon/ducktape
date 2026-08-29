@@ -94,6 +94,7 @@ Rotate the client key: generate a new value and update `client-key.sops.yaml` on
 ## Session ownership (rotation)
 
 CLIProxyAPI holds and refreshes **dedicated** Claude and Codex OAuth sessions. LiteLLM owns no
-subscription OAuth credential or auth PVC: its `codex-*` routes proxy model traffic to
-CLIProxyAPI with an API key, while its plain `claude-*` routes use the separate Anthropic API
-key. This keeps AIQuota from mounting or writing the CLIProxyAPI PVC.
+subscription OAuth credential or auth PVC: its `chatgpt/*` routes proxy model traffic to
+CLIProxyAPI with an API key, while its `anthropic-api/*` routes use the separate Anthropic API
+key and its `anthropic-max20/*` routes use the Claude subscription session. This keeps AIQuota
+from mounting or writing the CLIProxyAPI PVC.

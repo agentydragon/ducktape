@@ -1,14 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { api, createConversation, type ChatLaunchOption, type Conversation } from "./client";
+import {
+  api,
+  createConversation,
+  fetchGrants,
+  type Conversation,
+  type GrantPrincipal,
+  type LaunchOption,
+} from "./client";
 
 const selection = {
   agent_id: "00000000-0000-4000-8000-000000000002",
   agent_display_name: "public-coder-agent",
-  runtime: "codex_app_server",
-  runtime_display_name: "Codex",
-  is_default: false,
-} satisfies ChatLaunchOption;
+  harness_kind: "codex_app_server",
+  harness_display_name: "Codex",
+} satisfies LaunchOption;
 
 const conversation = {
   conversation_id: "00000000-0000-4000-8000-000000000099",
@@ -21,7 +27,7 @@ function mockConversationPost() {
 afterEach(() => vi.restoreAllMocks());
 
 describe("createConversation", () => {
-  it("submits the explicit Agent/runtime pair without a profile selector", async () => {
+  it("submits the explicit Agent/harness pair without a profile selector", async () => {
     const post = mockConversationPost();
 
     expect(await createConversation(selection)).toBe(conversation);
@@ -29,8 +35,24 @@ describe("createConversation", () => {
     expect(post).toHaveBeenCalledWith("/api/conversations", {
       body: {
         agent_id: selection.agent_id,
-        runtime: "codex_app_server",
+        harness_kind: "codex_app_server",
       },
+    });
+  });
+});
+
+describe("fetchGrants", () => {
+  it("sends an exact declared principal as the list filter", async () => {
+    const get = vi.spyOn(api, "GET").mockResolvedValue({ data: { grants: [] } } as never);
+    const principal = {
+      kind: "agent",
+      agent_id: "00000000-0000-4000-8000-000000000002",
+    } satisfies GrantPrincipal;
+
+    await fetchGrants(principal);
+
+    expect(get).toHaveBeenCalledWith("/api/grants", {
+      params: { query: { principal: JSON.stringify(principal) } },
     });
   });
 });

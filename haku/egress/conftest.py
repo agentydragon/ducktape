@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from haku.egress.proxy_test_harness import RecordingUpstream, recording_upstream
+from haku.egress.testing.proxy_test_harness import RecordingUpstream, recording_upstream
 
 
 @pytest.fixture

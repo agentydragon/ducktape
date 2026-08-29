@@ -22,31 +22,48 @@ const HTTP_ITEM = {
   },
 };
 
+const AGENT_PRINCIPAL = { kind: "agent" as const, agent_id: "10000000-0000-4000-8000-000000000001" };
+
 describe("grantsPreviews", () => {
   it("renders kubernetes-domain grant creation in both variants", () => {
     for (const variant of ["compact", "detailed"] as const) {
       expect(
-        renderPreview(grantsPreviews.create_grant, { grants: [KUBERNETES_ITEM], duration_seconds: 3600 }, variant)
+        renderPreview(
+          grantsPreviews.create_grant,
+          { grants: [KUBERNETES_ITEM], duration_seconds: 3600, principal: AGENT_PRINCIPAL },
+          variant
+        )
       ).not.toBeNull();
     }
     expect(
-      toolActionDescription(GRANTS_SERVER_ID, "create_grant", { grants: [KUBERNETES_ITEM], duration_seconds: 3600 })
-        ?.text
+      toolActionDescription(GRANTS_SERVER_ID, "create_grant", {
+        grants: [KUBERNETES_ITEM],
+        duration_seconds: 3600,
+        principal: AGENT_PRINCIPAL,
+      })?.text
     ).toBe("Grants: Create Kubernetes 1 grant");
   });
 
   it("renders http-domain grant creation and names the domain", () => {
     for (const variant of ["compact", "detailed"] as const) {
       expect(
-        renderPreview(grantsPreviews.create_grant, { grants: [HTTP_ITEM], duration_seconds: 1800 }, variant)
+        renderPreview(
+          grantsPreviews.create_grant,
+          { grants: [HTTP_ITEM], duration_seconds: 1800, principal: AGENT_PRINCIPAL },
+          variant
+        )
       ).not.toBeNull();
     }
     expect(
-      toolActionDescription(GRANTS_SERVER_ID, "create_grant", { grants: [HTTP_ITEM], duration_seconds: 1800 })?.text
+      toolActionDescription(GRANTS_SERVER_ID, "create_grant", {
+        grants: [HTTP_ITEM],
+        duration_seconds: 1800,
+        principal: AGENT_PRINCIPAL,
+      })?.text
     ).toBe("Grants: Create HTTP 1 grant");
   });
 
-  it("names an Agent's release (no owner_agent_id) and marks it destructive", () => {
+  it("names an end without distinguishing the caller", () => {
     const args = {
       domain: "kubernetes" as const,
       grant_ids: ["20000000-0000-4000-8000-000000000002", "20000000-0000-4000-8000-000000000003"],
@@ -54,12 +71,12 @@ describe("grantsPreviews", () => {
     };
     expect(renderPreview(grantsPreviews.revoke_grants, args, "compact")).not.toBeNull();
     expect(toolActionDescription(GRANTS_SERVER_ID, "revoke_grants", args)).toEqual({
-      text: "Grants: Release Kubernetes 2 grants",
+      text: "Grants: End Kubernetes 2 grants",
       destructive: true,
     });
   });
 
-  it("names an Operator revoke when owner_agent_id is present", () => {
+  it("uses the same end label when an Operator supplies owner_agent_id", () => {
     const args = {
       domain: "http" as const,
       owner_agent_id: "10000000-0000-4000-8000-000000000001",
@@ -68,7 +85,7 @@ describe("grantsPreviews", () => {
     };
     expect(renderPreview(grantsPreviews.revoke_grants, args, "detailed")).not.toBeNull();
     expect(toolActionDescription(GRANTS_SERVER_ID, "revoke_grants", args)).toEqual({
-      text: "Grants: Revoke HTTP 1 grant",
+      text: "Grants: End HTTP 1 grant",
       destructive: true,
     });
   });

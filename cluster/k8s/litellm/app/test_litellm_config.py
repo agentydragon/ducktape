@@ -9,6 +9,9 @@ from more_itertools import one
 from cluster.k8s.litellm.app.model_rosters import (
     ANTHROPIC_MODELS,
     CLIPROXY_MODELS,
+    CODEX_CONTEXT_WINDOW,
+    CODEX_MAX_TOKENS,
+    CODEX_MEASURED_MODELS,
     GEMINI_EMBEDDING_MODELS,
     GEMINI_MODELS,
     TANA_MODELS,
@@ -61,14 +64,14 @@ _TANA_LITELLM_BASE = "http://tana-litellm.litellm.svc.cluster.local:4000"
 _CLIPROXY_BASE = "http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317"
 
 
-# Real Anthropic API (plain claude-* names — the "-anthropic" suffix means
+# Real Anthropic API (`anthropic-api/ant-messages/*` names — the "-anthropic" suffix means
 # "Anthropic SHAPE via z.ai", not this). Key: litellm-anthropic-key, an ESO
 # mirror of the spend-capped haku-cloud workspace key. Access control is per-key
 # model allowlists because the main LiteLLM service is cluster-reachable.
 def _anthropic_entries() -> Iterator[dict]:
     for model in ANTHROPIC_MODELS:
         yield {
-            "model_name": model,
+            "model_name": exposed_name(Provider.ANTHROPIC_API, ApiShape.ANT_MESSAGES, model),
             "litellm_params": {"model": f"anthropic/{model}", "api_key": "os.environ/ANTHROPIC_API_KEY"},
             "model_info": {"mode": "chat", "supports_function_calling": True},
         }
@@ -120,6 +123,20 @@ def _tana_entries() -> Iterator[dict]:
         }
 
 
+# model_info token limits for the measured 5.6 models; empty for the rest. litellm's
+# model_cost DB has no window for the anthropic/-prefixed slugs and mis-values the
+# openai/-prefixed twins (~1.05M/922K raw-API), so the probed routes pin the measured
+# CODEX_CONTEXT_WINDOW and the unprobed models are left for litellm to answer.
+def _codex_window(model: str) -> dict[str, int]:
+    if model not in CODEX_MEASURED_MODELS:
+        return {}
+    return {
+        "max_input_tokens": CODEX_CONTEXT_WINDOW,
+        "max_output_tokens": CODEX_MAX_TOKENS,
+        "max_tokens": CODEX_MAX_TOKENS,
+    }
+
+
 # Anthropic Messages surface: the one path that translates Codex tool calls correctly
 # (function_call -> tool_use) for Claude Code — what LiteLLM's own Responses bridge could
 # not do (BerriAI/litellm#25429).
@@ -132,7 +149,7 @@ def _cliproxy_messages_entries() -> Iterator[dict]:
                 "api_base": _CLIPROXY_BASE,
                 "api_key": "os.environ/CLIPROXY_CLIENT_KEY",
             },
-            "model_info": {"mode": "chat", "supports_function_calling": True},
+            "model_info": {"mode": "chat", "supports_function_calling": True} | _codex_window(model),
         }
 
 
@@ -150,7 +167,7 @@ def _cliproxy_responses_entries() -> Iterator[dict]:
                 "api_base": f"{_CLIPROXY_BASE}/v1",
                 "api_key": "os.environ/CLIPROXY_CLIENT_KEY",
             },
-            "model_info": {"mode": "responses", "supports_function_calling": True},
+            "model_info": {"mode": "responses", "supports_function_calling": True} | _codex_window(model),
         }
 
 
@@ -158,13 +175,14 @@ def _cliproxy_responses_entries() -> Iterator[dict]:
 # `anthropic/` /v1/messages passthrough as the chatgpt/ant-messages entries above, a
 # different upstream OAuth session on the same pod. Messages wire only: Claude Code has no
 # Responses-wire twin. Exposes ANTHROPIC_MODELS: the subscription and the direct API serve
-# the same current generation, so they share one roster. The consuming key allowlist is
+# the same current generation, so they share one roster. The exposed prefix is
+# `anthropic-max20/ant-messages/`; the consuming key allowlist is
 # `claude_client_models` in tf/gitops/litellm-keys/main.tf, pinned to this roster by
 # test_terraform_claude_allowlist_matches_the_anthropic_model_list below.
 def _cliproxy_claude_entries() -> Iterator[dict]:
     for model in ANTHROPIC_MODELS:
         yield {
-            "model_name": exposed_name(Provider.CLAUDE, ApiShape.ANT_MESSAGES, model),
+            "model_name": exposed_name(Provider.ANTHROPIC_MAX20, ApiShape.ANT_MESSAGES, model),
             "litellm_params": {
                 "model": f"anthropic/{model}",
                 "api_base": _CLIPROXY_BASE,
@@ -262,7 +280,7 @@ def test_terraform_codex_allowlists_match_the_cliproxy_model_list() -> None:
 def test_terraform_claude_allowlist_matches_the_anthropic_model_list() -> None:
     tf_locals = _litellm_keys_locals()
     assert tf_locals["claude_client_models"] == [
-        exposed_name(Provider.CLAUDE, ApiShape.ANT_MESSAGES, model) for model in ANTHROPIC_MODELS
+        exposed_name(Provider.ANTHROPIC_MAX20, ApiShape.ANT_MESSAGES, model) for model in ANTHROPIC_MODELS
     ]
 
 
@@ -303,13 +321,16 @@ def test_console_codex_harnesses_use_oai_responses_wire_models() -> None:
 
 # haku-console's Claude runtime (#4670) picks model + haiku_model from Git YAML, the same
 # outside-the-Terraform-pins spot as the Codex runtime above. Claude Code speaks the Anthropic
-# Messages wire against CLIProxyAPI's Claude subscription, so both must be claude/ant-messages/*
+# Messages wire against CLIProxyAPI's Claude subscription, so both must be
+# anthropic-max20/ant-messages/*
 # entries the proxy serves -- never the codex chatgpt/ant-messages/* lane a stale GPT guess would
 # name, which the haku-console-claude key does not admit and which is a broken model turn every
 # request. Admits any served claude-lane model, so it pins the wire without hardcoding the choice.
 def test_console_claude_harness_uses_claude_ant_messages_wire_models() -> None:
     config = yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/config.yaml").read_text())
-    claude_wire_names = {exposed_name(Provider.CLAUDE, ApiShape.ANT_MESSAGES, model) for model in ANTHROPIC_MODELS}
+    claude_wire_names = {
+        exposed_name(Provider.ANTHROPIC_MAX20, ApiShape.ANT_MESSAGES, model) for model in ANTHROPIC_MODELS
+    }
     for name, runtime in config["harnesses"].items():
         implementation = runtime["implementation"]
         if implementation["kind"] == "claude_code":

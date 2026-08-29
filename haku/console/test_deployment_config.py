@@ -7,7 +7,7 @@ from more_itertools import one
 from pydantic import SecretStr
 
 from haku.console.channels.matrix.config import load_adapter_config
-from haku.console.channels.matrix.worker import AdapterSettings
+from haku.console.channels.matrix.worker import AdapterSettings, _launch_wiring
 from haku.console.config import ClaudeCodeImplementationConfig, OperatorIdentityConfig, OperatorOidcConfig, Settings
 from haku.console.indexer import ChunkSettings, EmbedSettings, IndexerRole
 from haku.console.indexer_config import IndexerConfigFile, load_indexer_config
@@ -26,17 +26,24 @@ def test_deployed_console_config_is_valid() -> None:
     assert config.harnesses is not None
     claude = config.harnesses.claude_code
     assert claude.claim_prefix == "claude"
-    assert claude.runtime_label == "claude-chat"
+    assert claude.harness_label == "claude"
     assert isinstance(claude.implementation, ClaudeCodeImplementationConfig)
     codex = config.harnesses.codex_app_server
     assert codex is not None
     assert codex.claim_prefix == "codex"
-    assert codex.runtime_label == "codex-chat"
+    assert codex.harness_label == "codex"
     assert isinstance(codex.implementation, CodexAppServerImplementationConfig)
     assert "codex_runtime" not in raw["settings"]
 
     profiles = {profile.id: profile for profile in config.access_profiles}
-    assert profiles["haku"].in_process_server_ids == {"haku_conversations", "grants", "sandbox", "workers"}
+    assert profiles["haku"].in_process_server_ids == {
+        "haku_conversations",
+        "grants",
+        "sandbox",
+        "workers",
+        "haku_session_sandboxes",
+    }
+    assert "haku_session_sandboxes" in profiles["public-coder"].in_process_server_ids
 
     assert config.kubernetes_authorization is not None
     subjects = config.kubernetes_authorization.subjects_by_access_profile
@@ -63,9 +70,26 @@ def test_deployed_console_config_is_valid() -> None:
     assert policies["kubernetes_reads"]["tools"] == {"grants": ["kubernetes_can_i", "get_grant"]}
     # An Agent's own-grant list read is auto-approved only for the explicit `principal=self` scope.
     assert policies["grants_own_list"] == {"id": "grants_own_list", "type": "grant_self_list", "server": "grants"}
+    # whoami is an argument-free, side-effect-free identity read (the caller's own resolved
+    # console/MCP principal), so it is unconditionally auto-approvable — its own exact-tools atom.
+    assert policies["grants_whoami"]["tools"] == {"grants": ["whoami"]}
+    # The two self-reads are bundled into one any_of so each root references it once (DRY) instead of
+    # repeating the pair; both atoms stay individually defined above.
+    assert policies["grants_self_introspection"]["type"] == "any_of"
+    assert set(policies["grants_self_introspection"]["policies"]) == {"grants_whoami", "grants_own_list"}
+    # An Agent's revoke_grants only ever relinquishes its OWN grants (the tool filters to the caller;
+    # owner_agent_id is operator-only and rejected for an Agent), so it is a narrowing self-service
+    # operation and click-free — its own exact-tools atom, distinct from the widening create_grant.
+    assert policies["grants_own_revoke"]["type"] == "exact_tools"
+    assert policies["grants_own_revoke"]["tools"] == {"grants": ["revoke_grants"]}
     for root in ("haku_v1", "public_coder_safe_reads"):
         assert "kubernetes_reads" in policies[root]["policies"], root
-        assert "grants_own_list" in policies[root]["policies"], root
+        assert "grants_self_introspection" in policies[root]["policies"], root
+        assert "grants_own_revoke" in policies[root]["policies"], root
+    assert all(
+        "haku_session_sandboxes" not in (policy.get("server"), *policy.get("tools", {}))
+        for policy in raw["auto_approval_policies"]
+    )
 
     # Every Agent may ASK for a grant: the unified `grants` server is exposed to every access profile
     # (operator ruling on #4986). Safe only together with the pin below — nothing in it auto-approves.
@@ -74,43 +98,47 @@ def test_deployed_console_config_is_valid() -> None:
 
     # An auto-approved source ToolCall cannot mint a grant (the repository's provenance check
     # requires approval_policy_id absent), so auto-approving create_grant would make every grant
-    # creation fail after the fact instead of queueing for the Operator. The mutating grant verbs
-    # (create/revoke) never auto-approve — only the reads above do.
+    # creation fail after the fact instead of queueing for the Operator. create_grant (widening —
+    # it issues new temporary authority) therefore never auto-approves in any policy. revoke_grants
+    # (narrowing — an Agent relinquishes only its own grants) is click-free, but ONLY through the
+    # dedicated grants_own_revoke atom; no other exact-tools policy may smuggle either verb in.
     for policy in raw["auto_approval_policies"]:
-        if policy["type"] == "exact_tools":
-            grant_tools = policy["tools"].get("grants", [])
-            assert "create_grant" not in grant_tools, policy["id"]
+        if policy["type"] != "exact_tools":
+            continue
+        grant_tools = policy["tools"].get("grants", [])
+        assert "create_grant" not in grant_tools, policy["id"]
+        if policy["id"] != "grants_own_revoke":
             assert "revoke_grants" not in grant_tools, policy["id"]
 
-    # A standing entry's named credential must actually redeem what the entry admits — the decide
+    # A configuration grant's named credential must actually redeem what it admits — the decide
     # service otherwise skips substitution with only a warning, and the fenced workload's inert
     # placeholder goes upstream and is rejected there (#4941/#4943).
     egress = config.egress_decide
     assert egress is not None
     registry = {credential.handle: credential for credential in egress.credentials}
-    for entry in egress.standing_policies:
+    for entry in egress.grants:
         if entry.credential_handle is None:
             continue
         credential = registry[entry.credential_handle]
-        assert entry.agent_ids <= credential.agent_ids, entry.id
+        assert entry.principal == credential.principal, entry.id
         assert entry.origins <= credential.origins, entry.id
 
 
 def test_deployed_egress_decide_env_slots_are_bound_at_their_rigor() -> None:
     """Every env slot `egress_decide` names must resolve in the server container, at the rigor
-    `load_egress_decide` assigns it: identity slots (proxy token, fence credentials) fail loud at
+    `load_egress_decide` assigns it: the fence credential identity slot fails loud at
     startup, so they are non-optional Secret references; a registry credential slot may be an
     optional Secret reference (unset skips the credential with a warning, #4970) or a committed
     literal — acceptable only when inert by construction, hence the EXAMPLE- prefix. The sidecar
-    presents the same proxy token and a configured fence credential, so its references must name
-    the same Secret keys the server resolves."""
+    presents the same fence credential, so its reference must name the same Secret key the server
+    resolves."""
     config = yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/config.yaml").read_text())
     egress = config["egress_decide"]
     deployment = yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/deployment.yaml").read_text())
     containers = {container["name"]: container for container in deployment["spec"]["template"]["spec"]["containers"]}
     server_env = {entry["name"]: entry for entry in containers["server"]["env"]}
 
-    for slot in [egress["proxy_token_env_var"], *(entry["token_env_var"] for entry in egress["fence_credentials"])]:
+    for slot in [egress["fence_credential_env_var"]]:
         reference = server_env[slot]["valueFrom"]["secretKeyRef"]
         assert not reference.get("optional", False), f"identity {slot=} must fail loud, never be optional"
 
@@ -122,9 +150,12 @@ def test_deployed_egress_decide_env_slots_are_bound_at_their_rigor() -> None:
             assert "secretKeyRef" in entry["valueFrom"], credential["handle"]
 
     sidecar_env = {entry["name"]: entry for entry in containers["egress-proxy"]["env"]}
-    assert sidecar_env["HAKU_EGRESS_PROXY_TOKEN"]["valueFrom"] == server_env[egress["proxy_token_env_var"]]["valueFrom"]
-    fence_sources = [server_env[entry["token_env_var"]]["valueFrom"] for entry in egress["fence_credentials"]]
-    assert sidecar_env["HAKU_EGRESS_FENCE_CREDENTIAL"]["valueFrom"] in fence_sources
+    assert (
+        sidecar_env["HAKU_EGRESS_FENCE_CREDENTIAL"]["valueFrom"]
+        == server_env[egress["fence_credential_env_var"]]["valueFrom"]
+    )
+    assert "HAKU_EGRESS_PROXY_TOKEN" not in server_env
+    assert "HAKU_EGRESS_PROXY_TOKEN" not in sidecar_env
 
 
 def test_deployed_console_settings_load_from_the_shared_yaml(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -169,7 +200,7 @@ def test_deployed_console_settings_load_from_the_shared_yaml(monkeypatch: pytest
     # Codex routes through the colocated Console egress fence (#4670), not its retiring iron proxy.
     assert codex.https_proxy == "http://haku-egress-proxy.haku-console.svc.cluster.local:8888"
     # LiteLLM stays OUT of no_proxy: its model traffic must traverse the fence for the virtual-key
-    # substitution (admitted through the standing policy's allow_prohibited_address).
+    # substitution (admitted through the configuration grant's allow_prohibited_address).
     assert "litellm.litellm.svc.cluster.local" not in codex.no_proxy
 
 
@@ -269,7 +300,11 @@ def test_deployed_config_reads_identically_for_console_and_matrix_adapter() -> N
     assert {agent.agent_id: agent.access_profile_id for agent in adapter.static_agents} == {
         agent.agent_id: agent.access_profile_id for agent in console.static_agents
     }
-    assert adapter.default_chat_agent_id == console.default_chat_agent_id
+    assert adapter.matrix is not None
+    launch = _launch_wiring(adapter)
+    assert launch is not None
+    assert launch.default_agent_id == adapter.matrix.default_agent_id
+    assert launch.harness_kind == adapter.matrix.default_harness_kind
     assert console.harnesses is not None
     assert adapter.harnesses is not None
     assert adapter.harnesses.claude_code is not None
@@ -278,6 +313,14 @@ def test_deployed_config_reads_identically_for_console_and_matrix_adapter() -> N
     if console.harnesses.codex_app_server is not None:
         assert adapter.harnesses.codex_app_server is not None
         assert adapter.harnesses.codex_app_server.agent_id == console.harnesses.codex_app_server.agent_id
+
+
+def test_matrix_creation_route_does_not_fall_back_when_unconfigured() -> None:
+    config_path = get_required_path("ducktape/cluster/k8s/haku/console/config.yaml")
+    adapter = load_adapter_config(config_path)
+
+    with pytest.raises(ValueError, match=r"matrix\.default_harness_kind"):
+        _launch_wiring(adapter.model_copy(update={"matrix": None}))
 
 
 if __name__ == "__main__":

@@ -176,7 +176,7 @@ Schema → Pydantic) for response types. Avoid discovery→OpenAPI→`FastMCP.fr
 dependency that still doesn't yield approval-gated per-Operator tools.
 
 **Frontend types (Zod) — no new pipeline.** The frontend already derives runtime Zod validators + TS
-types from the live MCP `tools/list` via `export_mcp_tool_schemas` → `js_json_schema` →
+types from the live MCP `tools/list` via `export_tool_schemas` → `js_json_schema` →
 `z.fromJSONSchema` (`frontend/mcp_tool_schema.ts`). A generated tool appears in `tools/list` like any
 other, so it flows through unchanged — register it and add it to the exporter allowlist. The one
 constraint is on the converter: emit only the JSON-Schema subset `z.fromJSONSchema` accepts (standard

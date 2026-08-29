@@ -14,8 +14,10 @@ py_library(
     ],
     deps = [
         "//haku/console:http_url",
+        "//haku/console/harnesses:environment",
         "//haku/console/harnesses:kind",
         "//haku/runner:backend",
+        "//util:env",
         "@pypi//pydantic",
     ],
 )

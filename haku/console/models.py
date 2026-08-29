@@ -14,14 +14,13 @@ from pydantic import BaseModel, Field
 from haku.console.harnesses.kind import HarnessKind
 
 
-class ChatLaunchOption(BaseModel):
-    """One deploy-authorized Agent/runtime pair the SPA may request explicitly."""
+class LaunchOption(BaseModel):
+    """One deploy-authorized Agent/harness pair the SPA may request explicitly."""
 
     agent_id: UUID
     agent_display_name: str
-    runtime: HarnessKind
-    runtime_display_name: str
-    is_default: bool = False
+    harness_kind: HarnessKind
+    harness_display_name: str
 
 
 class ConfigResponse(BaseModel):
@@ -34,6 +33,6 @@ class ConfigResponse(BaseModel):
     # The Authentik-gated origin of Haku's own UI service (haku-sandbox), framed as a
     # sandboxed cross-origin iframe. Always present — it's the console's whole surface.
     haku_ui_url: str = Field(description="Origin of Haku's own UI service for the iframe embed")
-    # Empty on runtime-disabled replicas. The SPA keeps conversation reads available but disables
-    # Web creation until an explicit deploy-authorized Agent/runtime pair is present.
-    chat_launch_options: list[ChatLaunchOption] = Field(default_factory=list)
+    # Empty on harness-disabled replicas. The SPA keeps conversation reads available but disables
+    # Web creation until an explicit deploy-authorized Agent/harness pair is present.
+    launch_options: list[LaunchOption] = Field(default_factory=list)

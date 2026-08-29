@@ -2,20 +2,33 @@
 
 One decision call carries both the reachability verdict and the request-specific
 credential-substitution operations (github.com/agentydragon/ducktape/issues/4670).
-The wire models below (``DecideRequest``/``DecideResponse``) are the schema of
+The wire models below (``DecideRequest``/``HttpAuthorizationDecision``) are the schema of
 Console's ``POST /api/internal/http/decide``, shared with the proxy adapter as an
-internal same-release contract: proxy and Console deploy from one commit, so
-there is no version negotiation and no versioning.
+internal same-release contract: proxy and Console are one pod speaking over its
+loopback, with no version negotiation and no versioning. The one skew this file
+must still absorb is the two containers' image tags landing in separate Flux
+automation commits, which re-rolls the pod minutes apart with one side ahead —
+the ``session_token`` wire aliases below exist for exactly that window.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
-from enum import StrEnum
 from ipaddress import IPv4Address, IPv6Address
-from typing import Annotated, Literal
+from typing import Annotated
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, PlainSerializer, SecretStr, model_validator
+from pydantic import (
+    AliasChoices,
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    PlainSerializer,
+    SecretStr,
+    model_validator,
+)
+
+from haku.grants.authorization import AuthorizationAllowed, AuthorizationDenied
 
 
 class RequestMeta(BaseModel):
@@ -67,14 +80,6 @@ class PlaceholderSubstitution(BaseModel):
     )
 
 
-class DecisionSource(StrEnum):
-    """Authority that produced the effective decision, for audit provenance."""
-
-    STANDING = "standing"
-    GRANT = "grant"
-    NONE = "none"
-
-
 def _sorted_addresses(addresses: Iterable[IPv4Address | IPv6Address]) -> list[str]:
     return [str(address) for address in sorted(addresses, key=lambda address: (address.version, int(address)))]
 
@@ -94,24 +99,36 @@ class DecideRequest(BaseModel):
 
     Header values and bodies stay out of the call: the placeholder the sandbox holds is inert, so
     nothing about it needs to travel inward — grant evaluation alone decides which substitutions
-    come back — and Console sits on the request-decision path, never the body path (#4670).
+    come back — and Console sits on the request-decision path, never the body path (#4670). The
+    ``session_token`` is the required per-Session secret the sandbox presented as proxy
+    authentication — the same HAKU_SESSION_TOKEN the runner protocol and Console MCP authenticate —
+    and it is the sole source of Agent/session identity for this decision.
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    # serialize_by_alias makes every dump apply the session_token serialization_alias below; it
+    # leaves the other fields untouched (no aliases) and goes with the CLEANUP there.
+    model_config = ConfigDict(extra="forbid", frozen=True, serialize_by_alias=True)
 
-    fence_credential: Annotated[SecretStr, PlainSerializer(SecretStr.get_secret_value, when_used="json")] = Field(
-        description=(
-            "The Agent-bound fence credential the sandbox workload presented to the proxy. Console "
-            "derives the Agent from authenticating it; the request carries no caller-asserted "
-            "identity. Serialized in full on the wire, masked everywhere else — never log it."
-        )
-    )
     request: RequestMeta
     resolved_ips: ResolvedAddresses = Field(
         description="Complete validated DNS answer for the request host, as the proxy resolved it."
     )
     upstream_ip: IPv4Address | IPv6Address = Field(
         description="The one resolved address the proxy pinned for the actual upstream connection."
+    )
+    session_token: Annotated[SecretStr, PlainSerializer(SecretStr.get_secret_value, when_used="json")] = Field(
+        # CLEANUP(added 2026-08-29): proxy_client_credential is the pre-rename wire spelling.
+        # Serialization keeps it so a proxy image one automation commit ahead of its pod's Console
+        # image (or behind) never hits extra="forbid" — a deny-all window, since the gate fails
+        # closed. One release after both images converge: drop serialization_alias (and the
+        # serialize_by_alias in model_config) so the wire says session_token; the release after
+        # that, drop the validation alias.
+        validation_alias=AliasChoices("session_token", "proxy_client_credential"),
+        serialization_alias="proxy_client_credential",
+        description=(
+            "The caller's session token, presented to the proxy as proxy authentication. "
+            "Console resolves it to a live Agent session."
+        ),
     )
 
     @model_validator(mode="after")
@@ -131,26 +148,14 @@ class GrantScope(BaseModel):
     port: int
 
 
-class DecideAllowed(BaseModel):
+class HttpAuthorizationAllowed(AuthorizationAllowed):
     """Forward after applying the substitutions; a new admission needs a new decision."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    allowed: Literal[True] = True
-    source: Literal[DecisionSource.STANDING, DecisionSource.GRANT] = Field(
-        description="Which authority admitted the request: standing policy or a temporary grant."
-    )
-    decision_id: str = Field(
-        min_length=1, description="Links audit records to the decision's policy provenance, e.g. 'grant:<grant UUID>'."
-    )
     valid_until: AwareDatetime | None = Field(
         default=None,
         description=(
             "Exact admission deadline: a later request, CONNECT, or reconnect needs a fresh decision. "
-            "An already admitted flow may overrun it only within the deployment's hard flow lifetime. "
-            "None for a standing-policy admission, which has no deadline short of a config change — "
-            "and a config change redeploys Console and proxy together; the hard flow lifetime still "
-            "bounds admitted flows."
+            "None means the authority has no end date; the deployment's hard flow lifetime still bounds flows."
         ),
     )
     substitutions: list[PlaceholderSubstitution] = Field(
@@ -159,14 +164,9 @@ class DecideAllowed(BaseModel):
     )
 
 
-class DecideDenied(BaseModel):
+class HttpAuthorizationDenied(AuthorizationDenied):
     """Refuse without contacting the upstream."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    allowed: Literal[False] = False
-    source: Literal[DecisionSource.NONE] = DecisionSource.NONE
-    reason: str = Field(min_length=1, description="Operator-facing denial reason; safe to log and to surface.")
     grant_scope: GrantScope | None = Field(
         default=None,
         description=(
@@ -176,4 +176,4 @@ class DecideDenied(BaseModel):
     )
 
 
-type DecideResponse = DecideAllowed | DecideDenied
+type HttpAuthorizationDecision = HttpAuthorizationAllowed | HttpAuthorizationDenied

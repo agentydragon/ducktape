@@ -99,6 +99,12 @@ over Matrix, and any write surface for the agent beyond its own replies.
   to in is one the operator put it in, since membership required an invite. Only a message from the
   operator triggers adoption, so the authorisation rule is unchanged. Without this, a room joined
   before a binding existed goes quiet permanently with no way to revive it from a Matrix client.
+- **New Matrix rooms use the explicit configured launch route.** Invites and messages do not carry
+  a harness selector, so the adapter uses `matrix.default_agent_id` and
+  `matrix.default_harness_kind` from the shared deploy config when it creates a conversation. The
+  values are a creation-time route, not properties of the room-binding store; an existing
+  conversation always keeps its persisted Agent and harness identity. Missing or invalid
+  configuration fails closed rather than choosing either implicitly.
 - **Nothing releases a binding.** Moving Haku to a different room is a database edit, not an
   operator gesture. The natural trigger is Haku being removed from the room, which `/sync` reports
   under `rooms.leave` — deferred because the session behind the binding is still running with a live
@@ -157,7 +163,7 @@ over Matrix, and any write surface for the agent beyond its own replies.
 - **A produced reply is never lost silently.** `matrix_outbox` holds it from the moment the room's
   subscriber reads the message complete, and the drain retries until the homeserver takes it. Each row is sent under its own
   stable transaction id, so a late redelivery inside Synapse's dedup window is refused rather than
-  duplicated (<../../docs/chat_runtime_facts.md>).
+  duplicated (<../../docs/conversation_runtime_facts.md>).
 - **A reply arrives formatted.** The event carries both forms — `body` stays the Markdown, which is
   the spec's fallback and what a plain-text client should show, and `format:
 "org.matrix.custom.html"` plus `formatted_body` carries the rendering. Lifecycle notices stay

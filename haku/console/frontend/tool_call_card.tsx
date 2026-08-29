@@ -2,6 +2,7 @@ import { Badge, Group, Stack, Text } from "@mantine/core";
 import type { ReactNode, Ref } from "react";
 
 import { showsAutoApprovalEvaluation, type ApprovalDisplayFields } from "./approval_state";
+import { ToolCallAgentProvider } from "./agent_names";
 import { ToolActionLine } from "./tool_action_line";
 import { RawArgumentsDisclosure, ToolArgumentsField } from "./tool_arguments_field";
 import { ToolCallMeta } from "./tool_call_meta";
@@ -47,89 +48,91 @@ export function ToolCallCard({
   const detailed = variant === "detailed";
   const combined = toolCallPreview(fields.serverId, fields.toolName, args, result, variant);
   return (
-    <section className="haku-shell-card" ref={containerRef}>
-      <Stack gap="sm">
-        {/* The badge + Brief/Full selector float to the top-right so the title and subheads wrap
+    <ToolCallAgentProvider agentId={fields.callerAgentId} displayName={fields.callerDisplayName}>
+      <section className="haku-shell-card" ref={containerRef}>
+        <Stack gap="sm">
+          {/* The badge + Brief/Full selector float to the top-right so the title and subheads wrap
             under them on the first line(s) and reclaim the full width below, instead of the whole
             text column being narrowed for every line. Anchored top so detail expands below and the
             selector stays put under the pointer. Block flow (not a flex Stack) so text wraps
             around the float; `haku-card-head` supplies the tight inter-line rhythm. */}
-        <div className="haku-card-head">
-          <Group className="haku-card-head-actions" gap="xs" align="center" wrap="nowrap">
-            <Badge color={status.color} variant="light">
-              {status.label}
-            </Badge>
-            <VariantControl variant={variant} onChange={onVariantChange} />
-          </Group>
-          <Text fw={600} size="sm">
-            {fields.title}
-          </Text>
-          <ToolActionLine serverId={fields.serverId} toolName={fields.toolName} args={args} />
-          {fields.rationale && <Text size="xs">{fields.rationale}</Text>}
-          {fields.denialReason && (
-            <Text size="xs" c="dimmed">
-              Denied: {fields.denialReason}
+          <div className="haku-card-head">
+            <Group className="haku-card-head-actions" gap="xs" align="center" wrap="nowrap">
+              <Badge color={status.color} variant="light">
+                {status.label}
+              </Badge>
+              <VariantControl variant={variant} onChange={onVariantChange} />
+            </Group>
+            <Text fw={600} size="sm">
+              {fields.title}
             </Text>
+            <ToolActionLine serverId={fields.serverId} toolName={fields.toolName} args={args} />
+            {fields.rationale && <Text size="xs">{fields.rationale}</Text>}
+            {fields.denialReason && (
+              <Text size="xs" c="dimmed">
+                Denied: {fields.denialReason}
+              </Text>
+            )}
+            {fields.withdrawalReason && (
+              <Text size="xs" c="dimmed">
+                Withdrawn: {fields.withdrawalReason}
+              </Text>
+            )}
+            {fields.approvalPolicyId && (
+              <Text size="xs" c="dimmed">
+                Auto-approved by {fields.approvalPolicyId}
+              </Text>
+            )}
+            {showsAutoApprovalEvaluation(fields, detailed) && (
+              <Text size="xs" c="dimmed">
+                Auto-approval: {fields.autoApprovalEvaluation}
+              </Text>
+            )}
+          </div>
+          {combined ? (
+            <>
+              {combined}
+              {detailed && <RawArgumentsDisclosure argumentsJson={fields.argumentsJson} />}
+            </>
+          ) : (
+            <ToolArgumentsField
+              serverId={fields.serverId}
+              toolName={fields.toolName}
+              args={args}
+              argumentsJson={fields.argumentsJson}
+              variant={variant}
+            />
           )}
-          {fields.withdrawalReason && (
-            <Text size="xs" c="dimmed">
-              Withdrawn: {fields.withdrawalReason}
-            </Text>
-          )}
-          {fields.approvalPolicyId && (
-            <Text size="xs" c="dimmed">
-              Auto-approved by {fields.approvalPolicyId}
-            </Text>
-          )}
-          {showsAutoApprovalEvaluation(fields, detailed) && (
-            <Text size="xs" c="dimmed">
-              Auto-approval: {fields.autoApprovalEvaluation}
-            </Text>
-          )}
-        </div>
-        {combined ? (
-          <>
-            {combined}
-            {detailed && <RawArgumentsDisclosure argumentsJson={fields.argumentsJson} />}
-          </>
-        ) : (
-          <ToolArgumentsField
-            serverId={fields.serverId}
-            toolName={fields.toolName}
-            args={args}
-            argumentsJson={fields.argumentsJson}
-            variant={variant}
-          />
-        )}
-        {/* A failed call's error is its outcome — the failure counterpart of the result body
+          {/* A failed call's error is its outcome — the failure counterpart of the result body
             below — so it renders under the arguments, not as a head subhead. Error and result
             are mutually exclusive (the ledger finishes a call with exactly one), so this never
             collides with the result field. */}
-        {error && (
-          <Text size="sm" c="red">
-            {error}
-          </Text>
-        )}
-        {/* Rendered for both variants; it self-gates (compact shows a result only when a
+          {error && (
+            <Text size="sm" c="red">
+              {error}
+            </Text>
+          )}
+          {/* Rendered for both variants; it self-gates (compact shows a result only when a
             per-tool widget makes it self-describing). A combined widget already rendered the
             result above (it's the same node as the arguments in that case), so this only adds
             the detailed-only Raw result disclosure. */}
-        {combined ? (
-          detailed && result != null && <RawResultDisclosure result={result} />
-        ) : (
-          <ToolResultField serverId={fields.serverId} toolName={fields.toolName} result={result} variant={variant} />
-        )}
-        {detailed && (
-          <ToolCallMeta
-            serverId={fields.serverId}
-            toolName={fields.toolName}
-            callerDisplayName={fields.callerDisplayName}
-            createdAt={fields.createdAt}
-            toolCallId={fields.toolCallId}
-          />
-        )}
-        {footer}
-      </Stack>
-    </section>
+          {combined ? (
+            detailed && result != null && <RawResultDisclosure result={result} />
+          ) : (
+            <ToolResultField serverId={fields.serverId} toolName={fields.toolName} result={result} variant={variant} />
+          )}
+          {detailed && (
+            <ToolCallMeta
+              serverId={fields.serverId}
+              toolName={fields.toolName}
+              callerDisplayName={fields.callerDisplayName}
+              createdAt={fields.createdAt}
+              toolCallId={fields.toolCallId}
+            />
+          )}
+          {footer}
+        </Stack>
+      </section>
+    </ToolCallAgentProvider>
   );
 }

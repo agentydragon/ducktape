@@ -67,7 +67,8 @@ One direction is rejected only as today's fence, not as an end state: an HTTP
 egress control plane where **haku-console makes the per-request decision** and
 a proxy merely enforces it (a mitmproxy-style addon was one candidate engine)
 is an in-progress track —
-[#4670](https://github.com/agentydragon/ducktape/issues/4670), design under
+[#4670](https://github.com/agentydragon/ducktape/issues/4670). Its current
+contract is <../../haku/egress/SPEC.md>; research and alternatives remain in
 <../../cluster/docs/plans/agent_egress_proxy_options.md>.
 
 - **Our mitmproxy addon** — worked and was smaller; lost narrowly because

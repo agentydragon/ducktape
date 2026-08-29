@@ -8,8 +8,8 @@ import pytest_bazel
 
 from haku.console.conversation_read_access import ConversationReadAccessPolicy, ProfileScopedReads, UnrestrictedReads
 from haku.console.grants.principal import RequestPrincipal
+from haku.console.mcp.execution import AgentMcpExecutionCaller, OperatorMcpExecutionCaller
 from haku.console.mcp_config import AccessProfile
-from haku.console.mcp_execution import AgentMcpExecutionCaller, OperatorMcpExecutionCaller
 from haku.console.tool_call_actor import AgentActor, OperatorActor
 
 _OPERATOR = UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")

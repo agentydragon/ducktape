@@ -10,14 +10,21 @@ import pytest
 import pytest_bazel
 from pydantic import SecretStr, TypeAdapter, ValidationError
 
-from haku.egress.decision import DecideAllowed, DecideDenied, DecideRequest, DecideResponse, DecisionSource, RequestMeta
+from haku.egress.decision import (
+    DecideRequest,
+    HttpAuthorizationAllowed,
+    HttpAuthorizationDecision,
+    HttpAuthorizationDenied,
+    RequestMeta,
+)
+from haku.grants.authorization import GrantSourceKind
 
-_FENCE = "agent-fence-credential"
+_SESSION_TOKEN = "test-session-token"
 
 
 def _request(**overrides: object) -> DecideRequest:
     fields: dict[str, object] = {
-        "fence_credential": SecretStr(_FENCE),
+        "session_token": SecretStr(_SESSION_TOKEN),
         "request": RequestMeta(method="GET", scheme="https", host="api.example", port=443, path="/api/items?x=1"),
         "resolved_ips": frozenset({IPv4Address("192.0.2.10"), IPv6Address("2001:db8::10")}),
         "upstream_ip": IPv4Address("192.0.2.10"),
@@ -26,16 +33,28 @@ def _request(**overrides: object) -> DecideRequest:
     return DecideRequest.model_validate(fields)
 
 
-def test_fence_credential_travels_on_the_wire_but_masks_everywhere_else() -> None:
+def test_session_token_travels_on_the_wire_but_masks_everywhere_else() -> None:
     request = _request()
 
     wire = request.model_dump_json()
 
-    assert json.loads(wire)["fence_credential"] == _FENCE
-    assert _FENCE not in repr(request)
-    assert _FENCE not in str(request)
+    # The wire still says proxy_client_credential: serialization keeps the pre-rename spelling
+    # until the CLEANUP in decision.py flips it, so an old-console pod parses a new proxy's body.
+    assert json.loads(wire)["proxy_client_credential"] == _SESSION_TOKEN
+    assert _SESSION_TOKEN not in repr(request)
+    assert _SESSION_TOKEN not in str(request)
     # The parsed form on the Console side masks identically.
-    assert _FENCE not in repr(DecideRequest.model_validate_json(wire))
+    assert _SESSION_TOKEN not in repr(DecideRequest.model_validate_json(wire))
+
+
+def test_both_wire_spellings_validate() -> None:
+    """Old proxies say proxy_client_credential; the alias window accepts either spelling."""
+    payload = json.loads(_request().model_dump_json())
+    legacy = DecideRequest.model_validate(payload)
+    assert legacy.session_token.get_secret_value() == _SESSION_TOKEN
+    payload["session_token"] = payload.pop("proxy_client_credential")
+    renamed = DecideRequest.model_validate(payload)
+    assert renamed.session_token.get_secret_value() == _SESSION_TOKEN
 
 
 def test_wire_round_trip_preserves_the_request() -> None:
@@ -46,7 +65,20 @@ def test_wire_round_trip_preserves_the_request() -> None:
     assert parsed.request == request.request
     assert parsed.resolved_ips == request.resolved_ips
     assert parsed.upstream_ip == request.upstream_ip
-    assert parsed.fence_credential.get_secret_value() == _FENCE
+    assert parsed.session_token is not None
+    assert parsed.session_token.get_secret_value() == _SESSION_TOKEN
+
+
+def test_session_token_is_required() -> None:
+    payload = json.loads(_request().model_dump_json())
+    payload.pop("proxy_client_credential")
+    with pytest.raises(ValidationError, match="session_token"):
+        DecideRequest.model_validate(payload)
+
+    # A null under either spelling is refused too; the error names the key that carried it.
+    payload["proxy_client_credential"] = None
+    with pytest.raises(ValidationError, match="proxy_client_credential"):
+        DecideRequest.model_validate(payload)
 
 
 def test_resolved_ips_serialize_deterministically() -> None:
@@ -71,14 +103,14 @@ def test_resolution_must_be_present_and_bounded() -> None:
 
 
 def test_verdicts_parse_by_their_allowed_discriminant() -> None:
-    adapter: TypeAdapter[DecideResponse] = TypeAdapter(DecideResponse)
+    adapter: TypeAdapter[HttpAuthorizationDecision] = TypeAdapter(HttpAuthorizationDecision)
 
     allowed = adapter.validate_json(
         json.dumps(
             {
                 "allowed": True,
-                "source": "grant",
-                "decision_id": "grant:50000000-0000-4000-8000-000000000005",
+                "source": "database",
+                "decision_id": "database:50000000-0000-4000-8000-000000000005",
                 "valid_until": "2026-08-27T12:30:00Z",
                 "substitutions": [
                     {
@@ -90,32 +122,32 @@ def test_verdicts_parse_by_their_allowed_discriminant() -> None:
             }
         )
     )
-    assert isinstance(allowed, DecideAllowed)
-    assert allowed.source is DecisionSource.GRANT
+    assert isinstance(allowed, HttpAuthorizationAllowed)
+    assert allowed.source is GrantSourceKind.DATABASE
     assert allowed.valid_until == datetime.datetime(2026, 8, 27, 12, 30, tzinfo=datetime.UTC)
     (substitution,) = allowed.substitutions
     assert substitution.match_headers == frozenset({"authorization"})
 
-    # A standing admission carries no deadline: the Console route omits the None field
+    # A config-file admission carries no deadline: the Console route omits the None field
     # (response_model_exclude_none), and the parse restores it.
     standing = adapter.validate_json(
-        json.dumps({"allowed": True, "source": "standing", "decision_id": "standing:haku-github-api"})
+        json.dumps({"allowed": True, "source": "config_file", "decision_id": "config_file:haku-github-api"})
     )
-    assert isinstance(standing, DecideAllowed)
-    assert standing.source is DecisionSource.STANDING
+    assert isinstance(standing, HttpAuthorizationAllowed)
+    assert standing.source is GrantSourceKind.CONFIG_FILE
     assert standing.valid_until is None
     assert standing.substitutions == []
 
-    denied = adapter.validate_json(json.dumps({"allowed": False, "source": "none", "reason": "no grant"}))
-    assert isinstance(denied, DecideDenied)
+    denied = adapter.validate_json(json.dumps({"allowed": False, "reason": "no grant"}))
+    assert isinstance(denied, HttpAuthorizationDenied)
     assert denied.grant_scope is None
 
 
 def test_denials_never_claim_an_admitting_source() -> None:
     with pytest.raises(ValidationError):
-        DecideDenied.model_validate({"allowed": False, "source": "grant", "reason": "contradiction"})
+        HttpAuthorizationDenied.model_validate({"allowed": False, "source": "database", "reason": "contradiction"})
     with pytest.raises(ValidationError):
-        DecideAllowed.model_validate(
+        HttpAuthorizationAllowed.model_validate(
             {"allowed": True, "source": "none", "decision_id": "x", "valid_until": "2026-08-27T12:30:00Z"}
         )
 

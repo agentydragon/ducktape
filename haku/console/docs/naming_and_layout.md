@@ -52,6 +52,11 @@ tree shows the packages, §3 and §4 settle what the files and classes inside th
   database_schema.py  database_migrate.py  migrations/  pydantic_column.py  models.py
                                                         # schema stays central; ORM row classes
                                                         #   carry the …Row suffix at definition (§3)
+  mcp_config.py                                         # `ConsoleConfigFile` (deploy-YAML model) + `AccessProfile` (spanning the
+                                                        #   auto-approval / recall-index / in-process-server / chat-runtime grants) + the
+                                                        #   `AutoApprovalPolicy` classes + static-agent config — cross-subsystem, imported well
+                                                        #   outside mcp/, so console-level, NOT under mcp/; keeps the mcp_ disambiguator (a bare
+                                                        #   config.py collides with the console config.py above). Boundary landed C15.
 
   identity/            # canonical Operator/Agent authority — see <agent_authority.md>
     operator.py  operator_auth.py  operator_login_flow.py  authentik_operator_token.py
@@ -73,18 +78,23 @@ tree shows the packages, §3 and §4 settle what the files and classes inside th
                        #   proxy_authorization (file prefixes dropped; entity names wait on §4.1 seam 3)
     http/              # models, repository, service, routes, decide_{config,routes,service}
 
-  mcp/                 # the approval / audit / execution surface
-    server.py  approval.py  config.py  catalog_reconciler.py  guidance.py  mount.py  reflection_cache.py
+  mcp/                 # the MCP transport surface — approval / audit / execution machinery only
+    server.py  approval.py  catalog_reconciler.py  guidance.py  mount.py  reflection_cache.py
     tool_call_service.py           # the actor-scoped lifecycle boundary
     execution.py                   # McpExecutionCaller/Context (was mcp_execution.py)  [#4836 parts 2-3]
     in_process_servers.py  in_process_server_access.py  operator_oauth.py  export_tool_schemas.py
-    tools/                         # in-process tool servers (gmail, google_calendar, kubernetes, hostexec, …)
-      recall/                      # the index-read tool server — reader.py + access.py + the tool module (was
-                                   #   recall_index_reader/recall_index_access + tools/recall_index.py). Console keeps
-                                   #   ONLY the query-time read path (#4887); its SOLE consumer is the haku_index MCP
-                                   #   server (nothing reads the index over SPA/HTTP), so it folds in with its peers
-                                   #   under tools/, not a standalone package (§4.2). Tool-id renamed under #4918/de-Haku.
-    auto_approval/
+
+  tools/                             # in-process tool servers (gmail, google_calendar, kubernetes, hostexec, …) —
+                                     #   console DOMAIN capabilities, not MCP transport, so console-level (a sibling
+                                     #   of mcp/), never under it. mcp/ mounts them; it does not own them.
+    recall/                          # the index-read tool server — reader.py + access.py + the tool module (was
+                                     #   recall_index_reader/recall_index_access + tools/recall_index.py). Console keeps
+                                     #   ONLY the query-time read path (#4887); its SOLE consumer is the haku_index MCP
+                                     #   server (nothing reads the index over SPA/HTTP), so it folds in with its peers
+                                     #   under tools/, not a standalone package (§4.2). Tool-id renamed under #4918/de-Haku.
+
+  auto_approval/                     # the auto-approval policy registry — a console domain capability, not MCP
+                                     #   transport; decides whether a call skips review. console-level, not under mcp/.
 
   oauth/               # provider account-linking + operator OAuth token machinery
     provider_connection.py  provider_connection_registry.py  token_state.py  token_support.py
@@ -109,8 +119,8 @@ tree shows the packages, §3 and §4 settle what the files and classes inside th
 
   session/             # one runner incarnation + its wire log (landed)
     store.py  runtime.py
-    session_frames.py  status.py   # the wire-log and lifecycle vocabularies (BridgeFrameKind/
-                                   #   FrameDirection; SessionStatus/LeaseExpiryReason + the status sets)
+    session_frames.py  status.py   # the wire-log and lifecycle vocabularies (SessionFrameKind target;
+                                   #   current BridgeFrameKind; FrameDirection; SessionStatus/LeaseExpiryReason + the status sets)
     conversation_views.py  sandbox_allocation.py  sandbox_claims.py
     subscription.py  system_prompt.py  launch_identity.py  setup_output.py
 
@@ -143,7 +153,7 @@ One concept → one name across every representation, with representation-role s
 only **on the definition** (never re-minted per import). The verb vocabulary aligns to the
 neutral-operation protocol (#4667): **opened / segment / completed** for items, a turn **ended**,
 and a required **`failure`** string. The neutral-operation protocol is the runner→console wire in
-the runner bridge package (`haku/runner/`, framing today in
+`haku/runner/`, framing today in
 <../../runner/protocol.py>; the concrete `neutral_operations.py` vocabulary lands with the
 #4667 cutover). The console-side native-projector fold (`x/conversation_events.py`) is
 deletion-scheduled by that cutover, so it is out of rename scope — new names align to the neutral
@@ -163,7 +173,7 @@ protocol, not to the fold.
 | item read model       | `Item` (or `…Item`, plain on wire)                                    | `conversation/item_reads.py` — private to the conversation read tools |                                                     | **"entry" leaves the vocabulary** (C6); the `item_entries.py` module name is already gone                                                                                                                                                                                                                                |
 | session (runner life) | `Session`                                                             | `SessionRecord` (MCP) · `SessionView` (REST)                          | `Session` / `sessions`                              | three representations, one concept-name + role suffix — landed: `SessionView` is the one REST session shape                                                                                                                                                                                                              |
 | channel copy          | `ChannelAttachment`                                                   | `ChannelAttachment`                                                   | `ChannelAttachment` / `channel_attachment`          | landed (C4b)                                                                                                                                                                                                                                                                                                             |
-| harness wire frame    | `SessionFrame`                                                        | `HarnessFrameRecord` / `…View`                                        | `SessionFrame` / `session_frames`                   | `session/session_frames.py` holds the frame vocabulary (`BridgeFrameKind`/`FrameDirection`); `x/session_events.py` (which held `conversation_event` bodies, not frames) dissolved into `conversation/conversation_event.py` (C5)                                                                                         |
+| harness wire frame    | `SessionFrame`                                                        | `HarnessFrameRecord` / `…View`                                        | `SessionFrame` / `session_frames`                   | `session/session_frames.py` holds the frame vocabulary (`SessionFrameKind`/`FrameDirection`; `BridgeFrameKind` is the old name); `x/session_events.py` (which held `conversation_event` bodies, not frames) dissolved into `conversation/conversation_event.py` (C5)                                                     |
 | front-end kind        | `ChannelSurface` (not `ChatSurface`)                                  |                                                                       | text col + CHECK                                    | landed (C4b)                                                                                                                                                                                                                                                                                                             |
 | harness (backend)     | `harness` — retire "runtime" for the backend                          | —                                                                     | —                                                   | Claude Code / Codex. Native client + frame projection move **runner-ward** into `haku/runner` (#4667); the console residue is `harnesses/` (selection/registration). "runtime" survives only for a running incarnation (session/conversation), never the backend                                                         |
 | harness kind (wire)   | `harness_kind` / `HarnessKind` (was `runtime_kind` / `RuntimeKind`)   | `HarnessKind` enum                                                    | `harness_kind` col + published `HarnessKind` schema | **rename, not free** — #4431 made `runtime_kind` a closed, read-only, **published** wire discriminator (`claude_code`\|`codex_app_server`) with a schema contract test; the rename is a coordinated stored + wire + OpenAPI change (expand/contract; published-schema consumers move in lockstep), not a mechanical swap |
@@ -236,6 +246,103 @@ rewritten). **Remaining:** the accuracy audit of the non-grant in-process server
 (`gmail`/`google_calendar`/`hostexec`/`sandbox`) for under/over-promise; the `haku_*` tool-id
 de-prefix rides C14 (§3.4).
 
+### 3.6 Transport and authentication vocabulary
+
+The word **bridge** is reserved for the iframe ↔ trusted outer-shell JavaScript channel. It is not a
+name for the runner protocol or for the session credential. Those boundaries have been conflated in
+older names, which makes a security-sensitive token sound tied to one transport. The following terms
+are the target names:
+
+| Concept                                | Canonical name                              | Definition                                                                                                                                                                                                                                                                                                                                                                            |
+| -------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Console ↔ sandbox runner WebSocket     | **runner protocol**                         | The runner's authenticated control and neutral-operation wire. A live connection is a runner connection; it is not a generic bridge.                                                                                                                                                                                                                                                  |
+| Durable records of the runner wire     | **`SessionFrame`** / **`SessionFrameKind`** | The opaque harness frame or Console-authored setup output recorded for one `Session`. The native payload remains a `HarnessFrame`; the outer record is a `SessionFrame`.                                                                                                                                                                                                              |
+| Runner ↔ native CLI boundary           | **harness adapter**                         | The runner-side implementation that starts one selected `harness`, speaks its native protocol, and emits neutral operations.                                                                                                                                                                                                                                                          |
+| Sandboxed iframe ↔ trusted outer shell | **frontend bridge**                         | The schema-validated `postMessage` contract for shell-owned actions such as opening links, launching, geolocation, and screenshots. It is independent of the runner protocol.                                                                                                                                                                                                         |
+| Per-session authentication secret      | **session token**                           | One random secret for one `Session`. The runner presents it to the runner protocol; the Agent presents the same value to Console MCP; the proxy presents it as proxy authentication and includes the same value in the decision request body. Console resolves it to the live session's Agent identity. It is not a runner-only token, MCP token, proxy credential, or bridge bearer. |
+| Shared proxy → Console authentication  | **HTTP decision endpoint token**            | One Secret-backed token presented in the decision endpoint's `Authorization` header. It authenticates the shared egress proxy to Console and never identifies an Agent or session.                                                                                                                                                                                                    |
+| Console-owned destination secret       | **egress credential**                       | A credential selected by an authorized egress policy and substituted for an inert placeholder. It is distinct from both authentication tokens above.                                                                                                                                                                                                                                  |
+
+The session-token contract is intentionally one credential across three uses: runner admission,
+Console MCP authentication, and proxy authentication. The proxy's decision call has two independent
+authentication facts: its own HTTP decision endpoint token in `Authorization`, and the caller's session
+token in the typed request body. Neither may be renamed or documented as the other.
+
+### 3.7 Known vocabulary divergences
+
+These are tracked old spellings, not alternate names. Historical migration identifiers remain in
+place as history; new code, wire fields, deployment names, and current documentation move to the
+canonical terms above.
+
+- **Session token family** (runner/backend, session allocation/claims, MCP, and egress decision
+  code) — **landed (C16a)** up to its deployed-transition riders: `SESSION_TOKEN_VARIABLE` /
+  `HAKU_SESSION_TOKEN` with a tombstoned `LEGACY_SESSION_TOKEN_VARIABLE` fallback, `session_token`
+  through allocation/claims/decide code, `authenticate_runner_connection` /
+  `RunnerConnectionAuthentication` for the connection lifecycle, and the `haku-session:` audit id.
+  Each rider carries a `CLEANUP` naming its removal condition: the claim's dual env mint and the
+  launch `bearer_environment_variable` still saying the legacy name (haku/console/session/), and
+  the decide body still serializing `proxy_client_credential` while validation accepts both
+  spellings (haku/egress/decision.py). The stored `bridge_token_fingerprint` /
+  `bridge_connected_at` → `session_token_fingerprint` / `runner_connected_at` columns ride the C4d
+  expand/contract recipe: expand (add + dual-write, reads stay old) first, contract releases
+  following convergence. `AgentBearerAuthority`, `_SessionAgentBearerSource`, and
+  `ResolvedAgentBearer` are authority/source/result types, not more names for the secret; their
+  identity-lane treatment stays separate.
+- **Runner protocol/frame family:** “runner bridge,” “bridge protocol,” “bridge websocket,” “bridge
+  envelope,” “bridge frame,” “Bridge v3,” `BridgeFrameKind`, and `bridge_kind`. Use “runner protocol,”
+  “runner connection,” “runner protocol envelope,” and `SessionFrame`/`SessionFrameKind`; the persisted
+  frame discriminator remains the existing `kind` column unless a separately approved schema rename is
+  needed. `Bridge v3` remains only when naming historical compatibility behavior.
+- **Frontend-bridge family:** `@haku/console-bridge`, `haku/shared/bridge_protocol/`,
+  `frontend/bridge.ts`, “bridge verb,” “bridge action,” “Bridge request id,” and “postMessage bridge.”
+  Keep **frontend bridge** as the canonical concept name for this iframe ↔ trusted outer-shell channel,
+  normalize its actions/verbs/request IDs under that name, and do not conflate it with the runner
+  protocol. Package/path alignment with the haku-state consumer is a separate change, not a reason to
+  remove the word “bridge” from this boundary.
+- **Dispatch/adaptation metaphors:** “journal bridge,” “bridge into durable vocabulary,” and generic
+  “bridge” prose. Use “journal dispatch,” “adapter,” “fold,” or “conversion,” according to the actual
+  operation.
+- **Old Agent SDK runner naming** — **landed (C16a)** up to tombstoned residue: the runner reads
+  `HAKU_RUNNER_WEBSOCKET_URL` (legacy fallback tombstoned), and the SandboxTemplates carry both
+  spellings until the pinned runner image converges. The `haku-agent-sdk-oauth-token` inner Secret
+  name survives only inside its SOPS ciphertext — its rendered name is already
+  `haku-claude-oauth-token`, consumed solely by `claude-iron-deployment.yaml` — because the SOPS
+  document MAC covers metadata values; the `CLEANUP` on the file names the age-key re-encrypt that
+  retires it and the kustomization rename patch. `HAKU_AGENT_SDK_RUNNER_TOKEN` was never introduced
+  and must not be. Keep `claude_agent_sdk` only where it is literally the build source for the
+  bundled Claude executable; SDK design/provenance documents stay historical rather than current
+  runtime guidance.
+- **Harness/backend family:** the `Runtime*` → `Harness*` entity mapping, the
+  `LaunchOption.harness_kind`/`harness_display_name` wire fields, and the `harness_label` config
+  contract are landed (C16d); the tracked residue is the `runtime_kind` attribute spellings that
+  ride C4d's stored-column contract. `session/runtime.py` and
+  `conversation/runtime.py` may retain `runtime` where they name live lifecycle/reconciliation, not
+  a backend implementation.
+- **Chat family:** the named artifacts are landed (C16d): `LaunchOption`/`launch_options` with
+  `harness` fields, `HarnessLaunchAuthorizer`, `HarnessesConfig`, the `default_agent_id` config
+  contract, the harness labels without `-chat`, the `conversation_layers.md`/
+  `conversation_runtime_facts.md`/`conversation_prompt_fragment.md.j2` renames, and the
+  `haku-conversation-*` CSS names. Tracked residue: `chat_models.py`
+  (deleted once `ChannelSurface` moves with the C4 channels packaging); the derived audit id
+  `haku-chat-session:` (session-token family, C16a); and remaining “chat runtime”/“chat surface”/
+  “chat session”/“chat records” prose, swept by the C16f gate. Rename current concepts to their
+  actual session, conversation, channel, Agent, harness, or frontend names; keep `chat` only where
+  it is a genuinely separate recall-index/data kind (`ChatSource`/`ChatIndexStatus` and the literal
+  `index_type: chat`) or a historical database/migration identifier.
+- **Item/failure wording:** “entry” when it means the conversation item read model, and “reason” when
+  it means a failed turn. Use `Item`/`Item…` and `TurnFailed.failure`. Keep `McpServerEntry`,
+  `EgressCredentialEntry`, registry/policy entries, prompt-rejection reasons, lease-expiry reasons,
+  Kubernetes condition reasons, and egress denial reasons because those are different concepts.
+- **Egress endpoint family:** `HAKU_EGRESS_FENCE_CREDENTIAL`, `fence_credential_env_var`,
+  `fence_credential`, `FENCE_CREDENTIAL`, “shared fence credential,” “fence credential,” and the
+  `fence-credential` Secret key. Rename these to the HTTP decision endpoint token names in one
+  deployment-coordinated change. “Egress proxy” remains the component name; “fence” is not the
+  authentication principal.
+
+The names `AgentBearerAuthority`, `_SessionAgentBearerSource`, and `ResolvedAgentBearer` are not
+additional names for the session token: they are the authority, source, and resolved authorization
+result. Their identity-lane treatment remains separate from the token rename.
+
 ## 4. Naming conventions — the reviewer checklist
 
 Every burn-down PR is checkable against these. They are already <../../../STYLE.md> rules, made
@@ -277,7 +384,7 @@ Three seams are handled deliberately — **do not reintroduce the prefix to dodg
    collisions) — never by baking the prefix back into the class name.
 2. **Shared primitives are not domain-specific.** `HttpMethod`, `HttpOrigin`, the k8s
    `RequestAttributes`/SAR types are cross-cutting primitives used **outside** grants (egress decision
-   models, standing policy, kube-api-proxy). They keep a clear shared home and keep meaningful names.
+   models, configuration grants, kube-api-proxy). They keep a clear shared home and keep meaningful names.
    The prefix-drop is for domain-specific grant entities, not cross-cutting primitives.
 3. **Published schema components rename only in a coordinated wire pass.** The console OpenAPI
    document and the exported MCP tool schemas key components by Pydantic **class name** in one flat
@@ -335,10 +442,10 @@ package split below keeps these exclusions structurally enforceable.
 
 | Binary                  | Tree                                                             | May import                                                                                                                                                           | MUST NOT import                                                                                                                                                                                                                                                                                                  | Reaches console via                        |
 | ----------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| **runner**              | `haku/runner`                                                    | its own bridge + shared wire                                                                                                                                         | **console (any package)** — the import arrow is console→runner, never the reverse                                                                                                                                                                                                                                | the neutral-operation socket (#4667)       |
+| **runner**              | `haku/runner`                                                    | its own runner protocol + shared wire                                                                                                                                | **console (any package)** — the import arrow is console→runner, never the reverse                                                                                                                                                                                                                                | the neutral-operation socket (#4667)       |
 | **haku-console server** | `<platform>/console/*`                                           | its own domain packages; the runner's shared wire vocab                                                                                                              | —                                                                                                                                                                                                                                                                                                                | in-process                                 |
 | **egress proxy**        | `haku/egress` (forthcoming; egress-grant work #4941/#4957/#4942) | the shared decision wire vocabulary only                                                                                                                             | console `identity/`, `grants/`, `mcp/` — anything beyond the shared decision vocab                                                                                                                                                                                                                               | HTTP to console (not a Python import)      |
-| **indexer**             | `haku/indexer/` (forthcoming, #4887)                             | the shared `haku/recall_index/` schema only                                                                                                                          | any console package — `identity/`, `grants/`, `mcp/` (incl. the `mcp/tools/recall/` read path), approval; its DB role is narrow, the deps must mirror it                                                                                                                                                         | its narrow DB role                         |
+| **indexer**             | `haku/indexer/` (forthcoming, #4887)                             | the shared `haku/recall_index/` schema only                                                                                                                          | any console package — `identity/`, `grants/`, `mcp/` (incl. the `tools/recall/` read path), approval; its DB role is narrow, the deps must mirror it                                                                                                                                                             | its narrow DB role                         |
 | **matrix adapter**      | `channels/matrix/` (worker.py, #4864)                            | its channel package; the conversation seam (the one pub/sub, positional read, offer-input); the schema; the narrow launch authority (`identity/launch_authority.py`) | `mcp/` and the identity auth stack (`identity/`'s `fastmcp_adapter`, `enrollment`, `authorization`, `agent_bearer_authority`, `mcp_agent_auth` — everything under `identity/` beyond `launch_authority` and the operator-identity leaves), approval, oauth, push; its DB role is narrow, the deps must mirror it | its narrow DB role                         |
 | **kube-api-proxy**      | `haku/kube_api_proxy` (Go)                                       | —                                                                                                                                                                    | zero console Python (it is Go)                                                                                                                                                                                                                                                                                   | —                                          |
 | **hostexecd**           | `haku/hostexec/hostexecd` (Rust, host-side)                      | —                                                                                                                                                                    | zero console Python (it is Rust)                                                                                                                                                                                                                                                                                 | HTTP to console's `hostexecd/` coordinator |
@@ -352,7 +459,7 @@ Directionality notes, verified against `devel`:
   only over HTTP and shares a small decision wire vocabulary; console may depend on that shared vocab,
   the egress binary must not depend on console. Its BUILD deps cannot reach `identity/`/`grants/`/`mcp/`.
 - **the indexer's narrow DB role is mirrored in the dep graph.** Console keeps the query-time read
-  path (folded under `mcp/tools/recall/`, since its sole consumer is the `haku_index` MCP server); the
+  path (folded under `tools/recall/`, since its sole consumer is the `haku_index` MCP server); the
   worker (`recall_index_sync.py`) leaves to `haku/indexer/` and is entitled to the shared
   `haku/recall_index/` schema and its own code — not to any console package.
 - **the two host-side daemons carry zero console Python** by language (Go, Rust); their only coupling
@@ -382,7 +489,7 @@ will conflict" / "touches the same file" is not a wait — whoever lands second 
 
 - **C13 · `haku/indexer/` tree move (#4887)** _(staged; the directory move is the last step)_ — the
   worker (`indexer.py` + `recall_index_sync.py`) leaves console; console keeps the query-time read
-  path (`mcp/tools/recall/`). Not a bare rename: the §5 exclusion — worker deps physically unable to
+  path (`tools/recall/`). Not a bare rename: the §5 exclusion — worker deps physically unable to
   reach console — must already hold when the tree appears, so the console edges sever in place first,
   each step an atomic sweep with no shims, beside every other lane. The shared recall-index/embedder
   config lives in `haku/recall_index/config.py` and the worker reads only its own
@@ -407,7 +514,8 @@ quiet gap.
   **deleted** rather than renamed. Its survival _is_ the tracked cleanup item — the #4772 reorg
   is not done until it is gone, each enum scattered to its true home. Landed:
   `SessionStatus`/`LeaseExpiryReason` + the status frozensets in `session/status.py`,
-  `BridgeFrameKind`/`FrameDirection` in `session/session_frames.py`, the prompt-origin models
+  the `FrameDirection` vocabulary in `session/session_frames.py` (the current `BridgeFrameKind`
+  name is tracked under C16), the prompt-origin models
   (`SpaOrigin`/`MatrixOrigin`/`HarnessOrigin`/`PromptOriginKind`) in `conversation/prompt_origin.py`,
   and `PromptRejection` in `conversation/conversation_event.py` (the `PromptRejected` body's
   discriminant; `prompt_inbox.py` reads `database_schema`, which reads the event vocabulary, so the
@@ -418,30 +526,67 @@ quiet gap.
   both layers import avoids it. Remaining:
   - `ChannelSurface` → `channels/` with the channel packaging
 - **C4d · `runtime_kind` → `harness_kind`** _(semantic — coordinated stored + wire + OpenAPI)_ — the
-  harness-kind discriminator (§3.1). Landed: the wire-field drop (#5050); the `RuntimeKind` enum →
-  `harnesses/kind.py` as `HarnessKind` and its OpenAPI component (SPA consumers read the
-  `harness_kind` field and its unchanged `claude_code`/`codex_app_server` values, not the component
-  name, so the key flip stays compatible across the independent static/API rolls); and the **expand**
-  step of the stored `conversation.runtime_kind` → `harness_kind` column — `harness_kind` added,
-  backfilled and dual-written while reads stay on `runtime_kind`, so a post-#5050 replica never reads
-  a vanished column mid-roll. Remaining is the stored **contract**, each release only after the prior
-  has converged: switch reads to `harness_kind` (backfill the roll-window stragglers, add NOT NULL);
-  stop writing and mapping `runtime_kind` (make it nullable); drop `runtime_kind` and its CHECK. The
-  console harness adapters (`x/claude_code`, `x/codex_app_server`) are deleted by the #4667 cutover
-  (native projection moves runner-ward), so there is no console `runtimes/`→`harnesses/` move to
-  schedule — only this discriminator rename and the small `harnesses/` selection residue.
+  harness-kind discriminator (§3.1). Complete across the wire, enum/OpenAPI, application API, and
+  stored schema. The stored contract was released as three independently deployed steps after the
+  expand already landed: read-switch to `harness_kind`, stop mapping/writing the legacy column while
+  retaining it for the soak, then drop the legacy column/CHECK and leave the identity trigger
+  protecting only `harness_kind`. Launch selection is explicit too: no session service or resource
+  registry supplies a default harness, and ambiguous deployment configuration fails closed instead
+  of choosing Claude.
 - **C4e · `allowed_chat_runtimes` → `allowed_harnesses`** _(semantic — per-profile config field,
   deploy-coordinated expand/contract, same recipe as the `chat_runtimes` → `harnesses` key flip)_.
-  **Expand landed**: `allowed_harnesses` is the canonical per-profile field, its readers (console
-  `app.py`, the harness/profile cross-check in `mcp_config.py`, the Matrix adapter worker) switched,
-  and both parsers of the shared YAML — `AccessProfile` (console, `extra="forbid"`) and
-  `ConfiguredProfile` (Matrix adapter) — accept the deployed `allowed_chat_runtimes` key as a
-  tombstoned alias and reject a profile setting both. The ConfigMap deliberately still writes
-  `allowed_chat_runtimes` until an image with these loaders is rolled out. **Remaining is the
-  contract**, after the expand has converged: flip the ConfigMap per-profile key to
-  `allowed_harnesses` and drop both twin aliases.
+  **Landed**: after the #5088 expand converged across the independently rolled Console and Matrix
+  adapter images, `allowed_harnesses` became the only ConfigMap spelling; the Console and Matrix
+  readers use that canonical field, and both expand-only compatibility aliases were removed.
 - **C6 · "entry" → item read model** _(semantic)_ — `*Entry` → `Item…`, into `conversation/item_reads.py`
   (private to the conversation read surface, beside the store that produces it — not `mcp/`).
+
+- **C16 · transport, session-token, and residual vocabulary closure (#5139 follow-up)** _(semantic;
+  split into independently approvable change-units)_ — execute the target vocabulary in §3.6 and
+  remove the divergences listed in §3.7. The plan is deliberately broader than a prose sweep: these
+  names occur in deployed environment variables, SandboxClaim fields, persisted fingerprints,
+  published request bodies, OpenAPI/MCP descriptions, tests, and cross-repository frontend package
+  names.
+  - **C16a · session token and runner URL:** landed (§3.7's session-token and Agent-SDK bullets
+    carry the per-rider state). Remaining: the tombstoned transition riders as their conditions
+    come due, and the stored-column contract steps after the expand converges — switch reads to
+    `session_token_fingerprint`/`runner_connected_at` (move the CHECKs/unique/partial-index),
+    stop writing the old columns, then drop them, one converged release apart.
+  - **C16b · frame vocabulary:** landed — `SessionFrameKind` is the vocabulary name and current
+    prose says runner protocol; `Bridge v3` and old migration names remain only in historical
+    compatibility documentation.
+  - **C16c · frontend bridge:** keep “frontend bridge” as the canonical name for the iframe ↔ trusted
+    outer-shell JavaScript channel. Normalize “bridge verb”/“bridge action”/request-id prose under
+    that concept, while treating `@haku/console-bridge`, `haku/shared/bridge_protocol/`, and
+    `frontend/bridge.ts` as coordinated cross-repository package/path work with the haku-state
+    consumer. This is a separate protocol from the runner protocol; do not use its exception to
+    preserve “bridge” for runner or credential names.
+  - **C16d · Harness\* and chat removal:** **Landed**: the `Runtime*` → `Harness*` entity mapping
+    (`HarnessExecutionConfig`, `HarnessImplementationConfig`, `HarnessRegistrationConfig`,
+    `HarnessesConfig`, `HarnessLaunchSpec`, `HarnessMcpServer`, `HarnessKey`, `HarnessAdapter`,
+    `HarnessRegistry`, `ConfiguredHarness`, `AgentHarnessResources`, `UnsupportedHarnessError`,
+    `HarnessNotConfiguredError`, `ClaudeHarnessAdapter`/`CodexHarnessAdapter`,
+    `HarnessLaunchAuthorizer`, `profile_harness_kinds`, `registered_harness_identities`); the
+    `LaunchOption.harness_kind`/`harness_display_name` wire shape (`launch_options` on
+    `ConfigResponse`, `harness_kind` on the create request); and the presentation renames
+    (`conversation_layers.md`, `conversation_runtime_facts.md`, `conversation_prompt_fragment.md.j2`,
+    `haku-conversation-*` CSS); and the deployed-config **contract** — the ConfigMap's
+    `harness_label` (values `claude`/`codex`) and `default_agent_id` are the only spellings, and the
+    expand aliases are gone. Remaining: `chat_models.py` deletion stays gated on `ChannelSurface`
+    moving out with the C4 channels packaging; the `runtime_kind` attribute spellings ride C4d's
+    stored-column contract. Keep `runtime` for live session/conversation lifecycle only.
+  - **C16e · HTTP decision endpoint token:** adopt the existing `haku/sandbox/TODO.md` direction:
+    rename `HAKU_EGRESS_FENCE_CREDENTIAL`, `fence_credential_env_var`, `fence_credential`,
+    `FENCE_CREDENTIAL`, and the `fence-credential` Secret key to the HTTP decision endpoint token
+    vocabulary in one proxy/Console deployment change. It must remain distinct from the session token
+    and from destination egress credentials.
+  - **C16f · wording and verification:** replace “journal bridge,” “bridge into durable vocabulary,”
+    item-read “entry,” and failed-turn “reason” with `journal dispatch`, `adapter`/`fold`, `Item`,
+    and `failure` respectively. Do not alter valid registry/policy entries, lease/Kubernetes/egress
+    reasons, or historical migration identifiers. The final search gate must find no current
+    `bridge`/`chat`/old SDK/session-token spelling outside the explicitly listed historical,
+    compatibility, frontend-bridge, native-index, and cross-repository package exceptions; schema and deployment
+    contract tests must cover every renamed published or persisted name.
 
 ### Identity lane — rides the #4836 compose PR
 
@@ -476,8 +621,21 @@ Needs operator go **and** the `<auth-context>` name pick.
   namespaces + connector + docs in a coordinated cutover; "Haku" kept as agent config; redirect/compat
   for external refs. The tool-id de-Haku rides C12.
 - **C15 · Remainder packaging (#4924)** _(mechanical)_ — Landed: `oauth/` (#5000),
-  `notifications/` (#5001), `hostexecd/` (#5002) carved off the flat top level. Remaining: the rest
-  settles around the app shell once #4772 has settled what everything is called
+  `notifications/` (#5001), `hostexecd/` (#5002); `mcp/` — the MCP transport surface, folding only
+  genuinely transport-specific modules (`server`, `approval`, `catalog_reconciler`, `guidance`, `mount`,
+  `reflection_cache`, `operator_oauth`, `execution`, `tool_call_service`, `in_process_servers` /
+  `in_process_server_access`, `export_tool_schemas`); its config module stays at console level as
+  `mcp_config.py` (`ConsoleConfigFile` + `AccessProfile` + the `AutoApprovalPolicy` classes +
+  static-agent config — cross-subsystem, imported well outside `mcp/`; keeps the `mcp_` disambiguator,
+  since a bare `config.py` collides with the console `config.py`), NOT folded under `mcp/`; and,
+  alongside `mcp/` at console level, the domain-capability packages `tools/` (in-process tool servers)
+  and `auto_approval/` (the auto-approval policy registry) — these are console capabilities, not MCP
+  transport, so they sit beside `mcp/`, not under it. Each
+  a one-file `py_library` with the `mcp_` file-prefix dropped per §4.1; the `McpExecution*` entity
+  reshape stays with C8, so `execution.py` keeps its class names for now. `tool_call_actor.py`
+  (→ `identity/`, C8) and the recall read path (`recall_index_{reader,access}.py` → `tools/recall/`,
+  C13) deliberately stay put. Remaining:
+  the rest settles around the app shell once #4772 has settled what everything is called
   (rename-before-move), in a final quiet-window sweep.
 
 ### Dependency-ordered picture
@@ -486,7 +644,8 @@ Needs operator go **and** the `<auth-context>` name pick.
 now ─┬─ C13               ← staged severing; ConversationItem home is the gate   [indexer lane, independent]
      ├─ C8 → C10          ← after operator go + <auth-context>  [identity lane]
      ├─ #4918 audit       ← C12 landed (one `grants` server)    [grants lane]
-     └─ C4e → C6                            ← packages + C5 landed         [conversation lane]
+     ├─ C4e → C6                            ← packages + C5 landed         [conversation lane]
+     └─ C16a–C16f                           ← vocabulary closure; split by boundary
                   │
                   C14 (de-Haku) ────────────────→ after lanes settle names
                   C15 (final packaging) ────────→ last

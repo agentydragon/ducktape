@@ -9,7 +9,7 @@ import { SUCCESS_COLOR } from "./theme";
 //
 // TODO(remarks-on-approve): let the same note ride an *approve* too, not only a deny — a general
 // operator remark the agent can read back from the tool-call result DB. Needs the decision
-// endpoint to persist a reason on approve (mcp_approval.py) and a neutral placeholder here.
+// endpoint to persist a reason on approve (mcp/approval.py) and a neutral placeholder here.
 export function PendingToolCallActions({
   busy,
   // The approvals panel arms its buttons after a short delay, guarding against a misclick on a card

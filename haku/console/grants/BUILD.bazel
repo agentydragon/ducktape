@@ -36,6 +36,38 @@ py_library(
     ],
 )
 
+py_library(
+    name = "catalog",
+    srcs = ["catalog.py"],
+    deps = [
+        ":envelope",
+        ":principal",
+        "//haku/console:config",
+        "//haku/console/grants/http:decide_config",
+        "//haku/console/grants/http:models",
+        "//haku/console/grants/http:service",
+        "//haku/console/grants/kubernetes:authorization",
+        "//haku/console/grants/kubernetes:models",
+        "//haku/console/grants/kubernetes:service",
+        "//haku/grants:authorization",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "routes",
+    srcs = ["routes.py"],
+    deps = [
+        ":catalog",
+        ":dependencies",
+        ":envelope",
+        "//haku/console/identity:operator_agents",
+        "//haku/console/identity:operator_auth",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
 py_test(
     name = "test_principal",
     srcs = ["test_principal.py"],
@@ -47,5 +79,42 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_routes",
+    size = "medium",
+    srcs = ["test_routes.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":catalog",
+        ":principal",
+        "//:conftest",
+        "//haku/console:config",
+        "//haku/console:conftest",
+        "//haku/console/grants/http:models",
+        "//haku/console/grants/http:service",
+        "//haku/console/grants/kubernetes:authorization",
+        "//haku/console/grants/kubernetes:models",
+        "//haku/console/grants/kubernetes:service",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "dependencies",
+    srcs = ["dependencies.py"],
+    deps = [
+        ":catalog",
+        "@pypi//fastapi",
     ],
 )

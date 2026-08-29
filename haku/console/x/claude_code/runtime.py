@@ -1,7 +1,7 @@
 """Claude Code's provider-specific Console launch adapter.
 
 Sandbox claims, runner bootstrap, bridge credentials, MCP credentials and attached-chat prompt
-selection are Haku infrastructure owned by ``runtime.py`` / ``session_runtime.py``.  This adapter
+selection are Haku infrastructure owned by ``harness.py`` / ``session_runtime.py``.  This adapter
 only translates generic launch facts into Claude's process launch; the runner interprets Claude's
 own stream and projects it to neutral operations (#4667).
 """
@@ -12,13 +12,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from haku.console.harnesses.kind import HarnessKind
-from haku.console.x.runtime import RuntimeLaunch
+from haku.console.x.runtime import HarnessLaunchSpec
 from haku.runner.claude.options import ClaudeSession, HttpMcpServer, build_claude_launch
 from haku.runner.protocol import HarnessLaunch
 
 
 @dataclass(frozen=True, slots=True)
-class ClaudeRuntimeAdapter:
+class ClaudeHarnessAdapter:
     """Claude launch behavior, with no sandbox lifecycle state and no console projection."""
 
     @property
@@ -29,7 +29,7 @@ class ClaudeRuntimeAdapter:
     def display_name(self) -> str:
         return "Claude"
 
-    def build_launch(self, launch: RuntimeLaunch) -> HarnessLaunch:
+    def build_launch(self, launch: HarnessLaunchSpec) -> HarnessLaunch:
         session = ClaudeSession(
             append_system_prompt=launch.appended_system_prompt,
             cwd=Path(launch.cwd),

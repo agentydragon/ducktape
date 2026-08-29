@@ -2,7 +2,8 @@
 
 Two halves, one binary. `Config` is the channel's own env-driven wiring (homeserver, identities,
 the bot credential). `AdapterConfigFile` is the worker's narrow read of the deploy-owned console
-config file — only the launch-identity registry a room bind consults. The console-only siblings
+config file — the launch-identity registry and explicit Matrix room-creation route a room bind
+consults. The console-only siblings
 (MCP catalog, policies, recall indexes) are deliberately unmodeled and unvalidated here: the worker
 must start without them and must not fail when their vocabularies move ahead of this image (one
 binary, one config — <../../docs/naming_and_layout.md> §5).
@@ -14,7 +15,7 @@ from pathlib import Path
 from uuid import UUID
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from haku.console.harnesses.kind import HarnessKind
 
@@ -62,22 +63,6 @@ class ConfiguredProfile(BaseModel):
     id: str
     allowed_harnesses: set[HarnessKind] = Field(default_factory=set)
 
-    @model_validator(mode="before")
-    @classmethod
-    def _accept_allowed_chat_runtimes_alias(cls, value: object) -> object:
-        # CLEANUP(added 2026-08-28): remove with ConsoleConfigFile's AccessProfile twin alias once
-        #   the deployed haku-console-config ConfigMap carries `allowed_harnesses` (contract step of
-        #   #4772 C4e).
-        if isinstance(value, dict) and "allowed_chat_runtimes" in value:
-            if "allowed_harnesses" in value:
-                raise ValueError(
-                    "allowed_harnesses and its deprecated alias allowed_chat_runtimes are both set; "
-                    "keep only allowed_harnesses"
-                )
-            value = dict(value)
-            value["allowed_harnesses"] = value.pop("allowed_chat_runtimes")
-        return value
-
 
 class LaunchableEntry(BaseModel):
     """The launchable-agent slice: membership only; prompts stay the console's."""
@@ -96,24 +81,29 @@ class Harnesses(BaseModel):
     codex_app_server: HarnessEntry | None = None
 
 
+class MatrixLaunchConfig(BaseModel):
+    """The Matrix-only launch route for rooms that do not carry a harness selector."""
+
+    default_agent_id: UUID = Field(
+        description="Agent identity to stamp on a new Matrix conversation when the room has no selector."
+    )
+    default_harness_kind: HarnessKind = Field(
+        description="Harness kind to stamp on a new Matrix conversation when the room has no selector."
+    )
+
+
 class AdapterConfigFile(BaseModel):
     harnesses: Harnesses | None = None
     access_profiles: tuple[ConfiguredProfile, ...] = ()
     static_agents: tuple[ConfiguredAgent, ...] = ()
     launchable_agents: tuple[LaunchableEntry, ...] = ()
-    default_chat_agent_id: UUID | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def _accept_chat_runtimes_alias(cls, value: object) -> object:
-        # CLEANUP(added 2026-08-28): remove with ConsoleConfigFile's twin alias once the deployed
-        #   haku-console-config ConfigMap carries `harnesses` (contract step of #4772 C4c).
-        if isinstance(value, dict) and "chat_runtimes" in value:
-            if "harnesses" in value:
-                raise ValueError("harnesses and its deprecated alias chat_runtimes are both set; keep only harnesses")
-            value = dict(value)
-            value["harnesses"] = value.pop("chat_runtimes")
-        return value
+    matrix: MatrixLaunchConfig | None = Field(
+        default=None,
+        description=(
+            "Explicit Agent and harness route for a new Matrix conversation: invites and messages "
+            "carry no selector. Existing rooms follow their conversation row."
+        ),
+    )
 
 
 def load_adapter_config(path: Path) -> AdapterConfigFile:

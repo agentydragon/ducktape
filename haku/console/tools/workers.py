@@ -32,7 +32,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from haku.console.conversation.prompt_origin import SPA_ORIGIN
 from haku.console.harnesses.kind import HarnessKind
-from haku.console.mcp_execution import (
+from haku.console.mcp.execution import (
     EXECUTION_CONTEXT_DEPENDENCY,
     AgentMcpExecutionCaller,
     McpExecutionContext,
@@ -119,7 +119,7 @@ def build_mcp(sessions: SessionService) -> FastMCP:
         """
         operator_id = _dispatching_operator(context)
         try:
-            conversation = await sessions.create_conversation(operator_id, agent_id=agent_id, runtime_kind=harness_kind)
+            conversation = await sessions.create_conversation(operator_id, agent_id=agent_id, harness_kind=harness_kind)
         except LaunchAgentRejectedError:
             # The durable reason is deliberately not surfaced (same generic refusal the console's own
             # launch route gives): a launchable-Agent probe must not read back why one was rejected.

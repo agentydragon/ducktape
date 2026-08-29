@@ -18,6 +18,7 @@ from haku.console.notifications.console_events import (
     ConsoleEventHub,
     ConsoleHelloEvent,
     McpOperatorAuthChangedEvent,
+    SandboxSessionsChangedEvent,
     ToolCallsChangedEvent,
 )
 
@@ -106,7 +107,7 @@ async def test_event_hub_routes_across_replicas_by_operator_id(migrated_db_url: 
         await second_hub.connect(cast(WebSocket, operator_a_second), OPERATOR_A)
         await second_hub.connect(cast(WebSocket, operator_b_second), OPERATOR_B)
 
-        event = McpOperatorAuthChangedEvent(server_id="grocy-sf", status=ConnectionStatus.CONNECTED)
+        event = SandboxSessionsChangedEvent()
         # start() guarantees both LISTEN subscriptions are ready, so an immediate publish reaches
         # the local replica and its peer without a test sleep or a production startup race.
         await first_hub.broadcast(OPERATOR_A, [event])

@@ -2,7 +2,7 @@
 
 The `type` values Claude Code puts at the top of a frame, and the shapes underneath them. The
 console stores the complete native object in `session_frames.payload`; `session_frames.kind` remains
-only the bridge envelope class. Native kinds are derived when an inspection or projection needs
+only the outer session-frame class. Native kinds are derived when an inspection or projection needs
 them, so a later CLI value remains preserved even before this module learns its meaning.
 
 Everything here is about the wire's shapes, so it holds no session state and touches no table.

@@ -34,7 +34,7 @@ def test_one_conversation_holds_an_address_at_a_time_and_detaching_frees_it(db_u
             for conversation_id in (first, second):
                 conn.execute(
                     text(
-                        "INSERT INTO conversation (conversation_id, operator_id, runtime_kind, created_at) "
+                        "INSERT INTO conversation (conversation_id, operator_id, harness_kind, created_at) "
                         "VALUES (:conversation_id, :operator_id, 'claude_code', now())"
                     ),
                     {"conversation_id": conversation_id, "operator_id": operator_id},

@@ -1,10 +1,10 @@
-"""The sandbox bridge at the neutral-operation generation: launch resolution, the session's
+"""The sandbox runner at the neutral-operation generation: launch resolution, the session's
 numbering/journal/retention, and the Claude harness's process-level round trip.
 
 The projection itself is `claude/test_projection.py` and the journal state machine is
 `test_operation_journal.py`; here `SessionApi` is tested for what it adds on top — one dense
 sequence over everything this end sends, native-input injection echoed into the record, the journal
-batches riding the bridge envelope — and `ClaudeHarness.run` for starting the CLI, handshaking it,
+batches riding the runner protocol envelope — and `ClaudeHarness.run` for starting the CLI, handshaking it,
 and folding its echoes through the session.
 """
 
@@ -23,6 +23,7 @@ import pytest_bazel
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.http11 import Request, Response
 
+from haku.runner.backend import LEGACY_SESSION_TOKEN_VARIABLE, SESSION_TOKEN_VARIABLE, child_environment
 from haku.runner.claude.harness import claude_harness
 from haku.runner.claude.options import ClaudeSession, HttpMcpServer, build_claude_launch
 from haku.runner.neutral_operations import (
@@ -115,22 +116,52 @@ def test_the_runner_runs_the_launch_the_console_sent(tmp_path: Path) -> None:
     assert "Bearer test-static-agent-token" in mcp_config
 
 
-def test_environment_exposes_the_claim_owned_session_credential(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_environment_exposes_the_claim_owned_session_token(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CLAUDECODE", "parent")
-    monkeypatch.setenv("HAKU_AGENT_SDK_RUNNER_TOKEN", "session-secret")
+    monkeypatch.setenv(SESSION_TOKEN_VARIABLE, "session-secret")
+    monkeypatch.setenv(LEGACY_SESSION_TOKEN_VARIABLE, "session-secret")
     launch = HarnessLaunch(
         arguments=(),
         cwd="/workspace",
         environment={
             "CLAUDECODE": "injected-parent",
-            "HAKU_AGENT_SDK_RUNNER_TOKEN": "injected-secret",
+            SESSION_TOKEN_VARIABLE: "injected-secret",
+            LEGACY_SESSION_TOKEN_VARIABLE: "injected-secret",
             "SAFE": "value",
         },
     )
     environment = claude_harness(Path("/usr/local/bin/claude")).resolve(launch).environment
     assert environment["CLAUDECODE"] == "injected-parent"
-    assert environment["HAKU_AGENT_SDK_RUNNER_TOKEN"] == "session-secret"
+    assert environment[SESSION_TOKEN_VARIABLE] == "session-secret"
+    assert environment[LEGACY_SESSION_TOKEN_VARIABLE] == "session-secret"
     assert environment["SAFE"] == "value"
+
+
+def test_environment_uses_the_session_token_for_proxy_authentication(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(SESSION_TOKEN_VARIABLE, "session bearer/with spaces")
+    launch = HarnessLaunch(
+        arguments=(),
+        cwd="/workspace",
+        environment={
+            "HTTP_PROXY": "http://egress-proxy.test:8888",
+            "HTTPS_PROXY": "https://egress-proxy.test:8443",
+            "NO_PROXY": "localhost",
+        },
+    )
+
+    environment = child_environment(launch)
+
+    assert environment["HTTP_PROXY"] == "http://:session%20bearer%2Fwith%20spaces@egress-proxy.test:8888"
+    assert environment["HTTPS_PROXY"] == "https://:session%20bearer%2Fwith%20spaces@egress-proxy.test:8443"
+    assert environment["NO_PROXY"] == "localhost"
+
+
+def test_proxy_authentication_falls_back_to_the_legacy_token_variable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A claim minted before the HAKU_SESSION_TOKEN rename carries only the legacy variable."""
+    monkeypatch.delenv(SESSION_TOKEN_VARIABLE, raising=False)
+    monkeypatch.setenv(LEGACY_SESSION_TOKEN_VARIABLE, "legacy-token")
+    launch = HarnessLaunch(arguments=(), cwd="/workspace", environment={"HTTP_PROXY": "http://egress-proxy.test:8888"})
+    assert child_environment(launch)["HTTP_PROXY"] == "http://:legacy-token@egress-proxy.test:8888"
 
 
 def test_the_harness_names_the_binary_its_own_image_set(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -189,7 +220,7 @@ def test_proxy_kubeconfig_uses_claim_owned_bearer_not_launch_environment(
         cwd=str(tmp_path),
         environment={
             KUBERNETES_PROXY_URL_ENV: "https://haku-kube-api-proxy.haku-console:8443",
-            "HAKU_AGENT_SDK_RUNNER_TOKEN": "launch-selected-secret",
+            SESSION_TOKEN_VARIABLE: "launch-selected-secret",
         },
     )
     _materialize_proxy_kubeconfig(launch, "claim-owned-secret")

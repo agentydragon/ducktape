@@ -7,7 +7,7 @@ import logging
 from typing import Any
 
 from haku.console.auto_approval.decision import AutoApprovalDecision, AutoDenied
-from haku.console.grants.kubernetes.authorization import KubernetesAuthorizationService
+from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
 from haku.console.grants.kubernetes.kubectl_passthrough_policy import map_kubectl_passthrough_request
 from haku.console.grants.principal import RequestPrincipal
 from haku.console.tool_call_actor import AgentActor, RuntimeActor

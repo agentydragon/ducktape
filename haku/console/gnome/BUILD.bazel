@@ -6,11 +6,8 @@ package(default_visibility = ["//visibility:public"])
 pkg_files(
     name = "haku_approvals_files",
     srcs = [
-        "extension.js",
         "haku-approvals.desktop",
-        "haku-approvals-window.js",
-        "metadata.json",
-        "stylesheet.css",
+        "haku-approvals.js",
         "//haku/console:logo.svg",
     ],
     strip_prefix = strip_prefix.from_pkg(),

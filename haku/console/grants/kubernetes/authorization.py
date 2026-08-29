@@ -14,19 +14,16 @@ and every client/config failure is surfaced as an unavailable authority so calle
 from __future__ import annotations
 
 import asyncio
-import datetime
 import logging
 from dataclasses import dataclass
-from enum import StrEnum
 from typing import Protocol
-from uuid import uuid4
 
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, AuthorizationV1Api
 from kubernetes_asyncio.config.config_exception import ConfigException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from haku.console.config import KubernetesAuthorizationConfig, KubernetesAuthorizationSubject
+from haku.console.config import KubernetesAuthorizationSubject
 from haku.console.grants.kubernetes.models import (
     AllNamespacesGrantScope,
     ClusterGrantScope,
@@ -37,26 +34,17 @@ from haku.console.grants.kubernetes.models import (
     Rule,
     validate_grant_scope_rules,
 )
-from haku.console.grants.kubernetes.service import GrantService
-from haku.console.grants.principal import RequestPrincipal
-from haku.console.identity.agent_bearer_authority import AgentBearerAuthority
+from haku.grants.authorization import AuthorizationUnavailableError
 
 logger = logging.getLogger(__name__)
 
 
-class KubernetesAuthorizationUnavailableError(RuntimeError):
+class KubernetesAuthorizationUnavailableError(AuthorizationUnavailableError):
     """The Console cannot make an authoritative Kubernetes decision."""
 
 
 class KubernetesBearerRejectedError(RuntimeError):
     """The presented Haku bearer does not resolve to an active Agent."""
-
-
-class KubernetesAuthorizationSource(StrEnum):
-    """Authority that made the effective Kubernetes decision."""
-
-    SAR = "sar"
-    GRANT = "grant"
 
 
 class RequestAttributes(BaseModel):
@@ -113,18 +101,6 @@ class AuthorizationRequest(BaseModel):
         elif scope.kind not in {GrantScopeKind.ALL_NAMESPACES, GrantScopeKind.CLUSTER}:
             raise ValueError("an unnamespaced resource request requires all_namespaces or cluster scope")
         return self
-
-
-class AuthorizationResponse(BaseModel):
-    """The small fail-closed response understood by the proxy."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    allowed: bool
-    reason: str | None = None
-    source: KubernetesAuthorizationSource
-    decision_id: str = Field(min_length=1)
-    valid_until: datetime.datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,144 +190,6 @@ class KubernetesSubjectAccessReviewClient:
         if self._clients is not None:
             await self._clients.api.close()
             self._clients = None
-
-
-class KubernetesAuthorizationService:
-    """Evaluate standing Kubernetes policy, then an Agent-owned temporary grant.
-
-    The bearer-facing proxy route is only an adapter: it resolves the bearer through the canonical
-    Agent authority and then calls :meth:`evaluate`. In-process tools carry the same Agent id and
-    access profile in trusted execution metadata. SAR is always the first authority. A grant is
-    consulted only after a clean SAR denial; SAR failures remain unavailable/fail-closed even when
-    a matching grant exists.
-    """
-
-    def __init__(
-        self,
-        *,
-        config: KubernetesAuthorizationConfig,
-        agent_bearer_authority: AgentBearerAuthority,
-        grants: GrantService,
-        sar_client: SubjectAccessReviewClient,
-    ) -> None:
-        self._config = config
-        self._agent_bearer_authority = agent_bearer_authority
-        self._grants = grants
-        self._sar_client = sar_client
-
-    async def authorize(self, *, bearer: str, request: AuthorizationRequest) -> AuthorizationResponse:
-        token = _bearer_token(bearer)
-        if token is None:
-            raise KubernetesBearerRejectedError("Bearer authorization is required")
-        try:
-            actor = await self._agent_bearer_authority.authenticate(token)
-        except KubernetesAuthorizationUnavailableError:
-            raise
-        except Exception as error:
-            raise KubernetesAuthorizationUnavailableError("Haku Agent authority is unavailable") from error
-        if actor is None:
-            raise KubernetesBearerRejectedError("Haku rejected the caller credential")
-        return await self.evaluate(request_principal=RequestPrincipal.from_source(actor), request=request)
-
-    async def authorize_agent(
-        self, *, request_principal: RequestPrincipal, request: AuthorizationRequest
-    ) -> AuthorizationResponse:
-        """Evaluate identity already revalidated into trusted in-process execution metadata."""
-
-        return await self.evaluate(request_principal=request_principal, request=request)
-
-    async def evaluate(
-        self, *, request_principal: RequestPrincipal, request: AuthorizationRequest
-    ) -> AuthorizationResponse:
-        """Evaluate one trusted Agent request without mutating grant state."""
-
-        subject = (
-            self._config.subjects_by_access_profile.get(request_principal.access_profile_id)
-            if request_principal.access_profile_id is not None
-            else None
-        )
-        if subject is None:
-            raise KubernetesAuthorizationUnavailableError(
-                "Kubernetes authorization is not configured for the Agent access profile"
-            )
-        try:
-            async with asyncio.timeout(self._config.timeout_seconds):
-                result = await self._sar_client.review(subject=subject, attributes=request.attributes)
-        except TimeoutError as error:
-            raise KubernetesAuthorizationUnavailableError("Kubernetes authorization timed out") from error
-        except KubernetesAuthorizationUnavailableError:
-            raise
-        except Exception as error:
-            raise KubernetesAuthorizationUnavailableError("Kubernetes authorization evaluation failed") from error
-        decision_id = f"sar:{uuid4()}"
-        if request.attributes.resource_request:
-            logger.info(
-                "Kubernetes standing-policy decision request_principal=%s subject=%s "
-                "decision_id=%s allowed=%s verb=%s namespace=%s resource=%s subresource=%s name=%s",
-                request_principal,
-                subject.username,
-                decision_id,
-                result.allowed,
-                request.attributes.verb,
-                request.attributes.namespace,
-                request.attributes.resource,
-                request.attributes.subresource,
-                request.attributes.name,
-            )
-        else:
-            logger.info(
-                "Kubernetes standing-policy decision request_principal=%s subject=%s "
-                "decision_id=%s allowed=%s verb=%s path=%s",
-                request_principal,
-                subject.username,
-                decision_id,
-                result.allowed,
-                request.attributes.verb,
-                request.attributes.path,
-            )
-        if result.allowed:
-            return AuthorizationResponse(
-                allowed=True, reason=result.reason, source=KubernetesAuthorizationSource.SAR, decision_id=decision_id
-            )
-
-        # A normal SAR denial is the only point at which temporary authority may add access.
-        # Matching is read-only: the repository query excludes expired rows.
-        try:
-            grant = await self._grants.match_request(
-                request_principal=request_principal,
-                required_scope=request.required_scope,
-                required_rules=request.required_rules,
-            )
-        except Exception as error:
-            raise KubernetesAuthorizationUnavailableError("Kubernetes grant authority is unavailable") from error
-        if grant.allowed and grant.grant_id is not None:
-            grant_decision_id = f"grant:{grant.grant_id}"
-            logger.info(
-                "Kubernetes temporary-grant decision request_principal=%s decision_id=%s allowed=true valid_until=%s",
-                request_principal,
-                grant_decision_id,
-                grant.expires_at,
-            )
-            return AuthorizationResponse(
-                allowed=True,
-                reason=grant.reason,
-                source=KubernetesAuthorizationSource.GRANT,
-                decision_id=grant_decision_id,
-                valid_until=grant.expires_at,
-            )
-        return AuthorizationResponse(
-            allowed=False, reason=result.reason, source=KubernetesAuthorizationSource.SAR, decision_id=decision_id
-        )
-
-    async def aclose(self) -> None:
-        await self._sar_client.aclose()
-
-
-def _bearer_token(value: str) -> str | None:
-    scheme, separator, token = value.partition(" ")
-    if scheme.lower() != "bearer" or not separator or not token.strip():
-        return None
-    return token.strip()
 
 
 def required_rule(attributes: RequestAttributes) -> Rule:
