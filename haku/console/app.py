@@ -603,13 +603,12 @@ def create_app(
                 ),
             )
         )
-        if session_service is not None and session_sandboxes_tools.HAKU_SESSION_SANDBOXES_SERVER_ID in configured_server_ids:
+        if (
+            session_service is not None
+            and session_sandboxes_tools.HAKU_SESSION_SANDBOXES_SERVER_ID in configured_server_ids
+        ):
             sandbox_session_observer = sandbox_observer.SandboxSessionObserver(
-                session_service,
-                session_claims,
-                db_engine,
-                console_event_hub,
-                operator_identity_store.list_active_ids,
+                session_service, session_claims, db_engine, console_event_hub, operator_identity_store.list_active_ids
             )
     validate_in_process_server_bindings(console_config, in_process_servers)
     # The console's one path out to its configured MCP servers. Executing a tool and reflecting a

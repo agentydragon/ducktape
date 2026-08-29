@@ -32,13 +32,7 @@ SESSION_2 = UUID("22222222-2222-2222-2222-222222222222")
 SESSION_3 = UUID("33333333-3333-3333-3333-333333333333")
 
 ACCESS = InProcessServerAccessPolicy(
-    (
-        AccessProfile(
-            id="haku",
-            auto_approval_policy="manual",
-            in_process_server_ids={HAKU_SESSION_SANDBOXES_SERVER_ID},
-        ),
-    )
+    (AccessProfile(id="haku", auto_approval_policy="manual", in_process_server_ids={HAKU_SESSION_SANDBOXES_SERVER_ID}),)
 )
 
 

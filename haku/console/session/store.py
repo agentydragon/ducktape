@@ -1744,12 +1744,7 @@ class Store:
         ]
 
     async def list_active_sessions(
-        self,
-        operator_id: UUID,
-        *,
-        before_created_at: datetime | None,
-        before_session_id: UUID | None,
-        limit: int,
+        self, operator_id: UUID, *, before_created_at: datetime | None, before_session_id: UUID | None, limit: int
     ) -> list[ActiveSessionRecord]:
         """List allocated, not-yet-ended sessions owned by one Operator.
 
@@ -1759,7 +1754,7 @@ class Store:
         notion of a running session.
         """
         query = (
-            select(Session, Conversation.runtime_kind)
+            select(Session, Conversation.harness_kind)
             .join(Conversation, Conversation.conversation_id == Session.conversation_id)
             .where(
                 Session.operator_id == operator_id,
@@ -1783,8 +1778,7 @@ class Store:
                     (
                         await db.scalars(
                             select(ConversationTurn.session_id).where(
-                                ConversationTurn.session_id.in_(session_ids),
-                                ConversationTurn.ended_at.is_(None),
+                                ConversationTurn.session_id.in_(session_ids), ConversationTurn.ended_at.is_(None)
                             )
                         )
                     ).all()

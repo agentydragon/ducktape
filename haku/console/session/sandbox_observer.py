@@ -53,10 +53,7 @@ class SandboxSessionObserver:
             logger.exception("could not enumerate Operators for sandbox inventory invalidation")
             return
         await asyncio.gather(
-            *(
-                self._event_hub.broadcast(operator_id, [SandboxSessionsChangedEvent()])
-                for operator_id in operator_ids
-            )
+            *(self._event_hub.broadcast(operator_id, [SandboxSessionsChangedEvent()]) for operator_id in operator_ids)
         )
 
     async def _watch(self, claim: SandboxClaims, queue: asyncio.Queue[None], stop: asyncio.Event) -> None:
@@ -76,8 +73,7 @@ class SandboxSessionObserver:
     async def _observe(self, stop: asyncio.Event) -> None:
         queue: asyncio.Queue[None] = asyncio.Queue()
         tasks = [
-            asyncio.create_task(self._watch(claim, queue, stop), name="sandbox-session-watch")
-            for claim in self._claims
+            asyncio.create_task(self._watch(claim, queue, stop), name="sandbox-session-watch") for claim in self._claims
         ]
         try:
             while not stop.is_set():

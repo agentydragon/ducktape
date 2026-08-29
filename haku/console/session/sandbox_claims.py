@@ -11,6 +11,7 @@ more than an exception that replaces the whole view.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
@@ -353,10 +354,8 @@ class KubernetesSandboxClaims:
                         raise
                     except Exception:
                         logger.warning("Kubernetes sandbox watch failed; retrying", exc_info=True)
-                        try:
+                        with contextlib.suppress(TimeoutError):
                             await asyncio.wait_for(stop.wait(), timeout=1)
-                        except asyncio.TimeoutError:
-                            pass
                     finally:
                         watcher.stop()
 
@@ -386,10 +385,7 @@ class KubernetesSandboxClaims:
                     name=f"sandbox-watch-{self._spec.runtime_label}",
                 ),
                 asyncio.create_task(
-                    watch_source(
-                        clients.core_v1.list_namespaced_pod,
-                        namespace=self._spec.namespace,
-                    ),
+                    watch_source(clients.core_v1.list_namespaced_pod, namespace=self._spec.namespace),
                     name=f"sandbox-pod-watch-{self._spec.runtime_label}",
                 ),
             ]
@@ -397,9 +393,7 @@ class KubernetesSandboxClaims:
                 while not stop.is_set():
                     get_event = asyncio.create_task(queue.get())
                     stop_wait = asyncio.create_task(stop.wait())
-                    done, pending = await asyncio.wait(
-                        (get_event, stop_wait), return_when=asyncio.FIRST_COMPLETED
-                    )
+                    done, pending = await asyncio.wait((get_event, stop_wait), return_when=asyncio.FIRST_COMPLETED)
                     for task in pending:
                         task.cancel()
                     await asyncio.gather(*pending, return_exceptions=True)

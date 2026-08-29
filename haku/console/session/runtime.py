@@ -412,13 +412,8 @@ class SessionService:
         )
 
     async def list_active_sandboxes(
-        self,
-        operator_id: UUID,
-        *,
-        before_created_at: datetime | None,
-        before_session_id: UUID | None,
-        limit: int,
-    ) -> list["ActiveSandboxRecord"]:
+        self, operator_id: UUID, *, before_created_at: datetime | None, before_session_id: UUID | None, limit: int
+    ) -> list[ActiveSandboxRecord]:
         """Project the operator's allocated sessions with their current claim observations."""
         records: list[ActiveSandboxRecord] = []
         cursor_created_at = before_created_at
