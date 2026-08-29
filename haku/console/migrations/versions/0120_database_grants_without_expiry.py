@@ -3,8 +3,8 @@
 An absent ``expires_at`` is a permanent grant, not a distinct grant source or lifecycle
 variant. It remains subject to the ordinary ``ended_at`` end fact.
 
-Revision ID: 0119
-Revises: 0118
+Revision ID: 0120
+Revises: 0119
 """
 
 from __future__ import annotations
@@ -12,8 +12,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0119"
-down_revision: str | None = "0118"
+revision: str = "0120"
+down_revision: str | None = "0119"
 branch_labels: str | None = None
 depends_on: str | None = None
 
