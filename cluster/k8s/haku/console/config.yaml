@@ -55,10 +55,12 @@ harnesses:
     ca_bundle: /egress-proxy-ca/ca-certificates.crt
     # Only cluster-internal control-plane hosts stay direct. LiteLLM is deliberately NOT here: its
     # traffic goes through the fence for key substitution, admitted despite its internal ClusterIP by
-    # the LiteLLM standing policy's allow_prohibited_address flag (#5073). forgejo-http.forgejo is
-    # spelled out (the bare service name does not end in `.svc`) so the haku-state checkout stays
-    # direct; the bootstrap runs with pod env and has no proxy.
-    no_proxy: 127.0.0.1,localhost,haku-console.haku-console.svc.cluster.local,haku-kube-api-proxy.haku-console.svc.cluster.local,forgejo-http.forgejo,forgejo-http.forgejo.svc.cluster.local
+    # the LiteLLM standing policy's allow_prohibited_address flag (#5073). Forgejo is deliberately
+    # NOT here either (#4710): the CLI's runtime git/REST traffic to both Forgejo origins traverses
+    # the fence, admitted by the haku-forgejo standing policy (allow_prohibited_address for the
+    # internal service). The bootstrap's haku-state checkout is unaffected — it runs with pod env
+    # and has no proxy.
+    no_proxy: 127.0.0.1,localhost,haku-console.haku-console.svc.cluster.local,haku-kube-api-proxy.haku-console.svc.cluster.local
     # Claude connects directly to Console's existing streamable-HTTP MCP endpoint with the
     # per-session bearer injected into this sandbox through SandboxClaim.spec.env. Its MCP variable
     # is an alias of the runner bearer, not a second credential. Console resolves it to the session's
