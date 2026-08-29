@@ -2,12 +2,12 @@
 # so a run over a converged tree is a no-op and any diff or unresolvable import
 # here means the PR hand-edited managed rules or skipped the gazelle run.
 #
-# Deliberately its own workflow on a plain runner: the released gazelle binary
-# comes from `nix build .#gazelle` — the flake's `artifacts.gazelle` fetchurl
-# carries the pin's sha256 (nix/artifact-pins.json), so nix is the download and
-# the digest check in one, with no secrets and no substituter beyond
-# cache.nixos.org — no Bazel, no BuildBuddy, and a red drift check neither
-# blocks nor delays bazel-ci.
+# Deliberately its own workflow on a plain runner: `nix profile install
+# .#gazelle` puts the released binary on PATH — the flake's `artifacts.gazelle`
+# fetchurl carries the pin's sha256 (nix/artifact-pins.json), so nix is the
+# download and the digest check in one, with no secrets and no substituter
+# beyond cache.nixos.org — no Bazel, no BuildBuddy, and a red drift check
+# neither blocks nor delays bazel-ci.
 name: Gazelle diff
 "on":
   pull_request: {}
@@ -42,14 +42,14 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
-      - name: Build pinned gazelle
+      - name: Install pinned gazelle
         if: steps.gate.outputs.skip == ''
-        run: nix build .#gazelle
+        run: nix profile install .#gazelle
 
       - name: Gazelle --mode=diff
         if: steps.gate.outputs.skip == ''
         run: |
-          if ! result/bin/gazelle --mode=diff; then
+          if ! gazelle --mode=diff; then
             echo "::error::BUILD files drifted from gazelle; run: gazelle (devshell) or bb run //devinfra:gazelle"
             exit 1
           fi

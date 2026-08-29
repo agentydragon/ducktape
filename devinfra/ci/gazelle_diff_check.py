@@ -2,9 +2,10 @@
 
 Runs on a plain GitHub Actions runner (stdlib only, no Bazel) and emits
 `skip=<reason>` to GITHUB_OUTPUT when the check cannot be meaningful; the
-workflow then skips fetching and running the binary. The binary itself comes
-from `nix build .#gazelle` — the flake's `artifacts.gazelle` fetchurl carries
-the pin's sha256, so nix is the download and the digest check in one.
+workflow then skips fetching and running the binary. The binary itself lands
+on PATH via `nix profile install .#gazelle` — the flake's `artifacts.gazelle`
+fetchurl carries the pin's sha256, so nix is the download and the digest check
+in one.
 
 - `bootstrap`: no `gazelle` pin exists in this tree — the release lands from a
   devel push and sync-pins publishes the pin afterwards, so trees from before
