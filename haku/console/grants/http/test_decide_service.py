@@ -129,23 +129,25 @@ def _harness(
     sessions = cast(async_sessionmaker[AsyncSession], app.state.db_sessions)
     assert client.portal is not None
     agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
-    grants = GrantService(PostgresGrantRepository(sessions), max_lifetime=timedelta(hours=1), clock=lambda: _NOW)
-    grants = config_grants(agent_id) if config_grants is not None else []
+    database_grants = GrantService(
+        PostgresGrantRepository(sessions), max_lifetime=timedelta(hours=1), clock=lambda: _NOW
+    )
+    config_grant_entries = config_grants(agent_id) if config_grants is not None else []
     decide = HttpDecideService(
         catalog=GrantCatalog(
             kubernetes_grants=cast(Any, app.state.kubernetes_grants),
-            http_grants=grants,
-            http_config_grants=tuple(grants),
+            http_grants=database_grants,
+            http_config_grants=tuple(config_grant_entries),
         ),
         credentials=LoadedEgressDecide(
             fence_credential=SecretStr(_FENCE),
             credentials=credentials(agent_id) if credentials is not None else [],
-            grants=grants,
+            grants=config_grant_entries,
         ),
         prohibited_cidrs=prohibited_cidrs,
         agent_bearer_authority=cast(Any, _BridgeBearerAuthority(agent_id=agent_id, binding_id=binding_id)),
     )
-    return _Harness(decide=decide, grants=grants, sessions=sessions, agent_id=agent_id, binding_id=binding_id)
+    return _Harness(decide=decide, grants=database_grants, sessions=sessions, agent_id=agent_id, binding_id=binding_id)
 
 
 def _create_grants(client: Any, harness: _Harness, *specs: GrantSpec, expires_at: datetime) -> tuple[UUID, ...]:
