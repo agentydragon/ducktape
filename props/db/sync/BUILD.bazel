@@ -22,18 +22,6 @@ py_library(
 )
 
 py_library(
-    name = "export",
-    srcs = ["export.py"],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        "//props/core:ids",
-        "//props/db:models",
-        "@pypi//pyyaml",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
     name = "stats",
     srcs = ["stats.py"],
     visibility = ["//props:__subpackages__"],
