@@ -15,12 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from haku.console.database_schema import McpOperatorOAuthAssociation, McpOperatorOAuthFlow, OAuthTokenState, Operator
 from haku.console.identity.operator_identity import InactiveOperatorError, OperatorStatus
-from haku.console.mcp.config import (
-    DynamicOAuthClientRegistration,
-    McpServerEntry,
-    RemoteMcpBackend,
-    RemoteServerOAuthAuth,
-)
 from haku.console.mcp.operator_oauth import (
     McpOperatorAuthConnected,
     McpOperatorAuthDegraded,
@@ -29,6 +23,12 @@ from haku.console.mcp.operator_oauth import (
     _OperatorOAuthTokenClient,
     _refresh_operator_oauth_token,
     _token_request_auth,
+)
+from haku.console.mcp_config import (
+    DynamicOAuthClientRegistration,
+    McpServerEntry,
+    RemoteMcpBackend,
+    RemoteServerOAuthAuth,
 )
 from haku.console.oauth.token_state import (
     PostgresTokenStateStore,

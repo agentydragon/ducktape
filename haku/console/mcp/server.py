@@ -70,7 +70,16 @@ from haku.console.mcp.approval import (
     server_metadata_response,
 )
 from haku.console.mcp.catalog_reconciler import OperatorCatalogReconciler
-from haku.console.mcp.config import (
+from haku.console.mcp.guidance import SERVER_INSTRUCTIONS, approval_request_preamble
+from haku.console.mcp.operator_oauth import McpOperatorAuthStatus, PostgresMcpOperatorOAuthStore
+from haku.console.mcp.tool_call_service import (
+    AgentActorRequiredError,
+    BackendAccountNotConnectedError,
+    ToolCallApplicationService,
+    ToolCallNotFoundError,
+    ToolCallStateConflictError,
+)
+from haku.console.mcp_config import (
     InProcessBackend,
     InProcessCredential,
     McpServerEntry,
@@ -83,15 +92,6 @@ from haku.console.mcp.config import (
     _load_servers,
     load_console_config,
     server_tool_prefix,
-)
-from haku.console.mcp.guidance import SERVER_INSTRUCTIONS, approval_request_preamble
-from haku.console.mcp.operator_oauth import McpOperatorAuthStatus, PostgresMcpOperatorOAuthStore
-from haku.console.mcp.tool_call_service import (
-    AgentActorRequiredError,
-    BackendAccountNotConnectedError,
-    ToolCallApplicationService,
-    ToolCallNotFoundError,
-    ToolCallStateConflictError,
 )
 from haku.console.oauth.provider_connection import PostgresProviderConnectionStore, ProviderConnectionStatus
 from haku.console.tool_call_actor import OperatorActor, RuntimeActor

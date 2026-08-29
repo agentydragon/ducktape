@@ -52,6 +52,11 @@ tree shows the packages, §3 and §4 settle what the files and classes inside th
   database_schema.py  database_migrate.py  migrations/  pydantic_column.py  models.py
                                                         # schema stays central; ORM row classes
                                                         #   carry the …Row suffix at definition (§3)
+  mcp_config.py                                         # `ConsoleConfigFile` (deploy-YAML model) + `AccessProfile` (spanning the
+                                                        #   auto-approval / recall-index / in-process-server / chat-runtime grants) + the
+                                                        #   `AutoApprovalPolicy` classes + static-agent config — cross-subsystem, imported well
+                                                        #   outside mcp/, so console-level, NOT under mcp/; keeps the mcp_ disambiguator (a bare
+                                                        #   config.py collides with the console config.py above). Boundary landed C15.
 
   identity/            # canonical Operator/Agent authority — see <agent_authority.md>
     operator.py  operator_auth.py  operator_login_flow.py  authentik_operator_token.py
@@ -74,7 +79,7 @@ tree shows the packages, §3 and §4 settle what the files and classes inside th
     http/              # models, repository, service, routes, decide_{config,routes,service}
 
   mcp/                 # the MCP transport surface — approval / audit / execution machinery only
-    server.py  approval.py  config.py  catalog_reconciler.py  guidance.py  mount.py  reflection_cache.py
+    server.py  approval.py  catalog_reconciler.py  guidance.py  mount.py  reflection_cache.py
     tool_call_service.py           # the actor-scoped lifecycle boundary
     execution.py                   # McpExecutionCaller/Context (was mcp_execution.py)  [#4836 parts 2-3]
     in_process_servers.py  in_process_server_access.py  operator_oauth.py  export_tool_schemas.py
@@ -481,11 +486,16 @@ Needs operator go **and** the `<auth-context>` name pick.
   namespaces + connector + docs in a coordinated cutover; "Haku" kept as agent config; redirect/compat
   for external refs. The tool-id de-Haku rides C12.
 - **C15 · Remainder packaging (#4924)** _(mechanical)_ — Landed: `oauth/` (#5000),
-  `notifications/` (#5001), `hostexecd/` (#5002); `mcp/` — the MCP transport surface
-  (the `mcp_*` modules, `tool_call_service`, `in_process_servers`/`in_process_server_access`,
-  `export_tool_schemas`); and, alongside it at console level, the domain-capability packages
-  `tools/` (in-process tool servers) and `auto_approval/` (the auto-approval policy registry) —
-  these are console capabilities, not MCP transport, so they sit beside `mcp/`, not under it. Each
+  `notifications/` (#5001), `hostexecd/` (#5002); `mcp/` — the MCP transport surface, folding only
+  genuinely transport-specific modules (`server`, `approval`, `catalog_reconciler`, `guidance`, `mount`,
+  `reflection_cache`, `operator_oauth`, `execution`, `tool_call_service`, `in_process_servers` /
+  `in_process_server_access`, `export_tool_schemas`); its config module stays at console level as
+  `mcp_config.py` (`ConsoleConfigFile` + `AccessProfile` + the `AutoApprovalPolicy` classes +
+  static-agent config — cross-subsystem, imported well outside `mcp/`; keeps the `mcp_` disambiguator,
+  since a bare `config.py` collides with the console `config.py`), NOT folded under `mcp/`; and,
+  alongside `mcp/` at console level, the domain-capability packages `tools/` (in-process tool servers)
+  and `auto_approval/` (the auto-approval policy registry) — these are console capabilities, not MCP
+  transport, so they sit beside `mcp/`, not under it. Each
   a one-file `py_library` with the `mcp_` file-prefix dropped per §4.1; the `McpExecution*` entity
   reshape stays with C8, so `execution.py` keeps its class names for now. `tool_call_actor.py`
   (→ `identity/`, C8) and the recall read path (`recall_index_{reader,access}.py` → `tools/recall/`,

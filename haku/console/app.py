@@ -74,7 +74,13 @@ from haku.console.identity.fastmcp_adapter import HakuMcpActorResolver, install_
 from haku.console.identity.operator_identity import OperatorIdentityTrust
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.mcp import approval, catalog_reconciler, mount, operator_oauth, server, tool_call_service
-from haku.console.mcp.config import (
+from haku.console.mcp.in_process_servers import (
+    HostexecServerConfig,
+    InProcessServerDependencies,
+    SandboxServerConfig,
+    build_in_process_servers,
+)
+from haku.console.mcp_config import (
     InProcessBackend,
     InProcessServers,
     LoadedStaticAgent,
@@ -83,12 +89,6 @@ from haku.console.mcp.config import (
     load_console_config,
     load_static_agents,
     validate_in_process_server_bindings,
-)
-from haku.console.mcp.in_process_servers import (
-    HostexecServerConfig,
-    InProcessServerDependencies,
-    SandboxServerConfig,
-    build_in_process_servers,
 )
 from haku.console.models import ChatLaunchOption, ConfigResponse
 from haku.console.notifications import connection_metrics, console_events, push, push_routes

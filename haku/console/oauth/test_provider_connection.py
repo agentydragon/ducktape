@@ -17,7 +17,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from haku.console.config import ProviderOAuthClientConfig
 from haku.console.database_schema import ProviderConnection
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.mcp.config import (
+from haku.console.mcp.tool_call_service import BackendAccountNotConnectedError, backend_auth_for_operator
+from haku.console.mcp_config import (
     ConsoleConfigFile,
     InProcessBackend,
     McpServerEntry,
@@ -25,7 +26,6 @@ from haku.console.mcp.config import (
     OperatorConnectionDefinition,
     OperatorConnectionProviderDefinition,
 )
-from haku.console.mcp.tool_call_service import BackendAccountNotConnectedError, backend_auth_for_operator
 from haku.console.oauth import provider_connection as provider_connection_module
 from haku.console.oauth.provider_connection import PostgresProviderConnectionStore, load_provider_clients
 from haku.console.oauth.provider_connection_registry import ProviderConnectionKind

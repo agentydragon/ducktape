@@ -21,14 +21,14 @@ import haku.console.tools.routine as routine_tools
 import haku.console.tools.sandbox as sandbox_tools
 from haku.console.config import HostexecConfig
 from haku.console.conversation_read_access import ConversationReadAccessPolicy
-from haku.console.mcp.config import (
+from haku.console.mcp.in_process_server_access import InProcessServerAccessPolicy
+from haku.console.mcp_config import (
     AccessProfile,
     InProcessCredentialKind,
     InProcessServerRegistration,
     InProcessServers,
     const_in_process_server,
 )
-from haku.console.mcp.in_process_server_access import InProcessServerAccessPolicy
 from haku.console.recall_index_access import RecallIndexAccessPolicy
 from haku.console.tools.hostexec_client import HostexecClient, NodeDaemonBroker
 from haku.console.tools.hostexec_token import HostexecJwtBearerExchanger

@@ -21,7 +21,7 @@ from haku.console.auto_approval.registry import (
     ToolAutoApprovalMode,
     auto_approve_tool_call,
 )
-from haku.console.mcp.config import AccessProfile, ConsoleConfigFile
+from haku.console.mcp_config import AccessProfile, ConsoleConfigFile
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tools.gmail import build_mcp
 from haku.console.tools.google_calendar import build_mcp as build_calendar_mcp

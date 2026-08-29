@@ -38,7 +38,7 @@ from haku.console.database_schema import ProviderConnection, ProviderConnectionF
 from haku.console.deps import SettingsDep
 from haku.console.identity.operator_auth import OperatorActorDep
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.mcp.config import (
+from haku.console.mcp_config import (
     ConsoleConfigFile,
     OperatorConnectionDefinition,
     OperatorConnectionProviderDefinition,

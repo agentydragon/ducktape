@@ -24,16 +24,6 @@ from haku.console.identity.agent import AgentStatus, CredentialBindingStatus, Cr
 from haku.console.identity.authentik_operator_token import PostgresAuthentikOperatorTokenStore
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.mcp.approval import PostgresToolCallLedger
-from haku.console.mcp.config import (
-    AccessProfile,
-    InProcessCredentialKind,
-    InProcessServerRegistration,
-    InProcessServers,
-    McpServerEntry,
-    McpServerNotFoundError,
-    NoCredential,
-    RemoteMcpBackend,
-)
 from haku.console.mcp.execution import AgentMcpExecutionCaller, McpExecutionContext
 from haku.console.mcp.tool_call_service import (
     AgentActorRequiredError,
@@ -42,6 +32,16 @@ from haku.console.mcp.tool_call_service import (
     ToolCallApplicationService,
     ToolCallNotFoundError,
     ToolCallStateConflictError,
+)
+from haku.console.mcp_config import (
+    AccessProfile,
+    InProcessCredentialKind,
+    InProcessServerRegistration,
+    InProcessServers,
+    McpServerEntry,
+    McpServerNotFoundError,
+    NoCredential,
+    RemoteMcpBackend,
 )
 from haku.console.oauth.provider_connection import PostgresProviderConnectionStore
 from haku.console.oauth.token_state import PostgresTokenStateStore

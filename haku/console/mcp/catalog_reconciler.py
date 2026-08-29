@@ -16,10 +16,10 @@ from haku.console.mcp.approval import (
     ServerReflection,
     metadata_for_operator,
 )
-from haku.console.mcp.config import McpServerEntry
 from haku.console.mcp.operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp.reflection_cache import ReflectedCatalog
 from haku.console.mcp.tool_call_service import ProviderConnectionTokenStore
+from haku.console.mcp_config import McpServerEntry
 from haku.console.notifications.console_events import (
     ConsoleEvent,
     McpOperatorAuthChangedEvent,

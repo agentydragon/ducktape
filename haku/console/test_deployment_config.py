@@ -11,7 +11,7 @@ from haku.console.channels.matrix.worker import AdapterSettings
 from haku.console.config import ClaudeCodeImplementationConfig, OperatorIdentityConfig, OperatorOidcConfig, Settings
 from haku.console.indexer import ChunkSettings, EmbedSettings, IndexerRole
 from haku.console.indexer_config import IndexerConfigFile, load_indexer_config
-from haku.console.mcp.config import ConsoleConfigFile
+from haku.console.mcp_config import ConsoleConfigFile
 from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
 from util.bazel.runfiles import get_required_path
 

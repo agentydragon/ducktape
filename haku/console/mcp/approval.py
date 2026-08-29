@@ -42,19 +42,6 @@ from haku.console.database_schema import (
 from haku.console.identity.agent import AgentStatus, CredentialBindingStatus
 from haku.console.identity.operator_auth import OperatorActorDep
 from haku.console.identity.operator_identity import OperatorStatus
-from haku.console.mcp.config import (
-    InProcessBackend,
-    InProcessServers,
-    McpServerEntry,
-    McpServerNotFoundError,
-    NoCredential,
-    OperatorConnectionCredential,
-    OperatorLoginIdentityCredential,
-    RemoteServerOAuthAuth,
-    StaticBearerAuth,
-    _credential_token,
-    _transport,
-)
 from haku.console.mcp.execution import McpExecutionContext, mcp_execution_request_meta
 from haku.console.mcp.operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp.reflection_cache import ReflectedCatalog, ReflectionCache, ReflectionCacheKey
@@ -68,6 +55,19 @@ from haku.console.mcp.tool_call_service import (
     ToolCallPageCursor,
     ToolCallStateConflictError,
     backend_auth_for_operator,
+)
+from haku.console.mcp_config import (
+    InProcessBackend,
+    InProcessServers,
+    McpServerEntry,
+    McpServerNotFoundError,
+    NoCredential,
+    OperatorConnectionCredential,
+    OperatorLoginIdentityCredential,
+    RemoteServerOAuthAuth,
+    StaticBearerAuth,
+    _credential_token,
+    _transport,
 )
 from haku.console.session.status import SessionStatus
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor

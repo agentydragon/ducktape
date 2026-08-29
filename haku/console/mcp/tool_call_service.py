@@ -22,7 +22,13 @@ from haku.console.auto_approval.registry import AutoApprovalPolicyRegistry, Poli
 from haku.console.config import Settings
 from haku.console.grants.kubernetes.authorization import KubernetesAuthorizationService
 from haku.console.grants.principal import RequestPrincipal
-from haku.console.mcp.config import (
+from haku.console.mcp.execution import (
+    AgentMcpExecutionCaller,
+    McpExecutionCaller,
+    McpExecutionContext,
+    OperatorMcpExecutionCaller,
+)
+from haku.console.mcp_config import (
     InProcessBackend,
     InProcessServers,
     McpServerEntry,
@@ -34,12 +40,6 @@ from haku.console.mcp.config import (
     _credential_token,
     _server_entry,
     load_console_config,
-)
-from haku.console.mcp.execution import (
-    AgentMcpExecutionCaller,
-    McpExecutionCaller,
-    McpExecutionContext,
-    OperatorMcpExecutionCaller,
 )
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_calls import (

@@ -215,7 +215,6 @@ py_test(
         "//haku/console/conversation:prompt_origin",
         "//haku/console/harnesses:kind",
         "//haku/console/identity:authorization",
-        "//haku/console/mcp:config",
         "//haku/console/notifications:session_wakes",
         "//haku/console/x:runtime",
         "//haku/console/x/codex_app_server:config",

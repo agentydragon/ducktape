@@ -10,7 +10,7 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from haku.console.harnesses.kind import HarnessKind
-from haku.console.mcp.config import ConsoleConfigFile
+from haku.console.mcp_config import ConsoleConfigFile
 
 _AGENT = UUID("00000000-0000-4000-8000-000000000001")
 

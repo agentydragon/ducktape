@@ -56,7 +56,7 @@ their heading, never by position — positions change as entries come and go.
 
 Durable Haku Agent/access-profile standing identity; deploy-selected after Agent
 authentication, with the same RBAC as Haku's OIDC and runtime identities.
-Source of truth: <../console/mcp/config.py>, <../../cluster/k8s/haku/console/config.yaml>,
+Source of truth: <../console/mcp_config.py>, <../../cluster/k8s/haku/console/config.yaml>,
 Kubernetes RoleBindings under <../../cluster/k8s/>.
 
 ### OIDC group `oidc-ksbx-groups:haku`
@@ -137,7 +137,7 @@ under the console's reviewed policy; every other Tana tool (node edits, moves, d
 tag creation) stays approval-gated, executing under the approving Operator's own linked
 Tana account. Supersedes the standalone `tana-mcp-ro` facade — no separate
 Deployment/secret/route.
-Source of truth: <../console/auto_approval/>, <../console/mcp/config.py>.
+Source of truth: <../console/auto_approval/>, <../console/mcp_config.py>.
 
 ### `grocy-sf` server entry
 
@@ -149,7 +149,7 @@ identity (`grocy-mcp-haku-sf` Authentik provider + JWT rotation) — that creden
 never reach writes at all; console routing trades a server-side permission scope for an
 allowlist gate, in exchange for approval-gated write access every runtime can now reach.
 Source of truth: <../console/auto_approval/>, <../../cluster/k8s/haku/console/config.yaml>,
-<../console/mcp/config.py>.
+<../console/mcp_config.py>.
 
 ### `sandbox` in-process server
 
@@ -169,7 +169,7 @@ therefore gains only the removal of the per-call operator tap within its existin
 RBE — source never leaves the cluster). The server itself is credential-free: Console's
 own ServiceAccount holds the claim/exec RBAC (client in `haku/sandbox`, tools in
 <../console/tools/sandbox.py>).
-Source of truth: <../console/auto_approval/>, <../console/mcp/config.py>,
+Source of truth: <../console/auto_approval/>, <../console/mcp_config.py>,
 <../../cluster/k8s/haku/console/config.yaml>, <../../cluster/k8s/haku/workspaces/>.
 
 ### Agent-facing `withdraw_tool_call` (`/mcp`)
