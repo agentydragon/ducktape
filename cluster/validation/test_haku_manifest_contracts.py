@@ -1081,6 +1081,30 @@ def test_haku_console_deployment_version_contract(k8s_dir: Path) -> None:
         assert all_image_policy_text.count(marker) == expected_count, f"missing or duplicated Flux marker: {marker}"
 
 
+def test_haku_console_runtime_observer_rbac_contract(k8s_dir: Path) -> None:
+    """The active-session observer has only namespaced, read-only graph observation access."""
+    workspaces_dir = k8s_dir / "haku" / "workspaces" / "app"
+    role = yaml.safe_load((workspaces_dir / "haku-console-runtime-claim-role.yaml").read_text(encoding="utf-8"))
+    binding = yaml.safe_load(
+        (workspaces_dir / "haku-console-runtime-claim-rolebinding.yaml").read_text(encoding="utf-8")
+    )
+
+    assert role["metadata"] == {"name": "haku-console-runtime-claims", "namespace": "haku-runtime-sandbox"}
+    permissions = {(tuple(rule["apiGroups"]), tuple(rule["resources"])): set(rule["verbs"]) for rule in role["rules"]}
+    assert permissions == {
+        (("extensions.agents.x-k8s.io",), ("sandboxclaims",)): {"create", "delete", "get", "list", "patch", "watch"},
+        (("agents.x-k8s.io",), ("sandboxes",)): {"get", "list", "watch"},
+        (("",), ("pods",)): {"get", "list", "watch"},
+    }
+    assert binding["metadata"] == {"name": "haku-console-runtime-claims", "namespace": "haku-runtime-sandbox"}
+    assert binding["roleRef"] == {
+        "apiGroup": "rbac.authorization.k8s.io",
+        "kind": "Role",
+        "name": "haku-console-runtime-claims",
+    }
+    assert binding["subjects"] == [{"kind": "ServiceAccount", "name": "haku-console", "namespace": "haku-console"}]
+
+
 def _secret_refs(container: dict[str, Any]) -> set[str]:
     return {
         entry["valueFrom"]["secretKeyRef"]["name"]

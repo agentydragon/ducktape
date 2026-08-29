@@ -77,10 +77,10 @@ spec:
       # took ~2s. Costs no availability — the database is node-pinned here anyway.
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
-      # Narrow runtime identity: create/delete/get SandboxClaims and read
+      # Narrow runtime identity: create/delete/get/observe SandboxClaims and read
       # their assigned Sandbox + Pod in the dedicated haku-runtime-sandbox namespace so the
-      # Operator UI can explain provisioning. It has no list/watch, Secret, log, exec, or
-      # SandboxTemplate access.
+      # Operator UI can explain provisioning and invalidate active-session projections. It has no
+      # Secret, log, exec, or SandboxTemplate access.
       serviceAccountName: haku-console
       automountServiceAccountToken: true
       # Room for a graceful shutdown to hand chat-session leases back before SIGKILL: the app

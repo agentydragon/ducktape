@@ -149,6 +149,8 @@ filegroup(
         "haku/runtime-namespace/networkpolicy.yaml",
         "haku/runtime-namespace/resourcequota.yaml",
         "haku/workspaces/app/flux-kustomization.yaml",
+        "haku/workspaces/app/haku-console-runtime-claim-role.yaml",
+        "haku/workspaces/app/haku-console-runtime-claim-rolebinding.yaml",
         "haku/workspaces/app/sandboxtemplate-haku.yaml",
         "haku/workspaces/app/sandboxtemplate-haku-claude.yaml",
         "haku/workspaces/app/sandboxtemplate-haku-public-coder-codex.yaml",
