@@ -1,8 +1,9 @@
-# Haku Console's chrome-free approvals window and GNOME Shell launcher.
+# Haku Console's chrome-free approvals desktop application.
 {
   config,
   ducktapePackages,
   lib,
+  pkgs,
   ...
 }:
 let
@@ -16,9 +17,19 @@ in
   config = lib.mkIf cfg.enable {
     home.packages = [ ducktapePackages.hakuApprovals ];
 
-    programs.gnome-shell.extensions = [
-      { package = ducktapePackages.hakuApprovals; }
-    ];
-
+    xdg.autostart = {
+      enable = true;
+      entries = [
+        (pkgs.writeText "haku-approvals.desktop" ''
+          [Desktop Entry]
+          Type=Application
+          Name=Haku Approvals
+          Comment=Monitor pending Haku tool-call approvals
+          Exec=haku-approvals --background
+          Terminal=false
+          X-GNOME-Autostart-enabled=true
+        '')
+      ];
+    };
   };
 }

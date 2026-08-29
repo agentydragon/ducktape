@@ -76,8 +76,9 @@ Changing either output changes the release identity and publishes both assets.
 
 **`haku-approvals`**
 
-The GNOME Shell extension, native GTK/WebKit window, desktop entry, symbolic
-icon, and canonical Haku logo come out of the Bazel-built
+The native GTK/WebKit application, desktop entry, app icon, and canonical Haku
+logo come out of the Bazel-built
 `//haku/console/gnome:haku_approvals_zip` archive. The Nix package consumes
 that release artifact and installs its contents; it does not maintain a second
-source-based copy of the desktop assets.
+source-based copy of the desktop assets. Session autostart is managed by the
+Home Manager module rather than by the package itself.
