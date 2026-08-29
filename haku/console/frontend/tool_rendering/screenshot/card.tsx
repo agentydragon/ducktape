@@ -105,7 +105,7 @@ export function PreviewCard({ fixture, variant }: { fixture: PreviewFixture; var
               args={args}
               variant={variant}
               onVariantChange={noop}
-              status={finished ? { label: "OK", color: "teal" } : { label: "Pending", color: "yellow" }}
+              status={finished ? "ok" : "pending_approval"}
               result={storedResult ?? undefined}
             />
           </div>

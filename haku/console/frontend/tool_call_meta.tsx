@@ -1,5 +1,5 @@
-import { formatTimestamp } from "./approval_state";
 import { Field } from "./field";
+import { formatTimestamp } from "./time";
 
 /** The provenance a tool call carries that isn't about *what it does* — who asked, the exact
  * request time, and the canonical id. Rarely needed while triaging, so it rides behind one

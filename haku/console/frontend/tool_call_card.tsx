@@ -1,8 +1,14 @@
 import { Group, Loader, Stack, Text } from "@mantine/core";
 import type { ReactNode, Ref } from "react";
 
-import { showsAutoApprovalEvaluation, type ApprovalDisplayFields } from "./approval_state";
+import {
+  showsAutoApprovalEvaluation,
+  statusColor,
+  terminalStatusLabel,
+  type ApprovalDisplayFields,
+} from "./approval_state";
 import { ToolCallAgentProvider } from "./agent_names";
+import type { ToolCallRecord } from "./client";
 import { ClockIcon, CloseIcon, SyncCurrentIcon, SyncErrorIcon } from "./icons";
 import { RawArgumentsDisclosure, ToolArgumentsField } from "./tool_arguments_field";
 import { ToolCallMeta } from "./tool_call_meta";
@@ -24,15 +30,17 @@ import { VariantControl } from "./variant_control";
  * one combined widget (tool_rendering's call registry) that owns both states; `toolCallPreview`
  * renders it in place of the separate fields when one matches, and the raw-JSON disclosures stay
  * available either way. */
-function ToolCallStatus({ label, color }: { label: string; color: string }): JSX.Element {
+function ToolCallStatus({ status }: { status: ToolCallRecord["status"] }): JSX.Element {
+  const label = terminalStatusLabel(status);
+  const color = statusColor(status);
   const icon =
-    label === "Running" ? (
+    status === "running" ? (
       <Loader size={14} color={color} />
-    ) : label === "Error" ? (
+    ) : status === "error" ? (
       <SyncErrorIcon size={16} color={color} />
-    ) : label === "OK" ? (
+    ) : status === "ok" ? (
       <SyncCurrentIcon size={16} color={color} />
-    ) : label === "Denied" || label === "Withdrawn" ? (
+    ) : status === "denied" || status === "withdrawn" ? (
       <CloseIcon size={16} color={color} />
     ) : (
       <ClockIcon size={16} color={color} />
@@ -59,7 +67,7 @@ export function ToolCallCard({
   args: Record<string, unknown>;
   variant: PreviewVariant;
   onVariantChange: (v: PreviewVariant) => void;
-  status: { label: string; color: string };
+  status: ToolCallRecord["status"];
   error?: string | null;
   result?: unknown;
   footer?: ReactNode;
@@ -78,18 +86,12 @@ export function ToolCallCard({
               fw={600}
               size="sm"
               className="haku-tool-call-title"
-              c={
-                action?.destructive || status.label === "Error"
-                  ? "red"
-                  : status.label === "Running"
-                    ? "blue"
-                    : undefined
-              }
+              c={action?.destructive || status === "error" ? "red" : status === "running" ? "blue" : undefined}
             >
               {fields.title}
             </Text>
             <Group className="haku-tool-call-summary-actions" gap="xs" align="center" wrap="nowrap">
-              <ToolCallStatus label={status.label} color={status.color} />
+              <ToolCallStatus status={status} />
               <VariantControl variant={variant} onChange={onVariantChange} />
             </Group>
           </div>

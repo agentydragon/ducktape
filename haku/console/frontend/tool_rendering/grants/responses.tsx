@@ -1,10 +1,10 @@
 import { Group, Stack } from "@mantine/core";
 import type { z } from "zod";
 
-import { formatTimestamp } from "../../approval_state";
 import { Field } from "../../field";
 import { GrantPrincipalLabel } from "../../grant_principal";
 import { mcpToolResultSchema, type McpToolResultFor } from "../../mcp_tool_result_schema";
+import { formatTimestamp } from "../../time";
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry";
 import { GRANTS_SERVER_ID } from "../server_ids";
 import {
@@ -58,7 +58,15 @@ function GrantCoverage({ view, variant }: { view: GrantView; variant: PreviewVar
   return <HttpGrantCoverage spec={view.grant.spec} />;
 }
 
-function GrantResult({ view, variant }: { view: GrantView; variant: PreviewVariant }) {
+function GrantResult({
+  view,
+  variant,
+  showCoverage,
+}: {
+  view: GrantView;
+  variant: PreviewVariant;
+  showCoverage: boolean;
+}) {
   const grant = view.grant;
   const endedAt = grant.ended_at;
   return (
@@ -70,12 +78,14 @@ function GrantResult({ view, variant }: { view: GrantView; variant: PreviewVaria
         </PreviewBadge>
         <PreviewBadge variant="outline">{view.domain}</PreviewBadge>
       </Group>
-      <GrantCoverage view={view} variant={variant} />
+      {showCoverage && <GrantCoverage view={view} variant={variant} />}
       {variant === "detailed" && (
         <Stack gap={2}>
-          <Field label="Applies to">
-            <GrantPrincipalLabel principal={grant.principal} />
-          </Field>
+          {showCoverage && (
+            <Field label="Applies to">
+              <GrantPrincipalLabel principal={grant.principal} />
+            </Field>
+          )}
           <Timestamp label="Created" value={grant.created_at} />
           {grant.expires_at ? (
             <Timestamp label="Expires" value={grant.expires_at} />
@@ -90,13 +100,21 @@ function GrantResult({ view, variant }: { view: GrantView; variant: PreviewVaria
   );
 }
 
-function GrantsResult({ grants, variant }: { grants: GrantView[]; variant: PreviewVariant }) {
+function GrantsResult({
+  grants,
+  variant,
+  showCoverage,
+}: {
+  grants: GrantView[];
+  variant: PreviewVariant;
+  showCoverage: boolean;
+}) {
   const shown = variant === "compact" ? grants.slice(0, COMPACT_ITEM_LIMIT) : grants;
   return (
     <Stack gap="xs">
       <PreviewText c="dimmed">{plural(grants.length, "grant")} returned</PreviewText>
       {shown.map((view) => (
-        <GrantResult key={view.grant.grant_id} view={view} variant={variant} />
+        <GrantResult key={view.grant.grant_id} view={view} variant={variant} showCoverage={showCoverage} />
       ))}
       <MoreLine count={grants.length - shown.length} />
     </Stack>
@@ -104,11 +122,11 @@ function GrantsResult({ grants, variant }: { grants: GrantView[]; variant: Previ
 }
 
 function CreateGrantResult({ result, variant }: ResultPreviewProps<z.infer<typeof zCreateGrantResult>>) {
-  return <GrantsResult grants={result} variant={variant} />;
+  return <GrantsResult grants={result} variant={variant} showCoverage={false} />;
 }
 
 function RevokeGrantsResult({ result, variant }: ResultPreviewProps<z.infer<typeof zRevokeGrantsResult>>) {
-  return <GrantsResult grants={result} variant={variant} />;
+  return <GrantsResult grants={result} variant={variant} showCoverage />;
 }
 
 export const grantsResultPreviews: {

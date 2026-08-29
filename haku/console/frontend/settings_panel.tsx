@@ -1,7 +1,6 @@
 import { Badge, Button, Group, Loader, Select, Stack, Table, Tabs, Text } from "@mantine/core";
 import { useCallback, useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 
-import { shortDate } from "./approval_state";
 import { useAsyncResource, type AsyncResource, type AsyncResourceLoader } from "./async_resource";
 import {
   connectMcpOperatorAuth,
@@ -20,6 +19,7 @@ import { useConsoleEvents } from "./console_events";
 import { GrantsPanel } from "./grants_panel";
 import { ExternalLink } from "./link";
 import { usePushNotifications, type PushState } from "./push_subscription";
+import { formatTimestamp, shortDate } from "./time";
 import {
   getIndexStatus,
   getMcpServerStatus,
@@ -313,9 +313,9 @@ const DAEMON_STATUS_COLOR: Record<DaemonStatus["status"], string> = {
 };
 
 function DaemonRow({ daemon }: { daemon: DaemonStatus }) {
-  const seen = daemon.last_heartbeat_at ? shortDate(daemon.last_heartbeat_at) : null;
+  const seen = daemon.last_heartbeat_at ? formatTimestamp(daemon.last_heartbeat_at) : null;
   return (
-    <Table.Tr>
+    <Table.Tr className="haku-node-row">
       <Table.Td data-slot="primary" className="haku-dense-primary">
         <Text fw={600} size="sm">
           {daemon.display_name}
@@ -326,9 +326,13 @@ function DaemonRow({ daemon }: { daemon: DaemonStatus }) {
           {daemon.status}
         </Badge>
       </Table.Td>
-      <Table.Td data-slot="secondary" className="haku-dense-secondary">
-        <Text size="sm">{daemon.version ? `hostexecd ${daemon.version}` : "Never connected"}</Text>
-        <Text size="xs">{seen ? `heartbeat ${seen}` : "No heartbeat"}</Text>
+      <Table.Td data-slot="version" className="haku-dense-secondary haku-dense-version">
+        <Text size="sm">{daemon.version ?? "—"}</Text>
+      </Table.Td>
+      <Table.Td data-slot="heartbeat" className="haku-dense-secondary haku-dense-heartbeat">
+        <Text size="sm" title={seen?.title}>
+          {seen?.text ?? "—"}
+        </Text>
       </Table.Td>
       <Table.Td data-slot="action" className="haku-dense-action">
         {daemon.active_execution_id ? (
@@ -1156,7 +1160,8 @@ export function SettingsPanel(): JSX.Element {
                   <Table.Tr>
                     <Table.Th>Node</Table.Th>
                     <Table.Th>Status</Table.Th>
-                    <Table.Th>Version / heartbeat</Table.Th>
+                    <Table.Th>Version</Table.Th>
+                    <Table.Th>Heartbeat</Table.Th>
                     <Table.Th>Active work</Table.Th>
                   </Table.Tr>
                 </Table.Thead>

@@ -813,6 +813,11 @@
   font-size: var(--mantine-font-size-xs);
 }
 
+.haku-node-row .haku-dense-version,
+.haku-node-row .haku-dense-heartbeat {
+  min-width: 9rem;
+}
+
 .haku-dense-table .haku-dense-status {
   min-width: 10rem;
   white-space: nowrap;
@@ -864,7 +869,7 @@
     border-top: 0;
   }
 
-  .haku-dense-table td {
+  .haku-dense-table tbody td {
     padding: 0;
     border: 0;
   }
@@ -891,6 +896,32 @@
 
   .haku-dense-table td[data-slot="extra"] {
     grid-area: extra;
+  }
+
+  .haku-dense-table tr.haku-node-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "primary primary"
+      "status status"
+      "version heartbeat"
+      "action action";
+  }
+
+  .haku-dense-table tr.haku-node-row td[data-slot="version"] {
+    grid-area: version;
+  }
+
+  .haku-dense-table tr.haku-node-row td[data-slot="heartbeat"] {
+    grid-area: heartbeat;
+  }
+
+  .haku-node-row .haku-dense-version,
+  .haku-node-row .haku-dense-heartbeat {
+    min-width: 0;
+  }
+
+  .haku-dense-table tr.haku-node-row td[data-slot="action"] {
+    text-align: left;
   }
 
   .haku-provisioning-header {

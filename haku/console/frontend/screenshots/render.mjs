@@ -20,7 +20,6 @@ import {
   assertNetworkSettled,
   prepareDeterministicPage,
   screenshotElement,
-  settle,
   waitForStable,
 } from "../../../../util/testing/frontend_visual/capture.mjs";
 import {
@@ -79,7 +78,7 @@ const SCENES = [
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,
     clicks: ['[role="tab"]::-p-text(Grants)'],
-    expectVisible: "::-p-text(Namespaces: public-coder-agent)",
+    expectVisible: "::-p-text(Public Coder)",
     frame: true,
   },
   {
@@ -135,6 +134,14 @@ const SCENES = [
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,
     clicks: ['[role="tab"]::-p-text(Nodes)'],
+    expectVisible: "::-p-text(wyrm2)",
+    frame: true,
+  },
+  {
+    name: "settings-nodes-mobile",
+    viewport: { width: 390, height: 900 },
+    closeApprovals: true,
+    clickTabText: "Nodes",
     expectVisible: "::-p-text(wyrm2)",
     frame: true,
   },
@@ -426,6 +433,7 @@ try {
       fullPage = false,
       frame,
       scrollToBottom,
+      clickTabText,
       typeInto,
     } of SCENES) {
       const page = await browser.newPage();
@@ -464,9 +472,18 @@ try {
           if (!hakuFrame) throw new Error(`scene ${name}: mocked Haku UI iframe did not load`);
           await hakuFrame.waitForSelector("main", { timeout: 10_000 });
         }
-        // Let Mantine mount and layout settle, and outlast the approval buttons' 400ms arm
-        // delay so they render enabled (animations are reduced above).
-        await settle(700);
+        // Wait for the initial fetches and paint rather than guessing how long the first render
+        // takes. This also gives approval cards a chance to arm without coupling the harness to
+        // their implementation delay.
+        await waitForStable(page);
+        await assertNetworkSettled(page, { context: `scene ${name}` });
+        await page.waitForFunction(
+          () =>
+            [...document.querySelectorAll("button")]
+              .filter((button) => /^(Approve|Deny)$/.test(button.textContent?.trim() ?? ""))
+              .every((button) => !button.disabled),
+          { timeout: 5_000 }
+        );
         // Close the drawer BEFORE the clicks below, not after. The drawer renders its own tool-call
         // cards, so while it is open its controls shadow the page's — `page.click` takes the first
         // match in DOM order, and a scene meant to toggle a history row would silently toggle the
@@ -480,21 +497,46 @@ try {
         // A scene whose subject is what a control does with operator input has to supply that input
         // first — a composer's Send stays disabled until something is typed.
         if (typeInto) {
+          await page.waitForSelector(typeInto.selector, { visible: true, timeout: 5_000 });
           await page.type(typeInto.selector, typeInto.text);
-          await settle(150);
+          await waitForStable(page);
         }
         // Some scenes need clicks to reveal state internal to a component: a popover's open state
-        // (location-sharing control) or history rows toggled into their detailed view.
-        // Each click re-renders the DOM, so re-settle before the next one.
-        for (const selector of clicks ?? (click ? [click] : [])) {
+        // (location-sharing control) or history rows toggled into their detailed view. Each click
+        // re-renders the DOM, so wait for its network and paint state before the next one.
+        const sceneClicks = clicks ?? (click ? [click] : []);
+        if (clickTabText) {
+          await page.evaluate((label) => {
+            const tab = [...document.querySelectorAll('[role="tab"]')].find(
+              (candidate) => candidate.textContent?.trim() === label
+            );
+            if (!tab) throw new Error(`No tab found for ${label}`);
+            tab.scrollIntoView({ block: "nearest", inline: "nearest" });
+            tab.click();
+          }, clickTabText);
+          await page.waitForFunction(
+            (label) =>
+              [...document.querySelectorAll('[role="tab"]')].some(
+                (candidate) =>
+                  candidate.textContent?.trim() === label && candidate.getAttribute("aria-selected") === "true"
+              ),
+            { timeout: 5_000 },
+            clickTabText
+          );
+          await page.mouse.move(0, 0);
+          await waitForStable(page);
+          await assertNetworkSettled(page, { context: `scene ${name}` });
+        }
+        for (const selector of sceneClicks) {
           await page.click(selector);
-          await settle(300);
+          await waitForStable(page);
+          await assertNetworkSettled(page, { context: `scene ${name}` });
           // `page.click` leaves the cursor on the element it clicked, so any Tooltip attached to it
           // opens and stays open into the capture — in the sync/session scenes that put a tooltip
           // squarely over the panel heading it had just revealed. Park the cursor off-canvas so a
           // scene captures its post-click state, not a hover state nobody asked for.
           await page.mouse.move(0, 0);
-          await settle(150);
+          await waitForStable(page);
         }
         // A click that lands on the wrong element fails silently — `page.click` only throws when
         // nothing matches at all — and so does one whose effect arrives asynchronously and never
@@ -502,7 +544,7 @@ try {
         // that clicks must also state what the clicks were for; `expectVisible` is its own proof.
         if (expectVisible) {
           await page.waitForSelector(expectVisible, { visible: true, timeout: 5_000 });
-        } else if (clicks ?? click) {
+        } else if (clicks ?? click ?? clickTabText) {
           throw new Error(`scene ${name}: has clicks but no expectVisible — assert what they reveal`);
         }
         if (frame) {
@@ -514,10 +556,9 @@ try {
           await page.waitForSelector('[aria-label="Syncing"]', { hidden: true, timeout: 5_000 });
         }
         // The settings scene's MCP server list resolves through two chained async mock-fetch
-        // rounds (list, then a per-connection status probe) — occasionally still in flight past
-        // the fixed 700ms settle under RBE scheduling jitter, capturing a spinner instead of the
-        // resolved status. Waiting for these loaders to clear is a no-op on scenes that never had
-        // them: `hidden: true` is already satisfied for a selector that was never in the DOM.
+        // rounds (list, then a per-connection status probe). Waiting for these loaders to clear
+        // is a no-op on scenes that never had them: `hidden: true` is already satisfied for a
+        // selector that was never in the DOM.
         await page.waitForSelector('[aria-label="Loading MCP servers"]', { hidden: true, timeout: 5_000 });
         await page.waitForSelector('[aria-label="Loading Agents"]', { hidden: true, timeout: 5_000 });
         await page.waitForSelector('[aria-label="Loading Agent enrollment"]', { hidden: true, timeout: 5_000 });
@@ -529,7 +570,7 @@ try {
           await page.$eval(scrollToBottom, (element) => {
             element.scrollTop = element.scrollHeight;
           });
-          await settle(400);
+          await waitForStable(page);
         }
         // The capture gate: nothing in flight, nothing recorded against the mocks, nothing escaped
         // to the real network, and fonts/images/paint stable — a violation fails the scene naming

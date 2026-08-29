@@ -2,11 +2,12 @@ import { Badge, Button, Code, Group, Loader, SegmentedControl, Select, Stack, Ta
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { displayableError, fetchGrants, revokeGrant, type Grant, type GrantPrincipal } from "./client";
-import { formatTimestamp } from "./approval_state";
+import { useAgentNames } from "./agent_names";
 import { CodeBlock } from "./code_block";
 import { GrantPrincipalLabel } from "./grant_principal";
 import { ExternalLink } from "./link";
 import { toolCallPath } from "./routing";
+import { formatTimestamp } from "./time";
 import { toastError, toastSuccess } from "./toast";
 
 export type GrantHistoryFilter = "active" | "history" | "all";
@@ -98,10 +99,10 @@ function principalKey(principal: GrantPrincipal): string {
   return JSON.stringify(principal);
 }
 
-function principalLabel(principal: GrantPrincipal): string {
+function principalLabel(principal: GrantPrincipal, agentNames: ReadonlyMap<string, string>): string {
   switch (principal.kind) {
     case "agent":
-      return `Agent ${principal.agent_id}`;
+      return `Agent ${agentNames.get(principal.agent_id) ?? "Unknown agent"}`;
     case "session":
       return `Session ${principal.session_id}`;
     case "access_profile":
@@ -223,6 +224,7 @@ function GrantRow({
 }
 
 export function GrantsPanel(): JSX.Element {
+  const agentNames = useAgentNames();
   const [allGrants, setAllGrants] = useState<Grant[] | null>(null);
   const [grants, setGrants] = useState<Grant[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -254,9 +256,9 @@ export function GrantsPanel(): JSX.Element {
   const principals = useMemo(() => {
     const byKey = new Map((allGrants ?? []).map((grant) => [principalKey(grant.subject), grant.subject]));
     return [...byKey.entries()]
-      .map(([value, principal]) => ({ value, label: principalLabel(principal) }))
+      .map(([value, principal]) => ({ value, label: principalLabel(principal, agentNames) }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [allGrants]);
+  }, [agentNames, allGrants]);
 
   const principalsByKey = useMemo(
     () => new Map((allGrants ?? []).map((grant) => [principalKey(grant.subject), grant.subject])),

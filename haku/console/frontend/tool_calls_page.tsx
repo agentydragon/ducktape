@@ -1,7 +1,7 @@
 import { Button, Checkbox, Group, Loader, Text } from "@mantine/core";
 import { useCallback, useRef, useState } from "react";
 
-import { approvalDisplayFields, statusColor, terminalStatusLabel } from "./approval_state";
+import { approvalDisplayFields } from "./approval_state";
 import { displayableError, fetchToolCalls, type ToolCallPage, type ToolCallRecord } from "./client";
 import { useCoalescedRefresh } from "./coalesced_refresh";
 import { PendingToolCallActions } from "./pending_tool_call_actions";
@@ -65,10 +65,7 @@ function ToolCallRow({
       args={record.arguments}
       variant={variant}
       onVariantChange={setVariant}
-      status={{
-        label: deciding ? "Running" : terminalStatusLabel(record.status),
-        color: deciding ? "blue" : statusColor(record.status),
-      }}
+      status={deciding ? "running" : record.status}
       error={record.error}
       result={record.result}
       footer={pending ? <PendingToolCallActions busy={deciding} onApprove={onApprove} onDeny={onDeny} /> : null}

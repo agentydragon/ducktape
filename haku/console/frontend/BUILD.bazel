@@ -228,6 +228,14 @@ ts_library(
 )
 
 ts_library(
+    name = "time",
+    srcs = ["time.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = ["//:node_modules/date-fns"],
+)
+
+ts_library(
     name = "async_resource",
     srcs = ["async_resource.ts"],
     isolated_typecheck = True,
@@ -588,8 +596,8 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":approval_state",
         ":field",
+        ":time",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -670,6 +678,7 @@ ts_library(
         ":pending_tool_call_actions",
         ":routing",
         ":theme",
+        ":time",
         ":tool_call_card",
         ":variant_control",
         "//:node_modules/@mantine/core",
@@ -717,12 +726,13 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":approval_state",
+        ":agent_names",
         ":client",
         ":code_block",
         ":grant_principal",
         ":link",
         ":routing",
+        ":time",
         ":toast",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -736,7 +746,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":approval_state",
         ":async_resource",
         ":client",
         ":console_events",
@@ -746,6 +755,7 @@ ts_library(
         ":open_external",
         ":push_subscription",
         ":session_sandboxes_client",
+        ":time",
         ":toast",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -1099,6 +1109,17 @@ ts_library(
 )
 
 ts_library(
+    name = "time_test",
+    srcs = ["time.test.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":time",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "bridge_test_lib",
     srcs = ["bridge.test.ts"],
     isolated_typecheck = True,
@@ -1417,6 +1438,7 @@ vitest_bin.vitest_test(
         ":shell_chrome_test",
         ":sw_test",
         ":tana_client_test",
+        ":time_test",
         ":tool_call_decision_test",
         ":tool_calls_page_test",
         "//:node_modules/@haku/console-bridge",

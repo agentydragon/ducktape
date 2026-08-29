@@ -133,6 +133,7 @@ function sceneElement(scene: string) {
     case "settings-sessions-terminate":
     case "settings-notifications":
     case "settings-nodes":
+    case "settings-nodes-mobile":
     case "settings-system":
       return <ConsoleScene view="settings" />;
     case "conversations":

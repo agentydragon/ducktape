@@ -397,7 +397,7 @@ export const SAMPLE_GRANTS: GrantListResponse = {
         kind: "database",
         id: "50000000-0000-4000-8000-000000000005",
         tool_call_id: "tc_0123456789abcdef01234567",
-        created_at: "2026-08-22T00:35:00Z",
+        created_at: "2025-02-01T11:35:00Z",
       },
       subject: { kind: "agent", agent_id: "30000000-0000-4000-8000-000000000003" },
       coverage: {
@@ -420,14 +420,14 @@ export const SAMPLE_GRANTS: GrantListResponse = {
           },
         ],
       },
-      validity: { ends_at: "2026-08-22T02:05:00Z", status: "active", ended_at: null, end_reason: null },
+      validity: { ends_at: "2025-02-02T02:05:00Z", status: "active", ended_at: null, end_reason: null },
     },
     {
       source: {
         kind: "database",
         id: "50000000-0000-4000-8000-000000000007",
         tool_call_id: "tc_0123456789abcdef01234567",
-        created_at: "2026-08-22T00:35:00Z",
+        created_at: "2025-02-01T11:35:00Z",
       },
       subject: { kind: "agent", agent_id: "30000000-0000-4000-8000-000000000003" },
       coverage: {
@@ -443,14 +443,14 @@ export const SAMPLE_GRANTS: GrantListResponse = {
           },
         ],
       },
-      validity: { ends_at: "2026-08-22T02:05:00Z", status: "active", ended_at: null, end_reason: null },
+      validity: { ends_at: "2025-02-02T02:05:00Z", status: "active", ended_at: null, end_reason: null },
     },
     {
       source: {
         kind: "database",
         id: "50000000-0000-4000-8000-000000000006",
         tool_call_id: "tc_1123456789abcdef01234567",
-        created_at: "2026-08-21T21:00:00Z",
+        created_at: "2025-01-31T21:00:00Z",
       },
       subject: { kind: "session", session_id: "60000000-0000-4000-8000-000000000006" },
       coverage: {
@@ -467,9 +467,9 @@ export const SAMPLE_GRANTS: GrantListResponse = {
         ],
       },
       validity: {
-        ends_at: "2026-08-21T22:00:00Z",
+        ends_at: "2025-01-31T22:00:00Z",
         status: "ended",
-        ended_at: "2026-08-21T21:20:00Z",
+        ended_at: "2025-01-31T21:20:00Z",
         end_reason: "Pilot complete; return to standard diagnostics.",
       },
     },
@@ -493,7 +493,7 @@ export const SAMPLE_DAEMONS: DaemonStatus[] = [
     daemon_id: "wyrm2",
     display_name: "wyrm2",
     status: "busy",
-    last_heartbeat_at: "2026-07-19T16:42:00Z",
+    last_heartbeat_at: "2025-02-01T11:58:00Z",
     version: "0.1.0",
     backends: ["hostexec"],
     active_execution_id: "8c8b5bc2-8b0c-4e89-9f1b-8129fa28d255",
@@ -502,7 +502,7 @@ export const SAMPLE_DAEMONS: DaemonStatus[] = [
     daemon_id: "rugged",
     display_name: "rugged",
     status: "offline",
-    last_heartbeat_at: "2026-07-19T14:10:00Z",
+    last_heartbeat_at: "2025-01-31T14:10:00Z",
     version: "0.1.0",
     backends: ["hostexec"],
     active_execution_id: null,

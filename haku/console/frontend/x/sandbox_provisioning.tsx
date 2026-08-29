@@ -1,7 +1,7 @@
 import { Badge, Group, Loader, Table, Text } from "@mantine/core";
 
 import type { Conversation } from "../client";
-import { formatTimestamp } from "../approval_state";
+import { formatTimestamp } from "../time";
 
 type Provisioning = NonNullable<Conversation["provisioning"]>;
 
@@ -31,7 +31,7 @@ function readiness(value: boolean | null | undefined, pending: string): { color:
 
 function inspectionAge(inspectedAt: string): { text: string; title: string } | null {
   const timestamp = formatTimestamp(inspectedAt);
-  return timestamp.text === "just now" ? null : { text: `stale · ${timestamp.text}`, title: timestamp.title };
+  return timestamp.isFresh ? null : { text: `stale · ${timestamp.text}`, title: timestamp.title };
 }
 
 /** What Kubernetes says about a sandbox still coming up.

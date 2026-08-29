@@ -45,9 +45,13 @@ export function AgentNamesProvider({
   return <AgentNamesContext.Provider value={names}>{children}</AgentNamesContext.Provider>;
 }
 
+export function useAgentNames(): AgentNames {
+  return useContext(AgentNamesContext);
+}
+
 /** Render a friendly Agent name while retaining the UUID as non-default detail. */
 export function AgentName({ agentId, displayName }: { agentId: string; displayName?: string }): JSX.Element {
-  const names = useContext(AgentNamesContext);
+  const names = useAgentNames();
   const name = displayName ?? names.get(agentId) ?? "Unknown";
   return <span title={`Agent UUID: ${agentId}`}>{name}</span>;
 }

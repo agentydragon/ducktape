@@ -51,8 +51,8 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//haku/console/frontend:approval_state",
         "//haku/console/frontend:client",
+        "//haku/console/frontend:time",
     ],
 )
 
