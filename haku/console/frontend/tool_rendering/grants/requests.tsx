@@ -153,7 +153,7 @@ function CreateGrantPreview({ args, variant }: PreviewProps<CreateGrantArgs>) {
           {args.principal.kind === "agent"
             ? "the Agent"
             : args.principal.kind === "session"
-              ? "this session"
+              ? `session ${args.principal.session_id}`
               : `access profile ${args.principal.access_profile_id}`}
         </PreviewBadge>
       </Group>
