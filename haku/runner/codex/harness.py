@@ -283,48 +283,20 @@ def _thread_params(launch: HarnessLaunch) -> dict[str, Any]:
     Model, reasoning effort and developer instructions ride in the launch environment under
     `codex.options`' keys: the runner owns `thread/start` now, so what the console's `CodexThread`
     used to send it travels to the runner rather than staying console-side.
-
-    The model is required and must be provider-qualified (`_require_qualified_model`): an absent one
-    lets Codex fall back to its sandbox `config.toml` default, and a bare slug is not on the cluster
-    LiteLLM key's allowlist — either reaches LiteLLM as an un-allowlisted model and is rejected 403
-    for the whole session. Reasoning effort and developer instructions stay optional: absent, Codex
-    uses its configured default.
     """
     params: dict[str, Any] = {
         "cwd": launch.cwd,
         "approvalPolicy": _APPROVAL_POLICY,
         "sandbox": _SANDBOX,
         "ephemeral": True,
-        "model": _require_qualified_model(launch.environment.get(CODEX_MODEL_ENV)),
     }
+    if model := launch.environment.get(CODEX_MODEL_ENV):
+        params["model"] = model
     if effort := launch.environment.get(CODEX_REASONING_EFFORT_ENV):
         params["config"] = {"model_reasoning_effort": effort}
     if instructions := launch.environment.get(CODEX_DEVELOPER_INSTRUCTIONS_ENV):
         params["developerInstructions"] = instructions
     return params
-
-
-def _require_qualified_model(model: str | None) -> str:
-    """The provider-qualified `thread/start` model, or a loud failure naming the expected form.
-
-    The cluster LiteLLM virtual key allowlists only provider-qualified `<provider>/<lane>/<name>`
-    slugs (the Codex Responses lane, `chatgpt/oai-responses/<name>`), so a bare model — or none,
-    which lets Codex fall back to its sandbox `config.toml` default — is rejected 403 at the first
-    turn and every turn after. Failing here turns that whole-session provider rejection into one
-    named launch error at the seam that composes the request Codex sends to LiteLLM.
-    """
-    if not model:
-        raise CodexAppServerError(
-            "codex thread/start requires an explicit provider-qualified model "
-            "(<provider>/<lane>/<name>); none was set, so Codex would fall back to its sandbox "
-            "config default and the cluster LiteLLM key would reject it"
-        )
-    segments = model.split("/")
-    if len(segments) < 3 or not all(segments):
-        raise CodexAppServerError(
-            f"codex thread/start model {model!r} is not provider-qualified; expected <provider>/<lane>/<name>"
-        )
-    return model
 
 
 def _as_object(value: Any, what: str) -> dict[str, Any]:

@@ -49,7 +49,6 @@ py_test(
         ":harness",
         ":options",
         "//:conftest",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
