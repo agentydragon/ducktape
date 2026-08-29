@@ -25,7 +25,7 @@ from haku.console.conversation.item_vocabulary import ItemStatus, ItemType
 from haku.console.conversation.prompt_origin import SPA_ORIGIN
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.notifications.conversation_wakes import ConversationWakes
-from haku.console.session.conftest import attach_channel
+from haku.console.session.conftest import TEST_ACCESS_PROFILE_ID, TEST_AGENT_ID, attach_channel
 from haku.console.session.conversation_views import (
     ConversationFollowMessage,
     ConversationSnapshot,
@@ -73,7 +73,12 @@ def _prose(items: list[Item]) -> list[str]:
 
 
 async def _started(session_store: Store, operator_id: UUID) -> tuple[UUID, UUID]:
-    view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
+    view, token = await session_store.create(
+        operator_id,
+        agent_id=TEST_AGENT_ID,
+        access_profile_id=TEST_ACCESS_PROFILE_ID,
+        harness_kind=HarnessKind.CLAUDE_CODE,
+    )
     await session_store.authenticate_bridge(view.session_id, token)
     return view.session_id, await session_store.conversation_of(view.session_id)
 
@@ -325,7 +330,12 @@ async def test_a_sandbox_still_coming_up_is_read_again_with_no_wake_to_carry_it(
     """Kubernetes writes no `conversation_event` row when a pod goes ready, so a follower waiting only
     for wakes would show a provisioning panel frozen at whatever it opened on — during exactly the
     phase that panel exists for."""
-    view, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
+    view, _ = await session_store.create(
+        operator_id,
+        agent_id=TEST_AGENT_ID,
+        access_profile_id=TEST_ACCESS_PROFILE_ID,
+        harness_kind=HarnessKind.CLAUDE_CODE,
+    )
     conversation_id = await session_store.conversation_of(view.session_id)
     messages = following.follow(operator_id, conversation_id)
 

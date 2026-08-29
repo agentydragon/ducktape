@@ -24,19 +24,28 @@ from haku.console.database_migrate import apply_migrations, sync_database_url
 _NOW = datetime.datetime(2026, 8, 27, tzinfo=datetime.UTC)
 
 
-def _session(conn: Connection) -> tuple[UUID, UUID]:
+def _session(conn: Connection, *, head_schema: bool = False) -> tuple[UUID, UUID]:
     operator_id, conversation_id, session_id = uuid4(), uuid4(), uuid4()
     conn.execute(
         text("INSERT INTO operators (operator_id, status, created_at, updated_at) VALUES (:id, 'active', :n, :n)"),
         {"id": operator_id, "n": _NOW},
     )
-    conn.execute(
-        text(
-            "INSERT INTO conversation (conversation_id, operator_id, runtime_kind, created_at)"
-            " VALUES (:id, :operator_id, 'claude_code', :n)"
-        ),
-        {"id": conversation_id, "operator_id": operator_id, "n": _NOW},
-    )
+    if head_schema:
+        conn.execute(
+            text(
+                "INSERT INTO conversation (conversation_id, operator_id, harness_kind, runtime_kind, created_at)"
+                " VALUES (:id, :operator_id, 'claude_code', 'claude_code', :n)"
+            ),
+            {"id": conversation_id, "operator_id": operator_id, "n": _NOW},
+        )
+    else:
+        conn.execute(
+            text(
+                "INSERT INTO conversation (conversation_id, operator_id, runtime_kind, created_at)"
+                " VALUES (:id, :operator_id, 'claude_code', :n)"
+            ),
+            {"id": conversation_id, "operator_id": operator_id, "n": _NOW},
+        )
     conn.execute(
         text(
             """
@@ -101,7 +110,7 @@ def test_0106_rejects_a_reused_runner_item_id(db_url: str) -> None:
     engine = create_engine(sync_database_url(db_url))
     try:
         with engine.begin() as conn:
-            conversation_id, session_id = _session(conn)
+            conversation_id, session_id = _session(conn, head_schema=True)
             runner_item_id = uuid4()
             _open_item(conn, conversation_id, session_id, runner_item_id)
             with pytest.raises(IntegrityError, match="uq_conversation_item_runner"), conn.begin_nested():
@@ -115,7 +124,7 @@ def test_0106_inbox_admission_is_paired_and_text_nonempty(db_url: str) -> None:
     engine = create_engine(sync_database_url(db_url))
     try:
         with engine.begin() as conn:
-            conversation_id, _session_id = _session(conn)
+            conversation_id, _session_id = _session(conn, head_schema=True)
 
             def submit(text_value: str, admitted_at: datetime.datetime | None) -> None:
                 conn.execute(

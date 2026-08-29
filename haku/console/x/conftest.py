@@ -13,4 +13,5 @@ from haku.console.session.conftest import (
     recording_claims,
     session_store,
     session_wakes,
+    test_agent,
 )
