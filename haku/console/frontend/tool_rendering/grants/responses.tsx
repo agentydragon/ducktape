@@ -2,6 +2,7 @@ import { Group, Stack } from "@mantine/core";
 import type { z } from "zod";
 
 import { formatTimestamp } from "../../approval_state";
+import { AgentName } from "../../agent_names";
 import { Field } from "../../field";
 import { mcpToolResultSchema, type McpToolResultFor } from "../../mcp_tool_result_schema";
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry";
@@ -51,12 +52,22 @@ function Timestamp({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function principalText(principal: GrantPrincipal): string {
+export function PrincipalLabel({
+  principal,
+  agentDisplayName,
+}: {
+  principal: GrantPrincipal;
+  agentDisplayName?: string;
+}): JSX.Element {
   switch (principal.kind) {
     case "agent":
-      return `Agent ${principal.agent_id}`;
+      return (
+        <>
+          Agent <AgentName agentId={principal.agent_id} displayName={agentDisplayName} />
+        </>
+      );
     case "session":
-      return `Session ${principal.session_id}`;
+      return <>Session {principal.session_id}</>;
   }
 }
 
@@ -84,7 +95,9 @@ function GrantResult({ view, variant }: { view: GrantView; variant: PreviewVaria
       <GrantCoverage view={view} variant={variant} />
       {variant === "detailed" && (
         <Stack gap={2}>
-          <Field label="Applies to">{principalText(grant.principal)}</Field>
+          <Field label="Applies to">
+            <PrincipalLabel principal={grant.principal} />
+          </Field>
           <Timestamp label="Created" value={grant.created_at} />
           <Timestamp label="Expires" value={grant.expires_at} />
           {endedAt && <Timestamp label="Ended" value={endedAt} />}

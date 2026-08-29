@@ -2,6 +2,7 @@ import { Group, Stack } from "@mantine/core";
 import type { z } from "zod";
 
 import { Field } from "../../field";
+import { AgentName } from "../../agent_names";
 import { mcpToolSchema, type McpToolArgumentsFor } from "../../mcp_tool_schema";
 import { definePreview, type ToolPreview } from "../entry";
 import { GRANTS_SERVER_ID } from "../server_ids";
@@ -192,8 +193,8 @@ function RevokeGrantsPreview({ args, variant }: PreviewProps<RevokeGrantsArgs>) 
       </Group>
       <GrantIdList ids={args.grant_ids} variant={variant} />
       {args.owner_agent_id && (
-        <Field label="Owner agent" mono>
-          {args.owner_agent_id}
+        <Field label="Owner agent">
+          <AgentName agentId={args.owner_agent_id} />
         </Field>
       )}
       <Field label="Reason">{args.reason ?? "released"}</Field>

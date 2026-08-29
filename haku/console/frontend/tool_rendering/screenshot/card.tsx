@@ -5,6 +5,7 @@
 import type { ReactNode } from "react";
 
 import { approvalDisplayFields } from "../../approval_state";
+import { AgentNamesProvider } from "../../agent_names";
 import type { ToolCallRecord } from "../../client";
 import { ToolCallCard } from "../../tool_call_card";
 import type { PreviewVariant } from "../vocabulary";
@@ -20,6 +21,7 @@ export type PreviewFixture = {
   // per-server fixture types this against its result widget's schema (RegisteredToolPreviewFixture);
   // the harness widens it here and wraps it into the stored envelope at render time.
   result?: unknown;
+  agentDisplayNames?: Record<string, string>;
 };
 
 // The stored wire shape of an executed call's result (mcp/approval.py's `_mcp_result_to_json`):
@@ -59,7 +61,7 @@ export function previewFixtureSlugs(fixtures: PreviewFixture[]): { slug: string;
 const noop = () => {};
 
 export function PreviewCard({ fixture, variant }: { fixture: PreviewFixture; variant: PreviewVariant }): ReactNode {
-  const { title, serverId, toolName, args, result } = fixture;
+  const { title, serverId, toolName, args, result, agentDisplayNames } = fixture;
   // A sample with a result renders as a finished OK call (so the result body shows); one without
   // stays pending, like the approvals panel's cards. The fixture carries the tool's raw return;
   // wrap it into the stored CallToolResult envelope the card renders.
@@ -91,19 +93,24 @@ export function PreviewCard({ fixture, variant }: { fixture: PreviewFixture; var
     // magic-number viewport width. `.haku-preview-card` is render.mjs's screenshot target: an
     // opaque background keeps the standalone PNG self-contained, and forcing no height gives a
     // tight crop at the card's real rendered height.
-    <div className="haku-page" style={{ position: "static" }}>
-      <div className="haku-shell-panels">
-        <div className="haku-preview-card" style={{ background: "var(--haku-page-bg)", padding: 12, borderRadius: 8 }}>
-          <ToolCallCard
-            fields={fields}
-            args={args}
-            variant={variant}
-            onVariantChange={noop}
-            status={finished ? { label: "OK", color: "teal" } : { label: "Pending", color: "yellow" }}
-            result={storedResult ?? undefined}
-          />
+    <AgentNamesProvider load={false} initialNames={new Map(Object.entries(agentDisplayNames ?? {}))}>
+      <div className="haku-page" style={{ position: "static" }}>
+        <div className="haku-shell-panels">
+          <div
+            className="haku-preview-card"
+            style={{ background: "var(--haku-page-bg)", padding: 12, borderRadius: 8 }}
+          >
+            <ToolCallCard
+              fields={fields}
+              args={args}
+              variant={variant}
+              onVariantChange={noop}
+              status={finished ? { label: "OK", color: "teal" } : { label: "Pending", color: "yellow" }}
+              result={storedResult ?? undefined}
+            />
+          </div>
         </div>
       </div>
-    </div>
+    </AgentNamesProvider>
   );
 }

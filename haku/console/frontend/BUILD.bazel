@@ -93,6 +93,18 @@ ts_library(
 )
 
 ts_library(
+    name = "agent_names",
+    srcs = ["agent_names.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "conversation_launch",
     srcs = ["conversation_launch.ts"],
     isolated_typecheck = True,
@@ -785,6 +797,7 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
+        ":agent_names",
         ":approvals_embed_page",
         ":client",
         ":haku_ui_embed",
