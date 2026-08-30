@@ -17,6 +17,7 @@ from haku.console.grants.http.decide_config import (
     EgressConfigGrantEntry,
     EgressCredentialEntry,
     EgressDecideConfig,
+    HttpOriginPattern,
     load_egress_decide,
 )
 from haku.console.grants.http.models import HttpMethod, HttpOrigin, HttpRequestCoverage, HttpScheme
@@ -172,6 +173,33 @@ def test_config_grant_entries_validate_fail_loud() -> None:
                 "coverage": {"methods": ["GET"]},
             }
         )
+
+
+def test_origin_pattern_fullmatches_host_at_exact_scheme_and_port() -> None:
+    pattern = HttpOriginPattern(
+        scheme=HttpScheme.HTTPS, host_pattern=r"productionresults[a-z0-9]*\.blob\.core\.windows\.net", port=443
+    )
+    fleet_host = "productionresultssa13.blob.core.windows.net"
+    assert pattern.matches(HttpOrigin(scheme=HttpScheme.HTTPS, host=fleet_host, port=443))
+    # Fullmatch, not search: a suffix-extended host under an unrelated registrable domain misses.
+    assert not pattern.matches(HttpOrigin(scheme=HttpScheme.HTTPS, host=fleet_host + ".evil.example", port=443))
+    assert not pattern.matches(HttpOrigin(scheme=HttpScheme.HTTPS, host=fleet_host, port=8443))
+    assert not pattern.matches(HttpOrigin(scheme=HttpScheme.HTTP, host=fleet_host, port=443))
+
+
+def test_pattern_only_grant_matches_origins_and_requires_some_origin() -> None:
+    entry = _config_grant(
+        origins=frozenset(),
+        origin_patterns=frozenset(
+            {HttpOriginPattern(scheme=HttpScheme.HTTPS, host_pattern=r"a[0-9]+\.example", port=443)}
+        ),
+    )
+    assert entry.matches_origin(HttpOrigin(scheme=HttpScheme.HTTPS, host="a7.example", port=443))
+    assert not entry.matches_origin(HttpOrigin(scheme=HttpScheme.HTTPS, host="b7.example", port=443))
+    with pytest.raises(ValidationError, match="at least one origin"):
+        _config_grant(origins=frozenset())
+    with pytest.raises(ValidationError, match="not a valid regex"):
+        HttpOriginPattern(scheme=HttpScheme.HTTPS, host_pattern=r"a[0-9.example", port=443)
 
 
 def test_overlapping_configuration_grants_are_deliberately_legal() -> None:

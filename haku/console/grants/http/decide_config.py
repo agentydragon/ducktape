@@ -23,13 +23,52 @@ from ipaddress import IPv4Network, IPv6Network
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
-from haku.console.grants.http.models import CREDENTIAL_HANDLE_PATTERN, HttpOrigin, HttpRequestCoverage
+from haku.console.grants.http.models import CREDENTIAL_HANDLE_PATTERN, HttpOrigin, HttpRequestCoverage, HttpScheme
 from haku.console.grants.principal import ConfigGrantPrincipal
 from util.env import EnvironmentVariableName
 
 logger = logging.getLogger(__name__)
 
 _HEADER_NAME = re.compile(r"[a-z0-9-]+")
+
+
+class HttpOriginPattern(BaseModel):
+    """One configuration-only origin pattern: exact scheme and port, host by regex fullmatch.
+
+    For destination fleets whose hostname is not constant (e.g. GitHub's numbered
+    ``productionresults*.blob.core.windows.net`` Actions log stores). Configuration-file
+    capability only — credential entries and the Agent-requestable grant path stay exact-origin
+    (`grants.http.models.HttpOrigin`), so no requested-and-approved grant can carry a pattern.
+    The pattern fullmatches the request host in its canonical lowercase A-label form. Address
+    policy is unchanged: a pattern admits no prohibited-address answer unless its entry carries
+    ``allow_prohibited_address``, and credential substitution still binds to the credential
+    entry's own exact origins. Pin the narrowest shape that covers the fleet, never a bare
+    provider suffix an unrelated tenant can register under.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    scheme: HttpScheme
+    host_pattern: str = Field(
+        min_length=1, max_length=256, description="Regex the canonical lowercase A-label request host must fullmatch."
+    )
+    port: int = Field(ge=1, le=65_535, description="Explicit port: 443 for standard https, 80 for http.")
+
+    @field_validator("host_pattern")
+    @classmethod
+    def compilable(cls, value: str) -> str:
+        try:
+            re.compile(value)
+        except re.error as error:
+            raise ValueError(f"host_pattern is not a valid regex: {error}") from error
+        return value
+
+    def matches(self, origin: HttpOrigin) -> bool:
+        return (
+            self.scheme == origin.scheme
+            and self.port == origin.port
+            and re.fullmatch(self.host_pattern, origin.host) is not None
+        )
 
 
 class EgressCredentialEntry(BaseModel):
@@ -118,7 +157,14 @@ class EgressConfigGrantEntry(BaseModel):
     )
     principal: ConfigGrantPrincipal = Field(description="Principal this grant applies to.")
     origins: frozenset[HttpOrigin] = Field(
-        min_length=1, description="Exact canonical origins the Agents may reach under this entry."
+        default_factory=frozenset, description="Exact canonical origins the Agents may reach under this entry."
+    )
+    origin_patterns: frozenset[HttpOriginPattern] = Field(
+        default_factory=frozenset,
+        description=(
+            "Host-pattern origins evaluated alongside `origins` — the configuration-only "
+            "capability for non-constant destination fleets (`HttpOriginPattern`)."
+        ),
     )
     coverage: HttpRequestCoverage = Field(description="Method set and optional path pin at each origin.")
     credential_handle: str | None = Field(
@@ -143,6 +189,15 @@ class EgressConfigGrantEntry(BaseModel):
             "(e.g. an in-cluster model gateway)."
         ),
     )
+
+    @model_validator(mode="after")
+    def _names_some_origin(self) -> EgressConfigGrantEntry:
+        if not self.origins and not self.origin_patterns:
+            raise ValueError("a configuration grant names at least one origin or origin pattern")
+        return self
+
+    def matches_origin(self, origin: HttpOrigin) -> bool:
+        return origin in self.origins or any(pattern.matches(origin) for pattern in self.origin_patterns)
 
 
 class EgressDecideConfig(BaseModel):

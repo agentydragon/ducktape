@@ -818,6 +818,21 @@ egress_decide:
           port: 443
       coverage:
         methods: [GET, HEAD]
+    # GitHub Actions job-log and artifact downloads: the api.github.com log/artifact endpoints 302
+    # to a numbered fleet of GitHub-owned Azure storage accounts with a SAS token in the URL, so
+    # this is pure reachability — no credential redeems here. The fleet hostname is not constant,
+    # hence the host-pattern origin (a configuration-only capability; Agent-requestable grants stay
+    # exact-origin). Pattern deliberately pins the full account-name shape, never a bare
+    # blob.core.windows.net suffix any Azure tenant can register under.
+    - id: codex-actions-results
+      principal: { kind: agent, agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e }
+      origin_patterns:
+        - scheme: https
+          host_pattern: productionresults[a-z0-9]*\.blob\.core\.windows\.net
+          port: 443
+      coverage:
+        methods: [GET]
+        path_regex: /actions-results/.*
     # The haku Agent's in-cluster + public Forgejo egress (git-over-HTTP + the REST API), redeeming
     # the `haku-forgejo-token` credential. allow_prohibited_address lifts the private-address denial
     # for the internal http origins (#5073, as the *-litellm entries do); it is a no-op for the

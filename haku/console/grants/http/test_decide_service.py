@@ -25,7 +25,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from haku.console.conftest import default_agent_binding, insert_approved_tool_call
 from haku.console.grants.catalog import GrantCatalog
-from haku.console.grants.http.decide_config import EgressConfigGrantEntry, LoadedEgressCredential, LoadedEgressDecide
+from haku.console.grants.http.decide_config import (
+    EgressConfigGrantEntry,
+    HttpOriginPattern,
+    LoadedEgressCredential,
+    LoadedEgressDecide,
+)
 from haku.console.grants.http.decide_service import HttpDecideService, HttpDecideUnavailableError
 from haku.console.grants.http.models import GrantSpec, HttpMethod, HttpOrigin, HttpRequestCoverage, HttpScheme
 from haku.console.grants.http.repository import PostgresGrantRepository
@@ -332,6 +337,52 @@ def test_configuration_grant_admits_with_provenance_and_no_deadline(make_client:
             decision = decide(miss)
             assert isinstance(decision, HttpAuthorizationDenied), miss.request
             assert decision.reason == "no active HTTP grant covers the request"
+
+
+def test_configuration_grant_host_pattern_admits_the_fleet(make_client: Any) -> None:
+    """A pattern origin admits every host its regex fullmatches at the exact scheme and port — the
+    configuration-only capability for non-constant destination fleets (the Actions log stores) —
+    and nothing beyond: suffix-extended hosts, other ports, and uncovered paths stay denied."""
+    with make_client() as client:
+        harness = _harness(
+            client,
+            config_grants=lambda agent_id: [
+                _config_grant(
+                    agent_id,
+                    id="fleet-config",
+                    origins=frozenset(),
+                    origin_patterns=frozenset(
+                        {
+                            HttpOriginPattern(
+                                scheme=HttpScheme.HTTPS,
+                                host_pattern=r"productionresults[a-z0-9]*\.blob\.core\.windows\.net",
+                                port=443,
+                            )
+                        }
+                    ),
+                    path_regex="/actions-results/.*",
+                )
+            ],
+        )
+        decide = partial(client.portal.call, harness.decide.decide)
+
+        allowed = decide(
+            _request(host="productionresultssa13.blob.core.windows.net", path="/actions-results/logs?sig=redacted")
+        )
+        assert allowed == HttpAuthorizationAllowed(
+            source=GrantSourceKind.CONFIG_FILE,
+            decision_id="config_file:fleet-config",
+            valid_until=None,
+            substitutions=[],
+        )
+
+        for miss in (
+            _request(host="productionresultssa13.blob.core.windows.net.evil.example", path="/actions-results/x"),
+            _request(host="productionresultssa13.blob.core.windows.net", path="/elsewhere"),
+            _request(host="productionresultssa13.blob.core.windows.net", port=8443, path="/actions-results/x"),
+        ):
+            decision = decide(miss)
+            assert isinstance(decision, HttpAuthorizationDenied), miss.request
 
 
 def test_configuration_grant_wins_over_a_matching_database_grant(make_client: Any) -> None:

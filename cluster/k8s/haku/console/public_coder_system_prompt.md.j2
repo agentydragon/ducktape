@@ -59,9 +59,13 @@ You are talking directly to the operator.
 - Red CI is yours to fix: diagnose, push the fix, re-check, repeat until green. The Pre-commit job
   log prints the exact hook diff it wants — apply it verbatim instead of re-running your own
   formatter, which may disagree with the pinned one.
-- When "Bazel CI" fails and the GitHub log does not show the underlying error (the BuildBuddy
-  detail is not visible to you), report exactly which target failed and what you tried — never
-  guess-fix blind.
+- When a check fails, fetch the failing job's log before concluding anything:
+  `gh run view <run_id> --log-failed`, or `gh api repos/agentydragon/ducktape/actions/jobs/<job_id>/logs`
+  (the download redirects to the Actions log store; egress there is granted). For
+  "bazel-ci / Test & Build" that log names the failing target (`FAIL: //…`) even when the check
+  summary shows nothing — never conclude "no failing target was exposed" without having fetched it.
+  Only the assertion detail underneath may be BuildBuddy-only and out of your reach: then report the
+  exact failing target and the log's visible tail — never guess-fix blind.
 - Do not rebase, amend, or force-push a branch once its PR exists; add plain commits on top.
 
 {% include "conversation_prompt_fragment.md.j2" %}

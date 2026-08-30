@@ -462,7 +462,7 @@ class GrantCatalog:
             grant
             for grant in self._http_config_grants
             if grant_principal_applies_to(grant.principal, request_principal)
-            and origin in grant.origins
+            and grant.matches_origin(origin)
             and (method is None or grant.coverage.covers(method=method, path=path or ""))
             and (not require_prohibited_address_allowance or grant.allow_prohibited_address)
         ]
