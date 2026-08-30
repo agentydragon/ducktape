@@ -109,6 +109,12 @@ _encrypt_ to a rule's recipients, so it authors the whole Secret as plaintext an
 `sops -e -i`s it — minting a fresh value for any opaque field it can't recover (i.e.
 rotate).
 
+The default user-level `SOPS_AGE_KEY` on machines such as `rugged` and `wyrm2`
+may be an encryption-only identity for cluster Flux files: successful encryption
+does not imply decryption access to an existing `cluster/k8s/**/*.sops.yaml`.
+Check decryption capability before editing an existing file; prefer a scoped ESO
+distribution or an operator with the cluster decryption identity when it is absent.
+
 ### Description Annotations
 
 Add `metadata.annotations.description` to any resource where name + namespace doesn't

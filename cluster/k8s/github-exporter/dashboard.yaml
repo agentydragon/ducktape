@@ -1,0 +1,13 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: github-exporter
+  namespace: monitoring
+spec:
+  folder: GitHub
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+  configMapRef:
+    name: github-exporter-dashboard
+    key: dashboard.json

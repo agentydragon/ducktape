@@ -153,6 +153,7 @@ resources:
   - monitoring/mimir/flux-kustomization.yaml
   - monitoring/grafana-db/flux-kustomization.yaml
   - monitoring/grafana-instance/flux-kustomization.yaml
+  - github-exporter/flux-kustomization.yaml
 
   # --- central ClickHouse ---
   - clickhouse/namespace/flux-kustomization.yaml
