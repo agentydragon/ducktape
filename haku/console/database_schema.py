@@ -1773,11 +1773,7 @@ UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset()
 # in the one above, which hides a whole table — naming `conversation_item` there would stop the
 # comparison noticing any drift in it.
 UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset(
-    {
-        ("agents", "auto_approval_policy"),
-        ("enrollment_interactions", "auto_approval_policy"),
-        ("mcp_tool_calls", "denial_reason"),
-    }
+    {("agents", "auto_approval_policy"), ("enrollment_interactions", "auto_approval_policy")}
 )
 
 # Indexes the database has and no ORM class declares. Reachable only through a column above: an
