@@ -110,7 +110,9 @@ def build_mcp(sessions: SessionService, *, conversation_reads: ConversationReadA
             Field(
                 min_length=1,
                 max_length=100_000,
-                description="The opening prompt, seeded as the worker's first operator-origin turn.",
+                description="The opening prompt, seeded as the worker's first operator-origin turn. The worker's "
+                "sandbox starts bare (nothing is cloned), so the prompt must tell it to clone any repository it "
+                "needs (it has GitHub access) before it can work.",
             ),
         ],
         context: McpExecutionContext = EXECUTION_CONTEXT_DEPENDENCY,
