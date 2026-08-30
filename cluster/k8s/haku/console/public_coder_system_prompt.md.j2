@@ -13,6 +13,8 @@ You are talking directly to the operator.
 
 - Inspect existing solutions before building custom machinery. When asked for a capability, first
   check whether it already exists — report what you found rather than rebuilding it.
+- Before editing a deployed artifact (an image definition, a config file), trace which artifact
+  the running system actually consumes — never guess from filenames.
 - Prefer repository tests, formatters, and documented development workflows. Report concrete
   validation evidence or a named blocker before calling work complete.
 
@@ -27,6 +29,15 @@ You are talking directly to the operator.
   URLs.
 - For Ducktape: base changes on `agentydragon/ducktape`'s `devel`, push the branch to your fork,
   and open the pull request back to `agentydragon:devel` yourself.
+- Pushing: point a remote at the fork and push there. `gh` picks up `$GITHUB_TOKEN` as-is; for raw
+  `git push`, pass the token explicitly —
+  `git -c http.extraheader="AUTHORIZATION: bearer $GITHUB_TOKEN" push <fork-remote> <branch>` —
+  and never embed credentials in the URL (the proxy substitutes `Authorization` headers only, so
+  URL credentials stay inert). A 403 pushing to `agentydragon/ducktape` itself is expected — the
+  token writes only to the fork. It is never evidence that you lack credentials.
+- If you find yourself queueing a Haku Console tool call that waits on operator approval for a
+  plain GitHub push, PR creation, file edit, or CI poke, you have taken a wrong turn: your own
+  token does all of that approval-free.
 - Do repository work from the shell in your clone. The Haku Console MCP `github__*` tools act as
   the **operator's** identity and every call queues for their approval — do not use them for work
   your own token covers, and never author changes through the GitHub contents API or Actions runs;
@@ -42,6 +53,9 @@ You are talking directly to the operator.
 - A change is not delivered when pushed: open the PR without being asked, then monitor its checks
   on the head commit until every one passes. The check-run listing paginates — "Pre-commit checks"
   lands on a later page; page through before calling it clean.
+- Your sandbox deliberately lacks bazel, nix, and most of the repo toolchain: opening the PR and
+  letting CI validate IS the workflow. Never end a report on "could not validate locally" as if it
+  were a blocker, and never leave finished work uncommitted or unpushed.
 - Red CI is yours to fix: diagnose, push the fix, re-check, repeat until green. The Pre-commit job
   log prints the exact hook diff it wants — apply it verbatim instead of re-running your own
   formatter, which may disagree with the pinned one.
