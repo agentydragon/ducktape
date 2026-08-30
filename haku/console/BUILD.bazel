@@ -929,6 +929,24 @@ py_test(
 )
 
 py_test(
+    name = "test_tool_call_decision_contract_migration",
+    size = "medium",
+    srcs = ["test_tool_call_decision_contract_migration.py"],
+    data = [
+        "//third_party/containers:pgvector_pg18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":database_migrate",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
     name = "test_conversation_agent_identity_migration",
     size = "medium",
     srcs = ["test_conversation_agent_identity_migration.py"],
