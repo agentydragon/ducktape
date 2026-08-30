@@ -21,6 +21,7 @@ packages:
   - "bubblewrap"
   - "curl"
   - "git"
+  - "ripgrep"
   - "wget"
   # TODO(2026-08-29): add python3 (full stdlib, not python3-minimal) to the runner image —
   #   operator wants it eventually.

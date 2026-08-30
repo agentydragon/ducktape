@@ -50,6 +50,11 @@
       "output": "bb-out/bazel-out/k8-fastbuild/bin/haku/console/gnome/haku-approvals.zip",
       "release": "haku-approvals"
     },
+    "haku-runner": {
+      "target": "//haku/runner:runner_bin",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/haku/runner/runner_bin",
+      "release": "haku-runner"
+    },
     "bbapi": {
       "target": "//devinfra/buildbuddy_cli:bbapi",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/buildbuddy_cli/bbapi_/bbapi",
@@ -117,6 +122,10 @@
     "haku-approvals": {
       "tests": "//haku/console/frontend/...",
       "nixPackage": true
+    },
+    "haku-runner": {
+      "tests": "//haku/runner/...",
+      "nixPackage": false
     },
     "bbapi": {
       "tests": "//devinfra/buildbuddy_cli/...",
