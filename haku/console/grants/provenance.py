@@ -1,9 +1,9 @@
 """The manual-approval provenance invariant every grant domain enforces at creation.
 
 A grant's ``source_tool_call_id`` must identify a manually approved ToolCall authenticated
-by the lifecycle owner, and the grant principal must match that durable source principal —
-an Agent's ToolCall can never author a principal wider than itself (#4670's non-goal, as a
-query). Split from :mod:`haku.console.grants.envelope` because these checks read
+by the lifecycle owner. Agent and session principals must match that durable source principal;
+an access-profile principal may name any profile because the Operator's approval of the source
+ToolCall is the decision point. Split from :mod:`haku.console.grants.envelope` because these checks read
 ``database_schema`` rows, which ``database_schema`` itself imports the envelope's column
 mixin from.
 """
@@ -41,7 +41,7 @@ async def assert_owner_principal_and_source(
     source_tool_call_id: str,
     source_tool: SourceToolFilter | None,
 ) -> None:
-    """Validate owner eligibility, source-ToolCall provenance, and principal applicability.
+    """Validate owner eligibility, source-ToolCall provenance, and principal compatibility.
 
     Locks the source ToolCall row, serializing grant-set creation against concurrent
     replays and revocations of the same source. An exact-session principal additionally
@@ -80,7 +80,7 @@ async def assert_owner_principal_and_source(
     if isinstance(grant_principal, AgentGrantPrincipal):
         valid_principal = grant_principal.agent_id == owner_agent_id
     elif isinstance(grant_principal, AccessProfileGrantPrincipal):
-        valid_principal = grant_principal.access_profile_id == agent.access_profile_id
+        valid_principal = True
     else:
         valid_principal = source.session_id is not None and grant_principal.session_id == source.session_id
         if valid_principal:

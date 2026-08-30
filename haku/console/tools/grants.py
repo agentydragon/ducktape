@@ -225,7 +225,7 @@ def build_mcp(service: GrantsToolsService) -> FastMCP:
     mcp = FastMCP(
         name=GRANTS_SERVER_ID,
         instructions=(
-            "Create/list/get/end explicit Agent- or session-scoped database grants across grant "
+            "Create/list/get/end explicit Agent-, session-, or access-profile-scoped database grants across grant "
             "domains. Each create item carries a 'domain' tag: 'kubernetes' for RBAC-like scope/rule coverage, "
             "'http' for one exact canonical public origin narrowed by method set and optional path regex. One "
             "create_grant call creates grants in a single domain, atomically, with one shared optional expiry. get_grant "
@@ -283,8 +283,8 @@ def build_mcp(service: GrantsToolsService) -> FastMCP:
             GrantPrincipal,
             Field(
                 description=(
-                    "Principal this grant covers. It must be applicable to the authenticated caller; "
-                    "an Agent, exact live session, or access profile may be selected."
+                    "Principal this grant covers. An Agent or exact live session must be the authenticated caller; "
+                    "an Agent may request any access profile, subject to Operator approval."
                 )
             ),
         ],

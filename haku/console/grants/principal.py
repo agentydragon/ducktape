@@ -72,8 +72,8 @@ class RequestPrincipal(BaseModel):
 
     When ``session_id`` is present, the authentication boundary must already have
     verified that the globally unique session belongs to ``agent_id``. The access
-    profile is also a grant-principal dimension. An Agent may create a grant only for
-    the profile carried by its authenticated request principal.
+    profile is also a grant-principal dimension. An Agent may request a grant for any
+    access profile; the manually approved ToolCall decides whether that request creates a grant.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -93,9 +93,16 @@ class RequestPrincipal(BaseModel):
 def require_applicable_grant_principal(
     grant_principal: GrantPrincipal, request_principal: RequestPrincipal
 ) -> GrantPrincipal:
-    """Authorize an Agent-created grant only for a principal it currently represents."""
+    """Validate the principal of an Agent-created grant request.
 
-    if not grant_principal_applies_to(grant_principal, request_principal):
+    Agent and session principals must refer to the authenticated caller. An access-profile
+    principal may name any profile; the manually approved ToolCall is the Operator's decision
+    point for whether that request creates a grant.
+    """
+
+    if not isinstance(grant_principal, AccessProfileGrantPrincipal) and not grant_principal_applies_to(
+        grant_principal, request_principal
+    ):
         raise PermissionError("grant principal is not applicable to the authenticated caller")
     return grant_principal
 

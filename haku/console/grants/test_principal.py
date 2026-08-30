@@ -16,6 +16,7 @@ from haku.console.grants.principal import (
     RequestPrincipal,
     SessionGrantPrincipal,
     grant_principal_applies_to,
+    require_applicable_grant_principal,
 )
 from haku.console.tool_call_actor import AgentActor
 
@@ -125,6 +126,16 @@ def test_access_profile_grant_principal_covers_agents_assigned_to_that_profile()
     assert not grant_principal_applies_to(
         principal, RequestPrincipal(agent_id=AGENT_A, session_id=None, access_profile_id="other")
     )
+
+
+def test_agent_can_request_a_grant_for_any_access_profile() -> None:
+    request_principal = RequestPrincipal(agent_id=AGENT_A, session_id=None, access_profile_id="public-coder")
+    principal = AccessProfileGrantPrincipal(access_profile_id="other")
+
+    assert require_applicable_grant_principal(principal, request_principal) == principal
+
+    with pytest.raises(PermissionError):
+        require_applicable_grant_principal(AgentGrantPrincipal(agent_id=AGENT_B), request_principal)
 
 
 if __name__ == "__main__":

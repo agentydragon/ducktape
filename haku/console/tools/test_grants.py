@@ -282,6 +282,19 @@ def test_list_grants_resolves_self_and_named_subjects(console: _Console) -> None
     console.call(exercise)
 
 
+def test_agent_can_request_a_grant_for_any_access_profile(console: _Console) -> None:
+    context = console.agent_context()
+    principal = AccessProfileGrantPrincipal(access_profile_id="other-profile")
+
+    async def exercise() -> None:
+        (view,) = await console.service.create_grants(
+            context=context, requests=[_kubernetes(_K8S_SPEC)], duration_seconds=600, principal=principal
+        )
+        assert view.grant.principal == principal
+
+    console.call(exercise)
+
+
 def test_list_grants_includes_database_history_only_when_requested(console: _Console) -> None:
     context = console.agent_context()
 
