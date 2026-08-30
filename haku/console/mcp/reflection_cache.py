@@ -91,7 +91,11 @@ class ReflectionCache:
         self._in_flight: dict[ReflectionCacheKey, asyncio.Task[ReflectedCatalog]] = {}
 
     async def reflect(
-        self, key: ReflectionCacheKey, load: Callable[[], Awaitable[ReflectedCatalog]]
+        self,
+        key: ReflectionCacheKey,
+        load: Callable[[], Awaitable[ReflectedCatalog]],
+        *,
+        ttl_seconds: float | None = None,
     ) -> ReflectedCatalog:
         """Return a fresh cached catalog, join an in-flight reflection, or start one."""
         cached = self._catalogs.get(key)
@@ -99,18 +103,21 @@ class ReflectionCache:
             return _detached(cached.catalog)
         task = self._in_flight.get(key)
         if task is None:
-            task = asyncio.create_task(self._load(key, load))
+            task = asyncio.create_task(self._load(key, load, ttl_seconds=ttl_seconds))
             self._in_flight[key] = task
         # Shielded so one caller giving up (client disconnect, an outer timeout) does not cancel
         # the reflection every other caller is waiting on.
         catalog = await asyncio.shield(task)
         return _detached(catalog)
 
-    async def _load(self, key: ReflectionCacheKey, load: Callable[[], Awaitable[ReflectedCatalog]]) -> ReflectedCatalog:
+    async def _load(
+        self, key: ReflectionCacheKey, load: Callable[[], Awaitable[ReflectedCatalog]], *, ttl_seconds: float | None
+    ) -> ReflectedCatalog:
         try:
             catalog = await load()
             self._prune()
-            self._catalogs[key] = _CachedCatalog(catalog=catalog, expires_at=time.monotonic() + self._ttl_seconds)
+            cache_ttl = self._ttl_seconds if ttl_seconds is None else ttl_seconds
+            self._catalogs[key] = _CachedCatalog(catalog=catalog, expires_at=time.monotonic() + cache_ttl)
             return catalog
         finally:
             # Also on failure: a raise must not wedge the key into permanent single-flight.

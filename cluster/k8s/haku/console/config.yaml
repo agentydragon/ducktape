@@ -932,6 +932,9 @@ mcp:
     # transparent access only to the explicit github_reads policy above; every other tool stays in
     # the Console's per-call operator approval queue.
     - id: github
+      # GitHub's hosted MCP catalog is expensive to reflect and changes infrequently. Keep the
+      # shared 60-second default for other servers, but refresh GitHub at most every 15 minutes.
+      catalog_refresh_interval_seconds: 900
       backend:
         kind: remote_mcp
         url: https://api.githubcopilot.com/mcp/

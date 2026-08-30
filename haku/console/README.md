@@ -109,15 +109,16 @@ and the Postgres-backed state required by the accepted private seam. See
 
 #### Catalog reconciliation
 
-`tools/list` is a snapshot read. `mcp/catalog_reconciler.py` builds one atomic per-Operator
-generation before readiness and refreshes it periodically. Connection changes invalidate that
-Operator's generation across replicas through Postgres `LISTEN`/`NOTIFY`; a newly admitted Operator
-queues an immediate pass.
+`tools/list` is a snapshot read. `mcp/catalog_reconciler.py` builds one complete per-Operator
+generation before readiness and refreshes each configured server's snapshot on its own interval.
+Connection changes invalidate that Operator's generation across replicas through Postgres
+`LISTEN`/`NOTIFY`; a newly admitted Operator queues an immediate pass.
 
-Successful reflection is TTL-reused and single-flighted by server/config/credential fingerprints.
+Successful reflection is TTL-reused and single-flighted by server/config/credential fingerprints;
+the process-wide interval is the default and a server may override it in the deploy-time catalog.
 Failures publish a degraded snapshot with no callable proxies. Execution never treats a catalog
 snapshot as authority: it revalidates the actor binding and current credential. Upstream tool-list
-changes may remain stale for one refresh interval; persistent sessions and
+changes may remain stale for the configured server's refresh interval; persistent sessions and
 `notifications/tools/list_changed` are optional latency improvements, not correctness requirements.
 
 ### Canonical Agent authority and enrollment

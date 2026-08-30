@@ -53,6 +53,16 @@ async def test_zero_ttl_reflects_again_on_the_next_request() -> None:
     assert reflect.calls == 2
 
 
+async def test_reflection_can_override_the_default_ttl() -> None:
+    cache = ReflectionCache(0.0)
+    reflect = _CountingReflector()
+
+    await cache.reflect(_key(), reflect, ttl_seconds=NEVER_EXPIRES)
+    await cache.reflect(_key(), reflect)
+
+    assert reflect.calls == 1
+
+
 async def test_concurrent_reflections_of_one_server_collapse_into_a_single_upstream_call() -> None:
     """The reason single-flight matters: one MCP handshake opens several connections at once, so
     without it a client's first `tools/list` fans out to every upstream more than once."""

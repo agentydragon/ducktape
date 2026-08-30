@@ -2123,6 +2123,24 @@ async def test_dispatcher_reuses_a_reflected_catalog_within_the_ttl() -> None:
     builder.assert_called_once_with(None)
 
 
+async def test_dispatcher_uses_a_server_specific_catalog_ttl() -> None:
+    builder = Mock(return_value=_build_test_mcp_server())
+    registration = InProcessServerRegistration(
+        builder=builder, credential_kind=InProcessCredentialKind.OPERATOR_CONNECTION
+    )
+    dispatcher = McpServerDispatcher({"google": registration}, catalog_cache_ttl_seconds=0.0)
+    server = McpServerEntry(
+        id="google",
+        backend=InProcessBackend(credential=OperatorConnectionCredential(connection="google_workspace")),
+        catalog_refresh_interval_seconds=900.0,
+    )
+
+    await dispatcher.metadata(server, auth_token=None)
+    await dispatcher.metadata(server, auth_token=None)
+
+    builder.assert_called_once_with(None)
+
+
 async def test_dispatcher_does_not_cache_a_degraded_reflection() -> None:
     """A server that failed must be retried on the next listing, not held degraded for the TTL."""
     dispatcher = McpServerDispatcher({}, catalog_cache_ttl_seconds=3600.0)

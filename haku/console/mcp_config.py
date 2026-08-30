@@ -196,6 +196,14 @@ type McpBackend = Annotated[RemoteMcpBackend | InProcessBackend, Field(discrimin
 class McpServerEntry(BaseModel):
     id: str
     backend: McpBackend
+    # None uses Settings.mcp_catalog_refresh_interval_seconds. A server can override the shared
+    # default when its upstream tool catalog is expensive to reflect, as GitHub's hosted MCP is.
+    catalog_refresh_interval_seconds: float | None = Field(default=None, ge=5.0, le=900.0)
+
+
+def _server_catalog_refresh_interval(server: McpServerEntry, default_seconds: float) -> float:
+    """Return a server's override, or the process-wide catalog refresh default."""
+    return server.catalog_refresh_interval_seconds or default_seconds
 
 
 class ConsoleMcpConfig(BaseModel):

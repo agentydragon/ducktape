@@ -523,6 +523,8 @@ class Settings(BaseSettings):
     # deployment wiring: it must leave margin below the deployment's own request timeout.
     max_wait_for_result_ms: int = Field(ge=5_000)
 
+    # Default interval for the background reconciler and reflection cache. Individual MCP servers
+    # may override it with catalog_refresh_interval_seconds when their catalog is expensive.
     # The background reconciler refreshes every Operator's configured MCP catalogs this often.
     # `tools/list` itself reads only the already-published in-memory generation, so an upstream
     # connect, OAuth refresh, or large tool schema can never extend the client startup path.

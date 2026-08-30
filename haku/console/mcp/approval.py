@@ -67,6 +67,7 @@ from haku.console.mcp_config import (
     RemoteServerOAuthAuth,
     StaticBearerAuth,
     _credential_token,
+    _server_catalog_refresh_interval,
     _transport,
 )
 from haku.console.session.status import SessionStatus
@@ -871,6 +872,7 @@ class McpServerDispatcher:
         catalog_cache_ttl_seconds: float,
     ) -> None:
         self._in_process = in_process_servers
+        self._default_catalog_cache_ttl_seconds = catalog_cache_ttl_seconds
         self._catalogs = ReflectionCache(catalog_cache_ttl_seconds)
 
     async def execute(
@@ -899,7 +901,9 @@ class McpServerDispatcher:
             # A raise propagates out of the cache, so only successful catalogs are ever stored and
             # a recovered server is retried on the next listing rather than staying degraded.
             return await self._catalogs.reflect(
-                _reflection_cache_key(server, auth_token), lambda: self._reflect(server, auth_token)
+                _reflection_cache_key(server, auth_token),
+                lambda: self._reflect(server, auth_token),
+                ttl_seconds=_server_catalog_refresh_interval(server, self._default_catalog_cache_ttl_seconds),
             )
         except Exception as e:
             logger.warning("MCP tool discovery failed for %s", server.id, exc_info=True)

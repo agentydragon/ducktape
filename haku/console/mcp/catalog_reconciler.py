@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -19,7 +18,7 @@ from haku.console.mcp.approval import (
 from haku.console.mcp.operator_oauth import PostgresMcpOperatorOAuthStore
 from haku.console.mcp.reflection_cache import ReflectedCatalog
 from haku.console.mcp.tool_call_service import ProviderConnectionTokenStore
-from haku.console.mcp_config import McpServerEntry
+from haku.console.mcp_config import McpServerEntry, _server_catalog_refresh_interval
 from haku.console.notifications.console_events import (
     ConsoleEvent,
     McpOperatorAuthChangedEvent,
@@ -43,9 +42,9 @@ class OperatorCatalogReconciler:
     """Refresh catalogs in the background and serve request-time snapshots without upstream I/O.
 
     One atomic snapshot is retained per Operator and configured server. A full reconciliation runs
-    before the MCP endpoint becomes ready, then repeats for the process lifetime. Newly admitted
-    Operators are scheduled when first observed; their first listing is empty rather than becoming
-    an accidental synchronous catalog load.
+    before the MCP endpoint becomes ready; each configured server then refreshes on its own
+    interval for the process lifetime. Newly admitted Operators are scheduled when first observed;
+    their first listing is empty rather than becoming an accidental synchronous catalog load.
     """
 
     def __init__(
@@ -124,7 +123,7 @@ class OperatorCatalogReconciler:
         }
 
     async def refresh_operator(self, operator_id: UUID) -> None:
-        """Reflect and atomically publish one Operator, for periodic and connection-change callers."""
+        """Reflect and atomically publish one Operator, for startup and connection-change callers."""
         generation = self._generations.get(operator_id, 0)
         reflections = await asyncio.gather(
             *(self._reflect(operator_id=operator_id, server=server) for server in self._servers)
@@ -141,6 +140,25 @@ class OperatorCatalogReconciler:
             key: reflection for key, reflection in self._snapshots.items() if key[0] != operator_id
         } | replacement
 
+    async def refresh_operator_server(self, operator_id: UUID, server: McpServerEntry) -> None:
+        """Refresh and publish one server without making unrelated servers pay the upstream cost."""
+        generation = self._generations.get(operator_id, 0)
+        reflection = await self._reflect(operator_id=operator_id, server=server)
+        if generation != self._generations.get(operator_id, 0):
+            return
+        self._snapshots[(operator_id, server.id)] = _detached(reflection)
+
+    async def refresh_server(self, server: McpServerEntry) -> None:
+        """Refresh one server for every currently active Operator."""
+        operator_ids = set(await self._operator_ids())
+        await asyncio.gather(*(self.refresh_operator_server(operator_id, server) for operator_id in operator_ids))
+        self._snapshots = {key: reflection for key, reflection in self._snapshots.items() if key[0] in operator_ids}
+        self._generations = {
+            operator_id: generation
+            for operator_id, generation in self._generations.items()
+            if operator_id in operator_ids
+        }
+
     async def _reflect(self, *, operator_id: UUID, server: McpServerEntry) -> ServerReflection:
         try:
             return await metadata_for_operator(
@@ -154,25 +172,25 @@ class OperatorCatalogReconciler:
             logger.exception("MCP catalog reconciliation failed for server %s", server.id)
             return DegradedReflection(failure_stage=ReflectionFailureStage.TOOL_DISCOVERY, degraded_reason=str(error))
 
-    async def _refresh_loop(self) -> None:
+    async def _refresh_server_loop(self, server: McpServerEntry) -> None:
         while True:
-            await asyncio.sleep(self._refresh_interval_seconds)
+            await asyncio.sleep(_server_catalog_refresh_interval(server, self._refresh_interval_seconds))
             try:
-                await self.reconcile()
+                await self.refresh_server(server)
             except Exception:
-                logger.exception("MCP catalog reconciliation pass failed")
+                logger.exception("MCP catalog reconciliation pass failed for server %s", server.id)
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator[None]:
         await self.reconcile()
-        refresh_task = asyncio.create_task(self._refresh_loop())
+        refresh_tasks = [asyncio.create_task(self._refresh_server_loop(server)) for server in self._servers]
         try:
             yield
         finally:
-            refresh_task.cancel()
+            for task in refresh_tasks:
+                task.cancel()
             for task in self._scheduled.values():
                 task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await refresh_task
+            await asyncio.gather(*refresh_tasks, return_exceptions=True)
             await asyncio.gather(*self._scheduled.values(), return_exceptions=True)
             self._scheduled.clear()
