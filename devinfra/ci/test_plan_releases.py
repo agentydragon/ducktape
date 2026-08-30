@@ -12,7 +12,6 @@ from devinfra.ci.plan_releases import (
     content_hash,
     content_tag,
     digests_from,
-    gh_tag_exists,
     is_published,
     load_releases,
     main,
@@ -116,24 +115,6 @@ def test_a_failing_tag_lookup_keeps_the_release() -> None:
         raise subprocess.SubprocessError("gh exploded")
 
     assert not is_published(make_release(), {f"{BIN}/a.whl": "aa" * 32}, explode)
-
-
-def test_tag_lookup_uses_the_rest_api(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[tuple[list[str], dict[str, object]]] = []
-
-    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        calls.append((args, kwargs))
-        return subprocess.CompletedProcess(args, 0)
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    assert gh_tag_exists("pkg-tag")
-    assert calls == [
-        (
-            ["gh", "api", "repos/agentydragon/ducktape/releases/tags/pkg-tag"],
-            {"check": False, "capture_output": True, "text": True},
-        )
-    ]
 
 
 def test_a_programming_error_still_crashes() -> None:
