@@ -66,7 +66,8 @@ def test_deployed_coder_template_includes_the_shared_contract():
     assert "Replies are automatic" in rendered
     assert "Haku Console MCP" in rendered
     assert "proxy-github-placeholder" in rendered
-    assert "ordinary repository work" in rendered
+    assert "Do repository work from the shell" in rendered
+    assert "yours until CI is green" in rendered
     assert str(CONVERSATION) in rendered
     assert "the start of it" in rendered
     assert "haku-state" not in rendered.lower()
