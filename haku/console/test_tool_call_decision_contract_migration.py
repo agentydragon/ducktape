@@ -19,14 +19,14 @@ from uuid import uuid4
 import pytest_bazel
 from sqlalchemy import create_engine, text
 
-from haku.console.database_migrate import apply_migrations
+from haku.console.database_migrate import apply_migrations, sync_database_url
 
 _NOW = datetime.datetime(2026, 8, 30, tzinfo=datetime.UTC)
 
 
 def test_0126_backfills_and_drops_denial_reason_with_an_existing_denied_row(db_url: str) -> None:
     apply_migrations(db_url, "0125")
-    engine = create_engine(db_url)
+    engine = create_engine(sync_database_url(db_url))
     try:
         operator_id = uuid4()
         with engine.begin() as conn:
