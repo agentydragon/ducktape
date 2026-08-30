@@ -288,28 +288,28 @@ def test_claude_environment_merges_configured_extra_environment_last() -> None:
 def _codex_harness_config(**overrides: Any) -> HarnessRegistrationConfig:
     implementation: dict[str, Any] = {
         "kind": "codex_app_server",
-        "model": "codex-gpt-5.6-sol",
-        "provider_id": "haku",
-        "provider_name": "Haku OpenAI-compatible",
-        "api_base_url": "http://litellm.litellm.svc.cluster.local:4000/v1",
+        "model": "test-codex-model",
+        "provider_id": "test-provider",
+        "provider_name": "Test OpenAI-compatible provider",
+        "api_base_url": "http://test-litellm.invalid/v1",
         "api_key_env_var": "OPENAI_API_KEY",
-        "github_token_placeholder": "proxy-github-placeholder",
+        "github_token_placeholder": "test-github-token-placeholder",
     }
     for field in tuple(overrides):
         if field in implementation:
             implementation[field] = overrides.pop(field)
     values: dict[str, Any] = {
         "agent_id": "00000000-0000-4000-8000-000000000002",
-        "namespace": "haku-harness-sandbox",
-        "warm_pool": "haku-public-coder-codex",
-        "claim_prefix": "codex",
-        "harness_label": "codex",
-        "cwd": "/workspace",
+        "namespace": "test-harness-sandbox",
+        "warm_pool": "test-codex-pool",
+        "claim_prefix": "test-codex",
+        "harness_label": "test-codex",
+        "cwd": "/test/workspace",
         "session_ttl_seconds": 7200,
-        "https_proxy": "http://haku-egress-proxy.haku-console.svc.cluster.local:8888",
-        "ca_bundle": "/ca/bundle.pem",
-        "no_proxy": ".svc,.svc.cluster.local",
-        "mcp_url": "http://haku-console:9090/mcp",
+        "https_proxy": "http://test-egress-proxy.invalid:8080",
+        "ca_bundle": "/test/ca/bundle.pem",
+        "no_proxy": "test-service.invalid,test-cluster.invalid",
+        "mcp_url": "http://test-console.invalid:9090/mcp",
         "implementation": implementation,
     }
     values.update(overrides)
@@ -321,17 +321,17 @@ def test_codex_environment_keeps_provider_auth_in_the_sandbox_template() -> None
 
     assert isinstance(config.implementation, CodexAppServerImplementationConfig)
     assert config.environment() == {
-        "HTTP_PROXY": "http://haku-egress-proxy.haku-console.svc.cluster.local:8888",
-        "HTTPS_PROXY": "http://haku-egress-proxy.haku-console.svc.cluster.local:8888",
-        "NO_PROXY": ".svc,.svc.cluster.local",
+        "HTTP_PROXY": "http://test-egress-proxy.invalid:8080",
+        "HTTPS_PROXY": "http://test-egress-proxy.invalid:8080",
+        "NO_PROXY": "test-service.invalid,test-cluster.invalid",
         "NODE_USE_ENV_PROXY": "1",
-        "NODE_EXTRA_CA_CERTS": "/ca/bundle.pem",
-        "SSL_CERT_FILE": "/ca/bundle.pem",
-        "CURL_CA_BUNDLE": "/ca/bundle.pem",
-        "REQUESTS_CA_BUNDLE": "/ca/bundle.pem",
-        "PIP_CERT": "/ca/bundle.pem",
-        "GH_PAT": "proxy-github-placeholder",
-        "GITHUB_TOKEN": "proxy-github-placeholder",
+        "NODE_EXTRA_CA_CERTS": "/test/ca/bundle.pem",
+        "SSL_CERT_FILE": "/test/ca/bundle.pem",
+        "CURL_CA_BUNDLE": "/test/ca/bundle.pem",
+        "REQUESTS_CA_BUNDLE": "/test/ca/bundle.pem",
+        "PIP_CERT": "/test/ca/bundle.pem",
+        "GH_PAT": "test-github-token-placeholder",
+        "GITHUB_TOKEN": "test-github-token-placeholder",
     }
     assert "OPENAI_API_KEY" not in config.environment()
 
@@ -348,7 +348,7 @@ def test_harness_registration_threads_the_codex_model_and_effort_into_the_launch
 
     launch = registration.adapter.build_launch(
         HarnessLaunchSpec(
-            cwd="/workspace", environment={}, mcp_servers={}, appended_system_prompt=None, resume_from=None
+            cwd="/test/workspace", environment={}, mcp_servers={}, appended_system_prompt=None, resume_from=None
         )
     )
 
