@@ -307,6 +307,12 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
   `conftest.py`. Never import fixtures in `test_*.py` files — import them in the
   nearest `conftest.py` (ruff ignores F401 there via `per-file-ignores`; test-file
   imports cause F811 collisions with parameter names).
+- **Test-only values**: tests that do not validate deployed or rendered production
+  configuration use unmistakable test-specific names, hosts, URLs, paths, and
+  placeholders. Do not copy production identifiers or addresses into such fixtures:
+  they should not appear in production-value greps or look like live references.
+  Tests of the actual production manifest/config may assert literal production values
+  when those values are the contract under test.
 - **Concise test bodies**: assertions in tests, setup in fixtures.
 - **Update tests with production code**: signature/behavior changes propagate to the
   tests that use them, in the same change.
