@@ -61,6 +61,7 @@ py_library(
         ":catalog",
         ":dependencies",
         ":envelope",
+        ":principal",
         "//haku/console/identity:operator_agents",
         "//haku/console/identity:operator_auth",
         "@pypi//fastapi",
