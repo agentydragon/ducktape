@@ -643,6 +643,7 @@ py_test(
     deps = [
         ":session_sandboxes",
         "//:conftest",
+        "//haku/console:conftest",
         "//haku/console:mcp_config",
         "//haku/console/grants:principal",
         "//haku/console/harnesses:kind",
