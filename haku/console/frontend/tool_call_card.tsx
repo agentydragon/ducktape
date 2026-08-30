@@ -102,11 +102,6 @@ export function ToolCallCard({
                 {fields.decisionOperatorId ? "Operator note" : "Automatic decision"}: {fields.decisionNote}
               </Text>
             )}
-            {!fields.decisionNote && fields.denialReason && (
-              <Text size="xs" c="dimmed">
-                Denied: {fields.denialReason}
-              </Text>
-            )}
             {fields.withdrawalReason && (
               <Text size="xs" c="dimmed">
                 Withdrawn: {fields.withdrawalReason}

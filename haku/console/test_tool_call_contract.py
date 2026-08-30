@@ -41,14 +41,9 @@ def test_decision_note_blank_is_normalized_to_none() -> None:
     assert request.model_dump(mode="json", exclude_none=True) == {"decision": "deny"}
 
 
-def test_legacy_reason_is_normalized_during_expand_release() -> None:
-    request = ApprovalDecisionRequest(decision=ApprovalDecision.DENY, reason="old client")
-    assert request.decision_note == "old client"
-
-
-def test_decision_note_and_legacy_reason_cannot_both_be_supplied() -> None:
-    with pytest.raises(ValidationError, match="cannot both be supplied"):
-        ApprovalDecisionRequest(decision=ApprovalDecision.DENY, decision_note="new", reason="old")
+def test_legacy_reason_is_rejected_after_contract_rollout() -> None:
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        ApprovalDecisionRequest.model_validate_json('{"decision":"deny","reason":"old client"}')
 
 
 def test_decision_note_has_a_bounded_length() -> None:

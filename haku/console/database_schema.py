@@ -626,7 +626,6 @@ class McpToolCall(Base):
     decision_operator_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="RESTRICT"), nullable=True
     )
-    denial_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     withdrawal_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     approval_policy_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     auto_approval_evaluation: Mapped[str | None] = mapped_column(Text, nullable=True)

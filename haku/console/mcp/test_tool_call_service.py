@@ -498,7 +498,6 @@ async def test_recall_index_authorizer_denies_argument_escalation_before_submiss
         "recall index access denied",
         None,
     )
-    assert record.denial_reason == "recall index access denied"
     assert executor.executions == []
     assert notifier.pending == []
 
@@ -593,7 +592,7 @@ async def test_two_operator_two_agent_authorization_matrix(
     )
     denied = await service.decide(
         tool_call_id=records["aa2"].tool_call_id,
-        decision=ApprovalDecisionRequest(decision=ApprovalDecision.DENY, reason="no"),
+        decision=ApprovalDecisionRequest(decision=ApprovalDecision.DENY, decision_note="no"),
         actor=actors["oa"],
     )
     # decide() now returns the RUNNING record and runs the tool in the background; deny stays terminal.
@@ -685,7 +684,7 @@ async def test_pending_wait_rereads_after_subscribing_before_waiting(
         [pending] = await service.list_tool_calls(actor=agent)
         decided = await service.decide(
             tool_call_id=pending.tool_call_id,
-            decision=ApprovalDecisionRequest(decision=ApprovalDecision.DENY, reason="reread race"),
+        decision=ApprovalDecisionRequest(decision=ApprovalDecision.DENY, decision_note="reread race"),
             actor=operator,
         )
         assert decided.status is ToolCallStatus.DENIED
@@ -750,7 +749,6 @@ async def test_withdraw_retracts_the_agents_own_pending_call(
 
     assert withdrawn.status is ToolCallStatus.WITHDRAWN
     assert withdrawn.withdrawal_reason == "superseded"
-    assert withdrawn.denial_reason is None
     # Published to the owning operator, so their open approvals drawer drops the item live.
     assert publisher.publications == [(actor.operator_id, pending.tool_call_id)]
     assert await service.pending_approvals(actor=actors["oa"]) == []
@@ -774,7 +772,7 @@ async def test_queued_call_is_notified_once_and_retracted_by_whichever_exit_it_t
 
     await service.decide(
         tool_call_id=denied.tool_call_id,
-        decision=ApprovalDecisionRequest(decision=ApprovalDecision.DENY, reason="no"),
+        decision=ApprovalDecisionRequest(decision=ApprovalDecision.DENY, decision_note="no"),
         actor=operator,
     )
     await service.decide(

@@ -161,7 +161,6 @@ function toolCall(overrides: Partial<ToolCallRecord> & Pick<ToolCallRecord, "too
     error: null,
     decision_note: null,
     decision_operator_id: null,
-    denial_reason: null,
     withdrawal_reason: null,
     ...overrides,
   };
@@ -203,7 +202,6 @@ export const SAMPLE_TOOL_CALLS: ToolCallRecord[] = [
     rationale: "The worker pod has been CrashLoopBackOff for 20 minutes; restart it.",
     decision_note: "Not without a rollout plan — investigate the crash first.",
     decision_operator_id: "00000000-0000-4000-8000-000000000001",
-    denial_reason: "Not without a rollout plan — investigate the crash first.",
     auto_approval_evaluation: "manual: kubectl/delete is never auto-approved",
     result: null,
     caller: { kind: "operator" },

@@ -36,7 +36,6 @@ export interface ApprovalDisplayFields {
   createdAt: string | null;
   decisionNote: string | null;
   decisionOperatorId: string | null;
-  denialReason: string | null;
   withdrawalReason: string | null;
   approvalPolicyId: string | null;
   autoApprovalEvaluation: string | null;
@@ -122,7 +121,6 @@ export function approvalDisplayFields(approval: ToolCallRecord): ApprovalDisplay
     createdAt: approval.created_at ?? null,
     decisionNote: approval.decision_note ?? null,
     decisionOperatorId: approval.decision_operator_id ?? null,
-    denialReason: approval.denial_reason ?? null,
     withdrawalReason: approval.withdrawal_reason ?? null,
     approvalPolicyId: approval.approval_policy_id ?? null,
     autoApprovalEvaluation: approval.auto_approval_evaluation ?? null,

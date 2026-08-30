@@ -440,11 +440,7 @@ def _record_to_result(record: ToolCallRecord, settings: Settings) -> ToolResult:
         case ToolCallStatus.ERROR:
             return _failed_result(record.error or "tool call failed", result_meta)
         case ToolCallStatus.DENIED:
-            # `denial_reason` is retained only while old API replicas drain. The neutral note is
-            # the canonical explanation for both automatic and Operator decisions.
-            return _failed_result(
-                f"denied: {record.decision_note or record.denial_reason or 'no reason given'}", result_meta
-            )
+            return _failed_result(f"denied: {record.decision_note or 'no reason given'}", result_meta)
         case ToolCallStatus.WITHDRAWN:
             return _failed_result(f"withdrawn: {record.withdrawal_reason or 'no reason given'}", result_meta)
         case ToolCallStatus.PENDING_APPROVAL:

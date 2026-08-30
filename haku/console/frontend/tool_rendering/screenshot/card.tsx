@@ -86,7 +86,6 @@ export function PreviewCard({ fixture, variant }: { fixture: PreviewFixture; var
     error: null,
     decision_note: null,
     decision_operator_id: null,
-    denial_reason: null,
   });
   return (
     // `.haku-page` (position overridden to static) mirrors the real surface so the card's

@@ -625,8 +625,7 @@ async def test_schema_invalid_call_fails_fast_and_never_queues(harness: _Harness
     assert calls[0]["status"] == ToolCallStatus.DENIED
     assert calls[0]["decision_note"] is not None
     assert calls[0]["decision_operator_id"] is None
-    assert calls[0]["denial_reason"] is not None
-    assert "single_events" in calls[0]["denial_reason"]
+    assert "single_events" in calls[0]["decision_note"]
     assert calls[0]["auto_approval_evaluation"] == "denied: arguments failed the registered tool schema"
     pending = await _operator_get(harness, "/api/approvals/pending")
     assert pending.status_code == 200, pending.text

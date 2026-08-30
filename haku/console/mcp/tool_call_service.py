@@ -350,7 +350,7 @@ class ToolCallApplicationService:
                 record.server_id,
                 record.tool_name,
                 record.caller,
-                record.denial_reason,
+                record.decision_note,
             )
             await self._publish(actor.operator_id, record.tool_call_id)
             return record
@@ -379,7 +379,7 @@ class ToolCallApplicationService:
                 record.server_id,
                 record.tool_name,
                 record.caller,
-                record.denial_reason,
+                record.decision_note,
             )
             await self._publish(actor.operator_id, record.tool_call_id)
             return record
@@ -473,12 +473,6 @@ class ToolCallApplicationService:
         self, *, tool_call_id: str, decision: ApprovalDecisionRequest, actor: RuntimeActor
     ) -> ToolCallRecord:
         operator = self._require_operator(actor)
-        if decision.reason is not None:
-            # This is intentionally a structured event rather than note content: it lets the
-            # expand-release soak prove that no old static client still sends the legacy key.
-            logger.info(
-                "legacy tool-call decision field used tool_call_id=%s decision=%s", tool_call_id, decision.decision
-            )
         if decision.decision is ApprovalDecision.DENY:
             record = await self._repository.deny(tool_call_id, decision.decision_note, actor=operator)
             await self._publish(operator.operator_id, record.tool_call_id)

@@ -13,7 +13,7 @@ from enum import StrEnum
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 MCP_TOOL_META_KEY = "works.allegedly.haku/tool"
 MCP_TOOL_CALL_META_KEY = "works.allegedly.haku/tool-call"
@@ -82,24 +82,15 @@ class SubmitToolCallRequest(BaseModel):
 
 
 class ApprovalDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     decision: ApprovalDecision
     decision_note: str | None = Field(default=None, max_length=MAX_DECISION_NOTE_LENGTH)
-    # Temporary compatibility for the old frontend. This is removed once all static clients have
-    # crossed the decision_note contract; the canonical field and generated types are decision_note.
-    reason: str | None = Field(default=None, max_length=MAX_DECISION_NOTE_LENGTH, deprecated=True)
 
-    @field_validator("decision_note", "reason", mode="before")
+    @field_validator("decision_note", mode="before")
     @classmethod
     def normalize_note(cls, value: Any) -> Any:
         return _normalize_decision_note(value)
-
-    @model_validator(mode="after")
-    def resolve_legacy_reason(self) -> ApprovalDecisionRequest:
-        if self.reason is not None:
-            if self.decision_note is not None:
-                raise ValueError("decision_note and legacy reason cannot both be supplied")
-            self.decision_note = self.reason
-        return self
 
 
 class OperatorToolCallCaller(BaseModel):
@@ -133,7 +124,6 @@ class ToolCallRecord(BaseModel):
     error: str | None = None
     decision_note: str | None = Field(default=None, max_length=MAX_DECISION_NOTE_LENGTH)
     decision_operator_id: UUID | None = None
-    denial_reason: str | None = None
     withdrawal_reason: str | None = None
     approval_policy_id: str | None = None
     auto_approval_evaluation: str | None = None

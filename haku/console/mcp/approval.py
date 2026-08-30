@@ -300,7 +300,6 @@ class PostgresToolCallLedger:
                 rationale=req.rationale,
                 title=req.title,
                 decision_note=auto_denial_reason,
-                denial_reason=auto_denial_reason,
                 approval_policy_id=auto_approval_policy_id,
                 auto_approval_evaluation=auto_approval_evaluation,
                 approved_at=now if auto_approval_policy_id is not None else None,
@@ -384,9 +383,6 @@ class PostgresToolCallLedger:
             row.updated_at = datetime.datetime.now(datetime.UTC)
             row.decision_note = decision_note
             row.decision_operator_id = operator.operator_id
-            # Temporary expand-release compatibility for old frontend bundles. This is removed
-            # once the frontend contract has converged and the legacy column is dropped.
-            row.denial_reason = decision_note
             return self._record_from_principal(row, principal)
 
     async def withdraw(self, tool_call_id: str, reason: str | None, *, actor: AgentActor) -> ToolCallRecord:
@@ -554,7 +550,6 @@ class PostgresToolCallLedger:
             McpToolCall.error.label("error"),
             McpToolCall.decision_note.label("decision_note"),
             McpToolCall.decision_operator_id.label("decision_operator_id"),
-            McpToolCall.denial_reason.label("denial_reason"),
             McpToolCall.withdrawal_reason.label("withdrawal_reason"),
             McpToolCall.approval_policy_id.label("approval_policy_id"),
             McpToolCall.auto_approval_evaluation.label("auto_approval_evaluation"),
@@ -596,7 +591,6 @@ class PostgresToolCallLedger:
             error=record.error,
             decision_note=record.decision_note,
             decision_operator_id=record.decision_operator_id,
-            denial_reason=record.denial_reason,
             withdrawal_reason=record.withdrawal_reason,
             approval_policy_id=record.approval_policy_id,
             auto_approval_evaluation=record.auto_approval_evaluation,
@@ -647,7 +641,6 @@ class PostgresToolCallLedger:
             error=projection["error"],
             decision_note=projection["decision_note"],
             decision_operator_id=projection["decision_operator_id"],
-            denial_reason=projection["denial_reason"],
             withdrawal_reason=projection["withdrawal_reason"],
             approval_policy_id=projection["approval_policy_id"],
             auto_approval_evaluation=projection["auto_approval_evaluation"],
@@ -681,7 +674,6 @@ class PostgresToolCallLedger:
             error=row.error,
             decision_note=row.decision_note,
             decision_operator_id=row.decision_operator_id,
-            denial_reason=row.denial_reason,
             withdrawal_reason=row.withdrawal_reason,
             approval_policy_id=row.approval_policy_id,
             auto_approval_evaluation=row.auto_approval_evaluation,
