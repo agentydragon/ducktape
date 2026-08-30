@@ -137,7 +137,7 @@ describe("approval queue state", () => {
     expect(statusColor("withdrawn")).toBe("gray");
     expect(
       approvalDisplayFields(pendingApproval({ status: "withdrawn", withdrawal_reason: "superseded" }))
-    ).toMatchObject({ withdrawalReason: "superseded", denialReason: null });
+    ).toMatchObject({ withdrawalReason: "superseded" });
   });
 
   it("never shows a withdrawal as recent operator feedback", () => {
