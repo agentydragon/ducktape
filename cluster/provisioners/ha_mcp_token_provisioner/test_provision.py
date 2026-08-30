@@ -212,6 +212,13 @@ def test_write_token_secret_creates_or_patches():
     write_token_secret(v1, exists=False, token="secret-token")
     assert v1.created[0][0] == TOKEN_SECRET_NAMESPACE
     assert v1.created[0][1].string_data == {"token": "secret-token"}
+    assert v1.created[0][1].metadata.annotations == {
+        "description": "Automatically provisioned Home Assistant long-lived token for HA-MCP",
+        "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
+        "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "haku-console",
+        "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
+        "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "haku-console",
+    }
 
     write_token_secret(v1, exists=True, token="replacement")
     assert v1.patched[0][:2] == (TOKEN_SECRET_NAME, TOKEN_SECRET_NAMESPACE)
