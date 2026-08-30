@@ -31,9 +31,7 @@ Use the JSON-RPC request method `turn/steer`. Its v2 params are:
 {
   "threadId": "thread-id",
   "expectedTurnId": "active-turn-id",
-  "input": [
-    { "type": "text", "text": "new instruction", "textElements": [] }
-  ],
+  "input": [{ "type": "text", "text": "new instruction", "textElements": [] }],
   "clientUserMessageId": "optional-client-id",
   "additionalContext": {},
   "responsesapiClientMetadata": {}
