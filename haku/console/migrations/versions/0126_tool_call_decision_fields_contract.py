@@ -71,10 +71,10 @@ def upgrade() -> None:
             """
         )
     )
-    # The replacement attribution FK is deferred, and PostgreSQL rejects DDL on a table with
-    # pending FK trigger events. Validate that FK now so the column drop below can proceed in this
-    # transaction.
-    op.execute(sa.text("SET CONSTRAINTS fk_mcp_tool_calls_decision_operator IMMEDIATE"))
+    # The replacement attribution FK and the legacy principal validation trigger are deferred, and
+    # PostgreSQL rejects DDL on a table with pending trigger events. Validate all deferred
+    # constraints now so the column drop below can proceed in this transaction.
+    op.execute(sa.text("SET CONSTRAINTS ALL IMMEDIATE"))
     op.execute(
         sa.text(
             """
