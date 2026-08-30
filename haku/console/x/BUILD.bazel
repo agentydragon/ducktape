@@ -19,7 +19,6 @@ py_library(
     deps = [
         ":runtime",
         "//haku/console:config",
-        "//haku/console/harnesses:kind",
         "//haku/console/session:sandbox_claims",
         "//haku/console/session:system_prompt",
         "//haku/console/x/claude_code:runtime",
@@ -82,6 +81,7 @@ py_test(
         "//haku/console/conversation:conversation_event",
         "//haku/console/conversation:item_reads",
         "//haku/console/conversation:prompt_origin",
+        "//haku/console/harnesses:kind",
         "//haku/console/notifications:session_wakes",
         "//haku/console/session:conftest",
         "//haku/console/session:runtime",
