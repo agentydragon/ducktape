@@ -13,7 +13,10 @@ spec:
     namespace: flux-system
 
   serviceAccountName: tf-runner
-  approvePlan: "auto"
+  # Generate the destroy plan, but require a separate Git-approved token before
+  # deleting the Forgejo props user and its upstream registry credentials.
+  destroy: true
+  approvePlan: ""
 
   backendConfig:
     customConfiguration: |

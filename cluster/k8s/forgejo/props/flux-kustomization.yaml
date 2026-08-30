@@ -29,5 +29,3 @@ spec:
       namespace: ducktape-flux
     - name: tofu-state-db
       namespace: ducktape-flux
-    - name: props-namespace
-      namespace: ducktape-flux
