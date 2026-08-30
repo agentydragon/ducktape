@@ -47,6 +47,23 @@ class SessionView(BaseModel):
     updated_at: datetime
 
 
+class ConversationPreview(BaseModel):
+    """The small, derived transcript glimpse shown in the conversation inventory.
+
+    These are read from ``conversation_item`` rather than stored on ``Conversation``. The first
+    operator prompt identifies the thread, while the latest operator prompt and its answer make
+    a multi-turn thread distinguishable at a glance.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    opening_prompt: str | None = Field(description="The first prompt an operator sent in this conversation.")
+    latest_prompt: str | None = Field(description="The most recent prompt an operator sent, if any.")
+    latest_message: str | None = Field(
+        description="The latest answer in the same exchange as `latest_prompt`, if one has arrived."
+    )
+
+
 class ConversationSummary(BaseModel):
     """The operator-facing inventory entry for one conversation.
 
@@ -77,6 +94,9 @@ class ConversationSummary(BaseModel):
     )
     item_count: int = Field(
         description="How many transcript rows this conversation holds — prompts, answers and calls alike."
+    )
+    preview: ConversationPreview | None = Field(
+        description="A derived glimpse of the conversation's opening prompt and latest exchange."
     )
     harness_kind: HarnessKind
 

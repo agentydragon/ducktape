@@ -394,6 +394,18 @@
 
 .haku-conversation-list-item-main {
   min-width: 0;
+  flex: 1 1 auto;
+}
+
+.haku-conversation-preview {
+  min-width: 0;
+  margin: 0.5rem 0;
+}
+
+.haku-conversation-preview-text {
+  min-width: 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
 }
 
 .haku-conversation-open {

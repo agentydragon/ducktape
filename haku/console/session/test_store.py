@@ -1256,12 +1256,75 @@ async def test_operator_conversation_read_surface_keeps_inventory_and_transcript
     assert page.conversations[0].live_session is not None
     assert page.conversations[0].live_session.session_id == matrix.session_id
     assert page.conversations[0].item_count == 1
+    assert page.conversations[0].preview is not None
+    assert page.conversations[0].preview.opening_prompt == "What is happening?"
+    assert page.conversations[0].preview.latest_prompt == "What is happening?"
+    assert page.conversations[0].preview.latest_message is None
     assert [attachment.address for attachment in detail.attachments] == [ROOM]
     assert detail.harness_kind == "claude_code"
     assert detail.session.session_id == matrix.session_id
     asked = one(item for item in detail.items if isinstance(item, PromptItem))
     assert asked.text == "What is happening?"
     assert detail.earlier_sessions == []
+
+
+async def test_conversation_inventory_preview_uses_the_latest_operator_exchange(session_store, operator_id) -> None:
+    view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
+    await _exchange(session_store, operator_id, view.session_id, "first question", "first answer")
+    await _exchange(session_store, operator_id, view.session_id, "latest question", "latest answer")
+
+    page = await session_store.list_operator_conversations(operator_id, cursor=None, limit=10)
+
+    assert page.conversations[0].preview is not None
+    assert page.conversations[0].preview.opening_prompt == "first question"
+    assert page.conversations[0].preview.latest_prompt == "latest question"
+    assert page.conversations[0].preview.latest_message == "latest answer"
+
+
+async def test_conversation_inventory_preview_does_not_attribute_a_harness_wake_to_the_operator(
+    session_store, operator_id
+) -> None:
+    view, token = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
+    assert (
+        await session_store.authenticate_runner_connection(view.session_id, token)
+        == RunnerConnectionAuthentication.ACCEPTED
+    )
+    await _exchange(session_store, operator_id, view.session_id, "operator question", "operator answer")
+    wake_start = await session_store.record_frame(
+        view.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "wake"}
+    )
+    wake = await session_store.open_wake_turn(
+        view.session_id, "background work finished", first_frame_seq=wake_start.frame_seq
+    )
+    assert wake is not None
+    wake_frame = await session_store.record_frame(
+        view.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, assistant(text_block("wake answer"))
+    )
+    await session_store.apply_frame(
+        view.session_id,
+        wake.turn_id,
+        wake_frame.frame_seq,
+        [
+            MessageStarted(provenance=FrameRange(wake_frame.frame_seq, wake_frame.frame_seq)),
+            ItemSegment(
+                item=OpenRef(item_type=ItemType.MESSAGE),
+                text="wake answer",
+                provenance=FrameRange(wake_frame.frame_seq, wake_frame.frame_seq),
+            ),
+            MessageCompleted(backend_item_id=None, provenance=FrameRange(wake_frame.frame_seq, wake_frame.frame_seq)),
+        ],
+    )
+    await session_store.end_turn(wake.turn_id, TurnAnswered(), last_frame_seq=wake_frame.frame_seq)
+
+    page = await session_store.list_operator_conversations(operator_id, cursor=None, limit=10)
+
+    assert page.conversations[0].preview is not None
+    assert page.conversations[0].preview.latest_prompt == "operator question"
+    assert page.conversations[0].preview.latest_message == "operator answer"
 
 
 async def test_a_conversation_a_channel_holds_takes_a_prompt_typed_in_the_browser(

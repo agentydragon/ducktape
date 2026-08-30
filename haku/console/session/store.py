@@ -30,7 +30,7 @@ from haku.console.conversation import conversation_event, log, prompt_inbox
 from haku.console.conversation.conversation_event import FrameRange, PromptRejection
 from haku.console.conversation.item_reads import ConversationPageRow, item_of, turn_end_of
 from haku.console.conversation.item_vocabulary import ItemStatus, ItemType
-from haku.console.conversation.prompt_origin import HARNESS_ORIGIN, PromptOrigin
+from haku.console.conversation.prompt_origin import HARNESS_ORIGIN, PromptOrigin, PromptOriginKind
 from haku.console.conversation.reads import (
     ChannelAttachment,
     FrameRecord,
@@ -66,6 +66,7 @@ from haku.console.notifications.session_wakes import SessionEventKind, notify
 from haku.console.session.conversation_views import (
     ConversationCursor,
     ConversationPage,
+    ConversationPreview,
     ConversationSummary,
     ConversationUpdate,
     ConversationView,
@@ -216,6 +217,63 @@ async def _item_counts(db: AsyncSession, conversations: set[UUID]) -> dict[UUID,
     )
     counted = {conversation: count for conversation, count in rows.all() if conversation is not None}
     return {conversation: counted.get(conversation, 0) for conversation in conversations}
+
+
+async def _conversation_previews(db: AsyncSession, conversations: set[UUID]) -> dict[UUID, ConversationPreview | None]:
+    """The inventory's transcript glimpse, derived from the item rows.
+
+    Prompts are read separately from messages because a conversation can have a harness-origin
+    wake between two operator exchanges. The latest answer only belongs in the preview when it
+    shares the latest operator prompt's turn; otherwise a pending prompt would display the answer
+    from an older exchange, or a harness wake's answer as the operator's.
+    """
+    if not conversations:
+        return {}
+    prompts = (
+        await db.scalars(
+            select(ConversationItem)
+            .where(ConversationItem.conversation_id.in_(conversations), ConversationItem.item_type == ItemType.PROMPT)
+            .order_by(ConversationItem.conversation_id, ConversationItem.opened_seq)
+        )
+    ).all()
+    operator_prompts: dict[UUID, list[ConversationItem]] = {conversation: [] for conversation in conversations}
+    for prompt in prompts:
+        if prompt.origin is None:
+            raise ValueError(f"a prompt row names no origin: {prompt.item_id=}")
+        if prompt.origin.kind is not PromptOriginKind.HARNESS:
+            operator_prompts[prompt.conversation_id].append(prompt)
+    latest_turns = {
+        prompts[-1].turn_id for prompts in operator_prompts.values() if prompts and prompts[-1].turn_id is not None
+    }
+    latest_messages = (
+        (
+            await db.scalars(
+                select(ConversationItem)
+                .where(ConversationItem.item_type == ItemType.MESSAGE, ConversationItem.turn_id.in_(latest_turns))
+                .order_by(ConversationItem.opened_seq.desc())
+            )
+        ).all()
+        if latest_turns
+        else []
+    )
+    messages: dict[UUID, ConversationItem] = {}
+    for message in latest_messages:
+        if message.turn_id is not None:
+            messages.setdefault(message.turn_id, message)
+    previews: dict[UUID, ConversationPreview | None] = {}
+    for conversation in conversations:
+        prompts_for_conversation = operator_prompts[conversation]
+        if not prompts_for_conversation:
+            previews[conversation] = None
+            continue
+        opening, latest = prompts_for_conversation[0], prompts_for_conversation[-1]
+        latest_message = messages.get(latest.turn_id) if latest.turn_id is not None else None
+        previews[conversation] = ConversationPreview(
+            opening_prompt=opening.item_text,
+            latest_prompt=latest.item_text,
+            latest_message=latest_message.item_text if latest_message is not None else None,
+        )
+    return previews
 
 
 async def _live_sessions(db: AsyncSession, conversations: set[UUID]) -> dict[UUID, SessionView]:
@@ -931,6 +989,7 @@ class Store:
             threads = {row.conversation_id for row in rows[:limit]}
             attachments = await _live_attachments(db, threads)
             counts = await _item_counts(db, threads)
+            previews = await _conversation_previews(db, threads)
             live = await _live_sessions(db, threads)
             ended = await _last_ended_sessions(db, threads - live.keys())
         return ConversationPage(
@@ -946,6 +1005,7 @@ class Store:
                     live_session=live.get(row.conversation_id),
                     last_session_status=ended.get(row.conversation_id),
                     item_count=counts[row.conversation_id],
+                    preview=previews[row.conversation_id],
                 )
                 for row in rows[:limit]
             ],

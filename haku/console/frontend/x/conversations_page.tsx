@@ -78,6 +78,32 @@ function Attachments({ attachments }: { attachments: ConversationSummary["attach
   );
 }
 
+function ConversationPreview({ preview }: { preview: ConversationSummary["preview"] }) {
+  if (!preview) return null;
+  const opening = preview.opening_prompt?.trim() || null;
+  const latestPrompt = preview.latest_prompt?.trim() || null;
+  const latestMessage = preview.latest_message?.trim() || null;
+  if (!opening && !latestPrompt && !latestMessage) return null;
+  const latestIsOpening = latestPrompt === opening;
+  const latestText = latestIsOpening
+    ? latestMessage && `Latest response: ${latestMessage}`
+    : [latestPrompt, latestMessage].filter((part): part is string => part !== null).join(" → ");
+  return (
+    <Stack gap={2} className="haku-conversation-preview">
+      {opening && (
+        <Text size="sm" lineClamp={2} title={opening} className="haku-conversation-preview-text">
+          {opening}
+        </Text>
+      )}
+      {latestText && (
+        <Text size="xs" c="dimmed" lineClamp={2} title={latestText} className="haku-conversation-preview-text">
+          {latestText}
+        </Text>
+      )}
+    </Stack>
+  );
+}
+
 /** The sandbox's own account of coming up, at the head of the transcript where it happened.
  *
  * Narration is recorded before the CLI produces anything, and a session that never got past setup
@@ -366,6 +392,7 @@ function ConversationListPage() {
                         </Badge>
                       )}
                     </Group>
+                    <ConversationPreview preview={conversation.preview} />
                     <Text size="xs" c="dimmed" mt={4}>
                       {conversation.item_count} items · active {timestamp(conversation.last_activity_at)}
                     </Text>

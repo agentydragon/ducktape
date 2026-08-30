@@ -292,6 +292,13 @@ const conversationPage = {
       },
       last_session_status: null,
       item_count: 6,
+      preview: {
+        opening_prompt:
+          "Investigate the API latency regression and summarize the likely cause for the on-call handoff.",
+        latest_prompt: "Now check whether the degraded server recovered.",
+        latest_message:
+          "The reflection call timed out before I could answer; I left the full diagnostic trail in the conversation.",
+      },
     },
     {
       conversation_id: "70000000-0000-4000-8000-0000000000a2",
@@ -302,6 +309,11 @@ const conversationPage = {
       live_session: null,
       last_session_status: "closed",
       item_count: 8,
+      preview: {
+        opening_prompt: "Review the deployment history and identify the first release that changed this behavior.",
+        latest_prompt: "Write a concise handoff for the next operator.",
+        latest_message: "The change entered with the July 30 release and the handoff is ready.",
+      },
     },
     {
       conversation_id: "70000000-0000-4000-8000-0000000000a3",
@@ -312,6 +324,11 @@ const conversationPage = {
       live_session: null,
       last_session_status: "failed",
       item_count: 2,
+      preview: {
+        opening_prompt: "Find out why this worker stopped responding.",
+        latest_prompt: "Find out why this worker stopped responding.",
+        latest_message: null,
+      },
     },
   ],
   // Not the last page, so the keyset's "Load older conversations" control renders.
