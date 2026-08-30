@@ -7,15 +7,9 @@
 # in-YAML version was a ConfigMap edit picked up on the next claim. Accepted — the
 # environment provenance never covered the image tag either way
 # (haku/sandbox/config.py), so no drift detection is lost.
-#
-# TWO IMAGES RUN THIS, and a change here lands in both:
-#   - the haku-sandbox exec target (this directory's Dockerfile), via Console's bootstrap;
-#   - the Console-owned Claude runner (//haku/runner:runner_image),
-#     which runs it itself before launching Claude Code, so that session comes up with
-#     Haku's manual and its git credential rather than an empty /workspace.
-# The steps a given box does not want are switched off by env, below — never by a second
-# copy of this file, because "similar setup to the haku sandbox" is the whole requirement
-# and two copies would drift out of it.
+# This script belongs to the haku-sandbox exec target only. Console-launched runner images use
+# an Agent-owned script mounted by their SandboxTemplate, so credentials and workspace checkout
+# policy are not shared through the runner image.
 #
 # Idempotent: safe to re-run against an already-set-up box.
 set -euo pipefail

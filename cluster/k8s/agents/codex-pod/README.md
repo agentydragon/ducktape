@@ -16,7 +16,7 @@ Registry-hosting rationale (why Forgejo over GHCR) + the general pattern:
   agent-box's unattended `ducktape.codex`). Baked directly rather than via the
   upstream `programs.codex` module, whose config.toml comes from a home-manager
   _activation_ script that never runs in this activation-less image.
-- **CI**: `.github/workflows/codex-pod-image.yml` builds `.#codex-pod-image` and
+- **CI**: `.github/workflows/nix-oci-images.yml` builds `.#codex-pod-image` and
   `skopeo copy`s a `devel-<ts>-<sha7>` tag to our Forgejo registry
   `git.allegedly.works/ducktape-ci/codex-pod` (as the `ducktape-ci` tenant).
 - **Auto-roll**: `ImageRepository` (authenticated `secretRef`) + `ImagePolicy` in

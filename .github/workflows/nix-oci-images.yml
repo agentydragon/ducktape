@@ -1,0 +1,64 @@
+# Build and publish the plain dockerTools OCI images from the Nix flake.
+# All entries use the shared build/publish action and the private Forgejo registry.
+name: Nix OCI images
+
+on:
+  push:
+    branches: [devel]
+    paths:
+      - "x/codex_pod_image/**"
+      - "cluster/k8s/haku/workspaces/image/**"
+      - "haku/runner/**"
+      - "nix/**"
+      - "flake.nix"
+      - "flake.lock"
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/actions/build-nix-oci-image/action.yml"
+      - ".github/workflows/nix-oci-images.yml"
+  pull_request:
+    paths:
+      - "x/codex_pod_image/**"
+      - "cluster/k8s/haku/workspaces/image/**"
+      - "haku/runner/**"
+      - "nix/**"
+      - "flake.nix"
+      - "flake.lock"
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/actions/build-nix-oci-image/action.yml"
+      - ".github/workflows/nix-oci-images.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: nix-oci-images-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-push:
+    name: Build & push ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: codex-pod
+            flake_output: codex-pod-image
+            image: git.allegedly.works/ducktape-ci/codex-pod
+          - name: haku-sandbox-image-nix
+            flake_output: haku-sandbox-image
+            image: git.allegedly.works/ducktape-ci/haku-sandbox-image-nix
+          - name: haku-harness-runner
+            flake_output: haku-harness-runner-image
+            image: git.allegedly.works/ducktape-ci/haku-harness-runner
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/build-nix-oci-image
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+          flake_output: ${{ matrix.flake_output }}
+          image: ${{ matrix.image }}
+          push: ${{ github.ref_name == 'devel' }}

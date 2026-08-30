@@ -32,11 +32,11 @@ durable frame record; the runner-side projection is what the neutral generation 
 and `transport.py` are the Console-side client value types and WebSocket transport of the v3 path,
 retained while that cutover completes.
 
-**Gotcha:** the provider-neutral image name is `haku-harness-runner`, the key in
-<../../devinfra/ci/image_targets.json> rather than derived from this Bazel path — so moving the
-target does not rename the published image. Its one OCI (`:runner_image`) contains the runner, both
-native CLIs, git, kubectl and CA roots. The SandboxTemplate selects the harness at launch; adding
-another harness must not create another publication alias.
+**Gotcha:** the provider-neutral image name is `haku-harness-runner`, published by
+`.github/workflows/nix-oci-images.yml` from the
+`.#haku-harness-runner-image` flake output. It contains the runner, both native CLIs, git, kubectl
+and CA roots. The SandboxTemplate selects the harness at launch; adding another harness must not
+create another publication alias.
 
 ## v4 framing
 
@@ -80,10 +80,10 @@ URL so standard HTTP clients send proxy authentication without another credentia
 copy.
 It is not the Claude OAuth credential, which never enters the sandbox.
 
-The shared workspace bootstrap runs before the launch environment is handed to the harness. When
-the claim carries a session token, the script derives the same session-authenticated proxy URL and
-uses the mounted fence CA for its initial `haku-state` checkout. A claim without that token keeps
-the existing setup path, which is how the separate `haku-sandbox` exec target remains compatible.
+The runner image contains only harness tooling and no Agent workspace bootstrap. `HAKU_RUNNER_SETUP`
+is selected in the received launch environment; Claude points it at the ConfigMap-mounted
+`/etc/haku/haku-claude-runner-setup.sh`, which derives the session-authenticated proxy URL, writes
+this Agent's git credentials and identity, and syncs `haku-state` plus the read-only `ducktape` checkout.
 
 When the Console launch environment contains `HAKU_KUBERNETES_PROXY_URL`, the runner creates
 `$HOME/.kube/config` and a mode-0600 `$HOME/.kube/haku-agent-token`. The config points only at that
@@ -98,6 +98,6 @@ no hard-coded proxy hostname. During rollout the existing Claude SandboxTemplate
 legacy ServiceAccount token for old runners and claims, even though new launches select this
 kubeconfig. The follow-up removes that direct credential only after the proxy path is live.
 
-`HAKU_RUNNER_SETUP` is likewise selected in the received launch environment. An explicit empty
-value disables setup for an Agent whose workspace starts empty. The process-level image value
-remains only as a rolling fallback for old Console replicas that launch Haku without this field.
+An explicit empty `HAKU_RUNNER_SETUP` disables setup for an Agent whose workspace starts empty, as
+Codex does. The dedicated `haku-sandbox` exec target continues to use its own full bootstrap, which
+also handles Bazel truststore and proxied Kubernetes configuration.

@@ -27,10 +27,6 @@
       "target": "//finance/scraper:image",
       "test": "//finance/scraper/..."
     },
-    "haku-harness-runner": {
-      "target": "//haku/runner:runner_image",
-      "test": "//haku/runner/..."
-    },
     "haku-egress-proxy": {
       "target": "//haku/egress:proxy_image",
       "test": "//haku/egress/..."

@@ -186,24 +186,6 @@ pkg_tar(
     srcs = [":claude_files"],
 )
 
-# The same bootstrap the haku-sandbox exec target runs, so this box gets Haku's manual and
-# git credential the same way rather than by a second, drifting copy.
-pkg_files(
-    name = "setup_files",
-    srcs = ["//cluster/k8s:haku_sandbox_setup"],
-    attributes = pkg_attributes(
-        group = "1000",
-        mode = "0755",
-        user = "1000",
-    ),
-    prefix = "/usr/local/bin",
-)
-
-pkg_tar(
-    name = "setup_layer",
-    srcs = [":setup_files"],
-)
-
 pkg_files(
     name = "codex_files",
     srcs = ["@codex_cli_linux_x64//:files"],
@@ -246,9 +228,6 @@ oci_image(
         extra_env = {
             "HAKU_CLAUDE_PATH": "/usr/local/bin/claude",
             "HAKU_CODEX_PATH": "/opt/codex/bin/codex",
-            # Compatibility for old Claude pods only. New launches select setup in the
-            # HarnessLaunch environment; Codex explicitly ignores this fallback.
-            "HAKU_RUNNER_SETUP": "/usr/local/bin/haku-sandbox-setup.sh",
             "HOME": "/home/runner",
             "CLAUDE_CONFIG_DIR": "/claude-config",
             "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
@@ -258,7 +237,6 @@ oci_image(
     tars = [
         ":runner_layers",
         ":claude_layer",
-        ":setup_layer",
         ":codex_layer",
         ":kubectl_layer",
         "//third_party/debian_slim:cacerts",

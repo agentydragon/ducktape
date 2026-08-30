@@ -7,7 +7,7 @@ settings:
   # https, never http: client-go attaches kubeconfig credentials only to a TLS server, so a
   # plain-http proxy URL makes every sandbox kubectl request unauthenticated (401).
   runner_kubernetes_proxy_url: https://haku-kube-api-proxy.haku-console.svc.cluster.local:8443
-  haku_agent_workspace_setup: /usr/local/bin/haku-sandbox-setup.sh
+  haku_agent_workspace_setup: /etc/haku/haku-claude-runner-setup.sh
 
 git_ca_bundle: /etc/ssl/certs/ca-certificates.crt
 recall_indexes:

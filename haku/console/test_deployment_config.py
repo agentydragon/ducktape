@@ -194,7 +194,7 @@ def test_deployed_console_settings_load_from_the_shared_yaml(monkeypatch: pytest
     # https, never http: client-go attaches kubeconfig credentials only to a TLS server, so a
     # plain-http proxy URL silently un-authenticates every sandbox kubectl request.
     assert settings.runner_kubernetes_proxy_url == "https://haku-kube-api-proxy.haku-console.svc.cluster.local:8443"
-    assert str(settings.haku_agent_workspace_setup) == "/usr/local/bin/haku-sandbox-setup.sh"
+    assert str(settings.haku_agent_workspace_setup) == "/etc/haku/haku-claude-runner-setup.sh"
     raw = yaml.safe_load(config_path.read_text())
     config = ConsoleConfigFile.model_validate(raw)
     assert config.harnesses is not None

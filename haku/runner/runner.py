@@ -176,11 +176,10 @@ async def _serve_console(
 
 
 async def prepare_workspace(setup_path: Path, *, cwd: str, narrate: SetupNarration | None = None) -> None:
-    """Run the shared sandbox bootstrap: git credentials and Haku's own checkouts.
+    """Run the launch-selected Agent bootstrap before starting the harness.
 
-    The same script the haku-sandbox exec target runs
-    (<../../cluster/k8s/haku/workspaces/image/haku-sandbox-setup.sh>), so this box gets the
-    same `.netrc` and haku-state working copy.
+    The selected script is Agent-owned and supplied by the SandboxTemplate; the shared runner image
+    contains no workspace credentials or checkout policy.
 
     Run in the runner rather than as an image entrypoint wrapper so *narrate* can report it: a clone
     is the longest thing between "provisioning" and an answer.

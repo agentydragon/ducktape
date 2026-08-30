@@ -7,13 +7,14 @@ in the harness and drives this box through `exec_sandbox`.
 
 Two builds of the same image exist right now:
 
-| File          | Built by                                       | Pushed to                            | Status                                    |
-| ------------- | ---------------------------------------------- | ------------------------------------ | ----------------------------------------- |
-| `Dockerfile`  | `.github/workflows/haku-sandbox-image.yml`     | `ducktape-ci/haku-sandbox-image`     | **Live** — what the SandboxTemplate pulls |
-| `default.nix` | `.github/workflows/haku-sandbox-image-nix.yml` | `ducktape-ci/haku-sandbox-image-nix` | **Works — 25/26**, cutover pending        |
+| File          | Built by                                   | Pushed to                            | Status                                    |
+| ------------- | ------------------------------------------ | ------------------------------------ | ----------------------------------------- |
+| `Dockerfile`  | `.github/workflows/haku-sandbox-image.yml` | `ducktape-ci/haku-sandbox-image`     | **Live** — what the SandboxTemplate pulls |
+| `default.nix` | `.github/workflows/nix-oci-images.yml`     | `ducktape-ci/haku-sandbox-image-nix` | **Works — 25/26**, cutover pending        |
 
-Both bake the same `haku-sandbox-setup.sh`, so the per-claim bootstrap cannot drift between
-them. The Nix build exists to end the recurring "the image is missing X" bug (`kubectl`,
+The exec-target image bakes `haku-sandbox-setup.sh`; Console-launched runner images contain only
+the harness toolchain. Agent-specific setup is mounted by each SandboxTemplate instead of being
+shared through the runner image. The Nix build exists to end the recurring "the image is missing X" bug (`kubectl`,
 then a `python3-minimal` with no `json`, then `jq`/`gh`/`tea`) by making the tool set one
 reviewable list that shares a substrate with <../../../../../x/codex_pod_image/default.nix>.
 
@@ -97,22 +98,21 @@ If step 2 or 3 fails, the next thing to try is `nix-ld` via pod env (`NIX_LD`,
 Firecracker made unreachable and a pod spec makes trivial. The Dockerfile stays in the
 meantime; it is not costing much beyond the occasional missing tool.
 
-Once the checklist passes: delete `Dockerfile`, fold
-`haku-sandbox-image-nix.yml` back into `haku-sandbox-image.yml` under the original image
-name, and repoint the SandboxTemplate.
+Once the checklist passes: delete `Dockerfile`, change the sandbox entry in
+`.github/workflows/nix-oci-images.yml` from `haku-sandbox-image-nix` to the original
+`haku-sandbox-image` repository, and repoint the SandboxTemplate.
 
 ## What the bootstrap does
 
-`haku-sandbox-setup.sh` runs once per claim (Console's configured `bootstrap.script` is just a call to
-it). In order: the egress CA into a JVM truststore for Bazel's downloader, the `haku` git
-identity, `http.sslCAInfo` so plain `git` trusts the bumped proxy, a two-machine `.netrc`
-for both Forgejo hostnames, the `haku-state` clone, and a partial `ducktape` clone so the
-run's base-sync step has something to diff against.
+`haku-sandbox-setup.sh` runs once per exec-target claim. It configures the egress CA for Bazel, the
+`haku` git identity and credentials, proxied Kubernetes access, and the `haku-state` plus `ducktape`
+checkouts. Console-launched Agents own their setup through a mounted per-Agent script instead.
 
 ## Console harness runner image
 
-The Console sandbox bridge is `//haku/runner:runner_image`, published once as
-`ghcr.io/agentydragon/haku-harness-runner`. It contains the pinned native Claude and Codex CLIs,
+The Console sandbox bridge is `.#haku-harness-runner-image`, published by
+`.github/workflows/nix-oci-images.yml` as
+`git.allegedly.works/ducktape-ci/haku-harness-runner`. It contains the pinned native Claude and Codex CLIs,
 git, kubectl, and CA roots; the SandboxTemplate still selects Claude explicitly with `--harness`.
 
 The repository rename and the first publication necessarily meet at the merge commit: CI cannot

@@ -61,6 +61,14 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     mounts = pod_template["spec"]["containers"][0]["volumeMounts"]
     ca_mount = one(mount for mount in mounts if mount["name"] == "egress-proxy-ca")
     assert str(PurePosixPath(runtime["ca_bundle"]).parent) == ca_mount["mountPath"]
+    setup_mount = one(mount for mount in mounts if mount["name"] == "claude-runner-setup")
+    assert setup_mount == {"name": "claude-runner-setup", "mountPath": "/etc/haku", "readOnly": True}
+    setup_volume = one(volume for volume in pod_template["spec"]["volumes"] if volume["name"] == "claude-runner-setup")
+    assert setup_volume["configMap"] == {"name": "haku-claude-runner-setup", "defaultMode": 493}
+    setup_path = PurePosixPath(
+        yaml.safe_load((k8s_dir / "haku/console/config.yaml").read_text())["settings"]["haku_agent_workspace_setup"]
+    )
+    assert setup_path == PurePosixPath("/etc/haku/haku-claude-runner-setup.sh")
 
     oauth_ingress = yaml.safe_load((k8s_dir / "agents/haku-egress-proxy/claude-networkpolicy.yaml").read_text())
     peers = oauth_ingress["spec"]["ingress"][0]["from"]
@@ -303,37 +311,31 @@ def test_haku_harness_runner_has_one_neutral_publication(k8s_dir: Path) -> None:
     """The Claude template follows the one provider-neutral image repository and policy."""
     canonical_name = "haku-harness-runner"
     retired_name = "haku-claude-runner"
-    flux_dir = k8s_dir / "flux-image-automation-ghcr"
+    flux_dir = k8s_dir / "flux-image-automation-forgejo"
 
     image_documents = list(yaml.safe_load_all((flux_dir / f"{canonical_name}-image.yaml").read_text()))
     repository = one(document for document in image_documents if document["kind"] == "ImageRepository")
     policy = one(document for document in image_documents if document["kind"] == "ImagePolicy")
     assert repository["metadata"]["name"] == canonical_name
-    assert repository["spec"]["image"] == f"ghcr.io/agentydragon/{canonical_name}"
+    assert repository["spec"]["image"] == f"git.allegedly.works/ducktape-ci/{canonical_name}"
     assert policy["metadata"]["name"] == canonical_name
     assert policy["spec"]["imageRepositoryRef"]["name"] == canonical_name
 
     flux_kustomization = yaml.safe_load((flux_dir / "kustomization.yaml").read_text())
     assert f"{canonical_name}-image.yaml" in flux_kustomization["resources"]
 
-    receiver = yaml.safe_load((k8s_dir / "flux-webhook/github-webhook-receiver.yaml").read_text())
-    image_repositories = {
-        resource["name"] for resource in receiver["spec"]["resources"] if resource["kind"] == "ImageRepository"
-    }
-    assert canonical_name in image_repositories
-    assert retired_name not in image_repositories
-
     template_path = k8s_dir / "haku/workspaces/app/sandboxtemplate-haku-claude.yaml"
     template_text = template_path.read_text()
     container = one(yaml.safe_load(template_text)["spec"]["podTemplate"]["spec"]["containers"])
     image_repository, image_tag = container["image"].rsplit(":", 1)
-    assert image_repository == f"ghcr.io/agentydragon/{canonical_name}"
-    assert re.fullmatch(policy["spec"]["filterTags"]["pattern"], image_tag)
+    assert image_repository == f"git.allegedly.works/ducktape-ci/{canonical_name}"
+    assert image_tag == "latest"
     assert f'# {{"$imagepolicy": "flux-system:{canonical_name}"}}' in template_text
     assert container["args"] == ["--harness", "claude"]
 
     manifests = "\n".join(path.read_text() for path in k8s_dir.rglob("*.yaml"))
-    assert retired_name not in manifests
+    image_references = re.findall(r"^\s*image:\s*([^\s#]+)", manifests, flags=re.MULTILINE)
+    assert all(retired_name not in image.rsplit(":", 1)[0] for image in image_references)
 
 
 def test_claude_sandbox_can_reach_the_forgejo_the_bootstrap_clones_from(k8s_dir: Path) -> None:
@@ -781,7 +783,7 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
     assert pod["automountServiceAccountToken"] is False
     assert "serviceAccountName" not in pod
     container = one(pod["containers"])
-    assert container["image"].startswith("ghcr.io/agentydragon/haku-harness-runner:devel-")
+    assert container["image"].startswith("git.allegedly.works/ducktape-ci/haku-harness-runner:")
     assert '# {"$imagepolicy": "flux-system:haku-harness-runner"}' in template_text
     assert container["args"] == ["--harness", "codex-app-server"]
     environment = sandbox_env(template)

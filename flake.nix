@@ -502,6 +502,12 @@
           # Build: nix build .#haku-sandbox-image
           # Load:  docker load < result
           haku-sandbox-image = import ./cluster/k8s/haku/workspaces/image { inherit pkgs; };
+          # Haku Console harness runner image (plain Docker, no NixOS/systemd).
+          # Build: nix build .#haku-harness-runner-image
+          # Load:  docker load < result
+          haku-harness-runner-image = import ./haku/runner/image {
+            inherit pkgs pkgsUnstable pkgsMaster;
+          };
           # Codex pod image (plain Docker, no NixOS/systemd). Tool set is a
           # buildEnv; see cluster/k8s/agents/codex-pod/README.md.
           # Build: nix build .#codex-pod-image

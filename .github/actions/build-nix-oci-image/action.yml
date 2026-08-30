@@ -1,0 +1,74 @@
+name: Build and publish Nix OCI image
+description: Build a dockerTools OCI archive and publish it with a sortable tag
+
+inputs:
+  sops_age_key:
+    description: SOPS age private key for CI decryption
+    required: true
+  flake_output:
+    description: Nix flake output containing the dockerTools image
+    required: true
+  image:
+    description: Full destination image repository
+    required: true
+  push:
+    description: Publish the image when true
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup-nix-attic
+      with:
+        sops_age_key: ${{ inputs.sops_age_key }}
+
+    - name: Build image
+      shell: bash
+      run: nix build .#${{ inputs.flake_output }} --print-build-logs
+
+    - name: Compute tag
+      id: meta
+      shell: bash
+      run: |
+        set -euo pipefail
+        SHA="${{ github.sha }}"
+        SLUG="${GITHUB_REF_NAME//\//-}"
+        echo "pin_tag=${SLUG}-$(date -u +%Y%m%d%H%M%S)-${SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+    - name: Check whether image changed
+      id: image
+      if: inputs.push == 'true'
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+      run: |
+        set -euo pipefail
+        archive="$(readlink -f result)"
+        local_digest="$(skopeo inspect --format '{{.Digest}}' "docker-archive:$archive")"
+        remote_digest="$(skopeo inspect --insecure-policy \
+          --creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD" \
+          --format '{{.Digest}}' "docker://$IMAGE:latest" 2>/dev/null || true)"
+        if [[ -n "$remote_digest" && "$local_digest" == "$remote_digest" ]]; then
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+          echo "Image matches $IMAGE:latest ($local_digest); skipping publish." >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Publish image
+      if: inputs.push == 'true' && steps.image.outputs.changed == 'true'
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+      run: |
+        set -euo pipefail
+        ref="$IMAGE:${{ steps.meta.outputs.pin_tag }}"
+        archive="docker-archive:$(readlink -f result)"
+        skopeo copy --insecure-policy \
+          --dest-creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD" \
+          "$archive" "docker://$ref"
+        skopeo copy --insecure-policy \
+          --dest-creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD" \
+          "$archive" "docker://$IMAGE:latest"
+        echo "pushed \`$ref\` and \`$IMAGE:latest\`" >> "$GITHUB_STEP_SUMMARY"
