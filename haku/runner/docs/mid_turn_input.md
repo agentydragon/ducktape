@@ -32,7 +32,7 @@ Use the JSON-RPC request method `turn/steer`. Its v2 params are:
   "threadId": "thread-id",
   "expectedTurnId": "active-turn-id",
   "input": [
-    {"type": "text", "text": "new instruction", "textElements": []}
+    { "type": "text", "text": "new instruction", "textElements": [] }
   ],
   "clientUserMessageId": "optional-client-id",
   "additionalContext": {},
@@ -167,9 +167,9 @@ The SDK source documents and tests the bidirectional client and concurrent send/
 pattern, but does not define a model-call scheduling boundary equivalent to Codex's
 input queue. The exact placement is therefore a Claude Code CLI behavior, not an SDK
 guarantee: the line is accepted by the live stream, and Claude Code incorporates it at
- the next point at which the CLI can absorb another user message. The SDK source does
-not promise that an in-flight model request is cancelled or that the new text is
-visible to that already-started request.
+the next point at which the CLI can absorb another user message. The SDK source does
+not promise that an in-flight model request is cancelled or that the new text is visible
+to that already-started request.
 
 The output `type: "user"` frame is the protocol-level acknowledgement that the CLI has
 accepted/emitted the message. The SDK parser maps it to `UserMessage`; see
@@ -198,7 +198,7 @@ the SDK does not expose a per-message turn result.
 ### Interrupt interplay
 
 `ClaudeSDKClient.interrupt()` sends a stream-json control request with
-`{"subtype":"interrupt"}` through the CLI control channel. It is a cancellation
+`{"subtype": "interrupt"}` through the CLI control channel. It is a cancellation
 operation, not a user message. The SDK's public method and internal control request are
 in [`src/claude_agent_sdk/client.py`](https://github.com/anthropics/claude-agent-sdk-python/blob/v0.2.141/src/claude_agent_sdk/client.py)
 and [`src/claude_agent_sdk/_internal/query.py`](https://github.com/anthropics/claude-agent-sdk-python/blob/v0.2.141/src/claude_agent_sdk/_internal/query.py).
