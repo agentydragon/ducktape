@@ -1,7 +1,9 @@
 use std::process::ExitCode;
 
+use aw_importer::DEFAULT_RECONCILIATION_LOOKBACK_SECONDS;
+use aw_importer::ImportOptions;
 use aw_importer::connect;
-use aw_importer::import_device;
+use aw_importer::import_device_with_options;
 use clap::Parser;
 
 /// Idempotent one-way importer of one device's ActivityWatch data into a central
@@ -23,6 +25,13 @@ struct Args {
     /// Device id stamped onto destination buckets as provenance, e.g. `rugged`.
     #[arg(long)]
     device: String,
+    /// Seconds of recent destination history to reconcile on each run.
+    #[arg(long, default_value_t = DEFAULT_RECONCILIATION_LOOKBACK_SECONDS)]
+    lookback_seconds: u64,
+    /// Scan complete source and destination buckets to recover old gaps.
+    /// This is intentionally explicit because it is expensive.
+    #[arg(long)]
+    full_reconcile: bool,
 }
 
 fn main() -> ExitCode {
@@ -50,11 +59,31 @@ fn main() -> ExitCode {
             }
         };
 
-        match import_device(&source, &dest, &args.device).await {
+        let options = match ImportOptions::from_lookback_seconds(
+            args.lookback_seconds,
+            args.full_reconcile,
+        ) {
+            Ok(options) => options,
+            Err(error) => {
+                eprintln!("options: {error}");
+                return ExitCode::FAILURE;
+            }
+        };
+
+        match import_device_with_options(&source, &dest, &args.device, options).await {
             Ok(summary) => {
                 for bucket in &summary.buckets {
+                    let mode = if bucket.full_reconcile {
+                        "full"
+                    } else {
+                        "incremental"
+                    };
+                    let frontier = bucket
+                        .reconciliation_frontier
+                        .map(|time| time.to_rfc3339())
+                        .unwrap_or_else(|| "none".to_string());
                     println!(
-                        "{} -> {}: {} source, {} distinct, {} already in dest, {} inserted",
+                        "{} -> {} ({mode}, frontier {frontier}): {} source, {} distinct, {} scanned in dest, {} inserted",
                         bucket.device,
                         bucket.dest_bucket,
                         bucket.source_events,

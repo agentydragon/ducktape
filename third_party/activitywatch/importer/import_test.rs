@@ -17,8 +17,9 @@ use std::sync::Once;
 use std::time::Duration;
 
 use aw_client_rust::AwClient;
+use aw_importer::ImportOptions;
 use aw_importer::connect;
-use aw_importer::import_device;
+use aw_importer::import_device_with_options;
 use aw_models::Bucket;
 use aw_models::BucketMetadata;
 use aw_models::Event;
@@ -197,6 +198,23 @@ async fn events(client: &AwClient, bucket_id: &str) -> Vec<Event> {
         .get_events(bucket_id, None, None, None)
         .await
         .unwrap()
+}
+
+async fn import_device(
+    source: &AwClient,
+    dest: &AwClient,
+    device: &str,
+) -> Result<aw_importer::ImportSummary, aw_importer::ImportError> {
+    import_device_with_options(source, dest, device, ImportOptions::default()).await
+}
+
+async fn import_device_with_options_for_test(
+    source: &AwClient,
+    dest: &AwClient,
+    device: &str,
+    options: ImportOptions,
+) -> Result<aw_importer::ImportSummary, aw_importer::ImportError> {
+    import_device_with_options(source, dest, device, options).await
 }
 
 fn runtime() -> tokio::runtime::Runtime {
@@ -466,6 +484,185 @@ fn growing_source_imports_only_the_delta() {
                 .total_inserted(),
             0
         );
+    });
+}
+
+#[test]
+fn catches_up_after_days_offline_from_last_destination_event() {
+    runtime().block_on(async {
+        let root = temp_root("offline-catchup");
+        let (_source_server, source) = aw_server(&root, "source").await;
+        let (_dest_server, dest) = aw_server(&root, "dest").await;
+
+        let initial = event(
+            1_700_000_000_000_000_000,
+            1_700_000_001_000_000_000,
+            r#"{"status":"not-afk"}"#,
+        );
+        seed_bucket(
+            &source,
+            "aw-watcher-afk_localhost",
+            "afkstatus",
+            "aw-watcher-afk",
+            "localhost",
+            vec![initial.clone()],
+        )
+        .await;
+        assert_eq!(
+            import_device_with_options_for_test(
+                &source,
+                &dest,
+                "rugged",
+                ImportOptions::from_lookback_seconds(0, false).unwrap(),
+            )
+            .await
+            .unwrap()
+            .total_inserted(),
+            1
+        );
+
+        // Model a desktop used offline for multiple days. The next invocation
+        // starts at the last destination event and must import the whole backlog,
+        // not just a wall-clock-sized slice.
+        let backlog: Vec<Event> = (1..=2_050)
+            .map(|i| {
+                let start = 1_700_000_002_000_000_000 + i * 86_400_000_000_000;
+                event(
+                    start,
+                    start + 1_000_000_000,
+                    &format!(r#"{{"status":"afk","day":{i}}}"#),
+                )
+            })
+            .collect();
+        source
+            .insert_events("aw-watcher-afk_localhost", backlog.clone())
+            .await
+            .unwrap();
+
+        let summary = import_device_with_options_for_test(
+            &source,
+            &dest,
+            "rugged",
+            ImportOptions::from_lookback_seconds(0, false).unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(summary.total_inserted(), backlog.len());
+        assert_eq!(
+            events(&dest, "rugged::aw-watcher-afk_localhost")
+                .await
+                .len(),
+            backlog.len() + 1
+        );
+    });
+}
+
+#[test]
+fn padded_frontier_drops_clipped_old_events_and_keeps_exact_frontier() {
+    runtime().block_on(async {
+        let root = temp_root("frontier");
+        let (_source_server, source) = aw_server(&root, "source").await;
+        let (_dest_server, dest) = aw_server(&root, "dest").await;
+        let base = 1_700_000_000_000_000_000;
+        let old_crossing = event(base + 4_000_000_000, base + 9_000_000_000, r#"{"n":0}"#);
+        let exact_frontier = event(base + 5_000_000_000, base + 6_000_000_000, r#"{"n":1}"#);
+        let cursor = event(base + 10_000_000_000, base + 11_000_000_000, r#"{"n":2}"#);
+        seed_bucket(
+            &source,
+            "aw-watcher-window_localhost",
+            "currentwindow",
+            "aw-watcher-window",
+            "localhost",
+            vec![old_crossing, exact_frontier.clone(), cursor.clone()],
+        )
+        .await;
+        seed_bucket(
+            &dest,
+            "rugged::aw-watcher-window_localhost",
+            "currentwindow",
+            "aw-watcher-window",
+            "rugged",
+            vec![cursor],
+        )
+        .await;
+
+        let summary = import_device_with_options_for_test(
+            &source,
+            &dest,
+            "rugged",
+            ImportOptions {
+                lookback: TimeDelta::seconds(5),
+                full_reconcile: false,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(summary.total_inserted(), 1);
+        let imported = events(&dest, "rugged::aw-watcher-window_localhost").await;
+        assert_eq!(imported.len(), 2);
+        assert!(
+            imported
+                .iter()
+                .any(|e| e.timestamp.timestamp_nanos_opt() == Some(base + 5_000_000_000))
+        );
+        assert!(
+            !imported
+                .iter()
+                .any(|e| e.timestamp.timestamp_nanos_opt() == Some(base + 5_000_000_000 - 1))
+        );
+    });
+}
+
+#[test]
+fn full_reconcile_repairs_an_old_gap() {
+    runtime().block_on(async {
+        let root = temp_root("full-reconcile");
+        let (_source_server, source) = aw_server(&root, "source").await;
+        let (_dest_server, dest) = aw_server(&root, "dest").await;
+        let source_events = vec![
+            event(1_000_000_000_000, 1_500_000_000_000, r#"{"n":1}"#),
+            event(2_000_000_000_000, 2_500_000_000_000, r#"{"n":2}"#),
+            event(3_000_000_000_000, 3_500_000_000_000, r#"{"n":3}"#),
+        ];
+        seed_bucket(
+            &source,
+            "aw-watcher-window_localhost",
+            "currentwindow",
+            "aw-watcher-window",
+            "localhost",
+            source_events.clone(),
+        )
+        .await;
+        seed_bucket(
+            &dest,
+            "rugged::aw-watcher-window_localhost",
+            "currentwindow",
+            "aw-watcher-window",
+            "rugged",
+            vec![source_events[2].clone()],
+        )
+        .await;
+
+        let normal = import_device_with_options_for_test(
+            &source,
+            &dest,
+            "rugged",
+            ImportOptions::from_lookback_seconds(0, false).unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(normal.total_inserted(), 0);
+
+        let full = import_device_with_options_for_test(
+            &source,
+            &dest,
+            "rugged",
+            ImportOptions::from_lookback_seconds(0, true).unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(full.total_inserted(), 2);
+        assert!(full.buckets[0].full_reconcile);
     });
 }
 

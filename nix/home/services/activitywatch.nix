@@ -34,6 +34,12 @@ in
         description = "systemd timer interval between importer runs.";
       };
 
+      reconciliationLookbackSeconds = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 3600;
+        description = "Recent destination history to reconcile on each importer run.";
+      };
+
       localPort = lib.mkOption {
         type = lib.types.port;
         default = 5600;
@@ -173,7 +179,8 @@ in
             exec ${lib.getExe ducktapePackages.aw-importer} \
               --source-url http://127.0.0.1:${toString cfg.sync.localPort} \
               --dest-url ${lib.escapeShellArg cfg.sync.dest.url} \
-              --device ${lib.escapeShellArg cfg.sync.dest.device}
+              --device ${lib.escapeShellArg cfg.sync.dest.device} \
+              --lookback-seconds ${toString cfg.sync.reconciliationLookbackSeconds}
           '';
         in
         {
@@ -207,6 +214,7 @@ in
             Timer = {
               OnBootSec = "2min";
               OnUnitActiveSec = cfg.sync.interval;
+              Persistent = true;
               Unit = "activitywatch-import.service";
             };
             Install.WantedBy = [ "timers.target" ];

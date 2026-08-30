@@ -35,6 +35,9 @@ use aw_client_rust::AwClient;
 use aw_models::Bucket;
 use aw_models::BucketMetadata;
 use aw_models::Event;
+use chrono::DateTime;
+use chrono::TimeDelta;
+use chrono::Utc;
 use reqwest::Url;
 use serde_json::Map;
 use serde_json::Value;
@@ -49,6 +52,47 @@ type EventKey = (i64, i64, String);
 /// oversized request; each batch is a few hundred KB. The steady-state delta is
 /// usually a single batch.
 pub const INSERT_BATCH_SIZE: usize = 1000;
+
+/// The overlap used to repair a failed or interrupted recent import. The
+/// destination's newest event is the cursor, so this is measured backwards from
+/// that event rather than from wall-clock time.
+pub const DEFAULT_RECONCILIATION_LOOKBACK_SECONDS: u64 = 60 * 60;
+
+/// Controls one importer invocation.
+#[derive(Debug, Clone, Copy)]
+pub struct ImportOptions {
+    /// Re-read this much history before the destination's newest event. The
+    /// overlap catches partially completed batches and late updates without
+    /// downloading the lifetime history on every run.
+    pub lookback: TimeDelta,
+    /// Scan complete source and destination buckets. This is an explicit
+    /// recovery mode and is never selected by the normal timer invocation.
+    pub full_reconcile: bool,
+}
+
+impl Default for ImportOptions {
+    fn default() -> Self {
+        Self {
+            lookback: TimeDelta::seconds(DEFAULT_RECONCILIATION_LOOKBACK_SECONDS as i64),
+            full_reconcile: false,
+        }
+    }
+}
+
+impl ImportOptions {
+    /// Build options from the CLI's unsigned seconds value, rejecting values
+    /// that chrono cannot represent instead of wrapping them.
+    pub fn from_lookback_seconds(seconds: u64, full_reconcile: bool) -> Result<Self, String> {
+        let seconds = i64::try_from(seconds)
+            .map_err(|_| "lookback seconds exceed the supported range".to_string())?;
+        let lookback = TimeDelta::try_seconds(seconds)
+            .ok_or_else(|| "lookback seconds exceed chrono's supported range".to_string())?;
+        Ok(Self {
+            lookback,
+            full_reconcile,
+        })
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum ImportError {
@@ -88,6 +132,10 @@ pub struct BucketImport {
     pub distinct_source: usize,
     pub dest_existing: usize,
     pub inserted: usize,
+    /// The lower bound used for this bucket, or `None` for a full scan or an
+    /// empty destination bucket.
+    pub reconciliation_frontier: Option<DateTime<Utc>>,
+    pub full_reconcile: bool,
 }
 
 #[derive(Debug, Default)]
@@ -101,13 +149,14 @@ impl ImportSummary {
     }
 }
 
-/// Import every bucket of the `source` aw-server into `dest` under device id
-/// `device`. Idempotent: a second import of unchanged source data inserts nothing,
-/// so a re-run after a transient failure converges with no double-counting.
-pub async fn import_device(
+/// Import every bucket with explicit reconciliation options. Idempotent: a
+/// second import of unchanged source data inserts nothing, so a re-run after a
+/// transient failure converges with no double-counting.
+pub async fn import_device_with_options(
     source: &AwClient,
     dest: &AwClient,
     device: &str,
+    options: ImportOptions,
 ) -> Result<ImportSummary, ImportError> {
     // One listing of the destination's buckets seeds which destinations already
     // exist; buckets this run creates are added as we go, so `create_bucket` is
@@ -128,6 +177,7 @@ pub async fn import_device(
             &source_buckets[name],
             &mut existing_buckets,
             &mut summary,
+            options,
         )
         .await?;
     }
@@ -142,17 +192,47 @@ async fn import_bucket(
     source_meta: &Bucket,
     existing_buckets: &mut HashSet<String>,
     summary: &mut ImportSummary,
+    options: ImportOptions,
 ) -> Result<(), ImportError> {
     let dest_bucket = format!("{device}::{source_bucket}");
     ensure_bucket(dest, existing_buckets, &dest_bucket, device, source_meta).await?;
 
-    let source_events = source.get_events(source_bucket, None, None, None).await?;
+    // The destination is the durable cursor. A failed batch cannot make a local
+    // checkpoint lie about what the central server received, and an empty bucket
+    // naturally triggers the one-time backfill.
+    let destination_latest = if options.full_reconcile {
+        None
+    } else {
+        dest.get_events(&dest_bucket, None, None, Some(1))
+            .await?
+            .into_iter()
+            .next()
+    };
+    let frontier = destination_latest.map(|event| event.timestamp - options.lookback);
 
-    // v1 reads the whole source bucket and the whole destination bucket every run
-    // and dedups in memory. That is correct and idempotent but re-reads accumulated
-    // history each time; the planned follow-up is incremental sync from a per-bucket
-    // high-water mark (read only source events past the newest already in dest).
-    let existing = dest.get_events(&dest_bucket, None, None, None).await?;
+    // aw-server clips an event that intersects a requested `start` to that
+    // boundary. Pad the request by one nanosecond and discard events before the
+    // real frontier, so every event we reconcile retains its original timestamp
+    // and duration. There is no end bound, hence no end clipping.
+    let query_start = frontier.map(|time| time - TimeDelta::nanoseconds(1));
+    let source_events = source
+        .get_events(source_bucket, query_start, None, None)
+        .await?
+        .into_iter()
+        .filter(|event| frontier.is_none_or(|time| event.timestamp >= time))
+        .collect::<Vec<_>>();
+
+    let existing = if options.full_reconcile || frontier.is_some() {
+        dest.get_events(&dest_bucket, query_start, None, None)
+            .await?
+            .into_iter()
+            .filter(|event| frontier.is_none_or(|time| event.timestamp >= time))
+            .collect::<Vec<_>>()
+    } else {
+        // A newly-created or empty destination bucket has no existing events;
+        // avoid a redundant full response just to discover that fact.
+        Vec::new()
+    };
     let dest_existing = existing.len();
     let mut seen: HashSet<EventKey> = existing.iter().map(event_key).collect();
 
@@ -165,6 +245,10 @@ async fn import_bucket(
             to_insert.push(reidentified(event));
         }
     }
+    // get_events returns newest-first. Insert oldest-first so a failed batch
+    // leaves the destination's newest event at the last contiguous success; the
+    // next invocation's cursor and overlap then resume without skipping a tail.
+    to_insert.sort_by_key(event_key);
     let inserted = to_insert.len();
     // Batch the inserts so one bucket's backfill is many bounded POSTs, not a
     // single multi-megabyte request. chunks() over an empty vec is a no-op.
@@ -180,6 +264,8 @@ async fn import_bucket(
         distinct_source: distinct.len(),
         dest_existing,
         inserted,
+        reconciliation_frontier: frontier,
+        full_reconcile: options.full_reconcile,
     });
     Ok(())
 }

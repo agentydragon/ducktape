@@ -9,10 +9,11 @@ write route — no snapshot files, no `aw-sync`, no Syncthing.
 **Revived 2026-08-26** on the repo-owned idempotent importer
 (`@ducktape_activitywatch//importer`): each device reads its own aw-server over REST and
 pushes into the central one at `https://activitywatch-write.allegedly.works`, deduped and
-idempotent (a re-run inserts only genuinely new events). rugged and wyrm2 are verified
-feeding; iguana and atlas are enabled and join on their next Home Manager switch.
-Remaining work — incremental sync, then restricting the write route to write methods — is
-tracked in [revival-plan.md](revival-plan.md).
+idempotent (a re-run inserts only genuinely new events). Routine runs use a bounded
+one-hour overlap from the destination's newest event; `--full-reconcile` is an explicit
+add-only recovery mode for older gaps. rugged and wyrm2 are verified feeding; iguana and
+atlas are enabled and join on their next Home Manager switch. The remaining write-route
+hardening is tracked in [revival-plan.md](revival-plan.md).
 
 **History.** The previous transport — desktop `aw-sync` staging databases shipped through
 Syncthing into a cluster receiver and imported by an `aw-sync` CronJob — was retired
