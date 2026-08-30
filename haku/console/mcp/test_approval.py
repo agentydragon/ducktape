@@ -1842,9 +1842,7 @@ async def test_postgres_store_runs_alembic_and_persists_typed_ledger(
         "mcp_tool_call_events",
         "mcp_tool_call_events_legacy_unowned",
     }.isdisjoint(tables)
-    # The contract release no longer maps the legacy column, but PR4 drops it only after old API
-    # replicas and static clients have drained.
-    assert columns == {column.name for column in McpToolCall.__table__.columns} | {"denial_reason"}
+    assert columns == {column.name for column in McpToolCall.__table__.columns}
     assert principal_columns == {column.name for column in McpToolCallPrincipal.__table__.columns}
 
 
