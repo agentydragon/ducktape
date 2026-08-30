@@ -259,12 +259,14 @@ recovery cashouts. Still missing:
 
 ## Refactor follow-ups
 
-- Revisit whether policy should emit all agent actions, including
-  obligation-payment transfers. Potential future shape: hard demands
-  are inputs to the agent policy; the policy emits both liquidation
-  orders and checking-cash payment transfers; settlement only validates
-  that every hard demand was satisfied. Current split: policy emits
-  sales; settlement emits required payments.
+- Move actor-controlled behaviour to the action boundary described in
+  `../plans/actor_actions.md`. Environment accruals/invoices/prices are
+  facts; a policy emits capability-scoped, fixed-shape `Pay`, `Buy`, and
+  `Sell` actions. Validate the complete batch, then settle it atomically
+  or fail that rollout loudly — never partially fill, clamp, or silently
+  omit an action. Current split: target allocation emits sales/buys while
+  obligation settlement emits required payments. Migrate one clock-driven
+  payment path first, then schedules and target allocation.
 - Consider whether `EventLog` should expose only catalog-keyed access
   (`log.frame(EVENT_FRAMES.transfers)`) or keep the current convenience
   properties (`log.transfers`, etc.). The catalog now owns
