@@ -118,7 +118,15 @@ const SCENES = [
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,
     clicks: ['[role="tab"]::-p-text(Sessions)', "button::-p-text(Terminate)"],
-    expectVisible: "::-p-text(This permanently deletes the SandboxClaim and its container.)",
+    expectVisible: "::-p-text(Yes, terminate)",
+    frame: true,
+  },
+  {
+    name: "settings-sessions-terminate-mobile",
+    viewport: { width: 390, height: 760 },
+    closeApprovals: true,
+    clicks: ['[role="tab"]::-p-text(Sessions)', "button::-p-text(Terminate)"],
+    expectVisible: "::-p-text(Yes, terminate)",
     frame: true,
   },
   {

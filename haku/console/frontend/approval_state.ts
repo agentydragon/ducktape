@@ -162,7 +162,9 @@ const STATUS_LABELS: Record<ToolCallRecord["status"], string> = {
 };
 
 const STATUS_COLORS: Record<ToolCallRecord["status"], string> = {
-  pending_approval: "blue",
+  // Approval is an operator decision, so keep it distinct from a running call and bright enough
+  // to read against the dark shell background.
+  pending_approval: "orange",
   running: "blue",
   ok: "teal",
   error: "red",

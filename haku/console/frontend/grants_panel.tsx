@@ -68,8 +68,13 @@ function GrantSource({ grant }: { grant: Grant }) {
       return (
         <Stack gap={2}>
           <Text size="sm">Database</Text>
-          <ExternalLink href={toolCallPath(grant.source.tool_call_id)} size="xs" ff="monospace">
-            tool call {grant.source.tool_call_id.slice(0, 12)}…
+          <ExternalLink
+            href={toolCallPath(grant.source.tool_call_id)}
+            size="xs"
+            title={`Open tool call ${grant.source.tool_call_id}`}
+            aria-label={`Open tool call ${grant.source.tool_call_id}`}
+          >
+            tool call
           </ExternalLink>
         </Stack>
       );
@@ -153,7 +158,7 @@ function GrantValidity({ grant }: { grant: Grant }) {
       </Badge>
       {endsAt && (
         <Text size="xs" c="dimmed" title={endsAt.title}>
-          until {endsAt.text}
+          expires {endsAt.text}
         </Text>
       )}
       {endedAt && (

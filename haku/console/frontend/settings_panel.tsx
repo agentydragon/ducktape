@@ -1,5 +1,5 @@
-import { Badge, Button, Group, Loader, Select, Stack, Table, Tabs, Text } from "@mantine/core";
-import { useCallback, useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { ActionIcon, Badge, Button, Group, Loader, Select, Stack, Table, Tabs, Text } from "@mantine/core";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { useAsyncResource, type AsyncResource, type AsyncResourceLoader } from "./async_resource";
 import {
@@ -17,6 +17,7 @@ import {
 } from "./client";
 import { useConsoleEvents } from "./console_events";
 import { GrantsPanel } from "./grants_panel";
+import { DisconnectIcon } from "./icons";
 import { ExternalLink } from "./link";
 import { usePushNotifications, type PushState } from "./push_subscription";
 import { formatTimestamp, shortDate } from "./time";
@@ -261,16 +262,32 @@ function McpServerRow({
     : providerConnection
       ? () => onDisconnectProvider(providerConnection)
       : null;
+  const statusMarker = view.checking ? (
+    <Loader size={12} aria-label="Checking connection status" />
+  ) : (
+    <span
+      className="haku-status-dot"
+      data-color={state.color}
+      role="img"
+      aria-label={state.label}
+      title={state.label}
+    />
+  );
 
   return (
     <Table.Tr>
       <Table.Td data-slot="primary" className="haku-dense-primary">
-        <Text fw={600} size="sm">
-          {view.connection.server_id}
-        </Text>
-        <Text size="xs" c="dimmed">
-          {view.connection.backend.kind === "remote_mcp" ? "Remote MCP" : "In-process"}
-        </Text>
+        <Group gap="xs" wrap="nowrap" className="haku-mcp-server-name">
+          {statusMarker}
+          <div className="haku-mcp-server-name-text">
+            <Text fw={600} size="sm">
+              {view.connection.server_id}
+            </Text>
+            <Text size="xs" c="dimmed">
+              {view.connection.backend.kind === "remote_mcp" ? "Remote MCP" : "In-process"}
+            </Text>
+          </div>
+        </Group>
       </Table.Td>
       <Table.Td data-slot="secondary" className="haku-dense-secondary">
         <Text size="sm">{connectionSummary(view.connection)}</Text>
@@ -280,21 +297,20 @@ function McpServerRow({
           </Text>
         )}
       </Table.Td>
-      <Table.Td data-slot="status" className="haku-dense-status">
-        <Group gap={6} wrap="nowrap">
-          {view.checking && view.probe && <Loader size={12} aria-label="Checking connection status" />}
-          <Badge color={state.color} variant="light">
-            {state.label}
-          </Badge>
-        </Group>
-      </Table.Td>
       <Table.Td data-slot="action" className="haku-dense-action">
         {linkage &&
           !unprovisioned &&
           (linkageStatus === "connected" || linkageStatus === "degraded" ? (
-            <Button size="compact-sm" variant="subtle" color="red" onClick={disconnect ?? undefined}>
-              Disconnect
-            </Button>
+            <ActionIcon
+              size="sm"
+              variant="subtle"
+              color="red"
+              aria-label="Disconnect MCP account"
+              title="Disconnect MCP account"
+              onClick={disconnect ?? undefined}
+            >
+              <DisconnectIcon size={16} />
+            </ActionIcon>
           ) : (
             <Button size="compact-sm" variant="light" onClick={connect ?? undefined}>
               Connect
@@ -550,80 +566,23 @@ export function provisioningStepLabel(step: ActiveSandbox["sandbox"]["step"]): s
   }
 }
 
-function pointerDownOutsideDialog(e: PointerEvent<HTMLDialogElement>): boolean {
-  const rect = e.currentTarget.getBoundingClientRect();
-  return e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom;
-}
-
-function SandboxTerminationDialog({
+function SandboxSessionRow({
   session,
-  onApprove,
-  onCancel,
+  terminationPending,
+  onRequestTerminate,
+  onCancelTerminate,
+  onConfirmTerminate,
 }: {
-  session: ActiveSandbox | null;
-  onApprove: () => void;
-  onCancel: () => void;
-}): JSX.Element {
-  const ref = useRef<HTMLDialogElement>(null);
-  const [armed, setArmed] = useState(false);
-  const sessionId = session?.session_id ?? null;
-
-  useEffect(() => {
-    const dialog = ref.current;
-    if (!dialog) return;
-    if (!sessionId) {
-      setArmed(false);
-      if (dialog.open) dialog.close();
-      return;
-    }
-    setArmed(false);
-    if (!dialog.open) dialog.showModal();
-    const timer = window.setTimeout(() => setArmed(true), 400);
-    return () => window.clearTimeout(timer);
-  }, [sessionId]);
-
-  return (
-    <dialog
-      ref={ref}
-      aria-label="Terminate sandbox confirmation"
-      onPointerDown={(event) => {
-        if (pointerDownOutsideDialog(event)) onCancel();
-      }}
-      onCancel={(event) => {
-        event.preventDefault();
-        onCancel();
-      }}
-      className="haku-confirm-dialog max-w-md rounded-lg p-5 shadow-xl"
-    >
-      {session && (
-        <Stack gap="sm">
-          <Text fw={600}>Terminate sandbox session?</Text>
-          <Text size="sm">
-            This permanently deletes the SandboxClaim and its container. Session history remains available.
-          </Text>
-          <Text size="sm" className="haku-url-preview rounded p-2 font-mono break-all">
-            {session.session_id}
-            {session.sandbox.claim_name ? ` · ${session.sandbox.claim_name}` : ""}
-          </Text>
-          <Group justify="flex-end" gap="sm" mt="xs">
-            <Button variant="default" size="xs" onClick={onCancel}>
-              Cancel
-            </Button>
-            <Button color="red" size="xs" disabled={!armed} onClick={onApprove}>
-              Terminate
-            </Button>
-          </Group>
-        </Stack>
-      )}
-    </dialog>
-  );
-}
-
-function SandboxSessionRow({ session, onTerminate }: { session: ActiveSandbox; onTerminate: () => void }) {
+  session: ActiveSandbox;
+  terminationPending: boolean;
+  onRequestTerminate: () => void;
+  onCancelTerminate: () => void;
+  onConfirmTerminate: () => void;
+}) {
   const display = activeSandboxStatusDisplay(session.status);
   const closing = session.status === "closing";
   return (
-    <Table.Tr>
+    <Table.Tr className={terminationPending ? "haku-session-row-termination-pending" : undefined}>
       <Table.Td data-slot="primary" className="haku-dense-primary">
         <Text fw={600} size="sm">
           {session.harness_kind.replaceAll("_", " ")}
@@ -642,9 +601,24 @@ function SandboxSessionRow({ session, onTerminate }: { session: ActiveSandbox; o
         <Text size="xs">started {shortDate(session.created_at) ?? "unknown"}</Text>
       </Table.Td>
       <Table.Td data-slot="action" className="haku-dense-action">
-        <Button size="compact-sm" color="red" variant="light" disabled={closing} onClick={onTerminate}>
-          {closing ? "Closing…" : "Terminate"}
-        </Button>
+        {closing ? (
+          <Button size="compact-sm" color="red" variant="light" disabled>
+            Closing…
+          </Button>
+        ) : terminationPending ? (
+          <Group gap="xs" wrap="nowrap">
+            <Button size="compact-sm" color="red" onClick={onConfirmTerminate}>
+              Yes, terminate
+            </Button>
+            <Button size="compact-sm" color="gray" variant="subtle" onClick={onCancelTerminate}>
+              Cancel
+            </Button>
+          </Group>
+        ) : (
+          <Button size="compact-sm" color="red" variant="light" onClick={onRequestTerminate}>
+            Terminate
+          </Button>
+        )}
       </Table.Td>
     </Table.Tr>
   );
@@ -704,18 +678,16 @@ function SessionsPanel({ resource }: { resource: AsyncResource<ActiveSandbox[]> 
                 <SandboxSessionRow
                   key={session.session_id}
                   session={session}
-                  onTerminate={() => requestTermination(session)}
+                  terminationPending={pendingTermination?.session_id === session.session_id}
+                  onRequestTerminate={() => requestTermination(session)}
+                  onCancelTerminate={() => setPendingTermination(null)}
+                  onConfirmTerminate={approveTermination}
                 />
               ))}
             </Table.Tbody>
           </DenseTable>
         )}
       </ResourcePanel>
-      <SandboxTerminationDialog
-        session={pendingTermination}
-        onApprove={approveTermination}
-        onCancel={() => setPendingTermination(null)}
-      />
     </Stack>
   );
 }
@@ -1082,7 +1054,6 @@ export function SettingsPanel(): JSX.Element {
                   <Table.Tr>
                     <Table.Th>Server</Table.Th>
                     <Table.Th>Connection</Table.Th>
-                    <Table.Th>Status</Table.Th>
                     <Table.Th />
                   </Table.Tr>
                 </Table.Thead>

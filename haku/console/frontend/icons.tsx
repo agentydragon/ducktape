@@ -18,6 +18,7 @@ import IconMapPin from "@tabler/icons-react/dist/esm/icons/IconMapPin.mjs";
 import IconMessagePlus from "@tabler/icons-react/dist/esm/icons/IconMessagePlus.mjs";
 import IconRepeat from "@tabler/icons-react/dist/esm/icons/IconRepeat.mjs";
 import IconSettings from "@tabler/icons-react/dist/esm/icons/IconSettings.mjs";
+import IconUnlink from "@tabler/icons-react/dist/esm/icons/IconUnlink.mjs";
 import IconUsers from "@tabler/icons-react/dist/esm/icons/IconUsers.mjs";
 import IconX from "@tabler/icons-react/dist/esm/icons/IconX.mjs";
 import type { ComponentProps } from "react";
@@ -59,6 +60,11 @@ export function HistoryIcon(props: TablerIconProps): JSX.Element {
 /** Gear — links to the settings view. */
 export function SettingsIcon(props: TablerIconProps): JSX.Element {
   return <IconSettings size={20} {...props} />;
+}
+
+/** Unlink — disconnects an operator account from an MCP server. */
+export function DisconnectIcon(props: TablerIconProps): JSX.Element {
+  return <IconUnlink size={20} {...props} />;
 }
 
 /** List with detail — opens the operator's conversation inventory. */

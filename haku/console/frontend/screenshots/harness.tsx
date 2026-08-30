@@ -131,6 +131,7 @@ function sceneElement(scene: string) {
     case "settings-sessions":
     case "settings-sessions-mobile":
     case "settings-sessions-terminate":
+    case "settings-sessions-terminate-mobile":
     case "settings-notifications":
     case "settings-nodes":
     case "settings-nodes-mobile":

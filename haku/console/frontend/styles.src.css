@@ -701,6 +701,40 @@
   flex: 0 0 auto;
 }
 
+.haku-mcp-server-name,
+.haku-mcp-server-name-text {
+  min-width: 0;
+}
+
+.haku-status-dot {
+  display: block;
+  flex: 0 0 auto;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--haku-panel-bg);
+}
+
+.haku-status-dot[data-color="teal"] {
+  background: var(--mantine-color-teal-5);
+}
+
+.haku-status-dot[data-color="red"] {
+  background: var(--mantine-color-red-5);
+}
+
+.haku-status-dot[data-color="orange"] {
+  background: var(--mantine-color-orange-5);
+}
+
+.haku-status-dot[data-color="gray"] {
+  background: var(--mantine-color-gray-5);
+}
+
+.haku-status-dot[data-color="blue"] {
+  background: var(--mantine-color-blue-5);
+}
+
 /* Provisioning is a live resource read, so its useful shape is a compact status table. The age
    marker only appears when the read is old enough to question, rather than spending a column on
    a timestamp that is normally fresh. */
@@ -922,6 +956,23 @@
 
   .haku-dense-table tr.haku-node-row td[data-slot="action"] {
     text-align: left;
+  }
+
+  .haku-dense-table tr.haku-session-row-termination-pending {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "primary"
+      "secondary"
+      "status"
+      "action";
+  }
+
+  .haku-dense-table tr.haku-session-row-termination-pending td[data-slot="action"] {
+    text-align: left;
+  }
+
+  .haku-dense-table tr.haku-session-row-termination-pending .haku-dense-action > * {
+    margin-left: 0;
   }
 
   .haku-provisioning-header {

@@ -133,6 +133,7 @@ describe("approval queue state", () => {
   it("labels an agent withdrawal distinctly from an operator denial", () => {
     expect(terminalStatusLabel("withdrawn")).toBe("Withdrawn");
     expect(terminalStatusLabel("denied")).toBe("Denied");
+    expect(statusColor("pending_approval")).toBe("orange");
     expect(statusColor("withdrawn")).toBe("gray");
     expect(
       approvalDisplayFields(pendingApproval({ status: "withdrawn", withdrawal_reason: "superseded" }))
