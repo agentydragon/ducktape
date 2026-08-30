@@ -201,7 +201,11 @@ If you touched `ansible/`, also follow <ansible/AGENTS.md>.
 the repo fails with "no matching creation rules found". Write to the final in-repo
 location, then `sops -e -i path/to/file.yaml`. Run sops from within repo direnv:
 `.envrc` derives `SOPS_AGE_KEY` from `~/.ssh/id_ed25519`, which SOPS does not
-auto-discover (it only finds `id_rsa`).
+auto-discover (it only finds `id_rsa`). On ordinary machines this user-level key
+may be able to encrypt to cluster recipients without being able to decrypt existing
+Flux SOPS secrets; a successful `sops -e` is not proof that `sops <existing-file>`
+will work. Check before editing existing ciphertext and use ESO or an operator-held
+decryption identity when the key is absent.
 
 ## Git
 
