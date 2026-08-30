@@ -51,19 +51,13 @@ spec:
               value: ws://haku-console.haku-console.svc.cluster.local:9090/internal/claude/runner
             # The shared per-claim bootstrap (cluster/k8s/haku/workspaces/image/haku-sandbox-setup.sh,
             # baked into the runner image) writes ~/.netrc and checks haku-state out into /workspace,
-            # so this session starts with Haku's manual instead of an empty directory. Same haku
-            # Forgejo account the haku-sandbox exec target uses; minted by tf/gitops/haku-state and
-            # reflected into this namespace, never hand-minted.
+            # so this session starts with Haku's manual instead of an empty directory. The colocated
+            # egress fence replaces this inert password only in Authorization headers for the approved
+            # Forgejo origins; the real haku credential stays in Console.
             - name: HAKU_GIT_USERNAME
-              valueFrom:
-                secretKeyRef:
-                  name: haku-forgejo-git
-                  key: username
+              value: haku
             - name: HAKU_GIT_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: haku-forgejo-git
-                  key: password
+              value: haku-forgejo-token-placeholder
             # No JVM in this image and no Bazel on this box, so the truststore step has nothing
             # to do. Explicit rather than probed, so a haku-sandbox image that lost its JVM still
             # fails loudly there.

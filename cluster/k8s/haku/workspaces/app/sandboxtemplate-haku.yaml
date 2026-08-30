@@ -71,23 +71,16 @@ spec:
             capabilities:
               drop: ["ALL"]
           env:
-            # The haku Forgejo account credential — ONE cred for BOTH in-cluster
-            # git fetches (the ducktape_haku module git_override on every bazel
-            # invocation + the haku-state clone), both over forgejo-http.forgejo.
-            # The haku account can read both repos, so a single .netrc line covers
-            # them. Same secret the managed-agent worker uses; minted into this
-            # namespace by tf/gitops/haku-state (never baked, never hand-minted).
-            # The per-claim haku-sandbox-setup.sh writes it into ~/.netrc.
+            # The haku Forgejo credential is redeemed by the colocated egress fence:
+            # this inert password is replaced only in Authorization headers for the
+            # approved Forgejo origins. The per-claim haku-sandbox-setup.sh writes
+            # the pair into ~/.netrc for both in-cluster git fetches (the
+            # ducktape_haku module git_override on every bazel invocation + the
+            # haku-state clone), while the real credential stays in Console.
             - name: HAKU_GIT_USERNAME
-              valueFrom:
-                secretKeyRef:
-                  name: haku-forgejo-git
-                  key: username
+              value: haku
             - name: HAKU_GIT_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: haku-forgejo-git
-                  key: password
+              value: haku-forgejo-token-placeholder
             # The haku-console agent bearer, so the CLI's console-MCP client
             # (`cli/console.py`, which prefers this env var over a kubectl secret
             # read) authenticates with no kubectl and no per-run token fetch —
