@@ -35,7 +35,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "100 * github_rate_remaining{resource=\"graphql\"} / on (github_account, resource) github_rate_limit_limit{resource=\"graphql\"}",
+          "expr": "100 * github_rate_remaining{resource=\"graphql\"} / on (github_account, resource) github_rate_limit{resource=\"graphql\"}",
           "legendFormat": "{{github_account}}",
           "range": true,
           "refId": "A"
@@ -66,7 +66,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "github_rate_limit_limit{resource=\"graphql\"}",
+          "expr": "github_rate_limit{resource=\"graphql\"}",
           "legendFormat": "{{github_account}} limit",
           "range": true,
           "refId": "B"
