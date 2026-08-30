@@ -1,5 +1,5 @@
 # The Haku Console API: reviewed FastAPI code behind the separately deployed static frontend.
-# The console is the trusted outer shell — it serves config + the capability tier
+# The console is the trusted outer shell â it serves config + the capability tier
 # (launch-routine) and frames Haku's own UI (haku-ui) as a sandboxed cross-origin
 # iframe. It writes nothing to haku-state (feedback/trace writes moved into haku-ui);
 # recall-index maintenance lives in the separate haku-indexer Deployment, so this pod
@@ -7,7 +7,7 @@
 # no *index* Git credential. It does hold the haku Forgejo write credential
 # (haku-forgejo-git) for a different reason: the colocated egress decide endpoint
 # substitutes it into the hosted haku agent's fenced Forgejo egress, so that agent uses
-# its full Forgejo user (read/write/push) through the fence — deliberate and accepted,
+# its full Forgejo user (read/write/push) through the fence â deliberate and accepted,
 # the write exposure bounded by haku-state `main` branch protection (force-push/delete
 # blocked). Temporary: once the indexer gains its own read-only Forgejo credential this
 # pod need not share haku-forgejo-git with it (TODO in test_haku_indexer_worker_contract).
@@ -26,8 +26,8 @@
 # Trust boundary: runs in its OWN `haku-console` namespace, NOT haku-sandbox. As
 # reviewed/released ducktape code it sits outside Haku's RBAC (Haku can't read its
 # secrets/logs or patch it) and outside the haku-egress-proxy egress fence (which keys
-# on the haku-sandbox namespace) — so it gets ordinary egress and can later hold
-# secrets Haku may not read. See haku/PLAN.md → "The agent-authored console". It
+# on the haku-sandbox namespace) â so it gets ordinary egress and can later hold
+# secrets Haku may not read. See haku/PLAN.md â "The agent-authored console". It
 # still runs locked down (uid/gid 1000, non-root, no service-account token, all
 # capabilities dropped). readOnlyRootFilesystem is intentionally NOT set: the aspect
 # py_binary launcher materializes its venv on the rootfs at startup (same as
@@ -44,22 +44,22 @@ metadata:
     # do NOT use reloader's blanket auto mode: the projected static-image metadata
     # changes on every frontend release and must not restart API/MCP/background work.
     configmap.reloader.stakater.com/reload: haku-console-config
-    secret.reloader.stakater.com/reload: haku-routine-launch-token,haku-console-oidc,haku-console-web-push-vapid,tana-agentydragon-gmail-com-account-pat,ha-mcp-bearer,haku-console-db-app,haku-console-agent-api,haku-console-public-coder-agent,haku-console-node-daemon-wyrm2,haku-console-node-daemon-rugged,haku-console-google-client-credentials,haku-console-google-calendar-client-credentials,haku-console-github-mcp-client-credentials,haku-egress-proxy-identity,haku-egress-github-token,litellm-key-public-coder-agent,litellm-key-haku-console-claude,haku-forgejo-git
+    secret.reloader.stakater.com/reload: haku-routine-launch-token,haku-console-oidc,haku-console-web-push-vapid,tana-agentydragon-gmail-com-account-pat,ha-mcp-bearer,ha-mcp-home-assistant-token,haku-console-db-app,haku-console-agent-api,haku-console-public-coder-agent,haku-console-node-daemon-wyrm2,haku-console-node-daemon-rugged,haku-console-google-client-credentials,haku-console-google-calendar-client-credentials,haku-console-github-mcp-client-credentials,haku-egress-proxy-identity,haku-egress-github-token,litellm-key-public-coder-agent,litellm-key-haku-console-claude,haku-forgejo-git
 spec:
   replicas: 2
   strategy:
     # `maxUnavailable: 0` is the point of this: a replacement that never becomes Ready leaves the
     # running version serving, so a bad release is a no-op rather than an outage. This replaced
-    # Recreate, which deleted every pod before starting one — on 2026-08-10 a transiently missing
+    # Recreate, which deleted every pod before starting one â on 2026-08-10 a transiently missing
     # reflected Secret (`ha-mcp-bearer`, absent for ~2min while its source namespace churned) took
     # the whole console down, where rolling would have been invisible.
     #
     # What Recreate bought and this gives up: an atomic version boundary. The static image keeps
     # only its own fingerprinted assets, so during a roll a browser can load the new shell from one
     # pod and 404 on its chunk against the other. That window is the roll's length, the blast
-    # radius is one page load, and a refresh after the roll fixes it — a worse failure than nothing,
+    # radius is one page load, and a refresh after the roll fixes it â a worse failure than nothing,
     # a much better one than every deploy being an outage. Session persistence would close it; see
-    # this directory's README § Rolling release compatibility for why that remains a follow-up.
+    # this directory's README Â§ Rolling release compatibility for why that remains a follow-up.
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
@@ -74,7 +74,7 @@ spec:
     spec:
       # Same zone as this console's Postgres and the public ingress. Unpinned, a replica landed
       # 166ms from the database, which every read pays several round trips of: 4.6ms of query
-      # took ~2s. Costs no availability — the database is node-pinned here anyway.
+      # took ~2s. Costs no availability â the database is node-pinned here anyway.
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       # Narrow runtime identity: create/delete/get/observe SandboxClaims and read
@@ -97,7 +97,7 @@ spec:
         # mitmproxy reads its interception CA from confdir/mitmproxy-ca.pem (key+cert
         # concatenated). Assemble it once from the shared egress-interception CA so the colocated
         # proxy (below) serves leaves fenced sandboxes already trust via haku-egress-proxy-ca-cert
-        # — the same shape as the iron/mitmproxy fence's own CA init.
+        # â the same shape as the iron/mitmproxy fence's own CA init.
         - name: egress-proxy-ca-init
           image: busybox:1.37
           command:
@@ -130,7 +130,7 @@ spec:
             # Capability tier: the launch-routine action. The console builds both the
             # (public) fire URL and the claude.ai/code page deep-link from this routine
             # (trigger) id; the bearer comes from the haku-console-only secret so Haku
-            # can't read it. See haku/PLAN.md → "The agent-authored console".
+            # can't read it. See haku/PLAN.md â "The agent-authored console".
             - name: HAKU_CONSOLE_LAUNCH_ROUTINE__ROUTINE_ID
               value: trig_0158pCMU1XBhoALBWikwSyK4
             - name: HAKU_CONSOLE_LAUNCH_ROUTINE__TOKEN
@@ -153,13 +153,13 @@ spec:
             # Where `haku_index.search` embeds its queries: Ollama's OpenAI-compatible
             # endpoint, in its own namespace. The console is outside the haku-egress-proxy
             # fence, so this is ordinary cluster egress. Index maintenance runs in the
-            # role-flagged haku-indexer Deployments — a per-index chunk pod for each source
+            # role-flagged haku-indexer Deployments â a per-index chunk pod for each source
             # sweep (only the haku-state pod holds a Git credential), batch embedding with its
             # own embedder wiring on the shared embed pod; this pod holds neither the sync loops
             # nor any Git credential.
             - name: HAKU_CONSOLE_EMBEDDER__BASE_URL
               value: "http://ollama.ollama.svc.cluster.local:11434/v1"
-            # Also the index's `model_key`, so it must be exactly what Ollama reports — the
+            # Also the index's `model_key`, so it must be exactly what Ollama reports â the
             # client fails closed on a mismatch rather than reading a second vector space out
             # of the corpus. Keep it equal to the haku-indexer-embed Deployment's value: search
             # joins `content_embeddings` on this key, so a mismatch searches a space the worker
@@ -167,8 +167,8 @@ spec:
             - name: HAKU_CONSOLE_EMBEDDER__MODEL
               value: "qwen3-embedding:4b"
             # Query-side only, which is why it stays on this pod after the indexer split:
-            # Qwen3-Embedding is instruction-aware — queries carry a task instruction,
-            # documents do not — and only `search` embeds queries (`embed_query`, request
+            # Qwen3-Embedding is instruction-aware â queries carry a task instruction,
+            # documents do not â and only `search` embeds queries (`embed_query`, request
             # path). The haku-indexer-embed worker embeds documents plain and deliberately
             # has no counterpart to this variable. Check the wording against the tag Ollama
             # actually serves.
@@ -205,13 +205,22 @@ spec:
                 secretKeyRef:
                   name: tana-agentydragon-gmail-com-account-pat
                   key: token
-            # ha-mcp static bearer — the SAME token the facade validates, reflected from
+            # ha-mcp static bearer â the SAME token the facade validates, reflected from
             # ha-mcp/ha-mcp-bearer into this namespace (emberstack reflector).
             - name: HAKU_CONSOLE_MCP_CREDENTIAL_HA_MCP_BEARER
               valueFrom:
                 secretKeyRef:
                   name: ha-mcp-bearer
                   key: bearer-token
+            # HA REST-read credential, reflected from the Secret consumed by HA-MCP.
+            # Optional keeps the console fail-safe during the reflector rollout; without it,
+            # the grant admits only the inert placeholder.
+            - name: HAKU_EGRESS_CREDENTIAL_HOME_ASSISTANT
+              valueFrom:
+                secretKeyRef:
+                  name: ha-mcp-home-assistant-token
+                  key: token
+                  optional: true
             - name: HAKU_CONSOLE_DB_USER
               valueFrom:
                 secretKeyRef:
@@ -240,7 +249,7 @@ spec:
             - name: HAKU_CONSOLE_DATABASE_URL
               value: "postgresql+asyncpg://$(HAKU_CONSOLE_DB_USER):$(HAKU_CONSOLE_DB_PASSWORD)@$(HAKU_CONSOLE_DB_HOST):$(HAKU_CONSOLE_DB_PORT)/$(HAKU_CONSOLE_DB_NAME)"
             # Haku's own backend static agent: the `haku` entry in config.yaml's `static_agents`
-            # references these two env vars — the bearer (below) and controller-fed stable external
+            # references these two env vars â the bearer (below) and controller-fed stable external
             # user key (further down). config.yaml owns the durable Agent UUID and display name.
             - name: HAKU_CONSOLE_AGENT_HAKU_TOKEN
               valueFrom:
@@ -266,8 +275,8 @@ spec:
                   key: token
             # Two in-process MCP servers execute as the acting Operator's own Google account:
             # `gmail` (Gmail reads mirroring the REST API, draft creation, thread-label changes,
-            # label CRUD — haku/console/tools/gmail.py) and `google_calendar` (recurrence-aware
-            # event reads + approval-gated creation — google_calendar.py). Each call resolves that
+            # label CRUD â haku/console/tools/gmail.py) and `google_calendar` (recurrence-aware
+            # event reads + approval-gated creation â google_calendar.py). Each call resolves that
             # Operator's per-Operator Google token from the console's own connection store
             # (haku/console/oauth/provider_connection.py), self-refreshed in-process.
             #
@@ -416,7 +425,7 @@ spec:
             #   - the public-coder LiteLLM virtual key for the Console-launched Codex runner. This is
             #     the same litellm-key-public-coder-agent value formerly delivered to the dedicated
             #     runner proxy, delivered into this trusted namespace by widening its emberstack
-            #     reflection at the owning Terraform (tf/gitops/litellm-keys) — not re-minted. optional
+            #     reflection at the owning Terraform (tf/gitops/litellm-keys) â not re-minted. optional
             #     (#4970) like github-bot: an unsynced reflection degrades the codex-litellm handle
             #     rather than crash-looping the console.
             - name: HAKU_EGRESS_CREDENTIAL_LITELLM_PUBLIC_CODER
@@ -438,7 +447,7 @@ spec:
                   key: api-key
                   optional: true
             #   - the substitution-smoke registry credential: a committed EXAMPLE- literal rather
-            #     than a Secret, deliberately — both sides of that swap are inert so the fence's
+            #     than a Secret, deliberately â both sides of that swap are inert so the fence's
             #     substitution path is drivable end to end against a public echo host with no real
             #     credential anywhere (haku/egress/docs/test_substitution.md). Identity secrets
             #     above stay Secret-backed and fail-loud.
@@ -448,7 +457,7 @@ spec:
             #     password, which the Console substitutes into the haku Agent's Forgejo egress
             #     (git-over-HTTP Basic + the REST API) at the internal forgejo-http.forgejo origin; the
             #     sandbox holds only `forgejo-token-placeholder`. This is the SAME haku-forgejo-git
-            #     Secret the haku-state indexer chunk pod mounts — the full haku Forgejo credential,
+            #     Secret the haku-state indexer chunk pod mounts â the full haku Forgejo credential,
             #     deliberately: the hosted haku agent uses its whole Forgejo user (read/write/push)
             #     through the fence, so the write credential lands on this API pod for substitution
             #     regardless of packaging. That the API server now shares this one secret with the
@@ -472,7 +481,7 @@ spec:
               # request / 1.74Gi upper bound, so the old limit was under half
               # what this actually uses and only survived because VPA was
               # silently raising it. A Node static-file + API server wanting
-              # 1.3Gi resident looks wrong — check for a leak before accepting.
+              # 1.3Gi resident looks wrong â check for a leak before accepting.
               memory: 3Gi
           # The image-coupled migration Job completes before this workload reconciles. Keep a
           # startupProbe anyway: normal boot still constructs authenticated clients and validates
@@ -508,9 +517,9 @@ spec:
               drop: ["ALL"]
         # Colocated egress proxy (#4942): the embedded mitmproxy adapter (haku/egress) gating every
         # fenced-workload request against Console's decide endpoint. It reaches that endpoint over
-        # the shared pod loopback (127.0.0.1:8079) — no Service exposes it, so no sandbox has a
+        # the shared pod loopback (127.0.0.1:8079) â no Service exposes it, so no sandbox has a
         # route to the oracle (acceptance criterion 14). Same pod as Console, so the two roll as one
-        # release unit and the decide API needs no versioning (#4670 § Topology). Fails closed on
+        # release unit and the decide API needs no versioning (#4670 Â§ Topology). Fails closed on
         # any decision-path error; the fenced-workload-facing listener is 8888, published by
         # egress-proxy-service.yaml for the force-proxy fence.
         - name: egress-proxy
@@ -541,7 +550,7 @@ spec:
               cpu: 500m
               # Sized for the first github-only spike (#4943); the embedded runner does not yet set
               # mitmproxy's stream_large_bodies, so broad adoption (dind layer pulls) needs that plus
-              # a higher ceiling — see this directory's README § Colocated egress proxy.
+              # a higher ceiling â see this directory's README Â§ Colocated egress proxy.
               memory: 1Gi
           volumeMounts:
             # Writable: mitmproxy derives its public CA files and caches per-host leaves in confdir.
