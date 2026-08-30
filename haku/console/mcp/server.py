@@ -94,7 +94,7 @@ from haku.console.mcp_config import (
     server_tool_prefix,
 )
 from haku.console.oauth.provider_connection import PostgresProviderConnectionStore, ProviderConnectionStatus
-from haku.console.tool_call_actor import OperatorActor, RuntimeActor
+from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_calls import (
     MCP_TOOL_CALL_META_KEY,
     MCP_TOOL_META_KEY,
@@ -359,9 +359,14 @@ def _is_passthrough(policies: AutoApprovalPolicyRegistry, actor: RuntimeActor, s
     )
 
 
+def _is_agent_tool_blocked(server: McpServerEntry, actor: RuntimeActor, tool_name: str) -> bool:
+    return isinstance(actor, AgentActor) and server.blocks_agent_tool(tool_name)
+
+
 def _exposed_metadata(
     metadata: ServerMetadata,
     *,
+    server: McpServerEntry,
     policies: AutoApprovalPolicyRegistry,
     actor: RuntimeActor,
     include_schemas: bool,
@@ -398,7 +403,11 @@ def _exposed_metadata(
             }
         )
 
-    tools = [exposed(tool) for tool in metadata.state.tools]
+    tools = [
+        exposed(tool)
+        for tool in metadata.state.tools
+        if not _is_agent_tool_blocked(server, actor, tool.name)
+    ]
     return metadata.model_copy(update={"state": metadata.state.model_copy(update={"tools": tools})})
 
 
@@ -513,6 +522,10 @@ async def _dispatch(
     parse or a second dispatch is how an approval bypass gets built by accident, since the policy
     decision lives inside ``submit_and_wait``.
     """
+    server = next((candidate for candidate in _load_servers(context.settings) if candidate.id == server_id), None)
+    if server is not None and _is_agent_tool_blocked(server, actor, tool_name):
+        raise ToolError(f"MCP tool {server_id!r}/{tool_name!r} is not available to Agents")
+
     # A browser Operator is always a direct caller, even if a stale or hand-built proxy supplied
     # the approval-required flag. Keep the caller-dependent wire contract true at the dispatch
     # boundary rather than allowing envelope validation to run before execute_direct.
@@ -712,6 +725,7 @@ class OperatorToolProvider(Provider):
                 actor=actor,
             )
             for tool in meta.tools
+            if not _is_agent_tool_blocked(server, actor, tool.name)
         ]
 
     async def _list_tools(self) -> Sequence[Tool]:
@@ -732,6 +746,8 @@ class OperatorToolProvider(Provider):
         if isinstance(meta, DegradedReflection):
             return None
         for upstream_tool in meta.tools:
+            if _is_agent_tool_blocked(server, actor, upstream_tool.name):
+                continue
             tool = _build_proxy_tool(
                 self._context,
                 server.id,
@@ -855,6 +871,7 @@ def build_console_mcp(
             connection=connection,
             server=_exposed_metadata(
                 server_metadata_response(server_id, reflection),
+                server=server,
                 policies=policies,
                 actor=actor,
                 include_schemas=include_tool_schemas,

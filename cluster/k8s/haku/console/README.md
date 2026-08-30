@@ -177,7 +177,7 @@ GitHub's hosted MCP endpoint is `https://api.githubcopilot.com/mcp/`. It discove
 authorization server normally, but GitHub does **not** support Dynamic Client Registration, so the
 Console needs an organization-owned, pre-registered **GitHub App**. The Console uses GitHub's normal
 endpoint: its upstream catalog includes write tools, but `config.yaml` explicitly auto-approves only
-the reviewed read-only tool names for Haku. Every other GitHub tool remains per-call operator approval.
+the reviewed read-only tool names for Haku. The same entry denies the Copilot delegation tools to every Agent, including stale-schema and generic-dispatch calls. Other GitHub tools remain per-call operator approval.
 
 1. Create a private GitHub App owned by the organization. Set its user-authorization callback URL
    to `https://haku.allegedly.works/api/mcp/operator-auth/callback`. Grant only the repository and

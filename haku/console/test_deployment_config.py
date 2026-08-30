@@ -56,6 +56,13 @@ def test_deployed_console_config_is_valid() -> None:
     # places: without `agent_sandbox` nothing registers `sandbox`, and startup fails
     # `validate_in_process_server_bindings` rather than quietly offering a server that cannot run.
     server_ids = {server.id for server in config.mcp.servers}
+    github_server = next(server for server in config.mcp.servers if server.id == "github")
+    assert github_server.agent_tool_denylist == {
+        "assign_copilot_to_issue",
+        "create_pull_request_with_copilot",
+        "get_copilot_job_status",
+        "request_copilot_review",
+    }
     assert ("sandbox" in server_ids) == (config.agent_sandbox is not None)
 
     policies = {policy["id"]: policy for policy in raw["auto_approval_policies"]}

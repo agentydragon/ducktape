@@ -141,6 +141,7 @@ An `mcp.servers` entry selects a remote HTTP MCP backend or a registered in-proc
 instance. `McpServerDispatcher` uses the same client/reflection path for both, while reviewed
 implementation code injects any in-process credential only at execution. Startup rejects a
 credential kind the implementation did not declare.
+An entry's `agent_tool_denylist` removes named upstream tools from every Agent's listing, status metadata, and execution path; Operators retain access unless the upstream server itself denies it.
 
 Built-ins are assembled in `mcp/in_process_servers.py`:
 

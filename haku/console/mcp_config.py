@@ -196,9 +196,20 @@ type McpBackend = Annotated[RemoteMcpBackend | InProcessBackend, Field(discrimin
 class McpServerEntry(BaseModel):
     id: str
     backend: McpBackend
+    agent_tool_denylist: set[str] = Field(default_factory=set)
     # None uses Settings.mcp_catalog_refresh_interval_seconds. A server can override the shared
     # default when its upstream tool catalog is expensive to reflect, as GitHub's hosted MCP is.
     catalog_refresh_interval_seconds: float | None = Field(default=None, ge=5.0, le=900.0)
+
+    @field_validator("agent_tool_denylist")
+    @classmethod
+    def _require_named_agent_tools(cls, value: set[str]) -> set[str]:
+        if any(not tool.strip() for tool in value):
+            raise ValueError("Agent tool denylist must not contain blank tool names")
+        return value
+
+    def blocks_agent_tool(self, tool_name: str) -> bool:
+        return tool_name in self.agent_tool_denylist
 
 
 def _server_catalog_refresh_interval(server: McpServerEntry, default_seconds: float) -> float:

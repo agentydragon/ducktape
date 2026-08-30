@@ -934,11 +934,17 @@ mcp:
   servers:
     # The root endpoint exposes GitHub's normal default toolsets, including writes. Haku receives
     # transparent access only to the explicit github_reads policy above; every other tool stays in
-    # the Console's per-call operator approval queue.
+    # the Console's per-call operator approval queue; tools in agent_tool_denylist are unavailable
+    # to Agents entirely.
     - id: github
       # GitHub's hosted MCP catalog is expensive to reflect and changes infrequently. Keep the
       # shared 60-second default for other servers, but refresh GitHub at most every 15 minutes.
       catalog_refresh_interval_seconds: 900
+      agent_tool_denylist:
+        - assign_copilot_to_issue
+        - create_pull_request_with_copilot
+        - get_copilot_job_status
+        - request_copilot_review
       backend:
         kind: remote_mcp
         url: https://api.githubcopilot.com/mcp/

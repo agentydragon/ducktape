@@ -44,7 +44,7 @@ from haku.console.mcp.operator_oauth import (
 )
 from haku.console.mcp.reflection_cache import ReflectedCatalog
 from haku.console.mcp.tool_call_service import ToolCallApplicationService, ToolCallNotFoundError
-from haku.console.mcp_config import ConsoleConfigFile, const_in_process_server
+from haku.console.mcp_config import ConsoleConfigFile, McpServerEntry, const_in_process_server
 from haku.console.oauth.provider_connection import ProviderConnected, ProviderConnectionStatusResponse
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_calls import (
@@ -2110,3 +2110,48 @@ def test_duplicate_static_agent_tokens_fail_startup(
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+
+
+def test_agent_tool_denylist_applies_only_to_agents() -> None:
+    server = McpServerEntry(
+        id="github",
+        backend=_in_process_backend({"kind": "none"}),
+        agent_tool_denylist={"create_pull_request_with_copilot"},
+    )
+    agent = AgentActor(agent_id=UUID(int=1), operator_id=UUID(int=2), binding_id=UUID(int=3))
+    operator = OperatorActor(operator_id=UUID(int=2))
+
+    assert mcp_server_module._is_agent_tool_blocked(server, agent, "create_pull_request_with_copilot")
+    assert not mcp_server_module._is_agent_tool_blocked(server, agent, "get_commit")
+    assert not mcp_server_module._is_agent_tool_blocked(server, operator, "create_pull_request_with_copilot")
+
+
+async def test_agent_tool_denylist_rejects_hand_built_dispatch(tmp_path: Path) -> None:
+    config_file = _write_console_config(
+        tmp_path / "denylist.yaml",
+        {
+            "mcp": {
+                "servers": [
+                    {
+                        "id": "github",
+                        "backend": _in_process_backend({"kind": "none"}),
+                        "agent_tool_denylist": ["create_pull_request_with_copilot"],
+                    }
+                ]
+            }
+        },
+    )
+    context = Mock()
+    context.settings.config_file = config_file
+    agent = AgentActor(agent_id=UUID(int=1), operator_id=UUID(int=2), binding_id=UUID(int=3))
+
+    with pytest.raises(ToolError, match="not available to Agents"):
+        await mcp_server_module._dispatch(
+            context,
+            server_id="github",
+            tool_name="create_pull_request_with_copilot",
+            arguments={},
+            passthrough=False,
+            actor=agent,
+        )
