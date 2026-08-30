@@ -4,7 +4,7 @@ metadata:
   name: public-coder-agent-proxy
   namespace: ducktape-flux
   annotations:
-    description: Separate OpenClaw and least-credential Codex runner proxies plus interception CA.
+    description: OpenClaw Iron proxy plus interception CA.
 spec:
   interval: 1h
   retryInterval: 1m
@@ -51,10 +51,6 @@ spec:
     - apiVersion: apps/v1
       kind: Deployment
       name: public-coder-agent-proxy
-      namespace: public-coder-agent
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: public-coder-codex-runner-proxy
       namespace: public-coder-agent
     - apiVersion: cert-manager.io/v1
       kind: Certificate

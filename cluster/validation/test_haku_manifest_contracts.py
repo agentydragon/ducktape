@@ -775,12 +775,6 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
             "namespace": "public-coder-agent",
         },
         {
-            "apiVersion": "apps/v1",
-            "kind": "Deployment",
-            "name": "public-coder-codex-runner-proxy",
-            "namespace": "public-coder-agent",
-        },
-        {
             "apiVersion": "cert-manager.io/v1",
             "kind": "Certificate",
             "name": "public-coder-agent-proxy-root-ca",
@@ -823,7 +817,7 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
     assert workspace == {"name": "workspace", "emptyDir": {"sizeLimit": "10Gi"}}
     # The runner trusts the colocated Console egress fence it now routes through (#4670): the bundle
     # mounted at the system trust path is the fence CA (haku-egress-proxy-ca-cert), replacing the
-    # retiring iron proxy's, so GnuTLS git and everything else verify the fence's leaves.
+    # former dedicated runner proxy's, so GnuTLS git and everything else verify the fence's leaves.
     trust_mount = one(mount for mount in container["volumeMounts"] if mount["name"] == "egress-proxy-ca")
     assert trust_mount["mountPath"] == "/etc/ssl/certs/ca-certificates.crt"
     assert trust_mount["subPath"] == "ca-certificates.crt"
@@ -843,11 +837,9 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
     }
     assert destinations == {
         ("haku-console", "haku-console", 8080),
-        # The colocated Console egress fence (#4670): the runner's HTTPS_PROXY now points here. The
-        # iron proxy :8080 rule stays for a config-only rollback.
+        # The colocated Console egress fence (#4670): the runner's HTTPS_PROXY points here.
         ("haku-console", "haku-console", 8888),
         ("haku-console", "haku-kube-api-proxy", 8443),
-        ("public-coder-agent", "public-coder-codex-runner-proxy", 8080),
     }
     # LiteLLM is reached only THROUGH the fence, never a direct runner egress; the fence is on the
     # haku-console pod, so no runner rule targets the litellm or haku-egress-proxy namespaces.
@@ -894,7 +886,7 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
     assert implementation["provider_id"] == "haku"
     assert implementation["api_key_env_var"] == "OPENAI_API_KEY"
     assert implementation["api_base_url"] == "http://litellm.litellm.svc.cluster.local:4000/v1"
-    # Codex routes through the colocated Console egress fence (#4670), not its retiring iron proxy.
+    # Codex routes through the colocated Console egress fence (#4670), not a dedicated runner proxy.
     assert codex["https_proxy"] == "http://haku-egress-proxy.haku-console.svc.cluster.local:8888"
     assert codex["mcp_url"] == "http://haku-console.haku-console.svc.cluster.local:9090/mcp"
     assert "kubernetes_proxy_url" not in codex
@@ -906,55 +898,6 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
         "username": "haku:access-profile:haku",
         "groups": ["haku:access-profile:haku", "system:authenticated"],
     }
-
-    # The runner proxy carries exactly two durable credentials. The ordinary all-purpose proxy
-    # keeps its existing callers and credential set, but is unreachable from this runtime profile.
-    agent_proxy_dir = k8s_dir / "agents" / "public-coder-agent" / "proxy"
-    runner_proxy_objects = list(yaml.safe_load_all((agent_proxy_dir / "codex-runner-deployment.yaml").read_text()))
-    runner_proxy = one(obj for obj in runner_proxy_objects if obj["kind"] == "Deployment")
-    runner_proxy_container = one(runner_proxy["spec"]["template"]["spec"]["containers"])
-    runner_proxy_env = {entry["name"]: entry for entry in runner_proxy_container["env"]}
-    assert set(runner_proxy_env) == {"GITHUB_TOKEN", "LITELLM_API_KEY"}
-    forbidden_durable_credentials = {
-        "HAKU_CONSOLE_TOKEN",
-        "CLICKHOUSE_PUBLIC_CODER_PASSWORD",
-        "AIQUOTA_API_BEARER_TOKEN",
-        "BRAVE_API_KEY",
-        "MATRIX_BOT_PASSWORD",
-    }
-    assert not forbidden_durable_credentials & runner_proxy_env.keys()
-    runner_proxy_ca = one(
-        volume for volume in runner_proxy["spec"]["template"]["spec"]["volumes"] if volume["name"] == "ca"
-    )
-    assert runner_proxy_ca["secret"]["secretName"] == "public-coder-agent-proxy-ca"
-    runner_iron = yaml.safe_load((agent_proxy_dir / "codex-runner-iron.yaml").read_text())
-    runner_secrets = one(t for t in runner_iron["transforms"] if t["name"] == "secrets")["config"]["secrets"]
-    assert {secret["source"]["var"] for secret in runner_secrets} == {"GITHUB_TOKEN", "LITELLM_API_KEY"}
-    assert "proxy-haku-console-placeholder" not in (agent_proxy_dir / "codex-runner-iron.yaml").read_text()
-    assert {t["name"] for t in runner_iron["transforms"]} == {"allowlist", "secrets"}
-    proxy_kustomization = yaml.safe_load((agent_proxy_dir / "kustomization.yaml").read_text())
-    runner_generator = one(
-        item
-        for item in proxy_kustomization["configMapGenerator"]
-        if item["name"] == "public-coder-codex-runner-proxy-config"
-    )
-    assert runner_generator["files"] == ["iron.yaml=codex-runner-iron.yaml"]
-    runner_proxy_policy = yaml.safe_load((agent_proxy_dir / "codex-runner-networkpolicy.yaml").read_text())
-    assert one(runner_proxy_policy["spec"]["ingress"])["fromEndpoints"] == [
-        {
-            "matchLabels": {
-                "k8s:io.kubernetes.pod.namespace": namespace,
-                "k8s:app.kubernetes.io/name": "haku-harness-runner",
-                "k8s:haku.allegedly.works/access-profile-id": "public-coder",
-            }
-        }
-    ]
-    runner_proxy_destinations = {
-        one(rule["toEndpoints"])["matchLabels"].get("k8s:app.kubernetes.io/name")
-        for rule in runner_proxy_policy["spec"]["egress"]
-        if "toEndpoints" in rule
-    }
-    assert runner_proxy_destinations == {"litellm", None}
 
     kube_objects = list(yaml.safe_load_all((console_dir / "kube-api-proxy.yaml").read_text()))
     kube_policy = one(obj for obj in kube_objects if obj["kind"] == "CiliumNetworkPolicy")
@@ -992,8 +935,8 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
     workspaces_flux = yaml.safe_load((k8s_dir / "haku/workspaces/app/flux-kustomization.yaml").read_text())
     workspace_dependencies = {entry["name"] for entry in workspaces_flux["spec"]["dependsOn"]}
     # The Codex sandbox template now mounts the fence CA (haku-egress-proxy-ca-cert) instead of the
-    # iron proxy's, so its trust-bundle generator is the ordering dependency; the dropped
-    # public-coder-agent-proxy dep is gone with that mount (#4670).
+    # former dedicated runner proxy's, so its trust-bundle generator is the ordering dependency;
+    # the dropped public-coder-agent-proxy dep is gone with that mount (#4670).
     assert {"haku-runtime-namespace", "haku-egress-proxy", "litellm-keys-tf"} <= workspace_dependencies
     assert "public-coder-agent-proxy" not in workspace_dependencies
 

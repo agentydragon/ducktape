@@ -413,13 +413,12 @@ spec:
                   name: haku-egress-github-token
                   key: token
                   optional: true
-            #   - the public-coder LiteLLM virtual key for the Console-launched Codex runner, mirrored
-            #     from the retiring public-coder-codex-runner-proxy (codex-runner-iron.yaml) as it
-            #     moves onto this fence (#4670). The SAME litellm-key-public-coder-agent the iron proxy
-            #     reads, delivered into this trusted namespace by widening its emberstack reflection at
-            #     the owning Terraform (tf/gitops/litellm-keys) — not re-minted. optional (#4970) like
-            #     github-bot: an unsynced reflection degrades the codex-litellm handle rather than
-            #     crash-looping the console.
+            #   - the public-coder LiteLLM virtual key for the Console-launched Codex runner. This is
+            #     the same litellm-key-public-coder-agent value formerly delivered to the dedicated
+            #     runner proxy, delivered into this trusted namespace by widening its emberstack
+            #     reflection at the owning Terraform (tf/gitops/litellm-keys) — not re-minted. optional
+            #     (#4970) like github-bot: an unsynced reflection degrades the codex-litellm handle
+            #     rather than crash-looping the console.
             - name: HAKU_EGRESS_CREDENTIAL_LITELLM_PUBLIC_CODER
               valueFrom:
                 secretKeyRef:

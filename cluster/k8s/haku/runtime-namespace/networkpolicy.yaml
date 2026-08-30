@@ -15,7 +15,7 @@ spec:
     - {}
 ---
 # Public-coder runners establish bridge/MCP through Console, use the shared exact-session
-# Kubernetes proxy, and reach GitHub/LiteLLM only through their own least-credential proxy.
+# Kubernetes proxy, and reach GitHub/LiteLLM only through the Console egress fence.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -45,8 +45,6 @@ spec:
     # Colocated Console egress fence (#4670): the runner's HTTPS_PROXY now points at
     # haku-egress-proxy.haku-console.svc:8888. The sidecar shares the Console pod's network
     # namespace, so it is selected by the same haku-console pod label on the fence container port.
-    # The iron proxy rule below stays until public-coder-codex-runner-proxy retires, so reverting the
-    # runner's proxy in config.yaml needs no policy change.
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: haku-console
@@ -54,13 +52,6 @@ spec:
       toPorts:
         - ports:
             - { port: "8888", protocol: TCP }
-    - toEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: public-coder-agent
-            k8s:app.kubernetes.io/name: public-coder-codex-runner-proxy
-      toPorts:
-        - ports:
-            - { port: "8080", protocol: TCP }
     # Console-selected Kubernetes access is mediated by the shared authorization proxy; the pod
     # has no ServiceAccount token and the runner writes a tokenFile kubeconfig only for this URL.
     # The proxy's TLS listener, because kubectl sends credentials only to an https server.

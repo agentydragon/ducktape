@@ -43,10 +43,10 @@ spec:
             # when an old Console does not yet send the Agent-owned launch field.
             - name: HAKU_RUNNER_SETUP
               value: ""
-            # Inert provider placeholder. The real public-coder LiteLLM virtual key remains in
-            # the least-credential runner proxy, which replaces this value only in Authorization
-            # headers sent to the exact in-cluster LiteLLM host. The Codex process and its children never
-            # receive provider bearer bytes.
+            # Inert provider placeholder. The real public-coder LiteLLM virtual key remains in the
+            # Console egress fence, which replaces this value only in Authorization headers sent to
+            # the exact in-cluster LiteLLM host. The Codex process and its children never receive
+            # provider bearer bytes.
             - name: OPENAI_API_KEY
               value: proxy-litellm-public-coder-placeholder
           securityContext:
@@ -70,7 +70,7 @@ spec:
             - name: egress-proxy-ca
               # The colocated Console egress fence's trust bundle (haku-egress-proxy-ca-cert: the
               # shared public + cluster + haku-egress-proxy interception roots), replacing the
-              # retiring iron proxy's CA as the Codex runner moves onto the fence (#4670). At
+              # former dedicated runner proxy's CA now that Codex uses the fence (#4670). At
               # /etc/ssl/certs it covers Git's GnuTLS linkage (which reads no SSL_CERT_FILE);
               # Node/Python/curl also receive explicit env pointers from Console (ca_bundle) at this
               # same path.

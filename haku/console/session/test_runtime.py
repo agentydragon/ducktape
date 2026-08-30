@@ -306,7 +306,7 @@ def _codex_harness_config(**overrides: Any) -> HarnessRegistrationConfig:
         "harness_label": "codex",
         "cwd": "/workspace",
         "session_ttl_seconds": 7200,
-        "https_proxy": "http://public-coder-codex-runner-proxy:8080",
+        "https_proxy": "http://haku-egress-proxy.haku-console.svc.cluster.local:8888",
         "ca_bundle": "/ca/bundle.pem",
         "no_proxy": ".svc,.svc.cluster.local",
         "mcp_url": "http://haku-console:9090/mcp",
@@ -321,8 +321,8 @@ def test_codex_environment_keeps_provider_auth_in_the_sandbox_template() -> None
 
     assert isinstance(config.implementation, CodexAppServerImplementationConfig)
     assert config.environment() == {
-        "HTTP_PROXY": "http://public-coder-codex-runner-proxy:8080",
-        "HTTPS_PROXY": "http://public-coder-codex-runner-proxy:8080",
+        "HTTP_PROXY": "http://haku-egress-proxy.haku-console.svc.cluster.local:8888",
+        "HTTPS_PROXY": "http://haku-egress-proxy.haku-console.svc.cluster.local:8888",
         "NO_PROXY": ".svc,.svc.cluster.local",
         "NODE_USE_ENV_PROXY": "1",
         "NODE_EXTRA_CA_CERTS": "/ca/bundle.pem",

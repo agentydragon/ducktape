@@ -10,14 +10,8 @@ resources:
   - service.yaml
   - cnp-ingress.yaml
   - cnp-egress.yaml
-  - codex-runner-deployment.yaml
-  - codex-runner-networkpolicy.yaml
 configMapGenerator:
   - name: public-coder-agent-proxy-config
     namespace: public-coder-agent
     files:
       - iron.yaml
-  - name: public-coder-codex-runner-proxy-config
-    namespace: public-coder-agent
-    files:
-      - iron.yaml=codex-runner-iron.yaml

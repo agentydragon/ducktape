@@ -68,7 +68,7 @@ def _worker_harness_config() -> HarnessRegistrationConfig:
         harness_label="codex",
         cwd="/workspace",
         session_ttl_seconds=7200,
-        https_proxy="http://public-coder-codex-runner-proxy:8080",
+        https_proxy="http://haku-egress-proxy.haku-console.svc.cluster.local:8888",
         ca_bundle="/ca/bundle.pem",
         no_proxy=".svc,.svc.cluster.local",
         mcp_url="http://haku-console:9090/mcp",

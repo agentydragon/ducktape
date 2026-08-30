@@ -97,16 +97,14 @@ harnesses:
     harness_label: codex
     cwd: /workspace
     session_ttl_seconds: 7200
-    # Colocated Console egress fence (#4670): replaces the dedicated public-coder-codex-runner-proxy
-    # iron proxy. Codex's two credentialed hosts — the internal LiteLLM model gateway and GitHub —
-    # are registered in `egress_decide` below with matching configuration grants; LiteLLM's carries
-    # `allow_prohibited_address` because it resolves into the cluster service CIDR, the boundary the
-    # fence otherwise denies. The iron proxy's :8080 network rule stays (public-coder-runner-egress)
-    # so reverting this line needs no policy change; the CA differs (below), so a full revert also
-    # restores the iron CA mount.
+    # Colocated Console egress fence (#4670): Codex's two credentialed hosts — the internal LiteLLM
+    # model gateway and GitHub — are registered in `egress_decide` below with matching configuration
+    # grants. LiteLLM's grant carries `allow_prohibited_address` because it resolves into the cluster
+    # service CIDR, the boundary the fence otherwise denies.
     https_proxy: http://haku-egress-proxy.haku-console.svc.cluster.local:8888
     # The Codex sandbox now mounts the fence's trust bundle (haku-egress-proxy-ca-cert — full
-    # public + cluster + interception roots) at this path in place of the iron proxy's CA
+    # public + cluster + interception roots) at this path in place of the former dedicated runner
+    # proxy's CA
     # (sandboxtemplate-haku-public-coder-codex.yaml), so every TLS client — GnuTLS git included —
     # trusts the fence.
     ca_bundle: /etc/ssl/certs/ca-certificates.crt
@@ -612,12 +610,10 @@ egress_decide:
         - scheme: https
           host: postman-echo.com
           port: 443
-    # The Console-launched Codex runner's egress credentials, mirrored from the retiring
-    # public-coder-codex-runner-proxy iron proxy (cluster/k8s/agents/public-coder-agent/proxy/
-    # codex-runner-iron.yaml) as the runner moves onto this colocated fence (#4670). Authored
-    # against the public-coder Agent. The live bridge bearer selects that Agent at request time;
-    # the sidecar's shared-fence credential authenticates the fence only. The sandbox only ever
-    # holds the inert placeholder plus its session bearer.
+    # The Console-launched Codex runner's egress credentials are held by this colocated fence
+    # (#4670), authored against the public-coder Agent. The live bridge bearer selects that Agent
+    # at request time; the sidecar's shared-fence credential authenticates the fence only. The
+    # sandbox only ever holds the inert placeholder plus its session bearer.
     #   The public-coder LiteLLM virtual key, substituted only on the internal LiteLLM model gateway;
     #   its configuration grant carries allow_prohibited_address because the gateway is a cluster ClusterIP.
     - handle: codex-litellm
@@ -753,14 +749,13 @@ egress_decide:
           port: 443
       coverage:
         methods: [GET, HEAD]
-    # The Console-launched Codex runner's configured reachability, mirroring the host set the retiring
-    # public-coder-codex-runner-proxy iron proxy allowed (codex-runner-iron.yaml). codex- ids keep
-    # these distinct from the haku- GitHub entries above: each live bridge bearer resolves to one
-    # Agent, so a request matches only that Agent's entries and receives only its credentials.
+    # The Console-launched Codex runner's configured reachability. codex- ids keep these distinct
+    # from the haku- GitHub entries above: each live bridge bearer resolves to one Agent, so a
+    # request matches only that Agent's entries and receives only those credentials.
     #   The internal LiteLLM model gateway is Codex's model access. allow_prohibited_address admits
     #   its cluster-internal resolution (litellm.litellm.svc → a ClusterIP inside prohibited_cidrs),
-    #   scoped to this exact origin — unrestricted methods, matching the iron rule's host-only
-    #   substitution so a denied method is never a broken model turn.
+    #   scoped to this exact origin — unrestricted methods, matching the host-only substitution
+    #   contract so a denied method is never a broken model turn.
     - id: codex-litellm
       principal: { kind: agent, agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e }
       origins:
