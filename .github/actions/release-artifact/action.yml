@@ -78,7 +78,9 @@ runs:
         echo "content_sha=${content_sha}" >> "$GITHUB_OUTPUT"
         echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 
-        if gh release view "$tag" >/dev/null 2>&1; then
+        # Use the REST endpoint explicitly: `gh release view` spends one GraphQL
+        # point per check, and this action runs once for every changed release.
+        if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/$tag" >/dev/null 2>&1; then
           echo "$PKG: unchanged (release $tag exists), skipping"
           echo "should_release=false" >> "$GITHUB_OUTPUT"
           exit 0

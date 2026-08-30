@@ -49,6 +49,7 @@ import subprocess
 import sys
 from collections.abc import Callable, Mapping
 from pathlib import Path
+from urllib.parse import quote
 
 from devinfra.ci.bes import BuildBuddyError, Invocation, read
 from devinfra.ci.release_content_hash import release_content_hash_from_digests
@@ -59,6 +60,7 @@ TAG_HASH_LENGTH = 12
 # materialize it on the GitHub runner, under a `bb-out/` prefix. A build event
 # stream reports the same file without it, relative to the workspace.
 BB_OUT_PREFIX = "bb-out/"
+REPO = "agentydragon/ducktape"
 
 
 def bes_path(output: str) -> str:
@@ -171,8 +173,10 @@ def is_published(release: Release, digests: Mapping[str, str], tag_exists: Calla
 
 
 def gh_tag_exists(tag: str) -> bool:
-    """Whether a GitHub release exists for `tag` — the same check release-artifact makes."""
-    result = subprocess.run(["gh", "release", "view", tag], check=False, capture_output=True, text=True)
+    """Whether a GitHub release exists for `tag`, using REST rather than GraphQL."""
+    result = subprocess.run(
+        ["gh", "api", f"repos/{REPO}/releases/tags/{quote(tag, safe='')}"], check=False, capture_output=True, text=True
+    )
     return result.returncode == 0
 
 

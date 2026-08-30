@@ -1,11 +1,11 @@
 name: Prune releases
 # Delete GitHub Releases past the retention window, once a day for the whole repo.
 #
-# This used to be a step inside every release-matrix job. `gh release list` is the
-# only GraphQL call in the release path, it pages the entire release list, and it ran
-# in ~66 concurrent jobs that each discarded every package but their own -- which
-# exhausted the 5,000/hour GraphQL quota and failed the whole release lane with
-# "API rate limit already exceeded".
+# This used to be a step inside every release-matrix job. The old `gh release list`
+# scan paged the entire release list, and it ran in ~66 concurrent jobs that each
+# discarded every package but their own -- which exhausted the 5,000/hour GraphQL
+# quota and failed the whole release lane with "API rate limit already exceeded".
+# The current planner and release action use REST for their per-tag existence checks too.
 #
 # Runs on the ducktape-automation GitHub App token rather than GH_RELEASE_PAT so the
 # scan draws on the App's own rate-limit bucket instead of competing with a human's.
