@@ -1462,8 +1462,7 @@ async def test_two_operator_two_agent_http_authorization_matrix(
 
         approved = operator_a.post(f"/api/tool-calls/{call_ids['haku']}/decision", json={"decision": "approve"})
         denied = operator_b.post(
-            f"/api/tool-calls/{call_ids['ops']}/decision",
-            json={"decision": "deny", "decision_note": "no"},
+            f"/api/tool-calls/{call_ids['ops']}/decision", json={"decision": "deny", "decision_note": "no"}
         )
         assert approved.status_code == 200, approved.text
         assert approved.json()["tool_call"]["status"] == "running"
@@ -1474,8 +1473,7 @@ async def test_two_operator_two_agent_http_authorization_matrix(
 async def test_approval_denial_is_terminal_and_does_not_execute(operator_client: TestClient) -> None:
     submitted = _submit(operator_client)
     resp = operator_client.post(
-        f"/api/tool-calls/{submitted['tool_call_id']}/decision",
-        json={"decision": "deny", "decision_note": "not today"},
+        f"/api/tool-calls/{submitted['tool_call_id']}/decision", json={"decision": "deny", "decision_note": "not today"}
     )
     assert resp.status_code == 200
     tool_call = resp.json()["tool_call"]

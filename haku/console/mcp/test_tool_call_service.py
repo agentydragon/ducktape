@@ -684,7 +684,7 @@ async def test_pending_wait_rereads_after_subscribing_before_waiting(
         [pending] = await service.list_tool_calls(actor=agent)
         decided = await service.decide(
             tool_call_id=pending.tool_call_id,
-        decision=ApprovalDecisionRequest(decision=ApprovalDecision.DENY, decision_note="reread race"),
+            decision=ApprovalDecisionRequest(decision=ApprovalDecision.DENY, decision_note="reread race"),
             actor=operator,
         )
         assert decided.status is ToolCallStatus.DENIED
