@@ -43,6 +43,18 @@ spec:
             # when an old Console does not yet send the Agent-owned launch field.
             - name: HAKU_RUNNER_SETUP
               value: ""
+            # The Codex workspace intentionally skips the shared Haku bootstrap, so provide the
+            # same deterministic author identity through Git's environment configuration layer.
+            - name: GIT_CONFIG_COUNT
+              value: "2"
+            - name: GIT_CONFIG_KEY_0
+              value: user.name
+            - name: GIT_CONFIG_VALUE_0
+              value: public-coder-agent
+            - name: GIT_CONFIG_KEY_1
+              value: user.email
+            - name: GIT_CONFIG_VALUE_1
+              value: public-coder-agent@allegedly.works
             # Inert provider placeholder. The real public-coder LiteLLM virtual key remains in the
             # Console egress fence, which replaces this value only in Authorization headers sent to
             # the exact in-cluster LiteLLM host. The Codex process and its children never receive
