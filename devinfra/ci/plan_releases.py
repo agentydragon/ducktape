@@ -58,6 +58,7 @@ TAG_HASH_LENGTH = 12
 
 REPO = "agentydragon/ducktape"
 
+
 @dataclasses.dataclass(frozen=True)
 class Release:
     """One row of the release matrix.
