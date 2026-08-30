@@ -290,6 +290,7 @@ py_test(
     name = "test_runner",
     srcs = ["test_runner.py"],
     deps = [
+        ":backend",
         ":neutral_operations",
         ":projection",
         ":protocol",

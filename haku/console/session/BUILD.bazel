@@ -85,7 +85,6 @@ py_library(
         "//haku/runner:protocol",
         "@pypi//fastapi",
         "@pypi//pydantic",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -177,10 +176,12 @@ py_test(
     name = "test_sandbox_observer",
     srcs = ["test_sandbox_observer.py"],
     deps = [
+        ":conftest",
         ":runtime",
         ":sandbox_claims",
         ":sandbox_observer",
         "//:conftest",
+        "//haku/console:conftest",
         "//haku/console/notifications:console_events",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
@@ -259,6 +260,7 @@ py_test(
         "//:conftest",
         "//haku/console:conftest",
         "//haku/console/conversation:prompt_origin",
+        "//haku/console/harnesses:kind",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
         "@pypi//pytest_bazel",
     ],
@@ -302,6 +304,7 @@ py_test(
         "//haku/console/grants:principal",
         "//haku/console/grants/http:models",
         "//haku/console/grants/kubernetes:models",
+        "//haku/console/harnesses:kind",
         "//haku/console/notifications:session_wakes",
         "//haku/console/x:conversation_events",
         "//haku/console/x/claude_code/testing:wire",
@@ -326,6 +329,7 @@ py_test(
         "//haku/console:conftest",
         "//haku/console/conversation:conversation_event",
         "//haku/console/conversation:prompt_origin",
+        "//haku/console/harnesses:kind",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
