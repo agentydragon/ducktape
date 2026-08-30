@@ -80,6 +80,11 @@ URL so standard HTTP clients send proxy authentication without another credentia
 copy.
 It is not the Claude OAuth credential, which never enters the sandbox.
 
+The shared workspace bootstrap runs before the launch environment is handed to the harness. When
+the claim carries a session token, the script derives the same session-authenticated proxy URL and
+uses the mounted fence CA for its initial `haku-state` checkout. A claim without that token keeps
+the existing setup path, which is how the separate `haku-sandbox` exec target remains compatible.
+
 When the Console launch environment contains `HAKU_KUBERNETES_PROXY_URL`, the runner creates
 `$HOME/.kube/config` and a mode-0600 `$HOME/.kube/haku-agent-token`. The config points only at that
 URL and references the token via client-go's `tokenFile`; bearer bytes never occur in argv,

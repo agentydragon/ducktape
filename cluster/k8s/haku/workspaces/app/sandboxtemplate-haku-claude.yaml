@@ -82,10 +82,8 @@ spec:
             # its GitHub identity are injected declaratively by Console from config.yaml's claude_code
             # implementation (haku/console/config.py). The AIQuota and ActivityWatch read tokens the
             # iron fence used are deferred from this reroute — see PR — pending an ESO source.
-            # ducktape is a read-only source Haku consults. github.com is reachable from the
-            # agent's shell, which has the proxy in its environment, but not from the bootstrap,
-            # which runs with pod env and deliberately has no proxy vars — so a clone here would
-            # fail and cost the bootstrap's exit status its meaning. The agent clones it itself.
+            # ducktape is a read-only source Haku consults. The bootstrap intentionally skips this
+            # optional source; the agent clones it itself with the launch-selected proxy when needed.
             - name: HAKU_DUCKTAPE_SKIP
               value: "1"
           securityContext:

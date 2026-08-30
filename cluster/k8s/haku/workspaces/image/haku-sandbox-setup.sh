@@ -22,6 +22,39 @@ set -euo pipefail
 
 bundle="${EGRESS_CA:-/egress-proxy-ca/ca-certificates.crt}"
 
+# ── 0. Runtime egress fence ──────────────────────────────────────────────────
+# Console launches run this script before the launch-selected environment is handed to the
+# harness process. The runtime runner does, however, inherit the per-session bearer in its Pod
+# environment. Give the bootstrap the same fenced Forgejo path the harness will use: an empty
+# proxy username plus the bearer in URL userinfo, and the shared interception CA for Git's TLS.
+#
+# The haku-sandbox exec target has no session bearer and already receives its own proxy settings
+# from Kyverno, so this is deliberately a no-op there. That keeps old images/templates usable
+# while the runner image rolls out. Session tokens come from secrets.token_urlsafe(), so their
+# URL-safe alphabet needs no additional userinfo escaping.
+session_token="${HAKU_SESSION_TOKEN:-${HAKU_RUNNER_TOKEN:-}}"
+if [ -n "$session_token" ]; then
+  if [ ! -r "$bundle" ]; then
+    echo "haku-sandbox-setup: fenced runtime requires egress CA bundle at $bundle" >&2
+    exit 1
+  fi
+  fence_proxy="http://haku-egress-proxy.haku-console.svc.cluster.local:8888"
+  export HTTP_PROXY="http://:${session_token}@${fence_proxy#http://}"
+  export HTTPS_PROXY="$HTTP_PROXY"
+  export http_proxy="$HTTP_PROXY"
+  export https_proxy="$HTTP_PROXY"
+  # Only the Console and Kubernetes authorization endpoints stay direct. In particular, both
+  # Forgejo origins must remain out of NO_PROXY so the bootstrap's haku-state clone is admitted
+  # and its Basic credential can be handled by the fence.
+  export NO_PROXY="127.0.0.1,localhost,haku-console.haku-console.svc.cluster.local,haku-kube-api-proxy.haku-console.svc.cluster.local"
+  export no_proxy="$NO_PROXY"
+  export SSL_CERT_FILE="$bundle"
+  export CURL_CA_BUNDLE="$bundle"
+  export REQUESTS_CA_BUNDLE="$bundle"
+  export NODE_EXTRA_CA_CERTS="$bundle"
+  echo "haku-sandbox-setup: using the session-bound egress fence for runtime checkouts"
+fi
+
 # ── 1. Egress CA at the JVM level ────────────────────────────────────────────
 # Bazel's downloader runs in the server JVM, which validates against a Java KeyStore and
 # ignores SSL_CERT_FILE. The proxy bumps every host, so a store holding only the egress CA

@@ -61,6 +61,10 @@ as empty-username URL userinfo (`http://:<token>@proxy`). The token is not
 copied into the launch frame or command arguments. The runner keeps the claim
 value in its process environment for the runner protocol and MCP.
 
+The shared workspace bootstrap also uses the inherited session token to configure this same
+session-authenticated proxy and trust bundle before cloning `haku-state`. Without a session token,
+it leaves the existing sandbox setup environment unchanged.
+
 The Secret-backed claim migration and the role-based rename of the shared
 decision-endpoint credential are deferred in <../sandbox/TODO.md>.
 

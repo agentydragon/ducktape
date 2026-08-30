@@ -58,8 +58,9 @@ harnesses:
     # the LiteLLM configuration grant's allow_prohibited_address flag (#5073). Forgejo is deliberately
     # NOT here either (#4710): the CLI's runtime git/REST traffic to both Forgejo origins traverses
     # the fence, admitted by the haku-forgejo configuration grant (allow_prohibited_address for the
-    # internal service). The bootstrap's haku-state checkout is unaffected — it runs with pod env
-    # and has no proxy.
+    # internal service). The shared bootstrap derives the same bearer-userinfo proxy from the
+    # claim-owned session token before its haku-state checkout, because it runs before this
+    # launch-selected environment is handed to the harness.
     no_proxy: 127.0.0.1,localhost,haku-console.haku-console.svc.cluster.local,haku-kube-api-proxy.haku-console.svc.cluster.local
     # Claude connects directly to Console's existing streamable-HTTP MCP endpoint with the
     # per-session bearer injected into this sandbox through SandboxClaim.spec.env. Its MCP variable
