@@ -735,6 +735,29 @@
   background: var(--mantine-color-blue-5);
 }
 
+.haku-status-dot[data-color="yellow"] {
+  background: var(--mantine-color-yellow-5);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .haku-status-dot[data-status="busy"] {
+    animation: haku-status-dot-pulse 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes haku-status-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.45;
+    transform: scale(0.8);
+  }
+}
+
 /* Provisioning is a live resource read, so its useful shape is a compact status table. The age
    marker only appears when the read is old enough to question, rather than spending a column on
    a timestamp that is normally fresh. */

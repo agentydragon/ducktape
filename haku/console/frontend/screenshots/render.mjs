@@ -142,7 +142,7 @@ const SCENES = [
     viewport: { width: 1200, height: 1000 },
     closeApprovals: true,
     clicks: ['[role="tab"]::-p-text(Nodes)'],
-    expectVisible: "::-p-text(wyrm2)",
+    expectVisible: '[aria-label="Node status: busy"]',
     frame: true,
   },
   {
@@ -150,7 +150,7 @@ const SCENES = [
     viewport: { width: 390, height: 900 },
     closeApprovals: true,
     clickTabText: "Nodes",
-    expectVisible: "::-p-text(wyrm2)",
+    expectVisible: '[aria-label="Node status: busy"]',
     frame: true,
   },
   {

@@ -338,9 +338,14 @@ function DaemonRow({ daemon }: { daemon: DaemonStatus }) {
         </Text>
       </Table.Td>
       <Table.Td data-slot="status" className="haku-dense-status">
-        <Badge color={DAEMON_STATUS_COLOR[daemon.status]} variant="light">
-          {daemon.status}
-        </Badge>
+        <span
+          className="haku-status-dot haku-node-status-dot"
+          data-color={DAEMON_STATUS_COLOR[daemon.status]}
+          data-status={daemon.status}
+          role="img"
+          aria-label={`Node status: ${daemon.status}`}
+          title={`Node status: ${daemon.status}`}
+        />
       </Table.Td>
       <Table.Td data-slot="version" className="haku-dense-secondary haku-dense-version">
         <Text size="sm">{daemon.version ?? "—"}</Text>
