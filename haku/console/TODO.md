@@ -3,16 +3,6 @@
 Project-level TODOs for the console. Design rationale lives in `README.md`; this is the
 actionable checklist. Remove entries once done.
 
-## Derive conversation previews entirely in SQL
-
-The conversation inventory preview currently reads the page's prompt items and classifies
-their Pydantic `origin` values in Python before looking up the latest message. Make this one
-SQL-side query (using the existing turn ordering and same-turn answer rule) so the inventory
-does not pull every prompt into the application. The likely schema prerequisite is a
-prompt-only `origin_kind` column containing the `spa`/`matrix`/`harness` discriminator, while
-retaining the structured `origin` payload for channel-specific addresses and references. Keep
-the preview derived at read time; do not materialize it on `Conversation`.
-
 ## Extend the kubectl-passthrough redundancy check past public-coder
 
 `kubectl_passthrough_redundancy_check` (`auto_approval_policies`, `type: kubernetes_passthrough`)

@@ -219,6 +219,9 @@ async def _item_counts(db: AsyncSession, conversations: set[UUID]) -> dict[UUID,
     return {conversation: counted.get(conversation, 0) for conversation in conversations}
 
 
+# TODO: Make this preview derivation one SQL query. Move the prompt-origin discriminator
+# (`spa`/`matrix`/`harness`) into a prompt-only column while retaining structured `origin`, then
+# filter prompts and select the latest same-turn message without pulling every prompt into Python.
 async def _conversation_previews(db: AsyncSession, conversations: set[UUID]) -> dict[UUID, ConversationPreview | None]:
     """The inventory's transcript glimpse, derived from the item rows.
 
