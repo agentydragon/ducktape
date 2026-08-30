@@ -51,8 +51,8 @@ function ToolCallRow({
 }: {
   record: ToolCallRecord;
   deciding: boolean;
-  onApprove: () => void;
-  onDeny: (reason?: string) => void;
+  onApprove: (decisionNote?: string) => void;
+  onDeny: (decisionNote?: string) => void;
 }) {
   // Per-row verbosity: the ledger starts compact (scannable) and expands to the full record
   // on demand. The variant propagates to both the arguments field and the detail-only fields.
@@ -209,8 +209,8 @@ export function ToolCallsPage(): JSX.Element {
               key={record.tool_call_id}
               record={record}
               deciding={decisions.isDeciding(record.tool_call_id)}
-              onApprove={() => void decisions.approve(record)}
-              onDeny={(reason) => void decisions.deny(record, reason)}
+              onApprove={(decisionNote) => void decisions.approve(record, decisionNote)}
+              onDeny={(decisionNote) => void decisions.deny(record, decisionNote)}
             />
           ))}
           {hasMore && (

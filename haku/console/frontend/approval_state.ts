@@ -34,6 +34,8 @@ export interface ApprovalDisplayFields {
   callerDisplayName: string;
   callerAgentId: string | null;
   createdAt: string | null;
+  decisionNote: string | null;
+  decisionOperatorId: string | null;
   denialReason: string | null;
   withdrawalReason: string | null;
   approvalPolicyId: string | null;
@@ -118,6 +120,8 @@ export function approvalDisplayFields(approval: ToolCallRecord): ApprovalDisplay
     callerDisplayName: approval.caller.kind === "agent" ? approval.caller.display_name : "Operator",
     callerAgentId: approval.caller.kind === "agent" ? approval.caller.agent_id : null,
     createdAt: approval.created_at ?? null,
+    decisionNote: approval.decision_note ?? null,
+    decisionOperatorId: approval.decision_operator_id ?? null,
     denialReason: approval.denial_reason ?? null,
     withdrawalReason: approval.withdrawal_reason ?? null,
     approvalPolicyId: approval.approval_policy_id ?? null,

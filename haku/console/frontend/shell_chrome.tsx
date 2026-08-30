@@ -50,8 +50,8 @@ export interface ShellChromeProps {
   screenshotApprovals: ScreenshotApproval[];
   decidingApprovalIds: readonly string[];
   recentToolCalls: RecentToolCall[];
-  onApproveTool: (approval: ToolCallRecord) => void;
-  onDenyTool: (approval: ToolCallRecord, reason?: string) => void;
+  onApproveTool: (approval: ToolCallRecord, decisionNote?: string) => void;
+  onDenyTool: (approval: ToolCallRecord, decisionNote?: string) => void;
   onApproveGeolocation: (approval: GeolocationApproval) => void;
   onDenyGeolocation: (approval: GeolocationApproval) => void;
   onApproveScreenshot: (approval: ScreenshotApproval) => void;
@@ -302,7 +302,7 @@ function SyncStatusPanel({
 
 // Each queue card renders compact by default and expands **in place** via its own Details toggle
 // (the same control as the history page) — no separate detail panel, no overlay. An always-visible
-// denial-reason field keeps a single Deny click able to carry a "why" from either form.
+// operator-note field keeps either decision able to carry a note from the same control.
 function ToolApprovalCard({
   approval,
   deciding,
@@ -312,8 +312,8 @@ function ToolApprovalCard({
 }: {
   approval: ToolCallRecord;
   deciding: boolean;
-  onApprove: () => void;
-  onDeny: (reason?: string) => void;
+  onApprove: (decisionNote?: string) => void;
+  onDeny: (decisionNote?: string) => void;
   /** This card is the one a deep link (a push notification's Details, or the URL the MCP server
    * advertised) named: it opens expanded and scrolls itself into view. */
   focused?: boolean;
@@ -545,8 +545,8 @@ export function ApprovalsTab({
                   key={item.id}
                   approval={item.approval}
                   deciding={deciding.has(item.id)}
-                  onApprove={() => onApproveTool(item.approval)}
-                  onDeny={(reason) => onDenyTool(item.approval, reason)}
+                  onApprove={(decisionNote) => onApproveTool(item.approval, decisionNote)}
+                  onDeny={(decisionNote) => onDenyTool(item.approval, decisionNote)}
                   focused={item.approval.tool_call_id === focusedToolCallId}
                 />
               );

@@ -84,6 +84,8 @@ export function PreviewCard({ fixture, variant }: { fixture: PreviewFixture; var
     title,
     result: storedResult,
     error: null,
+    decision_note: null,
+    decision_operator_id: null,
     denial_reason: null,
   });
   return (

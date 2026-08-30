@@ -169,7 +169,9 @@ async function decide(message: PushShow, action: string): Promise<void> {
     // Origin the backend's mutation guard requires. No credential is stored in the worker.
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(action === APPROVE_ACTION ? { decision: "approve" } : { decision: "deny", reason: null }),
+    body: JSON.stringify(
+      action === APPROVE_ACTION ? { decision: "approve" } : { decision: "deny", decision_note: null }
+    ),
   });
 
   if (response.ok) return;

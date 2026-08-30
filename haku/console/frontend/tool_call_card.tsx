@@ -68,7 +68,12 @@ export function ToolCallCard({
             </Text>
             <ToolActionLine serverId={fields.serverId} toolName={fields.toolName} args={args} />
             {fields.rationale && <Text size="xs">{fields.rationale}</Text>}
-            {fields.denialReason && (
+            {fields.decisionNote && (
+              <Text size="xs" c="dimmed">
+                {fields.decisionOperatorId ? "Operator note" : "Automatic decision"}: {fields.decisionNote}
+              </Text>
+            )}
+            {!fields.decisionNote && fields.denialReason && (
               <Text size="xs" c="dimmed">
                 Denied: {fields.denialReason}
               </Text>

@@ -59,6 +59,11 @@ only `not found`), races approval under the row lock, and can only move work awa
 Agents never receive an approval tool. Approved execution revalidates the exact credential binding recorded at
 submission, so queued work cannot transfer to a replacement credential.
 
+Every approved or denied call may carry one `decision_note`. For an Operator decision,
+`decision_operator_id` identifies the authenticated Operator; automatic decisions leave that field
+NULL, so an automatic denial's explanation and an Operator's note use the same neutral annotation
+without conflating their authorship. `auto_approval_evaluation` retains the policy evaluation detail.
+
 The browser reads pending calls and the audit ledger through `/api/approvals/pending` and
 `/api/tool-calls`; `POST /api/tool-calls/{tool_call_id}/decision` is exact-Origin-gated. The event
 WebSocket is only a lossy invalidation channel: REST remains authoritative. `list_node_daemons`

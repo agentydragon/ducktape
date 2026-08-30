@@ -351,10 +351,18 @@ async function decideToolCall(
   return data.tool_call;
 }
 
-export async function approveToolCall(toolCallId: string): Promise<ToolCallRecord> {
-  return decideToolCall(toolCallId, { decision: "approve" }, "Failed to approve tool call");
+export async function approveToolCall(toolCallId: string, decisionNote?: string): Promise<ToolCallRecord> {
+  return decideToolCall(
+    toolCallId,
+    { decision: "approve", decision_note: decisionNote ?? null },
+    "Failed to approve tool call"
+  );
 }
 
-export async function denyToolCall(toolCallId: string, reason?: string): Promise<ToolCallRecord> {
-  return decideToolCall(toolCallId, { decision: "deny", reason: reason ?? null }, "Failed to deny tool call");
+export async function denyToolCall(toolCallId: string, decisionNote?: string): Promise<ToolCallRecord> {
+  return decideToolCall(
+    toolCallId,
+    { decision: "deny", decision_note: decisionNote ?? null },
+    "Failed to deny tool call"
+  );
 }

@@ -557,12 +557,12 @@ export function HakuUiEmbed({
     }
   }
 
-  function approveToolApproval(approval: ToolCallRecord) {
-    void toolDecisions.approve(approval);
+  function approveToolApproval(approval: ToolCallRecord, decisionNote?: string) {
+    void toolDecisions.approve(approval, decisionNote);
   }
 
-  function denyToolApproval(approval: ToolCallRecord, reason?: string) {
-    void toolDecisions.deny(approval, reason);
+  function denyToolApproval(approval: ToolCallRecord, decisionNote?: string) {
+    void toolDecisions.deny(approval, decisionNote);
   }
 
   function approveGeolocationApproval(approval: GeolocationApproval) {

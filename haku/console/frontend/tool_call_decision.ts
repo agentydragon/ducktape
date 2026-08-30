@@ -40,15 +40,15 @@ export function toolCallDecisionFeedback(
 export async function executeToolCallDecision(
   call: ToolCallRecord,
   decision: ToolCallDecision,
-  reason?: string,
+  decisionNote?: string,
   dependencies: ToolCallDecisionDependencies = DEFAULT_DEPENDENCIES
 ): Promise<ToolCallRecord | null> {
   let record: ToolCallRecord;
   try {
     record =
       decision === "approve"
-        ? await dependencies.approve(call.tool_call_id)
-        : await dependencies.deny(call.tool_call_id, reason);
+        ? await dependencies.approve(call.tool_call_id, decisionNote)
+        : await dependencies.deny(call.tool_call_id, decisionNote);
   } catch (error) {
     dependencies.error("Tool call decision failed", error);
     return null;
@@ -61,16 +61,16 @@ export async function executeToolCallDecision(
 export function useToolCallDecision({ dependencies, onSuccess, onSettled }: ToolCallDecisionOptions = {}): {
   decidingToolCallIds: ReadonlySet<string>;
   isDeciding: (toolCallId: string) => boolean;
-  approve: (call: ToolCallRecord) => Promise<void>;
-  deny: (call: ToolCallRecord, reason?: string) => Promise<void>;
+  approve: (call: ToolCallRecord, decisionNote?: string) => Promise<void>;
+  deny: (call: ToolCallRecord, decisionNote?: string) => Promise<void>;
 } {
   const [decidingToolCallIds, setDecidingToolCallIds] = useState<ReadonlySet<string>>(() => new Set());
 
   const decide = useCallback(
-    async (call: ToolCallRecord, decision: ToolCallDecision, reason?: string) => {
+    async (call: ToolCallRecord, decision: ToolCallDecision, decisionNote?: string) => {
       setDecidingToolCallIds((ids) => new Set(ids).add(call.tool_call_id));
       try {
-        const record = await executeToolCallDecision(call, decision, reason, dependencies);
+        const record = await executeToolCallDecision(call, decision, decisionNote, dependencies);
         if (record) onSuccess?.(record);
       } finally {
         setDecidingToolCallIds((ids) => {
@@ -87,7 +87,7 @@ export function useToolCallDecision({ dependencies, onSuccess, onSettled }: Tool
   return {
     decidingToolCallIds,
     isDeciding: (toolCallId: string) => decidingToolCallIds.has(toolCallId),
-    approve: (call: ToolCallRecord) => decide(call, "approve"),
-    deny: (call: ToolCallRecord, reason?: string) => decide(call, "deny", reason),
+    approve: (call: ToolCallRecord, decisionNote?: string) => decide(call, "approve", decisionNote),
+    deny: (call: ToolCallRecord, decisionNote?: string) => decide(call, "deny", decisionNote),
   };
 }

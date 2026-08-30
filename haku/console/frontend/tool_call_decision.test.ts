@@ -59,7 +59,7 @@ describe("tool-call decision controller", () => {
 
     await expect(executeToolCallDecision(pendingApproval(), "approve", undefined, deps)).resolves.toBe(record);
 
-    expect(deps.approve).toHaveBeenCalledWith("tc_1");
+    expect(deps.approve).toHaveBeenCalledWith("tc_1", undefined);
     expect(deps.deny).not.toHaveBeenCalled();
     expect(deps.success).toHaveBeenCalledWith("Tool call approved", "Remove bought items: Running");
     expect(deps.error).not.toHaveBeenCalled();
@@ -75,6 +75,19 @@ describe("tool-call decision controller", () => {
     expect(deps.deny).toHaveBeenCalledWith("tc_1", undefined);
     expect(deps.approve).not.toHaveBeenCalled();
     expect(deps.success).toHaveBeenCalledWith("Tool call denied", "Remove bought items: Denied");
+  });
+
+  it("passes the same note to an approval as to a denial", async () => {
+    const deps = dependencies();
+    const record = toolCallRecord({ status: "running", result: null });
+    deps.approve.mockResolvedValue(record);
+
+    await expect(
+      executeToolCallDecision(pendingApproval(), "approve", "approved for the current task", deps)
+    ).resolves.toBe(record);
+
+    expect(deps.approve).toHaveBeenCalledWith("tc_1", "approved for the current task");
+    expect(deps.deny).not.toHaveBeenCalled();
   });
 
   it("uses approvalDisplayFields' fallback title", () => {
