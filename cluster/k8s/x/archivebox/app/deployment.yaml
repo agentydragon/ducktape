@@ -26,6 +26,45 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
+      # ArchiveBox's RemoteUser backend creates a local Django user on the
+      # first successful Authentik login, but that user is not a staff user.
+      # Bootstrap the intended Authentik principal declaratively instead of
+      # relying on an operator to run createsuperuser in a live Pod.
+      initContainers:
+        - name: bootstrap-admin
+          image: archivebox/archivebox@sha256:1a5a37331091d9df865ead2b9c231aa5a892fc26fe0422ce6140d9e2d9532327
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              archivebox init --quick
+              archivebox manage shell -c "from django.contrib.auth import get_user_model; import os; User = get_user_model(); user, _ = User.objects.get_or_create(username=os.environ['ARCHIVEBOX_ADMIN_USERNAME']); user.is_active = True; user.is_staff = True; user.is_superuser = True; user.set_unusable_password(); user.save()"
+          env:
+            - name: ARCHIVEBOX_ADMIN_USERNAME
+              value: agentydragon
+          envFrom:
+            - configMapRef:
+                name: archivebox-config
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 911
+            runAsGroup: 911
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: archive
+              mountPath: /data/archive
+            - name: tmp
+              mountPath: /tmp
       containers:
         - name: archivebox
           # Pinned official stable multi-architecture v0.7.4 image index.

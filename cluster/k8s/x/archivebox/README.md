@@ -16,6 +16,13 @@ The application relies on ArchiveBox's supported `RemoteUserMiddleware`:
 Authentik supplies `X-authentik-username`; a namespace NetworkPolicy prevents
 any other pod from reaching the application port and spoofing that header.
 
+The Deployment's idempotent `bootstrap-admin` init container initializes the
+collection and makes the declared Authentik principal `agentydragon` a Django
+superuser/staff user. It sets an unusable local password, so the account is
+entered through Authentik rather than an independently managed ArchiveBox
+password. This is expressed in the Deployment instead of being created by an
+imperative command in a live Pod.
+
 The app Kustomization uses `deletionPolicy: Orphan` while experimental so
 removing its Flux controller cannot silently delete captured data. Explicitly
 delete the namespace/PVCs only when the archive is intentionally retired.
