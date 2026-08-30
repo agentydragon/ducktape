@@ -750,6 +750,7 @@ ts_library(
         ":client",
         ":console_events",
         ":grants_panel",
+        ":icons",
         ":link",
         ":mcp_status_client",
         ":open_external",
