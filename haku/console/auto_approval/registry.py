@@ -44,7 +44,7 @@ AGENT_AUTO_APPROVAL_ID = "agent_policy_v1"
 SCHEMA_AUTO_DENIAL_EVALUATION = "denied: arguments failed the registered tool schema"
 
 # The `grants` server's own-grant list read and the scope value that makes it click-free. Mirrors
-# `haku.console.tools.grants` (`list_grants`, `GrantReadScope`) without importing the tool layer into
+# `haku.console.tools.grants` (`list_grants`, `GrantPrincipalInput`) without importing the tool layer into
 # the policy engine.
 _LIST_GRANTS_TOOL = "list_grants"
 _OWN_GRANT_SCOPE = "self"

@@ -96,18 +96,19 @@ def test_scope_is_a_discriminated_union_consistent_with_rule_kind() -> None:
         validate_grant_scope_rules(NonResourceGrantScope(), (resource_rule(),))
 
 
-def test_agent_grant_principal_must_belong_to_lifecycle_owner() -> None:
-    with pytest.raises(ValidationError, match="must belong to the lifecycle owner"):
-        Grant(
-            grant_id=UUID(int=1),
-            owner_agent_id=UUID(int=2),
-            principal=AgentGrantPrincipal(agent_id=UUID(int=3)),
-            source_tool_call_id="tc_source",
-            scope=NamespacesGrantScope(namespaces=("demo",)),
-            rules=(resource_rule(),),
-            created_at=datetime.datetime(2026, 8, 21, tzinfo=datetime.UTC),
-            expires_at=datetime.datetime(2026, 8, 21, 1, tzinfo=datetime.UTC),
-        )
+def test_agent_grant_principal_may_differ_from_lifecycle_owner() -> None:
+    grant = Grant(
+        grant_id=UUID(int=1),
+        owner_agent_id=UUID(int=2),
+        principal=AgentGrantPrincipal(agent_id=UUID(int=3)),
+        source_tool_call_id="tc_source",
+        scope=NamespacesGrantScope(namespaces=("demo",)),
+        rules=(resource_rule(),),
+        created_at=datetime.datetime(2026, 8, 21, tzinfo=datetime.UTC),
+        expires_at=datetime.datetime(2026, 8, 21, 1, tzinfo=datetime.UTC),
+    )
+
+    assert grant.principal == AgentGrantPrincipal(agent_id=UUID(int=3))
 
 
 def test_matching_is_conservative_about_resource_names() -> None:

@@ -343,8 +343,10 @@ def test_repository_matches_agent_and_exact_session_principals(make_client: Any)
         agent_id, binding_id = client.portal.call(default_agent_binding, sessions)
         session_id = client.portal.call(partial(insert_live_session, sessions, binding_id=binding_id, now=_NOW))
         agent_source = client.portal.call(partial(insert_approved_tool_call, sessions, binding_id=binding_id, now=_NOW))
+        # The source Agent may request a grant for another live session; the operator approval
+        # on the source ToolCall, not source-session identity equality, authorizes that choice.
         session_source = client.portal.call(
-            partial(insert_approved_tool_call, sessions, binding_id=binding_id, now=_NOW, session_id=session_id)
+            partial(insert_approved_tool_call, sessions, binding_id=binding_id, now=_NOW)
         )
         repository = PostgresGrantRepository(sessions)
 
@@ -409,7 +411,7 @@ def test_repository_matches_agent_and_exact_session_principals(make_client: Any)
             ended_source = await insert_approved_tool_call(
                 sessions, binding_id=binding_id, now=_NOW, session_id=session_id
             )
-            with pytest.raises(GrantSourceError, match="durable source ToolCall principal"):
+            with pytest.raises(GrantSourceError, match="live session"):
                 await repository.create(
                     owner_agent_id=agent_id,
                     grant_principal=SessionGrantPrincipal(session_id=session_id),

@@ -46,6 +46,7 @@ from haku.console.grants.kubernetes.service import GrantService as KubernetesGra
 from haku.console.grants.principal import (
     AccessProfileGrantPrincipal,
     AgentGrantPrincipal,
+    GrantPrincipalInput,
     RequestPrincipal,
     SessionGrantPrincipal,
 )
@@ -59,7 +60,6 @@ from haku.console.mcp.execution import (
 )
 from haku.console.tools.grants import (
     GrantDomain,
-    GrantReadScope,
     GrantsToolsService,
     HttpGrantRequest,
     HttpGrantView,
@@ -308,7 +308,7 @@ def test_list_grants_includes_database_history_only_when_requested(console: _Con
         await console.service.revoke_grants(
             context=context, domain=GrantDomain.KUBERNETES, grant_ids=[view.grant.grant_id], reason=None
         )
-        scopes: tuple[GrantReadScope | None, ...] = ("self", None, AgentGrantPrincipal(agent_id=console.agent_id))
+        scopes: tuple[GrantPrincipalInput | None, ...] = ("self", None, AgentGrantPrincipal(agent_id=console.agent_id))
         for principal in scopes:
             current = await console.service.list_grants(context=context, principal=principal)
             history = await console.service.list_grants(context=context, principal=principal, include_inactive=True)
@@ -564,17 +564,11 @@ def test_session_scope_binds_the_grant_to_the_exact_live_session(console: _Conso
 
     async def exercise() -> None:
         (session_view,) = await console.service.create_grants(
-            context=session_context,
-            requests=[_http(_HTTP_SPEC)],
-            duration_seconds=600,
-            principal=SessionGrantPrincipal(session_id=session_id),
+            context=session_context, requests=[_http(_HTTP_SPEC)], duration_seconds=600, principal="self"
         )
         assert session_view.grant.principal == SessionGrantPrincipal(session_id=session_id)
         (agent_view,) = await console.service.create_grants(
-            context=static_context,
-            requests=[_http(_HTTP_SPEC)],
-            duration_seconds=600,
-            principal=AgentGrantPrincipal(agent_id=console.agent_id),
+            context=static_context, requests=[_http(_HTTP_SPEC)], duration_seconds=600, principal="self"
         )
         # `self` resolves the trusted request principal; omission lists every catalog grant.
         assert {

@@ -183,12 +183,11 @@ def test_grant_timestamps_require_timezone_awareness(field: str) -> None:
         Grant.model_validate(payload)
 
 
-def test_agent_grant_principal_must_belong_to_lifecycle_owner() -> None:
+def test_agent_grant_principal_may_differ_from_lifecycle_owner() -> None:
     payload = _grant_payload()
     payload["principal"] = AgentGrantPrincipal(agent_id=UUID(int=3))
 
-    with pytest.raises(ValidationError, match="must belong to the lifecycle owner"):
-        Grant.model_validate(payload)
+    assert Grant.model_validate(payload).principal == AgentGrantPrincipal(agent_id=UUID(int=3))
 
 
 def test_grant_end_reason_is_optional_but_nonblank() -> None:

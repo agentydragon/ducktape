@@ -1,8 +1,8 @@
 """The manual-approval provenance invariant every grant domain enforces at creation.
 
 A grant's ``source_tool_call_id`` must identify a manually approved ToolCall authenticated
-by the lifecycle owner. Agent and session principals must match that durable source principal;
-an access-profile principal may name any profile because the Operator's approval of the source
+by the lifecycle owner. The requested principal must identify an eligible Agent, live session,
+or access profile; it may differ from the requester because the Operator's approval of the source
 ToolCall is the decision point. Split from :mod:`haku.console.grants.envelope` because these checks read
 ``database_schema`` rows, which ``database_schema`` itself imports the envelope's column
 mixin from.
@@ -78,25 +78,29 @@ async def assert_owner_principal_and_source(
             "authenticated by the lifecycle owner"
         )
     if isinstance(grant_principal, AgentGrantPrincipal):
-        valid_principal = grant_principal.agent_id == owner_agent_id
+        target_agent = await session.scalar(
+            select(Agent).where(Agent.agent_id == grant_principal.agent_id).with_for_update()
+        )
+        valid_principal = target_agent is not None and target_agent.status not in (
+            AgentStatus.ABANDONED,
+            AgentStatus.DELETED,
+        )
     elif isinstance(grant_principal, AccessProfileGrantPrincipal):
         valid_principal = True
     else:
-        valid_principal = source.session_id is not None and grant_principal.session_id == source.session_id
-        if valid_principal:
-            live_session = await session.scalar(
-                select(Session)
-                .where(
-                    Session.session_id == grant_principal.session_id,
-                    Session.agent_binding_id == source.binding_id,
-                    Session.status == SessionStatus.READY,
-                    Session.lease_expires_at > datetime.datetime.now(datetime.UTC),
-                )
-                .with_for_update()
+        live_session = await session.scalar(
+            select(Session)
+            .where(
+                Session.session_id == grant_principal.session_id,
+                Session.agent_binding_id.is_not(None),
+                Session.status == SessionStatus.READY,
+                Session.lease_expires_at > datetime.datetime.now(datetime.UTC),
             )
-            valid_principal = live_session is not None
+            .with_for_update()
+        )
+        valid_principal = live_session is not None
     if not valid_principal:
-        raise GrantSourceError("grant principal does not match the durable source ToolCall principal")
+        raise GrantSourceError("grant principal must identify an eligible Agent, live session, or access profile")
 
 
 async def lock_owned_source(session: AsyncSession, *, owner_agent_id: UUID, source_tool_call_id: str) -> None:

@@ -5,7 +5,8 @@ ToolCall provenance, requester identity, and lifecycle ownership remain separate
 
 Callers construct :class:`RequestPrincipal` only from authenticated runtime identity.
 A session ID is usable only after the authentication boundary has confirmed that the
-live session belongs to the named Agent; request payloads never select principal IDs.
+live session belongs to the named Agent; request payloads may select a distinct
+:class:`GrantPrincipal` explicitly, but never the caller's trusted identity.
 """
 
 from __future__ import annotations
@@ -61,6 +62,7 @@ class AccessProfileGrantPrincipal(BaseModel):
 type GrantPrincipal = Annotated[
     AgentGrantPrincipal | SessionGrantPrincipal | AccessProfileGrantPrincipal, Field(discriminator="kind")
 ]
+type GrantPrincipalInput = Literal["self"] | GrantPrincipal
 
 # Configuration has no authenticated-session lifecycle to bind, so it may name only principals
 # that remain meaningful across restarts and deployments.
@@ -72,8 +74,8 @@ class RequestPrincipal(BaseModel):
 
     When ``session_id`` is present, the authentication boundary must already have
     verified that the globally unique session belongs to ``agent_id``. The access
-    profile is also a grant-principal dimension. An Agent may request a grant for any
-    access profile; the manually approved ToolCall decides whether that request creates a grant.
+    profile is also a grant-principal dimension. An Agent may request a grant for any valid
+    principal; the manually approved ToolCall decides whether that request creates a grant.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -90,21 +92,20 @@ class RequestPrincipal(BaseModel):
         return cls(agent_id=source.agent_id, session_id=source.session_id, access_profile_id=source.access_profile_id)
 
 
-def require_applicable_grant_principal(
-    grant_principal: GrantPrincipal, request_principal: RequestPrincipal
+def resolve_grant_principal_input(
+    requested_principal: GrantPrincipalInput, request_principal: RequestPrincipal
 ) -> GrantPrincipal:
-    """Validate the principal of an Agent-created grant request.
+    """Resolve the ``self`` shorthand or preserve an explicitly requested principal.
 
-    Agent and session principals must refer to the authenticated caller. An access-profile
-    principal may name any profile; the manually approved ToolCall is the Operator's decision
-    point for whether that request creates a grant.
+    Explicit principals may name any valid Agent, live session, or access profile. The manually
+    approved ToolCall is the Operator's decision point for whether that request creates a grant.
     """
 
-    if not isinstance(grant_principal, AccessProfileGrantPrincipal) and not grant_principal_applies_to(
-        grant_principal, request_principal
-    ):
-        raise PermissionError("grant principal is not applicable to the authenticated caller")
-    return grant_principal
+    if requested_principal == "self":
+        if request_principal.session_id is not None:
+            return SessionGrantPrincipal(session_id=request_principal.session_id)
+        return AgentGrantPrincipal(agent_id=request_principal.agent_id)
+    return requested_principal
 
 
 def grant_principal_from_columns(

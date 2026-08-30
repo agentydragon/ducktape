@@ -37,7 +37,6 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from haku.console.grants.principal import (
-    AgentGrantPrincipal,
     GrantPrincipal,
     GrantPrincipalKind,
     RequestPrincipal,
@@ -111,14 +110,6 @@ class GrantEnvelope(BaseModel):
     end_reason: str | None = None
 
     @model_validator(mode="after")
-    def validate_principal_owner(self) -> GrantEnvelope:
-        # Session ownership is a relational invariant enforced while persisting/reconstructing the
-        # grant: a globally unique session ID intentionally does not duplicate its Agent ID here.
-        if isinstance(self.principal, AgentGrantPrincipal) and self.principal.agent_id != self.owner_agent_id:
-            raise ValueError("Agent grant principals must belong to the lifecycle owner")
-        return self
-
-    @model_validator(mode="after")
     def validate_window(self) -> GrantEnvelope:
         if self.expires_at is not None and self.expires_at <= self.created_at:
             raise ValueError("expires_at must be after created_at")
@@ -175,7 +166,7 @@ def grant_envelope_table_args(table: str) -> tuple[CheckConstraint | Index, ...]
         CheckConstraint("btrim(source_tool_call_id) <> ''", name=f"ck_{table}_source_tool_call_nonempty"),
         CheckConstraint(
             "(principal_kind = 'agent' AND principal_agent_id IS NOT NULL "
-            "AND principal_agent_id = owner_agent_id AND principal_session_id IS NULL "
+            "AND principal_session_id IS NULL "
             "AND principal_access_profile_id IS NULL) OR "
             "(principal_kind = 'session' AND principal_agent_id IS NULL "
             "AND principal_session_id IS NOT NULL AND principal_access_profile_id IS NULL) OR "
