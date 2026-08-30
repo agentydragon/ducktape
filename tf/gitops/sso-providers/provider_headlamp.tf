@@ -10,11 +10,14 @@ resource "authentik_provider_oauth2" "headlamp" {
 
   issuer_mode                = "per_provider"
   include_claims_in_id_token = true
+  # Authentik defaults to 10-minute access tokens; Headlamp refreshes them on API requests.
+  access_token_validity = "hours=24"
 
   property_mappings = [
     data.authentik_property_mapping_provider_scope.openid.id,
     data.authentik_property_mapping_provider_scope.email.id,
     data.authentik_property_mapping_provider_scope.profile.id,
+    data.authentik_property_mapping_provider_scope.offline_access.id,
   ]
 
   allowed_redirect_uris = [
@@ -57,6 +60,6 @@ resource "kubernetes_secret" "headlamp_oidc" {
     OIDC_CLIENT_ID     = authentik_provider_oauth2.headlamp.client_id
     OIDC_CLIENT_SECRET = authentik_provider_oauth2.headlamp.client_secret
     OIDC_ISSUER_URL    = "https://auth.allegedly.works/application/o/headlamp/"
-    OIDC_SCOPES        = "openid profile email"
+    OIDC_SCOPES        = "profile,email,offline_access"
   }
 }
