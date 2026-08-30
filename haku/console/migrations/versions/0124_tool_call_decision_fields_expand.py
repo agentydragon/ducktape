@@ -31,6 +31,26 @@ _DECISION_OPERATOR_FK = "fk_mcp_tool_calls_decision_operator"
 
 
 def upgrade() -> None:
+    # Fail before changing the schema if existing denial text cannot fit the bounded replacement
+    # field. This makes the migration failure actionable and leaves the old release deployable.
+    op.execute(
+        sa.text(
+            """
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM mcp_tool_calls
+                    WHERE denial_reason IS NOT NULL
+                      AND char_length(btrim(denial_reason)) > 4096
+                ) THEN
+                    RAISE EXCEPTION 'historical tool-call denial reason exceeds 4096 characters';
+                END IF;
+            END;
+            $$
+            """
+        )
+    )
     op.add_column("mcp_tool_calls", sa.Column("decision_note", sa.Text(), nullable=True))
     op.add_column("mcp_tool_calls", sa.Column("decision_operator_id", postgresql.UUID(as_uuid=True), nullable=True))
     op.create_foreign_key(
