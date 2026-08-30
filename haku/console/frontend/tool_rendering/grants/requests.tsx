@@ -138,6 +138,18 @@ function formatDuration(seconds: number): string {
   return `${seconds}s`;
 }
 
+function principalLabel(principal: CreateGrantArgs["principal"]): string {
+  if (principal === "self") return "self (current session or Agent)";
+  switch (principal.kind) {
+    case "agent":
+      return "the Agent";
+    case "session":
+      return `session ${principal.session_id}`;
+    case "access_profile":
+      return `access profile ${principal.access_profile_id}`;
+  }
+}
+
 function CreateGrantPreview({ args, variant }: PreviewProps<CreateGrantArgs>) {
   const grants = variant === "compact" ? args.grants.slice(0, COMPACT_ITEM_LIMIT) : args.grants;
   const domain = args.grants.length > 0 ? domainLabel(args.grants[0]) : "";
@@ -150,14 +162,7 @@ function CreateGrantPreview({ args, variant }: PreviewProps<CreateGrantArgs>) {
         <PreviewBadge variant="outline">
           {args.duration_seconds == null ? "permanent" : `for ${formatDuration(args.duration_seconds)}`}
         </PreviewBadge>
-        <PreviewBadge variant="light">
-          applies to{" "}
-          {args.principal.kind === "agent"
-            ? "the Agent"
-            : args.principal.kind === "session"
-              ? `session ${args.principal.session_id}`
-              : `access profile ${args.principal.access_profile_id}`}
-        </PreviewBadge>
+        <PreviewBadge variant="light">applies to {principalLabel(args.principal)}</PreviewBadge>
       </Group>
       <Stack gap="xs">
         {grants.map((item, index) => (

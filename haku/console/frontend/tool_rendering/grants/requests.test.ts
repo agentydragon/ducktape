@@ -44,6 +44,16 @@ describe("grantsPreviews", () => {
     ).toBe("Grants: Create Kubernetes 1 grant");
   });
 
+  it("renders the self principal shorthand", () => {
+    expect(
+      renderPreview(
+        grantsPreviews.create_grant,
+        { grants: [KUBERNETES_ITEM], duration_seconds: 3600, principal: "self" },
+        "detailed"
+      )
+    ).not.toBeNull();
+  });
+
   it("renders http-domain grant creation and names the domain", () => {
     for (const variant of ["compact", "detailed"] as const) {
       expect(
