@@ -13,14 +13,194 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Apply patch and remove bootstrap workflow
-        env:
-          PATCH_GZIP_B64: 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
+      - name: Apply owned source edits and remove bootstrap workflow
         run: |
-          printf '%s' "$PATCH_GZIP_B64" | base64 --decode | gzip --decompress > /tmp/deny-agent-copilot-tools.patch
-          git apply --check /tmp/deny-agent-copilot-tools.patch
-          git apply /tmp/deny-agent-copilot-tools.patch
+          python - <<'PY'
+          from pathlib import Path
+
+          edits = {
+              'haku/console/mcp_config.py': [
+                  ('    id: str\n    backend: McpBackend\n', '''    id: str
+    backend: McpBackend
+    agent_tool_denylist: set[str] = Field(default_factory=set)
+'''),
+                  ('''    catalog_refresh_interval_seconds: float | None = Field(default=None, ge=5.0, le=900.0)
+''', '''    catalog_refresh_interval_seconds: float | None = Field(default=None, ge=5.0, le=900.0)
+
+    @field_validator("agent_tool_denylist")
+    @classmethod
+    def _require_named_agent_tools(cls, value: set[str]) -> set[str]:
+        if any(not tool.strip() for tool in value):
+            raise ValueError("Agent tool denylist must not contain blank tool names")
+        return value
+
+    def blocks_agent_tool(self, tool_name: str) -> bool:
+        return tool_name in self.agent_tool_denylist
+'''),
+              ],
+              'haku/console/mcp/server.py': [
+                  ('from haku.console.tool_call_actor import OperatorActor, RuntimeActor', 'from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor'),
+                  ('''def _exposed_metadata(
+    metadata: ServerMetadata,
+    *,
+    policies: AutoApprovalPolicyRegistry,
+''', '''def _is_agent_tool_blocked(server: McpServerEntry, actor: RuntimeActor, tool_name: str) -> bool:
+    return isinstance(actor, AgentActor) and server.blocks_agent_tool(tool_name)
+
+
+def _exposed_metadata(
+    metadata: ServerMetadata,
+    *,
+    server: McpServerEntry,
+    policies: AutoApprovalPolicyRegistry,
+'''),
+                  ('    tools = [exposed(tool) for tool in metadata.state.tools]', '''    tools = [
+        exposed(tool)
+        for tool in metadata.state.tools
+        if not _is_agent_tool_blocked(server, actor, tool.name)
+    ]'''),
+                  ('''    # A browser Operator is always a direct caller, even if a stale or hand-built proxy supplied
+''', '''    server = next((candidate for candidate in _load_servers(context.settings) if candidate.id == server_id), None)
+    if server is not None and _is_agent_tool_blocked(server, actor, tool_name):
+        raise ToolError(f"MCP tool {server_id!r}/{tool_name!r} is not available to Agents")
+
+    # A browser Operator is always a direct caller, even if a stale or hand-built proxy supplied
+'''),
+                  ('''            for tool in meta.tools
+        ]
+''', '''            for tool in meta.tools
+            if not _is_agent_tool_blocked(server, actor, tool.name)
+        ]
+'''),
+                  ('''        for upstream_tool in meta.tools:
+            tool = _build_proxy_tool(
+''', '''        for upstream_tool in meta.tools:
+            if _is_agent_tool_blocked(server, actor, upstream_tool.name):
+                continue
+            tool = _build_proxy_tool(
+'''),
+                  ('''                server_metadata_response(server_id, reflection),
+                policies=policies,
+''', '''                server_metadata_response(server_id, reflection),
+                server=server,
+                policies=policies,
+'''),
+              ],
+              'haku/console/mcp_config.py': [],
+          }
+
+          for filename, replacements in edits.items():
+              path = Path(filename)
+              text = path.read_text()
+              for old, new in replacements:
+                  if old not in text:
+                      raise SystemExit(f'missing edit anchor in {filename}: {old[:80]!r}')
+                  text = text.replace(old, new, 1)
+              path.write_text(text)
+
+          path = Path('haku/console/mcp/test_server.py')
+          text = path.read_text()
+          text = text.replace(
+              'from haku.console.mcp_config import ConsoleConfigFile, const_in_process_server',
+              'from haku.console.mcp_config import ConsoleConfigFile, McpServerEntry, const_in_process_server',
+              1,
+          )
+          text += '''\n\ndef test_agent_tool_denylist_applies_only_to_agents() -> None:
+    server = McpServerEntry(
+        id="github",
+        backend=_in_process_backend({"kind": "none"}),
+        agent_tool_denylist={"create_pull_request_with_copilot"},
+    )
+    agent = AgentActor(agent_id=UUID(int=1), operator_id=UUID(int=2), binding_id=UUID(int=3))
+    operator = OperatorActor(operator_id=UUID(int=2))
+
+    assert mcp_server_module._is_agent_tool_blocked(server, agent, "create_pull_request_with_copilot")
+    assert not mcp_server_module._is_agent_tool_blocked(server, agent, "get_commit")
+    assert not mcp_server_module._is_agent_tool_blocked(server, operator, "create_pull_request_with_copilot")
+
+
+async def test_agent_tool_denylist_rejects_hand_built_dispatch(tmp_path: Path) -> None:
+    config_file = _write_console_config(
+        tmp_path / "denylist.yaml",
+        {
+            "mcp": {
+                "servers": [
+                    {
+                        "id": "github",
+                        "backend": _in_process_backend({"kind": "none"}),
+                        "agent_tool_denylist": ["create_pull_request_with_copilot"],
+                    }
+                ]
+            }
+        },
+    )
+    context = Mock()
+    context.settings.config_file = config_file
+    agent = AgentActor(agent_id=UUID(int=1), operator_id=UUID(int=2), binding_id=UUID(int=3))
+
+    with pytest.raises(ToolError, match="not available to Agents"):
+        await mcp_server_module._dispatch(
+            context,
+            server_id="github",
+            tool_name="create_pull_request_with_copilot",
+            arguments={},
+            passthrough=False,
+            actor=agent,
+        )
+'''
+          path.write_text(text)
+
+          path = Path('haku/console/test_deployment_config.py')
+          text = path.read_text()
+          anchor = '    server_ids = {server.id for server in config.mcp.servers}\n'
+          insertion = '''    github_server = next(server for server in config.mcp.servers if server.id == "github")
+    assert github_server.agent_tool_denylist == {
+        "assign_copilot_to_issue",
+        "create_pull_request_with_copilot",
+        "get_copilot_job_status",
+        "request_copilot_review",
+    }
+'''
+          if anchor not in text:
+              raise SystemExit('missing deployment test anchor')
+          path.write_text(text.replace(anchor, anchor + insertion, 1))
+
+          path = Path('cluster/k8s/haku/console/config.yaml')
+          text = path.read_text()
+          text = text.replace(
+              "    # the Console's per-call operator approval queue.\n",
+              "    # the Console's per-call operator approval queue; tools in agent_tool_denylist are unavailable\n    # to Agents entirely.\n",
+              1,
+          )
+          anchor = '      catalog_refresh_interval_seconds: 900\n'
+          insertion = '''      agent_tool_denylist:
+        - assign_copilot_to_issue
+        - create_pull_request_with_copilot
+        - get_copilot_job_status
+        - request_copilot_review
+'''
+          if anchor not in text:
+              raise SystemExit('missing deployment config anchor')
+          path.write_text(text.replace(anchor, anchor + insertion, 1))
+
+          path = Path('haku/console/README.md')
+          text = path.read_text()
+          anchor = 'credential kind the implementation did not declare.\n'
+          insertion = "An entry's `agent_tool_denylist` removes named upstream tools from every Agent's listing, status metadata, and execution path; Operators retain access unless the upstream server itself denies it.\n"
+          if anchor not in text:
+              raise SystemExit('missing console README anchor')
+          path.write_text(text.replace(anchor, anchor + insertion, 1))
+
+          path = Path('cluster/k8s/haku/console/README.md')
+          text = path.read_text()
+          old = 'the reviewed read-only tool names for Haku. Every other GitHub tool remains per-call operator approval.\n'
+          new = 'the reviewed read-only tool names for Haku. The same entry denies the Copilot delegation tools to every Agent, including stale-schema and generic-dispatch calls. Other GitHub tools remain per-call operator approval.\n'
+          if old not in text:
+              raise SystemExit('missing cluster README anchor')
+          path.write_text(text.replace(old, new, 1))
+          PY
           rm .github/workflows/apply-owned-denylist-patch.yml
+          git diff --check
           git config user.name 'haku-console-agent'
           git config user.email 'haku-console-agent@users.noreply.github.com'
           git add -A
