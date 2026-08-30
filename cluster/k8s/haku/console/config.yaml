@@ -2,7 +2,7 @@
 #
 # Console-owned Agent Sandbox runtimes. Every value is explicit deployment
 # wiring; the application deliberately has no topology/path/proxy defaults. The
-# placeholder is non-secret—the real OAuth bearer exists only in iron-proxy.
+# placeholder is non-secretâthe real OAuth bearer exists only in iron-proxy.
 settings:
   # https, never http: client-go attaches kubeconfig credentials only to a TLS server, so a
   # plain-http proxy URL makes every sandbox kubectl request unauthenticated (401).
@@ -15,7 +15,7 @@ recall_indexes:
   # Git rather than being inferred from an environment-variable name; only the Git credential is
   # secret and therefore remains an env reference.
   # Sync contract: each entry is mirrored verbatim into its chunk pod's own config slice
-  # (indexer-chunk-<index>-config.yaml) — the derivation tests fail this file against the slices
+  # (indexer-chunk-<index>-config.yaml) â the derivation tests fail this file against the slices
   # on any drift.
   - index_id: haku-state
     index_type: git
@@ -46,7 +46,7 @@ harnesses:
     session_ttl_seconds: 7200
     # Colocated Console egress fence (#4670): replaces the dedicated haku-claude-oauth-proxy iron
     # proxy. Claude Code's inference now goes to the in-cluster LiteLLM gateway (-> CLIProxyAPI) as a
-    # FENCED destination — the `claude-litellm` credential + its allow_prohibited_address configuration grant
+    # FENCED destination â the `claude-litellm` credential + its allow_prohibited_address configuration grant
     # policy below admit and substitute it; the real bearers stay in Console.
     https_proxy: http://haku-egress-proxy.haku-console.svc.cluster.local:8888
     # The sidecar mints leaves with the shared haku-egress-proxy CA, which the mounted
@@ -72,8 +72,8 @@ harnesses:
       kind: claude_code
       # Claude Code -> in-cluster LiteLLM (Anthropic Messages surface) -> CLIProxyAPI, running the
       # agent on the flat-rate Claude subscription models (anthropic-max20/ant-messages/*, #5086) served by
-      # CLIProxyAPI's Claude OAuth session — not the ChatGPT/Codex lane the codex runner uses. Never
-      # api.anthropic.com — the subscription OAuth stays in CLIProxyAPI. ANTHROPIC_BASE_URL is the
+      # CLIProxyAPI's Claude OAuth session â not the ChatGPT/Codex lane the codex runner uses. Never
+      # api.anthropic.com â the subscription OAuth stays in CLIProxyAPI. ANTHROPIC_BASE_URL is the
       # internal LiteLLM host, reached through the fence (see the no_proxy + claude-litellm credential
       # above/below). sonnet-5 is Haku's standing primary (haku/base/agent_shared.yaml); haiku is the
       # cheap background tier. The haku-console-claude key allowlist (tf/gitops/litellm-keys) admits
@@ -97,15 +97,15 @@ harnesses:
     harness_label: codex
     cwd: /workspace
     session_ttl_seconds: 7200
-    # Colocated Console egress fence (#4670): Codex's two credentialed hosts — the internal LiteLLM
-    # model gateway and GitHub — are registered in `egress_decide` below with matching configuration
+    # Colocated Console egress fence (#4670): Codex's two credentialed hosts â the internal LiteLLM
+    # model gateway and GitHub â are registered in `egress_decide` below with matching configuration
     # grants. LiteLLM's grant carries `allow_prohibited_address` because it resolves into the cluster
     # service CIDR, the boundary the fence otherwise denies.
     https_proxy: http://haku-egress-proxy.haku-console.svc.cluster.local:8888
-    # The Codex sandbox now mounts the fence's trust bundle (haku-egress-proxy-ca-cert — full
+    # The Codex sandbox now mounts the fence's trust bundle (haku-egress-proxy-ca-cert â full
     # public + cluster + interception roots) at this path in place of the former dedicated runner
     # proxy's CA
-    # (sandboxtemplate-haku-public-coder-codex.yaml), so every TLS client — GnuTLS git included —
+    # (sandboxtemplate-haku-public-coder-codex.yaml), so every TLS client â GnuTLS git included â
     # trusts the fence.
     ca_bundle: /etc/ssl/certs/ca-certificates.crt
     # Control-plane traffic (Console bridge/MCP, the Kubernetes auth proxy) stays direct. LiteLLM is
@@ -118,7 +118,7 @@ harnesses:
       kind: codex_app_server
       # The runner pins wire_api=responses, so this must be a `chatgpt/oai-responses/*`
       # LiteLLM entry, never `chatgpt/ant-messages/*` (the Messages lane, which fails every
-      # turn at /v1/responses) — cross-checked by cluster/k8s/litellm/app/test_litellm_config.py.
+      # turn at /v1/responses) â cross-checked by cluster/k8s/litellm/app/test_litellm_config.py.
       model: chatgpt/oai-responses/gpt-5.6-luna
       reasoning_effort: low
       provider_id: haku
@@ -262,7 +262,7 @@ auto_approval_policies:
   # The coder Agent's own fork, used to stage branches before opening PRs into
   # agentydragon/ducktape. It already has write access here (that's how it opens PRs), so a
   # read grant on its own fork's content adds no exposure beyond what it can already write.
-  # Same tool list/boundary as public_ducktape_reads — only the trusted owner differs.
+  # Same tool list/boundary as public_ducktape_reads â only the trusted owner differs.
   - id: public_ducktape_fork_reads
     type: github_repository
     server: github
@@ -280,7 +280,7 @@ auto_approval_policies:
     owner: agentydragon
     repository: gaffer-private
     tools: *repo_read_tools
-  # Any repository confirmed genuinely public — not bounded to a fixed owner/repo allowlist.
+  # Any repository confirmed genuinely public â not bounded to a fixed owner/repo allowlist.
   # `type: github_public_repository` positively confirms the target repository's visibility with a
   # live, unauthenticated GitHub API call before approving (see
   # haku/console/auto_approval/github.py) rather than inferring "public" from the absence
@@ -290,7 +290,7 @@ auto_approval_policies:
   # the same way as the fixed-repo policies above (owner/repo arguments and no query-level `repo:`
   # qualifier for search_pull_requests; one unquoted `repo:owner/repo` qualifier for search_code),
   # then checked for public visibility instead of compared against a configured pair. Same tool
-  # list as the fixed-repo policies (*repo_read_tools) — get_job_logs included.
+  # list as the fixed-repo policies (*repo_read_tools) â get_job_logs included.
   - id: public_github_reads
     type: github_public_repository
     server: github
@@ -303,11 +303,11 @@ auto_approval_policies:
       - public_gaffer_private_reads
       - public_github_reads
   # Side-effect-free reads on the shared `grants` server (#4918): `kubernetes_can_i` (SAR access
-  # inspection) and `get_grant`. `get_grant` is actor-scoped by construction — it returns only a
+  # inspection) and `get_grant`. `get_grant` is actor-scoped by construction â it returns only a
   # grant owned by and applicable to the calling Agent (else not-found), and an Operator cannot call
-  # it over MCP at all — so auto-approving it never exposes another principal's grant. `list_grants`
+  # it over MCP at all â so auto-approving it never exposes another principal's grant. `list_grants`
   # is auto-approved separately, only for the explicit own scope (see `grants_own_list`).
-  # `create_grant` (widening — it issues new temporary authority) stays manual; `revoke_grants`
+  # `create_grant` (widening â it issues new temporary authority) stays manual; `revoke_grants`
   # (own-relinquish, narrowing) is click-free via `grants_own_revoke`.
   - id: kubernetes_reads
     type: exact_tools
@@ -315,7 +315,7 @@ auto_approval_policies:
       grants:
         - kubernetes_can_i
         - get_grant
-  # An Agent listing its OWN grants — `list_grants(principal=self)` — is click-free (argument-
+  # An Agent listing its OWN grants â `list_grants(principal=self)` â is click-free (argument-
   # conditional, the same shape as `public_*_github_reads` confirming a safe scope before approving).
   # The read is actor-scoped regardless (the grant service filters to the caller's own grants), so
   # this only removes the click; omitting `principal` (the reserved broader read) stays manual.
@@ -323,9 +323,9 @@ auto_approval_policies:
     type: grant_self_list
     server: grants
   # `whoami` returns the caller's own resolved console/MCP principal (durable Agent id + live session
-  # id + access profile, or Operator id). It takes no arguments and has no side effects — a pure
+  # id + access profile, or Operator id). It takes no arguments and has no side effects â a pure
   # identity read of what Console already authenticated the caller as, exposing nothing another
-  # principal cannot see about itself — so it is unconditionally click-free. Distinct from
+  # principal cannot see about itself â so it is unconditionally click-free. Distinct from
   # `kubernetes_reads` only in intent (identity, not a grant/SAR read); a dedicated atom keeps that
   # boundary legible, bundled with `grants_own_list` into `grants_self_introspection` below.
   - id: grants_whoami
@@ -344,15 +344,15 @@ auto_approval_policies:
       - grants_own_list
   # An Agent's `revoke_grants` only ever relinquishes its OWN grants: the tool filters to the caller
   # (`release_applicable_grants` on the trusted request principal), and `owner_agent_id` is operator-
-  # only and rejected for an Agent. So it is a narrowing self-service operation — it reduces the
-  # Agent's own temporary authority — and is click-free, while `create_grant` (widening) stays manual.
+  # only and rejected for an Agent. So it is a narrowing self-service operation â it reduces the
+  # Agent's own temporary authority â and is click-free, while `create_grant` (widening) stays manual.
   - id: grants_own_revoke
     type: exact_tools
     tools:
       grants:
         - revoke_grants
   # public-coder's profile already declares recall_index_ids: [ducktape-public] below, but that
-  # grant was dead without server access — haku_index wasn't in its in_process_server_ids. This is
+  # grant was dead without server access â haku_index wasn't in its in_process_server_ids. This is
   # narrower than haku_recall_reads: haku_index enforces per-call index scoping against the caller's
   # granted recall_index_ids server-side, so this can never reach haku-state/haku-conversations; it
   # deliberately omits haku_conversations, which reads Haku's own session transcripts.
@@ -365,7 +365,7 @@ auto_approval_policies:
   # Never grants standing authority: it only checks whether the calling Agent's own Kubernetes SAR
   # identity already covers a kubectl-passthrough-mcp call, and if so auto-*denies* it with a
   # message to use that direct path instead of the operator's broader passthrough credential. A
-  # denial here always falls back to manual for anything not already covered — this narrows toward
+  # denial here always falls back to manual for anything not already covered â this narrows toward
   # what the Agent could already do unattended, never widens it.
   #
   # public-coder only for now. Haku's Claude Code runtime (and any other claude.ai-hosted variant)
@@ -422,23 +422,19 @@ auto_approval_policies:
         - ha_get_addon
         - ha_get_automation_traces
         - ha_get_blueprint
-        - ha_get_camera_image
         - ha_get_device
         - ha_get_entity
         - ha_get_entity_exposure
         - ha_get_hacs_info
-        - ha_get_history
         - ha_get_integration
         - ha_get_logs
         - ha_get_operation_status
         - ha_get_overview
         - ha_get_skill_guide
-        - ha_get_state
         - ha_get_system_health
         - ha_get_todo
         - ha_get_zone
         - ha_list_floors_areas
-        - ha_list_services
         - ha_search
   - id: haku_sandbox_control
     type: exact_tools
@@ -456,14 +452,14 @@ auto_approval_policies:
   # Reading back what happened and what is written down: the frames of a past session, the real
   # session outcome and sandbox provisioning state of a worker Haku dispatched (#5193), and semantic search over
   # the same sessions plus haku-state.
-  # One atom because they are one authority — every tool here reads a corpus Haku can already reach
+  # One atom because they are one authority â every tool here reads a corpus Haku can already reach
   # (it has a haku-state clone, and `read_session_frames`/`session_outcome`/`get_worker_provisioning`
   # span the sessions in its
   # read scope), so this adds discoverability rather than reachability. `session_outcome` is a
   # side-effect-free read of the worker session Haku already opened through `dispatch_worker`, so it
   # is pass-through here exactly like the other conversation reads. Both cross rooms and sessions but
   # are fenced identically per conversation by the profile-DAG read scope over `can_read_profiles`
-  # (haku/recall_index/README.md § Read scoping).
+  # (haku/recall_index/README.md Â§ Read scoping).
   - id: haku_recall_reads
     type: exact_tools
     tools:
@@ -538,7 +534,7 @@ access_profiles:
     # Even the fallback profile may ASK for a grant: every `grants` call queues for the operator,
     # and create_grant is never auto-approvable (operator ruling on #4986; pinned in
     # haku/console/test_deployment_config.py). Consolidating onto one `grants` server (#4918) means
-    # this profile may now also ASK for a kubernetes grant, not only HTTP egress — still manual-only.
+    # this profile may now also ASK for a kubernetes grant, not only HTTP egress â still manual-only.
     in_process_server_ids:
       - grants
 default_access_profile_id: manual-review
@@ -593,6 +589,17 @@ egress_decide:
         - scheme: https
           host: codeload.github.com
           port: 443
+    # The Haku egress proxy's HA API credential. The provisioner reflects the same token
+    # Secret consumed by HA-MCP into haku-console; the sandbox only holds this inert placeholder.
+    - handle: home-assistant-api
+      placeholder: home-assistant-api-token-placeholder
+      value_env_var: HAKU_EGRESS_CREDENTIAL_HOME_ASSISTANT
+      match_headers: [authorization]
+      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
+      origins:
+        - scheme: http
+          host: home-assistant.home-assistant.svc.cluster.local
+          port: 8123
     # The Console-launched Claude runner's LiteLLM virtual key: Claude Code's inference reaches the
     # in-cluster LiteLLM gateway (-> CLIProxyAPI, anthropic-max20/ant-messages/* Claude-subscription models)
     # through the fence, which swaps this placeholder for the real haku-console-claude key on the
@@ -608,9 +615,9 @@ egress_decide:
           host: litellm.litellm.svc.cluster.local
           port: 4000
     # End-to-end substitution smoke test (haku/egress/docs/test_substitution.md): both sides of
-    # this swap are committed EXAMPLE- literals — the placeholder here and the deployment's
-    # literal HAKU_EGRESS_CREDENTIAL_SUBSTITUTION_SMOKE value — so watching the swap arrive at
-    # the public echo host exercises the whole decide→substitute path with no secret anywhere.
+    # this swap are committed EXAMPLE- literals â the placeholder here and the deployment's
+    # literal HAKU_EGRESS_CREDENTIAL_SUBSTITUTION_SMOKE value â so watching the swap arrive at
+    # the public echo host exercises the whole decideâsubstitute path with no secret anywhere.
     - handle: substitution-smoke
       placeholder: EXAMPLE-EGRESS-SMOKE-PLACEHOLDER
       value_env_var: HAKU_EGRESS_CREDENTIAL_SUBSTITUTION_SMOKE
@@ -654,7 +661,7 @@ egress_decide:
         - scheme: https
           host: codeload.github.com
           port: 443
-    # The haku Forgejo credential (the existing haku-forgejo-git Secret — the full haku Forgejo user)
+    # The haku Forgejo credential (the existing haku-forgejo-git Secret â the full haku Forgejo user)
     # substituted into the haku Agent's Forgejo egress (git-over-HTTP + REST API), reachable at the
     # internal forgejo-http.forgejo service and the public git.allegedly.works. The sandbox only ever
     # holds `haku-forgejo-token-placeholder`.
@@ -676,7 +683,7 @@ egress_decide:
   # Configuration-file HTTP grants (#4941), evaluated before database grants; admissions carry
   # `config_file:<id>` provenance.
   grants:
-    # The reachability half of the substitution smoke test — exactly GET /headers at the public
+    # The reachability half of the substitution smoke test â exactly GET /headers at the public
     # echo host, redeeming the inert credential above.
     - id: substitution-smoke
       principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
@@ -688,13 +695,26 @@ egress_decide:
         methods: [GET]
         path_regex: /headers
       credential_handle: substitution-smoke
+    # HA REST reads that have direct, non-multiplexed GET routes. Keep this list narrow:
+    # the path grant cannot inspect request bodies, response selectors, or WebSocket messages.
+    - id: haku-home-assistant-rest-reads
+      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
+      origins:
+        - scheme: http
+          host: home-assistant.home-assistant.svc.cluster.local
+          port: 8123
+      coverage:
+        methods: [GET]
+        path_regex: '^/api/(states(?:/[^/?]+)?|history/period(?:/.*)?|logbook(?:/.*)?|error_log|services|camera_proxy/[^/?]+)(?:\?.*)?$'
+      credential_handle: home-assistant-api
+      allow_prohibited_address: true
     # The GitHub egress path was validated in PR #5223, merged August 30, 2026. These haku-scoped
     # entries remain for the separate iron-proxy exercise; moving that workload onto this colocated
     # fence still requires a live bridge bearer for the intended Agent.
     # Coverage: the GitHub API and git-over-HTTPS smart-HTTP endpoints, redeeming the bot
-    # credential at both — Bearer on the API, Basic (decoded/swapped/re-encoded proxy-side) on
+    # credential at both â Bearer on the API, Basic (decoded/swapped/re-encoded proxy-side) on
     # github.com. No path pin: git smart HTTP needs /info/refs?service=git-upload-pack through to
-    # the pack endpoints. codeload.github.com is deliberately not configured — the registry can
+    # the pack endpoints. codeload.github.com is deliberately not configured â the registry can
     # redeem there, but reaching it takes a temporary grant.
     - id: haku-github-api
       principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
@@ -717,7 +737,7 @@ egress_decide:
     # The Console-launched Claude runner's model access: its inference reaches the in-cluster LiteLLM
     # gateway (-> CLIProxyAPI). LiteLLM resolves to a ClusterIP, so this entry carries
     # allow_prohibited_address (#5073) to lift the decide oracle's private-address denial for THIS
-    # origin only — exactly as codex-litellm below does for the Codex runner. GET+POST: Claude Code
+    # origin only â exactly as codex-litellm below does for the Codex runner. GET+POST: Claude Code
     # POSTs /v1/messages and (with gateway discovery) GETs /v1/models. Redeems the LiteLLM key.
     - id: haku-claude-litellm
       principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
@@ -762,8 +782,8 @@ egress_decide:
     # from the haku- GitHub entries above: each live bridge bearer resolves to one Agent, so a
     # request matches only that Agent's entries and receives only those credentials.
     #   The internal LiteLLM model gateway is Codex's model access. allow_prohibited_address admits
-    #   its cluster-internal resolution (litellm.litellm.svc → a ClusterIP inside prohibited_cidrs),
-    #   scoped to this exact origin — unrestricted methods, matching the host-only substitution
+    #   its cluster-internal resolution (litellm.litellm.svc â a ClusterIP inside prohibited_cidrs),
+    #   scoped to this exact origin â unrestricted methods, matching the host-only substitution
     #   contract so a denied method is never a broken model turn.
     - id: codex-litellm
       principal: { kind: agent, agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e }
@@ -803,7 +823,7 @@ egress_decide:
       coverage:
         methods: [GET, HEAD]
       credential_handle: codex-github-bot
-    #   githubusercontent CDN (pre-signed URLs) — pure reachability, no credential, matching iron.
+    #   githubusercontent CDN (pre-signed URLs) â pure reachability, no credential, matching iron.
     - id: codex-githubusercontent
       principal: { kind: agent, agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e }
       origins:
@@ -839,7 +859,7 @@ egress_decide:
       credential_handle: haku-forgejo-token
       allow_prohibited_address: true
   # Cluster pod + service CIDRs, denied in resolved answers on top of the always-prohibited classes
-  # (loopback, link-local, multicast, private/RFC1918/ULA — which already cover 10/8). Named per the
+  # (loopback, link-local, multicast, private/RFC1918/ULA â which already cover 10/8). Named per the
   # field's contract so the internal boundary is legible and survives a re-IP off 10/8.
   prohibited_cidrs: [10.42.0.0/16, 10.244.0.0/16]
 #
@@ -864,8 +884,8 @@ agent_sandbox:
   bootstrap:
     cwd: /workspace
     timeout_seconds: 300
-    # The reviewed per-claim bootstrap is one baked script — egress CA trust, git identity,
-    # git credentials, and the haku-state checkout — kept in its native file
+    # The reviewed per-claim bootstrap is one baked script â egress CA trust, git identity,
+    # git credentials, and the haku-state checkout â kept in its native file
     # (cluster/k8s/haku/workspaces/image/haku-sandbox-setup.sh) rather than inlined here, so
     # shfmt/shellcheck lint it. Read that file for what each step does and why. Changing
     # bootstrap behavior therefore means an image rebuild + rollout, not a ConfigMap edit.
@@ -875,7 +895,7 @@ agent_sandbox:
 #
 # Static machine Agents: each has a fixed durable Agent UUID, globally reserved display name, and
 # bearer bound to one Operator. The bearer and controller-fed Authentik user id are named env vars,
-# not literals — values live in the haku-console-agent / haku-console-oidc Secrets.
+# not literals â values live in the haku-console-agent / haku-console-oidc Secrets.
 # The externally stable `operator_subject_env` label names a startup-only Authentik `sub`/user_id
 # seed; the app immediately resolves it to a canonical Operator UUID and never uses it as live
 # request authority.
@@ -894,7 +914,7 @@ static_agents:
     # requests.
     access_profile_id: public-coder
 # Prompts belong to Agents (#4431 stage 6): each launchable Agent names its identity template,
-# mounted from this same ConfigMap. A template `{% include %}`s siblings from the same directory —
+# mounted from this same ConfigMap. A template `{% include %}`s siblings from the same directory â
 # that is how the shared conversation_prompt_fragment.md.j2 rides along without being a config key. Haku's
 # identity and what only Haku is told stay in its template; the craft it authors for itself lives
 # in haku-state, which it can write and these it cannot.
@@ -981,12 +1001,12 @@ mcp:
           kind: static_bearer
           bearer_token_secret: tana-account-pat
     # `sandbox` (haku/console/tools/sandbox.py): claim a warm Haku sandbox from the `agent_sandbox`
-    # pool above, bootstrap it, run bounded bash via pods/exec, dispose it. Credential-free —
+    # pool above, bootstrap it, run bounded bash via pods/exec, dispose it. Credential-free â
     # Console's own ServiceAccount holds the claim/exec RBAC (cluster/k8s/haku/workspaces/app/
     # haku-console-sandbox-role.yaml), so there is no bearer to reflect and no second process to
     # keep alive. By operator directive the whole named surface in `haku_sandbox_control`
-    # auto-approves so Haku drives its own box tap-free — exec_sandbox = arbitrary bash, but
-    # ≈ the direct `kubectl exec` Haku's SA can already run in haku-sandbox, and dispose_sandbox
+    # auto-approves so Haku drives its own box tap-free â exec_sandbox = arbitrary bash, but
+    # â the direct `kubectl exec` Haku's SA can already run in haku-sandbox, and dispose_sandbox
     # only releases the ephemeral claim Haku itself created (re-clonable checkout, rebuildable
     # cache). The `haku_sandbox_control` exact-tools policy above records that reviewed authority;
     # `in_process_server_ids` on the profile is what grants access to the server at all.
@@ -996,8 +1016,8 @@ mcp:
         credential:
           kind: none
     # Multi-agent v0 (#5193/#5194): `dispatch_worker` opens a hosted worker session for a launchable
-    # Agent on a harness — reusing the same createConversation launch + session/sandbox allocation the
-    # operator-initiated flow uses — seeds the opening prompt, and returns its session id immediately.
+    # Agent on a harness â reusing the same createConversation launch + session/sandbox allocation the
+    # operator-initiated flow uses â seeds the opening prompt, and returns its session id immediately.
     # The worker runs under its OWN Agent perimeter (its grants + fence identity), not the caller's;
     # dispatch never widens its reach. Credential-free (Console's own session runtime). `dispatch_worker`
     # is in NO auto-approval policy, so every spawn queues for the operator, exactly like `create_grant`.
@@ -1020,11 +1040,11 @@ mcp:
     # kubernetes SAR check `kubernetes_can_i` (side-effect-free). HTTP egress grants (#4670; first
     # exercised by the #4943 spike) are evaluated by the egress decide endpoint after configuration-file
     # policy; kubernetes grants are RBAC-like scope/rule coverage. Both ledgers are Console's own
-    # Postgres — credential-free. Exposed to EVERY access profile (operator ruling on #4986): any
+    # Postgres â credential-free. Exposed to EVERY access profile (operator ruling on #4986): any
     # Agent may ask. `create_grant` is deliberately in NO auto-approval policy: grant creation
     # requires a manually approved source ToolCall (an auto-approved call cannot mint a grant).
-    # `revoke_grants` auto-approves for an Agent — which relinquishes only its own grants, a
-    # narrowing self-service operation (`grants_own_revoke`) — and the reads auto-approve per their
+    # `revoke_grants` auto-approves for an Agent â which relinquishes only its own grants, a
+    # narrowing self-service operation (`grants_own_revoke`) â and the reads auto-approve per their
     # atoms (`kubernetes_can_i`/`get_grant` via `kubernetes_reads`, own-scoped `list_grants` via
     # `grants_own_list`, `whoami` via `grants_whoami`).
     - id: grants
@@ -1033,13 +1053,13 @@ mcp:
         credential:
           kind: none
     # postscanmail-mcp (x/postscanmail_mcp_server): the PostScan Mail Developer API behind the
-    # shared mcp-oauth-facade OIDCProxy — same facade shape as tana-mcp-facade, so
+    # shared mcp-oauth-facade OIDCProxy â same facade shape as tana-mcp-facade, so
     # haku-console reaches it via operator OAuth (DCR against the facade's own OAuth surface,
     # using dynamic client registration). Restricted to agentydragon by the facade's Authentik group policy
     # (tf/gitops/agent-machine-access/postscanmail-mcp.tf). Reads (list_items,
     # list_automation_rules) auto-approve for the agent; every mutating/paid/destructive action
-    # (set_automation_rule, request_*/cancel_* — open & rescan are paid, discard & shred remove
-    # mail) queues for operator approval — see `postscanmail_reads` above. Reached via the
+    # (set_automation_rule, request_*/cancel_* â open & rescan are paid, discard & shred remove
+    # mail) queues for operator approval â see `postscanmail_reads` above. Reached via the
     # public hostname like the other remote facades; no Terraform or NetworkPolicy change.
     - id: postscanmail-mcp
       backend:
@@ -1053,7 +1073,7 @@ mcp:
     # Writable Home Assistant management through homeassistant-ai/ha-mcp. The upstream Home
     # Assistant token remains in the ha-mcp pod; haku-console authenticates with a static bearer
     # reflected from ha-mcp/ha-mcp-bearer, exactly like tana-rw. Read tools
-    # auto-approve (the readOnlyHint subset, minus ha_report_issue — see `home_assistant_reads`
+    # auto-approve (the readOnlyHint subset, minus ha_report_issue â see `home_assistant_reads`
     # above); every state-changing/control tool stays operator-gated. Schemas exercised 2026-07-20.
     #
     # A static bearer rather than operator OAuth: Haku is the only consumer and ha-mcp is our own
@@ -1066,12 +1086,12 @@ mcp:
           kind: static_bearer
           bearer_token_secret: ha-mcp-bearer
     # osmmcp (github.com/NERVsystems/osmmcp): geocoding via Nominatim, routing via OSRM,
-    # place lookup via Overpass — all public, anonymous, read-only APIs. No secret, no
+    # place lookup via Overpass â all public, anonymous, read-only APIs. No secret, no
     # per-operator identity, so unlike every other remote server here it isn't
     # OAuth-fronted: reachable only from haku-console's own namespace via
     # CiliumNetworkPolicy (cluster/k8s/agents/osm-mcp/), not a public HTTPRoute.
     #
-    # Unwired for now (operator, 2026-07-19): not yet tested properly and possibly clunky —
+    # Unwired for now (operator, 2026-07-19): not yet tested properly and possibly clunky â
     # first live use found routing `mode` is a no-op (the public OSRM demo serves only the
     # car profile; the URL's profile segment is decorative), so foot/bike distances and
     # durations are silently car values, and route geometry is returned as a path on the
@@ -1087,13 +1107,13 @@ mcp:
     #     auth:
     #       kind: none
     # kubectl-passthrough-mcp forwards the approving operator's own OAuth token straight
-    # to kube-apiserver (cluster_auth_mode=passthrough) — no group override, no scoped
+    # to kube-apiserver (cluster_auth_mode=passthrough) â no group override, no scoped
     # credential of its own. RBAC is agentydragon's real cluster-admin binding
     # (oidc-ksbx-agentydragon-admin, cluster/k8s/agents/kubectl-passthrough-mcp/app/).
     # Every kubectl-shaped tool (pods_*, resources_*, nodes_*, events_list,
-    # configuration_view — see cluster/k8s/agents/kubectl-passthrough-mcp/) runs with full
+    # configuration_view â see cluster/k8s/agents/kubectl-passthrough-mcp/) runs with full
     # cluster-admin once approved; the approval click in trusted console chrome is the
-    # only gate, by design — see haku/docs/security.md.
+    # only gate, by design â see haku/docs/security.md.
     - id: kubectl-passthrough-mcp
       backend:
         kind: remote_mcp
@@ -1106,7 +1126,7 @@ mcp:
             # just mirrors Authentik's own OAuth metadata, which omits registration_endpoint),
             # so DCR would 401 against the guessed {server}/register fallback. Use the
             # pre-registered public/PKCE client_id from the kubectl_passthrough_mcp Authentik
-            # provider instead (tf/gitops/agent-machine-access/main.tf) — it already allows
+            # provider instead (tf/gitops/agent-machine-access/main.tf) â it already allows
             # multiple redirect URIs (CLI localhost, kubernetes-mcp-server's own callback, and
             # haku-console's operator-auth callback), safe to share since PKCE plus per-request
             # redirect_uri validation secure each caller independently.
@@ -1141,11 +1161,11 @@ mcp:
     # public Ducktape source, and Haku's own past conversations. Listing it here is what builds
     # the searcher, and the
     # console refuses to start unless an embedder is configured too (`HAKU_CONSOLE_EMBEDDER__*`,
-    # Ollama) — search embeds its query. Keeping the corpora current is the role-flagged
+    # Ollama) â search embeds its query. Keeping the corpora current is the role-flagged
     # haku-indexer Deployments (haku/console/indexer.py): one chunk Deployment per index below,
     # plus the shared embed drain. Each chunk pod mounts only its own index's slice of the
     # recall_indexes registry above (indexer-chunk-<index>-config.yaml, derivation-tested against
-    # these entries) — the conversations corpus from the console's tables, haku-state through a
+    # these entries) â the conversations corpus from the console's tables, haku-state through a
     # read-only mirror fetched with `HAKU_CONSOLE_HAKU_STATE_GIT_*`, and Ducktape from GitHub
     # without a credential. The embed role fills the shared vector queue those chunks land in.
     - id: haku_index
@@ -1156,7 +1176,7 @@ mcp:
     # `haku_conversations` (haku/console/tools/conversations.py): read Haku's own past sessions
     # out of the console's rollout store, so a replacement session can consult what its
     # predecessor actually did instead of only the last few room messages. Read-only, and
-    # credential-free — the corpus is the console's own database.
+    # credential-free â the corpus is the console's own database.
     - id: haku_conversations
       backend:
         kind: in_process
