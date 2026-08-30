@@ -477,9 +477,7 @@ class ToolCallApplicationService:
             # This is intentionally a structured event rather than note content: it lets the
             # expand-release soak prove that no old static client still sends the legacy key.
             logger.info(
-                "legacy tool-call decision field used tool_call_id=%s decision=%s",
-                tool_call_id,
-                decision.decision,
+                "legacy tool-call decision field used tool_call_id=%s decision=%s", tool_call_id, decision.decision
             )
         if decision.decision is ApprovalDecision.DENY:
             record = await self._repository.deny(tool_call_id, decision.decision_note, actor=operator)

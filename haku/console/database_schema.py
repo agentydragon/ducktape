@@ -605,8 +605,7 @@ class McpToolCall(Base):
     __table_args__ = (
         Index("idx_mcp_tool_calls_created_at", "created_at"),
         CheckConstraint(
-            "decision_note IS NULL OR char_length(decision_note) <= 4096",
-            name="ck_mcp_tool_calls_decision_note_length",
+            "decision_note IS NULL OR char_length(decision_note) <= 4096", name="ck_mcp_tool_calls_decision_note_length"
         ),
     )
 
