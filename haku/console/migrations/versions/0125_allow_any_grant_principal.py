@@ -1,6 +1,6 @@
 """Allow Agent-requested grants to target any valid principal identity.
 
-Revision ID: 0124
+Revision ID: 0125
 Revises: 0123
 """
 
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from alembic import op
 
-revision: str = "0124"
+revision: str = "0125"
 down_revision: str | None = "0123"
 branch_labels: str | None = None
 depends_on: str | None = None
