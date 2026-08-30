@@ -74,8 +74,7 @@ export function ApprovalsEmbedPage(): JSX.Element {
     recentToolCalls,
     onApproveTool: (approval: ToolCallRecord, decisionNote?: string) =>
       void toolDecisions.approve(approval, decisionNote),
-    onDenyTool: (approval: ToolCallRecord, decisionNote?: string) =>
-      void toolDecisions.deny(approval, decisionNote),
+    onDenyTool: (approval: ToolCallRecord, decisionNote?: string) => void toolDecisions.deny(approval, decisionNote),
     onApproveGeolocation: () => {},
     onDenyGeolocation: () => {},
     onApproveScreenshot: () => {},
