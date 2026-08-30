@@ -27,6 +27,11 @@ spec:
   # that would fight the haku-egress-proxy fence applied at the namespace level
   # (the existing haku-sandbox-force-proxy CCNP).
   networkPolicyManagement: Unmanaged
+  # Claims may inject env, same as the runner templates: the claim-env rail is how a
+  # per-provision caller-bound token reaches the box (#5228 slice 1); without this the
+  # controller rejects claim env (`EnvVarsInjectionRejected`, fatal in the sandbox client).
+  # Injection authority stays Console's — only Console creates claims against this pool.
+  envVarsInjectionPolicy: Allowed
   podTemplate:
     metadata:
       labels:
