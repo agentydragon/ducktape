@@ -150,7 +150,13 @@ def write_token_secret(v1: Any, *, exists: bool, token: str) -> None:
         metadata=client.V1ObjectMeta(
             name=TOKEN_SECRET_NAME,
             namespace=TOKEN_SECRET_NAMESPACE,
-            annotations={"description": "Automatically provisioned Home Assistant long-lived token for HA-MCP"},
+            annotations={
+                "description": "Automatically provisioned Home Assistant long-lived token for HA-MCP",
+                "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
+                "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "haku-console",
+                "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
+                "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "haku-console",
+            },
         ),
         string_data={"token": token},
         type="Opaque",
