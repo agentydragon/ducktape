@@ -52,12 +52,12 @@
     restart: false,
   },
   channels: {
-    // The Matrix plugin's guarded fetch reads this field explicitly; generic
-    // HTTP(S)_PROXY is not enough. Keep it equal to Deployment HTTPS_PROXY:
-    // the same proxy also performs Matrix login-password substitution.
     matrix: {
       enabled: true,
       homeserver: "https://matrix.allegedly.works",
+      // The Matrix plugin's guarded fetch reads this field explicitly; generic
+      // HTTP(S)_PROXY is not enough. Keep it equal to Deployment HTTPS_PROXY:
+      // the same proxy also performs Matrix login-password substitution.
       proxy: "http://public-coder-agent-proxy.public-coder-agent.svc.cluster.local:8080",
       userId: "@public-coder-agent:allegedly.works",
       // MATRIX_PASSWORD is intentionally absent: OpenClaw reads the stable
@@ -65,6 +65,7 @@
       // password only in Matrix's login body. The resulting access token is
       // cached in the state PVC.
       dm: {
+        // DMs are allowlisted; group rooms are disabled below.
         policy: "allowlist",
         allowFrom: ["@agentydragon:allegedly.works"],
         // A room is the stable conversation boundary; threaded replies keep
