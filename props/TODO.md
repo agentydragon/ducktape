@@ -49,7 +49,7 @@
 
 - Sane story for applying migrations without full `db recreate` (direct `alembic upgrade head`)
 - Bulk specimen sync in `props db sync` from Bazel bundle artifacts (currently one-by-one via `sync-specimen`)
-- GLM per-model pricing. `cluster/k8s/props/app/config.toml` assigns all 7 z.ai GLM models
+- GLM per-model pricing. `props/deploy/app/config.toml` assigns all 7 z.ai GLM models
   glm-4.6's placeholder rates (input 0.39 / output 1.74 per 1M). Set real-ish per-model z.ai
   rates so budget accounting is accurate. Low urgency: z.ai is currently a flat prepaid
   subscription (quota-based), so per-token cost is largely cosmetic for budgeting.

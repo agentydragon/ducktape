@@ -2,7 +2,7 @@
 #
 # Console-owned Agent Sandbox runtimes. Every value is explicit deployment
 # wiring; the application deliberately has no topology/path/proxy defaults. The
-# placeholder is non-secret—the real OAuth bearer exists only in iron-proxy.
+# placeholders are non-secret—the real bearers stay in the trusted Console/egress path.
 settings:
   # https, never http: client-go attaches kubeconfig credentials only to a TLS server, so a
   # plain-http proxy URL makes every sandbox kubectl request unauthenticated (401).
@@ -673,6 +673,19 @@ egress_decide:
         - scheme: https
           host: git.allegedly.works
           port: 443
+    # Read-only ActivityWatch access for Haku's time-use queries. The sandbox carries only this
+    # inert bearer placeholder in AW_READ_TOKEN; the Console resolves the reflected Secret and
+    # substitutes it only at the exact read origin. The route itself enforces the same GET plus
+    # query-POST read-only boundary, so this credential cannot be used for writes.
+    - handle: activitywatch-read-token
+      placeholder: activitywatch-read-token-placeholder
+      value_env_var: HAKU_EGRESS_CREDENTIAL_ACTIVITYWATCH_READ
+      match_headers: [authorization]
+      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
+      origins:
+        - scheme: https
+          host: activitywatch-read.allegedly.works
+          port: 443
   # Configuration-file HTTP grants (#4941), evaluated before database grants; admissions carry
   # `config_file:<id>` provenance.
   grants:
@@ -853,6 +866,27 @@ egress_decide:
         methods: [DELETE, GET, HEAD, PATCH, POST, PUT]
       credential_handle: haku-forgejo-token
       allow_prohibited_address: true
+    # ActivityWatch's bearer-proxy allows all GET reads, plus POST only for the large query body.
+    # Keep those as separate grants so the POST path can never widen to another write endpoint.
+    - id: haku-activitywatch-read
+      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
+      origins:
+        - scheme: https
+          host: activitywatch-read.allegedly.works
+          port: 443
+      coverage:
+        methods: [GET]
+      credential_handle: activitywatch-read-token
+    - id: haku-activitywatch-query
+      principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
+      origins:
+        - scheme: https
+          host: activitywatch-read.allegedly.works
+          port: 443
+      coverage:
+        methods: [POST]
+        path_regex: /api/0/query/.*
+      credential_handle: activitywatch-read-token
   # Cluster pod + service CIDRs, denied in resolved answers on top of the always-prohibited classes
   # (loopback, link-local, multicast, private/RFC1918/ULA — which already cover 10/8). Named per the
   # field's contract so the internal boundary is legible and survives a re-IP off 10/8.

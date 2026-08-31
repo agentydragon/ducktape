@@ -31,8 +31,9 @@ applies the previous state and reads as a failed change.
 
 ### Wiping a backing DB orphans tofu state
 
-`tf/gitops/sso-providers/` (Authentik OAuth2 providers) and `tf/gitops/forgejo-props/`
-(Forgejo registry user) both manage objects inside another stateful system whose IDs
+`tf/gitops/sso-providers/` (Authentik OAuth2 providers) and
+`props/deploy/forgejo/tofu/` (Forgejo registry user) both manage objects inside
+another stateful system whose IDs
 they record in tfstate. Wiping the backing DB without also clearing the tofu state
 triggers `Unable to read … not found with id N` failures on the next plan. State lives
 in the `tofu-state-db-ovh` CNPG cluster (one schema per `Terraform` CR). Recovery:
@@ -109,6 +110,12 @@ _encrypt_ to a rule's recipients, so it authors the whole Secret as plaintext an
 `sops -e -i`s it — minting a fresh value for any opaque field it can't recover (i.e.
 rotate).
 
+The default user-level `SOPS_AGE_KEY` on machines such as `rugged` and `wyrm2`
+may be an encryption-only identity for cluster Flux files: successful encryption
+does not imply decryption access to an existing `cluster/k8s/**/*.sops.yaml`.
+Check decryption capability before editing an existing file; prefer a scoped ESO
+distribution or an operator with the cluster decryption identity when it is absent.
+
 ### Description Annotations
 
 Add `metadata.annotations.description` to any resource where name + namespace doesn't
@@ -177,7 +184,7 @@ Layer 1 (CRD operators) → Layer 2 (secrets with ESO) → Layer 3 (app with Hel
 each layer's `flux-kustomization.yaml` with `dependsOn` on the previous. Violations are
 caught by `//cluster/validation:test_crd_layering`.
 
-- Flat example: `k8s/scanner/` — single flux-kustomization, all manifests at root
+- Flat example: `k8s/aiquota/` — single flux-kustomization, all manifests at root
 - Grouped example: `k8s/langfuse/{namespace,secrets,db,app}/` — multi-layer with dependsOn
 
 ## Reference Documentation

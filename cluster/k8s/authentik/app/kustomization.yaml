@@ -16,7 +16,7 @@ configMapGenerator:
       - blueprints/public-coder-agent-sso.yaml
       - blueprints/haku-openclaw-spike-sso.yaml
       - blueprints/tandoor-sso.yaml
-      - blueprints/filebrowser-sso.yaml
+      - blueprints/filebrowser-sso-retire.yaml
       - blueprints/agents-mitmproxy-sso.yaml
       - blueprints/proxmox-sso.yaml
       - blueprints/goldilocks-sso.yaml

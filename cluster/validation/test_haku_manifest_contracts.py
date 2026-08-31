@@ -51,6 +51,37 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     assert implementation["auth_token_placeholder"] == credential["placeholder"]
     assert implementation["model"]
     assert implementation["haiku_model"]
+
+    # ActivityWatch follows the same placeholder-substitution path, but its credential is
+    # deliberately read-only: the runner gets only the inert env value, the Console registry
+    # binds the reflected Secret to Haku's Agent, and POST is pinned to the query endpoint.
+    runner_environment = sandbox_env(template)
+    assert runner_environment["AW_READ_TOKEN"] == {
+        "name": "AW_READ_TOKEN",
+        "value": "activitywatch-read-token-placeholder",
+    }
+    activity_credential = one(c for c in egress["credentials"] if c["handle"] == "activitywatch-read-token")
+    assert activity_credential["placeholder"] == runner_environment["AW_READ_TOKEN"]["value"]
+    assert activity_credential["value_env_var"] == "HAKU_EGRESS_CREDENTIAL_ACTIVITYWATCH_READ"
+    assert activity_credential["origins"] == [
+        {"scheme": "https", "host": "activitywatch-read.allegedly.works", "port": 443}
+    ]
+    activity_grants = [grant for grant in egress["grants"] if grant["id"].startswith("haku-activitywatch-")]
+    assert {tuple(grant["coverage"]["methods"]) for grant in activity_grants} == {("GET",), ("POST",)}
+    query_grant = one(grant for grant in activity_grants if grant["id"] == "haku-activitywatch-query")
+    assert query_grant["coverage"]["path_regex"] == "/api/0/query/.*"
+    assert all(grant["credential_handle"] == activity_credential["handle"] for grant in activity_grants)
+
+    read_token = yaml.safe_load((k8s_dir / "x/activitywatch/activitywatch-read-token.sops.yaml").read_text())
+    annotations = read_token["metadata"]["annotations"]
+    assert annotations["reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"].split(",") == [
+        "haku-egress-proxy",
+        "haku-console",
+    ]
+    assert annotations["reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"].split(",") == [
+        "haku-egress-proxy",
+        "haku-console",
+    ]
     assert "mcp_static_agent_id" not in runtime
     assert "oauth_placeholder" not in runtime
     pod_template = template["spec"]["podTemplate"]
@@ -401,28 +432,29 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(k8s_dir: P
     agent_readable_metadata_label = "rbac.ducktape.io/agent-readable-metadata"
     agent_readable_logs_label = "rbac.ducktape.io/agent-readable-logs"
     expected_namespace_labels = {
-        "agents/agent-sandbox/controller/patches.yaml": agent_readable_metadata_label,
-        "agents/public-coder-agent/namespace/namespace.yaml": agent_readable_metadata_label,
-        "nix-cache/namespace/namespace.yaml": agent_readable_metadata_label,
-        "vm-images-publisher/namespace.yaml": agent_readable_metadata_label,
-        "cli-proxy-api/namespace.yaml": agent_readable_logs_label,
-        "grocy/sf/app/namespace.yaml": agent_readable_logs_label,
-        "grocy/vallejo/app/namespace.yaml": agent_readable_logs_label,
-        "haku-ci/namespace.yaml": agent_readable_logs_label,
-        "monitoring/loki/namespace.yaml": agent_readable_logs_label,
-        "props/namespace/namespace.yaml": agent_readable_logs_label,
+        k8s_dir / "agents/agent-sandbox/controller/patches.yaml": agent_readable_metadata_label,
+        k8s_dir / "agents/public-coder-agent/namespace/namespace.yaml": agent_readable_metadata_label,
+        k8s_dir / "nix-cache/namespace/namespace.yaml": agent_readable_metadata_label,
+        k8s_dir / "vm-images-publisher/namespace.yaml": agent_readable_metadata_label,
+        k8s_dir / "cli-proxy-api/namespace.yaml": agent_readable_logs_label,
+        k8s_dir / "grocy/sf/app/namespace.yaml": agent_readable_logs_label,
+        k8s_dir / "grocy/vallejo/app/namespace.yaml": agent_readable_logs_label,
+        k8s_dir / "haku-ci/namespace.yaml": agent_readable_logs_label,
+        k8s_dir / "monitoring/loki/namespace.yaml": agent_readable_logs_label,
+        get_required_path("_main/props/deploy/namespace/namespace.yaml"): agent_readable_logs_label,
     }
     for path, expected_label in expected_namespace_labels.items():
-        namespace = one(obj for obj in yaml.safe_load_all((k8s_dir / path).read_text()) if obj["kind"] == "Namespace")
+        namespace = one(obj for obj in yaml.safe_load_all(path.read_text()) if obj["kind"] == "Namespace")
         labels = namespace["metadata"]["labels"]
         assert labels[expected_label] == "true", path
         assert not ({agent_readable_metadata_label, agent_readable_logs_label} - {expected_label}) & labels.keys(), path
 
-    for path in ("matrix/namespace/namespace.yaml", "x/haku/dispatch/namespace/namespace.yaml"):
-        namespace = one(obj for obj in yaml.safe_load_all((k8s_dir / path).read_text()) if obj["kind"] == "Namespace")
+    for relative_path in ("matrix/namespace/namespace.yaml", "x/haku/dispatch/namespace/namespace.yaml"):
+        path = k8s_dir / relative_path
+        namespace = one(obj for obj in yaml.safe_load_all(path.read_text()) if obj["kind"] == "Namespace")
         assert (
             not {agent_readable_metadata_label, agent_readable_logs_label} & namespace["metadata"]["labels"].keys()
-        ), path
+        ), relative_path
 
     flux_system_kustomization = (k8s_dir / "flux-system/kustomization.yaml").read_text()
     assert "path: /metadata/labels/rbac.ducktape.io~1agent-readable-logs" in flux_system_kustomization
@@ -495,16 +527,16 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(k8s_dir: P
         "haku/console/kustomization.yaml": "agent-diagnostics-rbac.yaml",
         "agents/public-coder-agent/k8s-reader/kustomization.yaml": "extended-diagnostics-reader.yaml",
     }
-    for path, resource in expected_kustomization_resources.items():
-        kustomization = yaml.safe_load((k8s_dir / path).read_text())
-        assert resource in kustomization["resources"], path
+    for relative_path, resource in expected_kustomization_resources.items():
+        kustomization = yaml.safe_load((k8s_dir / relative_path).read_text())
+        assert resource in kustomization["resources"], relative_path
     public_coder_kustomization = yaml.safe_load(
         (k8s_dir / "agents/public-coder-agent/k8s-reader/kustomization.yaml").read_text()
     )
     assert "cluster-metadata-reader.yaml" in public_coder_kustomization["resources"]
 
-    for path, expected_rules in expected_roles.items():
-        objects = list(yaml.safe_load_all((k8s_dir / path).read_text()))
+    for relative_path, expected_rules in expected_roles.items():
+        objects = list(yaml.safe_load_all((k8s_dir / relative_path).read_text()))
         role = one(obj for obj in objects if obj["kind"] == "Role")
         binding = one(obj for obj in objects if obj["kind"] == "RoleBinding")
         assert binding["roleRef"] == {

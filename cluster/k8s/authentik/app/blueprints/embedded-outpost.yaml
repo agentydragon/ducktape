@@ -30,7 +30,6 @@ entries:
         - !Find [authentik_providers_proxy.proxyprovider, [name, haku-openclaw-spike]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, agents-mitmproxy]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, proxmox]]
-        - !Find [authentik_providers_proxy.proxyprovider, [name, scanner-filebrowser]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, goldilocks]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, google-workspace-mcp]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, plaid-link]]

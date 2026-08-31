@@ -63,11 +63,9 @@ rotations:
     credentials_dir: /var/run/secrets/authentik/haku-k8s
     sops_file: secrets/haku-k8s-openclaw-jwt.yaml
     token_field: jwt
-    # Published straight into the consuming namespace. NOT via the shared
-    # claude-sandbox ClusterSecretStore that carries GITHUB_TOKEN: that store is
-    # conditioned to four namespaces including public-coder-agent, the one
-    # deliberately unconfined fence in the cluster. A cluster-API bearer has one
-    # consumer and should be readable from one namespace.
+    # Published straight into the consuming namespace. A cluster-API bearer has
+    # one consumer and should be readable from one namespace, not distributed
+    # through a cross-namespace SecretStore.
     k8s_secret:
       path: cluster/k8s/agents/haku-egress-proxy/openclaw-spike-kube-token.sops.yaml
       name: haku-openclaw-spike-kube-token

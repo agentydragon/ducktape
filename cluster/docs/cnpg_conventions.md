@@ -80,9 +80,8 @@ most on the deprecated `local-path-ovh` alias, plus `forgejo-db-ssd` and
 
 Parked clusters (suspended Flux Kustomizations; R2/R3 bind again on revival):
 
-- `props-db` (`k8s/props/db/`): OVH-HA shape; suspended 2026-08-20 with the
-  rest of props for a temporary teardown (<decisions.md> § "Suspended
-  Kustomizations").
+- `Props` (<../../props/deploy/>): suspended 2026-08-20 for a temporary teardown
+  (<decisions.md> § "Suspended Kustomizations").
 - Proxmox-single: `firecrawl-db`, `inventree-db`, `tandoor-db` (`x/`). Their
   manifests still name `local-path`, the chart-default StorageClass retired
   2026-06-03 (`k8s/local-path-provisioner/helmrelease.yaml`) — re-point to

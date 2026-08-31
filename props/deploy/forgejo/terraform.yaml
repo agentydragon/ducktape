@@ -6,14 +6,17 @@ metadata:
 spec:
   interval: 15m
   refreshBeforeApply: true
-  path: ./tf/gitops/forgejo-props
+  path: ./props/deploy/forgejo/tofu
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
 
   serviceAccountName: tf-runner
-  approvePlan: "auto"
+  approvePlan: auto
+  # Once the Terraform object is removed, destroy the external Forgejo user
+  # before allowing the controller to remove the object.
+  destroyResourcesOnDeletion: true
 
   backendConfig:
     customConfiguration: |

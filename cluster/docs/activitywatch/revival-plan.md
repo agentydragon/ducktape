@@ -17,7 +17,9 @@ The importer that meets it exists: `@ducktape_activitywatch//importer`. Given a
 source and a destination aw-server and a device id, it folds every source bucket
 into `<device>::<bucket>` on the destination, deduping on
 `(device, bucket, starttime, endtime, canonical-data)`, and only ever GETs from the
-source. Its test starts two real aw-servers and imports between them.
+source. Normal runs reconcile a bounded overlap before the destination's newest
+event; an explicit `--full-reconcile` mode repairs older gaps. Its test starts two
+real aw-servers and imports between them.
 
 Reading the device's authoritative aw-server directly — instead of an `aw-sync`
 staging copy — is also what removes the heartbeat amplification that retired the old
@@ -49,18 +51,21 @@ importer dedups any residue.
 - **All desktops enabled**: iguana and atlas join rugged and wyrm2 as importer devices
   (`iguana::…` / `atlas::…`). Config-only — the shared write token already reaches both
   hosts' user keys — so each starts feeding the central on its next `switch`.
-- **Batched inserts**: the importer now POSTs a bucket's new events in fixed-size batches
+- **Batched inserts**: the importer POSTs a bucket's new events in fixed-size batches
   (`INSERT_BATCH_SIZE`), so a first backfill is many bounded requests, not one ~10 MB one —
   the write-proxy's 256 MB cap is now a safety ceiling, not a dependency, and could be
   lowered.
+- **Incremental reconciliation**: routine runs use the destination's newest event as a
+  durable cursor, re-read a one-hour overlap, and insert missing events oldest-first.
+  The systemd timer is persistent so a missed run is caught up after a desktop wakes;
+  a long-lived polling daemon is unnecessary because aw-server exposes no change stream.
 
 ## What's left
 
-1. **Incremental sync, then make the write route ingest-only.** v1 reads the whole source
-   and whole destination bucket each run; switch to a per-bucket high-water mark — read only
-   source events past the newest already in the destination. Once the importer no longer
-   reads the destination, restrict the write route to write methods: today it must allow GET,
-   so a leaked token can read history, not just ingest.
+1. **Make the write route ingest-only.** Incremental runs still need destination GET access
+   for their bounded reconciliation window. Once the importer has a separate cursor or
+   another way to avoid destination reads, restrict the write route to write methods; today
+   a leaked token can read history, not just ingest.
 
 ## Not blocking
 

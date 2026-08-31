@@ -30,6 +30,22 @@ Defined in `.sops.yaml` creation rules:
 | Cluster age key (`age1nywe...`)  | Flux decrypts `k8s/**/*.sops.yaml` in-cluster | `secrets/shared/cluster-secrets-age.yaml` → deployed to `flux-system/sops-age-cluster-secrets` |
 | Host keys (wyrm2, rugged, atlas) | Per-host sops-nix secrets                     | Derived from host SSH keys                                                                     |
 
+### Local SOPS key scope
+
+The default `SOPS_AGE_KEY` on ordinary developer machines is usually the local
+user's age identity derived from `~/.ssh/id_ed25519` (for example, the
+`rugged-agentydragon` or `wyrm2-agentydragon` recipient). That identity can be
+authorized to encrypt new files to a rule's recipients without being authorized
+to decrypt the existing cluster Flux secrets. A successful `sops -e` therefore
+does not prove that `sops <existing-cluster-file>` will work.
+
+When editing an existing `cluster/k8s/**/*.sops.yaml`, confirm that the active
+identity can decrypt it before changing metadata or values. If it cannot, do not
+raw-edit the file or attempt to recover the cluster key from Kubernetes in an
+ordinary encrypt-only shell; use a scoped distribution mechanism such as ESO for
+consumers, or ask an operator with the appropriate decryption identity to make
+the SOPS edit.
+
 ## Adding New SOPS Secrets
 
 ```bash

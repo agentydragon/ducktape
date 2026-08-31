@@ -1,0 +1,123 @@
+# agentydragon-agent GitHub PAT distribution. Each target authenticates with a
+# dedicated ServiceAccount whose source Role can read only the canonical
+# ducktape-flux/github-agentydragon-agent Secret.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: github-agentydragon-agent-reader
+  namespace: public-coder-agent
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: github-agentydragon-agent-reader
+  namespace: haku-egress-proxy
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: github-agentydragon-agent-reader
+  namespace: haku-console
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: github-agentydragon-agent-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["github-agentydragon-agent"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-agentydragon-agent-public-coder-agent-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-agentydragon-agent-reader
+subjects:
+  - kind: ServiceAccount
+    name: github-agentydragon-agent-reader
+    namespace: public-coder-agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-agentydragon-agent-haku-egress-proxy-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-agentydragon-agent-reader
+subjects:
+  - kind: ServiceAccount
+    name: github-agentydragon-agent-reader
+    namespace: haku-egress-proxy
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-agentydragon-agent-haku-console-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-agentydragon-agent-reader
+subjects:
+  - kind: ServiceAccount
+    name: github-agentydragon-agent-reader
+    namespace: haku-console
+---
+# These target-local stores are capabilities: their authenticated
+# ServiceAccounts can read only ducktape-flux/github-agentydragon-agent.
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: github-agentydragon-agent
+  namespace: public-coder-agent
+spec:
+  provider:
+    kubernetes:
+      server:
+        caProvider: { type: ConfigMap, name: kube-root-ca.crt, key: ca.crt }
+      auth:
+        serviceAccount:
+          name: github-agentydragon-agent-reader
+          namespace: public-coder-agent
+      remoteNamespace: ducktape-flux
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: github-agentydragon-agent
+  namespace: haku-egress-proxy
+spec:
+  provider:
+    kubernetes:
+      server:
+        caProvider: { type: ConfigMap, name: kube-root-ca.crt, key: ca.crt }
+      auth:
+        serviceAccount:
+          name: github-agentydragon-agent-reader
+          namespace: haku-egress-proxy
+      remoteNamespace: ducktape-flux
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: github-agentydragon-agent
+  namespace: haku-console
+spec:
+  provider:
+    kubernetes:
+      server:
+        caProvider: { type: ConfigMap, name: kube-root-ca.crt, key: ca.crt }
+      auth:
+        serviceAccount:
+          name: github-agentydragon-agent-reader
+          namespace: haku-console
+      remoteNamespace: ducktape-flux

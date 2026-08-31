@@ -50,3 +50,5 @@ spec:
       namespace: ducktape-flux
     - name: reflector
       namespace: ducktape-flux
+    - name: external-creds
+      namespace: ducktape-flux

@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: github-agentydragon-agent
+    namespace: ducktape-flux
+    annotations:
+        description: GitHub PAT for agentydragon-agent machine user
+type: Opaque
+stringData:
+    token: ENC[AES256_GCM,data:jOuv5fQEZsDAMDNtMANPjJH6Vqk4zgLZ9Wg6OVKEKebDnbBYTas+8A==,iv:AitNUeyMwCreLNvXumu9i2h3QUkx6SyTTgJgPThtRx0=,tag:8nTURR3ase9mKBPIjclwzg==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBBM2dFeUUzeVJzY0o0akdv
+            eXNRRlJsekxBam53aXl3ZStidEZrdDhyQlJzCnJoYTBFUHRBTnE3QjdSaTh5bity
+            dDB4VWlVQ1lvbzdZWWt3SnJpbmVPSFkKLS0tIHN2emV0SmZ6cExKcjVmeUxsVkYr
+            bDlCR01JOWxGNXpscWVHU3dYNEdWcmcKQQRB126Yv0EYx7303r3QJsxbsoqJrYvF
+            VXgu2wemCnz10ZE9+4l/tMU4Fl4fCDALJP6tI3S6h+HVjn8aF+3y0A==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBNV1JwZzYrU0hNSmRac2E0
+            UkZMZU9CUnliR2JKajFkUDJMc05LQ1J6alY4CjRLTThHdTRmOFpaeG5yL0xxZ3BF
+            U0JIQmkwLzE1MUpFUm1pYlV3UldaU1UKLS0tIE9JQy9xOUpGTGtsaFBzUzZXVWp5
+            TW5vQkUwS0UwSU9aWDI3WkZtN0JFbTQKJ1heO+KQrqYQJ5QVjG9jkF7Y7FTDCiBj
+            KFDdoNfMWpOqsVzl6w2oz45IMM6KGTCpPgEuWPx3h6TklDLxqhLe1A==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-08-31T00:18:29Z"
+    mac: ENC[AES256_GCM,data:zf3rwZeCmAUHO04XOcLBfZxzlIfFCuGsGQNiPsTbUqDConcToT06JzojXgVk19seGdF45xMF82zbtxIh4LO70G/01oIK624WwEPfgmbKj4S02eXaM8C5RX1wTbgJ0jWw67+zeerDhCVzic52qT/xqhPEnXHLPBrJYlnv/a1G/lM=,iv:iQRE9YAw9Pyp26+Po/qA2eeLHh3t7kKvophF8sLDah4=,tag:tAb2zu9pZim5xV1mn9GF7w==,type:str]
+    version: 3.13.3

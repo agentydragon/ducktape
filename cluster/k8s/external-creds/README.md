@@ -2,11 +2,14 @@
 
 This is the cluster-wide pattern for static credentials for services operated
 outside the cluster. The initial migrations are LLM provider keys, but the
-pattern also applies to other eligible API credentials. Canonical SOPS Secrets
-live in `ducktape-flux`. Consumers receive a local copy only through a
-dedicated edge in `distribution.yaml`: a target-namespace ServiceAccount
-authenticates a local `SecretStore`, while a `ducktape-flux` Role permits that
-identity to `get` only the one named source Secret.
+pattern also applies to other eligible API credentials. Canonical SOPS Secret
+manifests and their distribution capabilities live in this Kustomization. Most
+source Secrets live in `ducktape-flux`; a source may retain an existing namespace
+when that name and namespace are an established consumer contract. Consumers
+receive a local copy only through a dedicated edge in a per-credential
+`*-distribution.yaml`: a target-namespace ServiceAccount authenticates a local
+`SecretStore`, while a source-namespace Role permits that identity to `get` only
+the one named source Secret.
 
 Add a credential by creating one encrypted source Secret and one source Role.
 Add a consumer by adding a target ServiceAccount, RoleBinding, SecretStore, and

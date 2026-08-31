@@ -4,7 +4,8 @@
 # placeholder `github-token-placeholder`. Same remote secret the retiring iron fence reads
 # (cluster/k8s/agents/haku-egress-proxy/claude-github-token-eso.yaml) — one operator account,
 # delivered separately into the trusted Console namespace so retiring the iron fence does not take
-# it with them.
+# it with them. The canonical Secret is
+# ducktape-flux/github-agentydragon-agent.
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
@@ -13,8 +14,8 @@ metadata:
 spec:
   refreshInterval: 1h
   secretStoreRef:
-    kind: ClusterSecretStore
-    name: kubernetes-claude-sandbox-secret-store
+    kind: SecretStore
+    name: github-agentydragon-agent
   target:
     name: haku-egress-github-token
     creationPolicy: Owner
@@ -22,5 +23,5 @@ spec:
   data:
     - secretKey: token
       remoteRef:
-        key: github-token
+        key: github-agentydragon-agent
         property: token

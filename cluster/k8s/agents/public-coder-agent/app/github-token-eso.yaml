@@ -13,8 +13,8 @@ metadata:
 spec:
   refreshInterval: 1h
   secretStoreRef:
-    kind: ClusterSecretStore
-    name: kubernetes-claude-sandbox-secret-store
+    kind: SecretStore
+    name: github-agentydragon-agent
   target:
     name: public-coder-agent-github-token
     creationPolicy: Owner
@@ -22,5 +22,5 @@ spec:
   data:
     - secretKey: GITHUB_TOKEN
       remoteRef:
-        key: github-token
+        key: github-agentydragon-agent
         property: token

@@ -9,10 +9,11 @@ write route — no snapshot files, no `aw-sync`, no Syncthing.
 **Revived 2026-08-26** on the repo-owned idempotent importer
 (`@ducktape_activitywatch//importer`): each device reads its own aw-server over REST and
 pushes into the central one at `https://activitywatch-write.allegedly.works`, deduped and
-idempotent (a re-run inserts only genuinely new events). rugged and wyrm2 are verified
-feeding; iguana and atlas are enabled and join on their next Home Manager switch.
-Remaining work — incremental sync, then restricting the write route to write methods — is
-tracked in [revival-plan.md](revival-plan.md).
+idempotent (a re-run inserts only genuinely new events). Routine runs use a bounded
+one-hour overlap from the destination's newest event; `--full-reconcile` is an explicit
+add-only recovery mode for older gaps. rugged and wyrm2 are verified feeding; iguana and
+atlas are enabled and join on their next Home Manager switch. The remaining write-route
+hardening is tracked in [revival-plan.md](revival-plan.md).
 
 **History.** The previous transport — desktop `aw-sync` staging databases shipped through
 Syncthing into a cluster receiver and imported by an `aw-sync` CronJob — was retired
@@ -78,7 +79,7 @@ Gotchas (bite every consumer): `POST /api/0/query` requires the **trailing slash
 TLS connection resets occur (~1/20 calls) — retry once; bucket `last_updated` is always
 `null` on this server — derive recency from each bucket's newest event.
 
-### Console agent read route (iron-substituted bearer)
+### Console agent read route (egress-substituted bearer)
 
 The console-owned Claude runner pool (`haku-runtime-sandbox`, the sandbox behind Haku's
 egress proxy) can't do an OAuth exchange, so the mechanism mirrors aiquota's: a static
@@ -87,12 +88,13 @@ bearer the sandbox never actually holds.
 - The read route is gated on its own token and allows read methods only — GET plus POST
   to `/api/0/query/` — so even a leaked read token can't write. The token is minted and
   SOPS-encrypted at `cluster/k8s/x/activitywatch/activitywatch-read-token.sops.yaml`, and
-  the emberstack reflector mirrors it into `haku-egress-proxy`.
+  the emberstack reflector mirrors it into both `haku-console` and the legacy
+  `haku-egress-proxy` namespace.
 - The sandbox template sets only the inert placeholder
-  (`AW_READ_TOKEN: activitywatch-read-token-placeholder`). The iron egress proxy
-  substitutes the real read token on `activitywatch-read.allegedly.works` read requests
-  (`cluster/k8s/agents/haku-egress-proxy/claude-iron.yaml`); the runtime never receives
-  it.
+  (`AW_READ_TOKEN: activitywatch-read-token-placeholder`). The colocated Console egress
+  proxy substitutes the real read token on `activitywatch-read.allegedly.works` read requests
+  (`cluster/k8s/haku/console/config.yaml`); the runtime never receives it. The dedicated iron
+  proxy keeps the same substitution for legacy Claude pods.
 - The host is pinned in the Haku-Claude egress fence
   (`cluster/k8s/agents/haku-egress-proxy/cnp-haku-claude-egress.yaml`) and the
   `ACTIVITYWATCH` group of `cluster/validation/test_egress_allowlists.py`.

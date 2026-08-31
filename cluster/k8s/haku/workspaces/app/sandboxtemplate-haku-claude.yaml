@@ -70,10 +70,15 @@ spec:
             # look, and the netrc entry the bootstrap writes is what git uses.
             - name: GITHUB_TOKEN
               value: github-token-placeholder
+            # Read-only ActivityWatch bearer placeholder. The Console egress fence substitutes
+            # the real value only for the exact read route's GET and query-POST requests; this
+            # inert value is all the runner and Claude process ever receive.
+            - name: AW_READ_TOKEN
+              value: activitywatch-read-token-placeholder
             # The runner's model access (ANTHROPIC_BASE_URL/ANTHROPIC_AUTH_TOKEN/ANTHROPIC_MODEL) and
             # its GitHub identity are injected declaratively by Console from config.yaml's claude_code
-            # implementation (haku/console/config.py). The AIQuota and ActivityWatch read tokens the
-            # iron fence used are deferred from this reroute — see PR — pending an ESO source.
+            # implementation (haku/console/config.py). AIQuota remains a separate deferred path;
+            # ActivityWatch's read placeholder is carried above for the colocated fence.
             # ducktape is a read-only source Haku consults. The bootstrap intentionally skips this
             # optional source; the agent clones it itself with the launch-selected proxy when needed.
             - name: HAKU_DUCKTAPE_SKIP

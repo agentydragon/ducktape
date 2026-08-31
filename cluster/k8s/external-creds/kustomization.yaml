@@ -6,5 +6,7 @@ resources:
   - anthropic-haku-distribution.yaml
   - gemini.sops.yaml
   - gemini-distribution.yaml
+  - github-agentydragon-agent.sops.yaml
+  - github-agentydragon-agent-distribution.yaml
   - groq.sops.yaml
   - groq-distribution.yaml

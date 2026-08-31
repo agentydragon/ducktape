@@ -193,7 +193,10 @@ resources:
   - forgejo/app/flux-kustomization.yaml
   - forgejo/servicemonitor/flux-kustomization.yaml
   - forgejo/secrets/flux-kustomization.yaml
-  - forgejo/props/flux-kustomization.yaml
+
+  # --- props (parked; flip cluster/k8s/props.yaml suspend to revive) ---
+  - props.yaml
+
   - forgejo-images/flux-kustomization.yaml
   - forgejo/budget-ledger/flux-kustomization.yaml
   - forgejo/augur-evidence/flux-kustomization.yaml
@@ -256,13 +259,6 @@ resources:
   - inventree/db/flux-kustomization.yaml
   - inventree/app/flux-kustomization.yaml
   - inventree/token-provisioner/flux-kustomization.yaml
-
-  # --- props ---
-  - props/namespace/flux-kustomization.yaml
-  - props/agent-rbac/flux-kustomization.yaml
-  - props/db/flux-kustomization.yaml
-  - props/secrets/flux-kustomization.yaml
-  - props/app/flux-kustomization.yaml
 
   # --- langfuse ---
   - langfuse/namespace/flux-kustomization.yaml

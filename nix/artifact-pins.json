@@ -209,8 +209,8 @@
       "sha256": "EyZsrWk/MnlTXUt5ZpzEdP2Bop1Jx4Efh9M5rnDwoP0="
     },
     "aw-importer": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aw-importer-025a929a1353/aw_importer_bin",
-      "sha256": "AlqSmhNTYRMiDMvJfp6gW4TVYRAhY4+hINs8WrmxTrQ="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aw-importer-044666f670bd/aw_importer_bin",
+      "sha256": "BEZm9nC9X0BrCFFSchCHj/YYmFJaKBBRcFCQG3gmw/o="
     },
     "skill-semantic_branch_pruner": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-semantic_branch_pruner-cdc68e38255f/semantic_branch_pruner.skill",

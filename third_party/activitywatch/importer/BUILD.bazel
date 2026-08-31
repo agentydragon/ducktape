@@ -19,6 +19,7 @@ rust_library(
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
+        "@aw_server_crates//:chrono",
         "@aw_server_crates//:reqwest",
         "@aw_server_crates//:serde_json",
         "@aw_server_crates//:thiserror",
