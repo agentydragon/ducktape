@@ -4,7 +4,7 @@ metadata:
   name: github-exporter
   namespace: ducktape-flux
   annotations:
-    description: GitHub API rate-limit metrics for the human and agent accounts.
+    description: GitHub API rate-limit metrics for the agentydragon-agent account.
 spec:
   interval: 10m
   retryInterval: 1m
@@ -19,15 +19,7 @@ spec:
   healthChecks:
     - apiVersion: external-secrets.io/v1
       kind: ExternalSecret
-      name: github-exporter-agentydragon-token
-      namespace: monitoring
-    - apiVersion: external-secrets.io/v1
-      kind: ExternalSecret
       name: github-exporter-agentydragon-agent-token
-      namespace: monitoring
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: github-exporter-agentydragon
       namespace: monitoring
     - apiVersion: apps/v1
       kind: Deployment
@@ -42,7 +34,5 @@ spec:
       namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
-    - name: agent-shared-secrets
-      namespace: ducktape-flux
-    - name: github-secrets-sync
+    - name: external-creds
       namespace: ducktape-flux

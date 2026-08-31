@@ -21,5 +21,6 @@ spec:
     - name: public-coder-agent-namespace
     - name: haku-egress-proxy-namespace
     - name: haku-console-namespace
+    - name: monitoring-namespace
     - name: external-secrets-operator
   timeout: 5m
