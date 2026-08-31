@@ -1106,6 +1106,34 @@ async def test_static_reconcile_is_idempotent_rotates_and_revalidates(db_url: st
     assert b"second-token" not in stored_fingerprints
 
 
+async def test_static_reconcile_ignores_secret_reference_rename(harness: Harness) -> None:
+    definition = StaticAgentDefinition(
+        agent_id=uuid4(),
+        display_name="Renamed Secret Reference Agent",
+        operator_id=harness.browser.operator_id,
+        secret_reference="env:LEGACY_AGENT_TOKEN",
+        token_fingerprint=fingerprint_static_token("unchanged-token"),
+        access_profile_id="no_auto_approval",
+    )
+    initial = (await harness.authority.reconcile_static_agents([definition]))[0]
+
+    renamed_reference = StaticAgentDefinition(
+        agent_id=definition.agent_id,
+        display_name=definition.display_name,
+        operator_id=definition.operator_id,
+        secret_reference="pydantic:renamed_agent",
+        token_fingerprint=definition.token_fingerprint,
+        access_profile_id=definition.access_profile_id,
+    )
+    reconciled = (await harness.authority.reconcile_static_agents([renamed_reference]))[0]
+
+    assert reconciled == initial
+    async with harness.sessions() as session:
+        credential = await session.get(StaticCredential, initial.binding_id)
+        assert credential is not None
+        assert credential.secret_reference == definition.secret_reference
+
+
 async def test_static_agent_access_profile_is_deployment_managed(harness_factory: HarnessFactory) -> None:
     harness = await harness_factory(access_profiles=("no_auto_approval", "haku_v1"))
     definition = StaticAgentDefinition(

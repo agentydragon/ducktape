@@ -490,10 +490,8 @@ class PostgresAgentAuthority:
                             f"static Agent slot {definition.agent_id} is already owned by a non-static binding"
                         )
                     if hmac.compare_digest(active_credential.credential_fingerprint, definition.token_fingerprint):
-                        if active_credential.secret_reference != definition.secret_reference:
-                            raise StaticAgentDefinitionError(
-                                f"static Agent slot {definition.agent_id} reused a fingerprint from another secret source"
-                            )
+                        # A deployment may rename the configuration slot that supplies an unchanged
+                        # credential. The source label is metadata, not credential identity.
                         authorizations.append(
                             StaticAgentAuthorization(
                                 agent.agent_id,
