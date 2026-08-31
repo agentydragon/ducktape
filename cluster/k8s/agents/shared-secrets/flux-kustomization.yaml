@@ -6,9 +6,10 @@ metadata:
 spec:
   interval: 10m
   path: ./cluster/k8s/agents/shared-secrets
-  # CLEANUP(added 2026-08-30): Restore pruning once external-creds owns
-  # claude-sandbox/github-token and this Kustomization's live inventory no
-  # longer lists it.
+  # CLEANUP(added 2026-08-30): Restore pruning once all PAT consumers read
+  # ducktape-flux/github-agentydragon-agent and the obsolete
+  # claude-sandbox/github-token can be pruned from this Kustomization's live
+  # inventory.
   prune: false
   sourceRef:
     kind: GitRepository
