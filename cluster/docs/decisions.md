@@ -301,8 +301,6 @@ the open question is unsuspending, not hardware.
   deleted.
 - **ArchiveBox**: `archivebox`, `archivebox-namespace` — retained suspended so Flux
   cannot recreate the retired objects.
-- **Browsertrix**: `browsertrix`, `browsertrix-{namespace,retained}`,
-  `seaweedfs-browsertrix-bucket` — manifests retained suspended (#4248).
 - **BuildBuddy Executor**: `buildbuddy-executor` — scaled to 0; Proxmox-pinned, and
   atlas/wyrm2 being back removes that blocker — re-enable when needed.
 - **claude-sandbox-firecracker** — pinned to wyrm2; parked to free resources, and wyrm2
