@@ -7,7 +7,6 @@ resources:
   - alloy-otlp-httproute.yaml
   - grocy-sf-httproute.yaml
   - grocy-vallejo-httproute.yaml
-  - filebrowser-httproute.yaml
   - agents-mitmproxy-httproute.yaml
   - proxmox-httproute.yaml
   - google-workspace-mcp-httproute.yaml

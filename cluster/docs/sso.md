@@ -48,7 +48,7 @@ bug this migration fixed.
 When a service is behind the shared proxy outpost, add a `networkpolicy.yaml` restricting
 ingress to the outpost pod. Without this, any pod can forge `X-authentik-username` headers.
 
-Real example: `k8s/scanner/networkpolicy.yaml`
+Real example: `k8s/goldilocks/networkpolicy.yaml`
 
 Template:
 

@@ -183,7 +183,7 @@ Layer 1 (CRD operators) → Layer 2 (secrets with ESO) → Layer 3 (app with Hel
 each layer's `flux-kustomization.yaml` with `dependsOn` on the previous. Violations are
 caught by `//cluster/validation:test_crd_layering`.
 
-- Flat example: `k8s/scanner/` — single flux-kustomization, all manifests at root
+- Flat example: `k8s/aiquota/` — single flux-kustomization, all manifests at root
 - Grouped example: `k8s/langfuse/{namespace,secrets,db,app}/` — multi-layer with dependsOn
 
 ## Reference Documentation
