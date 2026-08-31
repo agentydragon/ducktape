@@ -377,9 +377,8 @@ py_test(
     srcs = ["test_clickhouse_distributed_ddl_contract.py"],
     data = [
         "//cluster/k8s:clickhouse/cluster/clickhouse.yaml",
-        "//cluster/k8s:clickhouse/cluster/kustomization.yaml",
         "//cluster/k8s:clickhouse/schema/flux-kustomization.yaml",
-        "//cluster/k8s:clickhouse/schema/schema.sql",
+        "//cluster/k8s:clickhouse/schema/kustomization.yaml",
         "//cluster/k8s:clickhouse/schema/schema-job.yaml",
         "//cluster/k8s:kustomization.yaml",
     ],

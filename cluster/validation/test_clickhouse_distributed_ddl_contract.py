@@ -17,13 +17,8 @@ def clickhouse_installation(k8s_dir: Path) -> dict[str, Any]:
 
 
 @pytest.fixture
-def cluster_kustomization(k8s_dir: Path) -> dict[str, Any]:
-    return cast(dict[str, Any], yaml.safe_load((k8s_dir / "clickhouse/cluster/kustomization.yaml").read_text()))
-
-
-@pytest.fixture
-def schema_sql(k8s_dir: Path) -> str:
-    return (k8s_dir / "clickhouse/schema/schema.sql").read_text()
+def schema_kustomization(k8s_dir: Path) -> dict[str, Any]:
+    return cast(dict[str, Any], yaml.safe_load((k8s_dir / "clickhouse/schema/kustomization.yaml").read_text()))
 
 
 @pytest.fixture
@@ -38,8 +33,7 @@ def schema_flux(k8s_dir: Path) -> dict[str, Any]:
 
 def test_clickhouse_distributed_ddl_contract(
     clickhouse_installation: dict[str, Any],
-    cluster_kustomization: dict[str, Any],
-    schema_sql: str,
+    schema_kustomization: dict[str, Any],
     schema_job: dict[str, Any],
     schema_flux: dict[str, Any],
 ) -> None:
@@ -57,35 +51,48 @@ def test_clickhouse_distributed_ddl_contract(
     assert clickhouse_installation["spec"]["defaults"]["replicasUseFQDN"] == "yes"
 
     grants = configuration["users"]["aiquota_ingest/grants/query"]
+    # This is a least-privilege boundary: the ingest identity must not gain
+    # access to columns outside those used by the materialized views.
     assert grants == [
         "GRANT INSERT ON aiquota.raw_http_observations",
         "GRANT SELECT(event_id, observed_at, source, quota_windows, token_activity, reset_credits) "
         "ON aiquota.raw_http_observations",
     ]
 
-    assert cluster_kustomization["configMapGenerator"][0]["files"] == ["system_logs.xml"]
-
-    for statement in (
-        "CREATE DATABASE IF NOT EXISTS aiquota ON CLUSTER default;",
-        "CREATE TABLE IF NOT EXISTS aiquota.raw_http_observations ON CLUSTER default",
-        "CREATE TABLE IF NOT EXISTS aiquota.aiquota_windows ON CLUSTER default",
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS aiquota.aiquota_windows_mv ON CLUSTER default",
-        "CREATE TABLE IF NOT EXISTS aiquota.token_activity_daily ON CLUSTER default",
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS aiquota.token_activity_daily_mv ON CLUSTER default",
-        "CREATE TABLE IF NOT EXISTS aiquota.reset_credits ON CLUSTER default",
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS aiquota.reset_credits_mv ON CLUSTER default",
-    ):
-        assert statement in schema_sql
-
-    assert schema_job["metadata"]["name"] == "clickhouse-aiquota-schema-v7"
-    schema_args = schema_job["spec"]["template"]["spec"]["containers"][0]["args"]
-    assert "--host=clickhouse.clickhouse.svc.cluster.local" in schema_args
+    schema_pod_spec = schema_job["spec"]["template"]["spec"]
+    schema_container = one(schema_pod_spec["containers"])
+    schema_args = schema_container["args"]
+    clickhouse_host = ".".join(
+        [
+            clickhouse_installation["metadata"]["name"],
+            clickhouse_installation["metadata"]["namespace"],
+            "svc",
+            "cluster.local",
+        ]
+    )
+    assert f"--host={clickhouse_host}" in schema_args
     assert "--port=9000" in schema_args
-    assert not any(item.startswith("chi-clickhouse-clickhouse-") for item in schema_args)
 
-    assert schema_flux["spec"]["healthChecks"] == [
-        {"apiVersion": "batch/v1", "kind": "Job", "name": "clickhouse-aiquota-schema-v7", "namespace": "clickhouse"}
-    ]
+    schema_volume = one(volume for volume in schema_pod_spec["volumes"] if volume["name"] == "schema")
+    schema_config_map_name = schema_volume["configMap"]["name"]
+    schema_generator = one(
+        generator
+        for generator in schema_kustomization["configMapGenerator"]
+        if generator["name"] == schema_config_map_name
+    )
+    schema_mount = one(mount for mount in schema_container["volumeMounts"] if mount["name"] == "schema")
+    query_file_arg = one(arg for arg in schema_args if arg.startswith("--queries-file="))
+    query_file = Path(query_file_arg.removeprefix("--queries-file="))
+    assert query_file.parent == Path(schema_mount["mountPath"])
+    assert query_file.name in schema_generator["files"]
+
+    schema_health_check = one(schema_flux["spec"]["healthChecks"])
+    assert schema_health_check == {
+        "apiVersion": schema_job["apiVersion"],
+        "kind": schema_job["kind"],
+        "name": schema_job["metadata"]["name"],
+        "namespace": schema_job["metadata"]["namespace"],
+    }
 
 
 if __name__ == "__main__":

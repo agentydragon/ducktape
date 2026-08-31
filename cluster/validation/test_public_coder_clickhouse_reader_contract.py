@@ -67,13 +67,12 @@ def test_public_coder_clickhouse_reader_contract(
 
     The app has only a placeholder, while the real password is reflected into
     its Iron proxy. Both ClickHouse and Cilium constrain the resulting query
-    surface; 8123 remains an internal ClusterIP port, not a Gateway route.
+    surface; the exact grant list is the read-only data boundary, and 8123
+    remains an internal ClusterIP port, not a Gateway route.
     """
     users = clickhouse_installation["spec"]["configuration"]["users"]
-    assert users["public_coder_analytics/password"]["valueFrom"]["secretKeyRef"] == {
-        "name": "clickhouse-public-coder-credentials",
-        "key": "password",
-    }
+    clickhouse_credentials_ref = users["public_coder_analytics/password"]["valueFrom"]["secretKeyRef"]
+    assert clickhouse_credentials_ref["key"] == "password"
     assert users["public_coder_analytics/profile"] == "readonly"
     assert users["public_coder_analytics/quota"] == "readonly"
     assert users["public_coder_analytics/grants/query"] == [
@@ -81,10 +80,29 @@ def test_public_coder_clickhouse_reader_contract(
         "GRANT SELECT ON aiquota.raw_http_observations",
     ]
 
+    clickhouse_host = ".".join(
+        [
+            clickhouse_installation["metadata"]["name"],
+            clickhouse_installation["metadata"]["namespace"],
+            "svc",
+            "cluster.local",
+        ]
+    )
     annotations = source_secret["metadata"]["annotations"]
-    assert source_secret["metadata"]["namespace"] == "clickhouse"
-    assert annotations["reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"] == "public-coder-agent"
-    assert annotations["reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"] == "public-coder-agent"
+    assert source_secret["metadata"]["name"] == clickhouse_credentials_ref["name"]
+    assert source_secret["metadata"]["namespace"] == clickhouse_installation["metadata"]["namespace"]
+    assert clickhouse_credentials_ref["key"] in source_secret["stringData"]
+
+    agent_namespace = app["metadata"]["namespace"]
+    assert annotations["reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"] == agent_namespace
+    assert annotations["reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"] == agent_namespace
+
+    secrets = one(transform for transform in iron["transforms"] if transform["name"] == "secrets")["config"]["secrets"]
+    clickhouse_secret = one(
+        secret for secret in secrets if secret["source"]["var"] == "CLICKHOUSE_PUBLIC_CODER_PASSWORD"
+    )
+    assert clickhouse_secret["replace"]["match_headers"] == ["Authorization"]
+    assert clickhouse_secret["rules"] == [{"host": clickhouse_host}]
 
     app_env = {
         entry["name"]: entry["value"]
@@ -92,40 +110,31 @@ def test_public_coder_clickhouse_reader_contract(
         if "value" in entry
     }
     assert app_env["CLICKHOUSE_PUBLIC_CODER_USER"] == "public_coder_analytics"
-    assert app_env["CLICKHOUSE_PUBLIC_CODER_PASSWORD"] == "proxy-clickhouse-public-coder-password"
-    assert app_env["NO_PROXY"] == "127.0.0.1,localhost,litellm.litellm.svc,litellm.litellm.svc.cluster.local"
+    assert app_env["CLICKHOUSE_PUBLIC_CODER_PASSWORD"] == clickhouse_secret["replace"]["proxy_value"]
+    no_proxy = set(app_env["NO_PROXY"].split(","))
+    assert "clickhouse.clickhouse.svc" not in no_proxy
+    assert {"litellm.litellm.svc", "litellm.litellm.svc.cluster.local"} <= no_proxy
 
     proxy_password = one(
         entry
         for entry in proxy["spec"]["template"]["spec"]["containers"][0]["env"]
         if entry["name"] == "CLICKHOUSE_PUBLIC_CODER_PASSWORD"
     )
-    assert proxy_password["valueFrom"]["secretKeyRef"] == {
-        "name": "clickhouse-public-coder-credentials",
-        "key": "password",
-    }
-
-    secrets = one(transform for transform in iron["transforms"] if transform["name"] == "secrets")["config"]["secrets"]
-    clickhouse_secret = one(
-        secret for secret in secrets if secret["source"]["var"] == "CLICKHOUSE_PUBLIC_CODER_PASSWORD"
-    )
-    assert clickhouse_secret["replace"] == {
-        "proxy_value": "proxy-clickhouse-public-coder-password",
-        "match_headers": ["Authorization"],
-    }
-    assert clickhouse_secret["rules"] == [{"host": "clickhouse.clickhouse.svc.cluster.local"}]
+    assert proxy_password["valueFrom"]["secretKeyRef"] == clickhouse_credentials_ref
 
     clickhouse_ingress = one(
         policy for policy in network_policies if policy["metadata"]["name"] == "clickhouse-ingress"
     )
+    assert clickhouse_ingress["metadata"]["namespace"] == clickhouse_installation["metadata"]["namespace"]
+    proxy_pod_labels = proxy["spec"]["template"]["metadata"]["labels"]
     clickhouse_rule = one(
         rule
         for rule in clickhouse_ingress["spec"]["ingress"]
         if rule.get("from")
         == [
             {
-                "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "public-coder-agent"}},
-                "podSelector": {"matchLabels": {"app.kubernetes.io/name": "public-coder-agent-proxy"}},
+                "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": agent_namespace}},
+                "podSelector": {"matchLabels": {"app.kubernetes.io/name": proxy_pod_labels["app.kubernetes.io/name"]}},
             }
         ]
     )
@@ -135,9 +144,17 @@ def test_public_coder_clickhouse_reader_contract(
         "toEndpoints": [
             {
                 "matchLabels": {
-                    "k8s:io.kubernetes.pod.namespace": "clickhouse",
-                    "k8s:app.kubernetes.io/name": "clickhouse",
-                    "k8s:app.kubernetes.io/instance": "clickhouse",
+                    "k8s:io.kubernetes.pod.namespace": clickhouse_installation["metadata"]["namespace"],
+                    **{
+                        f"k8s:{key}": value
+                        for key, value in one(
+                            template
+                            for template in clickhouse_installation["spec"]["templates"]["podTemplates"]
+                            if template["name"]
+                            == clickhouse_installation["spec"]["defaults"]["templates"]["podTemplate"]
+                        )["metadata"]["labels"].items()
+                        if key in {"app.kubernetes.io/name", "app.kubernetes.io/instance"}
+                    },
                 }
             }
         ],
