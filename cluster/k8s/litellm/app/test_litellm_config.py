@@ -153,7 +153,8 @@ def _cliproxy_messages_entries() -> Iterator[dict]:
         }
 
 
-# OpenAI Responses surface, for Codex CLI (`wire_api = "responses"` in its config).
+# OpenAI Responses surface, for Codex CLI and OpenClaw (`wire_api = "responses"` in
+# their configs).
 # `openai/` is what makes this a passthrough: LiteLLM serves /v1/responses natively for
 # the OpenAI provider and forwards to `{api_base}/responses`, whereas every other provider
 # — including the `anthropic/` entries above — gets a bridge that rewrites the request into

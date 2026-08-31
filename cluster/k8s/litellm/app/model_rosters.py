@@ -68,8 +68,9 @@ def exposed_name(provider: Provider, shape: ApiShape, model: str) -> str:
     return f"{provider}/{shape}/{model}"
 
 
-# ChatGPT/Codex-subscription models behind CLIProxyAPI, each exposed on both wire
-# surfaces (Provider.CHATGPT with ApiShape.ANT_MESSAGES and ApiShape.OAI_RESPONSES).
+# ChatGPT/Codex-subscription models behind CLIProxyAPI, exposed on both wire surfaces
+# for clients that need them. OpenClaw uses the Responses surface below because it is
+# the working native passthrough to CLIProxyAPI.
 CLIPROXY_MODELS: list[str] = [
     "gpt-5.4",
     "gpt-5.5",
@@ -125,7 +126,7 @@ ANTHROPIC_MODELS: list[str] = ["claude-opus-5", "claude-sonnet-5", "claude-fable
 # provider does not query the proxy's authenticated /v1/models endpoint.
 OPENCLAW_CLIPROXY_MODELS: list[str] = ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]
 OPENCLAW_CODEX_MODELS: list[str] = [
-    exposed_name(Provider.CHATGPT, ApiShape.ANT_MESSAGES, model) for model in OPENCLAW_CLIPROXY_MODELS
+    exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, model) for model in OPENCLAW_CLIPROXY_MODELS
 ]
 
 # Google AI (Gemini). Key from the GEMINI_API_KEY env var (litellm-gemini-key

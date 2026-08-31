@@ -36,19 +36,12 @@ the raw models are ~1.05M, Codex product docs say 272K -- and neither is
 what this chain accepts. cluster/k8s/litellm/app/test_openclaw_models.py
 pins every declaration in the repo to the same measured numbers.
 
-The same LiteLLM key and `litellm` provider also offer Google's
-Gemini chat lineup (`google/oai-chat/gemini-*`, mirroring GEMINI_MODELS in
-cluster/k8s/litellm/app/model_rosters.py), routed the same way Codex is --
-LiteLLM's `/v1/messages` surface accepts an Anthropic-shaped request for any
-backend model and translates it, so no separate provider entry is needed.
-Unlike Codex, there is no live serving-path probe for a hosted third-party
-API: contextWindow (1,048,576) and maxTokens (65,536) are Google's published
-limits for the current Gemini generation, shared by every entry except that
-gemini-3.5-flash-lite is the deliberately cheap/fast tier and is marked
-`"reasoning": false`. cluster/k8s/litellm/app/test_openclaw_models.py pins
-the catalog to the roster and these figures. The agent's default model is
-unchanged (still a Codex 5.6 model) -- Gemini is added as a selectable
-option, not a new default.
+The Codex entries use OpenClaw's `openai-responses` API and the
+`chatgpt/oai-responses/*` LiteLLM routes. This is the native Responses
+passthrough to CLIProxyAPI and is the working path for these subscription
+models. This OpenClaw instance deliberately exposes only those working Codex
+models; it does not configure an Anthropic-shaped provider or expose the shared
+LiteLLM Gemini routes.
 
 `agents.defaults.compaction.reserveTokensFloor` is 50,000 rather than
 OpenClaw's 20,000 default, which is sized for small local models. OpenClaw
