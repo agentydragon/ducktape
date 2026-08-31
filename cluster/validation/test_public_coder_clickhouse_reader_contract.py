@@ -3,33 +3,73 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 import pytest_bazel
 import yaml
-
-from util.bazel.runfiles import get_required_path
-
-_K8S_ROOT_KUSTOMIZATION = "_main/cluster/k8s/kustomization.yaml"
+from more_itertools import one
 
 
-@pytest.fixture(scope="session")
-def k8s_dir() -> Path:
-    return get_required_path(_K8S_ROOT_KUSTOMIZATION).parent
+@pytest.fixture
+def clickhouse_installation(k8s_dir: Path) -> dict[str, Any]:
+    return cast(dict[str, Any], yaml.safe_load((k8s_dir / "clickhouse/cluster/clickhouse.yaml").read_text()))
 
 
-def test_public_coder_clickhouse_reader_contract(k8s_dir: Path) -> None:
+@pytest.fixture
+def source_secret(k8s_dir: Path) -> dict[str, Any]:
+    return cast(
+        dict[str, Any], yaml.safe_load((k8s_dir / "clickhouse/cluster/public-coder-credentials.sops.yaml").read_text())
+    )
+
+
+@pytest.fixture
+def app(k8s_dir: Path) -> dict[str, Any]:
+    return cast(dict[str, Any], yaml.safe_load((k8s_dir / "agents/public-coder-agent/app/deployment.yaml").read_text()))
+
+
+@pytest.fixture
+def proxy(k8s_dir: Path) -> dict[str, Any]:
+    return cast(
+        dict[str, Any], yaml.safe_load((k8s_dir / "agents/public-coder-agent/proxy/deployment.yaml").read_text())
+    )
+
+
+@pytest.fixture
+def iron(k8s_dir: Path) -> dict[str, Any]:
+    return cast(dict[str, Any], yaml.safe_load((k8s_dir / "agents/public-coder-agent/proxy/iron.yaml").read_text()))
+
+
+@pytest.fixture
+def network_policies(k8s_dir: Path) -> list[dict[str, Any]]:
+    return cast(
+        list[dict[str, Any]], list(yaml.safe_load_all((k8s_dir / "clickhouse/cluster/networkpolicy.yaml").read_text()))
+    )
+
+
+@pytest.fixture
+def proxy_egress(k8s_dir: Path) -> dict[str, Any]:
+    return cast(
+        dict[str, Any], yaml.safe_load((k8s_dir / "agents/public-coder-agent/proxy/cnp-egress.yaml").read_text())
+    )
+
+
+def test_public_coder_clickhouse_reader_contract(
+    clickhouse_installation: dict[str, Any],
+    source_secret: dict[str, Any],
+    app: dict[str, Any],
+    proxy: dict[str, Any],
+    iron: dict[str, Any],
+    network_policies: list[dict[str, Any]],
+    proxy_egress: dict[str, Any],
+) -> None:
     """The Console-managed public-coder runner gets a mediated native ClickHouse reader.
 
     The app has only a placeholder, while the real password is reflected into
     its Iron proxy. Both ClickHouse and Cilium constrain the resulting query
     surface; 8123 remains an internal ClusterIP port, not a Gateway route.
     """
-    clickhouse_dir = k8s_dir / "clickhouse" / "cluster"
-    agent_dir = k8s_dir / "agents" / "public-coder-agent"
-
-    installation = yaml.safe_load((clickhouse_dir / "clickhouse.yaml").read_text())
-    users = installation["spec"]["configuration"]["users"]
+    users = clickhouse_installation["spec"]["configuration"]["users"]
     assert users["public_coder_analytics/password"]["valueFrom"]["secretKeyRef"] == {
         "name": "clickhouse-public-coder-credentials",
         "key": "password",
@@ -41,13 +81,11 @@ def test_public_coder_clickhouse_reader_contract(k8s_dir: Path) -> None:
         "GRANT SELECT ON aiquota.raw_http_observations",
     ]
 
-    source_secret = yaml.safe_load((clickhouse_dir / "public-coder-credentials.sops.yaml").read_text())
     annotations = source_secret["metadata"]["annotations"]
     assert source_secret["metadata"]["namespace"] == "clickhouse"
     assert annotations["reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"] == "public-coder-agent"
     assert annotations["reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"] == "public-coder-agent"
 
-    app = yaml.safe_load((agent_dir / "app/deployment.yaml").read_text())
     app_env = {
         entry["name"]: entry["value"]
         for entry in app["spec"]["template"]["spec"]["containers"][0]["env"]
@@ -57,16 +95,18 @@ def test_public_coder_clickhouse_reader_contract(k8s_dir: Path) -> None:
     assert app_env["CLICKHOUSE_PUBLIC_CODER_PASSWORD"] == "proxy-clickhouse-public-coder-password"
     assert app_env["NO_PROXY"] == "127.0.0.1,localhost,litellm.litellm.svc,litellm.litellm.svc.cluster.local"
 
-    proxy = yaml.safe_load((agent_dir / "proxy/deployment.yaml").read_text())
-    proxy_env = {entry["name"]: entry for entry in proxy["spec"]["template"]["spec"]["containers"][0]["env"]}
-    assert proxy_env["CLICKHOUSE_PUBLIC_CODER_PASSWORD"]["valueFrom"]["secretKeyRef"] == {
+    proxy_password = one(
+        entry
+        for entry in proxy["spec"]["template"]["spec"]["containers"][0]["env"]
+        if entry["name"] == "CLICKHOUSE_PUBLIC_CODER_PASSWORD"
+    )
+    assert proxy_password["valueFrom"]["secretKeyRef"] == {
         "name": "clickhouse-public-coder-credentials",
         "key": "password",
     }
 
-    iron = yaml.safe_load((agent_dir / "proxy/iron.yaml").read_text())
-    secrets = next(transform for transform in iron["transforms"] if transform["name"] == "secrets")["config"]["secrets"]
-    clickhouse_secret = next(
+    secrets = one(transform for transform in iron["transforms"] if transform["name"] == "secrets")["config"]["secrets"]
+    clickhouse_secret = one(
         secret for secret in secrets if secret["source"]["var"] == "CLICKHOUSE_PUBLIC_CODER_PASSWORD"
     )
     assert clickhouse_secret["replace"] == {
@@ -75,9 +115,10 @@ def test_public_coder_clickhouse_reader_contract(k8s_dir: Path) -> None:
     }
     assert clickhouse_secret["rules"] == [{"host": "clickhouse.clickhouse.svc.cluster.local"}]
 
-    policies = list(yaml.safe_load_all((clickhouse_dir / "networkpolicy.yaml").read_text()))
-    clickhouse_ingress = next(policy for policy in policies if policy["metadata"]["name"] == "clickhouse-ingress")
-    clickhouse_rule = next(
+    clickhouse_ingress = one(
+        policy for policy in network_policies if policy["metadata"]["name"] == "clickhouse-ingress"
+    )
+    clickhouse_rule = one(
         rule
         for rule in clickhouse_ingress["spec"]["ingress"]
         if rule.get("from")
@@ -90,7 +131,6 @@ def test_public_coder_clickhouse_reader_contract(k8s_dir: Path) -> None:
     )
     assert clickhouse_rule["ports"] == [{"port": 8123, "protocol": "TCP"}]
 
-    proxy_egress = yaml.safe_load((agent_dir / "proxy/cnp-egress.yaml").read_text())
     assert {
         "toEndpoints": [
             {

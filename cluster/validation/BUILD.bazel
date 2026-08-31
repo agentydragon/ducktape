@@ -151,6 +151,16 @@ py_library(
     ],
 )
 
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+    ],
+)
+
 py_test(
     name = "test_k8s",
     srcs = ["test_k8s.py"],
@@ -374,7 +384,10 @@ py_test(
         "//cluster/k8s:kustomization.yaml",
     ],
     deps = [
+        ":conftest",
+        "//:conftest",
         "//util/bazel:runfiles",
+        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
@@ -395,7 +408,10 @@ py_test(
         "//cluster/k8s:kustomization.yaml",
     ],
     deps = [
+        ":conftest",
+        "//:conftest",
         "//util/bazel:runfiles",
+        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

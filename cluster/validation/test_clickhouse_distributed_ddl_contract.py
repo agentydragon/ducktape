@@ -3,22 +3,46 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 import pytest_bazel
 import yaml
-
-from util.bazel.runfiles import get_required_path
-
-_K8S_ROOT_KUSTOMIZATION = "_main/cluster/k8s/kustomization.yaml"
+from more_itertools import one
 
 
-@pytest.fixture(scope="session")
-def k8s_dir() -> Path:
-    return get_required_path(_K8S_ROOT_KUSTOMIZATION).parent
+@pytest.fixture
+def clickhouse_installation(k8s_dir: Path) -> dict[str, Any]:
+    return cast(dict[str, Any], yaml.safe_load((k8s_dir / "clickhouse/cluster/clickhouse.yaml").read_text()))
 
 
-def test_clickhouse_distributed_ddl_contract(k8s_dir: Path) -> None:
+@pytest.fixture
+def cluster_kustomization(k8s_dir: Path) -> dict[str, Any]:
+    return cast(dict[str, Any], yaml.safe_load((k8s_dir / "clickhouse/cluster/kustomization.yaml").read_text()))
+
+
+@pytest.fixture
+def schema_sql(k8s_dir: Path) -> str:
+    return (k8s_dir / "clickhouse/schema/schema.sql").read_text()
+
+
+@pytest.fixture
+def schema_job(k8s_dir: Path) -> dict[str, Any]:
+    return cast(dict[str, Any], yaml.safe_load((k8s_dir / "clickhouse/schema/schema-job.yaml").read_text()))
+
+
+@pytest.fixture
+def schema_flux(k8s_dir: Path) -> dict[str, Any]:
+    return cast(dict[str, Any], yaml.safe_load((k8s_dir / "clickhouse/schema/flux-kustomization.yaml").read_text()))
+
+
+def test_clickhouse_distributed_ddl_contract(
+    clickhouse_installation: dict[str, Any],
+    cluster_kustomization: dict[str, Any],
+    schema_sql: str,
+    schema_job: dict[str, Any],
+    schema_flux: dict[str, Any],
+) -> None:
     """Central ClickHouse uses one plaintext native port consistently for ON CLUSTER DDL.
 
     The Altinity operator generates 9440 secure remote-server entries when
@@ -27,12 +51,10 @@ def test_clickhouse_distributed_ddl_contract(k8s_dir: Path) -> None:
     as local by DDLWorker. Keep the manifest, schema Job, and Flux health check
     pinned to the working port-9000 configuration.
     """
-    clickhouse_dir = k8s_dir / "clickhouse"
-    installation = yaml.safe_load((clickhouse_dir / "cluster/clickhouse.yaml").read_text())
-    configuration = installation["spec"]["configuration"]
-    cluster_spec = next(item for item in configuration["clusters"] if item["name"] == "default")
+    configuration = clickhouse_installation["spec"]["configuration"]
+    cluster_spec = one(item for item in configuration["clusters"] if item["name"] == "default")
     assert "secure" not in cluster_spec
-    assert installation["spec"]["defaults"]["replicasUseFQDN"] == "yes"
+    assert clickhouse_installation["spec"]["defaults"]["replicasUseFQDN"] == "yes"
 
     grants = configuration["users"]["aiquota_ingest/grants/query"]
     assert grants == [
@@ -41,11 +63,8 @@ def test_clickhouse_distributed_ddl_contract(k8s_dir: Path) -> None:
         "ON aiquota.raw_http_observations",
     ]
 
-    cluster_kustomization = yaml.safe_load((clickhouse_dir / "cluster/kustomization.yaml").read_text())
-    generated_files = cluster_kustomization["configMapGenerator"][0]["files"]
-    assert generated_files == ["system_logs.xml"]
+    assert cluster_kustomization["configMapGenerator"][0]["files"] == ["system_logs.xml"]
 
-    schema_sql = (clickhouse_dir / "schema/schema.sql").read_text()
     for statement in (
         "CREATE DATABASE IF NOT EXISTS aiquota ON CLUSTER default;",
         "CREATE TABLE IF NOT EXISTS aiquota.raw_http_observations ON CLUSTER default",
@@ -58,14 +77,12 @@ def test_clickhouse_distributed_ddl_contract(k8s_dir: Path) -> None:
     ):
         assert statement in schema_sql
 
-    schema_job = yaml.safe_load((clickhouse_dir / "schema/schema-job.yaml").read_text())
     assert schema_job["metadata"]["name"] == "clickhouse-aiquota-schema-v7"
     schema_args = schema_job["spec"]["template"]["spec"]["containers"][0]["args"]
     assert "--host=clickhouse.clickhouse.svc.cluster.local" in schema_args
     assert "--port=9000" in schema_args
     assert not any(item.startswith("chi-clickhouse-clickhouse-") for item in schema_args)
 
-    schema_flux = yaml.safe_load((clickhouse_dir / "schema/flux-kustomization.yaml").read_text())
     assert schema_flux["spec"]["healthChecks"] == [
         {"apiVersion": "batch/v1", "kind": "Job", "name": "clickhouse-aiquota-schema-v7", "namespace": "clickhouse"}
     ]
