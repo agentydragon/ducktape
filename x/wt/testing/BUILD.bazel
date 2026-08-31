@@ -1,0 +1,91 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_visibility = ["//x/wt:__subpackages__"])
+
+py_library(
+    name = "asserts",
+    srcs = ["asserts.py"],
+    deps = ["@pypi//pyhamcrest"],
+)
+
+py_library(
+    name = "config_factory",
+    srcs = ["config_factory.py"],
+    deps = [
+        ":data",
+        "//x/wt/shared:config_file",
+        "//x/wt/shared:configuration",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "data",
+    srcs = ["data.py"],
+    deps = ["@pypi//pygit2"],
+)
+
+py_library(
+    name = "git_helpers",
+    srcs = ["git_helpers.py"],
+    deps = [
+        ":data",
+        "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "mock_factory",
+    srcs = ["mock_factory.py"],
+    deps = [
+        ":data",
+        "//x/wt/client:view_formatter",
+        "//x/wt/client:wt_client",
+        "//x/wt/server:git_manager",
+        "//x/wt/server:github_client",
+        "//x/wt/server:worktree_service",
+        "//x/wt/shared:protocol",
+    ],
+)
+
+py_library(
+    name = "repo_factory",
+    srcs = ["repo_factory.py"],
+    deps = [
+        ":data",
+        "@pypi//pygit2",
+    ],
+)
+
+py_library(
+    name = "utils",
+    srcs = ["utils.py"],
+    deps = [
+        "@pypi//tenacity",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":config_factory",
+        ":mock_factory",
+        ":repo_factory",
+        ":utils",
+        "//x/wt/server:git_manager",
+        "//x/wt/server:github_client",
+        "//x/wt/server:gitstatusd_listener",
+        "//x/wt/server:worktree_service",
+        "//x/wt/shared:config_file",
+        "//x/wt/shared:configuration",
+        "//x/wt/shared:fixtures",
+        "//x/wt/shared:protocol",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pyyaml",
+        "@pypi//typer_slim",
+    ],
+)
