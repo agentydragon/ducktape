@@ -47,6 +47,39 @@ filegroup(
     visibility = ["//cluster:__subpackages__"],
 )
 
+# Direct-file contract inputs for ClickHouse's distributed DDL wiring. Keep these
+# separate from cluster_all_files so unrelated cluster manifests do not invalidate
+# the focused validation target.
+filegroup(
+    name = "clickhouse_distributed_ddl_contract_files",
+    srcs = [
+        "clickhouse/cluster/clickhouse.yaml",
+        "clickhouse/cluster/kustomization.yaml",
+        "clickhouse/schema/flux-kustomization.yaml",
+        "clickhouse/schema/schema.sql",
+        "clickhouse/schema/schema-job.yaml",
+        "kustomization.yaml",
+    ],
+    visibility = ["//cluster/validation:__pkg__"],
+)
+
+# Direct-file contract inputs for the public-coder ClickHouse reader. This is
+# intentionally independent from the full Haku manifest contract filegroup.
+filegroup(
+    name = "public_coder_clickhouse_reader_contract_files",
+    srcs = [
+        "agents/public-coder-agent/app/deployment.yaml",
+        "agents/public-coder-agent/proxy/cnp-egress.yaml",
+        "agents/public-coder-agent/proxy/deployment.yaml",
+        "agents/public-coder-agent/proxy/iron.yaml",
+        "clickhouse/cluster/clickhouse.yaml",
+        "clickhouse/cluster/networkpolicy.yaml",
+        "clickhouse/cluster/public-coder-credentials.sops.yaml",
+        "kustomization.yaml",
+    ],
+    visibility = ["//cluster/validation:__pkg__"],
+)
+
 # Just the central ClusterPolicy manifests, so a per-policy test is not
 # invalidated by every unrelated manifest in the cluster (same reasoning as the
 # contract filegroup below). The zone injector under x/haku/zones/policies is not

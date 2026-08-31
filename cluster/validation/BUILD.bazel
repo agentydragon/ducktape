@@ -363,6 +363,30 @@ py_test(
 )
 
 py_test(
+    name = "test_clickhouse_distributed_ddl_contract",
+    srcs = ["test_clickhouse_distributed_ddl_contract.py"],
+    data = ["//cluster/k8s:clickhouse_distributed_ddl_contract_files"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_public_coder_clickhouse_reader_contract",
+    srcs = ["test_public_coder_clickhouse_reader_contract.py"],
+    data = ["//cluster/k8s:public_coder_clickhouse_reader_contract_files"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
     name = "test_haku_manifest_contracts",
     srcs = ["test_haku_manifest_contracts.py"],
     data = [
