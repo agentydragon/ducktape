@@ -401,28 +401,29 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(k8s_dir: P
     agent_readable_metadata_label = "rbac.ducktape.io/agent-readable-metadata"
     agent_readable_logs_label = "rbac.ducktape.io/agent-readable-logs"
     expected_namespace_labels = {
-        "agents/agent-sandbox/controller/patches.yaml": agent_readable_metadata_label,
-        "agents/public-coder-agent/namespace/namespace.yaml": agent_readable_metadata_label,
-        "nix-cache/namespace/namespace.yaml": agent_readable_metadata_label,
-        "vm-images-publisher/namespace.yaml": agent_readable_metadata_label,
-        "cli-proxy-api/namespace.yaml": agent_readable_logs_label,
-        "grocy/sf/app/namespace.yaml": agent_readable_logs_label,
-        "grocy/vallejo/app/namespace.yaml": agent_readable_logs_label,
-        "haku-ci/namespace.yaml": agent_readable_logs_label,
-        "monitoring/loki/namespace.yaml": agent_readable_logs_label,
-        "props/namespace/namespace.yaml": agent_readable_logs_label,
+        k8s_dir / "agents/agent-sandbox/controller/patches.yaml": agent_readable_metadata_label,
+        k8s_dir / "agents/public-coder-agent/namespace/namespace.yaml": agent_readable_metadata_label,
+        k8s_dir / "nix-cache/namespace/namespace.yaml": agent_readable_metadata_label,
+        k8s_dir / "vm-images-publisher/namespace.yaml": agent_readable_metadata_label,
+        k8s_dir / "cli-proxy-api/namespace.yaml": agent_readable_logs_label,
+        k8s_dir / "grocy/sf/app/namespace.yaml": agent_readable_logs_label,
+        k8s_dir / "grocy/vallejo/app/namespace.yaml": agent_readable_logs_label,
+        k8s_dir / "haku-ci/namespace.yaml": agent_readable_logs_label,
+        k8s_dir / "monitoring/loki/namespace.yaml": agent_readable_logs_label,
+        get_required_path("_main/props/deploy/namespace/namespace.yaml"): agent_readable_logs_label,
     }
     for path, expected_label in expected_namespace_labels.items():
-        namespace = one(obj for obj in yaml.safe_load_all((k8s_dir / path).read_text()) if obj["kind"] == "Namespace")
+        namespace = one(obj for obj in yaml.safe_load_all(path.read_text()) if obj["kind"] == "Namespace")
         labels = namespace["metadata"]["labels"]
         assert labels[expected_label] == "true", path
         assert not ({agent_readable_metadata_label, agent_readable_logs_label} - {expected_label}) & labels.keys(), path
 
-    for path in ("matrix/namespace/namespace.yaml", "x/haku/dispatch/namespace/namespace.yaml"):
-        namespace = one(obj for obj in yaml.safe_load_all((k8s_dir / path).read_text()) if obj["kind"] == "Namespace")
+    for relative_path in ("matrix/namespace/namespace.yaml", "x/haku/dispatch/namespace/namespace.yaml"):
+        path = k8s_dir / relative_path
+        namespace = one(obj for obj in yaml.safe_load_all(path.read_text()) if obj["kind"] == "Namespace")
         assert (
             not {agent_readable_metadata_label, agent_readable_logs_label} & namespace["metadata"]["labels"].keys()
-        ), path
+        ), relative_path
 
     flux_system_kustomization = (k8s_dir / "flux-system/kustomization.yaml").read_text()
     assert "path: /metadata/labels/rbac.ducktape.io~1agent-readable-logs" in flux_system_kustomization
@@ -495,16 +496,16 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(k8s_dir: P
         "haku/console/kustomization.yaml": "agent-diagnostics-rbac.yaml",
         "agents/public-coder-agent/k8s-reader/kustomization.yaml": "extended-diagnostics-reader.yaml",
     }
-    for path, resource in expected_kustomization_resources.items():
-        kustomization = yaml.safe_load((k8s_dir / path).read_text())
-        assert resource in kustomization["resources"], path
+    for relative_path, resource in expected_kustomization_resources.items():
+        kustomization = yaml.safe_load((k8s_dir / relative_path).read_text())
+        assert resource in kustomization["resources"], relative_path
     public_coder_kustomization = yaml.safe_load(
         (k8s_dir / "agents/public-coder-agent/k8s-reader/kustomization.yaml").read_text()
     )
     assert "cluster-metadata-reader.yaml" in public_coder_kustomization["resources"]
 
-    for path, expected_rules in expected_roles.items():
-        objects = list(yaml.safe_load_all((k8s_dir / path).read_text()))
+    for relative_path, expected_rules in expected_roles.items():
+        objects = list(yaml.safe_load_all((k8s_dir / relative_path).read_text()))
         role = one(obj for obj in objects if obj["kind"] == "Role")
         binding = one(obj for obj in objects if obj["kind"] == "RoleBinding")
         assert binding["roleRef"] == {

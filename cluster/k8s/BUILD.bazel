@@ -162,9 +162,9 @@ filegroup(
         "monitoring/loki/namespace.yaml",
         "monitoring/namespace/namespace.yaml",
         "nix-cache/namespace/namespace.yaml",
-        "props/namespace/namespace.yaml",
         "vm-images-publisher/namespace.yaml",
         "x/haku/dispatch/namespace/namespace.yaml",
+        "//props:deploy/namespace/namespace.yaml",
     ],
     visibility = ["//cluster/validation:__pkg__"],
 )
