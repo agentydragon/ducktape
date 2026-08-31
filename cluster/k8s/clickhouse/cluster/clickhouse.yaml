@@ -76,7 +76,10 @@ spec:
       grafana/networks/ip:
         - 0.0.0.0/0
         - ::/0
-      grafana/profile: readonly
+      # The Grafana ClickHouse plugin sends max_execution_time during the
+      # connection handshake. Keep this account read-only while allowing that
+      # session setting to be changed.
+      grafana/profile: grafana_readonly
       grafana/quota: readonly
       grafana/grants/query:
         - GRANT SELECT ON aiquota.*
@@ -99,6 +102,10 @@ spec:
         - GRANT SELECT ON aiquota.aiquota_windows
         - GRANT SELECT ON aiquota.raw_http_observations
     profiles:
+      grafana_readonly/readonly: 2
+      grafana_readonly/max_memory_usage: 1073741824
+      grafana_readonly/max_threads: 4
+      grafana_readonly/max_execution_time: 60
       readonly/readonly: 1
       readonly/max_memory_usage: 1073741824
       readonly/max_threads: 4
