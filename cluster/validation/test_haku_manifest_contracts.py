@@ -367,7 +367,7 @@ def test_haku_harness_runner_has_one_neutral_publication(k8s_dir: Path) -> None:
     container = one(yaml.safe_load(template_text)["spec"]["podTemplate"]["spec"]["containers"])
     image_repository, image_tag = container["image"].rsplit(":", 1)
     assert image_repository == f"git.allegedly.works/ducktape-ci/{canonical_name}"
-    assert image_tag == "latest"
+    assert re.fullmatch(policy["spec"]["filterTags"]["pattern"], image_tag)
     assert f'# {{"$imagepolicy": "flux-system:{canonical_name}"}}' in template_text
     assert container["args"] == ["--harness", "claude"]
 
@@ -821,7 +821,7 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
     assert pod["automountServiceAccountToken"] is False
     assert "serviceAccountName" not in pod
     container = one(pod["containers"])
-    assert container["image"] == "git.allegedly.works/ducktape-ci/haku-harness-runner:latest"
+    assert container["image"].startswith("git.allegedly.works/ducktape-ci/haku-harness-runner:devel-")
     assert '# {"$imagepolicy": "flux-system:haku-harness-runner"}' in template_text
     assert container["args"] == ["--harness", "codex-app-server"]
     environment = sandbox_env(template)
