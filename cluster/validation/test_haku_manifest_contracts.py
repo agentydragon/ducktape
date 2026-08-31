@@ -21,6 +21,12 @@ def k8s_dir() -> Path:
     return get_required_path(_K8S_ROOT_KUSTOMIZATION).parent
 
 
+def assert_image_selected_by_policy(image: str, repository: dict[str, Any], policy: dict[str, Any]) -> None:
+    image_repository, image_tag = image.rsplit(":", 1)
+    assert image_repository == repository["spec"]["image"]
+    assert re.fullmatch(policy["spec"]["filterTags"]["pattern"], image_tag) is not None
+
+
 def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) -> None:
     """Only the dedicated Haku Claude runner receives proxy authority."""
     template = yaml.safe_load((k8s_dir / "haku/workspaces/app/sandboxtemplate-haku-claude.yaml").read_text())
@@ -365,9 +371,7 @@ def test_haku_harness_runner_has_one_neutral_publication(k8s_dir: Path) -> None:
     template_path = k8s_dir / "haku/workspaces/app/sandboxtemplate-haku-claude.yaml"
     template_text = template_path.read_text()
     container = one(yaml.safe_load(template_text)["spec"]["podTemplate"]["spec"]["containers"])
-    image_repository, image_tag = container["image"].rsplit(":", 1)
-    assert image_repository == f"git.allegedly.works/ducktape-ci/{canonical_name}"
-    assert image_tag == "latest"
+    assert_image_selected_by_policy(container["image"], repository, policy)
     assert f'# {{"$imagepolicy": "flux-system:{canonical_name}"}}' in template_text
     assert container["args"] == ["--harness", "claude"]
 
@@ -821,7 +825,12 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
     assert pod["automountServiceAccountToken"] is False
     assert "serviceAccountName" not in pod
     container = one(pod["containers"])
-    assert container["image"] == "git.allegedly.works/ducktape-ci/haku-harness-runner:latest"
+    image_documents = list(
+        yaml.safe_load_all((k8s_dir / "flux-image-automation-forgejo/haku-harness-runner-image.yaml").read_text())
+    )
+    repository = one(document for document in image_documents if document["kind"] == "ImageRepository")
+    policy = one(document for document in image_documents if document["kind"] == "ImagePolicy")
+    assert_image_selected_by_policy(container["image"], repository, policy)
     assert '# {"$imagepolicy": "flux-system:haku-harness-runner"}' in template_text
     assert container["args"] == ["--harness", "codex-app-server"]
     environment = sandbox_env(template)
