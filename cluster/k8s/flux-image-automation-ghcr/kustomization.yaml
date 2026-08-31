@@ -21,7 +21,6 @@ resources:
   - haku-kube-api-proxy-image.yaml
   - haku-console-static-image.yaml
   - haku-indexer-image.yaml
-  - haku-harness-runner-image.yaml
   - haku-managed-agent-image.yaml
   - rtl-tcp-image.yaml
   - wayback-archive-image.yaml

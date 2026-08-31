@@ -112,7 +112,7 @@ run's base-sync step has something to diff against.
 ## Console harness runner image
 
 The Console sandbox bridge is `//haku/runner:runner_image`, published once as
-`ghcr.io/agentydragon/haku-harness-runner`. It contains the pinned native Claude and Codex CLIs,
+`git.allegedly.works/ducktape-ci/haku-harness-runner`. It contains the pinned native Claude and Codex CLIs,
 git, kubectl, and CA roots; the SandboxTemplate still selects Claude explicitly with `--harness`.
 
 The repository rename and the first publication necessarily meet at the merge commit: CI cannot

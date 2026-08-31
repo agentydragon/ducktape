@@ -69,9 +69,6 @@ spec:
       name: haku-openclaw-spike
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
-      name: haku-harness-runner
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
       name: openclaw
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository

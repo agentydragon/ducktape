@@ -19,6 +19,8 @@ spec:
         haku.allegedly.works/access-profile-id: haku
     spec:
       dnsPolicy: ClusterFirst
+      imagePullSecrets:
+        - name: forgejo-images-creds
       # Console maps the exact-session bearer to Haku's pinned profile and SARs Haku's canonical
       # compute identity before the separate proxy executes a request. No Kubernetes credential is
       # mounted into this pod.
@@ -35,7 +37,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: runner
-          image: ghcr.io/agentydragon/haku-harness-runner:devel-20260830042955-a18428e # {"$imagepolicy": "flux-system:haku-harness-runner"}
+          image: git.allegedly.works/ducktape-ci/haku-harness-runner:latest # {"$imagepolicy": "flux-system:haku-harness-runner"}
           imagePullPolicy: Always
           # Harness selection is immutable for the runner lifetime. It is not inferred from the
           # native payload, which stays opaque inside the runner protocol envelope.

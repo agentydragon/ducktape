@@ -16,6 +16,8 @@ spec:
         haku.allegedly.works/access-profile-id: public-coder
     spec:
       dnsPolicy: ClusterFirst
+      imagePullSecrets:
+        - name: forgejo-images-creds
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
@@ -26,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: runner
-          image: ghcr.io/agentydragon/haku-harness-runner:devel-20260830042955-a18428e # {"$imagepolicy": "flux-system:haku-harness-runner"}
+          image: git.allegedly.works/ducktape-ci/haku-harness-runner:latest # {"$imagepolicy": "flux-system:haku-harness-runner"}
           imagePullPolicy: Always
           args: ["--harness", "codex-app-server"]
           workingDir: /workspace

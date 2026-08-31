@@ -17,6 +17,7 @@ resources:
   - tana-mcp-image.yaml
   - agent-workspace-image.yaml
   - haku-sandbox-image.yaml
+  - haku-harness-runner-image.yaml
   - haku-openclaw-spike-image.yaml
   - codex-pod-image.yaml
   - iron-proxy-image.yaml

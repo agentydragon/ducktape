@@ -29,7 +29,8 @@
     },
     "haku-harness-runner": {
       "target": "//haku/runner:runner_image",
-      "test": "//haku/runner/..."
+      "test": "//haku/runner/...",
+      "registry": "forgejo"
     },
     "haku-egress-proxy": {
       "target": "//haku/egress:proxy_image",
