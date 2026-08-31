@@ -3,10 +3,10 @@ kind: Kustomization
 resources:
   - analysis-ai.sops.yaml
   - anthropic-haku.sops.yaml
-  - anthropic-haku-distribution.yaml
+  - anthropic-haku-grants.yaml
   - gemini.sops.yaml
-  - gemini-distribution.yaml
+  - gemini-grants.yaml
   - github-agentydragon-agent.sops.yaml
-  - github-agentydragon-agent-distribution.yaml
+  - github-agentydragon-agent-grants.yaml
   - groq.sops.yaml
-  - groq-distribution.yaml
+  - groq-grants.yaml

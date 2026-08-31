@@ -199,7 +199,7 @@ Until this exists, shape verification is a manual step and therefore skippable -
 see the rough edge in <../../docs/personal_agents/findings/rough_edges.md>.
 The point of the TODO is to stop relying on remembering.
 
-Scope: `cluster/k8s/agents/public-coder-agent/app/openclaw.json`. The retired
+Scope: `cluster/k8s/agents/public-coder-agent/app/openclaw.json5`. The retired
 operator-managed gateway also embedded config in a CRD field, but that second
 configuration no longer exists.
 

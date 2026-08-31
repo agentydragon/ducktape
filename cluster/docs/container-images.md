@@ -20,7 +20,7 @@ registry proxy (`props.allegedly.works` → `git.allegedly.works/props/*`).
 1. **Build**: Prefer Bazel (`oci_image` + `oci_load` from `@rules_oci`). Use GitHub
    Actions only when Bazel can't build it (e.g., multi-stage Docker builds with
    external toolchains). Set `org.opencontainers.image.source` label.
-   Example: <../k8s/activitywatch/BUILD.bazel>
+   Example: <../../third_party/activitywatch/BUILD.bazel>
 
 2. **Push**: Add an entry to <../../devinfra/ci/image_targets.json> (the image roster
    SSOT the `push-images` workflow reads): the key is the published image name, with

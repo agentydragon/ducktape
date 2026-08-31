@@ -9,6 +9,7 @@ resources:
   - claude-iron-service.yaml
   - claude-networkpolicy.yaml
   - claude-code-oauth-token.sops.yaml
+  - github-token-secret-store.yaml
   - claude-github-token-eso.yaml
   - openclaw-spike-github-token-eso.yaml
   - openclaw-spike-iron-deployment.yaml

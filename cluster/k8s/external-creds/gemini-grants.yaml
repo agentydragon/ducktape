@@ -1,0 +1,26 @@
+# Source-controlled grant for the canonical Gemini credential. The consumer
+# ServiceAccount and SecretStore live with LiteLLM.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: llm-gemini-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["llm-gemini"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: llm-gemini-litellm-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: llm-gemini-reader
+subjects:
+  - kind: ServiceAccount
+    name: llm-gemini-reader
+    namespace: litellm

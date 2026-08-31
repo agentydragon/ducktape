@@ -29,13 +29,11 @@ pkg_files(
     name = "activitywatch_bin_files",
     srcs = [
         "@aw_server_rust//:aw_server_bin",
-        "@aw_server_rust//:aw_sync_bin",
     ],
     attributes = pkg_attributes(mode = "0755"),
     prefix = "/usr/local/bin",
     renames = {
         "@aw_server_rust//:aw_server_bin": "aw-server",
-        "@aw_server_rust//:aw_sync_bin": "aw-sync",
     },
     strip_prefix = strip_prefix.files_only(),
 )

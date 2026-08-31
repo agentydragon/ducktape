@@ -19,7 +19,7 @@ from cluster.k8s.litellm.app.model_rosters import (
 )
 from util.bazel.runfiles import get_required_path
 
-_PUBLIC_CODER_AGENT_CONFIG = "ducktape/cluster/k8s/agents/public-coder-agent/app/openclaw.json"
+_PUBLIC_CODER_AGENT_CONFIG = "ducktape/cluster/k8s/agents/public-coder-agent/app/openclaw.json5"
 _HAKU_OPENCLAW_CONFIG = "ducktape/cluster/k8s/agents/haku-openclaw-spike/app/openclaw.json"
 _HAKU_OPENCLAW_DEPLOYMENT = "ducktape/cluster/k8s/agents/haku-openclaw-spike/app/deployment.yaml"
 _LITELLM_CONFIG = "ducktape/cluster/k8s/litellm/app/proxy-config.yaml"
@@ -27,8 +27,8 @@ _LITELLM_CONFIG = "ducktape/cluster/k8s/litellm/app/proxy-config.yaml"
 
 def _public_coder_agent_models() -> list[dict]:
     config = json5.loads(get_required_path(_PUBLIC_CODER_AGENT_CONFIG).read_text())
-    models: list[dict] = config["models"]["providers"]["litellm"]["models"]
-    return models
+    providers = config["models"]["providers"]
+    return [model for provider in providers.values() for model in provider["models"]]
 
 
 def _haku_claude_models() -> tuple[dict, dict]:
@@ -49,6 +49,9 @@ def _litellm_models() -> dict[str, dict]:
     return {entry["model_name"]: entry for entry in config["model_list"]}
 
 
+_OPENCLAW_GEMINI_IDS = [exposed_name(Provider.GOOGLE, ApiShape.OAI_CHAT, model) for model in GEMINI_MODELS]
+
+
 def test_litellm_config_has_a_route_per_declared_codex_model() -> None:
     """Every model the agents may name must exist in the committed LiteLLM config."""
     assert set(OPENCLAW_CLIPROXY_MODELS) <= set(CLIPROXY_MODELS)
@@ -57,12 +60,12 @@ def test_litellm_config_has_a_route_per_declared_codex_model() -> None:
         assert litellm_models[catalog_id] == {
             "model_name": catalog_id,
             "litellm_params": {
-                "model": f"anthropic/{model}",
-                "api_base": "http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317",
+                "model": f"openai/{model}",
+                "api_base": "http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317/v1",
                 "api_key": "os.environ/CLIPROXY_CLIENT_KEY",
             },
             "model_info": {
-                "mode": "chat",
+                "mode": "responses",
                 "supports_function_calling": True,
                 "max_input_tokens": CODEX_CONTEXT_WINDOW,
                 "max_output_tokens": CODEX_MAX_TOKENS,
@@ -104,17 +107,15 @@ def test_current_anthropic_roster_matches_haku_openclaw() -> None:
         }
 
 
-# The catalog's Gemini ids, in roster order: GEMINI_MODELS under their #4823 scheme names.
-_OPENCLAW_GEMINI_IDS = [exposed_name(Provider.GOOGLE, ApiShape.OAI_CHAT, model) for model in GEMINI_MODELS]
-
-
 def test_public_coder_agent_models_match_litellm_codex_routes() -> None:
-    """The agent's catalog is pinned to exactly the Codex and Gemini routes it should offer."""
+    """The agent's catalog is pinned to exactly the working routes it should offer."""
     assert [model["id"] for model in _public_coder_agent_models()] == [*OPENCLAW_CODEX_MODELS, *_OPENCLAW_GEMINI_IDS]
 
     config = json5.loads(get_required_path(_PUBLIC_CODER_AGENT_CONFIG).read_text())
-    provider = config["models"]["providers"]["litellm"]
-    assert provider["api"] == "anthropic-messages"
+    providers = config["models"]["providers"]
+    assert providers["litellm"]["api"] == "openai-responses"
+    assert set(providers) == {"litellm"}
+    assert [model["id"] for model in providers["litellm"]["models"]] == [*OPENCLAW_CODEX_MODELS, *_OPENCLAW_GEMINI_IDS]
     assert config["agents"]["defaults"]["model"]["primary"] in {
         f"litellm/{model_id}" for model_id in OPENCLAW_CODEX_MODELS
     }
@@ -139,7 +140,7 @@ def test_codex_context_window_is_the_measured_one() -> None:
 
 
 def test_gemini_models_match_the_published_spec() -> None:
-    """Gemini catalog entries route to a committed LiteLLM model and carry Google's published limits."""
+    """Gemini catalog entries route to committed LiteLLM models and carry published limits."""
     litellm_models = _litellm_models()
     models = {model["id"]: model for model in _public_coder_agent_models()}
 
@@ -150,7 +151,6 @@ def test_gemini_models_match_the_published_spec() -> None:
         assert entry["maxTokens"] == GEMINI_MAX_OUTPUT_TOKENS
         assert entry["input"] == ["text", "image"]
         assert entry["reasoning"] == (model_id not in GEMINI_NON_REASONING_MODELS)
-    # maxTokens is reserved out of the window, so it has to leave room for input.
     assert GEMINI_MAX_OUTPUT_TOKENS < GEMINI_CONTEXT_WINDOW
 
 

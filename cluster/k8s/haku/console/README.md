@@ -332,7 +332,8 @@ enumerate every Console destination; deferred until that set is pinned.
 The first GitHub egress validation passed in [PR #5223](https://github.com/agentydragon/ducktape/pull/5223), merged
 August 30, 2026. The detailed spike runbook is retired.
 
-The remaining cutover work stays deferred: retiring the iron fence (which carries the shared CA out of
-`cluster/k8s/agents/haku-egress-proxy/`), adopting a live session token for every colocated caller,
+The remaining cutover work stays deferred: adopting a live session token for every colocated caller,
 Secret-backed binding for that token (tracked in `haku/sandbox/TODO.md`), and broad-body/h2/gRPC
-handling. These remain #4670 work items.
+handling. Retiring the iron fence—which carries the shared CA out of
+`cluster/k8s/agents/haku-egress-proxy/`—now waits on the adapter and topology reconsideration in
+[#5306](https://github.com/agentydragon/ducktape/issues/5306); the other items remain #4670 work.

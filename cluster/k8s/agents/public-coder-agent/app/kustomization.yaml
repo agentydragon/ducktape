@@ -1,6 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
+  - github-token-secret-store.yaml
   - github-token-eso.yaml
   - gateway-password-eso.yaml
   - public-coder-devbox-ssh.sops.yaml
@@ -23,7 +24,7 @@ configMapGenerator:
     # Deployment for three hours.
     namespace: public-coder-agent
     files:
-      - openclaw.json
+      - openclaw.json5
   - name: public-coder-agent-kubeconfig
     namespace: public-coder-agent
     files:

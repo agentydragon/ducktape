@@ -105,7 +105,6 @@ locals {
   # minor version are excluded. Consumed by the laptop gemini-claude alias and
   # public-coder-agent.
   gemini_client_models = [
-    "google/oai-chat/gemini-3.1-pro-preview",
     "google/oai-chat/gemini-3.7-flash",
     "google/oai-chat/gemini-3.5-flash-lite",
   ]
@@ -168,10 +167,9 @@ resource "kubernetes_secret" "codex_pod" {
 resource "litellm_key" "public_coder_agent" {
   key_alias = "public-coder-agent"
   # Codex subscription models on both wire surfaces, the Gemini chat lineup,
-  # plus embeddings. The subscription lane is doubled because the two shells
-  # speak different protocols: OpenClaw drives the `chatgpt/ant-messages/*`
-  # models, while the Console-launched Codex runner pins wire_api=responses and
-  # needs the `chatgpt/oai-responses/*` Responses-lane models.
+  # plus embeddings. Both subscription wire surfaces remain allowlisted because
+  # this shared key serves Responses-lane OpenClaw/Console consumers and clients
+  # that still use the Anthropic Messages lane.
   # Embeddings ride along because OpenClaw's memory index needs a backend and
   # this agent has no route to api.openai.com -- its egress allowlist is git
   # hosting plus package indexes, and it should not gain one merely to embed.
@@ -188,7 +186,7 @@ resource "kubernetes_secret" "public_coder_agent" {
     name      = "litellm-key-public-coder-agent"
     namespace = "litellm"
     annotations = {
-      description                                                     = "LiteLLM virtual key for public-coder-agent OpenClaw (chatgpt/ant-messages/* models) and least-credential runner-proxy-mediated Haku Console Codex shells (chatgpt/oai-responses/* models); subscription models through CLIProxyAPI, Gemini chat models, plus embeddings"
+      description                                                     = "LiteLLM virtual key for public-coder-agent OpenClaw and least-credential runner-proxy-mediated Haku Console Codex shells (chatgpt/oai-responses/* models); subscription models through CLIProxyAPI, Gemini chat models, plus embeddings"
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
       "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "public-coder-agent,haku-console"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
@@ -343,8 +341,7 @@ data "sops_file" "gemini_clients_key" {
 resource "litellm_team" "gemini_clients" {
   team_alias = "gemini-clients"
   router_settings = {
-    # The primary model (gemini-3.1-pro-preview) is still a preview release and can be
-    # quota-throttled; degrade to the cheap, high-quota flash-lite tier instead of
+    # Keep a fallback to the cheap, high-quota flash-lite tier instead of
     # hard-failing Claude Code.
     fallbacks = [
       {

@@ -29,7 +29,7 @@ spec:
         topology.kubernetes.io/region: proxmox
       containers:
         - name: aw-server
-          image: git.allegedly.works/ducktape-ci/aw-server:devel-20260828071913-20a40e4 # {"$imagepolicy": "flux-system:aw-server"}
+          image: git.allegedly.works/ducktape-ci/aw-server:devel-20260831015008-2fbc425 # {"$imagepolicy": "flux-system:aw-server"}
           command:
             - /usr/local/bin/aw-server
             - --host

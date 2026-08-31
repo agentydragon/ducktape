@@ -71,8 +71,6 @@ secrets that Flux and tofu consume.
 | `secrets/k8s-ca.crt`                                      | K8s cluster CA cert (plaintext)                                            | None                                                                        | L7: kubelet TLS on NixOS workers                                                                                   |
 | `secrets/k8s-worker.yaml`                                 | k8s bootstrap token                                                        | Admin age key                                                               | L7: kubelet TLS bootstrap on NixOS workers                                                                         |
 | `cluster/k8s/**/*.sops.yaml`                              | App credentials, generated service identities, API keys, tokens            | Admin age key + cluster age key                                             | L6: individual services + L5 Flux git auth (`ducktape-automation-github-app`)                                      |
-| `secrets/home/*/activitywatch-syncthing.cert.pem`         | Public certificate for the desktop ActivityWatch Syncthing (being retired) | None                                                                        | Desktop Syncthing only; retained pending the desktop-side Syncthing retirement                                     |
-| `secrets/home/*/activitywatch-syncthing.sops.key`         | Private key for the desktop ActivityWatch Syncthing (being retired)        | Admin age key + owning host user age key                                    | Desktop Syncthing only; retained pending the desktop-side Syncthing retirement                                     |
 
 **If nebula CA is lost**: Generate new CA with `nebula-cert ca`, write cert
 to `secrets/nebula/ca.crt`, encrypt key to `secrets/nebula/ca.sops.key`.
@@ -236,13 +234,16 @@ and writes state to the `forgejo_agentydragon` schema.
 reconciliation. The token and webhook URL use `ignore_changes` and are stable across
 re-applies — only resource recreation changes them.
 
-### ActivityWatch Authentik Access (retired)
+### ActivityWatch access
 
-ActivityWatch was retired because upstream `aw-sync` cannot safely produce a
-canonical central dataset. Its Authentik proxy, OAuth provider, service accounts,
-and reflected Kubernetes Secrets are removed by the `agent-machine-access`
-tofu-controller; they are not SOPS-managed and must not be recreated unless a
-replacement importer design is adopted.
+ActivityWatch is active again with the repo-owned incremental importer. The central
+server has three separately bounded surfaces: the Authentik-protected human UI at
+`https://activitywatch.allegedly.works`, the bearer-gated write route at
+`https://activitywatch-write.allegedly.works`, and the read-only bearer route at
+`https://activitywatch-read.allegedly.works` used by Haku's egress substitution.
+The importer and route contract are the SSOT in
+[`cluster/docs/activitywatch/README.md`](activitywatch/README.md); the SOPS source
+for the importer tokens is next to the ActivityWatch manifests.
 
 ## L7: NixOS Worker Integration
 
@@ -287,20 +288,22 @@ External service credentials and generated bot credentials stored in
 `cluster/k8s/**/*.sops.yaml`. If lost, re-enter from the external service or
 regenerate, then SOPS-encrypt.
 
-| Category        | File(s)                                                                                                                                                                                                           | External Source                                                |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| **AWS**         | `dns-automation/aws-credentials.sops.yaml`                                                                                                                                                                        | AWS IAM console (Route 53 access)                              |
-| **GitHub**      | `external-creds/github-agentydragon-agent.sops.yaml`, `arc/secrets/github-app.sops.yaml`, `flux-system/ducktape-automation-github-app.sops.yaml`, `github-secrets-sync/secrets/github-secrets-sync-pat.sops.yaml` | GitHub settings → PAT / App                                    |
-| **BuildBuddy**  | `buildbuddy-executor/api-key.sops.yaml`, `agents/shared-secrets/buildbuddy-api-key.sops.yaml`                                                                                                                     | BuildBuddy org settings                                        |
-| **OpenAI**      | `props/secrets/openai-api-key.sops.yaml`, `agents/shared-secrets/openclaw-openai-api-key.sops.yaml`                                                                                                               | OpenAI API keys                                                |
-| **Anthropic**   | `agents/shared-secrets/openclaw-anthropic-api-key.sops.yaml`                                                                                                                                                      | Anthropic console                                              |
-| **Google**      | `agents/airlock/google-client-credentials.sops.yaml`                                                                                                                                                              | Google Cloud console                                           |
-| **Financial**   | `agents/coinbase-read/coinbase-api-credentials.sops.yaml`                                                                                                                                                         | Coinbase portal                                                |
-| **Messaging**   | `agents/shared-secrets/openclaw-telegram-bot-token.sops.yaml`, `flux-webhook/ntfy-webhook.sops.yaml`, `matrix/haku-matrix-bot-password.sops.yaml`, `matrix/public-coder-agent-matrix-bot-password.sops.yaml`      | Telegram @BotFather / ntfy.sh / generated Matrix bot passwords |
-| **OAuth**       | `agents/airlock/oura-client-credentials.sops.yaml`                                                                                                                                                                | Oura developer portal                                          |
-| **Agent infra** | `agents/shared-secrets/attic-push-token.sops.yaml`, `agents/claude-sandbox-secrets/claude-web-age-key.sops.yaml`                                                                                                  | Generated / internal                                           |
-| **Nix cache**   | `nix-cache/app/signing-key.sops.yaml`, `nix-cache/app/jwt-token.sops.yaml`                                                                                                                                        | Generated at bootstrap                                         |
-| **CNPG**        | `tofu-state/db/credentials.sops.yaml`                                                                                                                                                                             | Generated (random password)                                    |
+| Category         | File(s)                                                                                                                                                                                                                      | External Source                                                |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| **AWS**          | `cert-manager/config/base/aws-credentials.sops.yaml`, `dns-automation/aws-credentials.sops.yaml`                                                                                                                             | AWS IAM console (DNS-01 / Route 53 access)                     |
+| **GitHub**       | `external-creds/github-agentydragon-agent.sops.yaml`, `flux-system/ducktape-automation-github-app.sops.yaml`, `github-secrets-sync/secrets/github-secrets-sync-pat.sops.yaml`                                                | GitHub settings → PAT / App                                    |
+| **BuildBuddy**   | `x/buildbuddy-executor/api-key.sops.yaml`, `agents/shared-secrets/buildbuddy-api-key.sops.yaml`                                                                                                                              | BuildBuddy org settings                                        |
+| **Anthropic**    | `external-creds/anthropic-haku.sops.yaml`                                                                                                                                                                                    | Anthropic console                                              |
+| **Google AI**    | `external-creds/gemini.sops.yaml`                                                                                                                                                                                            | Google AI console                                              |
+| **Groq**         | `external-creds/groq.sops.yaml`                                                                                                                                                                                              | Groq console                                                   |
+| **Analysis AI**  | `external-creds/analysis-ai.sops.yaml`                                                                                                                                                                                       | Analysis AI                                                    |
+| **Google OAuth** | `agents/airlock/google-client-credentials.sops.yaml`                                                                                                                                                                         | Google Cloud console                                           |
+| **Financial**    | `agents/coinbase-read/coinbase-api-credentials.sops.yaml`                                                                                                                                                                    | Coinbase portal                                                |
+| **Messaging**    | `agents/shared-secrets/openclaw-telegram-bot-token.sops.yaml`, `flux-webhook/ntfy-webhook.sops.yaml`, `matrix/secrets/haku-matrix-bot-password.sops.yaml`, `matrix/secrets/public-coder-agent-matrix-bot-password.sops.yaml` | Telegram @BotFather / ntfy.sh / generated Matrix bot passwords |
+| **OAuth**        | `agents/airlock/oura-client-credentials.sops.yaml`                                                                                                                                                                           | Oura developer portal                                          |
+| **Agent infra**  | `agents/shared-secrets/attic-push-token.sops.yaml`, `agents/claude-sandbox-secrets/claude-web-age-key.sops.yaml`                                                                                                             | Generated / internal                                           |
+| **Nix cache**    | `nix-cache/app/jwt-token.sops.yaml`                                                                                                                                                                                          | Generated at bootstrap                                         |
+| **CNPG**         | `tofu-state/db/credentials.sops.yaml`                                                                                                                                                                                        | Generated (random password)                                    |
 
 ## Recovery Scenarios
 

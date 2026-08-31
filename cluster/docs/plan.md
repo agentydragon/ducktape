@@ -332,8 +332,7 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       blueprint `!Env` secret-rotation incident is resolved: no active provider client
       secret uses that path. Move the remaining application providers to Terraform while
       preserving each backend's supported authentication model. Retain identity-aware
-      proxy providers for backends without native OIDC; migrate Tandoor and Proxmox to
-      native OIDC.
+      proxy providers for backends without native OIDC; migrate Proxmox to native OIDC.
 - [ ] Authentik cache/channels offload: design a Redis-based replacement for the current
       Postgres-backed cache/channels path (`django_postgres_cache`,
       `django_channels_postgres`) without regressing single-node-failure resilience on the
@@ -371,8 +370,6 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
 - [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `props`/`props-registry`).
       `proxmox-proxy` likely belongs on `optiplex` rather than a roaming laptop —
       decide placement before moving it.
-- [ ] Tandoor: verify deployment works end-to-end (DB migration, Authentik
-      proxy auth, recipe import)
 - [ ] Fix Goldilocks VPA over-requesting memory on HIL pods. VPA `updateMode: Auto`
       mutates pod requests on creation but old pods retain stale high values until
       restarted. This caused grocy-sf to fail scheduling (97% memory requested on HIL
@@ -419,8 +416,6 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       reachability, and noVNC/xterm.js WebSockets unless Gateway API is separately proven
       to replace all three safely.
 - [ ] Proxmox SPICE proxy routing via cluster ingress
-- [ ] Tandoor: replace trusted-header proxy auth with its native generic OIDC support,
-      preserving account matching, space access, and a documented break-glass login.
 - [ ] OpenClaw: retain the Authentik identity-aware proxy, but adopt OpenClaw's native
       `trusted-proxy` auth mode with a narrow proxy source and user allowlist.
 - [ ] Google Workspace MCP: decide deliberately whether to adopt its Google-backed OAuth
@@ -430,10 +425,9 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
 - [ ] Ollama: per-user auth (Authentik JWTs or LiteLLM proxy)
 - [ ] LiteLLM: `ollama/` provider drops `tool_calls` — use `openai-chat` variants for now
 - [ ] Verify ntfy.sh notifications
-- [ ] ActivityWatch: Gatus health check (`activitywatch-readonly:5600/api/0/info`)
 - [ ] ActivityWatch: replace reflected persistent agent OAuth credentials with
-      short-lived auto-rotated proxy JWTs, if agents do not need to perform the
-      Authentik exchange themselves.
+      short-lived auto-rotated read tokens. The current egress-substituted bearer
+      remains intentionally static until a rotator handoff is designed.
 
 ## Production Cutover (`agentydragon.com`)
 

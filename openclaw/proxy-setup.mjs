@@ -8,7 +8,7 @@
 // dispatcher. Replacing globalThis.fetch with a closure that captures the proxy agent sidesteps
 // this: grammY and pi-ai both use globalThis.fetch, which we control; neither replaces the
 // function itself.
-import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
+import { EnvHttpProxyAgent, fetch as undiciFetch, setGlobalDispatcher } from "undici";
 
 const hasProxy = ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"].some((k) =>
   process.env[k]?.trim()
@@ -21,6 +21,9 @@ if (hasProxy) {
   setGlobalDispatcher(proxyAgent);
   // Primary: capture proxyAgent in closure so proxy survives Telegram's later
   // setGlobalDispatcher(new Agent({autoSelectFamily:true})) call.
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = (input, init) => originalFetch(input, { ...init, dispatcher: proxyAgent });
+  // Keep the fetch implementation and dispatcher from the same Undici release. Node's
+  // built-in fetch uses its bundled Undici, while this preload imports the external
+  // package; passing the latter's dispatcher to the former fails with
+  // `UND_ERR_INVALID_ARG: invalid onRequestStart method`.
+  globalThis.fetch = (input, init) => undiciFetch(input, { ...init, dispatcher: proxyAgent });
 }

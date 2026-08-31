@@ -9,6 +9,7 @@ import pytest_bazel
 
 from cluster.validation.authentik_blueprints import (
     check_blueprint_completeness,
+    check_outpost_provider_references,
     check_proxy_provider_outpost_assignment,
 )
 from util.bazel.runfiles import get_required_path
@@ -35,6 +36,12 @@ def test_proxy_providers_assigned_to_outpost(k8s_dir: Path) -> None:
     redirect_uri_mismatch — the haku.allegedly.works failure mode.
     """
     errors = check_proxy_provider_outpost_assignment(k8s_dir)
+    assert not errors, "\n".join(errors)
+
+
+def test_outpost_provider_references_resolve(k8s_dir: Path) -> None:
+    """Embedded-outpost refs are valid and do not target retired providers."""
+    errors = check_outpost_provider_references(k8s_dir)
     assert not errors, "\n".join(errors)
 
 

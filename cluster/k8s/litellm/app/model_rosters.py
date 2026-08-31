@@ -68,8 +68,9 @@ def exposed_name(provider: Provider, shape: ApiShape, model: str) -> str:
     return f"{provider}/{shape}/{model}"
 
 
-# ChatGPT/Codex-subscription models behind CLIProxyAPI, each exposed on both wire
-# surfaces (Provider.CHATGPT with ApiShape.ANT_MESSAGES and ApiShape.OAI_RESPONSES).
+# ChatGPT/Codex-subscription models behind CLIProxyAPI, exposed on both wire surfaces
+# for clients that need them. OpenClaw uses the Responses surface below because it is
+# the working native passthrough to CLIProxyAPI.
 CLIPROXY_MODELS: list[str] = [
     "gpt-5.4",
     "gpt-5.5",
@@ -125,7 +126,7 @@ ANTHROPIC_MODELS: list[str] = ["claude-opus-5", "claude-sonnet-5", "claude-fable
 # provider does not query the proxy's authenticated /v1/models endpoint.
 OPENCLAW_CLIPROXY_MODELS: list[str] = ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]
 OPENCLAW_CODEX_MODELS: list[str] = [
-    exposed_name(Provider.CHATGPT, ApiShape.ANT_MESSAGES, model) for model in OPENCLAW_CLIPROXY_MODELS
+    exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, model) for model in OPENCLAW_CLIPROXY_MODELS
 ]
 
 # Google AI (Gemini). Key from the GEMINI_API_KEY env var (litellm-gemini-key
@@ -140,10 +141,13 @@ OPENCLAW_CODEX_MODELS: list[str] = [
 # advanced through 3.5 -> 3.6 -> 3.7 (shipped 2026-08-13) on an independent,
 # faster cadence; 3.5-flash-lite is the current lite tier. Remaining specialty
 # SKUs (image, tts, live/bidi, customtools, imagen, veo, "Cyber") are
-# intentionally excluded — add on demand. Mirrored into the gemini-clients
+# intentionally excluded — add on demand. `gemini-3.1-pro-preview` was tested
+# on 2026-08-30 and did not work with the current credential: Google returned
+# RESOURCE_EXHAUSTED with a quota of 0. It may simply have no quota, but keep it
+# out of the roster until that is verified. Mirrored into the gemini-clients
 # Terraform key and public-coder-agent's OpenClaw catalog; both are pinned
 # against this list.
-GEMINI_MODELS: list[str] = ["gemini-3.1-pro-preview", "gemini-3.7-flash", "gemini-3.5-flash-lite"]
+GEMINI_MODELS: list[str] = ["gemini-3.7-flash", "gemini-3.5-flash-lite"]
 
 # Gemini embeddings, same key as the chat lineup. Added for OpenClaw memory search,
 # whose index needs an embedding backend and had none — see
@@ -162,8 +166,8 @@ GEMINI_MODELS: list[str] = ["gemini-3.1-pro-preview", "gemini-3.7-flash", "gemin
 GEMINI_EMBEDDING_MODELS: list[str] = ["gemini-embedding-2", "gemini-embedding-001"]
 
 # Published input/output token limits shared across the current Gemini chat
-# generation: ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview,
-# .../gemini-3.7-flash, and .../gemini-3.5-flash-lite (2026-08-23). Unlike
+# generation: ai.google.dev/gemini-api/docs/models/gemini-3.7-flash and
+# .../gemini-3.5-flash-lite (2026-08-23). Unlike
 # Codex's CODEX_CONTEXT_WINDOW above, there is no live serving-path probe for
 # a third-party hosted API, so this is Google's published figure rather than
 # a measured one. Used by public-coder-agent's OpenClaw catalog.

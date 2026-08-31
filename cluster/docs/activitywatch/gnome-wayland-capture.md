@@ -80,8 +80,9 @@ interface that an external watcher polls.
   `127.0.0.1:5600`. Also handles AFK via `org.gnome.Mutter.IdleMonitor` (no extension
   needed for AFK). Default `--poll-time-window 1s`, `--host 127.0.0.1 --port 5600`.
 - Writes bucket `aw-watcher-window_<hostname>`, type `currentwindow`, data `{app, title}`
-  — **the same shape as the stock watcher** (contract below), so the existing aw-sync →
-  Syncthing → cluster pipeline populates the synced bucket with zero cluster-side changes.
+  — **the same shape as the stock watcher** (contract below). This was originally
+  compared with the aw-sync/Syncthing pipeline; the current importer reads the local
+  aw-server directly.
 
 **Maintainer endorsements**: ErikBjare (`aw-watcher-window#46`, 2024-11-26) and
 johan-bjareholt (forum #3947, 2025-05-24) both redirect GNOME-Wayland users to
@@ -115,40 +116,10 @@ local throwaway-bucket round-trip; `awatcher` writes the same shape:
   `{"timestamp":"<iso8601 utc>","data":{"app":"<wm_class>","title":"<title>"}}`
 - `app`/`title` fall back to `"unknown"` when unresolved.
 
-## Options
+## Current state
 
-1. **`awatcher` + `focused-window-d-bus` extension (recommended).** Both already in
-   nixpkgs. Wire into `nix/home/services/activitywatch.nix`:
-   - Add `pkgs.awatcher` + `pkgs.gnomeExtensions.focused-window-d-bus` to the host (rugged)
-     packages.
-   - Enable the extension (`gnome-extensions enable`, or `dconf`
-     `org.gnome.shell enabled-extensions`); needs a one-time logout/login (Wayland can't
-     restart the shell live).
-   - Run `awatcher` as a systemd-user service (it is a standalone binary, not an aw-qt
-     module) pointing at `127.0.0.1:5600`.
-   - Drop `aw-watcher-window` from `aw-qt.toml` `autostart_modules` (stops the per-second
-     journal error spam and bucket-ownership collision).
-   - AFK: `awatcher` produces AFK itself; decide whether to also drop the stock
-     `aw-watcher-afk` (verify which bucket id `awatcher` uses for AFK so the cluster-side
-     `aw-watcher-afk_rugged` sync mapping is preserved) or keep the stock AFK watcher and
-     suppress `awatcher`'s AFK (no CLI flag for that — so the clean cut is to let
-     `awatcher` own both).
-2. **Custom GNOME Shell extension, direct heartbeat.** ~100 LOC GJS reading
-   `global.display.focus_window` and POSTing to aw-server via `imports.gi.Soup`. Only
-   worth it if `awatcher` proves unsuitable — it duplicates what `awatcher` + the
-   extension already do, maintained.
-3. **Log into GNOME-on-Xorg instead of Wayland.** Zero code — stock `aw-watcher-window`
-   works. Cost: lose Wayland (fractional scaling, gestures) and run a legacy/deprecated
-   X11 session on Lunar Lake (see [[project_rugged_gnome_iris_crash]]). Bad trade.
-4. **Do nothing; keep AFK + Chrome-tab only.** Current state. Lose the non-browser-app
-   focus signal.
-
-## Next step
-
-Proceed with Option 1. Open implementation details to nail in the plan: the AFK
-bucket-id question (does `awatcher` write `aw-watcher-afk_rugged` or a different id?),
-the systemd-user service unit for `awatcher`, and the extension-enable mechanism via
-home-manager. Capture lives under `nix/home/services/activitywatch.nix`; cluster
-ingestion is documented in `cluster/docs/activitywatch/README.md`. Other GNOME-Wayland hosts
-(`wyrm2` runs sway → `aw-watcher-window-wayland` would also work there; `iguana`, `atlas`
-if GNOME-Wayland) likely have the same empty-window-bucket issue.
+The recommended `awatcher` plus `focused-window-d-bus` implementation is deployed from
+`nix/home/services/activitywatch.nix`; it owns window and AFK capture and emits the same
+bucket shapes as the stock watchers. Cluster ingestion is documented in
+`cluster/docs/activitywatch/README.md`. The remaining device-specific question is only
+whether another host needs a compositor-specific watcher configuration.

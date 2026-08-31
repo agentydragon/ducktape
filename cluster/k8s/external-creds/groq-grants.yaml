@@ -1,0 +1,26 @@
+# Source-controlled grant for the canonical Groq credential. The consumer
+# ServiceAccount and SecretStore live with LiteLLM.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: llm-groq-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["llm-groq"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: llm-groq-litellm-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: llm-groq-reader
+subjects:
+  - kind: ServiceAccount
+    name: llm-groq-reader
+    namespace: litellm

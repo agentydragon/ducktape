@@ -31,6 +31,7 @@ resources:
   # bearers, and the github-bot credential the Console substitutes for the egress credential registry.
   - egress-proxy-service.yaml
   - haku-egress-proxy-identity-eso.yaml
+  - github-token-secret-store.yaml
   - haku-egress-github-token-eso.yaml
 
 configMapGenerator:

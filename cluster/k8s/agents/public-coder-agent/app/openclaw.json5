@@ -1,0 +1,266 @@
+{
+  // This file is the GitOps source of truth. The app init container copies it
+  // into the state PVC; OPENCLAW_CONFIG_PATH points OpenClaw back at that copy.
+  agents: {
+    defaults: {
+      userTimezone: "America/Los_Angeles",
+      // The working path is Codex subscription -> CLIProxyAPI -> LiteLLM's
+      // native Responses endpoint. Keep this on the measured 5.6 roster.
+      model: {
+        primary: "litellm/chatgpt/oai-responses/gpt-5.6-luna",
+      },
+      // Measured against the live route: all three 5.6 models fail just above
+      // 372k total context. The 50k floor is OpenClaw's tier for that window.
+      // OpenClaw 2026.8 retires this setting; remove it when the image moves.
+      compaction: {
+        reserveTokensFloor: 50000,
+      },
+      sandbox: {
+        mode: "off",
+      },
+      maxConcurrent: 16,
+      subagents: {
+        maxConcurrent: 16,
+        maxChildrenPerAgent: 16,
+      },
+      skills: [],
+      verboseDefault: "full",
+      // Memory uses LiteLLM's OpenAI-compatible embeddings route; keep it out
+      // of the public egress proxy because LiteLLM is an in-cluster Service.
+      memorySearch: {
+        enabled: true,
+        sources: ["memory"],
+        provider: "openai-compatible",
+        model: "google/oai-embeddings/gemini-embedding-2",
+        remote: {
+          baseUrl: "http://litellm.litellm.svc.cluster.local:4000/v1",
+          apiKey: "${OPENCLAW_LITELLM_API_KEY}",
+          nonBatchConcurrency: 2,
+        },
+      },
+    },
+    list: [
+      {
+        id: "coder",
+        name: "Coder",
+      },
+    ],
+  },
+  commands: {
+    config: false,
+    mcp: false,
+    restart: false,
+  },
+  channels: {
+    matrix: {
+      // MATRIX_PASSWORD is intentionally absent: OpenClaw reads the stable
+      // placeholder from the environment, while iron-proxy swaps the real
+      // password only in Matrix's login body. The resulting access token is
+      // cached in the state PVC.
+      enabled: true,
+      homeserver: "https://matrix.allegedly.works",
+      // The Matrix plugin's guarded fetch reads this field explicitly; generic
+      // HTTP(S)_PROXY is not enough. Keep it equal to Deployment HTTPS_PROXY:
+      // the same proxy also performs Matrix login-password substitution.
+      proxy: "http://public-coder-agent-proxy.public-coder-agent.svc.cluster.local:8080",
+      userId: "@public-coder-agent:allegedly.works",
+      dm: {
+        policy: "allowlist",
+        allowFrom: ["@agentydragon:allegedly.works"],
+        // Keep each DM room as an independent conversation.
+        sessionScope: "per-room",
+      },
+      // Group rooms are intentionally not accepted.
+      groupPolicy: "disabled",
+      // Matrix DMs arrive as invites, so classify them only after joining.
+      autoJoin: "always",
+      // Preserve Matrix's threaded reply presentation.
+      threadReplies: "always",
+    },
+  },
+  cron: {
+    enabled: true,
+    triggers: {
+      enabled: true,
+    },
+  },
+  gateway: {
+    // Local backend and subagent calls have no Authentik headers, so they use
+    // the generated gateway password supplied by the Deployment. Keep it out
+    // of this file.
+    auth: {
+      mode: "trusted-proxy",
+      // Browser requests arrive with Authentik identity headers.
+      trustedProxy: {
+        allowLoopback: true,
+        allowUsers: ["agentydragon"],
+        requiredHeaders: ["x-authentik-email", "x-forwarded-host", "x-forwarded-proto"],
+        userHeader: "x-authentik-username",
+      },
+    },
+    // Authentik reaches the pod over the cluster network, hence "lan" rather
+    // than loopback. The ingress NetworkPolicy, not this bind address, is the
+    // trust boundary. Valid values are loopback, lan, tailnet, auto, custom.
+    bind: "lan",
+    controlUi: {
+      allowedOrigins: ["https://public-coder-agent.allegedly.works"],
+      dangerouslyDisableDeviceAuth: true,
+    },
+    mode: "local",
+    trustedProxies: ["10.0.0.0/8"],
+  },
+  hooks: {
+    internal: {
+      entries: {
+        "session-memory": {
+          enabled: true,
+          llmSlug: false,
+          messages: 15,
+        },
+      },
+    },
+  },
+  models: {
+    providers: {
+      // One provider intentionally covers both working model families. Codex
+      // uses openai-responses and chatgpt/oai-responses/* through CLIProxyAPI;
+      // Gemini uses the same LiteLLM Responses surface. No Anthropic provider.
+      litellm: {
+        agentRuntime: {
+          id: "openclaw",
+        },
+        api: "openai-responses",
+        apiKey: "${OPENCLAW_LITELLM_API_KEY}",
+        baseUrl: "http://litellm.litellm.svc.cluster.local:4000/v1",
+        // The roster deliberately excludes gemini-3.1-pro-preview: Google
+        // returned RESOURCE_EXHAUSTED with quota 0 on 2026-08-30.
+        models: [
+          // contextWindow/maxTokens are measured serving limits, not vendor
+          // marketing values; keep them synchronized with test_openclaw_models.py.
+          {
+            contextWindow: 372000,
+            id: "chatgpt/oai-responses/gpt-5.6-luna",
+            input: ["text", "image"],
+            maxTokens: 128000,
+            name: "GPT-5.6 Luna (Codex subscription via LiteLLM)",
+            reasoning: true,
+          },
+          {
+            contextWindow: 372000,
+            id: "chatgpt/oai-responses/gpt-5.6-terra",
+            input: ["text", "image"],
+            maxTokens: 128000,
+            name: "GPT-5.6 Terra (Codex subscription via LiteLLM)",
+            reasoning: true,
+          },
+          {
+            contextWindow: 372000,
+            id: "chatgpt/oai-responses/gpt-5.6-sol",
+            input: ["text", "image"],
+            maxTokens: 128000,
+            name: "GPT-5.6 Sol (Codex subscription via LiteLLM)",
+            reasoning: true,
+          },
+          {
+            contextWindow: 1048576,
+            id: "google/oai-chat/gemini-3.7-flash",
+            input: ["text", "image"],
+            maxTokens: 65536,
+            name: "Gemini 3.7 Flash (Google AI via LiteLLM)",
+            reasoning: true,
+          },
+          {
+            contextWindow: 1048576,
+            id: "google/oai-chat/gemini-3.5-flash-lite",
+            input: ["text", "image"],
+            maxTokens: 65536,
+            name: "Gemini 3.5 Flash-Lite (Google AI via LiteLLM)",
+            reasoning: false,
+          },
+        ],
+        request: {
+          allowPrivateNetwork: true,
+        },
+      },
+    },
+  },
+  mcp: {
+    servers: {
+      "haku-console": {
+        url: "https://haku.allegedly.works/mcp",
+        transport: "streamable-http",
+        // Haku fans out to many upstream MCP servers and each call is independent,
+        // so let the agent issue concurrent tool calls against it.
+        supportsParallelToolCalls: true,
+        // Haku's tools/list is ~194 tools/~733 KB and exceeds OpenClaw's 1.5s
+        // catalog default. Haku can wait up to 60s for terminal results, so
+        // keep this timeout above that to avoid client-side MCP timeouts.
+        requestTimeoutMs: 70000,
+        headers: {
+          // Haku's token is an inert placeholder here; runtime interpolation
+          // and iron-proxy substitution provide the controller-owned secret.
+          Authorization: "Bearer ${HAKU_CONSOLE_TOKEN}",
+        },
+      },
+    },
+  },
+  plugins: {
+    entries: {
+      // Matrix is bundled into the image as a trusted plugin; loading a copy
+      // through plugins.load.paths breaks its state-storage trust requirement.
+      matrix: {
+        enabled: true,
+      },
+      brave: {
+        enabled: true,
+        config: {
+          webSearch: {
+            // Brave is bundled and image-pinned; the pod sees only a
+            // placeholder, which iron-proxy replaces at Brave's API endpoint.
+            apiKey: { source: "env", id: "BRAVE_API_KEY" },
+            mode: "web",
+          },
+        },
+      },
+      // Disabled on this headless agent: companion-device plugins need a paired
+      // phone/desktop, phone-control needs Android, and Ollama is not used.
+      canvas: {
+        enabled: false,
+      },
+      "device-pair": {
+        enabled: false,
+      },
+      "file-transfer": {
+        enabled: false,
+      },
+      "talk-voice": {
+        enabled: false,
+      },
+      "phone-control": {
+        enabled: false,
+      },
+      ollama: {
+        enabled: false,
+      },
+    },
+  },
+  tools: {
+    web: {
+      search: {
+        enabled: true,
+        provider: "brave",
+        maxResults: 5,
+        timeoutSeconds: 30,
+        cacheTtlMinutes: 15,
+      },
+    },
+  },
+  session: {
+    // OpenClaw permits only daily/idle resets. A 100-year idle timeout makes
+    // automatic rollover unreachable while preserving /new and /reset.
+    reset: {
+      mode: "idle",
+      idleMinutes: 52560000,
+    },
+  },
+}

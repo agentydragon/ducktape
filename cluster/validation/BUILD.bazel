@@ -125,7 +125,9 @@ py_library(
     srcs = ["checks.py"],
     deps = [
         ":cluster",
+        ":k8s",
         ":kustomize",
+        "@pypi//networkx",
     ],
 )
 
@@ -168,7 +170,9 @@ py_test(
     deps = [
         ":checks",
         ":cluster",
+        ":flux",
         ":k8s",
+        ":kustomize",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

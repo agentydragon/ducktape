@@ -150,5 +150,9 @@ the decision endpoint token.
   argv, or persisted session records.
 - Any authority, parsing, DNS, pinning, or lifetime failure fails closed.
 
-The current follow-up work is tracked in <TODO.md>. The deployed configuration uses
-`HAKU_DECISION_ENDPOINT_TOKEN` for the shared proxy-to-Console token.
+The current implementation follow-up work is tracked in <TODO.md>. Whether
+iron-proxy can replace the adapter without weakening this contract is tracked
+in [#5306](https://github.com/agentydragon/ducktape/issues/5306); that
+reconsideration does not change the current guarantees. The deployed
+configuration uses `HAKU_DECISION_ENDPOINT_TOKEN` for the shared
+proxy-to-Console token.
