@@ -211,13 +211,6 @@ endpoints:
     conditions:
       - "[STATUS] == 200"
 
-  - name: kubectl-sandbox-mcp
-    group: services
-    url: http://kubectl-sandbox-mcp.kubectl-sandbox-mcp.svc.cluster.local:8080/healthz
-    interval: 60s
-    conditions:
-      - "[STATUS] == 200"
-
   - name: kubectl-passthrough-mcp
     group: services
     url: http://kubectl-passthrough-mcp.kubectl-passthrough-mcp.svc.cluster.local:8080/healthz

@@ -1,16 +1,34 @@
 # ============================================================================
 # kubectl-sandbox-client-credentials — machine-to-machine OIDC for kubeconfig
 # ============================================================================
-# Non-interactive sibling of kubectl-sandbox-mcp: confidential OAuth2 client
-# using `client_credentials` grant, so a CronJob can mint JWTs without a
-# browser. Reuses the same kube-apiserver trusted issuer/audience for every
-# machine identity; the provider's machine-only scope mapping is an explicit
-# principal-to-groups allowlist.
+# Non-interactive Authentik client_credentials provider for direct kubeconfig /
+# kube-api-proxy access and kubectl-machine-mcp. The provider's machine-only
+# scope mapping is an explicit principal-to-groups allowlist.
 #
-# Consumer: cluster/k8s/agents/authentik-jwt-rotation/ CronJob. It runs
-# biweekly, exchanges client_id + client_secret for a JWT, commits the JWT
-# SOPS-encrypted to secrets/claude-web-k8s-jwt.yaml. `write_kubeconfig.py`
-# on Claude Code sessions decrypts and embeds it.
+# Consumer: cluster/k8s/agents/authentik-jwt-rotation/ CronJob. It mints JWTs
+# for Claude Code Web, Haku, the agent-box Codex VM, and other explicitly
+# configured machine principals.
+
+## Machine-client scope mapping for kubectl-sandbox-client-credentials.
+## This provider is trusted by kube-apiserver, so keep the effective groups as
+## an explicit allowlist of known machine principals. Unknown users get no
+## Kubernetes RBAC group instead of falling back to sandbox.
+resource "authentik_property_mapping_provider_scope" "kubectl_machine_groups" {
+  name       = "kubectl-client-credentials-machine-groups"
+  scope_name = "groups"
+  expression = <<-EXPR
+    username = request.user.username
+    if username == "ak-kubectl-sandbox-client-credentials-client_credentials":
+        return {"groups": ["kubectl-sandbox-users"]}
+    if username == "haku-k8s":
+        return {"groups": ["haku"]}
+    # agent-box VM users map 1:1 to a same-named k8s group (group == username).
+    # Add a user by extending this set.
+    if username == "agent-box-codex":
+        return {"groups": [username]}
+    return {"groups": []}
+  EXPR
+}
 
 resource "authentik_provider_oauth2" "kubectl_sandbox_client_credentials" {
   name        = "kubectl-sandbox-client-credentials"
@@ -61,8 +79,7 @@ resource "authentik_policy_binding" "kubectl_sandbox_cc_auto_user" {
 
 # K8s Secret holding the client_id + client_secret. Lives in agents-infra
 # (where the authentik-jwt-rotation CronJob runs) and is the only place this
-# credential exists outside Authentik — the CC web sandbox only ever holds
-# the already-minted JWT (in secrets/claude-web-k8s-jwt.yaml SOPS).
+# credential exists outside Authentik; consumers receive only minted JWTs.
 resource "kubernetes_secret" "kubectl_sandbox_client_credentials" {
   metadata {
     name      = "kubectl-sandbox-client-credentials"

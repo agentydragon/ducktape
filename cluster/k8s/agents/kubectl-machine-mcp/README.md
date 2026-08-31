@@ -27,8 +27,8 @@ credentials (its ServiceAccount has no RBAC bindings).
   here; the caller's group claim in the token (e.g. `haku` →
   `oidc-ksbx-groups:haku`) drives kube-apiserver RBAC, not this server.
 - **Passthrough, no token exchange**: `cluster_auth_mode = "passthrough"` —
-  the caller's JWT is forwarded as-is to kube-apiserver. There's no STS/token
-  exchange step, unlike `kubectl-sandbox-mcp`'s scoped-token flow.
+  the caller's JWT is forwarded as-is to kube-apiserver. This is the machine
+  client-credentials path; there is no interactive scoped-MCP endpoint.
 - **Public ingress**: `app/httproute.yaml` is **not** behind the Authentik
   forward-auth outpost — the MCP server validates bearer tokens itself via
   `kubernetes-mcp-server`'s built-in OAuth2/OIDC support, since its callers

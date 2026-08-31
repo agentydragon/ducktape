@@ -1,7 +1,7 @@
 # MCP + OAuth + Authentik: What We Learned
 
-Notes from building an in-cluster MCP server (`kubectl-sandbox-mcp`) that
-authenticates MCP clients via Authentik and scopes any caller —
+Historical notes from building the now-retired in-cluster MCP server
+(`kubectl-sandbox-mcp`) that authenticated MCP clients via Authentik and scoped any caller —
 including cluster admins — down to sandbox-level Kubernetes permissions.
 
 ## Goal
@@ -220,14 +220,15 @@ that prefixed group.
 
 ## Current state
 
-Two kubectl MCP servers:
+The scoped `kubectl-sandbox-mcp` endpoint and its dedicated Authentik provider
+have been retired. The remaining Kubernetes MCP endpoints are:
 
-| Name                      | Transport | Auth                                       | Permissions                                          |
-| ------------------------- | --------- | ------------------------------------------ | ---------------------------------------------------- |
-| `kubectl-passthrough-mcp` | HTTP      | OAuth passthrough (public client, PKCE)    | caller's own OIDC group permissions                  |
-| `kubectl-sandbox-mcp`     | HTTP      | OAuth passthrough + scope mapping override | always `kubectl-sandbox-users`, regardless of caller |
+| Name                      | Transport | Auth                                    | Permissions                         |
+| ------------------------- | --------- | --------------------------------------- | ----------------------------------- |
+| `kubectl-passthrough-mcp` | HTTP      | OAuth passthrough (public client, PKCE) | caller's own OIDC group permissions |
+| `kubectl-machine-mcp`     | HTTP      | OAuth passthrough (machine credentials) | caller's own OIDC group permissions |
 
-### `.mcp.json` for the scoped server
+### Historical `.mcp.json` for the retired scoped server
 
 ```json
 {
@@ -268,7 +269,6 @@ provider's `allowed_redirect_uris`. In the Custom Connectors UI, paste:
 
 ## Followups
 
-- [ ] Add Gatus endpoint checks for MCP server health
 - [ ] Watch for Authentik DCR release (2026.8.0?); once shipped, we can
       switch to DCR and remove the pre-configured client setup (though
       the current setup is arguably fine forever)

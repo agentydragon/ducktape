@@ -41,12 +41,6 @@ resource "authentik_provider_oauth2" "kubectl_passthrough_mcp" {
   #   across callers since this is a public/PKCE client and redirect_uri is validated
   #   per request.
   #
-  # TODO: Consider adding https://claude.ai/api/mcp/auth_callback for Claude.ai
-  # Custom Connectors. Intentionally omitted for now — using the passthrough
-  # server from Claude.ai would give the caller full (admin) cluster access
-  # through the web UI, which may be more exposure than we want. The
-  # kubectl-sandbox-mcp provider includes it because its scope mapping keeps
-  # the caller sandbox-only regardless.
   allowed_redirect_uris = [
     {
       matching_mode = "regex"

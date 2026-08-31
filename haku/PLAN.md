@@ -141,8 +141,3 @@ What the ask still does not have:
   human-editable state, but no queries or concurrent-writer safety. Fine at personal
   volumes with effectively serialized writers. If volume/concurrency ever outgrows it,
   add a read index (the repo stays source of truth) rather than moving authority to a DB.
-- **Tighten the shared groups scope mapping** (deferred hardening): the Haku JWT reuses
-  the `kubectl-sandbox-client-credentials` issuer; replace the `else`-defaults-to-sandbox
-  group mapping with an explicit SA→group allowlist so a typo'd/renamed SA fails closed.
-  Interim net: the `expected_group: haku` check in the `authentik-jwt-rotation`
-  `rotations.yaml` aborts rotation rather than minting a mis-scoped JWT.

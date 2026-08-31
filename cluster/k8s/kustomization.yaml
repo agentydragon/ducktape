@@ -76,8 +76,6 @@ resources:
   - grocy/vallejo/mcp-servicemonitor/flux-kustomization.yaml
   - agents/kubectl-passthrough-mcp/namespace/flux-kustomization.yaml
   - agents/kubectl-passthrough-mcp/app/flux-kustomization.yaml
-  - agents/kubectl-sandbox-mcp/namespace/flux-kustomization.yaml
-  - agents/kubectl-sandbox-mcp/app/flux-kustomization.yaml
   - agents/kubectl-machine-mcp/namespace/flux-kustomization.yaml
   - agents/kubectl-machine-mcp/app/flux-kustomization.yaml
   - agents/manifold-mcp/namespace/flux-kustomization.yaml
