@@ -14,7 +14,3 @@ spec:
       scheme: http
       interval: 1m
       scrapeTimeout: 15s
-      relabelings:
-        - sourceLabels:
-            - __meta_kubernetes_service_label_github_account
-          targetLabel: github_account

@@ -5,6 +5,7 @@ resources:
   - airlock-image.yaml
   - aw-server-image.yaml
   - grocy-mcp-oidc-server-image.yaml
+  - github-graphql-rate-exporter-image.yaml
   - loki-read-proxy-image.yaml
   - manifold-mcp-server-image.yaml
   - mcp-oauth-facade-image.yaml
