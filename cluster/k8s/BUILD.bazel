@@ -164,6 +164,7 @@ filegroup(
         "nix-cache/namespace/namespace.yaml",
         "props/namespace/namespace.yaml",
         "vm-images-publisher/namespace.yaml",
+        "x/activitywatch/activitywatch-read-token.sops.yaml",
         "x/haku/dispatch/namespace/namespace.yaml",
     ],
     visibility = ["//cluster/validation:__pkg__"],

@@ -288,6 +288,13 @@ The fenced-workload-facing listener is `:8888` (`egress-proxy-service.yaml`,
   via the claude-sandbox ClusterSecretStore (now admitting `haku-console`). Optional: an unset value is
   skipped with a warning (#4970), so a not-yet-synced Secret degrades the `github-bot` handle rather
   than crash-looping — the endpoint still serves reachability verdicts.
+- **`activitywatch-read-token`** (reflector) — the read-only ActivityWatch bearer for Haku's
+  `activitywatch-read-token` registry handle. The source Secret remains owned by the `activitywatch`
+  namespace and is reflected into `haku-console` (and the legacy `haku-egress-proxy` namespace). The
+  runner receives only `AW_READ_TOKEN=activitywatch-read-token-placeholder`; Console substitutes the
+  real value at `activitywatch-read.allegedly.works` only for GETs and POSTs under `/api/0/query/`.
+  The optional server reference lets a reflected-secret lag degrade this handle to upstream 401
+  without taking the Console down; the route's own bearer proxy remains read-only.
 - **Shared interception CA** — the sidecar reuses `haku-egress-proxy-ca` (reflected into this
   namespace); an init container assembles it into `confdir/mitmproxy-ca.pem` so fenced sandboxes trust
   its leaves. A missing reflected Secret fails the init container and the pod never starts.

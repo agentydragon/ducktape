@@ -1,7 +1,8 @@
 # Read-only bearer for the central ActivityWatch read route. The bearer-proxy
 # sidecar (5603) checks it; the emberstack reflector mirrors this Secret into
-# haku-egress-proxy so the iron proxy can substitute it for the Haku sandbox's
-# placeholder (cluster/k8s/agents/haku-egress-proxy/claude-iron.yaml). Distinct from
+# haku-egress-proxy and haku-console so the egress fences can substitute it for the
+# Haku sandbox's placeholder (cluster/k8s/agents/haku-egress-proxy/claude-iron.yaml
+# and cluster/k8s/haku/console/config.yaml). Distinct from
 # the write token so read and write are separate credentials -- and unlike the write
 # token, no desktop reads it, so it is encrypted only to Flux (cluster-secrets) +
 # admin via the generic cluster/k8s rule. Rotate by re-minting and re-encrypting.
@@ -11,11 +12,11 @@ metadata:
     name: activitywatch-read-token
     namespace: activitywatch
     annotations:
-        description: Read-only ActivityWatch bearer; checked by the bearer-proxy read route (5603) and mirrored to haku-egress-proxy for the iron proxy's placeholder substitution.
+        description: Read-only ActivityWatch bearer; checked by the bearer-proxy read route (5603) and mirrored to haku-console plus haku-egress-proxy for egress placeholder substitution.
         reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-egress-proxy
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-egress-proxy,haku-console
         reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-egress-proxy
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-egress-proxy,haku-console
 type: Opaque
 stringData:
     token: ENC[AES256_GCM,data:wHhM7SxWvYQMx8dPO2h/GJI8dpOCIWud+w2fjt64LozhBHkI6FIuers5uNXAeepRKXiNomDKEgg6cn5Jj4zOwg==,iv:adC9d/TlvlBb90s09I2G0y2jW1cyTjQk8WSIIJeN6qI=,tag:ljigWeUTtV2TAm510HJZiw==,type:str]

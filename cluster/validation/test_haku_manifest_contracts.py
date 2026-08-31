@@ -51,6 +51,37 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     assert implementation["auth_token_placeholder"] == credential["placeholder"]
     assert implementation["model"]
     assert implementation["haiku_model"]
+
+    # ActivityWatch follows the same placeholder-substitution path, but its credential is
+    # deliberately read-only: the runner gets only the inert env value, the Console registry
+    # binds the reflected Secret to Haku's Agent, and POST is pinned to the query endpoint.
+    runner_environment = sandbox_env(template)
+    assert runner_environment["AW_READ_TOKEN"] == {
+        "name": "AW_READ_TOKEN",
+        "value": "activitywatch-read-token-placeholder",
+    }
+    activity_credential = one(c for c in egress["credentials"] if c["handle"] == "activitywatch-read-token")
+    assert activity_credential["placeholder"] == runner_environment["AW_READ_TOKEN"]["value"]
+    assert activity_credential["value_env_var"] == "HAKU_EGRESS_CREDENTIAL_ACTIVITYWATCH_READ"
+    assert activity_credential["origins"] == [
+        {"scheme": "https", "host": "activitywatch-read.allegedly.works", "port": 443}
+    ]
+    activity_grants = [grant for grant in egress["grants"] if grant["id"].startswith("haku-activitywatch-")]
+    assert {tuple(grant["coverage"]["methods"]) for grant in activity_grants} == {("GET",), ("POST",)}
+    query_grant = one(grant for grant in activity_grants if grant["id"] == "haku-activitywatch-query")
+    assert query_grant["coverage"]["path_regex"] == "/api/0/query/.*"
+    assert all(grant["credential_handle"] == activity_credential["handle"] for grant in activity_grants)
+
+    read_token = yaml.safe_load((k8s_dir / "x/activitywatch/activitywatch-read-token.sops.yaml").read_text())
+    annotations = read_token["metadata"]["annotations"]
+    assert annotations["reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"].split(",") == [
+        "haku-egress-proxy",
+        "haku-console",
+    ]
+    assert annotations["reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"].split(",") == [
+        "haku-egress-proxy",
+        "haku-console",
+    ]
     assert "mcp_static_agent_id" not in runtime
     assert "oauth_placeholder" not in runtime
     pod_template = template["spec"]["podTemplate"]

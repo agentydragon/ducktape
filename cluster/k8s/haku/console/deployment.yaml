@@ -44,7 +44,7 @@ metadata:
     # do NOT use reloader's blanket auto mode: the projected static-image metadata
     # changes on every frontend release and must not restart API/MCP/background work.
     configmap.reloader.stakater.com/reload: haku-console-config
-    secret.reloader.stakater.com/reload: haku-routine-launch-token,haku-console-oidc,haku-console-web-push-vapid,tana-agentydragon-gmail-com-account-pat,ha-mcp-bearer,haku-console-db-app,haku-console-agent-api,haku-console-public-coder-agent,haku-console-node-daemon-wyrm2,haku-console-node-daemon-rugged,haku-console-google-client-credentials,haku-console-google-calendar-client-credentials,haku-console-github-mcp-client-credentials,haku-egress-proxy-identity,haku-egress-github-token,litellm-key-public-coder-agent,litellm-key-haku-console-claude,haku-forgejo-git
+    secret.reloader.stakater.com/reload: haku-routine-launch-token,haku-console-oidc,haku-console-web-push-vapid,tana-agentydragon-gmail-com-account-pat,ha-mcp-bearer,haku-console-db-app,haku-console-agent-api,haku-console-public-coder-agent,haku-console-node-daemon-wyrm2,haku-console-node-daemon-rugged,haku-console-google-client-credentials,haku-console-google-calendar-client-credentials,haku-console-github-mcp-client-credentials,haku-egress-proxy-identity,haku-egress-github-token,litellm-key-public-coder-agent,litellm-key-haku-console-claude,haku-forgejo-git,activitywatch-read-token
 spec:
   replicas: 2
   strategy:
@@ -461,6 +461,18 @@ spec:
                 secretKeyRef:
                   name: haku-forgejo-git
                   key: password
+                  optional: true
+            #   - the read-only ActivityWatch bearer for Haku's time-use queries. The Console
+            #     substitutes it for the sandbox's inert AW_READ_TOKEN placeholder only on the
+            #     read route and its GET/query-POST grants; the runner never receives this value.
+            #     The source Secret is reflected from the activitywatch namespace. Optional keeps
+            #     the Console serving while that reflected Secret is temporarily absent; the
+            #     handle then degrades to an upstream 401 until the reflector catches up.
+            - name: HAKU_EGRESS_CREDENTIAL_ACTIVITYWATCH_READ
+              valueFrom:
+                secretKeyRef:
+                  name: activitywatch-read-token
+                  key: token
                   optional: true
           resources:
             requests:
