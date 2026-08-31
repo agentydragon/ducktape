@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cilium-agent
+  labels:
+    app.kubernetes.io/name: cilium-agent
+    app.kubernetes.io/part-of: monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - kube-system
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cilium-agent
+  endpoints:
+    - port: metrics
+      path: /metrics
+      scheme: http
+      interval: 30s
+      scrapeTimeout: 10s

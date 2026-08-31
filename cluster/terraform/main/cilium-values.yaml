@@ -58,6 +58,13 @@ envoy:
         - NET_BIND_SERVICE
 
 # Observability (optional, not networking-critical)
+# Expose cilium-agent metrics through the chart-managed headless Service. The
+# ServiceMonitor is declared separately under cluster/k8s/monitoring/cilium so
+# the bootstrap-time Helm install does not depend on monitoring CRDs.
+prometheus:
+  enabled: true
+  metricsService: true
+
 hubble:
   enabled: true
   relay:

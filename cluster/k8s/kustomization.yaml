@@ -143,6 +143,7 @@ resources:
   - monitoring/stack-secrets/flux-kustomization.yaml
   - monitoring/rules/flux-kustomization.yaml
   - monitoring/etcd/flux-kustomization.yaml
+  - monitoring/cilium/flux-kustomization.yaml
   - monitoring/loki/flux-kustomization.yaml
   - vector-talos-logs/flux-kustomization.yaml # Talos node logs → Loki (Talos has no journald)
   - monitoring/alloy/flux-kustomization.yaml

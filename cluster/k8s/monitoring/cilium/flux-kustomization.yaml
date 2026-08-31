@@ -1,0 +1,24 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cilium-monitoring
+  namespace: ducktape-flux
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 2m
+  path: ./cluster/k8s/monitoring/cilium
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  dependsOn:
+    - name: monitoring-stack
+      namespace: ducktape-flux
+  wait: true
+  healthChecks:
+    - apiVersion: monitoring.coreos.com/v1
+      kind: ServiceMonitor
+      name: cilium-agent
+      namespace: monitoring
