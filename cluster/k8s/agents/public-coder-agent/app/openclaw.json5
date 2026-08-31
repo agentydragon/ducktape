@@ -53,6 +53,10 @@
   },
   channels: {
     matrix: {
+      // MATRIX_PASSWORD is intentionally absent: OpenClaw reads the stable
+      // placeholder from the environment, while iron-proxy swaps the real
+      // password only in Matrix's login body. The resulting access token is
+      // cached in the state PVC.
       enabled: true,
       homeserver: "https://matrix.allegedly.works",
       // The Matrix plugin's guarded fetch reads this field explicitly; generic
@@ -60,21 +64,17 @@
       // the same proxy also performs Matrix login-password substitution.
       proxy: "http://public-coder-agent-proxy.public-coder-agent.svc.cluster.local:8080",
       userId: "@public-coder-agent:allegedly.works",
-      // MATRIX_PASSWORD is intentionally absent: OpenClaw reads the stable
-      // placeholder from the environment, while iron-proxy swaps the real
-      // password only in Matrix's login body. The resulting access token is
-      // cached in the state PVC.
       dm: {
-        // DMs are allowlisted; group rooms are disabled below.
         policy: "allowlist",
         allowFrom: ["@agentydragon:allegedly.works"],
-        // A room is the stable conversation boundary; threaded replies keep
-        // concurrent Matrix DMs independent.
+        // Keep each DM room as an independent conversation.
         sessionScope: "per-room",
       },
+      // Group rooms are intentionally not accepted.
       groupPolicy: "disabled",
       // Matrix DMs arrive as invites, so classify them only after joining.
       autoJoin: "always",
+      // Preserve Matrix's threaded reply presentation.
       threadReplies: "always",
     },
   },
@@ -85,14 +85,12 @@
     },
   },
   gateway: {
-    // Authentik reaches the pod over the cluster network, hence "lan" rather
-    // than loopback. The ingress NetworkPolicy, not this bind address, is the
-    // trust boundary. Valid bind values are loopback, lan, tailnet, auto, custom.
+    // Local backend and subagent calls have no Authentik headers, so they use
+    // the generated gateway password supplied by the Deployment. Keep it out
+    // of this file.
     auth: {
       mode: "trusted-proxy",
-      // Browser requests arrive with Authentik identity headers. Backend and
-      // subagent calls use the local gateway password from the Deployment;
-      // never put that generated password in this file.
+      // Browser requests arrive with Authentik identity headers.
       trustedProxy: {
         allowLoopback: true,
         allowUsers: ["agentydragon"],
@@ -100,6 +98,9 @@
         userHeader: "x-authentik-username",
       },
     },
+    // Authentik reaches the pod over the cluster network, hence "lan" rather
+    // than loopback. The ingress NetworkPolicy, not this bind address, is the
+    // trust boundary. Valid values are loopback, lan, tailnet, auto, custom.
     bind: "lan",
     controlUi: {
       allowedOrigins: ["https://public-coder-agent.allegedly.works"],
@@ -131,6 +132,8 @@
         api: "openai-responses",
         apiKey: "${OPENCLAW_LITELLM_API_KEY}",
         baseUrl: "http://litellm.litellm.svc.cluster.local:4000/v1",
+        // The roster deliberately excludes gemini-3.1-pro-preview: Google
+        // returned RESOURCE_EXHAUSTED with quota 0 on 2026-08-30.
         models: [
           // contextWindow/maxTokens are measured serving limits, not vendor
           // marketing values; keep them synchronized with test_openclaw_models.py.
@@ -166,8 +169,6 @@
             name: "Gemini 3.7 Flash (Google AI via LiteLLM)",
             reasoning: true,
           },
-          // gemini-3.1-pro-preview was removed from the shared roster on
-          // 2026-08-30: Google returned RESOURCE_EXHAUSTED with quota 0.
           {
             contextWindow: 1048576,
             id: "google/oai-chat/gemini-3.5-flash-lite",
@@ -185,23 +186,19 @@
   },
   mcp: {
     servers: {
-      // Haku fans out tools/list to many upstreams (~194 tools, ~733 KB), so
-      // its catalog needs more than OpenClaw's 1.5s default. The token is an
-      // inert placeholder here; iron-proxy substitutes the controller-owned
-      // credential only for this host.
       "haku-console": {
         url: "https://haku.allegedly.works/mcp",
         transport: "streamable-http",
         // Haku fans out to many upstream MCP servers and each call is independent,
         // so let the agent issue concurrent tool calls against it.
         supportsParallelToolCalls: true,
-        // Haku can synchronously wait up to 60s for a terminal result. Keep this
-        // client timeout above that so Haku returns a non-terminal stub instead
-        // of OpenClaw surfacing an MCP protocol-level timeout.
+        // Haku's tools/list is ~194 tools/~733 KB and exceeds OpenClaw's 1.5s
+        // catalog default. Haku can wait up to 60s for terminal results, so
+        // keep this timeout above that to avoid client-side MCP timeouts.
         requestTimeoutMs: 70000,
         headers: {
-          // Keep interpolation syntax; mcp doctor may flag this as a literal,
-          // but the runtime expands it and iron-proxy audits the substitution.
+          // Haku's token is an inert placeholder here; runtime interpolation
+          // and iron-proxy substitution provide the controller-owned secret.
           Authorization: "Bearer ${HAKU_CONSOLE_TOKEN}",
         },
       },
@@ -209,9 +206,8 @@
   },
   plugins: {
     entries: {
-      // Matrix and Brave are bundled into the image as trusted plugins. Do not
-      // re-add them through plugins.load.paths: Matrix state storage rejects
-      // config-loaded copies, and Brave must remain image-pinned.
+      // Matrix is bundled into the image as a trusted plugin; loading a copy
+      // through plugins.load.paths breaks its state-storage trust requirement.
       matrix: {
         enabled: true,
       },
@@ -219,8 +215,8 @@
         enabled: true,
         config: {
           webSearch: {
-            // The pod sees only a placeholder; iron-proxy replaces it only at
-            // Brave's API endpoint.
+            // Brave is bundled and image-pinned; the pod sees only a
+            // placeholder, which iron-proxy replaces at Brave's API endpoint.
             apiKey: { source: "env", id: "BRAVE_API_KEY" },
             mode: "web",
           },
