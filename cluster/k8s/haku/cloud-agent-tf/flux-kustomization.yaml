@@ -29,6 +29,8 @@ spec:
   dependsOn:
     - name: external-creds
       namespace: ducktape-flux
+    - name: external-secrets-config
+      namespace: ducktape-flux
     - name: tofu-controller
       namespace: ducktape-flux
     - name: tofu-state-db

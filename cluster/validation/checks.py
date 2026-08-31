@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections import defaultdict
 from pathlib import Path
 
+import networkx as nx
+
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.k8s import (
     CiliumPolicyResource,
@@ -12,8 +14,11 @@ from cluster.validation.k8s import (
     HelmReleaseResource,
     K8sResource,
     PodTemplateWorkloadResource,
+    RoleBindingResource,
+    RoleResource,
     SandboxTemplateResource,
     SecretResource,
+    SecretStoreResource,
 )
 from cluster.validation.kustomize import KustomizeBuildResult
 
@@ -61,6 +66,76 @@ def check_duplicate_external_secrets(build_results: list[KustomizeBuildResult]) 
         errors.append("There should be exactly ONE external-secrets installation.")
     elif len(deployments) == 0:
         errors.append("No external-secrets HelmRelease found. At least one is required.")
+
+    return errors
+
+
+def check_external_credential_ownership(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
+    """Keep credential approval at the source and consumer machinery with consumers."""
+    supplier = "external-creds"
+    supplier_resources = cluster.flux_kust_resources(k8s_dir).get(supplier, [])
+    errors: list[str] = []
+
+    allowed_supplier_kinds = {"Secret", "Role", "RoleBinding"}
+    for resource in supplier_resources:
+        if resource.kind not in allowed_supplier_kinds:
+            errors.append(
+                f"{supplier} renders consumer-owned {resource.kind} "
+                f"'{resource.namespace}/{resource.name}'; keep only Secrets and source-side RBAC in the supplier"
+            )
+        if isinstance(resource, RoleResource):
+            expected = [([""], ["secrets"], ["get"])]
+            actual = [(rule.api_groups, rule.resources, rule.verbs) for rule in resource.rules]
+            if actual != expected or len(resource.rules[0].resource_names) != 1:
+                errors.append(
+                    f"{supplier} Role '{resource.namespace}/{resource.name}' must contain one exact-name, "
+                    "get-only Secret rule"
+                )
+        if isinstance(resource, RoleBindingResource) and (
+            resource.role_ref.api_group != "rbac.authorization.k8s.io"
+            or resource.role_ref.kind != "Role"
+            or len(resource.subjects) != 1
+            or resource.subjects[0].kind != "ServiceAccount"
+            or not resource.subjects[0].name
+            or not resource.subjects[0].namespace
+        ):
+            errors.append(
+                f"{supplier} RoleBinding '{resource.namespace}/{resource.name}' must approve exactly one "
+                "explicitly namespaced ServiceAccount for a source Role"
+            )
+
+    supplier_spec = cluster.flux_kustomizations.get(supplier)
+    if supplier_spec is not None:
+        dependencies = {dependency.name for dependency in supplier_spec.depends_on}
+        if dependencies != {"claude-rbac"}:
+            errors.append(
+                f"{supplier} must depend only on claude-rbac, not ESO or consumer namespaces; got "
+                f"{sorted(dependencies)}"
+            )
+
+    for kustomization, resources in cluster.flux_kust_resources(k8s_dir).items():
+        for resource in resources:
+            if not isinstance(resource, SecretStoreResource):
+                continue
+            provider = resource.spec.provider.kubernetes
+            if provider is None or provider.remote_namespace != "ducktape-flux":
+                continue
+            service_account = provider.auth.service_account if provider.auth is not None else None
+            if service_account is None or not service_account.name:
+                errors.append(
+                    f"{kustomization} SecretStore '{resource.namespace}/{resource.name}' reads external-creds "
+                    "without an explicit local ServiceAccount"
+                )
+            elif service_account.namespace is not None:
+                errors.append(
+                    f"{kustomization} SecretStore '{resource.namespace}/{resource.name}' must omit the "
+                    "ServiceAccount namespace so a namespaced store cannot borrow another namespace's identity"
+                )
+            if supplier not in cluster.graph or not nx.has_path(cluster.graph, kustomization, supplier):
+                errors.append(
+                    f"{kustomization} SecretStore '{resource.namespace}/{resource.name}' reads external-creds "
+                    f"but does not depend on {supplier}"
+                )
 
     return errors
 

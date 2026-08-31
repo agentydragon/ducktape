@@ -20,9 +20,4 @@ spec:
     namespace: flux-system
   dependsOn:
     - name: claude-rbac
-    - name: litellm-namespace
-    - name: public-coder-agent-namespace
-    - name: haku-egress-proxy-namespace
-    - name: haku-console-namespace
-    - name: external-secrets-operator
   timeout: 5m

@@ -204,6 +204,78 @@ class SecretRef(BaseModel):
     name: str = ""
 
 
+class RoleRule(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+
+    api_groups: list[str] = Field(default_factory=list)
+    resources: list[str] = Field(default_factory=list)
+    resource_names: list[str] = Field(default_factory=list)
+    verbs: list[str] = Field(default_factory=list)
+
+
+class RoleResource(K8sResource):
+    rules: list[RoleRule] = Field(default_factory=list)
+
+
+class RoleBindingSubject(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    kind: str = ""
+    name: str = ""
+    namespace: str = ""
+
+
+class RoleBindingRoleRef(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+
+    api_group: str = ""
+    kind: str = ""
+    name: str = ""
+
+
+class RoleBindingResource(K8sResource):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+
+    role_ref: RoleBindingRoleRef = Field(default_factory=RoleBindingRoleRef)
+    subjects: list[RoleBindingSubject] = Field(default_factory=list)
+
+
+class SecretStoreServiceAccountAuth(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    name: str = ""
+    namespace: str | None = None
+
+
+class SecretStoreKubernetesAuth(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+
+    service_account: SecretStoreServiceAccountAuth | None = None
+
+
+class SecretStoreKubernetesProvider(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+
+    auth: SecretStoreKubernetesAuth | None = None
+    remote_namespace: str = ""
+
+
+class SecretStoreProvider(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    kubernetes: SecretStoreKubernetesProvider | None = None
+
+
+class SecretStoreSpec(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    provider: SecretStoreProvider = Field(default_factory=SecretStoreProvider)
+
+
+class SecretStoreResource(K8sResource):
+    spec: SecretStoreSpec = Field(default_factory=SecretStoreSpec)
+
+
 class FluxSourceRef(BaseModel):
     model_config = ConfigDict(extra="ignore")
     kind: str = "GitRepository"
@@ -309,7 +381,10 @@ _KIND_MODELS: dict[str, type[K8sResource]] = {
     "ImageRepository": ImageRepositoryResource,
     "ImagePolicy": ImagePolicyResource,
     "Receiver": ReceiverResource,
+    "Role": RoleResource,
+    "RoleBinding": RoleBindingResource,
     "Secret": SecretResource,
+    "SecretStore": SecretStoreResource,
     "CiliumNetworkPolicy": CiliumPolicyResource,
     "CiliumClusterwideNetworkPolicy": CiliumPolicyResource,
     "CronJob": CronJobResource,

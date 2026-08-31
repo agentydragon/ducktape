@@ -23,6 +23,7 @@ import yaml
 from cluster.validation.checks import (
     check_cilium_policy_rules_nonempty,
     check_duplicate_external_secrets,
+    check_external_credential_ownership,
     check_forgejo_image_namespace_reflection,
     check_goldilocks_explicit_decision,
     check_goldilocks_namespace_labels,
@@ -110,6 +111,12 @@ def test_no_crd_layering_violations(cluster: ParsedCluster, k8s_dir: Path) -> No
 def test_single_external_secrets_installation(cluster: ParsedCluster) -> None:
     """Exactly one external-secrets HelmRelease across the cluster."""
     errors = check_duplicate_external_secrets(cluster.build_results)
+    assert not errors, "\n".join(errors)
+
+
+def test_external_credential_ownership(cluster: ParsedCluster, k8s_dir: Path) -> None:
+    """Suppliers own grants; consumers own ESO identities and stores."""
+    errors = check_external_credential_ownership(cluster, k8s_dir)
     assert not errors, "\n".join(errors)
 
 

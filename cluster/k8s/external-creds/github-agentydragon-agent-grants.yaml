@@ -1,0 +1,55 @@
+# Source-controlled grants for the agentydragon-agent GitHub PAT. Each binding
+# explicitly approves one consumer ServiceAccount; consumer-local
+# ServiceAccounts and SecretStores live with those consumers.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: github-agentydragon-agent-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["github-agentydragon-agent"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-agentydragon-agent-public-coder-agent-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-agentydragon-agent-reader
+subjects:
+  - kind: ServiceAccount
+    name: github-agentydragon-agent-reader
+    namespace: public-coder-agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-agentydragon-agent-haku-egress-proxy-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-agentydragon-agent-reader
+subjects:
+  - kind: ServiceAccount
+    name: github-agentydragon-agent-reader
+    namespace: haku-egress-proxy
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-agentydragon-agent-haku-console-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-agentydragon-agent-reader
+subjects:
+  - kind: ServiceAccount
+    name: github-agentydragon-agent-reader
+    namespace: haku-console

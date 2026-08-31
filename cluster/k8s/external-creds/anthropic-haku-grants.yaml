@@ -1,0 +1,41 @@
+# Source-controlled grants for the canonical Anthropic Haku credential. Each
+# binding explicitly approves one consumer ServiceAccount; consumer-local
+# ServiceAccounts and SecretStores live with those consumers.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: llm-anthropic-haku-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["llm-anthropic-haku"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: llm-anthropic-haku-litellm-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: llm-anthropic-haku-reader
+subjects:
+  - kind: ServiceAccount
+    name: llm-anthropic-haku-reader
+    namespace: litellm
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: llm-anthropic-haku-flux-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: llm-anthropic-haku-reader
+subjects:
+  - kind: ServiceAccount
+    name: llm-anthropic-haku-reader
+    namespace: flux-system
