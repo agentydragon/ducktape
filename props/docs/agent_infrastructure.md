@@ -25,7 +25,7 @@ props/
 ## Deployed Runtime
 
 The Kubernetes deployment uses `executor.type = "kubernetes"` in
-`cluster/k8s/props/app/config.toml`. The backend owns orchestration, but agents
+`props/deploy/app/config.toml`. The backend owns orchestration, but agents
 use split-out data-plane services:
 
 - `props-llm-proxy` handles `/v1/responses`, `/v1/chat/completions`, and

@@ -257,6 +257,15 @@ creation_rules:
           - *admin
           - *cluster-secrets
 
+  # Props deployment secrets live with the app package rather than under
+  # cluster/k8s, but are still decrypted only by Flux and the admin identity.
+  - path_regex: props/deploy/secrets/.*\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+
   # --- CI secrets (admin + CI key) ---
   - path_regex: secrets/ci/.*\.sops\.yaml$
     key_groups:

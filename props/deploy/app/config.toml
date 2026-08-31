@@ -3,7 +3,7 @@ auto_sync_specimens = true
 backend_url = "http://props:8000"
 # Agents reach the LLM proxy (split out of the backend) here, not the dashboard,
 # so the API server can roll without disrupting in-flight agents. See
-# cluster/k8s/props/app/llm-proxy-deployment.yaml.
+# props/deploy/app/llm-proxy-deployment.yaml.
 llm_proxy_url = "http://props-llm-proxy:8000"
 # Default evaluator: the grader supervisor auto-grades critic runs with this
 # model. GPT-5.6 Terra via LiteLLM keeps grading off the home GPU host.

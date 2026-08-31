@@ -16,5 +16,6 @@ spec:
   sparseCheckout:
     - cluster/k8s/
     - cluster/charts/browsertrix/
+    - props/deploy/
     - tf/gitops/
   url: https://github.com/agentydragon/ducktape.git

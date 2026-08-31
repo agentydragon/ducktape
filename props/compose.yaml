@@ -81,7 +81,7 @@ services:
   # LLM proxy data plane — agents reach the LLM through here (auth + budget +
   # cost + upstream routing), split out of the backend so the API can roll
   # without disrupting in-flight agents. config.toml's llm_proxy_url points
-  # agents at this service. Mirrors cluster/k8s/props/app/llm-proxy-deployment.yaml.
+  # agents at this service. Mirrors props/deploy/app/llm-proxy-deployment.yaml.
   llm-proxy:
     image: props-llm-proxy:latest
     container_name: props-llm-proxy

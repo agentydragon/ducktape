@@ -192,6 +192,10 @@ resources:
   - forgejo/app/flux-kustomization.yaml
   - forgejo/servicemonitor/flux-kustomization.yaml
   - forgejo/secrets/flux-kustomization.yaml
+
+  # --- props (parked; flip cluster/k8s/props.yaml suspend to revive) ---
+  - props.yaml
+
   - forgejo-images/flux-kustomization.yaml
   - forgejo/budget-ledger/flux-kustomization.yaml
   - forgejo/augur-evidence/flux-kustomization.yaml

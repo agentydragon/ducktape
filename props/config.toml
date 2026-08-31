@@ -7,7 +7,7 @@ backend_url = "http://props-backend:8000"
 # Agents reach the LLM proxy (split out of the backend) here, not the dashboard,
 # so the API server can roll without disrupting in-flight agents. Agents get
 # OPENAI_BASE_URL = <llm_proxy_url>/v1. Mirrors the `llm-proxy` service in
-# compose.yaml (and cluster/k8s/props/app/config.toml).
+# compose.yaml (and props/deploy/app/config.toml).
 llm_proxy_url = "http://props-llm-proxy:8000"
 
 # Model for snapshot graders. If unset, grader supervisor is disabled.
