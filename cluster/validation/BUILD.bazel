@@ -158,6 +158,7 @@ py_library(
     deps = [
         "//util/bazel:runfiles",
         "@pypi//pytest",
+        "@pypi//pyyaml",
     ],
 )
 

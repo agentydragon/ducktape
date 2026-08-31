@@ -12,11 +12,6 @@ from more_itertools import one
 
 
 @pytest.fixture
-def clickhouse_installation(k8s_dir: Path) -> dict[str, Any]:
-    return cast(dict[str, Any], yaml.safe_load((k8s_dir / "clickhouse/cluster/clickhouse.yaml").read_text()))
-
-
-@pytest.fixture
 def source_secret(k8s_dir: Path) -> dict[str, Any]:
     return cast(
         dict[str, Any], yaml.safe_load((k8s_dir / "clickhouse/cluster/public-coder-credentials.sops.yaml").read_text())
@@ -56,6 +51,7 @@ def proxy_egress(k8s_dir: Path) -> dict[str, Any]:
 
 def test_public_coder_clickhouse_reader_contract(
     clickhouse_installation: dict[str, Any],
+    clickhouse_host: str,
     source_secret: dict[str, Any],
     app: dict[str, Any],
     proxy: dict[str, Any],
@@ -80,14 +76,6 @@ def test_public_coder_clickhouse_reader_contract(
         "GRANT SELECT ON aiquota.raw_http_observations",
     ]
 
-    clickhouse_host = ".".join(
-        [
-            clickhouse_installation["metadata"]["name"],
-            clickhouse_installation["metadata"]["namespace"],
-            "svc",
-            "cluster.local",
-        ]
-    )
     annotations = source_secret["metadata"]["annotations"]
     assert source_secret["metadata"]["name"] == clickhouse_credentials_ref["name"]
     assert source_secret["metadata"]["namespace"] == clickhouse_installation["metadata"]["namespace"]

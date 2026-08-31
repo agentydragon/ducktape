@@ -12,11 +12,6 @@ from more_itertools import one
 
 
 @pytest.fixture
-def clickhouse_installation(k8s_dir: Path) -> dict[str, Any]:
-    return cast(dict[str, Any], yaml.safe_load((k8s_dir / "clickhouse/cluster/clickhouse.yaml").read_text()))
-
-
-@pytest.fixture
 def schema_kustomization(k8s_dir: Path) -> dict[str, Any]:
     return cast(dict[str, Any], yaml.safe_load((k8s_dir / "clickhouse/schema/kustomization.yaml").read_text()))
 
@@ -33,6 +28,7 @@ def schema_flux(k8s_dir: Path) -> dict[str, Any]:
 
 def test_clickhouse_distributed_ddl_contract(
     clickhouse_installation: dict[str, Any],
+    clickhouse_host: str,
     schema_kustomization: dict[str, Any],
     schema_job: dict[str, Any],
     schema_flux: dict[str, Any],
@@ -62,14 +58,6 @@ def test_clickhouse_distributed_ddl_contract(
     schema_pod_spec = schema_job["spec"]["template"]["spec"]
     schema_container = one(schema_pod_spec["containers"])
     schema_args = schema_container["args"]
-    clickhouse_host = ".".join(
-        [
-            clickhouse_installation["metadata"]["name"],
-            clickhouse_installation["metadata"]["namespace"],
-            "svc",
-            "cluster.local",
-        ]
-    )
     assert f"--host={clickhouse_host}" in schema_args
     assert "--port=9000" in schema_args
 
