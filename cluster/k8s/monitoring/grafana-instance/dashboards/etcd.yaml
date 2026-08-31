@@ -7,6 +7,9 @@ spec:
   instanceSelector:
     matchLabels:
       dashboards: grafana
+  datasources:
+    - inputName: DS_PROMETHEUS
+      datasourceName: Mimir
   grafanaCom:
     id: 3070
     revision: 3

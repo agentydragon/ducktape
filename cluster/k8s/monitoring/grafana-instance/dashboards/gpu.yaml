@@ -7,6 +7,9 @@ spec:
   instanceSelector:
     matchLabels:
       dashboards: grafana
+  datasources:
+    - inputName: DS_PROMETHEUS
+      datasourceName: Mimir
   # NVIDIA DCGM Exporter dashboard (power/temp/clocks, PCIe, XID). Backed by the
   # DCGM metrics from cluster/k8s/dcgm-exporter/ via Mimir.
   grafanaCom:

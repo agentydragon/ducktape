@@ -7,6 +7,9 @@ spec:
   instanceSelector:
     matchLabels:
       dashboards: grafana
+  datasources:
+    - inputName: datasource
+      datasourceName: Mimir
   grafanaCom:
     id: 20842
     revision: 3
