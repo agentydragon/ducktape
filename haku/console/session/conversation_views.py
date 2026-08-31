@@ -20,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from haku.console.conversation.item_reads import Item
-from haku.console.conversation.reads import ChannelAttachment, SetupOutputRecord
+from haku.console.conversation.reads import ChannelAttachment, QueuedPrompt, SetupOutputRecord
 from haku.console.database_schema import Session, SessionFrame
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.sandbox_claims import SandboxProvisioningView
@@ -147,6 +147,9 @@ class ConversationView(BaseModel):
         description="The conversation's item rows, in opening order — each in its current "
         "state, an item still being written included."
     )
+    queued_prompts: list[QueuedPrompt] = Field(
+        description="Prompts accepted for the conversation but not yet delivered to a runner, oldest first."
+    )
     session: SessionView = Field(
         description="The current session: the one holding the conversation, or the last one to have held it."
     )
@@ -224,6 +227,9 @@ class ConversationUpdate(BaseModel):
     items: list[Item] = Field(
         description="The rows that moved since the follower's position, whole and in their current state — "
         "merge them by `opened_seq` over the ones already held, replacing."
+    )
+    queued_prompts: list[QueuedPrompt] = Field(
+        description="The conversation's currently undelivered prompts, oldest first — replaces what is held."
     )
 
 

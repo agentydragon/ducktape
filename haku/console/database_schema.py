@@ -27,7 +27,7 @@ from sqlalchemy import (
     text as sql_text,
     type_coerce,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy.dialects.postgresql import JSON, JSONB, UUID as PGUUID
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -1694,7 +1694,7 @@ class SessionFrame(Base):
     direction: Mapped[FrameDirection] = mapped_column(TextBackedStrEnumColumn(FrameDirection), nullable=False)
     # The outer frame discriminator, never the native payload's `type` or JSON-RPC method.
     kind: Mapped[SessionFrameKind] = mapped_column(TextBackedStrEnumColumn(SessionFrameKind), nullable=False)
-    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     # The **runner's** number for this frame, off the runner protocol envelope (`HarnessFrame.seq`), where
     # the runner gave one. Dense and monotonic over everything one runner process sent, which
     # `frame_seq` above is deliberately not — so this is the number a reconnect is computed from:

@@ -498,6 +498,14 @@
   padding: 0.45rem 0.85rem;
 }
 
+.haku-conversation-queued-prompt {
+  align-self: flex-end;
+  max-width: min(80%, 40rem);
+  border: 1px dashed color-mix(in srgb, currentColor 35%, transparent);
+  border-radius: 14px 14px 4px 14px;
+  padding: 0.45rem 0.85rem;
+}
+
 /* The agent's prose sits flush left with no chrome of its own — the transcript is mostly this,
  * so it gets the page rather than a card on it. */
 .haku-conversation-assistant {
@@ -1225,4 +1233,65 @@
     left: calc(100% + 4px);
     width: calc(100vw - 64px);
   }
+}
+
+.haku-aiquota-rail-button {
+  position: relative;
+  overflow: visible;
+}
+
+.haku-aiquota-rail-glyph {
+  display: block;
+}
+
+.haku-aiquota-rail-meter {
+  position: absolute;
+  right: 4px;
+  bottom: 3px;
+  left: 4px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--haku-border);
+}
+
+.haku-aiquota-rail-meter > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: currentColor;
+  transition: width 180ms ease;
+}
+
+.haku-aiquota-rail-meter-red {
+  color: var(--mantine-color-red-6);
+}
+
+.haku-aiquota-rail-meter-yellow {
+  color: var(--mantine-color-yellow-6);
+}
+
+.haku-aiquota-rail-meter-teal {
+  color: var(--mantine-color-teal-6);
+}
+
+.haku-aiquota-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 1rem;
+}
+
+.haku-aiquota-provider {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--haku-border);
+}
+
+.haku-aiquota-window {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
 }

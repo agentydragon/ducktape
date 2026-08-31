@@ -38,6 +38,7 @@ export type AgentView = components["schemas"]["AgentView"];
 // The one conversation item-read vocabulary, shared with the MCP conversation reads: one item per
 // row, keyed by the position it opened at, its lifecycle carried as `status`.
 export type Item = components["schemas"]["Item"];
+export type QueuedPrompt = components["schemas"]["QueuedPrompt"];
 export type ToolCallItem = components["schemas"]["ToolCallItem"];
 export type ConversationSummary = components["schemas"]["ConversationSummary"];
 export type ConversationPage = components["schemas"]["ConversationPage"];
@@ -64,6 +65,7 @@ export type EnrollmentDecisionRequest =
 export type EnrollmentDecisionResponse =
   | components["schemas"]["EnrollmentContinues"]
   | components["schemas"]["EnrollmentWasDenied"];
+export type AiquotaView = components["schemas"]["AllQuotasView"];
 
 // FastAPI error responses are `{detail: string}`; surface that real reason, falling back when the
 // body isn't shaped that way. Shared with the per-integration client files.
@@ -87,6 +89,12 @@ export function displayableError(e: unknown): string | null {
 export async function fetchConfig(): Promise<ConfigResponse> {
   const { data, error } = await api.GET("/api/config");
   if (error || !data) throw new Error(errorDetail(error, "Failed to load config"));
+  return data;
+}
+
+export async function fetchAiquotaQuotas(): Promise<AiquotaView> {
+  const { data, error } = await api.GET("/api/aiquota/quotas");
+  if (error || !data) throw new Error(errorDetail(error, "Failed to load aiquota"));
   return data;
 }
 

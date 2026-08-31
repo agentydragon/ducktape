@@ -99,12 +99,6 @@ let
   opencodeConfig = {
     "$schema" = "https://opencode.ai/config.json";
     mcp = {
-      # TODO: Auth not yet working - MCP servers require OAuth but auth flow not triggered
-      # Plan: Add oauth config with client credentials or verify .well-known/opencode endpoint
-      "cluster-kubectl-sandbox-diagnostics" = {
-        type = "remote";
-        url = "https://kubectl-sandbox-mcp.allegedly.works/mcp";
-      };
       "grocy-sf" = {
         type = "remote";
         url = "https://grocy-mcp-sf.allegedly.works/mcp";

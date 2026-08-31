@@ -144,11 +144,6 @@ that carries `groups: ["kubectl-sandbox-users"]`; kube-apiserver's
 subjects on. JWTs are minted biweekly by the `authentik-jwt-rotation`
 CronJob in the `agents-infra` namespace — see <../authentik-jwt-rotation/>.
 
-OIDC users who log into the `kubectl-sandbox-mcp` Authentik application
-(interactive MCP) receive the same group claim via the same
-`kubectl_sandbox_fixed_groups` scope mapping, so the RBAC below applies
-unchanged.
-
 Machine JWTs from the `kubectl-sandbox-client-credentials` provider use a
 separate explicit Authentik allowlist for effective groups. The normal provider
 client-credentials principal maps to `kubectl-sandbox-users`; the `haku-k8s`

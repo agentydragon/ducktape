@@ -120,6 +120,7 @@ py_library(
     srcs = ["reads.py"],
     deps = [
         ":conversation_event",
+        ":prompt_origin",
         "//haku/console/harnesses:kind",
         "//haku/console/session:session_frames",
         "//haku/console/session:status",

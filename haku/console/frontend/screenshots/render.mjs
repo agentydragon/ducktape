@@ -39,6 +39,7 @@ const SCENES = [
     closeApprovals: true,
     frame: true,
   },
+  { name: "aiquota", viewport: { width: 1200, height: 800 } },
   { name: "console-drawer", viewport: { width: 1200, height: 800 }, frame: true },
   { name: "console-mobile", viewport: { width: 390, height: 760 }, frame: true },
   {

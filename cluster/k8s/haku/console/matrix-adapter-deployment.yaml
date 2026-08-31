@@ -62,7 +62,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: adapter
-          image: git.allegedly.works/ducktape-ci/haku-matrix-adapter:devel-20260830230209-b724557 # {"$imagepolicy": "flux-system:haku-matrix-adapter"}
+          image: git.allegedly.works/ducktape-ci/haku-matrix-adapter:devel-20260831024820-25bc91a # {"$imagepolicy": "flux-system:haku-matrix-adapter"}
           imagePullPolicy: Always
           env:
             - name: HAKU_MATRIX_ADAPTER_CONFIG_FILE

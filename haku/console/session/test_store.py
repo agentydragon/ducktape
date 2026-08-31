@@ -529,6 +529,34 @@ async def test_method_only_native_frames_are_visible_and_filterable(session_stor
     assert [frame.payload for frame in _harness(exact)] == [inner]
 
 
+async def test_frame_payload_with_nul_survives_and_session_continues(
+    session_store, migrated_sessions, operator_id
+) -> None:
+    session, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
+    payload = {"type": "commandExecution", "output": "before\x00after"}
+
+    first = await session_store.record_frame(
+        session.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, payload, runner_seq=1
+    )
+    second = await session_store.record_frame(
+        session.session_id, FrameDirection.FROM_AGENT, SessionFrameKind.HARNESS_FRAME, {"type": "result"}, runner_seq=2
+    )
+
+    async with migrated_sessions() as db:
+        stored = await db.scalar(
+            text("SELECT payload::text FROM session_frames WHERE frame_seq = :frame_seq"),
+            {"frame_seq": first.frame_seq},
+        )
+
+    assert stored is not None
+    assert "\\u0000" in stored
+    frames = await session_store.read_session_frames(
+        session.session_id, cursor=None, limit=25, scope=UnrestrictedReads()
+    )
+    assert [frame.payload for frame in _harness(frames)] == [payload, {"type": "result"}]
+    assert second.frame_seq > first.frame_seq
+
+
 async def test_native_frames_without_a_known_discriminator_remain_in_the_default_and_exact_views(
     session_store, operator_id
 ) -> None:
@@ -1228,6 +1256,19 @@ async def test_a_prompt_admitted_before_any_session_is_on_the_conversations_item
     item = one(await _conversation_items(session_store, conversation_id, limit=10))
     assert isinstance(item, PromptItem)
     assert (item.text, item.origin) == ("start", PromptOriginKind.SPA)
+
+
+async def test_submitted_prompt_is_read_as_queued_without_a_transcript_item(session_store, operator_id) -> None:
+    view, _ = await session_store.create(operator_id, harness_kind=HarnessKind.CLAUDE_CODE)
+    conversation_id = await session_store.conversation_of(view.session_id)
+
+    await session_store.submit_prompt(operator_id, conversation_id, "wait for delivery", SPA_ORIGIN)
+
+    detail = await session_store.get_operator_conversation(operator_id, conversation_id)
+    assert detail.items == []
+    assert [(prompt.text, prompt.origin) for prompt in detail.queued_prompts] == [
+        ("wait for delivery", PromptOriginKind.SPA)
+    ]
 
 
 async def test_operator_conversation_read_surface_keeps_inventory_and_transcript_separate(

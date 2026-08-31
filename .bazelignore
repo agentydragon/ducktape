@@ -20,7 +20,7 @@ venv
 .cache
 # Nested (.bazelignore doesn't support ** globs, so list explicitly)
 cluster/.direnv
-wt/.direnv
+x/wt/.direnv
 props/.direnv
 
 # bb remote / bbr artifact downloads. Building a py_library materializes its

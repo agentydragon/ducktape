@@ -68,10 +68,8 @@ spec:
             - port: "9000"
               protocol: TCP
 
-    # kubectl MCP servers: OIDC discovery + token exchange
+    # kubectl MCP servers: OIDC discovery + JWKS
     - fromEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: kubectl-sandbox-mcp
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: kubectl-passthrough-mcp
         - matchLabels:

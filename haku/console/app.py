@@ -31,7 +31,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.middleware.sessions import SessionMiddleware
 
-from haku.console import capabilities
+from haku.console import aiquota_proxy, capabilities
 from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
 from haku.console.config import MCP_PATH, Settings
 
@@ -806,6 +806,10 @@ def create_app(
     app.include_router(enrollment_routes.operator_router, dependencies=operator_only)
     app.include_router(service.operator_router, dependencies=operator_only)
     app.include_router(push_routes.router, dependencies=operator_only)
+    app.include_router(
+        aiquota_proxy.build_router(url=settings.aiquota_url, bearer_token=settings.aiquota_bearer_token),
+        dependencies=operator_only,
+    )
     # Machine endpoints use their own per-daemon bearer and deliberately do not accept an Operator
     # browser session.
     app.include_router(service.machine_router)

@@ -13,7 +13,8 @@ import {
   type RecentToolCall,
   type ScreenshotApproval,
 } from "./approval_state";
-import type { ToolCallRecord } from "./client";
+import type { AiquotaView, ToolCallRecord } from "./client";
+import { AiquotaPanel, AiquotaRailButton } from "./aiquota_panel";
 import { CodeBlock } from "./code_block";
 import { Field } from "./field";
 import {
@@ -32,12 +33,17 @@ import {
 import { PendingToolCallActions } from "./pending_tool_call_actions";
 import type { ConsoleNavigationView, ConsoleView } from "./routing";
 import { SUCCESS_COLOR } from "./theme";
-import { formatTimestamp } from "./time";
+import { formatClockTime, formatTimestamp } from "./time";
 import { ToolCallCard } from "./tool_call_card";
 import type { LiveStatus } from "./console_events";
 import { useVariant, VariantControl } from "./variant_control";
 
 export interface ShellChromeProps {
+  aiquota: AiquotaView | null;
+  aiquotaLoading: boolean;
+  aiquotaError: string | null;
+  aiquotaOpen: boolean;
+  onAiquotaOpenChange: (open: boolean) => void;
   // Approvals panel open-state, parent-controlled so a newly-arrived geolocation approval can
   // force it open.
   approvalsOpen: boolean;
@@ -289,8 +295,7 @@ function SyncStatusPanel({
         )}
         {lastSyncAt && (
           <Text size="xs" c="dimmed">
-            Last refreshed{" "}
-            {lastSyncAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}
+            Last refreshed {formatClockTime(lastSyncAt)}
           </Text>
         )}
       </Stack>
@@ -667,6 +672,8 @@ export function ShellChrome(props: ShellChromeProps): JSX.Element {
   const {
     approvalsOpen,
     onApprovalsOpenChange,
+    aiquotaOpen,
+    onAiquotaOpenChange,
     liveStatus,
     syncError,
     geoGranted,
@@ -698,11 +705,12 @@ export function ShellChrome(props: ShellChromeProps): JSX.Element {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       if (openIndicator) setOpenIndicator(null);
+      else if (aiquotaOpen) onAiquotaOpenChange(false);
       else if (approvalsOpen) onApprovalsOpenChange(false);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [approvalsOpen, onApprovalsOpenChange, openIndicator]);
+  }, [aiquotaOpen, approvalsOpen, onAiquotaOpenChange, onApprovalsOpenChange, openIndicator]);
 
   const toggleIndicator = (panel: IndicatorPanel) => setOpenIndicator((open) => (open === panel ? null : panel));
 
@@ -721,12 +729,24 @@ export function ShellChrome(props: ShellChromeProps): JSX.Element {
             <RailButton
               open={approvalsOpen}
               label={approvalsOpen ? "Close approvals" : "Open approvals"}
-              onClick={() => onApprovalsOpenChange(!approvalsOpen)}
+              onClick={() => {
+                onApprovalsOpenChange(!approvalsOpen);
+                if (!approvalsOpen) onAiquotaOpenChange(false);
+              }}
             >
               <ChecklistIcon />
             </RailButton>
           </Indicator>
           <div className="haku-shell-rail-divider" />
+          <AiquotaRailButton
+            quotas={props.aiquota}
+            loading={props.aiquotaLoading}
+            open={aiquotaOpen}
+            onClick={() => {
+              onAiquotaOpenChange(!aiquotaOpen);
+              if (!aiquotaOpen) onApprovalsOpenChange(false);
+            }}
+          />
           <RailButton open={props.view === "embed"} label="Haku UI" onClick={() => props.onNavigate("embed")}>
             <HomeIcon />
           </RailButton>
@@ -822,6 +842,16 @@ export function ShellChrome(props: ShellChromeProps): JSX.Element {
           </div>
         )}
       </nav>
+      {aiquotaOpen && (
+        <div className="haku-shell-drawer haku-shell-panels" style={{ zIndex: PANEL_Z - 1 }}>
+          <AiquotaPanel
+            quotas={props.aiquota}
+            loading={props.aiquotaLoading}
+            error={props.aiquotaError}
+            onClose={() => onAiquotaOpenChange(false)}
+          />
+        </div>
+      )}
       {approvalsOpen && (
         <div className="haku-shell-drawer haku-shell-panels" style={{ zIndex: PANEL_Z - 1 }}>
           <ApprovalsPanel {...props} onClose={() => onApprovalsOpenChange(false)} />

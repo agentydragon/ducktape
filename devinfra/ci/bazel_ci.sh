@@ -213,6 +213,10 @@ TEST_TARGET_COUNT=$(bazel query --query_file=/tmp/test-query.txt | wc -l)
 echo "test targets in scope: $TEST_TARGET_COUNT"
 
 probe_bb_runner before-test
+# BuildBuddy runner VMs can be reused between invocations.  The probe above
+# records that state for diagnosis; do not let a server from a previous
+# checkout serve this test run.
+bazel shutdown || true
 if [ "$TEST_TARGET_COUNT" -eq 0 ]; then
   echo "No test targets in scope -- skipping bazel test."
   bazel build --invocation_id="$BUILD_INVOCATION_ID" --keep_going $RBE_FLAGS $TARGETS \

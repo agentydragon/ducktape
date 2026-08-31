@@ -35,6 +35,7 @@ from haku.console.conversation.reads import (
     ChannelAttachment,
     FrameRecord,
     HarnessFrameRecord,
+    QueuedPrompt,
     SessionCursor,
     SessionRecord,
     SetupOutputRecord,
@@ -1058,6 +1059,7 @@ class Store:
             responding = await _open_turn(db, conversation_id) is not None
             narration = await setup_narration(db, current.session_id)
             rows = await _item_page_rows(db, conversation_id, after_seq=None, limit=None)
+            queued_prompts = await _queued_prompt_reads(db, conversation_id)
         return ConversationView(
             conversation_id=conversation_id,
             agent_id=conversation.agent_id,
@@ -1066,6 +1068,7 @@ class Store:
             created_at=conversation.created_at,
             attachments=attachments,
             items=[item_of(row) for row in rows],
+            queued_prompts=queued_prompts,
             session=session_view(current, responding=responding),
             narration=narration,
             earlier_sessions=[session_view(row, responding=False) for row in earlier],
@@ -1118,6 +1121,7 @@ class Store:
                 raise PositionUnusableError(f"more than {limit} rows have moved since {after=}")
             narration = await setup_narration(db, current.session_id)
             attachments = (await _live_attachments(db, {conversation_id}))[conversation_id]
+            queued_prompts = await _queued_prompt_reads(db, conversation_id)
             responding = await _open_turn(db, conversation_id) is not None
         return ConversationUpdate(
             position=position,
@@ -1126,6 +1130,7 @@ class Store:
             attachments=attachments,
             earlier_sessions=[session_view(row, responding=False) for row in earlier],
             items=[item_of(row) for row in rows],
+            queued_prompts=queued_prompts,
         )
 
     async def authenticate_runner_connection(self, session_id: UUID, token: str) -> RunnerConnectionAuthentication:
@@ -2702,6 +2707,25 @@ async def _touched_item_rows(
         )
     ).all()
     return await _spans(db, items)
+
+
+async def _queued_prompt_reads(db: AsyncSession, conversation_id: UUID) -> list[QueuedPrompt]:
+    """Read prompts accepted for a conversation that have not reached a runner yet."""
+    submitted = (
+        await db.scalars(
+            select(SubmittedPrompt)
+            .where(
+                SubmittedPrompt.conversation_id == conversation_id,
+                SubmittedPrompt.admitted_at.is_(None),
+                SubmittedPrompt.withdrawn_at.is_(None),
+            )
+            .order_by(SubmittedPrompt.submitted_at, SubmittedPrompt.prompt_id)
+        )
+    ).all()
+    return [
+        QueuedPrompt(prompt_id=row.prompt_id, text=row.text, origin=row.origin.kind, queued_at=row.submitted_at)
+        for row in submitted
+    ]
 
 
 async def _open_turn(db: AsyncSession, conversation_id: UUID) -> UUID | None:

@@ -11,6 +11,7 @@ import {
   type Conversation,
   type ConversationCursor,
   type Item,
+  type QueuedPrompt,
   type ConversationSummary,
   type Session,
 } from "../client";
@@ -213,6 +214,22 @@ function ItemView({ item }: { item: Item }) {
       );
     }
   }
+}
+
+function QueuedPromptView({ prompt }: { prompt: QueuedPrompt }) {
+  return (
+    <div className="haku-conversation-queued-prompt">
+      <Group gap="xs" mb={4}>
+        <Badge size="xs" variant="light" color="yellow">
+          queued
+        </Badge>
+        <Text size="xs" c="dimmed">
+          delivers on turn end
+        </Text>
+      </Group>
+      <Markdown source={prompt.text.trim()} className="haku-conversation-markdown" />
+    </div>
+  );
 }
 
 function ItemRunView({ run }: { run: ItemRun }) {
@@ -722,6 +739,9 @@ function ConversationDetailPage({ conversationId }: { conversationId: string }) 
             )}
             {groupItemRuns(rows).map((run) => (
               <ItemRunView key={run.kind === "single" ? run.item.opened_seq : run.items[0].opened_seq} run={run} />
+            ))}
+            {conversation.queued_prompts.map((prompt) => (
+              <QueuedPromptView key={prompt.prompt_id} prompt={prompt} />
             ))}
           </div>
         </div>

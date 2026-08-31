@@ -115,17 +115,6 @@ locals {
           groups   = { claim = "groups", prefix = "oidc-ksbx-groups:" }
         }
       },
-      # kubectl-sandbox-mcp: scoped kubectl MCP (token exchange → sandbox group only)
-      {
-        issuer = {
-          url       = "https://auth.${var.cluster_domain}/application/o/kubectl-sandbox-mcp/"
-          audiences = ["kubectl-sandbox-mcp"]
-        }
-        claimMappings = {
-          username = { claim = "preferred_username", prefix = "oidc-ksbx:" }
-          groups   = { claim = "groups", prefix = "oidc-ksbx-groups:" }
-        }
-      },
       # kubectl-sandbox-client-credentials: machine-to-machine OIDC for
       # write_kubeconfig.py / authentik-jwt-rotation CronJob. Non-interactive
       # client_credentials grant; Authentik maps known machine principals to

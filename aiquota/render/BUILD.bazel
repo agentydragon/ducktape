@@ -16,7 +16,7 @@ py_library(
     name = "view_model_lib",
     srcs = ["view_model.py"],
     imports = ["../.."],
-    visibility = ["//aiquota:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         "//aiquota:models",
         "//aiquota:pace",

@@ -3,6 +3,7 @@
 // `.mjs` subpaths come from the ambient declaration in `tabler_icons.d.ts`. Thin wrappers keep a
 // stable local name + a consistent glyph size; callers can still override via props.
 import IconAlertTriangle from "@tabler/icons-react/dist/esm/icons/IconAlertTriangle.mjs";
+import IconGauge from "@tabler/icons-react/dist/esm/icons/IconGauge.mjs";
 import IconBell from "@tabler/icons-react/dist/esm/icons/IconBell.mjs";
 import IconCalendarEvent from "@tabler/icons-react/dist/esm/icons/IconCalendarEvent.mjs";
 import IconCamera from "@tabler/icons-react/dist/esm/icons/IconCamera.mjs";
@@ -31,6 +32,11 @@ type TablerIconProps = ComponentProps<typeof IconChecklist>;
 /** Checklist — the shell's approvals-queue toggle. */
 export function ChecklistIcon(props: TablerIconProps): JSX.Element {
   return <IconChecklist size={20} {...props} />;
+}
+
+/** Gauge — opens the AI quota summary. */
+export function AiquotaIcon(props: TablerIconProps): JSX.Element {
+  return <IconGauge size={20} {...props} />;
 }
 
 /** Home — selects the persistent Haku UI frame. */

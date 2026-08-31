@@ -174,9 +174,6 @@ doctrine change, not just a config line.
   for attribution / budget / kill-switch, if routing model calls through LiteLLM.
 - **Tighten egress** — narrow the `haku-sandbox` CCNP `toEntities: cluster` to
   only Haku's named in-cluster sources (the gap `claude-sandbox` also accepts).
-- **SA→group scope-mapping allowlist** — replace the
-  `kubectl_sandbox_fixed_groups` `else` default with an explicit SA→group map
-  once the claude-sandbox JWT path has soaked (`tf/gitops/agent-machine-access`).
 
 ## Console — operator-facing dashboard
 

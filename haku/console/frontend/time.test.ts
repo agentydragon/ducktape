@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatTimestamp, shortDate } from "./time";
+import { formatDurationShort, formatTimestamp, formatWindowDuration, secondsUntil, shortDate } from "./time";
 
 describe("time formatting", () => {
   const now = Date.parse("2026-08-29T12:00:00Z");
@@ -23,5 +23,15 @@ describe("time formatting", () => {
   it("returns null for an absent short date", () => {
     expect(shortDate(null)).toBeNull();
     expect(shortDate("2026-08-29T12:00:00Z")).not.toBeNull();
+  });
+
+  it("formats durations through date-fns", () => {
+    expect(formatDurationShort(90 * 60)).toBe("1 hour 30 minutes");
+    expect(formatWindowDuration(24 * 60 * 60)).toBe("1 day");
+  });
+
+  it("calculates seconds until a timestamp through date-fns", () => {
+    expect(secondsUntil("2026-08-29T12:01:30Z", now)).toBe(90);
+    expect(secondsUntil("2026-08-29T11:59:30Z", now)).toBe(0);
   });
 });

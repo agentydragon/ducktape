@@ -1,0 +1,95 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+# Layering: Client code must not depend on server code (//wt/server:*).
+# Both layers may depend on shared code (//wt/shared:*).
+# This visibility constraint enforces the layering at build time.
+# See also: wt/server/BUILD.bazel for the server-side constraint.
+package(default_visibility = [
+    "//x/wt:__pkg__",
+    "//x/wt/client:__subpackages__",
+    "//x/wt/testing:__pkg__",
+])
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//x/wt:__subpackages__"],
+    deps = [
+        "//x/wt/testing:conftest",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "cd_utils",
+    srcs = ["cd_utils.py"],
+    visibility = [
+        "//x/wt:__pkg__",
+        "//x/wt/client:__subpackages__",
+    ],
+    deps = [":shell_utils"],
+)
+
+py_library(
+    name = "handlers",
+    srcs = ["handlers.py"],
+    deps = [
+        ":cd_utils",
+        ":wt_client",
+        "//x/wt/shared:constants",
+        "//x/wt/shared:env",
+        "//x/wt/shared:protocol",
+        "@pypi//click",
+        "@pypi//more_itertools",
+        "@pypi//psutil",
+    ],
+)
+
+py_library(
+    name = "shell_utils",
+    srcs = ["shell_utils.py"],
+    deps = ["@pypi//click"],
+)
+
+py_library(
+    name = "view_formatter",
+    srcs = ["view_formatter.py"],
+    deps = [
+        "//x/wt/shared:github_models",
+        "//x/wt/shared:protocol",
+        "@pypi//click",
+        "@pypi//colorama",
+        "@pypi//tabulate",
+    ],
+)
+
+py_library(
+    name = "wt_client",
+    srcs = ["wt_client.py"],
+    deps = [
+        "//x/wt/shared:configuration",
+        "//x/wt/shared:env",
+        "//x/wt/shared:error_handling",
+        "//x/wt/shared:protocol",
+        "@pypi//click",
+        "@pypi//more_itertools",
+        "@pypi//psutil",
+        "@pypi//pydantic",
+        "@pypi//pygit2",
+    ],
+)
+
+py_test(
+    name = "test_cli_click_integration",
+    srcs = ["test_cli_click_integration.py"],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//x/wt:cli",
+        "//x/wt/shared:protocol",
+        "//x/wt/testing:asserts",
+        "@pypi//pytest_bazel",
+        "@pypi//typer_slim",
+    ],
+)

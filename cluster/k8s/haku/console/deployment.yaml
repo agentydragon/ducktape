@@ -44,7 +44,7 @@ metadata:
     # do NOT use reloader's blanket auto mode: the projected static-image metadata
     # changes on every frontend release and must not restart API/MCP/background work.
     configmap.reloader.stakater.com/reload: haku-console-config
-    secret.reloader.stakater.com/reload: haku-routine-launch-token,haku-console-oidc,haku-console-web-push-vapid,tana-agentydragon-gmail-com-account-pat,ha-mcp-bearer,haku-console-db-app,haku-console-agent-api,haku-console-public-coder-agent,haku-console-node-daemon-wyrm2,haku-console-node-daemon-rugged,haku-console-google-client-credentials,haku-console-google-calendar-client-credentials,haku-console-github-mcp-client-credentials,haku-egress-proxy-identity,haku-egress-github-token,litellm-key-public-coder-agent,litellm-key-haku-console-claude,haku-forgejo-git,activitywatch-read-token
+    secret.reloader.stakater.com/reload: haku-routine-launch-token,haku-console-oidc,haku-console-web-push-vapid,tana-agentydragon-gmail-com-account-pat,ha-mcp-bearer,haku-console-db-app,haku-console-agent-api,haku-console-public-coder-agent,haku-console-node-daemon-wyrm2,haku-console-node-daemon-rugged,haku-console-google-client-credentials,haku-console-google-calendar-client-credentials,haku-console-github-mcp-client-credentials,haku-egress-proxy-identity,haku-egress-github-token,litellm-key-public-coder-agent,litellm-key-haku-console-claude,haku-forgejo-git,activitywatch-read-token,aiquota-api-bearer-haku-console
 spec:
   replicas: 2
   strategy:
@@ -116,7 +116,7 @@ spec:
               drop: ["ALL"]
       containers:
         - name: server
-          image: ghcr.io/agentydragon/haku-console:devel-20260830230158-b724557 # {"$imagepolicy": "flux-system:haku-console"}
+          image: ghcr.io/agentydragon/haku-console:devel-20260831024824-25bc91a # {"$imagepolicy": "flux-system:haku-console"}
           imagePullPolicy: Always
           ports:
             - name: api
@@ -126,7 +126,14 @@ spec:
             # policies as the images, preserving reproducible image contents while exposing the
             # commits selected by this pod manifest.
             - name: HAKU_CONSOLE_IMAGE_TAG
-              value: devel-20260830230158-b724557 # {"$imagepolicy": "flux-system:haku-console:tag"}
+              value: devel-20260831024824-25bc91a # {"$imagepolicy": "flux-system:haku-console:tag"}
+            - name: HAKU_CONSOLE_AIQUOTA_URL
+              value: "http://aiquota-api.cli-proxy-api.svc.cluster.local:8080"
+            - name: HAKU_CONSOLE_AIQUOTA_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: aiquota-api-bearer-haku-console
+                  key: bearer-token
             # Capability tier: the launch-routine action. The console builds both the
             # (public) fire URL and the claude.ai/code page deep-link from this routine
             # (trigger) id; the bearer comes from the haku-console-only secret so Haku

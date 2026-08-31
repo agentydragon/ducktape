@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 
+import { differenceInMilliseconds, minutesToMilliseconds, parseISO } from "date-fns";
+
 import { fetchOperator } from "./client";
 
 // How long before the deadline the shell starts saying so. The operator session has a hard,
 // non-sliding one-hour lifetime, so expiry always arrives — as a warning here, or as a tab that
 // navigates itself to Authentik mid-task.
-export const SESSION_WARNING_LEAD_MS: number = 5 * 60_000;
-const TICK_MS = 30_000;
+export const SESSION_WARNING_LEAD_MS: number = minutesToMilliseconds(5);
+const TICK_MS = minutesToMilliseconds(0.5);
 
 /** The absolute deadline of the current operator session, or `null` until it is known.
  *
@@ -19,7 +21,7 @@ export function useOperatorSessionDeadline(): Date | null {
     let alive = true;
     void fetchOperator().then(
       (operator) => {
-        if (alive) setExpiresAt(new Date(operator.expires_at));
+        if (alive) setExpiresAt(parseISO(operator.expires_at));
       },
       (error: unknown) => {
         // A 401 has already sent the browser to the login flow; anything else costs only the
@@ -45,5 +47,5 @@ export function useSessionExpiringSoon(expiresAt: Date | null): boolean {
     return () => window.clearInterval(tick);
   }, [expiresAt]);
 
-  return expiresAt !== null && expiresAt.getTime() - nowMs <= SESSION_WARNING_LEAD_MS;
+  return expiresAt !== null && differenceInMilliseconds(expiresAt, new Date(nowMs)) <= SESSION_WARNING_LEAD_MS;
 }

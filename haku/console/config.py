@@ -505,6 +505,11 @@ class Settings(BaseSettings):
     # Haku's Agent-owned workspace bootstrap inside the shared runner image.
     haku_agent_workspace_setup: Path | None = None
 
+    # Optional operator-only proxy to the internal aiquota service. The browser never sees this
+    # bearer token; the console fetches quota snapshots server-side.
+    aiquota_url: str | None = None
+    aiquota_bearer_token: SecretStr | None = None
+
     # Shared haku-console Postgres database. Required: it holds the MCP approval audit/result
     # ledger and the operator OAuth token store — the console does not run without them. Both
     # stores are always constructed; migrations are applied once at startup (see app.main).

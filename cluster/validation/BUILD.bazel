@@ -153,6 +153,17 @@ py_library(
     ],
 )
 
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pyyaml",
+    ],
+)
+
 py_test(
     name = "test_k8s",
     srcs = ["test_k8s.py"],
@@ -363,6 +374,51 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_clickhouse_distributed_ddl_contract",
+    srcs = ["test_clickhouse_distributed_ddl_contract.py"],
+    data = [
+        "//cluster/k8s:clickhouse/cluster/clickhouse.yaml",
+        "//cluster/k8s:clickhouse/schema/flux-kustomization.yaml",
+        "//cluster/k8s:clickhouse/schema/kustomization.yaml",
+        "//cluster/k8s:clickhouse/schema/schema-job.yaml",
+        "//cluster/k8s:kustomization.yaml",
+    ],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_public_coder_clickhouse_reader_contract",
+    srcs = ["test_public_coder_clickhouse_reader_contract.py"],
+    data = [
+        "//cluster/k8s:agents/public-coder-agent/app/deployment.yaml",
+        "//cluster/k8s:agents/public-coder-agent/proxy/cnp-egress.yaml",
+        "//cluster/k8s:agents/public-coder-agent/proxy/deployment.yaml",
+        "//cluster/k8s:agents/public-coder-agent/proxy/iron.yaml",
+        "//cluster/k8s:clickhouse/cluster/clickhouse.yaml",
+        "//cluster/k8s:clickhouse/cluster/networkpolicy.yaml",
+        "//cluster/k8s:clickhouse/cluster/public-coder-credentials.sops.yaml",
+        "//cluster/k8s:kustomization.yaml",
+    ],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 

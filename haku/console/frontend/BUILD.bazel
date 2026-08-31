@@ -379,7 +379,9 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":time",
         "//:node_modules/@types/react",
+        "//:node_modules/date-fns",
         "//:node_modules/react",
     ],
 )
@@ -664,11 +666,27 @@ ts_library(
 )
 
 ts_library(
+    name = "aiquota_panel",
+    srcs = ["aiquota_panel.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":icons",
+        ":time",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "shell_chrome",
     srcs = ["shell_chrome.tsx"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
+        ":aiquota_panel",
         ":approval_state",
         ":client",
         ":code_block",

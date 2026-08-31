@@ -47,6 +47,24 @@ filegroup(
     visibility = ["//cluster:__subpackages__"],
 )
 
+# Focused validation targets inline these direct-file inputs in their data lists.
+exports_files(
+    [
+        "agents/public-coder-agent/app/deployment.yaml",
+        "agents/public-coder-agent/proxy/cnp-egress.yaml",
+        "agents/public-coder-agent/proxy/deployment.yaml",
+        "agents/public-coder-agent/proxy/iron.yaml",
+        "clickhouse/cluster/clickhouse.yaml",
+        "clickhouse/cluster/networkpolicy.yaml",
+        "clickhouse/cluster/public-coder-credentials.sops.yaml",
+        "clickhouse/schema/flux-kustomization.yaml",
+        "clickhouse/schema/kustomization.yaml",
+        "clickhouse/schema/schema-job.yaml",
+        "kustomization.yaml",
+    ],
+    visibility = ["//cluster/validation:__pkg__"],
+)
+
 # Just the central ClusterPolicy manifests, so a per-policy test is not
 # invalidated by every unrelated manifest in the cluster (same reasoning as the
 # contract filegroup below). The zone injector under x/haku/zones/policies is not

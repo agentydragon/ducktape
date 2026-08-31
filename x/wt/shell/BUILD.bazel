@@ -1,0 +1,22 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+filegroup(
+    name = "shell_scripts",
+    srcs = glob(["*.sh"]),
+    visibility = ["//x/wt:__subpackages__"],
+)
+
+py_library(
+    name = "install",
+    srcs = ["install.py"],
+    data = [":shell_scripts"],
+    visibility = ["//x/wt:__subpackages__"],
+)
+
+py_binary(
+    name = "wt_install",
+    data = [":shell_scripts"],
+    main_module = "x.wt.shell.install",
+    visibility = ["//visibility:public"],
+    deps = [":install"],
+)

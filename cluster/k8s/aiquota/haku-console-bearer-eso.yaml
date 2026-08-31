@@ -1,0 +1,28 @@
+# Narrow mirror of the shared AIQuota API bearer for the Haku Console backend.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: aiquota-api-bearer-haku-console
+  namespace: cli-proxy-api
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-cli-proxy-api-secret-store
+  target:
+    name: aiquota-api-bearer-haku-console
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    template:
+      metadata:
+        annotations:
+          description: Shared AIQuota API bearer mirrored only to the Haku Console backend.
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-console
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-console
+  data:
+    - secretKey: bearer-token
+      remoteRef:
+        key: aiquota-api-bearer
+        property: bearer-token

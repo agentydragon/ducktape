@@ -14,7 +14,15 @@ import { type GeolocationOptions, type Outbound } from "@haku/console-bridge/pro
 import { isRoutePath, parseInbound, vetOpenLink } from "./bridge";
 import { ConversationsPage } from "./x/conversations_page";
 import { SessionFramesPage } from "./x/session_frames_page";
-import { displayableError, fetchPendingApprovals, fetchToolCall, launchRoutine, type ToolCallRecord } from "./client";
+import {
+  displayableError,
+  fetchAiquotaQuotas,
+  fetchPendingApprovals,
+  fetchToolCall,
+  launchRoutine,
+  type AiquotaView,
+  type ToolCallRecord,
+} from "./client";
 import { ConfirmDialog, type Escalation } from "./confirm_dialog";
 import { ShellChrome } from "./shell_chrome";
 import { GEO_PERMISSION_DENIED, GeolocationWatcher, getGeolocation } from "./geolocation";
@@ -122,7 +130,39 @@ export function HakuUiEmbed({
   const [screenshotApprovals, setScreenshotApprovals] = useState<ScreenshotApproval[]>([]);
   const screenshotApprovalsRef = useRef<ScreenshotApproval[]>([]);
   const [approvalsOpen, setApprovalsOpen] = useState(false);
+  const [aiquotaOpen, setAiquotaOpen] = useState(false);
+  const [aiquota, setAiquota] = useState<AiquotaView | null>(null);
+  const [aiquotaLoading, setAiquotaLoading] = useState(false);
+  const [aiquotaError, setAiquotaError] = useState<string | null>(null);
   const approvalsOpenedAutomaticallyRef = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+    const refreshAiquota = () => {
+      setAiquotaLoading(true);
+      void fetchAiquotaQuotas()
+        .then(
+          (result) => {
+            if (active) {
+              setAiquota(result);
+              setAiquotaError(null);
+            }
+          },
+          (error: unknown) => {
+            if (active) setAiquotaError(displayableError(error));
+          }
+        )
+        .finally(() => {
+          if (active) setAiquotaLoading(false);
+        });
+    };
+    refreshAiquota();
+    const timer = globalThis.setInterval(refreshAiquota, 60_000);
+    return () => {
+      active = false;
+      globalThis.clearInterval(timer);
+    };
+  }, []);
   // A deep-linked call opens the drawer on arrival — following the link *is* the request to
   // decide it. Keyed on the id so navigating to a different call re-opens a drawer the operator
   // closed, while closing it on the same call leaves it closed.
@@ -620,6 +660,11 @@ export function HakuUiEmbed({
       <ShellChrome
         view={view}
         onNavigate={onNavigate}
+        aiquota={aiquota}
+        aiquotaLoading={aiquotaLoading}
+        aiquotaError={aiquotaError}
+        aiquotaOpen={aiquotaOpen}
+        onAiquotaOpenChange={setAiquotaOpen}
         approvalsOpen={approvalsOpen}
         focusedToolCallId={toolCallId ?? null}
         onApprovalsOpenChange={setApprovalsOpenFromUser}

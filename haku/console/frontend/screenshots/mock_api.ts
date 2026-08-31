@@ -13,6 +13,7 @@ import {
   SAMPLE_MCP_SERVERS,
   SAMPLE_PENDING,
   SAMPLE_TOOL_CALLS,
+  SAMPLE_AIQUOTA,
 } from "./sample_data";
 import type { Conversation, Item, ConversationPage, SessionFramePage } from "../client";
 import { mockOperatorMcpFetch } from "../tool_rendering/screenshot/mcp_mock";
@@ -361,6 +362,7 @@ const conversationDetail = {
   session: conversationSession,
   provisioning: null,
   narration: setupNarration,
+  queued_prompts: [],
   // The thread ran one session before this one: what a sandbox dying looks like from the
   // conversation's side, and the only place its frame log stays reachable from.
   earlier_sessions: [
@@ -634,6 +636,7 @@ async function respond(input: RequestInfo | URL, init: RequestInit | undefined, 
     });
   }
   if (url.includes("/api/deployment")) return jsonResponse(SAMPLE_DEPLOYMENT);
+  if (url.includes("/api/aiquota/quotas")) return jsonResponse(SAMPLE_AIQUOTA);
   // Before the conversation detail below, which its path is a prefix of.
   if (url.includes("/frames")) return jsonResponse(conversationFrames);
   // The refusal the composer has to render: `enqueue_prompt` answers 409 and records nothing, so

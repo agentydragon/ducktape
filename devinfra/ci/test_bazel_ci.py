@@ -77,6 +77,8 @@ if query_arg:
         print("//ci:normal_test")
     else:
         raise SystemExit(f"unexpected query file: {{query_arg}}")
+elif args and args[0] == "shutdown":
+    pass
 elif args and args[0] in {"test", "build"}:
     if args[0] == "test":
         Path({str(test_args_log)!r}).write_text("\\n".join(args))

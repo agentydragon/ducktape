@@ -33,6 +33,7 @@ function conversation(items: Item[]): Conversation {
     created_at: "2026-08-18T00:00:00Z",
     attachments: [],
     items,
+    queued_prompts: [],
     session: session({}),
     provisioning: null,
     narration: [],
@@ -50,6 +51,7 @@ function update(fields: Partial<ConversationUpdate>): ConversationUpdate {
     attachments: [],
     earlier_sessions: [],
     items: [],
+    queued_prompts: [],
     ...fields,
   };
 }

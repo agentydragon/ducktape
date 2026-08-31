@@ -23,6 +23,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from haku.console.conversation.conversation_event import TurnAborted, TurnAnswered, TurnFailed
+from haku.console.conversation.prompt_origin import PromptOriginKind
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.session.session_frames import FrameDirection
 from haku.console.session.status import SessionStatus
@@ -156,3 +157,12 @@ class SessionOutcome(BaseModel):
     final_message: str | None = Field(
         description="The final assistant message for the latest exchange when it answered; absent otherwise."
     )
+
+
+class QueuedPrompt(BaseModel):
+    """A prompt accepted by the console that has not reached a runner yet."""
+
+    prompt_id: UUID
+    text: str
+    origin: PromptOriginKind
+    queued_at: datetime.datetime

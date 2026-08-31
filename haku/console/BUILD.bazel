@@ -430,9 +430,22 @@ py_test(
 )
 
 py_library(
+    name = "aiquota_proxy",
+    srcs = ["aiquota_proxy.py"],
+    deps = [
+        "//aiquota:models",
+        "//aiquota/render:view_model_lib",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "app",
     srcs = ["app.py"],
     deps = [
+        ":aiquota_proxy",
         ":capabilities",
         ":config",
         ":database_migrate",

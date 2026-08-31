@@ -162,7 +162,10 @@ def main() -> None:
     settings = ServerSettings()
     mcp = build_server(settings)
     tool_count = asyncio.run(record_tool_count(mcp))
-    app = mcp.http_app(path="/mcp")
+    # Grocy state lives downstream and OAuth state is externalized in Valkey;
+    # retaining stateful Streamable HTTP transports would leak one transport
+    # per client session in the pinned MCP SDK.
+    app = mcp.http_app(path="/mcp", stateless_http=True)
     # Metrics (incl. mcp_auth_upstream_refresh_failures_total) on a dedicated
     # cluster-internal port, off the public HTTPRoute.
     start_http_server(settings.metrics_port, addr=settings.host)

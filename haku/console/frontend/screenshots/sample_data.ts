@@ -1,7 +1,7 @@
 // Deterministic sample data for the screenshot scenes (harness.tsx) and the API stub
 // (mock_api.ts). Kept separate so both share one source of truth.
 import { makeRecentToolCall, type RecentToolCall } from "../approval_state";
-import type { DeploymentInfo, GrantListResponse, ToolCallRecord } from "../client";
+import type { AiquotaView, DeploymentInfo, GrantListResponse, ToolCallRecord } from "../client";
 import type { DaemonStatus, IndexStatus, McpServerConnection, McpServerProbe } from "../mcp_status_client";
 import type { RegisteredToolPreviewFixture } from "../tool_rendering/index";
 
@@ -566,6 +566,68 @@ export const SAMPLE_INDEX_STATUS: IndexStatus = {
       embedded_chunks: 774,
       pending_chunks: 0,
       superseded_chunks: 34,
+    },
+  ],
+};
+
+export const SAMPLE_AIQUOTA: AiquotaView = {
+  fetched_at: "2026-08-30T17:05:00Z",
+  providers: [
+    {
+      provider: "Anthropic",
+      last_output: {
+        fetched_at: "2026-08-30T17:05:00Z",
+        result: {
+          kind: "success",
+          windows: [
+            {
+              name: "5-hour",
+              display: true,
+              used_percent: 61,
+              reset_seconds: 10_800,
+              window_seconds: 18_000,
+              reset_at: "2026-08-30T20:05:00Z",
+            },
+            {
+              name: "7-day",
+              display: true,
+              used_percent: 34,
+              reset_seconds: 345_600,
+              window_seconds: 604_800,
+              reset_at: "2026-09-04T17:05:00Z",
+            },
+          ],
+          extra_spend: { is_enabled: true, monthly_limit_usd: 100, used_usd: 18.42, utilization: 0.1842 },
+        },
+      },
+      last_success: null,
+      currently_over_plan: false,
+      extra_status: "informational",
+      burn: null,
+    },
+    {
+      provider: "OpenAI",
+      last_output: {
+        fetched_at: "2026-08-30T17:04:00Z",
+        result: {
+          kind: "success",
+          windows: [
+            {
+              name: "3-hour",
+              display: true,
+              used_percent: 87,
+              reset_seconds: 5_400,
+              window_seconds: 10_800,
+              reset_at: "2026-08-30T20:04:00Z",
+            },
+          ],
+          extra_spend: null,
+        },
+      },
+      last_success: null,
+      currently_over_plan: false,
+      extra_status: "none",
+      burn: null,
     },
   ],
 };

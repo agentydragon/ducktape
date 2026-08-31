@@ -1,0 +1,74 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "path_handler",
+    srcs = ["path_handler.py"],
+    visibility = ["//x/wt:__subpackages__"],
+    deps = [
+        "//x/wt/server:rpc",
+        "//x/wt/server:services",
+        "//x/wt/shared:configuration",
+        "//x/wt/shared:constants",
+        "//x/wt/shared:protocol",
+    ],
+)
+
+py_library(
+    name = "pr_handler",
+    srcs = ["pr_handler.py"],
+    visibility = ["//x/wt:__subpackages__"],
+    deps = [
+        "//x/wt/server:github_watcher",
+        "//x/wt/server:rpc",
+        "//x/wt/shared:protocol",
+    ],
+)
+
+py_library(
+    name = "status_handler",
+    srcs = ["status_handler.py"],
+    visibility = ["//x/wt:__subpackages__"],
+    deps = [
+        "//x/wt/server:git_manager",
+        "//x/wt/server:github_watcher",
+        "//x/wt/server:rpc",
+        "//x/wt/server:services",
+        "//x/wt/server:worktree_ids",
+        "//x/wt/shared:configuration",
+        "//x/wt/shared:env",
+        "//x/wt/shared:protocol",
+    ],
+)
+
+py_library(
+    name = "worktree_handler",
+    srcs = ["worktree_handler.py"],
+    visibility = ["//x/wt:__subpackages__"],
+    deps = [
+        "//x/wt/server:git_manager",
+        "//x/wt/server:rpc",
+        "//x/wt/server:services",
+        "//x/wt/server:types",
+        "//x/wt/server:worktree_ids",
+        "//x/wt/server:worktree_service",
+        "//x/wt/shared:configuration",
+        "//x/wt/shared:constants",
+        "//x/wt/shared:protocol",
+    ],
+)
+
+py_test(
+    name = "test_status_handler",
+    srcs = ["test_status_handler.py"],
+    deps = [
+        ":status_handler",
+        "//:conftest",
+        "//x/wt/server:conftest",
+        "//x/wt/server:rpc",
+        "//x/wt/shared:protocol",
+        "@pypi//more_itertools",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

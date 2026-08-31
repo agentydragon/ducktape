@@ -49,6 +49,7 @@ export function followed(held: Conversation | null, message: ConversationFollowM
     attachments: message.attachments,
     earlier_sessions: message.earlier_sessions,
     items: mergedItems(held.items, message.items),
+    queued_prompts: message.queued_prompts,
     session: message.session,
     provisioning: message.provisioning,
     narration: message.narration,

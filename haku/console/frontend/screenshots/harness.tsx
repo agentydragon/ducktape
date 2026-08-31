@@ -16,7 +16,7 @@ import type { ConsoleNavigationView, ConsoleView } from "../routing";
 import { ShellChrome, type ShellChromeProps } from "../shell_chrome";
 import { hakuTheme } from "../theme";
 import { toastError, toastSuccess } from "../toast";
-import { SAMPLE_PENDING, sampleRecentToolCalls } from "./sample_data";
+import { SAMPLE_AIQUOTA, SAMPLE_PENDING, sampleRecentToolCalls } from "./sample_data";
 
 const noop = () => {};
 const noopNavigate = (_view: ConsoleNavigationView) => {};
@@ -52,6 +52,11 @@ function ConsoleScene({
 }
 
 const chromeProps: ShellChromeProps = {
+  aiquota: SAMPLE_AIQUOTA,
+  aiquotaLoading: false,
+  aiquotaError: null,
+  aiquotaOpen: false,
+  onAiquotaOpenChange: noop,
   view: "embed",
   onNavigate: noopNavigate,
   approvalsOpen: false,
@@ -98,6 +103,16 @@ function IndicatorScene({ state }: { state: "current" | "syncing" | "error" }) {
 }
 
 // The rail's session warning, which only appears inside the last few minutes of the session.
+// The quota drawer is rendered in its production shell container so spacing and overflow are reviewed.
+function AiquotaScene() {
+  return (
+    <div className="haku-console-shell">
+      <ShellChrome {...chromeProps} aiquotaOpen />
+      <main className="haku-shell-content" />
+    </div>
+  );
+}
+
 function SessionExpiringScene() {
   return (
     <div className="haku-console-shell">
@@ -120,6 +135,8 @@ function OAuthSettingsResultScene({ status }: { status: "success" | "error" }) {
 
 function sceneElement(scene: string) {
   switch (scene) {
+    case "aiquota":
+      return <AiquotaScene />;
     case "approvals-embed":
       return <ApprovalsEmbedPage />;
     case "settings":
