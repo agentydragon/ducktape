@@ -105,7 +105,6 @@ locals {
   # minor version are excluded. Consumed by the laptop gemini-claude alias and
   # public-coder-agent.
   gemini_client_models = [
-    "google/oai-chat/gemini-3.1-pro-preview",
     "google/oai-chat/gemini-3.7-flash",
     "google/oai-chat/gemini-3.5-flash-lite",
   ]
@@ -342,8 +341,7 @@ data "sops_file" "gemini_clients_key" {
 resource "litellm_team" "gemini_clients" {
   team_alias = "gemini-clients"
   router_settings = {
-    # The primary model (gemini-3.1-pro-preview) is still a preview release and can be
-    # quota-throttled; degrade to the cheap, high-quota flash-lite tier instead of
+    # Keep a fallback to the cheap, high-quota flash-lite tier instead of
     # hard-failing Claude Code.
     fallbacks = [
       {

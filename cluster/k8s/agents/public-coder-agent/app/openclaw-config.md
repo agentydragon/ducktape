@@ -40,8 +40,12 @@ The Codex entries use OpenClaw's `openai-responses` API and the
 `chatgpt/oai-responses/*` LiteLLM routes. This is the native Responses
 passthrough to CLIProxyAPI and is the working path for these subscription
 models. This OpenClaw instance deliberately exposes only those working Codex
-models; it does not configure an Anthropic-shaped provider or expose the shared
-LiteLLM Gemini routes.
+models; it does not configure an Anthropic-shaped provider. The same `litellm`
+provider exposes the remaining Gemini models through LiteLLM's OpenAI Responses
+surface. `gemini-3.1-pro-preview` was
+removed from the shared roster after returning a Google quota-0 error on
+2026-08-30; it may simply lack quota and should be reconsidered only after that
+is verified.
 
 `agents.defaults.compaction.reserveTokensFloor` is 50,000 rather than
 OpenClaw's 20,000 default, which is sized for small local models. OpenClaw

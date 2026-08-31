@@ -141,10 +141,13 @@ OPENCLAW_CODEX_MODELS: list[str] = [
 # advanced through 3.5 -> 3.6 -> 3.7 (shipped 2026-08-13) on an independent,
 # faster cadence; 3.5-flash-lite is the current lite tier. Remaining specialty
 # SKUs (image, tts, live/bidi, customtools, imagen, veo, "Cyber") are
-# intentionally excluded — add on demand. Mirrored into the gemini-clients
+# intentionally excluded — add on demand. `gemini-3.1-pro-preview` was tested
+# on 2026-08-30 and did not work with the current credential: Google returned
+# RESOURCE_EXHAUSTED with a quota of 0. It may simply have no quota, but keep it
+# out of the roster until that is verified. Mirrored into the gemini-clients
 # Terraform key and public-coder-agent's OpenClaw catalog; both are pinned
 # against this list.
-GEMINI_MODELS: list[str] = ["gemini-3.1-pro-preview", "gemini-3.7-flash", "gemini-3.5-flash-lite"]
+GEMINI_MODELS: list[str] = ["gemini-3.7-flash", "gemini-3.5-flash-lite"]
 
 # Gemini embeddings, same key as the chat lineup. Added for OpenClaw memory search,
 # whose index needs an embedding backend and had none — see
@@ -163,8 +166,8 @@ GEMINI_MODELS: list[str] = ["gemini-3.1-pro-preview", "gemini-3.7-flash", "gemin
 GEMINI_EMBEDDING_MODELS: list[str] = ["gemini-embedding-2", "gemini-embedding-001"]
 
 # Published input/output token limits shared across the current Gemini chat
-# generation: ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview,
-# .../gemini-3.7-flash, and .../gemini-3.5-flash-lite (2026-08-23). Unlike
+# generation: ai.google.dev/gemini-api/docs/models/gemini-3.7-flash and
+# .../gemini-3.5-flash-lite (2026-08-23). Unlike
 # Codex's CODEX_CONTEXT_WINDOW above, there is no live serving-path probe for
 # a third-party hosted API, so this is Google's published figure rather than
 # a measured one. Used by public-coder-agent's OpenClaw catalog.

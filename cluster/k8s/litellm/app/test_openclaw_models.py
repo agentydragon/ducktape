@@ -7,6 +7,10 @@ from cluster.k8s.litellm.app.model_rosters import (
     CLIPROXY_MODELS,
     CODEX_CONTEXT_WINDOW,
     CODEX_MAX_TOKENS,
+    GEMINI_CONTEXT_WINDOW,
+    GEMINI_MAX_OUTPUT_TOKENS,
+    GEMINI_MODELS,
+    GEMINI_NON_REASONING_MODELS,
     OPENCLAW_CLIPROXY_MODELS,
     OPENCLAW_CODEX_MODELS,
     ApiShape,
@@ -43,6 +47,9 @@ def _haku_openclaw_env() -> dict[str, str]:
 def _litellm_models() -> dict[str, dict]:
     config = yaml.safe_load(get_required_path(_LITELLM_CONFIG).read_text())
     return {entry["model_name"]: entry for entry in config["model_list"]}
+
+
+_OPENCLAW_GEMINI_IDS = [exposed_name(Provider.GOOGLE, ApiShape.OAI_CHAT, model) for model in GEMINI_MODELS]
 
 
 def test_litellm_config_has_a_route_per_declared_codex_model() -> None:
@@ -101,14 +108,17 @@ def test_current_anthropic_roster_matches_haku_openclaw() -> None:
 
 
 def test_public_coder_agent_models_match_litellm_codex_routes() -> None:
-    """The agent's catalog is pinned to exactly the working Codex routes it should offer."""
-    assert [model["id"] for model in _public_coder_agent_models()] == OPENCLAW_CODEX_MODELS
+    """The agent's catalog is pinned to exactly the working routes it should offer."""
+    assert [model["id"] for model in _public_coder_agent_models()] == [*OPENCLAW_CODEX_MODELS, *_OPENCLAW_GEMINI_IDS]
 
     config = json5.loads(get_required_path(_PUBLIC_CODER_AGENT_CONFIG).read_text())
     providers = config["models"]["providers"]
     assert providers["litellm"]["api"] == "openai-responses"
     assert set(providers) == {"litellm"}
-    assert [model["id"] for model in providers["litellm"]["models"]] == OPENCLAW_CODEX_MODELS
+    assert [model["id"] for model in providers["litellm"]["models"]] == [
+        *OPENCLAW_CODEX_MODELS,
+        *_OPENCLAW_GEMINI_IDS,
+    ]
     assert config["agents"]["defaults"]["model"]["primary"] in {
         f"litellm/{model_id}" for model_id in OPENCLAW_CODEX_MODELS
     }
@@ -130,6 +140,21 @@ def test_codex_context_window_is_the_measured_one() -> None:
     assert [model["maxTokens"] for model in declared] == [CODEX_MAX_TOKENS] * len(declared)
     # maxTokens is reserved out of the window, so it has to leave room for input.
     assert CODEX_MAX_TOKENS < CODEX_CONTEXT_WINDOW
+
+
+def test_gemini_models_match_the_published_spec() -> None:
+    """Gemini catalog entries route to committed LiteLLM models and carry published limits."""
+    litellm_models = _litellm_models()
+    models = {model["id"]: model for model in _public_coder_agent_models()}
+
+    for model_id, catalog_id in zip(GEMINI_MODELS, _OPENCLAW_GEMINI_IDS, strict=True):
+        assert catalog_id in litellm_models, f"{catalog_id} has no committed LiteLLM route"
+        entry = models[catalog_id]
+        assert entry["contextWindow"] == GEMINI_CONTEXT_WINDOW
+        assert entry["maxTokens"] == GEMINI_MAX_OUTPUT_TOKENS
+        assert entry["input"] == ["text", "image"]
+        assert entry["reasoning"] == (model_id not in GEMINI_NON_REASONING_MODELS)
+    assert GEMINI_MAX_OUTPUT_TOKENS < GEMINI_CONTEXT_WINDOW
 
 
 if __name__ == "__main__":
