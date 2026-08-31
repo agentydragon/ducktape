@@ -17,6 +17,9 @@ spec:
   # deleting the Forgejo props user and its upstream registry credentials.
   destroy: true
   approvePlan: ""
+  # Once the Terraform object is removed, destroy the external Forgejo resources
+  # before allowing the controller to remove the object.
+  destroyResourcesOnDeletion: true
 
   backendConfig:
     customConfiguration: |
