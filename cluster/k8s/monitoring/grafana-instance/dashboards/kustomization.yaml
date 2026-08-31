@@ -10,3 +10,12 @@ resources:
   - etcd.yaml
   - seaweedfs.yaml
   - gpu.yaml
+
+configMapGenerator:
+  - name: flux-cluster-dashboard
+    namespace: monitoring
+    files:
+      - flux-cluster.json
+
+configurations:
+  - kustomizeconfig

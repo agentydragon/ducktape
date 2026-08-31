@@ -7,6 +7,6 @@ spec:
   instanceSelector:
     matchLabels:
       dashboards: grafana
-  grafanaCom:
-    id: 16714
-    revision: 1
+  configMapRef:
+    name: flux-cluster-dashboard
+    key: flux-cluster.json
