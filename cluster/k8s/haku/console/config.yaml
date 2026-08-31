@@ -537,7 +537,7 @@ access_profiles:
     can_read_profiles: []
     # Even the fallback profile may ASK for a grant: every `grants` call queues for the operator,
     # and create_grant is never auto-approvable (operator ruling on #4986; pinned in
-    # haku/console/test_deployment_config.py). Consolidating onto one `grants` server (#4918) means
+    # //cluster/validation:test_haku_deployment_config_contract). Consolidating onto one `grants` server (#4918) means
     # this profile may now also ASK for a kubernetes grant, not only HTTP egress — still manual-only.
     in_process_server_ids:
       - grants

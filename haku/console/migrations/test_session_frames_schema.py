@@ -1,4 +1,4 @@
-"""The v3 frame log rejects pre-cutover kinds and deduplicates runner positions."""
+"""The current session-frame schema records and deduplicates runner positions."""
 
 from __future__ import annotations
 

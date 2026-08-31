@@ -1,4 +1,4 @@
-"""The index's two schema definitions must not drift.
+"""The deployed recall-index schema and its ORM definition must not drift.
 
 `haku/recall_index/schema.py` is what the code queries and what `store.ensure_schema` builds for
 the CLI and the tests; the console's Alembic baseline is what the deployed database gets. Nothing
@@ -29,7 +29,7 @@ def _only_the_index_schema(name: str | None, type_: str, parent_names: dict[str,
     return name == SCHEMA if type_ == "schema" else True
 
 
-def test_the_migration_builds_exactly_what_the_orm_declares(db_url: str) -> None:
+def test_head_schema_matches_the_recall_index_orm(db_url: str) -> None:
     apply_migrations(db_url)
     # The fixture hands out an asyncpg URL for the app; comparison is synchronous.
     engine = create_engine(make_url(db_url).set(drivername="postgresql+psycopg").render_as_string(False))

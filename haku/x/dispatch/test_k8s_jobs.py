@@ -1,12 +1,46 @@
-"""Stamping tests against the REAL reviewed template from cluster/k8s —
-a parity check that the template and the stamper agree on placeholders."""
+"""Unit tests for the dispatcher's Kubernetes job stamper."""
+
+import textwrap
 
 import pytest_bazel
 
 from haku.x.dispatch.k8s_jobs import job_name, render_job, render_secret
-from util.bazel.runfiles import get_required_path
 
-_TEMPLATE = get_required_path("_main/cluster/k8s/x/haku/dispatch/dispatcher/job-template.yaml").read_text()
+_TEMPLATE = textwrap.dedent(
+    """
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: ${JOB_NAME}
+      namespace: ${NAMESPACE}
+      labels:
+        haku.allegedly.works/zone: ${ZONE}
+    spec:
+      template:
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - name: worker
+              image: example.test/worker:devel # {"$imagepolicy": "flux-system:worker"}
+              env:
+                - name: MODEL
+                  value: ${MODEL}
+                - name: ANTHROPIC_AUTH_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${JOB_NAME}
+                      key: ANTHROPIC_AUTH_TOKEN
+                - name: RESULT_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: ${JOB_NAME}
+                      key: RESULT_TOKEN
+          volumes:
+            - name: prompt
+              secret:
+                secretName: ${JOB_NAME}
+    """
+)
 
 
 def test_job_name_deterministic_and_dns_safe():

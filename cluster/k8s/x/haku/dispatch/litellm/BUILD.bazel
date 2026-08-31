@@ -5,7 +5,10 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 py_library(
     name = "generate_workers_litellm",
     srcs = ["generate_workers_litellm.py"],
-    visibility = ["//haku/x/dispatch:__pkg__"],
+    visibility = [
+        "//cluster/validation:__pkg__",
+        "//haku/x/dispatch:__pkg__",
+    ],
     deps = [
         "//cluster/k8s/litellm/app:model_rosters",
         "//devinfra:prettier",

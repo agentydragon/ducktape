@@ -1,4 +1,4 @@
-"""The Console image exposes a minimal migration-only process mode."""
+"""The Console image exposes a minimal database-migration process mode."""
 
 from __future__ import annotations
 

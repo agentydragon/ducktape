@@ -1,7 +1,7 @@
 # The haku-state chunk pod's config slice: exactly its one index's definition, projected from the
 # `recall_indexes` registry in config.yaml (which the console still reads whole). Sync contract:
 # edit the registry entry there and mirror it here — the derivation tests
-# (haku/console/test_deployment_config.py, cluster/validation/test_haku_manifest_contracts.py)
+# (//cluster/validation:test_haku_deployment_config_contract)
 # fail on any drift, an extra entry, or a console-only key.
 git_ca_bundle: /etc/ssl/certs/ca-certificates.crt
 recall_indexes:

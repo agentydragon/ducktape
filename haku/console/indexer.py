@@ -92,8 +92,8 @@ class ChunkSettings(IndexerConfigFile, _WorkerSettings):
     """
 
     # The pod's own slice of the deploy-owned registry, derivation-tested against the console's
-    # `recall_indexes` (test_deployment_config) so the console's readers and this role's writers
-    # stay on the same registry entry and Git credential slots.
+    # `recall_indexes` (cluster validation's deployed configuration contract), keeps the
+    # console's readers and this role's writers on the same registry entry and Git credential slots.
     config_file: Path = Field(validation_alias=AliasChoices("config_file", "HAKU_INDEXER_CONFIG_FILE"))
     recall_index: RecallIndexSettings = Field(default_factory=RecallIndexSettings)
 

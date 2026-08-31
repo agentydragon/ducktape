@@ -8,6 +8,7 @@ py_library(
     name = "config",
     srcs = ["config.py"],
     visibility = [
+        "//cluster/validation:__pkg__",
         "//haku/console:__pkg__",
         "//haku/console/session:__pkg__",
         "//haku/console/x:__pkg__",

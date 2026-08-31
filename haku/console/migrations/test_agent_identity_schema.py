@@ -1,8 +1,4 @@
-"""Conversation identity is fail-closed on the current schema.
-
-The 0092/0093 cutover's own backfill test is gone: it migrated to head and asserted against rows
-0096 is entitled to delete. See `AGENTS.md` § "Do not keep tests for old migrations".
-"""
+"""Conversation identity is fail-closed on the current schema."""
 
 from __future__ import annotations
 
@@ -110,7 +106,7 @@ def _insert_tool_call(conn: Connection, tool_call_id: str) -> None:
                 created_at, updated_at, arguments_json, rationale
             ) VALUES (
                 :tool_call_id, 'server', 'tool', 'pending_approval',
-                :n, :n, '{}'::jsonb, 'session attribution migration test'
+                :n, :n, '{}'::jsonb, 'session attribution schema test'
             )
             """
         ),

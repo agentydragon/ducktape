@@ -13,7 +13,7 @@ Zone wiring (namespace + model allowlist per zone) is runtime config —
 zones.yaml, configMapGenerator-mounted from
 cluster/k8s/x/haku/dispatch/dispatcher/ next to the Job template. Its model lists
 must match the zone key minted in tf/gitops/litellm-keys/main.tf and the
-workers-LiteLLM config (parity-tested in test_zones_config.py).
+workers-LiteLLM config (parity-tested in cluster validation).
 """
 
 from pathlib import Path

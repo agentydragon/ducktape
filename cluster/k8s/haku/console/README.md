@@ -88,7 +88,7 @@ ConfigMap), so `haku-indexer-chunk-haku-state`, `-haku-conversations`, and `-duc
 sweep exactly their one index — the mounted config is the selection, with no selector env, and one
 index's config change or parse breakage never touches another's pod. Each slice is the projection
 of the registry in `config.yaml` (which the console still reads whole); the derivation tests
-(`haku/console/test_deployment_config.py`, `cluster/validation/test_haku_manifest_contracts.py`)
+(`//cluster/validation:test_haku_deployment_config_contract`)
 pin every slice to its registry entry and the Deployment set to the registry, both ways. The embed
 role stays one shared Deployment — `haku-indexer-embed` (`indexer-embed-deployment.yaml`,
 `--role=embed`) — draining the shared embedding queue. The API pod keeps only the database readers

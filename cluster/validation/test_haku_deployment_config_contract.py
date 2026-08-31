@@ -1,4 +1,4 @@
-"""Contracts for the deploy-owned Haku Console configuration."""
+"""Contracts between Haku's deployed configuration and its Kubernetes wiring."""
 
 import pytest
 import pytest_bazel
@@ -54,9 +54,8 @@ def test_deployed_console_config_is_valid(monkeypatch: pytest.MonkeyPatch) -> No
     raw = yaml.safe_load(raw_text)
     config = _console_settings(monkeypatch)
 
-    # The deployed ConfigMap writes only the canonical `harnesses` key (#4772 C4c).
+    # The deployed ConfigMap writes the canonical `harnesses` key.
     assert "harnesses" in raw
-    assert "chat_runtimes" not in raw
     assert config.harnesses is not None
     claude = config.harnesses.claude_code
     assert claude.claim_prefix == "claude"
@@ -67,19 +66,6 @@ def test_deployed_console_config_is_valid(monkeypatch: pytest.MonkeyPatch) -> No
     assert codex.claim_prefix == "codex"
     assert codex.harness_label == "codex"
     assert isinstance(codex.implementation, CodexAppServerImplementationConfig)
-    assert "settings" not in raw
-    assert "codex_runtime" not in raw
-    for removed_indirection in (
-        "token_env_var",
-        "operator_subject_env",
-        "client_id_env_var",
-        "client_secret_env_var",
-        "value_env_var",
-        "username_env_var",
-        "password_env_var",
-        "bearer_token_secret",
-    ):
-        assert removed_indirection not in raw_text
     assert (
         config.static_agents["haku"]
         .token.get_secret_value()

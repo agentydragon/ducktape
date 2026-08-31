@@ -237,12 +237,12 @@ def test_load_egress_decide_passes_configuration_grants_through() -> None:
     assert load_egress_decide(config).grants == config.grants
 
 
-def test_github_spike_configuration_grants() -> None:
-    """The #4943 GitHub spike shape: Agent haku reaches api.github.com + github.com through config
+def test_github_api_and_git_grants_share_one_agent_credential() -> None:
+    """Agent haku reaches the GitHub API and Git over one declared credential
     grants, redeeming the bot credential at both — Bearer on the API, git-over-HTTPS Basic on
     github.com (one registry entry: both are Authorization presentations of one placeholder).
-    The deployed section lives in cluster/k8s/haku/console/config.yaml; its coherence with the
-    registry is asserted over the real file in test_deployment_config.py."""
+    The deployed section is checked separately by cluster validation; this test keeps the parser
+    and the representative in-process configuration independent of deployment files."""
     haku = UUID("8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2")
     config = EgressDecideConfig.model_validate(
         yaml.safe_load(

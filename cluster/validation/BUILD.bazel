@@ -423,18 +423,128 @@ py_test(
 )
 
 py_test(
-    name = "test_haku_manifest_contracts",
-    srcs = ["test_haku_manifest_contracts.py"],
+    name = "test_haku_sandbox_contract",
+    srcs = ["test_haku_sandbox_contract.py"],
+    data = [
+        "//cluster/k8s:haku_manifest_contract_files",
+    ],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_haku_public_coder_contract",
+    srcs = ["test_haku_public_coder_contract.py"],
     data = [
         "//cluster/k8s:haku_manifest_contract_files",
         "//cluster/k8s/cli-proxy-api:manifests",
     ],
     deps = [
+        ":conftest",
+        "//:conftest",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_haku_workers_contract",
+    srcs = ["test_haku_workers_contract.py"],
+    data = ["//cluster/k8s:haku_manifest_contract_files"],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_haku_deployment_contract",
+    srcs = ["test_haku_deployment_contract.py"],
+    data = ["//cluster/k8s:haku_manifest_contract_files"],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_haku_deployment_config_contract",
+    srcs = ["test_haku_deployment_config_contract.py"],
+    data = ["//cluster/k8s:haku_manifest_contract_files"],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//haku/console:config",
+        "//haku/console:indexer",
+        "//haku/console:indexer_config",
+        "//haku/console:mcp_config",
+        "//haku/console:settings",
+        "//haku/console/channels/matrix:config",
+        "//haku/console/channels/matrix:worker",
+        "//haku/console/x/codex_app_server:config",
+        "//util/bazel:runfiles",
+        "@pypi//more_itertools",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_haku_dispatch_job_contract",
+    srcs = ["test_haku_dispatch_job_contract.py"],
+    data = [
+        "//cluster/k8s:kustomization.yaml",
+        "//cluster/k8s/x/haku/dispatch/dispatcher:manifests",
+    ],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//haku/x/dispatch:k8s_jobs",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_haku_dispatch_zones_contract",
+    srcs = ["test_haku_dispatch_zones_contract.py"],
+    data = [
+        "//cluster/k8s:kustomization.yaml",
+        "//cluster/k8s/x/haku/dispatch/dispatcher:manifests",
+    ],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//cluster/k8s/x/haku/dispatch/litellm:generate_workers_litellm",
+        "//haku/x/dispatch:config",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_haku_prompt_contract",
+    srcs = ["test_haku_prompt_contract.py"],
+    data = ["//cluster/k8s:haku_manifest_contract_files"],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//haku/console/session:system_prompt",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

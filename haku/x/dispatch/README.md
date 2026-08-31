@@ -85,6 +85,6 @@ state repo (`memory/dispatch.md`), not here.
 bbr test //haku/x/dispatch/...
 ```
 
-`test_zones_config.py` parity-tests the zone model allowlists against the generated
+`cluster/validation/test_haku_dispatch_zones_contract.py` parity-tests the zone model allowlists against the generated
 workers-LiteLLM config; `test_k8s_jobs.py` renders the real Job template;
 `test_prompt_lint.py` / `test_result_tokens.py` cover the deterministic layers.

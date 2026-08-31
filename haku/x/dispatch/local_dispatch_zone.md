@@ -265,7 +265,7 @@ Add or update:
   chained through `litellm_proxy/`.
 - `cluster/k8s/x/haku/dispatch/dispatcher/zones.yaml`: migrate to model lanes,
   isolation profiles, and dispatch targets; add a local target.
-- `haku/x/dispatch/test_zones_config.py`: expected target set, model-lane parity, and
+- `cluster/validation/test_haku_dispatch_zones_contract.py`: expected target set, model-lane parity, and
   provider/capability compatibility invariants.
 
 ## Namespace perimeter

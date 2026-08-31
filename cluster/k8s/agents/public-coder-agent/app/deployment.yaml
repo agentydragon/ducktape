@@ -247,7 +247,7 @@ spec:
             # carrying the policy's own wiring is what its every rule preconditions on, so if
             # the fleet injection ever widens to this namespace (#4670 adoption), this pod reads
             # as already wired and no port-8080 env is appended over the iron values above.
-            # Pinned by cluster/validation/test_haku_manifest_contracts.py. The fence trust stays a
+            # Pinned by //cluster/validation:test_haku_public_coder_contract. The fence trust stays a
             # per-request opt-in until the fence owns this pod's egress.
             - name: haku-egress-proxy-ca-cert
               mountPath: /egress-proxy-ca
