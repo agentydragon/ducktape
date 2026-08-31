@@ -27,7 +27,7 @@ from typing import Any
 
 import httpx
 
-from haku.console.auto_approval.decision import AutoApprovalDecision, AutoApproved, NotAutoApproved
+from haku.console.auto_approval.decision import AutoApprovalDecision, AutoApproved, AutoDenied, NotAutoApproved
 
 logger = logging.getLogger(__name__)
 
@@ -218,3 +218,16 @@ async def evaluate_public_repository(
             f"reviewed code search targets confirmed-public repository {target.owner}/{target.repository}"
         )
     return AutoApproved(f"reviewed read targets confirmed-public repository {target.owner}/{target.repository}")
+
+
+async def evaluate_public_repository_denial(
+    tool_name: str, arguments: dict[str, Any], visibility: GitHubRepositoryVisibilityService | None
+) -> AutoApprovalDecision:
+    """Deny a configured GitHub tool when its target is confirmed public."""
+    decision = await evaluate_public_repository(tool_name, arguments, visibility)
+    if isinstance(decision, AutoApproved):
+        return AutoDenied(
+            reason="GitHub MCP use for public repositories is disabled; use $GITHUB_TOKEN (or $GH_PAT) with GitHub HTTPS instead",
+            evaluation="denied: confirmed-public repository GitHub MCP use",
+        )
+    return decision

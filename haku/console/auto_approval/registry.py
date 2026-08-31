@@ -15,6 +15,7 @@ from haku.console.auto_approval.github import (
     GitHubRepositoryVisibilityService,
     evaluate_fixed_repository,
     evaluate_public_repository,
+    evaluate_public_repository_denial,
 )
 from haku.console.auto_approval.gmail import LABEL_NAMESPACE_TOOLS, evaluate_label_namespace
 from haku.console.auto_approval.kubernetes import evaluate_passthrough_redundancy
@@ -25,6 +26,7 @@ from haku.console.mcp_config import (
     ConsoleConfigFile,
     ExactToolsAutoApprovalPolicy,
     GitHubPublicRepositoryAutoApprovalPolicy,
+    GitHubPublicRepositoryAutoDenialPolicy,
     GitHubRepositoryAutoApprovalPolicy,
     GmailLabelNamespaceAutoApprovalPolicy,
     GrantSelfListAutoApprovalPolicy,
@@ -164,6 +166,12 @@ class AutoApprovalPolicyRegistry:
                     if server_id == server and tool_name in tools
                     else ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
                 )
+            case GitHubPublicRepositoryAutoDenialPolicy(server=server, tools=tools):
+                return (
+                    ToolAutoApprovalMode.CONDITIONALLY_AUTO_APPROVED
+                    if server_id == server and tool_name in tools
+                    else ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
+                )
             case GrantSelfListAutoApprovalPolicy(server=server):
                 return (
                     ToolAutoApprovalMode.CONDITIONALLY_AUTO_APPROVED
@@ -258,6 +266,13 @@ class AutoApprovalPolicyRegistry:
                 if server_id != server or tool_name not in tools:
                     return
                 decision = await evaluate_public_repository(tool_name, arguments, self._github_repository_visibility)
+                evaluation.record(current_path, decision)
+            case GitHubPublicRepositoryAutoDenialPolicy(server=server, tools=tools):
+                if server_id != server or tool_name not in tools:
+                    return
+                decision = await evaluate_public_repository_denial(
+                    tool_name, arguments, self._github_repository_visibility
+                )
                 evaluation.record(current_path, decision)
             case GrantSelfListAutoApprovalPolicy(server=server):
                 if server_id != server or tool_name != _LIST_GRANTS_TOOL:

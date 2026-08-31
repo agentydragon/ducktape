@@ -125,6 +125,14 @@ def test_deployed_console_config_is_valid(monkeypatch: pytest.MonkeyPatch) -> No
     assert ("sandbox" in server_ids) == (config.agent_sandbox is not None)
 
     policies = {policy["id"]: policy for policy in raw["auto_approval_policies"]}
+    assert profiles["public-coder"].auto_approval_policy == "public_coder_agent"
+    assert policies["public_github_repository_mcp_denial"]["type"] == "github_public_repository_deny"
+    assert "get_file_contents" in policies["public_github_repository_mcp_denial"]["tools"]
+    assert set(policies["public_github_actions_reads"]["tools"]) == {"actions_get", "actions_list", "get_job_logs"}
+    assert not set(policies["public_github_actions_reads"]["tools"]) & set(
+        policies["public_github_repository_mcp_denial"]["tools"]
+    )
+    assert not {"public_ducktape_reads", "public_ducktape_fork_reads", "public_github_reads"} & policies.keys()
     # A policy naming a server the catalog does not declare governs nothing at all, and does so
     # silently — renaming a server would leave its approvals behind without failing anything.
     for policy in raw["auto_approval_policies"]:
@@ -148,7 +156,7 @@ def test_deployed_console_config_is_valid(monkeypatch: pytest.MonkeyPatch) -> No
     # operation and click-free — its own exact-tools atom, distinct from the widening create_grant.
     assert policies["grants_own_revoke"]["type"] == "exact_tools"
     assert policies["grants_own_revoke"]["tools"] == {"grants": ["revoke_grants"]}
-    for root in ("haku_v1", "public_coder_safe_reads"):
+    for root in ("haku_v1", "public_coder_agent"):
         assert "kubernetes_reads" in policies[root]["policies"], root
         assert "grants_self_introspection" in policies[root]["policies"], root
         assert "grants_own_revoke" in policies[root]["policies"], root

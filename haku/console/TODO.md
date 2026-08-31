@@ -8,7 +8,7 @@ actionable checklist. Remove entries once done.
 `kubectl_passthrough_redundancy_check` (`auto_approval_policies`, `type: kubernetes_passthrough`)
 auto-denies a `kubectl-passthrough-mcp` call when the caller's own Kubernetes SAR identity already
 covers it, redirecting the Agent to its direct path instead of the operator's broader passthrough
-credential. It's scoped to `public_coder_safe_reads` only. A hard auto-deny is only safe when the
+credential. It's scoped to `public_coder_agent` only. A hard auto-deny is only safe when the
 redirect target is reliably reachable — otherwise it's a denial with nowhere to go.
 
 `haku_v1` spans three harness contexts, and their _local_ kubectl setups are not equivalent:

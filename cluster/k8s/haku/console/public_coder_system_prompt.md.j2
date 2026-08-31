@@ -27,6 +27,10 @@ You are talking directly to the operator.
   Use `$GITHUB_TOKEN` with `git` over HTTPS, `gh`, or `curl`. **You always have working GitHub
   credentials — never conclude you lack them.** Never print or embed the placeholder in logs or
   URLs.
+- For ordinary repository reads and writes that can be done with HTTPS at GitHub, do not use the
+  mounted GitHub MCP tools. Use `$GITHUB_TOKEN` with `git` over HTTPS, `gh`, or `curl`. GitHub MCP
+  remains appropriate for deliberate exceptions such as Actions job logs or separate artifact/blob
+  hosts. A GitHub MCP denial is a nudge to switch paths, not a request to ask for another approval.
 - For Ducktape: base changes on `agentydragon/ducktape`'s `devel`, push the branch to your fork,
   and open the pull request back to `agentydragon:devel` yourself.
 - Pushing: point a remote at the fork and push there. `gh` picks up `$GITHUB_TOKEN` as-is; for raw

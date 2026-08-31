@@ -281,6 +281,14 @@ class GitHubPublicRepositoryAutoApprovalPolicy(AutoApprovalPolicyBase):
     tools: set[str] = Field(min_length=1)
 
 
+class GitHubPublicRepositoryAutoDenialPolicy(AutoApprovalPolicyBase):
+    """Auto-deny reviewed GitHub tools targeting a confirmed-public repository."""
+
+    type: Literal["github_public_repository_deny"] = "github_public_repository_deny"
+    server: str = Field(min_length=1)
+    tools: set[str] = Field(min_length=1)
+
+
 class GrantSelfListAutoApprovalPolicy(AutoApprovalPolicyBase):
     """Conditionally auto-approve an Agent listing its OWN grants (`list_grants(principal='self')`).
 
@@ -319,6 +327,7 @@ type AutoApprovalPolicy = Annotated[
     | GmailLabelNamespaceAutoApprovalPolicy
     | GitHubRepositoryAutoApprovalPolicy
     | GitHubPublicRepositoryAutoApprovalPolicy
+    | GitHubPublicRepositoryAutoDenialPolicy
     | GrantSelfListAutoApprovalPolicy
     | KubernetesPassthroughAutoApprovalPolicy
     | AnyOfAutoApprovalPolicy
@@ -542,6 +551,7 @@ class ConsoleConfigFile(BaseModel):
                         GmailLabelNamespaceAutoApprovalPolicy,
                         GitHubRepositoryAutoApprovalPolicy,
                         GitHubPublicRepositoryAutoApprovalPolicy,
+                        GitHubPublicRepositoryAutoDenialPolicy,
                     ),
                 )
                 and policy.server not in server_ids

@@ -157,6 +157,29 @@ _CONFIG = ConsoleConfigFile.model_validate(
 )
 _POLICIES = AutoApprovalPolicyRegistry(_CONFIG)
 
+_DENIAL_CONFIG_DATA = _CONFIG.model_dump()
+_DENIAL_CONFIG_DATA["auto_approval_policies"].append(
+    {
+        "id": "public_github_repository_mcp_denial",
+        "type": "github_public_repository_deny",
+        "server": "github",
+        "tools": [*_GITHUB_TOOLS, "create_pull_request"],
+    }
+)
+_DENIAL_CONFIG_DATA["auto_approval_policies"].append(
+    {
+        "id": "public_github_actions_reads",
+        "type": "github_public_repository",
+        "server": "github",
+        "tools": ["actions_get", "actions_list", "get_job_logs"],
+    }
+)
+for _root_id in ("haku_v1", "public_coder_github_reads"):
+    next(policy for policy in _DENIAL_CONFIG_DATA["auto_approval_policies"] if policy["id"] == _root_id)[
+        "policies"
+    ].extend(["public_github_repository_mcp_denial", "public_github_actions_reads"])
+_DENIAL_CONFIG = ConsoleConfigFile.model_validate(_DENIAL_CONFIG_DATA)
+
 
 async def _decision(tool_name: str, arguments: dict, *, gmail=None, actor: RuntimeActor = AGENT_ACTOR):
     gmail = gmail or Mock()
@@ -631,6 +654,24 @@ def _policies_with_visibility(handler) -> AutoApprovalPolicyRegistry:
     )
 
 
+async def _public_denial_raw_decision(
+    tool_name: str, arguments: dict, *, handler, actor: AgentActor
+) -> tuple[str | None, str | None] | PolicyDenial:
+    http_client = httpx.AsyncClient(base_url="https://api.github.com", transport=httpx.MockTransport(handler))
+    registry = AutoApprovalPolicyRegistry(
+        _DENIAL_CONFIG, github_repository_visibility=GitHubRepositoryVisibilityService(http_client, ttl_seconds=3600.0)
+    )
+    return await auto_approve_tool_call(
+        policies=registry,
+        actor=actor,
+        server_id="github",
+        tool_name=tool_name,
+        arguments=arguments,
+        gmail=None,
+        mcp=None,
+    )
+
+
 async def _public_repo_decision(
     tool_name: str, arguments: dict, *, handler, actor: RuntimeActor = PUBLIC_CODER_ACTOR
 ) -> tuple[str | None, str | None]:
@@ -645,6 +686,54 @@ async def _public_repo_decision(
             mcp=None,
         )
     )
+
+
+@pytest.mark.parametrize("actor", [AGENT_ACTOR, PUBLIC_CODER_ACTOR], ids=["haku", "public-coder"])
+@pytest.mark.parametrize(
+    ("tool_name", "arguments"),
+    [
+        ("issue_read", {"owner": "redpanda-data", "repo": "ducktape", "issue_number": 1}),
+        ("get_file_contents", {"owner": "redpanda-data", "repo": "ducktape", "path": "README.md"}),
+    ],
+)
+async def test_confirmed_public_repository_mcp_use_is_denied_for_http_replaceable_reads(
+    actor: AgentActor, tool_name: str, arguments: dict
+) -> None:
+    handler = _github_visibility_handler(("redpanda-data", "ducktape"))
+
+    denial = await _public_denial_raw_decision(tool_name, arguments, handler=handler, actor=actor)
+
+    assert isinstance(denial, PolicyDenial)
+    assert denial.evaluation == "denied: confirmed-public repository GitHub MCP use"
+    assert "GITHUB_TOKEN" in denial.reason
+
+
+@pytest.mark.parametrize("actor", [AGENT_ACTOR, PUBLIC_CODER_ACTOR], ids=["haku", "public-coder"])
+async def test_confirmed_public_repository_mcp_use_is_denied_for_http_replaceable_writes(actor: AgentActor) -> None:
+    handler = _github_visibility_handler(("redpanda-data", "ducktape"))
+
+    denial = await _public_denial_raw_decision(
+        "create_pull_request",
+        {"owner": "redpanda-data", "repo": "ducktape", "title": "Change", "head": "x", "base": "main"},
+        handler=handler,
+        actor=actor,
+    )
+
+    assert isinstance(denial, PolicyDenial)
+    assert "public repositories" in denial.reason
+
+
+@pytest.mark.parametrize("actor", [AGENT_ACTOR, PUBLIC_CODER_ACTOR], ids=["haku", "public-coder"])
+async def test_public_actions_and_file_content_reads_remain_mcp_allowed(actor: AgentActor) -> None:
+    handler = _github_visibility_handler(("redpanda-data", "ducktape"))
+
+    for tool_name, arguments in (
+        ("actions_list", {"owner": "redpanda-data", "repo": "ducktape", "method": "list_workflow_runs"}),
+        ("get_job_logs", {"owner": "redpanda-data", "repo": "ducktape", "run_id": 1, "failed_only": True}),
+    ):
+        decision = await _public_denial_raw_decision(tool_name, arguments, handler=handler, actor=actor)
+        assert not isinstance(decision, PolicyDenial), (tool_name, decision)
+        assert decision[0] == AGENT_AUTO_APPROVAL_ID
 
 
 async def test_confirmed_public_third_party_repo_auto_approves() -> None:
@@ -817,11 +906,11 @@ _OWN_REVOKE_REGISTRY = AutoApprovalPolicyRegistry(
             "auto_approval_policies": [
                 {"id": "grants_own_revoke", "type": "exact_tools", "tools": {"grants": ["revoke_grants"]}},
                 {"id": "haku_v1", "type": "any_of", "policies": ["grants_own_revoke"]},
-                {"id": "public_coder_safe_reads", "type": "any_of", "policies": ["grants_own_revoke"]},
+                {"id": "public_coder_agent", "type": "any_of", "policies": ["grants_own_revoke"]},
             ],
             "access_profiles": [
                 {"id": "haku", "auto_approval_policy": "haku_v1"},
-                {"id": "public-coder", "auto_approval_policy": "public_coder_safe_reads"},
+                {"id": "public-coder", "auto_approval_policy": "public_coder_agent"},
             ],
             "default_access_profile_id": "haku",
         }
@@ -831,7 +920,7 @@ _OWN_REVOKE_REGISTRY = AutoApprovalPolicyRegistry(
 
 @pytest.mark.parametrize("actor", [AGENT_ACTOR, PUBLIC_CODER_ACTOR], ids=["haku", "public-coder"])
 def test_revoke_grants_is_click_free_under_both_agent_roots(actor: AgentActor) -> None:
-    # Composed into both agent roots (haku_v1 and public_coder_safe_reads), an Agent's own-relinquish
+    # Composed into both agent roots (haku_v1 and public_coder_agent), an Agent's own-relinquish
     # revoke is unconditionally auto-approved.
     assert _OWN_REVOKE_REGISTRY.tool_mode(actor, "grants", "revoke_grants") is ToolAutoApprovalMode.ALWAYS_AUTO_APPROVED
     # create_grant (widening) is never listed, so it stays manual under the same roots.

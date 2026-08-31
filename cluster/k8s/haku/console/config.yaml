@@ -177,9 +177,12 @@ auto_approval_policies:
         - shopping_lists_list
         - stock_entries_list
         - stock_get
-  # GitHub MCP's normal endpoint exposes its default catalog, including writes. This is the
-  # explicit 2026-08-14 upstream read-only subset: new upstream tools intentionally stay manual
-  # until reviewed here. `ui_get` reads an MCP App UI resource, not GitHub repository state.
+  # GitHub MCP's normal endpoint exposes its default catalog, including writes. Keep only
+  # non-repository reads here; repository work is either an explicit exception or handled by the
+  # public-repository denial nudge below. Unscoped repository searches stay manual because they
+  # cannot be positively classified as public without a repository target. New upstream tools
+  # intentionally stay manual until reviewed.
+  # `ui_get` reads an MCP App UI resource, not GitHub repository state.
   - id: github_reads
     type: exact_tools
     tools:
@@ -188,31 +191,6 @@ auto_approval_policies:
         - get_team_members
         - get_teams
         - ui_get
-        - find_duplicate
-        - get_label
-        - issue_dependency_read
-        - issue_read
-        - list_issue_fields
-        - list_issue_types
-        - list_issues
-        - search_issues
-        - list_pull_requests
-        - pull_request_read
-        - search_pull_requests
-        - get_commit
-        - get_file_blame
-        - get_file_contents
-        - get_latest_release
-        - get_release_by_tag
-        - get_tag
-        - list_branches
-        - list_commits
-        - list_releases
-        - list_repository_collaborators
-        - list_tags
-        - search_code
-        - search_commits
-        - search_repositories
         - search_users
   # `get_me` returns only the authenticated caller's own GitHub identity and has no
   # repository or mutation surface. Keep it separate so every configured Agent can
@@ -222,24 +200,57 @@ auto_approval_policies:
     tools:
       github:
         - get_me
-  # public-coder-agent may inspect this public source repository, but not use the Operator's GitHub
-  # credential to read other public or private repositories. search_pull_requests is safe only
-  # with its matching owner/repo arguments and no query-level `repo:` qualifier; search_code is
-  # safe only with one unquoted `repo:agentydragon/ducktape` qualifier. Its typed policy evaluator
-  # verifies those distinct boundaries before allowing either search.
-  - id: public_ducktape_reads
+  # Retained for possible reconsideration: public-repository reads used to be auto-approved here,
+  # but ordinary repository work should use the Agent's GITHUB_TOKEN through HTTPS instead.
+  # - id: public_ducktape_reads
+  #   type: github_repository
+  #   server: github
+  #   owner: agentydragon
+  #   repository: ducktape
+  #   tools: &repo_read_tools
+  #     - actions_get
+  #     - actions_list
+  #     - find_duplicate
+  #     - get_commit
+  #     - get_file_blame
+  #     - get_file_contents
+  #     - get_job_logs
+  #     - get_label
+  #     - get_latest_release
+  #     - get_release_by_tag
+  #     - get_tag
+  #     - issue_dependency_read
+  #     - issue_read
+  #     - list_branches
+  #     - list_commits
+  #     - list_issue_fields
+  #     - list_issue_types
+  #     - list_issues
+  #     - list_pull_requests
+  #     - list_releases
+  #     - list_repository_collaborators
+  #     - list_tags
+  #     - pull_request_read
+  #     - search_issues
+  #     - search_pull_requests
+  #     - search_code
+  # - id: public_ducktape_fork_reads
+  #   type: github_repository
+  #   server: github
+  #   owner: agentydragon-agent
+  #   repository: ducktape
+  #   tools: *repo_read_tools
+  # Retained for possible reconsideration: this private-repository allow remains active.
+  - id: public_gaffer_private_reads
     type: github_repository
     server: github
     owner: agentydragon
-    repository: ducktape
-    tools: &repo_read_tools
-      - actions_get
-      - actions_list
+    repository: gaffer-private
+    tools:
       - find_duplicate
       - get_commit
       - get_file_blame
       - get_file_contents
-      - get_job_logs
       - get_label
       - get_latest_release
       - get_release_by_tag
@@ -259,49 +270,65 @@ auto_approval_policies:
       - search_issues
       - search_pull_requests
       - search_code
-  # The coder Agent's own fork, used to stage branches before opening PRs into
-  # agentydragon/ducktape. It already has write access here (that's how it opens PRs), so a
-  # read grant on its own fork's content adds no exposure beyond what it can already write.
-  # Same tool list/boundary as public_ducktape_reads — only the trusted owner differs.
-  - id: public_ducktape_fork_reads
-    type: github_repository
+  # Retained for possible reconsideration: this broad confirmed-public allow was replaced by
+  # public_github_repository_mcp_denial so Agents use their GitHub token through HTTPS instead.
+  # - id: public_github_reads
+  #   type: github_public_repository
+  #   server: github
+  #   tools: *repo_read_tools
+  # Ordinary repository reads and writes against confirmed-public repositories are denied so
+  # Agents use GITHUB_TOKEN via HTTPS. Actions metadata and job logs remain MCP-allowed because
+  # those responses may link to GitHub's separate artifact/log hosts.
+  - id: public_github_repository_mcp_denial
+    type: github_public_repository_deny
     server: github
-    owner: agentydragon-agent
-    repository: ducktape
-    tools: *repo_read_tools
-  # public-coder-agent may also inspect the private Gaffer repository. Keep this as a separate
-  # repository-scoped atom so adding one private source does not widen the Ducktape boundary or
-  # accidentally grant access to other repositories. Both search tools require their policy's
-  # repository boundary: owner/repo arguments (and no query-level qualifier) for PR searches, or
-  # one unquoted `repo:agentydragon/gaffer-private` qualifier for code searches.
-  - id: public_gaffer_private_reads
-    type: github_repository
-    server: github
-    owner: agentydragon
-    repository: gaffer-private
-    tools: *repo_read_tools
-  # Any repository confirmed genuinely public — not bounded to a fixed owner/repo allowlist.
-  # `type: github_public_repository` positively confirms the target repository's visibility with a
-  # live, unauthenticated GitHub API call before approving (see
-  # haku/console/auto_approval/github.py) rather than inferring "public" from the absence
-  # of a restriction: the operator's GitHub OAuth token behind this connection can also reach
-  # private repos it can see (agentydragon/gaffer-private included), so a bare owner/repo match
-  # here would let a call read any of those just by naming it. The target repository is derived
-  # the same way as the fixed-repo policies above (owner/repo arguments and no query-level `repo:`
-  # qualifier for search_pull_requests; one unquoted `repo:owner/repo` qualifier for search_code),
-  # then checked for public visibility instead of compared against a configured pair. Same tool
-  # list as the fixed-repo policies (*repo_read_tools) — get_job_logs included.
-  - id: public_github_reads
+    tools:
+      - create_branch
+      - create_or_update_file
+      - create_pull_request
+      - delete_file
+      - fork_repository
+      - issue_write
+      - merge_pull_request
+      - pull_request_review_write
+      - push_files
+      - update_pull_request
+      - update_pull_request_branch
+      - find_duplicate
+      - get_commit
+      - get_file_blame
+      - get_file_contents
+      - get_label
+      - get_latest_release
+      - get_release_by_tag
+      - get_tag
+      - issue_dependency_read
+      - issue_read
+      - list_branches
+      - list_commits
+      - list_issue_fields
+      - list_issue_types
+      - list_issues
+      - list_pull_requests
+      - list_releases
+      - list_repository_collaborators
+      - list_tags
+      - pull_request_read
+      - search_issues
+      - search_pull_requests
+      - search_code
+  - id: public_github_actions_reads
     type: github_public_repository
     server: github
-    tools: *repo_read_tools
+    tools:
+      - actions_get
+      - actions_list
+      - get_job_logs
   - id: public_coder_github_reads
     type: any_of
     policies:
-      - public_ducktape_reads
-      - public_ducktape_fork_reads
       - public_gaffer_private_reads
-      - public_github_reads
+      - public_github_actions_reads
   # Side-effect-free reads on the shared `grants` server (#4918): `kubernetes_can_i` (SAR access
   # inspection) and `get_grant`. `get_grant` is actor-scoped by construction — it returns only a
   # grant owned by and applicable to the calling Agent (else not-found), and an Operator cannot call
@@ -375,9 +402,10 @@ auto_approval_policies:
   - id: kubectl_passthrough_redundancy_check
     type: kubernetes_passthrough
     server: kubectl-passthrough-mcp
-  - id: public_coder_safe_reads
+  - id: public_coder_agent
     type: any_of
     policies:
+      - public_github_repository_mcp_denial
       - public_coder_github_reads
       - github_identity_reads
       - kubernetes_reads
@@ -487,6 +515,8 @@ auto_approval_policies:
       - grocy_reads
       - github_reads
       - github_identity_reads
+      - public_github_repository_mcp_denial
+      - public_github_actions_reads
       - tana_safe_tools
       - postscanmail_reads
       - home_assistant_reads
@@ -521,7 +551,7 @@ access_profiles:
       - workers
       - haku_session_sandboxes
   - id: public-coder
-    auto_approval_policy: public_coder_safe_reads
+    auto_approval_policy: public_coder_agent
     allowed_harnesses:
       - codex_app_server
     can_read_profiles: []

@@ -39,10 +39,14 @@ session id.
 
 - **All your HTTP(S) traffic leaves through an egress fence.** Only origins a standing policy
   or an active grant covers will connect.
-- For GitHub work from a shell, prefer the configured proxy path over MCP GitHub tools. When
-  `GITHUB_TOKEN` or `GH_PAT` is present, it is the inert `proxy-github-placeholder`; the proxy
-  translates it only in scoped `Authorization` headers. Use the environment variable with `curl`,
-  `gh`, or Git over HTTPS, and never print or put it in a URL.
+- For ordinary GitHub repository reads and writes that can be done with HTTPS at GitHub, do not use
+  the mounted GitHub MCP tools. Use `GITHUB_TOKEN` or `GH_PAT` with `curl`, `gh`, or Git over HTTPS;
+  in this environment the value is an inert `proxy-github-placeholder` and the configured proxy
+  translates it only in scoped `Authorization` headers. Never print or put the token in a URL.
+- The GitHub MCP exceptions are deliberate: use it when the operation is not yet replaceable by a
+  plain GitHub HTTPS request, such as reading Actions job logs or responses involving separate
+  artifact/blob hosts. A GitHub MCP denial is a nudge to switch paths, not a request to ask for
+  another approval.
 - A denied https request may still be summarized as
   `CONNECT tunnel failed, response 403`; inspect the response's `X-Haku-Egress-Denied`, optional
   `X-Haku-Grant-Scope`, and `X-Haku-Egress-Help` headers, then request the covering grant when
