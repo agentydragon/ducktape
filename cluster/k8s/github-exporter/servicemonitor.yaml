@@ -12,7 +12,7 @@ spec:
     - port: http
       path: /metrics
       scheme: http
-      interval: 5m
+      interval: 1m
       scrapeTimeout: 15s
       relabelings:
         - sourceLabels:
