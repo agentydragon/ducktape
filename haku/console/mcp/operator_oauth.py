@@ -16,7 +16,6 @@ from __future__ import annotations
 import base64
 import datetime
 import logging
-import os
 import secrets
 import time
 from functools import partial
@@ -579,29 +578,17 @@ async def _resolve_operator_oauth_client(
             )
             match oauth.client_registration:
                 case PreregisteredOAuthClient() as registration:
-                    client_id = registration.client_id
-                    if registration.client_id_env_var is not None:
-                        client_id = os.environ.get(registration.client_id_env_var)
-                        if not client_id:
-                            raise RuntimeError(
-                                f"missing OAuth client id env var {registration.client_id_env_var} for MCP server {server.id}"
-                            )
-                    assert client_id is not None  # validated by PreregisteredOAuthClient
-                    client_secret = None
-                    if registration.client_secret_env_var is not None:
-                        client_secret = os.environ.get(registration.client_secret_env_var)
-                        if not client_secret:
-                            raise RuntimeError(
-                                f"missing OAuth client secret env var {registration.client_secret_env_var} "
-                                f"for MCP server {server.id}"
-                            )
                     client_info = OAuthClientInformationFull(
-                        client_id=client_id,
+                        client_id=registration.client_id,
                         redirect_uris=[redirect_uri],
                         grant_types=["authorization_code", "refresh_token"],
                         response_types=["code"],
                         scope=scope,
-                        client_secret=client_secret,
+                        client_secret=(
+                            None
+                            if registration.client_secret is None
+                            else registration.client_secret.get_secret_value()
+                        ),
                         token_endpoint_auth_method=registration.token_endpoint_auth_method,
                     )
                 case DynamicOAuthClientRegistration(client_name=client_name):

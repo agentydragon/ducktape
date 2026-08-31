@@ -47,7 +47,11 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
     # LiteLLM resolves to a ClusterIP inside prohibited_cidrs, so the gateway is reachable only
     # because this entry lifts the private-address denial (#5073).
     assert litellm_grant["allow_prohibited_address"] is True
-    credential = one(c for c in egress["credentials"] if c["handle"] == litellm_grant["credential_handle"])
+    credential = one(
+        credential
+        for credential in egress["credentials"].values()
+        if credential["handle"] == litellm_grant["credential_handle"]
+    )
     assert implementation["auth_token_placeholder"] == credential["placeholder"]
     assert implementation["model"]
     assert implementation["haiku_model"]
@@ -60,9 +64,13 @@ def test_haku_claude_oauth_proxy_isolated_from_general_sandbox(k8s_dir: Path) ->
         "name": "AW_READ_TOKEN",
         "value": "activitywatch-read-token-placeholder",
     }
-    activity_credential = one(c for c in egress["credentials"] if c["handle"] == "activitywatch-read-token")
+    activity_credential = one(
+        credential
+        for credential in egress["credentials"].values()
+        if credential["handle"] == "activitywatch-read-token"
+    )
     assert activity_credential["placeholder"] == runner_environment["AW_READ_TOKEN"]["value"]
-    assert activity_credential["value_env_var"] == "HAKU_EGRESS_CREDENTIAL_ACTIVITYWATCH_READ"
+    assert "value" not in activity_credential
     assert activity_credential["origins"] == [
         {"scheme": "https", "host": "activitywatch-read.allegedly.works", "port": 443}
     ]
@@ -899,7 +907,7 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
     assert codex["claim_prefix"] == "codex"
     assert codex["harness_label"] == "codex"
     assert codex["agent_id"] in {entry["agent_id"] for entry in shared_config["launchable_agents"]}
-    assert shared_config["matrix"]["default_agent_id"] == "8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2"
+    assert shared_config["matrix_launch"]["default_agent_id"] == "8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2"
     implementation = codex["implementation"]
     assert implementation["kind"] == "codex_app_server"
     assert implementation["provider_id"] == "haku"
@@ -912,7 +920,7 @@ def test_public_coder_codex_has_empty_workspace_and_shared_trust_path(k8s_dir: P
     assert "litellm.litellm.svc.cluster.local" not in codex["no_proxy"]
     assert "haku-console.haku-console.svc.cluster.local" in codex["no_proxy"]
     assert "haku-kube-api-proxy.haku-console.svc.cluster.local" in codex["no_proxy"]
-    assert "codex_runtime" not in shared_config["settings"]
+    assert "codex_runtime" not in shared_config
     assert shared_config["kubernetes_authorization"]["subjects_by_access_profile"]["haku"] == {
         "username": "haku:access-profile:haku",
         "groups": ["haku:access-profile:haku", "system:authenticated"],
@@ -977,14 +985,14 @@ def test_haku_console_deployment_version_contract(k8s_dir: Path) -> None:
     assert deployment["spec"]["strategy"]["rollingUpdate"]["maxUnavailable"] == 0
     containers = {container["name"]: container for container in deployment["spec"]["template"]["spec"]["containers"]}
     runtime_tags = {entry["name"]: entry["value"] for entry in containers["server"]["env"] if "value" in entry}
-    assert containers["server"]["image"].rsplit(":", 1)[1] == runtime_tags["HAKU_CONSOLE_IMAGE_TAG"]
-    assert "HAKU_CONSOLE_STATIC_IMAGE_TAG" not in runtime_tags
+    assert containers["server"]["image"].rsplit(":", 1)[1] == runtime_tags["HAKU_CONSOLE__IMAGE_TAG"]
+    assert "HAKU_CONSOLE__STATIC_IMAGE_TAG" not in runtime_tags
     static_container = one(static_deployment["spec"]["template"]["spec"]["containers"])
     static_tag = static_container["image"].rsplit(":", 1)[1]
     static_metadata = yaml.safe_load((console_dir / "static-metadata.yaml").read_text(encoding="utf-8"))
     assert static_metadata["data"]["image-tag"] == static_tag
 
-    static_tag_file = runtime_tags["HAKU_CONSOLE_STATIC_IMAGE_TAG_FILE"]
+    static_tag_file = runtime_tags["HAKU_CONSOLE__STATIC_IMAGE_TAG_FILE"]
     static_metadata_mount = next(
         mount for mount in containers["server"]["volumeMounts"] if mount["name"] == "static-metadata"
     )
@@ -1095,15 +1103,15 @@ def test_haku_indexer_worker_contract(k8s_dir: Path) -> None:
     embed_pod = embed["spec"]["template"]["spec"]
     embed_container = one(embed_pod["containers"])
     embed_env = {entry["name"]: entry for entry in embed_container["env"]}
-    db_secret = embed_env["HAKU_INDEXER_DATABASE_URL"]["valueFrom"]["secretKeyRef"]["name"]
+    db_secret = embed_env["HAKU_INDEXER__DATABASE_URL"]["valueFrom"]["secretKeyRef"]["name"]
 
     # Search joins `content_embeddings` on the model key the embed role writes, so reader and writer
     # must name the same model. (The endpoint address may legitimately differ; the model may not.)
-    assert server_env["HAKU_CONSOLE_EMBEDDER__MODEL"]["value"] == embed_env["HAKU_INDEXER_EMBEDDER__MODEL"]["value"]
+    assert server_env["HAKU_CONSOLE__EMBEDDER__MODEL"]["value"] == embed_env["HAKU_INDEXER__EMBEDDER__MODEL"]["value"]
 
     kustomization = yaml.safe_load((console_dir / "kustomization.yaml").read_text(encoding="utf-8"))
     generator_files = {entry["name"]: entry["files"] for entry in kustomization["configMapGenerator"]}
-    index_by_id = {index["index_id"]: index for index in config["recall_indexes"]}
+    index_by_id = {index["index_id"]: (slot, index) for slot, index in config["recall_indexes"].items()}
     chunk_index_ids: set[str] = set()
     for path in sorted(console_dir.glob("indexer-chunk-*-deployment.yaml")):
         chunk_raw = path.read_text(encoding="utf-8")
@@ -1120,8 +1128,11 @@ def test_haku_indexer_worker_contract(k8s_dir: Path) -> None:
         configmap_name = config_volume["configMap"]["name"]
         slice_key, _, slice_name = one(generator_files[configmap_name]).partition("=")
         slice_config = yaml.safe_load((console_dir / slice_name).read_text(encoding="utf-8"))
-        index_id = one(slice_config["recall_indexes"])["index_id"]
+        slice_slot, slice_index = one(slice_config["recall_indexes"].items())
+        index_id = slice_index["index_id"]
         assert index_id in index_by_id, f"{path.name} slices an unregistered index {index_id!r}"
+        registry_slot, registry_index = index_by_id[index_id]
+        assert slice_slot == registry_slot
         chunk_index_ids.add(index_id)
         assert path.name == f"indexer-chunk-{index_id}-deployment.yaml", path.name
         assert chunk["metadata"]["name"] == f"haku-indexer-chunk-{index_id}"
@@ -1132,7 +1143,10 @@ def test_haku_indexer_worker_contract(k8s_dir: Path) -> None:
         # bundle the console reads, and nothing else — so a console-only or another index's config
         # change (or parse breakage) can never reach this pod. The config-file setting names the
         # mounted slice.
-        assert slice_config == {"git_ca_bundle": config["git_ca_bundle"], "recall_indexes": [index_by_id[index_id]]}
+        assert slice_config == {
+            "git_ca_bundle": config["git_ca_bundle"],
+            "recall_indexes": {registry_slot: registry_index},
+        }
         config_mount = one(mount for mount in chunk_container["volumeMounts"] if mount["name"] == "config")
         assert chunk_env["HAKU_INDEXER_CONFIG_FILE"]["value"] == f"{config_mount['mountPath']}/{slice_key}"
 
@@ -1158,23 +1172,21 @@ def test_haku_indexer_worker_contract(k8s_dir: Path) -> None:
         # share haku-forgejo-git with the chunk pod.
         forgejo_git_egress_secret = "haku-forgejo-git"
         assert chunk_pod["automountServiceAccountToken"] is False
-        assert chunk_env["HAKU_INDEXER_DATABASE_URL"]["valueFrom"]["secretKeyRef"]["name"] == db_secret
+        assert chunk_env["HAKU_INDEXER__DATABASE_URL"]["valueFrom"]["secretKeyRef"]["name"] == db_secret
         assert _secret_refs(server).isdisjoint(_secret_refs(chunk_container) - {forgejo_git_egress_secret})
         assert _secret_refs(chunk_container) & _secret_refs(embed_container) == {db_secret}
 
-        # Credential minimization by index: the registry names Git-read slots only for the indexes
-        # that need them, and a chunk pod binds a Git slot — from a Secret — iff its own registry
-        # entry names it. The pod's env is exactly its settings contract, {config_file,
+        # Credential minimization by index: a chunk pod overlays the typed Git credential leaves
+        # only for the private Forgejo source. The pod's env is exactly its settings contract, {config_file,
         # database_url} plus its own Git slots — in particular no embedder endpoint and no index
         # selector — and its secret set is exactly its DB role plus its own Git slots.
-        git_slots = {
-            index_by_id[index_id][slot]
-            for slot in ("username_env_var", "password_env_var")
-            if index_by_id[index_id].get(slot) is not None
-        }
+        credential_prefix = f"HAKU_INDEXER__RECALL_INDEXES__{registry_slot.upper()}__CREDENTIALS__"
+        git_slots = {f"{credential_prefix}USERNAME", f"{credential_prefix}PASSWORD"}
+        if not registry_index.get("repo_url", "").startswith("http://forgejo-http."):
+            git_slots = set()
         for var in git_slots:
             assert "secretKeyRef" in chunk_env[var]["valueFrom"], f"registry slot {var} unbound on {index_id}"
-        assert set(chunk_env) == {"HAKU_INDEXER_CONFIG_FILE", "HAKU_INDEXER_DATABASE_URL"} | git_slots
+        assert set(chunk_env) == {"HAKU_INDEXER_CONFIG_FILE", "HAKU_INDEXER__DATABASE_URL"} | git_slots
         git_secrets = {chunk_env[var]["valueFrom"]["secretKeyRef"]["name"] for var in git_slots}
         assert _secret_refs(chunk_container) == {db_secret} | git_secrets
 
@@ -1237,7 +1249,7 @@ def test_haku_matrix_adapter_worker_contract(k8s_dir: Path) -> None:
     server_env = {entry["name"]: entry for entry in server["env"]}
     assert not any("MATRIX" in name for name in server_env)
     adapter_env = {entry["name"]: entry for entry in adapter_container["env"]}
-    password_secret = adapter_env["HAKU_MATRIX_ADAPTER_MATRIX__PASSWORD"]["valueFrom"]["secretKeyRef"]
+    password_secret = adapter_env["HAKU_MATRIX_ADAPTER__MATRIX__PASSWORD"]["valueFrom"]["secretKeyRef"]
     assert password_secret["name"] not in _secret_refs(server)
     assert "optional" not in password_secret
     reflection_source = one(
@@ -1292,15 +1304,15 @@ def test_haku_matrix_adapter_worker_contract(k8s_dir: Path) -> None:
     ]
     assert {ref["key"] for ref in oidc_refs} == {"operator_subject"}
     subject_secret = one({ref["name"] for ref in oidc_refs})
-    assert server_env["HAKU_CONSOLE_OPERATOR_OIDC__CLIENT_SECRET"]["valueFrom"]["secretKeyRef"]["name"] == (
+    assert server_env["HAKU_CONSOLE__OPERATOR_OIDC__CLIENT_SECRET"]["valueFrom"]["secretKeyRef"]["name"] == (
         subject_secret
     )
 
     # The adapter resolves that subject through anchor rows written at console login, so the two
     # Deployments must name one trust domain.
     assert (
-        adapter_env["HAKU_MATRIX_ADAPTER_OPERATOR_IDENTITY_TRUST_DOMAIN"]["value"]
-        == server_env["HAKU_CONSOLE_OPERATOR_IDENTITY__TRUST_DOMAIN"]["value"]
+        adapter_env["HAKU_MATRIX_ADAPTER__OPERATOR_IDENTITY_TRUST_DOMAIN"]["value"]
+        == server_env["HAKU_CONSOLE__OPERATOR_IDENTITY__TRUST_DOMAIN"]["value"]
     )
 
     # The launch-identity registry is the one deploy-owned config file the console reads: the
@@ -1321,7 +1333,7 @@ def test_haku_matrix_adapter_worker_contract(k8s_dir: Path) -> None:
     # The narrow database role, wired end to end: the Deployment consumes the ESO-generated
     # Secret, CNPG syncs that Secret's password onto the managed role of the same name, and the
     # provisioner SQL grants to that role — and never to it via a default-privileges blanket.
-    db_secret = adapter_env["HAKU_MATRIX_ADAPTER_DATABASE_URL"]["valueFrom"]["secretKeyRef"]["name"]
+    db_secret = adapter_env["HAKU_MATRIX_ADAPTER__DATABASE_URL"]["valueFrom"]["secretKeyRef"]["name"]
     role_secret_docs = list(
         yaml.safe_load_all((console_dir / "db" / "matrix-adapter-role-secret.yaml").read_text(encoding="utf-8"))
     )
@@ -1378,9 +1390,9 @@ def test_haku_console_migration_release_gate(k8s_dir: Path) -> None:
         "HAKU_CONSOLE_DB_HOST",
         "HAKU_CONSOLE_DB_PORT",
         "HAKU_CONSOLE_DB_NAME",
-        "HAKU_CONSOLE_DATABASE_URL",
+        "HAKU_CONSOLE__DATABASE_URL",
     }
-    assert migration_env["HAKU_CONSOLE_DATABASE_URL"]["value"].startswith("postgresql+asyncpg://")
+    assert migration_env["HAKU_CONSOLE__DATABASE_URL"]["value"].startswith("postgresql+asyncpg://")
     assert {entry["valueFrom"]["secretKeyRef"]["name"] for entry in migration_env.values() if "valueFrom" in entry} == {
         "haku-console-db-app"
     }
@@ -1410,8 +1422,8 @@ def test_haku_console_oauth_edge_contract(k8s_dir: Path) -> None:
     deployment = yaml.safe_load((k8s_dir / "haku" / "console" / "deployment.yaml").read_text(encoding="utf-8"))
     server = next(c for c in deployment["spec"]["template"]["spec"]["containers"] if c["name"] == "server")
     literal_env = {entry["name"]: entry["value"] for entry in server["env"] if "value" in entry}
-    assert literal_env["HAKU_CONSOLE_PUBLIC_BASE_URL"] == f"https://{one(route['spec']['hostnames'])}"
-    assert "HAKU_CONSOLE_MCP_OAUTH__PUBLIC_BASE_URL" not in {entry["name"] for entry in server["env"]}
+    assert literal_env["HAKU_CONSOLE__PUBLIC_BASE_URL"] == f"https://{one(route['spec']['hostnames'])}"
+    assert "HAKU_CONSOLE__MCP_OAUTH__PUBLIC_BASE_URL" not in {entry["name"] for entry in server["env"]}
 
 
 def test_haku_ci_keda_resources_are_wired_to_the_runner_job(k8s_dir: Path) -> None:

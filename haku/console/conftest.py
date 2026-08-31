@@ -23,6 +23,7 @@ from collections.abc import AsyncGenerator, Callable, Generator, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -37,7 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from testcontainers.postgres import PostgresContainer
 
 from haku.console.app import create_app
-from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig, Settings, WebPushConfig
+from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig, WebPushConfig
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import Agent, CredentialBinding, McpToolCall, McpToolCallPrincipal, StaticCredential
 from haku.console.identity.authorization import fingerprint_static_token
@@ -48,6 +49,7 @@ from haku.console.identity.operator_identity import (
     VerifiedExternalIdentity,
 )
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.settings import Settings
 from haku.console.tool_call_actor import OperatorActor
 from haku.console.tool_calls import ToolCallStatus
 from third_party.containers.rlocations import PGVECTOR_PG18
@@ -65,21 +67,19 @@ from util.testing.postgres_fixtures import start_postgres_container
 # A default static agent so `create_app`'s require-a-/mcp-credential invariant is satisfied without
 # every test spelling one out — the real deploy always has the `haku` agent. Tests that exercise
 # agent auth pass their own `config_file` naming the agents (and bearer) they need.
-_DEFAULT_AGENT_TOKEN_ENV = "HAKU_CONSOLE_DEFAULT_AGENT_TOKEN"
-_DEFAULT_AGENT_OPERATOR_ENV = "HAKU_CONSOLE_DEFAULT_AGENT_OPERATOR"
 _DEFAULT_AGENT_TOKEN = "default-agent-token"
 # The one access profile `make_client`'s default config defines and assigns its seeded static
 # agent; tests asserting profile identity import this rather than re-minting the literal.
 DEFAULT_ACCESS_PROFILE_ID = "no_auto_approval"
-_DEFAULT_STATIC_AGENTS = [
-    {
+_DEFAULT_STATIC_AGENTS = {
+    "default": {
         "agent_id": "00000000-0000-4000-8000-000000000001",
         "display_name": "Console Test Agent",
-        "token_env_var": _DEFAULT_AGENT_TOKEN_ENV,
-        "operator_subject_env": _DEFAULT_AGENT_OPERATOR_ENV,
+        "token": _DEFAULT_AGENT_TOKEN,
+        "operator_subject": "default-op",
         "access_profile_id": DEFAULT_ACCESS_PROFILE_ID,
     }
-]
+}
 
 # App-owned operator auth for tests. A dummy `operator_oidc` (no live IdP needed) activates
 # SessionMiddleware + the router guards exactly as production does; tests inject the operator session
@@ -135,14 +135,29 @@ def operator_session_cookie(
 
 def write_config(path: Path, config: dict[str, Any]) -> Path:
     """Dump a console config dict to `path` as YAML (the deploy-time config-file format)."""
-    path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
     return path
+
+
+def _empty_config_file() -> Path:
+    """Return a real empty YAML file for tests that supply every setting as an init override."""
+    with NamedTemporaryFile(mode="w", suffix=".yaml", delete=False, encoding="utf-8") as config:
+        config.write("{}\n")
+        return Path(config.name)
 
 
 def console_settings(migrated_db_url: str, **overrides: Any) -> Settings:
     """The console `Settings` tests need — required `haku_ui_url`/`database_url` defaulted, per-test
     `overrides` spread last. Shared by `make_client` and by the tests that serve `create_app` over a
     real socket (so they can't go through `make_client`'s `TestClient`)."""
+    has_catalog = "config_file" in overrides
+    catalog_defaults: dict[str, Any] = {}
+    if not has_catalog:
+        catalog_defaults = {
+            "auto_approval_policies": [{"id": "no_auto_approval", "type": "never"}],
+            "access_profiles": [{"id": DEFAULT_ACCESS_PROFILE_ID, "auto_approval_policy": "no_auto_approval"}],
+            "default_access_profile_id": DEFAULT_ACCESS_PROFILE_ID,
+        }
     return Settings(
         **{
             "haku_ui_url": "https://haku-ui.test",
@@ -151,8 +166,11 @@ def console_settings(migrated_db_url: str, **overrides: Any) -> Settings:
             "public_base_url": "https://haku.test",
             "operator_oidc": TEST_OPERATOR_OIDC,
             "operator_identity": TEST_OPERATOR_IDENTITY,
-            "config_file": Path("/nonexistent/haku-console.yaml"),
+            # Unit tests that construct Settings directly still exercise the YAML source;
+            # app-composition tests override this with their real temporary catalog.
+            "config_file": _empty_config_file(),
             "max_wait_for_result_ms": 60_000,
+            **catalog_defaults,
             **overrides,
         }
     )
@@ -387,8 +405,6 @@ def migrated_identity_store(migrated_sessions: async_sessionmaker[AsyncSession])
 def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..., Any]:
     """Factory: a TestClient over the console app on a fresh migrated database, with optional
     ``Settings`` overrides (e.g. ``config_file=...``, ``mcp_oauth=...``)."""
-    monkeypatch.setenv(_DEFAULT_AGENT_TOKEN_ENV, _DEFAULT_AGENT_TOKEN)
-    monkeypatch.setenv(_DEFAULT_AGENT_OPERATOR_ENV, "default-op")
     default_config = write_config(
         tmp_path / "console_default.yaml",
         {

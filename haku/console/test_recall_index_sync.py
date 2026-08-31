@@ -40,40 +40,41 @@ def test_deploy_config_declares_each_index_explicitly() -> None:
     config = ConsoleConfigFile.model_validate(
         {
             **_MANUAL_AUTHORITY_CONFIG,
-            "recall_indexes": [
-                {
+            "recall_indexes": {
+                "haku_state": {
                     "index_id": "haku-state",
                     "index_type": "git",
                     "repo_url": "https://forge.example/haku-state.git",
-                    "username_env_var": "HAKU_STATE_GIT_USERNAME",
-                    "password_env_var": "HAKU_STATE_GIT_PASSWORD",
+                    "credentials": {"username": "haku", "password": "secret"},
                 },
-                {"index_id": "haku-conversations", "index_type": "chat"},
-                {
+                "haku_conversations": {"index_id": "haku-conversations", "index_type": "chat"},
+                "ducktape_public": {
                     "index_id": "ducktape-public",
                     "index_type": "git",
                     "repo_url": "https://github.com/agentydragon/ducktape.git",
                     "branch": "devel",
                     "mirror_path": "/tmp/haku-recall-index/ducktape.git",
                 },
-            ],
+            },
         }
     )
-    assert [(index.index_id, index.index_type) for index in config.recall_indexes] == [
+    assert [(index.index_id, index.index_type) for index in config.recall_indexes.values()] == [
         ("haku-state", "git"),
         ("haku-conversations", "chat"),
         ("ducktape-public", "git"),
     ]
-    ducktape = config.recall_indexes[2]
+    ducktape = config.recall_indexes["ducktape_public"]
     assert isinstance(ducktape, GitRecallIndexDefinition)
-    assert (ducktape.branch, ducktape.username_env_var, ducktape.password_env_var) == ("devel", None, None)
+    assert (ducktape.branch, ducktape.credentials) == ("devel", None)
 
 
 def test_recall_profile_grants_require_declared_indexes() -> None:
     config = ConsoleConfigFile.model_validate(
         {
             **_MANUAL_AUTHORITY_CONFIG,
-            "recall_indexes": [{"index_id": "ducktape-public", "index_type": "git", "repo_url": "https://example"}],
+            "recall_indexes": {
+                "ducktape_public": {"index_id": "ducktape-public", "index_type": "git", "repo_url": "https://example"}
+            },
             "access_profiles": [
                 {"id": "manual", "auto_approval_policy": "manual", "recall_index_ids": ["ducktape-public"]}
             ],
@@ -85,7 +86,13 @@ def test_recall_profile_grants_require_declared_indexes() -> None:
         ConsoleConfigFile.model_validate(
             {
                 **_MANUAL_AUTHORITY_CONFIG,
-                "recall_indexes": [{"index_id": "ducktape-public", "index_type": "git", "repo_url": "https://example"}],
+                "recall_indexes": {
+                    "ducktape_public": {
+                        "index_id": "ducktape-public",
+                        "index_type": "git",
+                        "repo_url": "https://example",
+                    }
+                },
                 "access_profiles": [
                     {"id": "manual", "auto_approval_policy": "manual", "recall_index_ids": ["haku-state"]}
                 ],
@@ -97,7 +104,12 @@ def test_profile_in_process_server_grants_require_configured_in_process_servers(
     configured = {
         **_MANUAL_AUTHORITY_CONFIG,
         "mcp": {
-            "servers": [{"id": "haku_conversations", "backend": {"kind": "in_process", "credential": {"kind": "none"}}}]
+            "servers": {
+                "haku_conversations": {
+                    "id": "haku_conversations",
+                    "backend": {"kind": "in_process", "credential": {"kind": "none"}},
+                }
+            }
         },
         "access_profiles": [
             {"id": "manual", "auto_approval_policy": "manual", "in_process_server_ids": ["haku_conversations"]}
@@ -312,12 +324,12 @@ async def test_a_replica_that_loses_one_index_lock_leaves_that_index_alone(
     assert chat.sessions == 0
 
 
-def test_git_index_credential_references_are_explicit_and_paired() -> None:
-    with pytest.raises(ValueError, match="credentials"):
+def test_git_index_credentials_are_explicit_and_paired() -> None:
+    with pytest.raises(ValueError, match="password"):
         GitRecallIndexDefinition(
             index_id="private-notes",
             repo_url="https://example.invalid/private-notes.git",
-            username_env_var="PRIVATE_NOTES_USERNAME",
+            credentials={"username": "private-notes"},
         )
 
 

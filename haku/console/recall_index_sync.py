@@ -19,7 +19,6 @@ import asyncio
 import datetime
 import hashlib
 import logging
-import os
 from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager, suppress
 
@@ -69,13 +68,9 @@ async def _leading(engine: AsyncEngine, scope: str) -> AsyncIterator[bool]:
 
 
 def _git_credentials(index: GitRecallIndexDefinition) -> tuple[str | None, str | None]:
-    if index.username_env_var is None:
+    if index.credentials is None:
         return None, None
-    username = os.environ.get(index.username_env_var)
-    password = os.environ.get(index.password_env_var or "")
-    if username is None or password is None:
-        raise RuntimeError(f"Git recall index {index.index_id!r} is missing configured credentials")
-    return username, password
+    return index.credentials.username, index.credentials.password.get_secret_value()
 
 
 def _open_and_peek(index: GitRecallIndexDefinition) -> tuple[pygit2.Repository, str | None]:

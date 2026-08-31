@@ -34,8 +34,6 @@ from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 AGENT_TOKEN = "agent-secret"  # a test literal, not a real credential
-_AGENT_TOKEN_ENV = "HAKU_CONSOLE_OPERATOR_AUTH_TEST_TOKEN"
-_AGENT_OPERATOR_ENV = "HAKU_CONSOLE_OPERATOR_AUTH_TEST_OPERATOR"
 _OPERATOR_SUBJECT = "op-subject-1"  # the opaque Authentik `sub` the mock IdP issues
 _OPERATOR_USERNAME = "agentydragon"
 _UNSAFE_HTTP_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
@@ -109,15 +107,15 @@ def _static_agent_config(tmp_path: Path) -> Path:
     config.write_text(
         yaml.safe_dump(
             {
-                "static_agents": [
-                    {
+                "static_agents": {
+                    "haku": {
                         "agent_id": "10000000-0000-4000-8000-000000000001",
                         "display_name": "Haku",
-                        "token_env_var": _AGENT_TOKEN_ENV,
-                        "operator_subject_env": _AGENT_OPERATOR_ENV,
+                        "token": AGENT_TOKEN,
+                        "operator_subject": _OPERATOR_SUBJECT,
                         "access_profile_id": "no_auto_approval",
                     }
-                ],
+                },
                 "auto_approval_policies": [{"id": "no_auto_approval", "type": "never"}],
                 "access_profiles": [{"id": "no_auto_approval", "auto_approval_policy": "no_auto_approval"}],
                 "default_access_profile_id": "no_auto_approval",
@@ -128,13 +126,8 @@ def _static_agent_config(tmp_path: Path) -> Path:
     return config
 
 
-async def test_credential_matrix_through_real_app(
-    migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_credential_matrix_through_real_app(migrated_db_url: str, tmp_path: Path) -> None:
     """The browser API requires an Operator session; a static Agent bearer is MCP-only."""
-    monkeypatch.setenv(_AGENT_TOKEN_ENV, AGENT_TOKEN)
-    monkeypatch.setenv(_AGENT_OPERATOR_ENV, _OPERATOR_SUBJECT)
-
     private_key, public_key = generate_rsa_keypair()
     idp_port, console_port = pick_free_port(), pick_free_port()
     idp_url, console_url = f"http://127.0.0.1:{idp_port}", f"http://127.0.0.1:{console_port}"
@@ -180,16 +173,11 @@ async def test_credential_matrix_through_real_app(
             assert (await operator.get("/api/config")).status_code == 200
 
 
-async def test_two_console_tabs_can_log_in_at_once(
-    migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_two_console_tabs_can_log_in_at_once(migrated_db_url: str, tmp_path: Path) -> None:
     """Every open tab loses its session at the same moment (one absolute deadline), so they bounce
     to /auth/login together. Neither attempt may strand the other: with authlib's session-backed
     state each new authorization request evicts the last, and the loser's callback dies on
     "expired or was superseded"."""
-    monkeypatch.setenv(_AGENT_TOKEN_ENV, AGENT_TOKEN)
-    monkeypatch.setenv(_AGENT_OPERATOR_ENV, _OPERATOR_SUBJECT)
-
     private_key, public_key = generate_rsa_keypair()
     idp_port, console_port = pick_free_port(), pick_free_port()
     idp_url, console_url = f"http://127.0.0.1:{idp_port}", f"http://127.0.0.1:{console_port}"

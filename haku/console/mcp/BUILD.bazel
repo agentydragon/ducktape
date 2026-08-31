@@ -56,8 +56,8 @@ py_library(
     srcs = ["tool_call_service.py"],
     deps = [
         ":execution",
-        "//haku/console:config",
         "//haku/console:mcp_config",
+        "//haku/console:settings",
         "//haku/console:tool_call_actor",
         "//haku/console/auto_approval:github",
         "//haku/console/auto_approval:registry",
@@ -116,6 +116,7 @@ py_library(
         ":tool_call_service",
         "//haku/console:config",
         "//haku/console:mcp_config",
+        "//haku/console:settings",
         "//haku/console:tool_call_actor",
         "//haku/console/auto_approval:registry",
         "//haku/console/hostexecd:service",

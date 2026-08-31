@@ -125,7 +125,7 @@ spec:
             # Runtime deployment metadata for the Settings panel. Tags come from the same Flux
             # policies as the images, preserving reproducible image contents while exposing the
             # commits selected by this pod manifest.
-            - name: HAKU_CONSOLE_IMAGE_TAG
+            - name: HAKU_CONSOLE__IMAGE_TAG
               value: devel-20260831024824-25bc91a # {"$imagepolicy": "flux-system:haku-console:tag"}
             - name: HAKU_CONSOLE_AIQUOTA_URL
               value: "http://aiquota-api.cli-proxy-api.svc.cluster.local:8080"
@@ -138,9 +138,9 @@ spec:
             # (public) fire URL and the claude.ai/code page deep-link from this routine
             # (trigger) id; the bearer comes from the haku-console-only secret so Haku
             # can't read it. See haku/PLAN.md → "The agent-authored console".
-            - name: HAKU_CONSOLE_LAUNCH_ROUTINE__ROUTINE_ID
+            - name: HAKU_CONSOLE__LAUNCH_ROUTINE__ROUTINE_ID
               value: trig_0158pCMU1XBhoALBWikwSyK4
-            - name: HAKU_CONSOLE_LAUNCH_ROUTINE__TOKEN
+            - name: HAKU_CONSOLE__LAUNCH_ROUTINE__TOKEN
               valueFrom:
                 secretKeyRef:
                   name: haku-routine-launch-token
@@ -150,12 +150,12 @@ spec:
             # time, so rotating this key makes every enrolled device re-subscribe from
             # Settings -> Notifications. Unset would simply disable notifications.
             # See haku/console/notifications/push.py.
-            - name: HAKU_CONSOLE_WEB_PUSH__PRIVATE_KEY_PEM
+            - name: HAKU_CONSOLE__WEB_PUSH__PRIVATE_KEY_PEM
               valueFrom:
                 secretKeyRef:
                   name: haku-console-web-push-vapid
                   key: private-key-pem
-            - name: HAKU_CONSOLE_WEB_PUSH__SUBJECT
+            - name: HAKU_CONSOLE__WEB_PUSH__SUBJECT
               value: mailto:agentydragon@gmail.com
             # Where `haku_index.search` embeds its queries: Ollama's OpenAI-compatible
             # endpoint, in its own namespace. The console is outside the haku-egress-proxy
@@ -164,14 +164,14 @@ spec:
             # sweep (only the haku-state pod holds a Git credential), batch embedding with its
             # own embedder wiring on the shared embed pod; this pod holds neither the sync loops
             # nor any Git credential.
-            - name: HAKU_CONSOLE_EMBEDDER__BASE_URL
+            - name: HAKU_CONSOLE__EMBEDDER__BASE_URL
               value: "http://ollama.ollama.svc.cluster.local:11434/v1"
             # Also the index's `model_key`, so it must be exactly what Ollama reports — the
             # client fails closed on a mismatch rather than reading a second vector space out
             # of the corpus. Keep it equal to the haku-indexer-embed Deployment's value: search
             # joins `content_embeddings` on this key, so a mismatch searches a space the worker
             # never writes.
-            - name: HAKU_CONSOLE_EMBEDDER__MODEL
+            - name: HAKU_CONSOLE__EMBEDDER__MODEL
               value: "qwen3-embedding:4b"
             # Query-side only, which is why it stays on this pod after the indexer split:
             # Qwen3-Embedding is instruction-aware — queries carry a task instruction,
@@ -179,42 +179,42 @@ spec:
             # path). The haku-indexer-embed worker embeds documents plain and deliberately
             # has no counterpart to this variable. Check the wording against the tag Ollama
             # actually serves.
-            - name: HAKU_CONSOLE_EMBEDDER__QUERY_INSTRUCTION
+            - name: HAKU_CONSOLE__EMBEDDER__QUERY_INSTRUCTION
               value: "Instruct: Given a search query, retrieve relevant passages\nQuery: "
             # Free-form UI (Phase 1b): the Authentik-gated origin of Haku's own UI
             # service (haku-sandbox). The console embeds it in a sandboxed cross-origin
             # iframe and sets a CSP frame-src for it; it never renders Haku's UI itself.
             # Lights up once the haku-ui workload serves (cluster/k8s/haku/workloads +
             # the haku-ui Authentik route). See haku/console/docs/containment.md.
-            - name: HAKU_CONSOLE_HAKU_UI_URL
+            - name: HAKU_CONSOLE__HAKU_UI_URL
               value: https://haku-ui.allegedly.works
-            - name: HAKU_CONSOLE_AUTH_ORIGIN
+            - name: HAKU_CONSOLE__AUTH_ORIGIN
               value: https://auth.allegedly.works
-            - name: HAKU_CONSOLE_PUBLIC_BASE_URL
+            - name: HAKU_CONSOLE__PUBLIC_BASE_URL
               value: https://haku.allegedly.works
             - name: HAKU_CONSOLE_CONFIG_FILE
               value: /etc/haku-console/config/config.yaml
             # Flux updates the standalone static Deployment and this ConfigMap together. The tag
             # is projected as a file, so /api/deployment can report the frontend revision without
             # making a frontend-only image update roll this API Deployment.
-            - name: HAKU_CONSOLE_STATIC_IMAGE_TAG_FILE
+            - name: HAKU_CONSOLE__STATIC_IMAGE_TAG_FILE
               value: /etc/haku-console/static-metadata/image-tag
             # Config-first rollout for the approval-wait bound. Current images ignore unknown
             # environment variables; the follow-up image requires this value at startup.
-            - name: HAKU_CONSOLE_MAX_WAIT_FOR_RESULT_MS
+            - name: HAKU_CONSOLE__MAX_WAIT_FOR_RESULT_MS
               value: "60000"
-            - name: HAKU_CONSOLE_MCP_OPERATOR_OAUTH_TOKEN_TIMEOUT_SECONDS
+            - name: HAKU_CONSOLE__MCP_OPERATOR_OAUTH_TOKEN_TIMEOUT_SECONDS
               value: "30"
             # Direct tana-rw credential. It is resolved only while Console calls the internal
             # Tana MCP backend and is never mounted into the inner Haku workload.
-            - name: HAKU_CONSOLE_MCP_CREDENTIAL_TANA_ACCOUNT_PAT
+            - name: HAKU_CONSOLE__MCP__SERVERS__TANA_RW__BACKEND__AUTH__TOKEN
               valueFrom:
                 secretKeyRef:
                   name: tana-agentydragon-gmail-com-account-pat
                   key: token
             # ha-mcp static bearer — the SAME token the facade validates, reflected from
             # ha-mcp/ha-mcp-bearer into this namespace (emberstack reflector).
-            - name: HAKU_CONSOLE_MCP_CREDENTIAL_HA_MCP_BEARER
+            - name: HAKU_CONSOLE__MCP__SERVERS__HOME_ASSISTANT__BACKEND__AUTH__TOKEN
               valueFrom:
                 secretKeyRef:
                   name: ha-mcp-bearer
@@ -244,29 +244,29 @@ spec:
                 secretKeyRef:
                   name: haku-console-db-app
                   key: dbname
-            - name: HAKU_CONSOLE_DATABASE_URL
+            - name: HAKU_CONSOLE__DATABASE_URL
               value: "postgresql+asyncpg://$(HAKU_CONSOLE_DB_USER):$(HAKU_CONSOLE_DB_PASSWORD)@$(HAKU_CONSOLE_DB_HOST):$(HAKU_CONSOLE_DB_PORT)/$(HAKU_CONSOLE_DB_NAME)"
             # Haku's own backend static agent: the `haku` entry in config.yaml's `static_agents`
             # references these two env vars — the bearer (below) and controller-fed stable external
             # user key (further down). config.yaml owns the durable Agent UUID and display name.
-            - name: HAKU_CONSOLE_AGENT_HAKU_TOKEN
+            - name: HAKU_CONSOLE__STATIC_AGENTS__HAKU__TOKEN
               valueFrom:
                 secretKeyRef:
                   name: haku-console-agent-api
                   key: token
             # public-coder-agent's dedicated static-Agent bearer. The same generated value reaches
             # only its iron-proxy; the OpenClaw container uses a non-secret placeholder.
-            - name: HAKU_CONSOLE_AGENT_PUBLIC_CODER_AGENT_TOKEN
+            - name: HAKU_CONSOLE__STATIC_AGENTS__PUBLIC_CODER__TOKEN
               valueFrom:
                 secretKeyRef:
                   name: haku-console-public-coder-agent
                   key: token
-            - name: HAKU_CONSOLE_NODE_DAEMON_WYRM2_TOKEN
+            - name: HAKU_CONSOLE__NODE_DAEMONS__DAEMONS__WYRM2__TOKEN
               valueFrom:
                 secretKeyRef:
                   name: haku-console-node-daemon-wyrm2
                   key: token
-            - name: HAKU_CONSOLE_NODE_DAEMON_RUGGED_TOKEN
+            - name: HAKU_CONSOLE__NODE_DAEMONS__DAEMONS__RUGGED__TOKEN
               valueFrom:
                 secretKeyRef:
                   name: haku-console-node-daemon-rugged
@@ -282,25 +282,25 @@ spec:
             # sensitive-scope verification independently of restricted Gmail. The console runs both
             # per-Operator authorization-code flows itself. optional: true keeps only the integration
             # whose secret is absent degraded. Register the same console callback URI on each client.
-            - name: HAKU_CONSOLE_GOOGLE_MAIL_CLIENT_ID
+            - name: HAKU_CONSOLE__OPERATOR_CONNECTION_PROVIDERS__GOOGLE_MAIL__CLIENT_ID
               valueFrom:
                 secretKeyRef:
                   name: haku-console-google-client-credentials
                   key: client_id
                   optional: true
-            - name: HAKU_CONSOLE_GOOGLE_MAIL_CLIENT_SECRET
+            - name: HAKU_CONSOLE__OPERATOR_CONNECTION_PROVIDERS__GOOGLE_MAIL__CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: haku-console-google-client-credentials
                   key: client_secret
                   optional: true
-            - name: HAKU_CONSOLE_GOOGLE_CALENDAR_CLIENT_ID
+            - name: HAKU_CONSOLE__OPERATOR_CONNECTION_PROVIDERS__GOOGLE_CALENDAR__CLIENT_ID
               valueFrom:
                 secretKeyRef:
                   name: haku-console-google-calendar-client-credentials
                   key: client_id
                   optional: true
-            - name: HAKU_CONSOLE_GOOGLE_CALENDAR_CLIENT_SECRET
+            - name: HAKU_CONSOLE__OPERATOR_CONNECTION_PROVIDERS__GOOGLE_CALENDAR__CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: haku-console-google-calendar-client-credentials
@@ -310,13 +310,13 @@ spec:
             # organization-owned GitHub App therefore supplies this pre-registered confidential
             # client. The optional references keep the console deployable while the App is being
             # registered; the GitHub entry is enabled only after both values exist.
-            - name: HAKU_CONSOLE_GITHUB_MCP_CLIENT_ID
+            - name: HAKU_CONSOLE__MCP__SERVERS__GITHUB__BACKEND__AUTH__CLIENT_REGISTRATION__CLIENT_ID
               valueFrom:
                 secretKeyRef:
                   name: haku-console-github-mcp-client-credentials
                   key: client_id
                   optional: true
-            - name: HAKU_CONSOLE_GITHUB_MCP_CLIENT_SECRET
+            - name: HAKU_CONSOLE__MCP__SERVERS__GITHUB__BACKEND__AUTH__CLIENT_REGISTRATION__CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: haku-console-github-mcp-client-credentials
@@ -327,14 +327,14 @@ spec:
             # operator_oauth calls (a machine agent has no operator token of its own). The value is the
             # controller-fed Authentik user id. Haku resolves it through the configured identity
             # trust domain to a canonical Operator UUID; it never becomes live request authority.
-            - name: HAKU_CONSOLE_AGENT_HAKU_OPERATOR
+            - name: HAKU_CONSOLE__STATIC_AGENTS__HAKU__OPERATOR_SUBJECT
               valueFrom:
                 secretKeyRef:
                   name: haku-console-oidc
                   key: operator_subject
             # Coder's manually approved calls execute as the same canonical Operator. This is a
             # startup identity seed, not authority carried by the Agent request.
-            - name: HAKU_CONSOLE_AGENT_PUBLIC_CODER_AGENT_OPERATOR
+            - name: HAKU_CONSOLE__STATIC_AGENTS__PUBLIC_CODER__OPERATOR_SUBJECT
               valueFrom:
                 secretKeyRef:
                   name: haku-console-oidc
@@ -343,16 +343,16 @@ spec:
             # the `claude` CLI on /mcp, composed with the static agent bearer via MultiAuth. The
             # provider + client secret are minted by tf/gitops/agent-machine-access (application
             # slug `haku-console-mcp`, redirect https://haku.allegedly.works/mcp/auth/callback).
-            # The MCP public URL is derived in-app from HAKU_CONSOLE_PUBLIC_BASE_URL + /mcp. Keep a
+            # The MCP public URL is derived in-app from HAKU_CONSOLE__PUBLIC_BASE_URL + /mcp. Keep a
             # single canonical public origin: FastMCP itself is not aware of the outer ASGI mount.
-            - name: HAKU_CONSOLE_MCP_OAUTH__OIDC_ISSUER
+            - name: HAKU_CONSOLE__MCP_OAUTH__OIDC_ISSUER
               value: https://auth.allegedly.works/application/o/haku-console-mcp/
-            - name: HAKU_CONSOLE_MCP_OAUTH__OIDC_CLIENT_ID
+            - name: HAKU_CONSOLE__MCP_OAUTH__OIDC_CLIENT_ID
               valueFrom:
                 secretKeyRef:
                   name: haku-console-oidc
                   key: mcp_client_id
-            - name: HAKU_CONSOLE_MCP_OAUTH__OIDC_CLIENT_SECRET
+            - name: HAKU_CONSOLE__MCP_OAUTH__OIDC_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: haku-console-oidc
@@ -363,9 +363,9 @@ spec:
             # Postgres (py-key-value's PostgreSQLStore auto-creates its table), so there is no
             # separate valkey to run. The URL is the asyncpg
             # form (plain postgresql://), NOT the SQLAlchemy asyncpg URL the ORM uses.
-            - name: HAKU_CONSOLE_MCP_OAUTH__PERSISTENCE__KIND
+            - name: HAKU_CONSOLE__MCP_OAUTH__PERSISTENCE__KIND
               value: postgres
-            - name: HAKU_CONSOLE_MCP_OAUTH__PERSISTENCE__URL
+            - name: HAKU_CONSOLE__MCP_OAUTH__PERSISTENCE__URL
               value: "postgresql://$(HAKU_CONSOLE_DB_USER):$(HAKU_CONSOLE_DB_PASSWORD)@$(HAKU_CONSOLE_DB_HOST):$(HAKU_CONSOLE_DB_PORT)/$(HAKU_CONSOLE_DB_NAME)"
             # Operator browser login (Authentik OIDC), replacing the forward-auth proxy outpost:
             # the console authenticates the operator itself (authorization-code -> signed session
@@ -373,48 +373,54 @@ spec:
             # tf/gitops/agent-machine-access (application slug `haku-console`, redirect
             # https://haku.allegedly.works/auth/callback). This is required in every runtime; the
             # console refuses to start without app-owned operator auth.
-            - name: HAKU_CONSOLE_OPERATOR_OIDC__ISSUER
+            - name: HAKU_CONSOLE__OPERATOR_OIDC__ISSUER
               value: https://auth.allegedly.works/application/o/haku-console/
-            - name: HAKU_CONSOLE_OPERATOR_OIDC__CLIENT_ID
+            - name: HAKU_CONSOLE__OPERATOR_OIDC__CLIENT_ID
               valueFrom:
                 secretKeyRef:
                   name: haku-console-oidc
                   key: operator_client_id
-            - name: HAKU_CONSOLE_OPERATOR_OIDC__CLIENT_SECRET
+            - name: HAKU_CONSOLE__OPERATOR_OIDC__CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: haku-console-oidc
                   key: operator_client_secret
-            - name: HAKU_CONSOLE_OPERATOR_OIDC__SESSION_SECRET
+            - name: HAKU_CONSOLE__OPERATOR_OIDC__SESSION_SECRET
               valueFrom:
                 secretKeyRef:
                   name: haku-console-oidc
                   key: operator_session_secret
             # Explicit name for the Authentik user-id namespace shared by the exact browser and MCP
             # issuers above (both providers are provisioned with sub_mode=user_id).
-            - name: HAKU_CONSOLE_OPERATOR_IDENTITY__TRUST_DOMAIN
+            - name: HAKU_CONSOLE__OPERATOR_IDENTITY__TRUST_DOMAIN
               value: auth.allegedly.works/authentik-user-id/v1
-            # Colocated egress fence (#4942, #4670). config.yaml's `egress_decide` section names
-            # these env vars; `load_egress_decide` reads them at startup and the decide endpoint
+            # Colocated egress fence (#4942, #4670). Pydantic overlays these secret leaves directly
+            # onto config.yaml's typed `egress_decide` graph, and the decide endpoint
             # (loopback :8079, served by app._serve) resolves requests using the shared-fence
             # credential the sidecar presents in Authorization. It authenticates the sidecar only
-            # and carries no Agent identity (egress_decide.decision_endpoint_token_env_var).
-            - name: HAKU_DECISION_ENDPOINT_TOKEN
+            # and carries no Agent identity (`egress_decide.decision_endpoint_token`).
+            - name: HAKU_CONSOLE__EGRESS_DECIDE__DECISION_ENDPOINT_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: haku-egress-proxy-identity
                   key: decision-endpoint-token
-            #   - the github-bot registry credential's real value (#4951 EgressCredentialEntry
-            #     value_env_var). The Console holds it and substitutes it into decide responses;
+            #   - the github-bot registry credential's real value (#4951 EgressCredentialEntry).
+            #     The Console holds it and substitutes it into decide responses;
             #     the sandbox only ever presents the inert `github-token-placeholder`. Synced from
             #     the same operator account the retiring iron fence used (haku-egress-github-token
             #     ESO). Optional (#4970): an unset value is skipped with a warning by
-            #     load_egress_decide, so a not-yet-synced ESO Secret degrades the github-bot handle
+            #     the egress loader, so a not-yet-synced ESO Secret degrades the github-bot handle
             #     rather than crash-looping the console (the endpoint still serves reachability
             #     verdicts). optional: true keeps a missing Secret from blocking pod startup, so the
             #     skip path is actually reached; the fence credential below stays required
-            #     (load_egress_decide fails loud on it).
-            - name: HAKU_EGRESS_CREDENTIAL_GITHUB_BOT
+            #     (the egress loader fails loud on it).
+            - name: HAKU_CONSOLE__EGRESS_DECIDE__CREDENTIALS__GITHUB_BOT__VALUE
+              valueFrom:
+                secretKeyRef:
+                  name: haku-egress-github-token
+                  key: token
+                  optional: true
+            - name: HAKU_CONSOLE__EGRESS_DECIDE__CREDENTIALS__CODEX_GITHUB_BOT__VALUE
               valueFrom:
                 secretKeyRef:
                   name: haku-egress-github-token
@@ -426,7 +432,7 @@ spec:
             #     reflection at the owning Terraform (tf/gitops/litellm-keys) — not re-minted. optional
             #     (#4970) like github-bot: an unsynced reflection degrades the codex-litellm handle
             #     rather than crash-looping the console.
-            - name: HAKU_EGRESS_CREDENTIAL_LITELLM_PUBLIC_CODER
+            - name: HAKU_CONSOLE__EGRESS_DECIDE__CREDENTIALS__CODEX_LITELLM__VALUE
               valueFrom:
                 secretKeyRef:
                   name: litellm-key-public-coder-agent
@@ -438,7 +444,7 @@ spec:
             #     without ever holding the key. Reflected from the litellm-keys-tf Terraform mint
             #     (kubernetes_secret litellm-key-haku-console-claude). Optional (#4970): an unsynced
             #     key degrades this one handle (placeholder 401s) rather than crash-looping the console.
-            - name: HAKU_EGRESS_CREDENTIAL_CLAUDE_LITELLM
+            - name: HAKU_CONSOLE__EGRESS_DECIDE__CREDENTIALS__CLAUDE_LITELLM__VALUE
               valueFrom:
                 secretKeyRef:
                   name: litellm-key-haku-console-claude
@@ -449,7 +455,7 @@ spec:
             #     substitution path is drivable end to end against a public echo host with no real
             #     credential anywhere (haku/egress/docs/test_substitution.md). Identity secrets
             #     above stay Secret-backed and fail-loud.
-            - name: HAKU_EGRESS_CREDENTIAL_SUBSTITUTION_SMOKE
+            - name: HAKU_CONSOLE__EGRESS_DECIDE__CREDENTIALS__SUBSTITUTION_SMOKE__VALUE
               value: EXAMPLE-EGRESS-SMOKE-SUBSTITUTED
             #   - the forgejo registry credential's real value: Haku's own in-cluster Forgejo account
             #     password, which the Console substitutes into the haku Agent's Forgejo egress
@@ -463,7 +469,7 @@ spec:
             #     exactly this handle); the write exposure is bounded by haku-state `main` branch
             #     protection (force-push/delete blocked). Optional (#4970): an unset Secret degrades the
             #     forgejo handle (placeholder 401s) rather than crash-looping the console.
-            - name: HAKU_EGRESS_CREDENTIAL_FORGEJO
+            - name: HAKU_CONSOLE__EGRESS_DECIDE__CREDENTIALS__HAKU_FORGEJO_TOKEN__VALUE
               valueFrom:
                 secretKeyRef:
                   name: haku-forgejo-git
@@ -475,7 +481,7 @@ spec:
             #     The source Secret is reflected from the activitywatch namespace. Optional keeps
             #     the Console serving while that reflected Secret is temporarily absent; the
             #     handle then degrades to an upstream 401 until the reflector catches up.
-            - name: HAKU_EGRESS_CREDENTIAL_ACTIVITYWATCH_READ
+            - name: HAKU_CONSOLE__EGRESS_DECIDE__CREDENTIALS__ACTIVITYWATCH_READ_TOKEN__VALUE
               valueFrom:
                 secretKeyRef:
                   name: activitywatch-read-token

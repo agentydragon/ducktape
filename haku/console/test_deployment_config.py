@@ -6,19 +6,53 @@ import yaml
 from more_itertools import one
 from pydantic import SecretStr
 
-from haku.console.channels.matrix.config import load_adapter_config
+from haku.console.channels.matrix.config import AdapterConfigFile
 from haku.console.channels.matrix.worker import AdapterSettings, _launch_wiring
-from haku.console.config import ClaudeCodeImplementationConfig, OperatorIdentityConfig, OperatorOidcConfig, Settings
+from haku.console.config import ClaudeCodeImplementationConfig, OperatorIdentityConfig, OperatorOidcConfig
 from haku.console.indexer import ChunkSettings, EmbedSettings, IndexerRole
-from haku.console.indexer_config import IndexerConfigFile, load_indexer_config
-from haku.console.mcp_config import ConsoleConfigFile
+from haku.console.indexer_config import IndexerConfigFile
+from haku.console.mcp_config import PreregisteredOAuthClient, RemoteMcpBackend, RemoteServerOAuthAuth
+from haku.console.settings import Settings
 from haku.console.x.codex_app_server.config import CodexAppServerImplementationConfig
 from util.bazel.runfiles import get_required_path
 
 
-def test_deployed_console_config_is_valid() -> None:
-    raw = yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/config.yaml").read_text())
-    config = ConsoleConfigFile.model_validate(raw)
+def _console_settings(monkeypatch: pytest.MonkeyPatch) -> Settings:
+    for name in (
+        "HAKU_CONSOLE__STATIC_AGENTS__HAKU__TOKEN",
+        "HAKU_CONSOLE__STATIC_AGENTS__HAKU__OPERATOR_SUBJECT",
+        "HAKU_CONSOLE__STATIC_AGENTS__PUBLIC_CODER__TOKEN",
+        "HAKU_CONSOLE__STATIC_AGENTS__PUBLIC_CODER__OPERATOR_SUBJECT",
+        "HAKU_CONSOLE__NODE_DAEMONS__DAEMONS__WYRM2__TOKEN",
+        "HAKU_CONSOLE__NODE_DAEMONS__DAEMONS__RUGGED__TOKEN",
+        "HAKU_CONSOLE__MCP__SERVERS__TANA_RW__BACKEND__AUTH__TOKEN",
+        "HAKU_CONSOLE__MCP__SERVERS__HOME_ASSISTANT__BACKEND__AUTH__TOKEN",
+        "HAKU_CONSOLE__MCP__SERVERS__GITHUB__BACKEND__AUTH__CLIENT_REGISTRATION__CLIENT_ID",
+        "HAKU_CONSOLE__MCP__SERVERS__GITHUB__BACKEND__AUTH__CLIENT_REGISTRATION__CLIENT_SECRET",
+        "HAKU_CONSOLE__EGRESS_DECIDE__DECISION_ENDPOINT_TOKEN",
+    ):
+        monkeypatch.setenv(name, f"test-{name.lower()}")
+    return Settings(
+        config_file=get_required_path("ducktape/cluster/k8s/haku/console/config.yaml"),
+        haku_ui_url="https://haku-ui.test",
+        auth_origin="https://auth.test",
+        public_base_url="https://haku.test",
+        database_url=SecretStr("postgresql+psycopg://db.test/haku"),
+        operator_oidc=OperatorOidcConfig(
+            issuer="https://auth.test/application/o/haku-console/",
+            client_id="console",
+            client_secret=SecretStr("secret"),
+            session_secret=SecretStr("session-secret"),
+        ),
+        operator_identity=OperatorIdentityConfig(trust_domain="auth.test/authentik-user-id/v1"),
+        max_wait_for_result_ms=60_000,
+    )
+
+
+def test_deployed_console_config_is_valid(monkeypatch: pytest.MonkeyPatch) -> None:
+    raw_text = get_required_path("ducktape/cluster/k8s/haku/console/config.yaml").read_text()
+    raw = yaml.safe_load(raw_text)
+    config = _console_settings(monkeypatch)
 
     # The deployed ConfigMap writes only the canonical `harnesses` key (#4772 C4c).
     assert "harnesses" in raw
@@ -33,7 +67,32 @@ def test_deployed_console_config_is_valid() -> None:
     assert codex.claim_prefix == "codex"
     assert codex.harness_label == "codex"
     assert isinstance(codex.implementation, CodexAppServerImplementationConfig)
-    assert "codex_runtime" not in raw["settings"]
+    assert "settings" not in raw
+    assert "codex_runtime" not in raw
+    for removed_indirection in (
+        "token_env_var",
+        "operator_subject_env",
+        "client_id_env_var",
+        "client_secret_env_var",
+        "value_env_var",
+        "username_env_var",
+        "password_env_var",
+        "bearer_token_secret",
+    ):
+        assert removed_indirection not in raw_text
+    assert (
+        config.static_agents["haku"]
+        .token.get_secret_value()
+        .startswith("test-haku_console__static_agents__haku__token")
+    )
+    github_backend = config.mcp.servers["github"].backend
+    assert isinstance(github_backend, RemoteMcpBackend)
+    assert isinstance(github_backend.auth, RemoteServerOAuthAuth)
+    github_registration = github_backend.auth.client_registration
+    assert isinstance(github_registration, PreregisteredOAuthClient)
+    assert github_registration.client_id.startswith(
+        "test-haku_console__mcp__servers__github__backend__auth__client_registration__client_id"
+    )
 
     profiles = {profile.id: profile for profile in config.access_profiles}
     assert profiles["haku"].in_process_server_ids == {
@@ -55,8 +114,8 @@ def test_deployed_console_config_is_valid() -> None:
     # Listing an in-process server and configuring what it serves are one decision recorded in two
     # places: without `agent_sandbox` nothing registers `sandbox`, and startup fails
     # `validate_in_process_server_bindings` rather than quietly offering a server that cannot run.
-    server_ids = {server.id for server in config.mcp.servers}
-    github_server = next(server for server in config.mcp.servers if server.id == "github")
+    server_ids = {server.id for server in config.mcp.servers.values()}
+    github_server = config.mcp.servers["github"]
     assert github_server.agent_tool_denylist == {
         "assign_copilot_to_issue",
         "create_pull_request_with_copilot",
@@ -122,7 +181,7 @@ def test_deployed_console_config_is_valid() -> None:
     # placeholder goes upstream and is rejected there (#4941/#4943).
     egress = config.egress_decide
     assert egress is not None
-    registry = {credential.handle: credential for credential in egress.credentials}
+    registry = {credential.handle: credential for credential in egress.credentials.values()}
     for entry in egress.grants:
         if entry.credential_handle is None:
             continue
@@ -133,7 +192,7 @@ def test_deployed_console_config_is_valid() -> None:
 
 def test_deployed_egress_decide_env_slots_are_bound_at_their_rigor() -> None:
     """Every env slot `egress_decide` names must resolve in the server container, at the rigor
-    `load_egress_decide` assigns it: the fence credential identity slot fails loud at
+    the typed model assigns it: the fence credential identity slot fails loud at
     startup, so they are non-optional Secret references; a registry credential slot may be an
     optional Secret reference (unset skips the credential with a warning, #4970) or a committed
     literal — acceptable only when inert by construction, hence the EXAMPLE- prefix. The sidecar
@@ -145,22 +204,19 @@ def test_deployed_egress_decide_env_slots_are_bound_at_their_rigor() -> None:
     containers = {container["name"]: container for container in deployment["spec"]["template"]["spec"]["containers"]}
     server_env = {entry["name"]: entry for entry in containers["server"]["env"]}
 
-    for slot in [egress["decision_endpoint_token_env_var"]]:
-        reference = server_env[slot]["valueFrom"]["secretKeyRef"]
-        assert not reference.get("optional", False), f"identity {slot=} must fail loud, never be optional"
+    decision_slot = "HAKU_CONSOLE__EGRESS_DECIDE__DECISION_ENDPOINT_TOKEN"
+    reference = server_env[decision_slot]["valueFrom"]["secretKeyRef"]
+    assert not reference.get("optional", False), f"identity {decision_slot=} must fail loud, never be optional"
 
-    for credential in egress["credentials"]:
-        entry = server_env[credential["value_env_var"]]
+    for slot, credential in egress["credentials"].items():
+        entry = server_env[f"HAKU_CONSOLE__EGRESS_DECIDE__CREDENTIALS__{slot.upper()}__VALUE"]
         if "value" in entry:
             assert entry["value"].startswith("EXAMPLE-"), f"literal value for {credential['handle']} must be inert"
         else:
             assert "secretKeyRef" in entry["valueFrom"], credential["handle"]
 
     sidecar_env = {entry["name"]: entry for entry in containers["egress-proxy"]["env"]}
-    assert (
-        sidecar_env["HAKU_DECISION_ENDPOINT_TOKEN"]["valueFrom"]
-        == server_env[egress["decision_endpoint_token_env_var"]]["valueFrom"]
-    )
+    assert sidecar_env["HAKU_DECISION_ENDPOINT_TOKEN"]["valueFrom"] == server_env[decision_slot]["valueFrom"]
     assert "HAKU_EGRESS_PROXY_TOKEN" not in server_env
     assert "HAKU_EGRESS_PROXY_TOKEN" not in sidecar_env
 
@@ -171,23 +227,11 @@ def test_deployed_console_settings_load_from_the_shared_yaml(monkeypatch: pytest
     container_env = {
         item["name"]: item.get("value") for item in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
     }
-    max_wait_for_result_ms = container_env["HAKU_CONSOLE_MAX_WAIT_FOR_RESULT_MS"]
+    max_wait_for_result_ms = container_env["HAKU_CONSOLE__MAX_WAIT_FOR_RESULT_MS"]
     assert max_wait_for_result_ms is not None
     monkeypatch.setenv("HAKU_CONSOLE_CONFIG_FILE", str(config_path))
-    monkeypatch.setenv("HAKU_CONSOLE_MAX_WAIT_FOR_RESULT_MS", max_wait_for_result_ms)
-    settings = Settings(
-        haku_ui_url="https://haku-ui.test",
-        auth_origin="https://auth.test",
-        public_base_url="https://haku.test",
-        database_url=SecretStr("postgresql+psycopg://db.test/haku"),
-        operator_oidc=OperatorOidcConfig(
-            issuer="https://auth.test/application/o/haku-console/",
-            client_id="console",
-            client_secret=SecretStr("secret"),
-            session_secret=SecretStr("session-secret"),
-        ),
-        operator_identity=OperatorIdentityConfig(trust_domain="auth.test/authentik-user-id/v1"),
-    )
+    monkeypatch.setenv("HAKU_CONSOLE__MAX_WAIT_FOR_RESULT_MS", max_wait_for_result_ms)
+    settings = _console_settings(monkeypatch)
 
     assert settings.config_file == config_path
     assert settings.max_wait_for_result_ms == int(max_wait_for_result_ms)
@@ -195,8 +239,7 @@ def test_deployed_console_settings_load_from_the_shared_yaml(monkeypatch: pytest
     # plain-http proxy URL silently un-authenticates every sandbox kubectl request.
     assert settings.runner_kubernetes_proxy_url == "https://haku-kube-api-proxy.haku-console.svc.cluster.local:8443"
     assert str(settings.haku_agent_workspace_setup) == "/usr/local/bin/haku-sandbox-setup.sh"
-    raw = yaml.safe_load(config_path.read_text())
-    config = ConsoleConfigFile.model_validate(raw)
+    config = settings
     assert config.harnesses is not None
     codex = config.harnesses.codex_app_server
     assert codex is not None
@@ -227,20 +270,27 @@ def test_deployed_chunk_role_env_satisfies_its_settings(monkeypatch: pytest.Monk
     {config_file, database_url} — no embedder configuration, and no index selector: the mounted
     config slice is the selection.
     """
-    config = ConsoleConfigFile.model_validate(
-        yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/config.yaml").read_text())
-    )
-    for index in config.recall_indexes:
+    config = _console_settings(monkeypatch)
+    for index in config.recall_indexes.values():
         env = _indexer_deployment_env(f"indexer-chunk-{index.index_id}-deployment.yaml", IndexerRole.CHUNK)
         with monkeypatch.context() as patched:
             for name, value in env.items():
                 patched.setenv(name, value)
+            # Point the deployment's mount path at the equivalent runfile so the settings source
+            # exercises the whole projected YAML in this hermetic test.
+            patched.setenv(
+                "HAKU_INDEXER_CONFIG_FILE",
+                str(get_required_path(f"ducktape/cluster/k8s/haku/console/indexer-chunk-{index.index_id}-config.yaml")),
+            )
             # The one secret env the manifest binds by reference rather than value.
-            patched.setenv("HAKU_INDEXER_DATABASE_URL", "postgresql+asyncpg://haku_indexer@db.test/approval_store")
-            assert ChunkSettings().config_file.name == "config.yaml"
+            patched.setenv("HAKU_INDEXER__DATABASE_URL", "postgresql+asyncpg://haku_indexer@db.test/approval_store")
+            if index.index_id == "haku-state":
+                patched.setenv("HAKU_INDEXER__RECALL_INDEXES__HAKU_STATE__CREDENTIALS__USERNAME", "haku")
+                patched.setenv("HAKU_INDEXER__RECALL_INDEXES__HAKU_STATE__CREDENTIALS__PASSWORD", "secret")
+            assert ChunkSettings().config_file.name == f"indexer-chunk-{index.index_id}-config.yaml"
 
 
-def test_deployed_chunk_config_slices_project_the_registry() -> None:
+def test_deployed_chunk_config_slices_project_the_registry(monkeypatch: pytest.MonkeyPatch) -> None:
     """One instance, one config slice: each pod's mounted file equals its registry projection.
 
     The console still reads the whole `recall_indexes` registry in config.yaml; each chunk pod
@@ -249,13 +299,11 @@ def test_deployed_chunk_config_slices_project_the_registry() -> None:
     generated output pinned to the registry (the LiteLLM config pattern), so a registry edit that
     misses its slice, a drifted slice, or a slice grown past one entry fails here.
     """
-    console = ConsoleConfigFile.model_validate(
-        yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/config.yaml").read_text())
-    )
-    for index in console.recall_indexes:
+    console = _console_settings(monkeypatch)
+    for slot, index in console.recall_indexes.items():
         slice_path = get_required_path(f"ducktape/cluster/k8s/haku/console/indexer-chunk-{index.index_id}-config.yaml")
-        assert load_indexer_config(slice_path) == IndexerConfigFile(
-            git_ca_bundle=console.git_ca_bundle, recall_indexes=(index,)
+        assert IndexerConfigFile.model_validate(yaml.safe_load(slice_path.read_text())) == IndexerConfigFile(
+            git_ca_bundle=console.git_ca_bundle, recall_indexes={slot: index}
         )
 
 
@@ -263,7 +311,7 @@ def test_deployed_embed_role_env_satisfies_its_settings(monkeypatch: pytest.Monk
     """The embed pod starts from exactly its manifest env — no registry or Git configuration required."""
     for name, value in _indexer_deployment_env("indexer-embed-deployment.yaml", IndexerRole.EMBED).items():
         monkeypatch.setenv(name, value)
-    monkeypatch.setenv("HAKU_INDEXER_DATABASE_URL", "postgresql+asyncpg://haku_indexer@db.test/approval_store")
+    monkeypatch.setenv("HAKU_INDEXER__DATABASE_URL", "postgresql+asyncpg://haku_indexer@db.test/approval_store")
     settings = EmbedSettings()
     assert settings.embedder.base_url.startswith("http")
 
@@ -277,12 +325,15 @@ def test_deployed_matrix_adapter_env_satisfies_its_settings(monkeypatch: pytest.
     for item in container["env"]:
         if "value" in item:
             monkeypatch.setenv(item["name"], item["value"])
+    monkeypatch.setenv(
+        "HAKU_MATRIX_ADAPTER_CONFIG_FILE", str(get_required_path("ducktape/cluster/k8s/haku/console/config.yaml"))
+    )
     # The three secret envs the manifest binds by reference rather than value.
     monkeypatch.setenv(
-        "HAKU_MATRIX_ADAPTER_DATABASE_URL", "postgresql+asyncpg://haku_matrix_adapter@db.test/approval_store"
+        "HAKU_MATRIX_ADAPTER__DATABASE_URL", "postgresql+asyncpg://haku_matrix_adapter@db.test/approval_store"
     )
-    monkeypatch.setenv("HAKU_MATRIX_ADAPTER_MATRIX__OPERATOR_SUBJECT", "authentik-user-id")
-    monkeypatch.setenv("HAKU_MATRIX_ADAPTER_MATRIX__PASSWORD", "bot-password")
+    monkeypatch.setenv("HAKU_MATRIX_ADAPTER__MATRIX__OPERATOR_SUBJECT", "authentik-user-id")
+    monkeypatch.setenv("HAKU_MATRIX_ADAPTER__MATRIX__PASSWORD", "bot-password")
     settings = AdapterSettings()
     assert settings.config_file.name == "config.yaml"
     # The anchor namespace the operator subject resolves through is written at console login,
@@ -290,28 +341,28 @@ def test_deployed_matrix_adapter_env_satisfies_its_settings(monkeypatch: pytest.
     console = yaml.safe_load(get_required_path("ducktape/cluster/k8s/haku/console/deployment.yaml").read_text())
     server = one(c for c in console["spec"]["template"]["spec"]["containers"] if c["name"] == "server")
     server_env = {item["name"]: item.get("value") for item in server["env"]}
-    assert settings.operator_identity_trust_domain == server_env["HAKU_CONSOLE_OPERATOR_IDENTITY__TRUST_DOMAIN"]
+    assert settings.operator_identity_trust_domain == server_env["HAKU_CONSOLE__OPERATOR_IDENTITY__TRUST_DOMAIN"]
 
 
-def test_deployed_config_reads_identically_for_console_and_matrix_adapter() -> None:
+def test_deployed_config_reads_identically_for_console_and_matrix_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
     """Two parsers, one mounted file: the adapter's launch-identity slice must agree with the console's read."""
     config_path = get_required_path("ducktape/cluster/k8s/haku/console/config.yaml")
-    console = ConsoleConfigFile.model_validate(yaml.safe_load(config_path.read_text()))
-    adapter = load_adapter_config(config_path)
+    console = _console_settings(monkeypatch)
+    adapter = AdapterConfigFile.model_validate(yaml.safe_load(config_path.read_text()))
     assert {entry.agent_id for entry in adapter.launchable_agents} == {
         entry.agent_id for entry in console.launchable_agents
     }
     assert {profile.id: profile.allowed_harnesses for profile in adapter.access_profiles} == {
         profile.id: profile.allowed_harnesses for profile in console.access_profiles
     }
-    assert {agent.agent_id: agent.access_profile_id for agent in adapter.static_agents} == {
-        agent.agent_id: agent.access_profile_id for agent in console.static_agents
+    assert {agent.agent_id: agent.access_profile_id for agent in adapter.static_agents.values()} == {
+        agent.agent_id: agent.access_profile_id for agent in console.static_agents.values()
     }
-    assert adapter.matrix is not None
+    assert adapter.matrix_launch is not None
     launch = _launch_wiring(adapter)
     assert launch is not None
-    assert launch.default_agent_id == adapter.matrix.default_agent_id
-    assert launch.harness_kind == adapter.matrix.default_harness_kind
+    assert launch.default_agent_id == adapter.matrix_launch.default_agent_id
+    assert launch.harness_kind == adapter.matrix_launch.default_harness_kind
     assert console.harnesses is not None
     assert adapter.harnesses is not None
     assert adapter.harnesses.claude_code is not None
@@ -324,10 +375,10 @@ def test_deployed_config_reads_identically_for_console_and_matrix_adapter() -> N
 
 def test_matrix_creation_route_does_not_fall_back_when_unconfigured() -> None:
     config_path = get_required_path("ducktape/cluster/k8s/haku/console/config.yaml")
-    adapter = load_adapter_config(config_path)
+    adapter = AdapterConfigFile.model_validate(yaml.safe_load(config_path.read_text()))
 
     with pytest.raises(ValueError, match=r"matrix\.default_harness_kind"):
-        _launch_wiring(adapter.model_copy(update={"matrix": None}))
+        _launch_wiring(adapter.model_copy(update={"matrix_launch": None}))
 
 
 if __name__ == "__main__":

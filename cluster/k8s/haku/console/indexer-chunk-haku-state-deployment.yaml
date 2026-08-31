@@ -74,24 +74,23 @@ spec:
             # The narrow haku_indexer role (db/indexer-role-secret.yaml), never the
             # application owner: the worker cannot read the approval ledger, identity,
             # or OAuth state.
-            - name: HAKU_INDEXER_DATABASE_URL
+            - name: HAKU_INDEXER__DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: haku-console-db-indexer
                   key: DATABASE_URL
-            # The haku-state index's Git-read credential slots, named by this pod's
-            # config slice (username_env_var / password_env_var, mirrored from the
-            # config.yaml registry). This is Haku's own Forgejo account (operator,
+            # The haku-state index's typed Git credentials are overlaid directly at
+            # their nested Pydantic paths. This is Haku's own Forgejo account (operator,
             # 2026-08-15) reflected in by tf/gitops/haku-state — a credential that
             # *can* write haku-state, fetched read-only here; the cheaper-privilege
             # alternative remains the read-only `claude` account. The console API pod
             # no longer holds it, and neither does any other index's chunk pod.
-            - name: HAKU_CONSOLE_HAKU_STATE_GIT_USERNAME
+            - name: HAKU_INDEXER__RECALL_INDEXES__HAKU_STATE__CREDENTIALS__USERNAME
               valueFrom:
                 secretKeyRef:
                   name: haku-forgejo-git
                   key: username
-            - name: HAKU_CONSOLE_HAKU_STATE_GIT_PASSWORD
+            - name: HAKU_INDEXER__RECALL_INDEXES__HAKU_STATE__CREDENTIALS__PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: haku-forgejo-git

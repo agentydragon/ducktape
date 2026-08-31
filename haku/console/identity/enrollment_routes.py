@@ -11,7 +11,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from starlette.responses import RedirectResponse, Response
 
-from haku.console.config import Settings
 from haku.console.identity.agent import AgentStatus, CredentialBindingStatus, CredentialKind
 from haku.console.identity.enrollment import (
     AccessProfileUnavailableError,
@@ -36,6 +35,7 @@ from haku.console.identity.enrollment import (
 from haku.console.identity.naming import InvalidAgentNameError
 from haku.console.identity.operator_agents import AgentEnrollmentServiceDep
 from haku.console.identity.operator_auth import OperatorSession, operator_session
+from haku.console.settings import Settings
 
 entry_router = APIRouter(prefix="/auth/agent-enrollment", tags=["agent-enrollment"])
 operator_router = APIRouter(prefix="/api/agent-enrollment", tags=["agent-enrollment"])

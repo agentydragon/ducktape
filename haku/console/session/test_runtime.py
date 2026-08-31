@@ -187,15 +187,15 @@ def _console_config(**overrides: object) -> dict[str, object]:
         "auto_approval_policies": [{"id": "manual", "type": "never"}],
         "access_profiles": [{"id": "manual", "auto_approval_policy": "manual", "allowed_harnesses": ["claude_code"]}],
         "default_access_profile_id": "manual",
-        "static_agents": [
-            {
+        "static_agents": {
+            "console": {
                 "agent_id": "00000000-0000-4000-8000-000000000001",
                 "display_name": "Console Agent",
-                "token_env_var": "TOKEN",
-                "operator_subject_env": "OPERATOR_SUBJECT",
+                "token": "token",
+                "operator_subject": "operator-subject",
                 "access_profile_id": "manual",
             }
-        ],
+        },
         "launchable_agents": [
             {"agent_id": "00000000-0000-4000-8000-000000000001", "system_prompt_template": "/prompt"}
         ],

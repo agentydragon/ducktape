@@ -59,7 +59,7 @@ spec:
             # The narrow haku_indexer role (db/indexer-role-secret.yaml), never the
             # application owner: the worker cannot read the approval ledger, identity,
             # or OAuth state.
-            - name: HAKU_INDEXER_DATABASE_URL
+            - name: HAKU_INDEXER__DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: haku-console-db-indexer
@@ -69,9 +69,9 @@ spec:
             # the console API's — search joins vectors on it, so a mismatch writes a
             # space search never reads. No query instruction here: this role embeds
             # documents, which instruction-aware models take plain.
-            - name: HAKU_INDEXER_EMBEDDER__BASE_URL
+            - name: HAKU_INDEXER__EMBEDDER__BASE_URL
               value: "http://ollama.ollama.svc.cluster.local:11434/v1"
-            - name: HAKU_INDEXER_EMBEDDER__MODEL
+            - name: HAKU_INDEXER__EMBEDDER__MODEL
               value: "qwen3-embedding:4b"
           resources:
             requests:

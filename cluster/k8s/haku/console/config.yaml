@@ -3,11 +3,10 @@
 # Console-owned Agent Sandbox runtimes. Every value is explicit deployment
 # wiring; the application deliberately has no topology/path/proxy defaults. The
 # placeholders are non-secret—the real bearers stay in the trusted Console/egress path.
-settings:
-  # https, never http: client-go attaches kubeconfig credentials only to a TLS server, so a
-  # plain-http proxy URL makes every sandbox kubectl request unauthenticated (401).
-  runner_kubernetes_proxy_url: https://haku-kube-api-proxy.haku-console.svc.cluster.local:8443
-  haku_agent_workspace_setup: /usr/local/bin/haku-sandbox-setup.sh
+# https, never http: client-go attaches kubeconfig credentials only to a TLS server, so a
+# plain-http proxy URL makes every sandbox kubectl request unauthenticated (401).
+runner_kubernetes_proxy_url: https://haku-kube-api-proxy.haku-console.svc.cluster.local:8443
+haku_agent_workspace_setup: /usr/local/bin/haku-sandbox-setup.sh
 
 git_ca_bundle: /etc/ssl/certs/ca-certificates.crt
 recall_indexes:
@@ -17,19 +16,20 @@ recall_indexes:
   # Sync contract: each entry is mirrored verbatim into its chunk pod's own config slice
   # (indexer-chunk-<index>-config.yaml) — the derivation tests fail this file against the slices
   # on any drift.
-  - index_id: haku-state
+  haku_state:
+    index_id: haku-state
     index_type: git
     repo_url: http://forgejo-http.forgejo:3000/haku/haku-state.git
     branch: main
     mirror_path: /tmp/haku-recall-index/haku-state.git
-    username_env_var: HAKU_CONSOLE_HAKU_STATE_GIT_USERNAME
-    password_env_var: HAKU_CONSOLE_HAKU_STATE_GIT_PASSWORD
-  - index_id: haku-conversations
+  haku_conversations:
+    index_id: haku-conversations
     index_type: chat
   # Public upstream source for code and deployment-context recall. It intentionally has no
   # credential references: the console clones the canonical public repository over HTTPS.
   # The Git reducer skips binary blobs and blobs larger than 1 MiB.
-  - index_id: ducktape-public
+  ducktape_public:
+    index_id: ducktape-public
     index_type: git
     repo_url: https://github.com/agentydragon/ducktape.git
     branch: devel
@@ -572,15 +572,14 @@ egress_decide:
   # decide call. It authenticates the sidecar only and carries no Agent identity. Every data-plane
   # request must also present a live per-session bridge bearer, which is the sole source of
   # Agent/session attribution.
-  decision_endpoint_token_env_var: HAKU_DECISION_ENDPOINT_TOKEN
   # Console-owned egress credential registry (#4951): a grant redeems a credential by naming its
   # handle, and the endpoint returns the placeholder->value substitution only for its `principal`
   # at an origin in `origins`. First entry: the bot GitHub token (mirrors the retiring
   # iron fence's substitution). The sandbox only ever holds `github-token-placeholder`.
   credentials:
-    - handle: github-bot
+    github_bot:
+      handle: github-bot
       placeholder: github-token-placeholder
-      value_env_var: HAKU_EGRESS_CREDENTIAL_GITHUB_BOT
       match_headers: [authorization]
       principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
       origins:
@@ -598,9 +597,9 @@ egress_decide:
     # through the fence, which swaps this placeholder for the real haku-console-claude key on the
     # LiteLLM origin only. The runner holds only the inert placeholder. Value reflected from the
     # litellm-keys-tf Terraform mint (deployment.yaml env). Origin is plain http:4000, internal.
-    - handle: claude-litellm
+    claude_litellm:
+      handle: claude-litellm
       placeholder: proxy-litellm-haku-console-claude-placeholder
-      value_env_var: HAKU_EGRESS_CREDENTIAL_CLAUDE_LITELLM
       match_headers: [authorization]
       principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
       origins:
@@ -611,9 +610,9 @@ egress_decide:
     # this swap are committed EXAMPLE- literals — the placeholder here and the deployment's
     # literal HAKU_EGRESS_CREDENTIAL_SUBSTITUTION_SMOKE value — so watching the swap arrive at
     # the public echo host exercises the whole decide→substitute path with no secret anywhere.
-    - handle: substitution-smoke
+    substitution_smoke:
+      handle: substitution-smoke
       placeholder: EXAMPLE-EGRESS-SMOKE-PLACEHOLDER
-      value_env_var: HAKU_EGRESS_CREDENTIAL_SUBSTITUTION_SMOKE
       match_headers: [authorization]
       principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
       origins:
@@ -626,9 +625,9 @@ egress_decide:
     # sandbox only ever holds the inert placeholder plus its session bearer.
     #   The public-coder LiteLLM virtual key, substituted only on the internal LiteLLM model gateway;
     #   its configuration grant carries allow_prohibited_address because the gateway is a cluster ClusterIP.
-    - handle: codex-litellm
+    codex_litellm:
+      handle: codex-litellm
       placeholder: proxy-litellm-public-coder-placeholder
-      value_env_var: HAKU_EGRESS_CREDENTIAL_LITELLM_PUBLIC_CODER
       match_headers: [authorization]
       principal: { kind: agent, agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e }
       origins:
@@ -637,11 +636,11 @@ egress_decide:
           port: 4000
     #   Codex's GitHub access is the same agentydragon-agent PAT as `github-bot`, presented under a
     #   different inert placeholder (the Codex sandbox holds proxy-github-placeholder). A second
-    #   presentation of one credential is a second entry sharing its value_env_var under its own
-    #   handle and placeholder (decide_config.EgressCredentialEntry).
-    - handle: codex-github-bot
+    #   presentation of one credential is a second entry whose nested `value` setting receives the
+    #   same Secret under its own handle and placeholder (decide_config.EgressCredentialEntry).
+    codex_github_bot:
+      handle: codex-github-bot
       placeholder: proxy-github-placeholder
-      value_env_var: HAKU_EGRESS_CREDENTIAL_GITHUB_BOT
       match_headers: [authorization]
       principal: { kind: agent, agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e }
       origins:
@@ -658,9 +657,9 @@ egress_decide:
     # substituted into the haku Agent's Forgejo egress (git-over-HTTP + REST API), reachable at the
     # internal forgejo-http.forgejo service and the public git.allegedly.works. The sandbox only ever
     # holds `haku-forgejo-token-placeholder`.
-    - handle: haku-forgejo-token
+    haku_forgejo_token:
+      handle: haku-forgejo-token
       placeholder: haku-forgejo-token-placeholder
-      value_env_var: HAKU_EGRESS_CREDENTIAL_FORGEJO
       match_headers: [authorization]
       principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
       origins:
@@ -677,9 +676,9 @@ egress_decide:
     # inert bearer placeholder in AW_READ_TOKEN; the Console resolves the reflected Secret and
     # substitutes it only at the exact read origin. The route itself enforces the same GET plus
     # query-POST read-only boundary, so this credential cannot be used for writes.
-    - handle: activitywatch-read-token
+    activitywatch_read_token:
+      handle: activitywatch-read-token
       placeholder: activitywatch-read-token-placeholder
-      value_env_var: HAKU_EGRESS_CREDENTIAL_ACTIVITYWATCH_READ
       match_headers: [authorization]
       principal: { kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2 }
       origins:
@@ -923,21 +922,19 @@ agent_sandbox:
       /usr/local/bin/haku-sandbox-setup.sh
 #
 # Static machine Agents: each has a fixed durable Agent UUID, globally reserved display name, and
-# bearer bound to one Operator. The bearer and controller-fed Authentik user id are named env vars,
-# not literals — values live in the haku-console-agent / haku-console-oidc Secrets.
-# The externally stable `operator_subject_env` label names a startup-only Authentik `sub`/user_id
-# seed; the app immediately resolves it to a canonical Operator UUID and never uses it as live
-# request authority.
+# bearer bound to one Operator. The bearer and controller-fed Authentik user id are secret leaves,
+# omitted here and overlaid directly through `HAKU_CONSOLE__STATIC_AGENTS__<slot>__{TOKEN,
+# OPERATOR_SUBJECT}`. The externally stable operator subject is a startup-only Authentik
+# `sub`/user_id seed; the app immediately resolves it to a canonical Operator UUID and never uses
+# it as live request authority.
 static_agents:
-  - agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
+  haku:
+    agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
     display_name: Haku
-    token_env_var: HAKU_CONSOLE_AGENT_HAKU_TOKEN
-    operator_subject_env: HAKU_CONSOLE_AGENT_HAKU_OPERATOR
     access_profile_id: haku
-  - agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e
+  public_coder:
+    agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e
     display_name: public-coder-agent
-    token_env_var: HAKU_CONSOLE_AGENT_PUBLIC_CODER_AGENT_TOKEN
-    operator_subject_env: HAKU_CONSOLE_AGENT_PUBLIC_CODER_AGENT_OPERATOR
     # Coder may read the explicitly named Ducktape and Gaffer repositories without interrupting
     # the Operator. Everything else remains approval-wrapped, and Coder cannot approve its own
     # requests.
@@ -954,18 +951,14 @@ launchable_agents:
     system_prompt_template: /etc/haku-console/config/public_coder_system_prompt.md.j2
 # Matrix invites/messages have no harness selector. This explicit route applies only when the
 # adapter creates a conversation for a new room; existing conversations retain their own kind.
-matrix:
+matrix_launch:
   default_agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
   default_harness_kind: claude_code
 operator_connection_providers:
   google_mail:
     kind: google
-    client_id_env_var: HAKU_CONSOLE_GOOGLE_MAIL_CLIENT_ID
-    client_secret_env_var: HAKU_CONSOLE_GOOGLE_MAIL_CLIENT_SECRET
   google_calendar:
     kind: google
-    client_id_env_var: HAKU_CONSOLE_GOOGLE_CALENDAR_CLIENT_ID
-    client_secret_env_var: HAKU_CONSOLE_GOOGLE_CALENDAR_CLIENT_SECRET
 operator_connections:
   google_mail:
     display_name: Google Mail
@@ -985,7 +978,8 @@ mcp:
     # transparent access only to the explicit github_reads policy above; every other tool stays in
     # the Console's per-call operator approval queue; tools in agent_tool_denylist are unavailable
     # to Agents entirely.
-    - id: github
+    github:
+      id: github
       # GitHub's hosted MCP catalog is expensive to reflect and changes infrequently. Keep the
       # shared 60-second default for other servers, but refresh GitHub at most every 15 minutes.
       catalog_refresh_interval_seconds: 900
@@ -1016,10 +1010,9 @@ mcp:
           # write stays in the per-call operator approval queue.
           client_registration:
             kind: preregistered
-            client_id_env_var: HAKU_CONSOLE_GITHUB_MCP_CLIENT_ID
-            client_secret_env_var: HAKU_CONSOLE_GITHUB_MCP_CLIENT_SECRET
             token_endpoint_auth_method: client_secret_post
-    - id: grocy-sf
+    grocy_sf:
+      id: grocy-sf
       backend:
         kind: remote_mcp
         url: https://grocy-mcp-sf.allegedly.works/mcp
@@ -1028,7 +1021,8 @@ mcp:
           client_registration:
             kind: dynamic
             client_name: Haku Console
-    - id: tana-rw
+    tana_rw:
+      id: tana-rw
       backend:
         kind: remote_mcp
         # Haku Console authenticates directly with the account PAT. The credential lives only in
@@ -1036,7 +1030,6 @@ mcp:
         url: http://tana-mcp.tana-mcp.svc.cluster.local:8263/mcp
         auth:
           kind: static_bearer
-          bearer_token_secret: tana-account-pat
     # `sandbox` (haku/console/tools/sandbox.py): claim a warm Haku sandbox from the `agent_sandbox`
     # pool above, bootstrap it, run bounded bash via pods/exec, dispose it. Credential-free —
     # Console's own ServiceAccount holds the claim/exec RBAC (cluster/k8s/haku/workspaces/app/
@@ -1047,7 +1040,8 @@ mcp:
     # only releases the ephemeral claim Haku itself created (re-clonable checkout, rebuildable
     # cache). The `haku_sandbox_control` exact-tools policy above records that reviewed authority;
     # `in_process_server_ids` on the profile is what grants access to the server at all.
-    - id: sandbox
+    sandbox:
+      id: sandbox
       backend:
         kind: in_process
         credential:
@@ -1059,7 +1053,8 @@ mcp:
     # dispatch never widens its reach. Credential-free (Console's own session runtime). `dispatch_worker`
     # is in NO auto-approval policy, so every spawn queues for the operator, exactly like `create_grant`.
     # Granted to the `haku` orchestrator profile below; the intended first worker is public-coder/codex.
-    - id: workers
+    workers:
+      id: workers
       backend:
         kind: in_process
         credential:
@@ -1067,7 +1062,8 @@ mcp:
     # The Console-launched session inventory is a separate lifecycle from the Agent Sandbox
     # workbox server above. Its terminate tool remains explicitly approval-gated: no
     # auto-approval policy names this server.
-    - id: haku_session_sandboxes
+    haku_session_sandboxes:
+      id: haku_session_sandboxes
       backend:
         kind: in_process
         credential:
@@ -1084,7 +1080,8 @@ mcp:
     # narrowing self-service operation (`grants_own_revoke`) — and the reads auto-approve per their
     # atoms (`kubernetes_can_i`/`get_grant` via `kubernetes_reads`, own-scoped `list_grants` via
     # `grants_own_list`, `whoami` via `grants_whoami`).
-    - id: grants
+    grants:
+      id: grants
       backend:
         kind: in_process
         credential:
@@ -1098,7 +1095,8 @@ mcp:
     # (set_automation_rule, request_*/cancel_* — open & rescan are paid, discard & shred remove
     # mail) queues for operator approval — see `postscanmail_reads` above. Reached via the
     # public hostname like the other remote facades; no Terraform or NetworkPolicy change.
-    - id: postscanmail-mcp
+    postscanmail_mcp:
+      id: postscanmail-mcp
       backend:
         kind: remote_mcp
         url: https://postscanmail-mcp.allegedly.works/mcp
@@ -1115,13 +1113,13 @@ mcp:
     #
     # A static bearer rather than operator OAuth: Haku is the only consumer and ha-mcp is our own
     # in-cluster service, so there is no consent boundary OAuth would buy.
-    - id: home-assistant
+    home_assistant:
+      id: home-assistant
       backend:
         kind: remote_mcp
         url: http://ha-mcp.ha-mcp.svc.cluster.local:8765/mcp
         auth:
           kind: static_bearer
-          bearer_token_secret: ha-mcp-bearer
     # osmmcp (github.com/NERVsystems/osmmcp): geocoding via Nominatim, routing via OSRM,
     # place lookup via Overpass — all public, anonymous, read-only APIs. No secret, no
     # per-operator identity, so unlike every other remote server here it isn't
@@ -1151,7 +1149,8 @@ mcp:
     # configuration_view — see cluster/k8s/agents/kubectl-passthrough-mcp/) runs with full
     # cluster-admin once approved; the approval click in trusted console chrome is the
     # only gate, by design — see haku/docs/security.md.
-    - id: kubectl-passthrough-mcp
+    kubectl_passthrough_mcp:
+      id: kubectl-passthrough-mcp
       backend:
         kind: remote_mcp
         url: https://kubectl-passthrough-mcp.allegedly.works/mcp
@@ -1181,14 +1180,16 @@ mcp:
     # (threads_list, threads_get, messages_get, labels_list, labels_get); writes are
     # drafts_create, threads_modify_labels, and label CRUD (labels_create, labels_patch,
     # labels_delete).
-    - id: gmail
+    gmail:
+      id: gmail
       backend:
         kind: in_process
         credential:
           kind: operator_connection
           connection: google_mail
     # `google_calendar`: recurrence-aware get/list/instances reads + approval-gated create_event.
-    - id: google_calendar
+    google_calendar:
+      id: google_calendar
       backend:
         kind: in_process
         credential:
@@ -1197,15 +1198,16 @@ mcp:
     # `haku_index` (haku/console/tools/recall_index.py): semantic search over haku-state,
     # public Ducktape source, and Haku's own past conversations. Listing it here is what builds
     # the searcher, and the
-    # console refuses to start unless an embedder is configured too (`HAKU_CONSOLE_EMBEDDER__*`,
+    # console refuses to start unless an embedder is configured too (`HAKU_CONSOLE__EMBEDDER__*`,
     # Ollama) — search embeds its query. Keeping the corpora current is the role-flagged
     # haku-indexer Deployments (haku/console/indexer.py): one chunk Deployment per index below,
     # plus the shared embed drain. Each chunk pod mounts only its own index's slice of the
     # recall_indexes registry above (indexer-chunk-<index>-config.yaml, derivation-tested against
     # these entries) — the conversations corpus from the console's tables, haku-state through a
-    # read-only mirror fetched with `HAKU_CONSOLE_HAKU_STATE_GIT_*`, and Ducktape from GitHub
+    # read-only mirror whose typed Git credentials are supplied to its dedicated chunk worker, and Ducktape from GitHub
     # without a credential. The embed role fills the shared vector queue those chunks land in.
-    - id: haku_index
+    haku_index:
+      id: haku_index
       backend:
         kind: in_process
         credential:
@@ -1214,7 +1216,8 @@ mcp:
     # out of the console's rollout store, so a replacement session can consult what its
     # predecessor actually did instead of only the last few room messages. Read-only, and
     # credential-free — the corpus is the console's own database.
-    - id: haku_conversations
+    haku_conversations:
+      id: haku_conversations
       backend:
         kind: in_process
         credential:
@@ -1227,7 +1230,8 @@ mcp:
     # against Authentik's JWKS. This catalog entry only selects the auth mode; the in-scope
     # hosts + their exec URLs / audiences are the top-level `hostexec:` block below. Every
     # call is manual-approval (no auto-approve policy). See haku/hostexec/README.md.
-    - id: hostexec
+    hostexec:
+      id: hostexec
       backend:
         kind: in_process
         credential:
@@ -1249,9 +1253,7 @@ node_daemons:
   daemons:
     wyrm2:
       display_name: wyrm2
-      token_env_var: HAKU_CONSOLE_NODE_DAEMON_WYRM2_TOKEN
       backends: [hostexec]
     rugged:
       display_name: rugged
-      token_env_var: HAKU_CONSOLE_NODE_DAEMON_RUGGED_TOKEN
       backends: [hostexec]

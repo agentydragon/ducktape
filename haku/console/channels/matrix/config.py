@@ -11,10 +11,8 @@ binary, one config — <../../docs/naming_and_layout.md> §5).
 
 from __future__ import annotations
 
-from pathlib import Path
 from uuid import UUID
 
-import yaml
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from haku.console.harnesses.kind import HarnessKind
@@ -95,18 +93,12 @@ class MatrixLaunchConfig(BaseModel):
 class AdapterConfigFile(BaseModel):
     harnesses: Harnesses | None = None
     access_profiles: tuple[ConfiguredProfile, ...] = ()
-    static_agents: tuple[ConfiguredAgent, ...] = ()
+    static_agents: dict[str, ConfiguredAgent] = Field(default_factory=dict)
     launchable_agents: tuple[LaunchableEntry, ...] = ()
-    matrix: MatrixLaunchConfig | None = Field(
+    matrix_launch: MatrixLaunchConfig | None = Field(
         default=None,
         description=(
             "Explicit Agent and harness route for a new Matrix conversation: invites and messages "
             "carry no selector. Existing rooms follow their conversation row."
         ),
     )
-
-
-def load_adapter_config(path: Path) -> AdapterConfigFile:
-    if not path.is_file():
-        raise RuntimeError(f"haku-matrix-adapter config file does not exist: {path}")
-    return AdapterConfigFile.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")) or {})

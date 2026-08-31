@@ -17,7 +17,7 @@ from mcp.client.auth.utils import handle_token_response_scopes
 from mcp.shared.auth import OAuthToken
 from pydantic import ValidationError
 
-from haku.console.config import Settings
+from haku.console.settings import Settings
 
 # Refresh a little before expiry so a token handed to a tool call stays valid for the call.
 REFRESH_SKEW = datetime.timedelta(seconds=60)

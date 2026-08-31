@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 import pytest_bazel
 from fastapi import HTTPException
+from pydantic import SecretStr
 
 from haku.console.config import NodeDaemonDefinition, NodeDaemonsConfig
 from haku.console.conftest import console_sessions
@@ -13,14 +14,13 @@ from haku.console.hostexecd.service import ClaimRequest, ExecutionResultRequest,
 
 
 @pytest.fixture
-def hostexecd_service(migrated_db_url: str, monkeypatch: pytest.MonkeyPatch) -> Service:
-    monkeypatch.setenv("TEST_WYRM2_DAEMON_TOKEN", "wyrm2-secret")
+def hostexecd_service(migrated_db_url: str) -> Service:
     return Service(
         console_sessions(migrated_db_url),
         NodeDaemonsConfig(
             daemons={
                 "wyrm2": NodeDaemonDefinition(
-                    display_name="wyrm2", token_env_var="TEST_WYRM2_DAEMON_TOKEN", backends=["hostexec"]
+                    display_name="wyrm2", token=SecretStr("wyrm2-secret"), backends=["hostexec"]
                 )
             }
         ),

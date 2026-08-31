@@ -30,7 +30,6 @@ py_library(
         "//mcp_infra:persistence",
         "//mcp_infra/authentik_auth:config",
         "@pypi//pydantic",
-        "@pypi//pydantic_settings",
         "@pypi//sqlalchemy",
     ],
 )
@@ -41,6 +40,7 @@ py_library(
     deps = [
         ":config",
         ":tool_call_actor",
+        "//haku/console/channels/matrix:config",
         "//haku/console/grants/http:decide_config",
         "//haku/console/harnesses:kind",
         "//haku/console/identity:naming",
@@ -48,10 +48,8 @@ py_library(
         "//haku/recall_index:config",
         "//haku/sandbox:config",
         "//mcp_infra:prefix",
-        "//util:env",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -121,6 +119,7 @@ py_test(
         ":indexer",
         ":indexer_config",
         ":mcp_config",
+        ":settings",
         "//:conftest",
         "//haku/console/channels/matrix:config",
         "//haku/console/channels/matrix:worker",
@@ -158,7 +157,6 @@ py_library(
     deps = [
         "//haku/recall_index:config",
         "@pypi//pydantic",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -167,10 +165,11 @@ py_test(
     srcs = ["test_indexer_config.py"],
     deps = [
         ":conftest",
-        ":indexer_config",
+        ":indexer",
         "//:conftest",
         "//haku/recall_index:config",
         "@pypi//more_itertools",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -248,7 +247,7 @@ py_library(
     name = "deps",
     srcs = ["deps.py"],
     deps = [
-        ":config",
+        ":settings",
         "@pypi//fastapi",
     ],
 )
@@ -319,6 +318,8 @@ py_library(
         "//haku/recall_index:schema",
         "@pypi//alembic",
         "@pypi//psycopg",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
         "@pypi//sqlalchemy",
     ],
 )
@@ -453,6 +454,7 @@ py_library(
         ":mcp_config",
         ":models",
         ":recall_index_reader",
+        ":settings",
         "//haku/console/auto_approval:github",
         "//haku/console/conversation:follow",
         "//haku/console/conversation:history",
@@ -543,6 +545,7 @@ py_library(
     deps = [
         ":app",
         ":config",
+        ":settings",
         "//haku/console/identity:authorization",
         "//haku/console/session:conversation_views",
         "@pypi//pydantic",
@@ -601,6 +604,7 @@ py_library(
         "@pypi//asyncpg",
         "@pypi//psycopg",
         "@pypi//httpx",
+        ":settings",
     ],
 )
 
@@ -1017,7 +1021,19 @@ py_test(
         ":conftest",
         ":database_migrate",
         "//:conftest",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    deps = [
+        ":config",
+        ":mcp_config",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
     ],
 )

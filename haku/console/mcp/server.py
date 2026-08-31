@@ -56,7 +56,7 @@ from pydantic import (
 )
 
 from haku.console.auto_approval.registry import AutoApprovalPolicyRegistry, ToolAutoApprovalMode
-from haku.console.config import Settings, tool_call_console_url
+from haku.console.config import tool_call_console_url
 from haku.console.hostexecd.service import DaemonStatusResponse, Service
 from haku.console.identity.fastmcp_adapter import HakuMcpActorResolver
 from haku.console.mcp.approval import (
@@ -90,10 +90,10 @@ from haku.console.mcp_config import (
     RemoteServerOAuthAuth,
     StaticBearerAuth,
     _load_servers,
-    load_console_config,
     server_tool_prefix,
 )
 from haku.console.oauth.provider_connection import PostgresProviderConnectionStore, ProviderConnectionStatus
+from haku.console.settings import Settings
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_calls import (
     MCP_TOOL_CALL_META_KEY,
@@ -690,9 +690,7 @@ class OperatorToolProvider(Provider):
         self._context = context
         self._actor_resolver = actor_resolver
         self._catalog = catalog or OperatorServerCatalog(context)
-        self._auto_approval_policies = policies or AutoApprovalPolicyRegistry(
-            load_console_config(context.settings.config_file)
-        )
+        self._auto_approval_policies = policies or AutoApprovalPolicyRegistry(context.settings)
 
     def _is_passthrough(self, actor: RuntimeActor, server_id: str, tool_name: str) -> bool:
         return _is_passthrough(self._auto_approval_policies, actor, server_id, tool_name)
@@ -800,7 +798,7 @@ def build_console_mcp(
     catalog = OperatorServerCatalog(context)
     # One registry for both the generated proxies and `call_mcp_tool`, so the two can never disagree
     # about which payload shape a tool takes.
-    policies = AutoApprovalPolicyRegistry(load_console_config(context.settings.config_file))
+    policies = AutoApprovalPolicyRegistry(context.settings)
     mcp.add_provider(OperatorToolProvider(context, actor_resolver, catalog, policies))
     mcp.add_middleware(OperatorToolAvailabilityMiddleware(catalog, actor_resolver))
 

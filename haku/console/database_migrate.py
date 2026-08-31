@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
+from pydantic import SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.engine import make_url
 
@@ -24,6 +25,14 @@ _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 # normally has one Pod, but the transaction-scoped advisory lock also makes a deliberate retry or
 # a transient overlapping execution safe.
 _MIGRATION_LOCK_KEY = 0x4B41_4B55  # "KAKU" in hex, close enough to "haku" to be memorable
+
+
+class MigrationSettings(BaseSettings):
+    """The migration Job's deliberately narrow process contract."""
+
+    model_config = SettingsConfigDict(env_prefix="HAKU_CONSOLE__")
+
+    database_url: SecretStr
 
 
 def run_migrations_for_connection(conn: Any, revision: str = "head") -> None:
@@ -77,15 +86,12 @@ def verify_schema(database_url: str) -> None:
 
 
 def main() -> None:
-    """Run the migration-only process entrypoint from ``HAKU_CONSOLE_DATABASE_URL``.
+    """Run the migration-only process entrypoint from ``HAKU_CONSOLE__DATABASE_URL``.
 
     This intentionally avoids constructing ``Settings``: migrations need only the database URL and
     must not require the Console's OIDC, connector, routine, or Kubernetes credentials.
     """
-    database_url = os.environ.get("HAKU_CONSOLE_DATABASE_URL")
-    if not database_url:
-        raise SystemExit("HAKU_CONSOLE_DATABASE_URL is required for the migration command")
-    apply_migrations(database_url)
+    apply_migrations(MigrationSettings().database_url.get_secret_value())
 
 
 if __name__ == "__main__":

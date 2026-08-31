@@ -33,7 +33,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from haku.console import aiquota_proxy, capabilities
 from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
-from haku.console.config import MCP_PATH, Settings
+from haku.console.config import MCP_PATH
 
 # Aliased: bare `runtime` exists in three sibling packages, and `create_app` has a local `follow`.
 from haku.console.conversation import follow as conversation_follow, reader, runtime as conversation_runtime
@@ -84,7 +84,6 @@ from haku.console.mcp_config import (
     LoadedStaticAgent,
     OperatorConnectionCredential,
     _server_entry,
-    load_console_config,
     load_static_agents,
     validate_in_process_server_bindings,
 )
@@ -98,6 +97,7 @@ from haku.console.session import runtime as session_runtime, sandbox_allocation,
 from haku.console.session.launch_identity import HarnessLaunchAuthorizer
 from haku.console.session.store import Store
 from haku.console.session.system_prompt import SystemPromptTemplate
+from haku.console.settings import Settings
 from haku.console.tools import (
     gmail as gmail_tools,
     grants as grants_tools,
@@ -195,7 +195,7 @@ def create_app(
     # Deploy-time console config file (non-secret): the MCP server catalog, static agents, and the
     # hostexec host map. `hostexec is not None` gates the hostexec in-process server, the login-time
     # offline_access request, and operator-Authentik-token persistence — computed once here.
-    console_config = load_console_config(settings.config_file)
+    console_config = settings
     hostexec_config = console_config.hostexec
     # Postgres is required: it backs the approval ledger and the operator OAuth store, both always
     # constructed. Construction is lazy (no connect); migrations run once at startup (app.main /
@@ -215,7 +215,7 @@ def create_app(
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
     claude_harness = console_config.harnesses.claude_code if console_config.harnesses is not None else None
     codex_harness = console_config.harnesses.codex_app_server if console_config.harnesses is not None else None
-    static_by_id = {agent.agent_id: agent for agent in console_config.static_agents}
+    static_by_id = {agent.agent_id: agent for agent in console_config.static_agents.values()}
     profile_harness_kinds = {profile.id: set(profile.allowed_harnesses) for profile in console_config.access_profiles}
     launchable_agent_ids = {entry.agent_id for entry in console_config.launchable_agents}
     # Each layer owns its own LISTEN connection on its own channel: a session and a conversation
@@ -275,7 +275,7 @@ def create_app(
     oauth_maintenance = association_maintenance.AssociationMaintenance(
         db_engine,
         db_sessions,
-        servers=console_config.mcp.servers,
+        servers=list(console_config.mcp.servers.values()),
         oauth_store=mcp_operator_oauth_store,
         provider_store=provider_connection_store,
         authentik_store=authentik_operator_token_store,
@@ -543,7 +543,7 @@ def create_app(
         # listed and where the policy that lets an agent call it lives, and a boolean elsewhere
         # could only ever disagree with it — a listed server with no builder fails the binding
         # validation below.
-        configured_server_ids = {entry.id for entry in console_config.mcp.servers}
+        configured_server_ids = {entry.id for entry in console_config.mcp.servers.values()}
         index_searcher = None
         if HAKU_INDEX_SERVER_ID in configured_server_ids:
             if settings.embedder is None:
@@ -559,7 +559,7 @@ def create_app(
             index_searcher = PostgresIndexSearcher(
                 db_sessions,
                 _embedder(settings.embedder, timeout=settings.embedder.timeout_seconds),
-                indexes=console_config.recall_indexes,
+                indexes=tuple(console_config.recall_indexes.values()),
                 budget=settings.recall_index.chunk_budget,
             )
         # Claims are created lazily on first use, so this holds no Kubernetes connection until an
@@ -577,7 +577,7 @@ def create_app(
                 hostexec=hostexec_server,
                 index=index_searcher,
                 recall_access_profiles=tuple(console_config.access_profiles),
-                configured_recall_index_ids=tuple(index.index_id for index in console_config.recall_indexes),
+                configured_recall_index_ids=tuple(index.index_id for index in console_config.recall_indexes.values()),
                 # Only with an executable harness: otherwise nothing writes sessions, so the read
                 # tools would reflect an always-empty corpus.
                 conversations=(reader.ConversationReads(session_store) if harness_registry.configured_kinds else None),
@@ -627,7 +627,7 @@ def create_app(
         in_process_servers, catalog_cache_ttl_seconds=settings.mcp_catalog_refresh_interval_seconds
     )
     catalogs = catalog_reconciler.OperatorCatalogReconciler(
-        servers=console_config.mcp.servers,
+        servers=list(console_config.mcp.servers.values()),
         dispatcher=dispatcher,
         oauth_store=mcp_operator_oauth_store,
         provider_store=provider_connection_store,
@@ -679,7 +679,7 @@ def create_app(
             else await _resolve_static_agent_definitions()
         )
         await agent_authority.reconcile_static_agents(static_definitions)
-        await mcp_operator_oauth_store.forget_unconfigured_servers(console_config.mcp.servers)
+        await mcp_operator_oauth_store.forget_unconfigured_servers(list(console_config.mcp.servers.values()))
         if session_service is not None:
             await session_service.reconcile_terminal_claims()
         # Conversation demand owns session creation and replacement. It is a sibling of every
@@ -830,7 +830,11 @@ def create_app(
         # The static shell is an independent Deployment. Its Flux-selected tag is
         # read from a projected ConfigMap on every request so a frontend-only roll
         # does not need to restart this API pod merely to update Settings metadata.
-        return build_deployment_info(static_image_tag_file=settings.static_image_tag_file)
+        return build_deployment_info(
+            image_tag=settings.image_tag,
+            static_image_tag=settings.static_image_tag,
+            static_image_tag_file=settings.static_image_tag_file,
+        )
 
     @app.get("/api/config", dependencies=operator_only)
     async def config() -> ConfigResponse:
@@ -936,9 +940,8 @@ async def _serve(app: FastAPI) -> None:
     graceful-shutdown bound; the oracle installs none of its own and is asked to exit once the
     network server has.
     """
-    # host/port are fixed, not env-driven: under the HAKU_CONSOLE_ prefix a `port`
-    # setting would read the kubelet's HAKU_CONSOLE_PORT service-link var (a URL),
-    # not an int. The cluster-wide Kyverno default keeps that legacy variable out.
+    # Host/port are intentionally fixed process topology, not deploy settings. Ordinary Console
+    # settings use the collision-resistant HAKU_CONSOLE__ nested prefix.
     #
     # `timeout_graceful_shutdown` is load-bearing, not tuning. A Claude runner websocket stays
     # open for the life of a chat session, so with the default (None) uvicorn waits *forever* on

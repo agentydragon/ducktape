@@ -77,19 +77,11 @@ def _dynamic_remote_oauth() -> dict[str, Any]:
 
 
 # The `/mcp` static bearer used across these tests, and the static-agent config that binds it to the
-# `haku` agent id (which acts as operator subject "42"). Env-referenced, like the deploy.
+# `haku` agent id (which acts as operator subject "42").
 _AGENT_TOKEN = "agent-token"
-_AGENT_TOKEN_ENV = "HAKU_CONSOLE_TEST_AGENT_TOKEN"
-_AGENT_OPERATOR_ENV = "HAKU_CONSOLE_TEST_AGENT_OPERATOR"
 _SIBLING_AGENT_TOKEN = "sibling-agent-token"
-_SIBLING_AGENT_TOKEN_ENV = "HAKU_CONSOLE_TEST_SIBLING_AGENT_TOKEN"
-_SIBLING_AGENT_OPERATOR_ENV = "HAKU_CONSOLE_TEST_SIBLING_AGENT_OPERATOR"
 _OTHER_AGENT_TOKEN = "other-agent-token"
-_OTHER_AGENT_TOKEN_ENV = "HAKU_CONSOLE_TEST_OTHER_AGENT_TOKEN"
-_OTHER_AGENT_OPERATOR_ENV = "HAKU_CONSOLE_TEST_OTHER_AGENT_OPERATOR"
 _OTHER_SIBLING_AGENT_TOKEN = "other-sibling-agent-token"
-_OTHER_SIBLING_AGENT_TOKEN_ENV = "HAKU_CONSOLE_TEST_OTHER_SIBLING_AGENT_TOKEN"
-_OTHER_SIBLING_AGENT_OPERATOR_ENV = "HAKU_CONSOLE_TEST_OTHER_SIBLING_AGENT_OPERATOR"
 _MANUAL_POLICY_ID = "manual_review"
 _MANUAL_ACCESS_PROFILE_ID = "manual_review"
 _MANUAL_AUTHORITY_CONFIG = {
@@ -97,36 +89,36 @@ _MANUAL_AUTHORITY_CONFIG = {
     "access_profiles": [{"id": _MANUAL_ACCESS_PROFILE_ID, "auto_approval_policy": _MANUAL_POLICY_ID}],
     "default_access_profile_id": _MANUAL_ACCESS_PROFILE_ID,
 }
-_STATIC_AGENTS = [
-    {
+_STATIC_AGENTS = {
+    "haku": {
         "agent_id": "40000000-0000-4000-8000-000000000001",
         "display_name": "Haku",
-        "token_env_var": _AGENT_TOKEN_ENV,
-        "operator_subject_env": _AGENT_OPERATOR_ENV,
+        "token": _AGENT_TOKEN,
+        "operator_subject": "42",
         "access_profile_id": _MANUAL_ACCESS_PROFILE_ID,
     },
-    {
+    "sibling": {
         "agent_id": "40000000-0000-4000-8000-000000000002",
         "display_name": "Sibling",
-        "token_env_var": _SIBLING_AGENT_TOKEN_ENV,
-        "operator_subject_env": _SIBLING_AGENT_OPERATOR_ENV,
+        "token": _SIBLING_AGENT_TOKEN,
+        "operator_subject": "42",
         "access_profile_id": _MANUAL_ACCESS_PROFILE_ID,
     },
-    {
+    "other": {
         "agent_id": "40000000-0000-4000-8000-000000000003",
         "display_name": "Other",
-        "token_env_var": _OTHER_AGENT_TOKEN_ENV,
-        "operator_subject_env": _OTHER_AGENT_OPERATOR_ENV,
+        "token": _OTHER_AGENT_TOKEN,
+        "operator_subject": "99",
         "access_profile_id": _MANUAL_ACCESS_PROFILE_ID,
     },
-    {
+    "other_sibling": {
         "agent_id": "40000000-0000-4000-8000-000000000004",
         "display_name": "Other Sibling",
-        "token_env_var": _OTHER_SIBLING_AGENT_TOKEN_ENV,
-        "operator_subject_env": _OTHER_SIBLING_AGENT_OPERATOR_ENV,
+        "token": _OTHER_SIBLING_AGENT_TOKEN,
+        "operator_subject": "99",
         "access_profile_id": _MANUAL_ACCESS_PROFILE_ID,
     },
-]
+}
 
 
 def _with_manual_authority(config: dict[str, Any]) -> dict[str, Any]:
@@ -182,18 +174,6 @@ def test_direct_result_preserves_upstream_error_and_metadata() -> None:
     assert result.meta == {"upstream": "kept"}
 
 
-@pytest.fixture(autouse=True)
-def _static_agent_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(_AGENT_TOKEN_ENV, _AGENT_TOKEN)
-    monkeypatch.setenv(_AGENT_OPERATOR_ENV, "42")
-    monkeypatch.setenv(_SIBLING_AGENT_TOKEN_ENV, _SIBLING_AGENT_TOKEN)
-    monkeypatch.setenv(_SIBLING_AGENT_OPERATOR_ENV, "42")
-    monkeypatch.setenv(_OTHER_AGENT_TOKEN_ENV, _OTHER_AGENT_TOKEN)
-    monkeypatch.setenv(_OTHER_AGENT_OPERATOR_ENV, "99")
-    monkeypatch.setenv(_OTHER_SIBLING_AGENT_TOKEN_ENV, _OTHER_SIBLING_AGENT_TOKEN)
-    monkeypatch.setenv(_OTHER_SIBLING_AGENT_OPERATOR_ENV, "99")
-
-
 @dataclass
 class _Harness:
     base: str  # base URL of the served console MCP; open `Client(f"{base}/mcp", auth=_AGENT_TOKEN)`
@@ -218,10 +198,10 @@ async def harness(migrated_db_url: str, migrated_sessions, tmp_path: Path) -> As
     config_file = _write_console_config(
         tmp_path / "console.yaml",
         {
-            "static_agents": [
-                {**agent, **({"access_profile_id": "haku"} if agent["display_name"] == "Haku" else {})}
-                for agent in _STATIC_AGENTS
-            ],
+            "static_agents": {
+                slot: {**agent, **({"access_profile_id": "haku"} if agent["display_name"] == "Haku" else {})}
+                for slot, agent in _STATIC_AGENTS.items()
+            },
             "auto_approval_policies": [
                 {
                     "id": "transparent_reads",
@@ -256,10 +236,10 @@ async def harness(migrated_db_url: str, migrated_sessions, tmp_path: Path) -> As
             ],
             "default_access_profile_id": _MANUAL_ACCESS_PROFILE_ID,
             "mcp": {
-                "servers": [
-                    {"id": "gmail", "backend": _in_process_backend({"kind": "none"})},
-                    {"id": "google_calendar", "backend": _in_process_backend({"kind": "none"})},
-                ]
+                "servers": {
+                    "gmail": {"id": "gmail", "backend": _in_process_backend({"kind": "none"})},
+                    "google_calendar": {"id": "google_calendar", "backend": _in_process_backend({"kind": "none"})},
+                }
             },
         },
     )
@@ -1050,7 +1030,9 @@ def _console_config(tmp_path: Path, upstream_url: str) -> Path:
         tmp_path / "console.yaml",
         {
             "static_agents": _STATIC_AGENTS,
-            "mcp": {"servers": [{"id": "standin", "backend": _remote_backend(upstream_url, {"kind": "none"})}]},
+            "mcp": {
+                "servers": {"standin": {"id": "standin", "backend": _remote_backend(upstream_url, {"kind": "none"})}}
+            },
         },
     )
 
@@ -1191,7 +1173,9 @@ async def test_tool_surface_tracks_each_operators_connected_servers(
             {
                 "static_agents": _STATIC_AGENTS,
                 "mcp": {
-                    "servers": [{"id": "standin", "backend": _remote_backend(upstream_url, _dynamic_remote_oauth())}]
+                    "servers": {
+                        "standin": {"id": "standin", "backend": _remote_backend(upstream_url, _dynamic_remote_oauth())}
+                    }
                 },
             },
         )
@@ -1250,44 +1234,39 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
         {
             "static_agents": _STATIC_AGENTS,
             "operator_connection_providers": {
-                "google": {
-                    "kind": "google",
-                    "client_id_env_var": "GOOGLE_CLIENT_ID",
-                    "client_secret_env_var": "GOOGLE_CLIENT_SECRET",
-                }
+                "google": {"kind": "google", "client_id": "google-client", "client_secret": "google-secret"}
             },
             "operator_connections": {
                 "google_workspace": {"display_name": "Google Workspace", "provider": "google", "scopes": ["scope"]}
             },
             "mcp": {
-                "servers": [
-                    {
+                "servers": {
+                    "expired_remote": {
                         "id": "expired-remote",
                         "backend": _remote_backend(
                             "https://must-not-be-contacted.invalid/mcp", _dynamic_remote_oauth()
                         ),
                     },
-                    {
+                    "unconnected_remote": {
                         "id": "unconnected-remote",
                         "backend": _remote_backend(
                             "https://also-must-not-be-contacted.invalid/mcp", _dynamic_remote_oauth()
                         ),
                     },
-                    {
+                    "gmail": {
                         "id": "gmail",
                         "backend": _in_process_backend(
                             {"kind": "operator_connection", "connection": "google_workspace"}
                         ),
                     },
-                    {"id": "routine", "backend": _in_process_backend({"kind": "none"})},
-                    {
+                    "routine": {"id": "routine", "backend": _in_process_backend({"kind": "none"})},
+                    "static_remote": {
                         "id": "static-remote",
                         "backend": _remote_backend(
-                            "https://static.invalid/mcp",
-                            {"kind": "static_bearer", "bearer_token_secret": "STATIC_REMOTE_TOKEN"},
+                            "https://static.invalid/mcp", {"kind": "static_bearer", "token": "static-remote-token"}
                         ),
                     },
-                ]
+                }
             },
         },
     )
@@ -1410,8 +1389,7 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
     assert "access_token" not in serialized
     assert "refresh_token" not in serialized
     assert "client_secret" not in serialized
-    assert "bearer_token_secret" not in serialized
-    assert "STATIC_REMOTE_TOKEN" not in serialized
+    assert "static-remote-token" not in serialized
     oauth_statuses.assert_called_once()
     provider_statuses.assert_called_once()
     refresh_remote.assert_not_awaited()
@@ -1427,12 +1405,12 @@ async def test_get_mcp_server_status_reports_refresh_failure_as_degraded(
         {
             "static_agents": _STATIC_AGENTS,
             "mcp": {
-                "servers": [
-                    {
+                "servers": {
+                    "standin": {
                         "id": "standin",
                         "backend": _remote_backend("https://standin.invalid/mcp", _dynamic_remote_oauth()),
                     }
-                ]
+                }
             },
         },
     )
@@ -1463,19 +1441,11 @@ async def test_get_mcp_server_status_reports_refresh_failure_as_degraded(
 async def test_cataloged_provider_without_oauth_client_is_reflected_as_unprovisioned(
     migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.delenv("MISSING_GOOGLE_CLIENT_ID", raising=False)
-    monkeypatch.delenv("MISSING_GOOGLE_CLIENT_SECRET", raising=False)
     config_file = _write_console_config(
         tmp_path / "unprovisioned-provider.yaml",
         {
             "static_agents": _STATIC_AGENTS,
-            "operator_connection_providers": {
-                "google_calendar": {
-                    "kind": "google",
-                    "client_id_env_var": "MISSING_GOOGLE_CLIENT_ID",
-                    "client_secret_env_var": "MISSING_GOOGLE_CLIENT_SECRET",
-                }
-            },
+            "operator_connection_providers": {"google_calendar": {"kind": "google"}},
             "operator_connections": {
                 "google_calendar": {
                     "display_name": "Google Calendar",
@@ -1484,14 +1454,14 @@ async def test_cataloged_provider_without_oauth_client_is_reflected_as_unprovisi
                 }
             },
             "mcp": {
-                "servers": [
-                    {
+                "servers": {
+                    "google_calendar": {
                         "id": "google_calendar",
                         "backend": _in_process_backend(
                             {"kind": "operator_connection", "connection": "google_calendar"}
                         ),
                     }
-                ]
+                }
             },
         },
     )
@@ -1521,9 +1491,12 @@ async def test_get_mcp_server_status_includes_schemas_only_when_requested(
         {
             "static_agents": _STATIC_AGENTS,
             "mcp": {
-                "servers": [
-                    {"id": "standin", "backend": _remote_backend("https://standin.invalid/mcp", {"kind": "none"})}
-                ]
+                "servers": {
+                    "standin": {
+                        "id": "standin",
+                        "backend": _remote_backend("https://standin.invalid/mcp", {"kind": "none"}),
+                    }
+                }
             },
         },
     )
@@ -1584,10 +1557,10 @@ async def test_tool_discovery_is_concurrent_and_preserves_config_order(
         {
             "static_agents": _STATIC_AGENTS,
             "mcp": {
-                "servers": [
-                    {"id": "beta", "backend": _remote_backend("https://beta.invalid/mcp", {"kind": "none"})},
-                    {"id": "alpha", "backend": _remote_backend("https://alpha.invalid/mcp", {"kind": "none"})},
-                ]
+                "servers": {
+                    "beta": {"id": "beta", "backend": _remote_backend("https://beta.invalid/mcp", {"kind": "none"})},
+                    "alpha": {"id": "alpha", "backend": _remote_backend("https://alpha.invalid/mcp", {"kind": "none"})},
+                }
             },
         },
     )
@@ -1621,10 +1594,16 @@ async def test_tool_discovery_isolates_unexpected_server_failure(
         {
             "static_agents": _STATIC_AGENTS,
             "mcp": {
-                "servers": [
-                    {"id": "broken", "backend": _remote_backend("https://broken.invalid/mcp", {"kind": "none"})},
-                    {"id": "healthy", "backend": _remote_backend("https://healthy.invalid/mcp", {"kind": "none"})},
-                ]
+                "servers": {
+                    "broken": {
+                        "id": "broken",
+                        "backend": _remote_backend("https://broken.invalid/mcp", {"kind": "none"}),
+                    },
+                    "healthy": {
+                        "id": "healthy",
+                        "backend": _remote_backend("https://healthy.invalid/mcp", {"kind": "none"}),
+                    },
+                }
             },
         },
     )
@@ -1652,10 +1631,10 @@ async def test_tool_dispatch_reads_only_target_server_snapshot(migrated_db_url: 
         {
             "static_agents": _STATIC_AGENTS,
             "mcp": {
-                "servers": [
-                    {"id": "alpha", "backend": _remote_backend("https://alpha.invalid/mcp", {"kind": "none"})},
-                    {"id": "beta", "backend": _remote_backend("https://beta.invalid/mcp", {"kind": "none"})},
-                ]
+                "servers": {
+                    "alpha": {"id": "alpha", "backend": _remote_backend("https://alpha.invalid/mcp", {"kind": "none"})},
+                    "beta": {"id": "beta", "backend": _remote_backend("https://beta.invalid/mcp", {"kind": "none"})},
+                }
             },
         },
     )
@@ -1704,7 +1683,9 @@ async def test_operator_proxy_advertises_and_dispatches_native_arguments(migrate
         {
             "static_agents": _STATIC_AGENTS,
             "mcp": {
-                "servers": [{"id": "beta", "backend": _remote_backend("https://beta.invalid/mcp", {"kind": "none"})}]
+                "servers": {
+                    "beta": {"id": "beta", "backend": _remote_backend("https://beta.invalid/mcp", {"kind": "none"})}
+                }
             },
         },
     )
@@ -1758,12 +1739,12 @@ async def test_targeted_dispatch_reports_a_known_degraded_server(migrated_db_url
         {
             "static_agents": _STATIC_AGENTS,
             "mcp": {
-                "servers": [
-                    {
+                "servers": {
+                    "grocy_sf": {
                         "id": "grocy-sf",
                         "backend": {"kind": "remote_mcp", "url": "https://grocy.invalid/mcp", "auth": {"kind": "none"}},
                     }
-                ]
+                }
             },
         },
     )
@@ -1850,11 +1831,11 @@ def test_mcp_oauth_persistence_must_share_the_console_database() -> None:
 
 
 def test_mcp_oauth_reads_nested_shared_persistence_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("HAKU_CONSOLE_MCP_OAUTH__OIDC_ISSUER", "https://auth.example.test/application/o/mcp/")
-    monkeypatch.setenv("HAKU_CONSOLE_MCP_OAUTH__OIDC_CLIENT_ID", "console")
-    monkeypatch.setenv("HAKU_CONSOLE_MCP_OAUTH__OIDC_CLIENT_SECRET", "secret")
-    monkeypatch.setenv("HAKU_CONSOLE_MCP_OAUTH__PERSISTENCE__KIND", "postgres")
-    monkeypatch.setenv("HAKU_CONSOLE_MCP_OAUTH__PERSISTENCE__URL", "postgresql://db.example.test/haku")
+    monkeypatch.setenv("HAKU_CONSOLE__MCP_OAUTH__OIDC_ISSUER", "https://auth.example.test/application/o/mcp/")
+    monkeypatch.setenv("HAKU_CONSOLE__MCP_OAUTH__OIDC_CLIENT_ID", "console")
+    monkeypatch.setenv("HAKU_CONSOLE__MCP_OAUTH__OIDC_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("HAKU_CONSOLE__MCP_OAUTH__PERSISTENCE__KIND", "postgres")
+    monkeypatch.setenv("HAKU_CONSOLE__MCP_OAUTH__PERSISTENCE__URL", "postgresql://db.example.test/haku")
 
     oauth = console_settings("postgresql+psycopg://db.example.test/haku").mcp_oauth
 
@@ -2042,7 +2023,7 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
 
 def test_duplicate_static_agent_ids_fail_startup(migrated_db_url: str, tmp_path: Path) -> None:
     config_file = _write_console_config(
-        tmp_path / "duplicate-agent.yaml", {"static_agents": [*_STATIC_AGENTS, _STATIC_AGENTS[0]]}
+        tmp_path / "duplicate-agent.yaml", {"static_agents": {**_STATIC_AGENTS, "duplicate": _STATIC_AGENTS["haku"]}}
     )
     with pytest.raises(ValidationError, match="duplicate static Agent id"):
         create_app(console_settings(migrated_db_url, config_file=config_file))
@@ -2050,7 +2031,7 @@ def test_duplicate_static_agent_ids_fail_startup(migrated_db_url: str, tmp_path:
 
 def test_missing_deploy_config_fails_startup(migrated_db_url: str) -> None:
     with pytest.raises(RuntimeError, match="config file does not exist"):
-        create_app(console_settings(migrated_db_url))
+        console_settings(migrated_db_url, config_file=Path("/nonexistent/haku-console.yaml"))
 
 
 def test_duplicate_mcp_server_ids_fail_config_validation() -> None:
@@ -2059,10 +2040,10 @@ def test_duplicate_mcp_server_ids_fail_config_validation() -> None:
             _with_manual_authority(
                 {
                     "mcp": {
-                        "servers": [
-                            {"id": "grocy", "backend": _in_process_backend({"kind": "none"})},
-                            {"id": "grocy", "backend": _in_process_backend({"kind": "none"})},
-                        ]
+                        "servers": {
+                            "grocy_one": {"id": "grocy", "backend": _in_process_backend({"kind": "none"})},
+                            "grocy_two": {"id": "grocy", "backend": _in_process_backend({"kind": "none"})},
+                        }
                     }
                 }
             )
@@ -2075,10 +2056,10 @@ def test_duplicate_sanitized_mcp_server_prefixes_fail_config_validation() -> Non
             _with_manual_authority(
                 {
                     "mcp": {
-                        "servers": [
-                            {"id": "grocy-sf", "backend": _in_process_backend({"kind": "none"})},
-                            {"id": "grocy_sf", "backend": _in_process_backend({"kind": "none"})},
-                        ]
+                        "servers": {
+                            "grocy_hyphen": {"id": "grocy-sf", "backend": _in_process_backend({"kind": "none"})},
+                            "grocy_underscore": {"id": "grocy_sf", "backend": _in_process_backend({"kind": "none"})},
+                        }
                     }
                 }
             )
@@ -2088,20 +2069,19 @@ def test_duplicate_sanitized_mcp_server_prefixes_fail_config_validation() -> Non
 def test_duplicate_static_agent_tokens_fail_startup(
     migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("HAKU_CONSOLE_TEST_AGENT2_OPERATOR", "99")
     config_file = _write_console_config(
         tmp_path / "duplicate-token.yaml",
         {
-            "static_agents": [
-                *_STATIC_AGENTS,
-                {
+            "static_agents": {
+                **_STATIC_AGENTS,
+                "ops": {
                     "agent_id": "40000000-0000-4000-8000-000000000005",
                     "display_name": "Ops Bot",
-                    "token_env_var": _AGENT_TOKEN_ENV,
-                    "operator_subject_env": "HAKU_CONSOLE_TEST_AGENT2_OPERATOR",
+                    "token": _AGENT_TOKEN,
+                    "operator_subject": "99",
                     "access_profile_id": _MANUAL_ACCESS_PROFILE_ID,
                 },
-            ]
+            }
         },
     )
     with pytest.raises(RuntimeError, match="duplicate static agent bearer tokens"):
@@ -2127,18 +2107,18 @@ async def test_agent_tool_denylist_rejects_hand_built_dispatch(tmp_path: Path) -
         tmp_path / "denylist.yaml",
         {
             "mcp": {
-                "servers": [
-                    {
+                "servers": {
+                    "github": {
                         "id": "github",
                         "backend": _in_process_backend({"kind": "none"}),
                         "agent_tool_denylist": ["create_pull_request_with_copilot"],
                     }
-                ]
+                }
             }
         },
     )
     context = Mock()
-    context.settings.config_file = config_file
+    context.settings = console_settings("postgresql://unused/denylist", config_file=config_file)
     agent = AgentActor(agent_id=UUID(int=1), operator_id=UUID(int=2), binding_id=UUID(int=3))
 
     with pytest.raises(ToolError, match="not available to Agents"):

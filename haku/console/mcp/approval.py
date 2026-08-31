@@ -66,7 +66,6 @@ from haku.console.mcp_config import (
     OperatorLoginIdentityCredential,
     RemoteServerOAuthAuth,
     StaticBearerAuth,
-    _credential_token,
     _server_catalog_refresh_interval,
     _transport,
 )
@@ -1022,11 +1021,8 @@ async def _resolve_operator_metadata_auth(
             # server lists its tools regardless — so reflect with no token and never degrade here.
             # The operator's identity token is required only at execution (backend_auth_for_operator).
             return _ResolvedAuth(None)
-        case StaticBearerAuth(bearer_token_secret=secret):
-            try:
-                return _ResolvedAuth(_credential_token(server.id, secret))
-            except Exception as e:
-                return _DegradedAuth(str(e))
+        case StaticBearerAuth(token=token):
+            return _ResolvedAuth(token.get_secret_value())
         case NoCredential():
             return _ResolvedAuth(None)
 

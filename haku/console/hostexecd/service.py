@@ -11,7 +11,6 @@ import asyncio
 import contextlib
 import datetime
 import hashlib
-import os
 import secrets
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, cast
@@ -112,10 +111,7 @@ class Service:
         self.config = config
         credentials: list[_DaemonCredential] = []
         for daemon_id, definition in config.daemons.items():
-            token = os.environ.get(definition.token_env_var)
-            if not token:
-                raise RuntimeError(f"missing node daemon token env var {definition.token_env_var} for {daemon_id}")
-            credentials.append(_DaemonCredential(daemon_id, _fingerprint(token)))
+            credentials.append(_DaemonCredential(daemon_id, _fingerprint(definition.token.get_secret_value())))
         if len({credential.fingerprint for credential in credentials}) != len(credentials):
             raise RuntimeError("duplicate node daemon bearer tokens")
         self._credentials = tuple(credentials)

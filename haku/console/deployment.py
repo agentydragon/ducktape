@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-from collections.abc import Mapping
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -52,10 +50,8 @@ def _projected_tag(path: Path | None) -> str | None:
 
 
 def build_deployment_info(
-    env: Mapping[str, str] | None = None, *, static_image_tag_file: Path | None = None
+    *, image_tag: str | None, static_image_tag: str | None, static_image_tag_file: Path | None = None
 ) -> DeploymentInfo:
-    source = env if env is not None else os.environ
     return DeploymentInfo(
-        server=_image_info(source.get("HAKU_CONSOLE_IMAGE_TAG")),
-        frontend=_image_info(_projected_tag(static_image_tag_file) or source.get("HAKU_CONSOLE_STATIC_IMAGE_TAG")),
+        server=_image_info(image_tag), frontend=_image_info(_projected_tag(static_image_tag_file) or static_image_tag)
     )

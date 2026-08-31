@@ -62,8 +62,8 @@ def _service(tmp_path: Path, *, repository: AsyncMock, authorization: AsyncMock)
             "access_profiles": [{"id": "public-coder", "auto_approval_policy": "k8s-passthrough"}],
             "default_access_profile_id": "public-coder",
             "mcp": {
-                "servers": [
-                    {
+                "servers": {
+                    "kubernetes": {
                         "id": _SERVER_ID,
                         "backend": {
                             "kind": "remote_mcp",
@@ -71,7 +71,7 @@ def _service(tmp_path: Path, *, repository: AsyncMock, authorization: AsyncMock)
                             "auth": {"kind": "none"},
                         },
                     }
-                ]
+                }
             },
         },
     )

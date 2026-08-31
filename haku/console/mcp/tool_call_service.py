@@ -19,7 +19,6 @@ from uuid import UUID
 
 from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
 from haku.console.auto_approval.registry import AutoApprovalPolicyRegistry, PolicyDenial, auto_approve_tool_call
-from haku.console.config import Settings
 from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
 from haku.console.grants.principal import RequestPrincipal
 from haku.console.mcp.execution import (
@@ -37,10 +36,9 @@ from haku.console.mcp_config import (
     OperatorLoginIdentityCredential,
     RemoteServerOAuthAuth,
     StaticBearerAuth,
-    _credential_token,
     _server_entry,
-    load_console_config,
 )
+from haku.console.settings import Settings
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from haku.console.tool_calls import (
     ApprovalDecision,
@@ -273,8 +271,8 @@ async def backend_auth_for_operator(
             return await _require_operator_linked_token(
                 authentik_store.access_token_for(operator_id=operator_id), server.id
             )
-        case StaticBearerAuth(bearer_token_secret=secret):
-            return _credential_token(server.id, secret)
+        case StaticBearerAuth(token=token):
+            return token.get_secret_value()
         case NoCredential():
             return None
 
@@ -311,7 +309,7 @@ class ToolCallApplicationService:
         self._kubernetes_authorization = kubernetes_authorization
         self._github_repository_visibility = github_repository_visibility
         self._auto_approval_policies = AutoApprovalPolicyRegistry(
-            load_console_config(settings.config_file),
+            settings,
             kubernetes_authorization=self._kubernetes_authorization,
             github_repository_visibility=self._github_repository_visibility,
         )

@@ -333,25 +333,17 @@ async def preregistered_confidential_remote_oauth_url() -> AsyncGenerator[str]:
 # tests only pass the overrides they exercise.
 
 # A static agent `haku` (bearer `tool-token`, acting as operator subject `op-haku`), referenced from
-# a config file's `static_agents` and resolved from these env vars — like the deploy.
+# a config file's `static_agents`.
 _AGENT_TOKEN = "tool-token"
-_AGENT_TOKEN_ENV = "HAKU_CONSOLE_TEST_AGENT_TOKEN"
-_AGENT_OPERATOR_ENV = "HAKU_CONSOLE_TEST_AGENT_OPERATOR"
-_STATIC_AGENTS = [
-    {
+_STATIC_AGENTS = {
+    "haku": {
         "agent_id": "30000000-0000-4000-8000-000000000001",
         "display_name": "Haku",
-        "token_env_var": _AGENT_TOKEN_ENV,
-        "operator_subject_env": _AGENT_OPERATOR_ENV,
+        "token": _AGENT_TOKEN,
+        "operator_subject": "op-haku",
         "access_profile_id": "no_auto_approval",
     }
-]
-
-
-@pytest.fixture(autouse=True)
-async def _static_agent_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(_AGENT_TOKEN_ENV, _AGENT_TOKEN)
-    monkeypatch.setenv(_AGENT_OPERATOR_ENV, "op-haku")
+}
 
 
 class _BearerRecorder:
@@ -406,8 +398,7 @@ def upstream_bearers() -> list[str | None]:
 
 
 @pytest.fixture
-def mcp_server_url(monkeypatch: pytest.MonkeyPatch, upstream_bearers: list[str | None]) -> Generator[str]:
-    monkeypatch.setenv("HAKU_CONSOLE_MCP_CREDENTIAL_HAKU_CONSOLE_GROCY_SF_TOKEN", "test-token")
+def mcp_server_url(upstream_bearers: list[str | None]) -> Generator[str]:
     with _serve_recording_mcp(_build_test_mcp_server(), upstream_bearers) as url:
         yield url
 
@@ -437,7 +428,7 @@ def _config(servers: list[dict[str, Any]]) -> dict[str, Any]:
     console with no /mcp credential doesn't run (create_app raises), and the deploy always has it. So
     the test app exercises the same required static MCP credential as the deployment."""
     return {
-        "mcp": {"servers": servers},
+        "mcp": {"servers": {server["id"].replace("-", "_"): server for server in servers}},
         "static_agents": _STATIC_AGENTS,
         "auto_approval_policies": [{"id": "no_auto_approval", "type": "never"}],
         "access_profiles": [{"id": "no_auto_approval", "auto_approval_policy": "no_auto_approval"}],
@@ -489,9 +480,7 @@ def _operator_connection_server(mcp: FastMCP) -> InProcessServerRegistration:
 
 def _config_file(tmp_path: Path, mcp_server_url: str) -> Path:
     servers = [
-        _remote_server(
-            "grocy-sf", mcp_server_url, {"kind": "static_bearer", "bearer_token_secret": "haku-console-grocy-sf-token"}
-        ),
+        _remote_server("grocy-sf", mcp_server_url, {"kind": "static_bearer", "token": "test-token"}),
         _remote_server("smoke", mcp_server_url, {"kind": "none"}),
     ]
     return write_config(tmp_path / "haku_console.yaml", _config(servers))
@@ -521,7 +510,7 @@ def operator_oauth_config_file(tmp_path: Path, remote_oauth_url: str) -> Path:
 @pytest.fixture
 def gmail_config_file(tmp_path: Path) -> Path:
     config = _config([_in_process_server("gmail", {"kind": "operator_connection", "connection": "google_mail"})])
-    config["static_agents"] = [{**_STATIC_AGENTS[0], "access_profile_id": "haku"}]
+    config["static_agents"] = {"haku": {**_STATIC_AGENTS["haku"], "access_profile_id": "haku"}}
     config["auto_approval_policies"] = [
         {"id": "manual_review", "type": "never"},
         {"id": "gmail_reads", "type": "exact_tools", "tools": {"gmail": ["labels_list"]}},
@@ -534,11 +523,7 @@ def gmail_config_file(tmp_path: Path) -> Path:
     ]
     config["default_access_profile_id"] = "manual-review"
     config["operator_connection_providers"] = {
-        "google_mail": {
-            "kind": "google",
-            "client_id_env_var": "GOOGLE_MAIL_CLIENT_ID",
-            "client_secret_env_var": "GOOGLE_MAIL_CLIENT_SECRET",
-        }
+        "google_mail": {"kind": "google", "client_id": "google-mail-client", "client_secret": "google-mail-secret"}
     }
     config["operator_connections"] = {
         "google_mail": {
@@ -826,14 +811,9 @@ def test_operator_oauth_preregistered_client_skips_dynamic_registration(
     assert callback.status_code == 303, callback.text
 
 
-def test_operator_oauth_preregistered_confidential_client_reads_deploy_secret(
-    make_operator_client,
-    tmp_path: Path,
-    preregistered_confidential_remote_oauth_url: str,
-    monkeypatch: pytest.MonkeyPatch,
+def test_operator_oauth_preregistered_confidential_client_uses_typed_settings(
+    make_operator_client, tmp_path: Path, preregistered_confidential_remote_oauth_url: str
 ) -> None:
-    monkeypatch.setenv("GITHUB_MCP_CLIENT_ID", "github-client-id")
-    monkeypatch.setenv("GITHUB_MCP_CLIENT_SECRET", "github-client-secret")
     config_file = write_config(
         tmp_path / "haku_console_github_mcp.yaml",
         _config(
@@ -845,8 +825,8 @@ def test_operator_oauth_preregistered_confidential_client_reads_deploy_secret(
                         "kind": "remote_server_oauth",
                         "client_registration": {
                             "kind": "preregistered",
-                            "client_id_env_var": "GITHUB_MCP_CLIENT_ID",
-                            "client_secret_env_var": "GITHUB_MCP_CLIENT_SECRET",
+                            "client_id": "github-client-id",
+                            "client_secret": "github-client-secret",
                             "token_endpoint_auth_method": "client_secret_post",
                         },
                     },
@@ -1301,9 +1281,7 @@ async def test_routing_executes_each_agent_as_its_own_operator(
 ) -> None:
     """Two static agents bound to two operators: each agent's auto-approved operator_oauth call
     executes with *its* operator's token, with no crosstalk."""
-    # `haku` (bearer tool-token → op-haku) comes from the autouse env; add a second agent `ops-bot`.
-    monkeypatch.setenv("HAKU_CONSOLE_TEST_AGENT2_TOKEN", "ops-token")
-    monkeypatch.setenv("HAKU_CONSOLE_TEST_AGENT2_OPERATOR", "op-ops")
+    # `haku` (bearer tool-token → op-haku) comes from the base config; add a second agent `ops-bot`.
     mcp_server_url, upstream_bearers = routing_upstream
     await _seed_association(migrated_sessions, operator_external_user_key="op-haku", access_token="grocy-token-haku")
     await _seed_association(migrated_sessions, operator_external_user_key="op-ops", access_token="grocy-token-ops")
@@ -1313,16 +1291,16 @@ async def test_routing_executes_each_agent_as_its_own_operator(
         {"id": "manual_review", "type": "never"},
         {"id": "grocy_reads", "type": "exact_tools", "tools": {"grocy-sf": ["products_list"]}},
     ]
-    config["static_agents"] = [
-        {**_STATIC_AGENTS[0], "access_profile_id": "grocy-reader"},
-        {
+    config["static_agents"] = {
+        "haku": {**_STATIC_AGENTS["haku"], "access_profile_id": "grocy-reader"},
+        "ops": {
             "agent_id": "30000000-0000-4000-8000-000000000002",
             "display_name": "Ops Bot",
-            "token_env_var": "HAKU_CONSOLE_TEST_AGENT2_TOKEN",
-            "operator_subject_env": "HAKU_CONSOLE_TEST_AGENT2_OPERATOR",
+            "token": "ops-token",
+            "operator_subject": "op-ops",
             "access_profile_id": "grocy-reader",
         },
-    ]
+    }
     config["access_profiles"] = [
         {"id": "manual-review", "auto_approval_policy": "manual_review"},
         {"id": "grocy-reader", "auto_approval_policy": "grocy_reads"},
@@ -1362,45 +1340,22 @@ async def test_two_operator_two_agent_http_authorization_matrix(
     make_client, make_operator_client, tmp_path: Path, mcp_server_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     agent_specs = (
-        ("haku", "tool-token", "op-haku", _AGENT_TOKEN_ENV, _AGENT_OPERATOR_ENV),
-        (
-            "haku-sibling",
-            "haku-sibling-token",
-            "op-haku",
-            "HAKU_CONSOLE_TEST_HAKU_SIBLING_TOKEN",
-            "HAKU_CONSOLE_TEST_HAKU_SIBLING_OPERATOR",
-        ),
-        ("ops", "ops-token", "op-ops", "HAKU_CONSOLE_TEST_OPS_TOKEN", "HAKU_CONSOLE_TEST_OPS_OPERATOR"),
-        (
-            "ops-sibling",
-            "ops-sibling-token",
-            "op-ops",
-            "HAKU_CONSOLE_TEST_OPS_SIBLING_TOKEN",
-            "HAKU_CONSOLE_TEST_OPS_SIBLING_OPERATOR",
-        ),
+        ("haku", "tool-token", "op-haku"),
+        ("haku-sibling", "haku-sibling-token", "op-haku"),
+        ("ops", "ops-token", "op-ops"),
+        ("ops-sibling", "ops-sibling-token", "op-ops"),
     )
-    for _, token, operator_key, token_env, operator_env in agent_specs:
-        monkeypatch.setenv(token_env, token)
-        monkeypatch.setenv(operator_env, operator_key)
-    config = _config(
-        [
-            _remote_server(
-                "grocy-sf",
-                mcp_server_url,
-                {"kind": "static_bearer", "bearer_token_secret": "haku-console-grocy-sf-token"},
-            )
-        ]
-    )
-    config["static_agents"] = [
-        {
+    config = _config([_remote_server("grocy-sf", mcp_server_url, {"kind": "static_bearer", "token": "test-token"})])
+    config["static_agents"] = {
+        name.replace("-", "_"): {
             "agent_id": f"30000000-0000-4000-8000-{index:012d}",
             "display_name": name.replace("-", " ").title(),
-            "token_env_var": token_env,
-            "operator_subject_env": operator_env,
+            "token": token,
+            "operator_subject": operator_key,
             "access_profile_id": "no_auto_approval",
         }
-        for index, (name, _, _, token_env, operator_env) in enumerate(agent_specs, start=10)
-    ]
+        for index, (name, token, operator_key) in enumerate(agent_specs, start=10)
+    }
     config_file = write_config(tmp_path / "two_operator_agents.yaml", config)
 
     with (
@@ -1413,7 +1368,7 @@ async def test_two_operator_two_agent_http_authorization_matrix(
         ) as operator_b,
     ):
         call_ids: dict[str, str] = {}
-        for amount, (name, bearer, _, _, _) in enumerate(agent_specs, start=1):
+        for amount, (name, bearer, _) in enumerate(agent_specs, start=1):
             record = _submit_request(
                 agents,
                 SubmitToolCallRequest(
@@ -1429,7 +1384,7 @@ async def test_two_operator_two_agent_http_authorization_matrix(
         call_ids["operator-a"] = _submit(operator_a, amount=5)["tool_call_id"]
         call_ids["operator-b"] = _submit(operator_b, amount=6)["tool_call_id"]
 
-        for name, bearer, _, _, _ in agent_specs:
+        for name, bearer, _ in agent_specs:
             headers = {"Authorization": f"Bearer {bearer}"}
             assert agents.get("/api/tool-calls", headers=headers).status_code == 401
             assert agents.get(f"/api/tool-calls/{call_ids[name]}", headers=headers).status_code == 401
@@ -1885,7 +1840,9 @@ async def test_config_rejects_unknown_operator_connection() -> None:
             {
                 **_config([]),
                 "mcp": {
-                    "servers": [_in_process_server("google", {"kind": "operator_connection", "connection": "missing"})]
+                    "servers": {
+                        "google": _in_process_server("google", {"kind": "operator_connection", "connection": "missing"})
+                    }
                 },
             }
         )
@@ -1896,15 +1853,11 @@ async def test_config_allows_distinct_provider_instances_of_one_kind() -> None:
         {
             **_config([]),
             "operator_connection_providers": {
-                "google_mail": {
-                    "kind": "google",
-                    "client_id_env_var": "GOOGLE_MAIL_CLIENT_ID",
-                    "client_secret_env_var": "GOOGLE_MAIL_CLIENT_SECRET",
-                },
+                "google_mail": {"kind": "google", "client_id": "mail-client", "client_secret": "mail-secret"},
                 "google_calendar": {
                     "kind": "google",
-                    "client_id_env_var": "GOOGLE_CALENDAR_CLIENT_ID",
-                    "client_secret_env_var": "GOOGLE_CALENDAR_CLIENT_SECRET",
+                    "client_id": "calendar-client",
+                    "client_secret": "calendar-secret",
                 },
             },
             "operator_connections": {
@@ -1925,19 +1878,17 @@ async def test_config_rejects_incompatible_registered_credential_kind() -> None:
         {
             **_config([]),
             "operator_connection_providers": {
-                "google": {
-                    "kind": "google",
-                    "client_id_env_var": "GOOGLE_CLIENT_ID",
-                    "client_secret_env_var": "GOOGLE_CLIENT_SECRET",
-                }
+                "google": {"kind": "google", "client_id": "google-client", "client_secret": "google-secret"}
             },
             "operator_connections": {
                 "google_workspace": {"display_name": "Google Workspace", "provider": "google", "scopes": ["scope"]}
             },
             "mcp": {
-                "servers": [
-                    _in_process_server("google", {"kind": "operator_connection", "connection": "google_workspace"})
-                ]
+                "servers": {
+                    "google": _in_process_server(
+                        "google", {"kind": "operator_connection", "connection": "google_workspace"}
+                    )
+                }
             },
         }
     )
@@ -1960,13 +1911,13 @@ async def test_remote_oauth_client_registration_variants_reject_each_others_fiel
                 }
             }
         )
-    with pytest.raises(ValidationError, match="client_secret_env_var"):
+    with pytest.raises(ValidationError, match="token_endpoint_auth_method"):
         RemoteServerOAuthAuth.model_validate(
             {
                 "client_registration": {
                     "kind": "preregistered",
                     "client_id": "existing-client",
-                    "client_secret_env_var": "GITHUB_MCP_CLIENT_SECRET",
+                    "client_secret": "github-client-secret",
                 }
             }
         )

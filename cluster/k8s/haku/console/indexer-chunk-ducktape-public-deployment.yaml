@@ -74,7 +74,7 @@ spec:
             # The narrow haku_indexer role (db/indexer-role-secret.yaml), never the
             # application owner: the worker cannot read the approval ledger, identity,
             # or OAuth state.
-            - name: HAKU_INDEXER_DATABASE_URL
+            - name: HAKU_INDEXER__DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: haku-console-db-indexer

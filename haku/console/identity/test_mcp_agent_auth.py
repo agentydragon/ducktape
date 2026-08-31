@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import datetime
 from dataclasses import dataclass
-from pathlib import Path
 from typing import cast
 from unittest.mock import AsyncMock, Mock, call, patch
 from uuid import UUID, uuid4
@@ -15,8 +14,8 @@ from fastmcp.server.auth.auth import AccessToken
 from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.config import McpOAuthConfig, OperatorIdentityConfig, OperatorOidcConfig, Settings
-from haku.console.conftest import console_sessions, operator_id
+from haku.console.config import McpOAuthConfig
+from haku.console.conftest import console_sessions, console_settings, operator_id
 from haku.console.database_schema import Agent, Conversation, Operator, Session
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.identity.agent_bearer_authority import (
@@ -40,6 +39,7 @@ from haku.console.identity.launch_authority import StaticAgentAuthorization
 from haku.console.identity.mcp_agent_auth import OAuthMcpAuth, StaticMcpAuth, build_auth
 from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
+from haku.console.settings import Settings
 from haku.console.tool_call_actor import AgentActor
 from mcp_infra.authentik_auth.provider import DEFAULT_VALID_SCOPES
 from mcp_infra.persistence import PostgresPersistence
@@ -53,22 +53,7 @@ _TOKEN_FINGERPRINT = fingerprint_static_token(_TOKEN)
 
 
 def _settings(*, mcp_oauth: McpOAuthConfig | None = None) -> Settings:
-    return Settings(
-        haku_ui_url="https://haku-ui.test",
-        auth_origin="https://auth.test",
-        public_base_url="https://haku.test",
-        database_url=SecretStr(_DATABASE_URL),
-        operator_oidc=OperatorOidcConfig(
-            issuer="https://auth.test/application/o/haku-console/",
-            client_id="console",
-            client_secret=SecretStr("secret"),
-            session_secret=SecretStr("session-secret"),
-        ),
-        operator_identity=OperatorIdentityConfig(trust_domain="auth.test/authentik-user-id/v1"),
-        mcp_oauth=mcp_oauth,
-        config_file=Path("/unused/haku-console.yaml"),
-        max_wait_for_result_ms=60_000,
-    )
+    return console_settings(_DATABASE_URL, mcp_oauth=mcp_oauth)
 
 
 def _authority() -> PostgresAgentAuthority:

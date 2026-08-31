@@ -7,7 +7,7 @@ from typing import Annotated, cast
 
 from fastapi import Depends, Request
 
-from haku.console.config import Settings
+from haku.console.settings import Settings
 
 
 def _settings(request: Request) -> Settings:

@@ -69,10 +69,6 @@ _ORCHESTRATOR_AGENT_ID = UUID("40000000-0000-4000-8000-00000000dd01")
 _WORKER_AGENT_ID = UUID("40000000-0000-4000-8000-00000000dd02")
 _ORCHESTRATOR_TOKEN = "workers-orchestrator-token"
 _WORKER_TOKEN = "workers-worker-token"
-_ORCHESTRATOR_TOKEN_ENV = "HAKU_CONSOLE_TEST_WORKERS_ORCH_TOKEN"
-_ORCHESTRATOR_OPERATOR_ENV = "HAKU_CONSOLE_TEST_WORKERS_ORCH_OP"
-_WORKER_TOKEN_ENV = "HAKU_CONSOLE_TEST_WORKERS_WORKER_TOKEN"
-_WORKER_OPERATOR_ENV = "HAKU_CONSOLE_TEST_WORKERS_WORKER_OP"
 _ORCHESTRATOR_PROFILE = "orchestrator"
 _WORKER_PROFILE = "worker"
 _PROMPT = "Refactor the widget module and open a PR."
@@ -80,29 +76,31 @@ _PROMPT = "Refactor the widget module and open a PR."
 
 def _config() -> dict[str, Any]:
     return {
-        "static_agents": [
-            {
+        "static_agents": {
+            "orchestrator": {
                 "agent_id": str(_ORCHESTRATOR_AGENT_ID),
                 "display_name": "Orchestrator",
-                "token_env_var": _ORCHESTRATOR_TOKEN_ENV,
-                "operator_subject_env": _ORCHESTRATOR_OPERATOR_ENV,
+                "token": _ORCHESTRATOR_TOKEN,
+                "operator_subject": _OPERATOR_SUBJECT,
                 "access_profile_id": _ORCHESTRATOR_PROFILE,
             },
-            {
+            "worker": {
                 "agent_id": str(_WORKER_AGENT_ID),
                 "display_name": "Public Coder",
-                "token_env_var": _WORKER_TOKEN_ENV,
-                "operator_subject_env": _WORKER_OPERATOR_ENV,
+                "token": _WORKER_TOKEN,
+                "operator_subject": _OPERATOR_SUBJECT,
                 "access_profile_id": _WORKER_PROFILE,
             },
-        ],
+        },
         "auto_approval_policies": [{"id": "manual", "type": "never"}],
         "access_profiles": [
             {"id": _ORCHESTRATOR_PROFILE, "auto_approval_policy": "manual", "in_process_server_ids": ["workers"]},
             {"id": _WORKER_PROFILE, "auto_approval_policy": "manual"},
         ],
         "default_access_profile_id": _WORKER_PROFILE,
-        "mcp": {"servers": [{"id": "workers", "backend": {"kind": "in_process", "credential": {"kind": "none"}}}]},
+        "mcp": {
+            "servers": {"workers": {"id": "workers", "backend": {"kind": "in_process", "credential": {"kind": "none"}}}}
+        },
     }
 
 
@@ -227,15 +225,8 @@ class _Console:
 
 @pytest.fixture
 def workers_console(
-    make_operator_client: Callable[..., Any], migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    make_operator_client: Callable[..., Any], migrated_db_url: str, tmp_path: Path
 ) -> Iterator[_Console]:
-    for name, value in {
-        _ORCHESTRATOR_TOKEN_ENV: _ORCHESTRATOR_TOKEN,
-        _ORCHESTRATOR_OPERATOR_ENV: _OPERATOR_SUBJECT,
-        _WORKER_TOKEN_ENV: _WORKER_TOKEN,
-        _WORKER_OPERATOR_ENV: _OPERATOR_SUBJECT,
-    }.items():
-        monkeypatch.setenv(name, value)
     config = _config()
     config_path = write_config(tmp_path / "workers_console.yaml", config)
     profiles = ConsoleConfigFile.model_validate(config).access_profiles

@@ -5,7 +5,8 @@
 # fail on any drift, an extra entry, or a console-only key.
 git_ca_bundle: /etc/ssl/certs/ca-certificates.crt
 recall_indexes:
-  - index_id: ducktape-public
+  ducktape_public:
+    index_id: ducktape-public
     index_type: git
     repo_url: https://github.com/agentydragon/ducktape.git
     branch: devel

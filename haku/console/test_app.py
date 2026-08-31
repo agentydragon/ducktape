@@ -59,14 +59,10 @@ def test_config_haku_ui_url_surfaced_and_csp_allows_framing_it(make_operator_cli
 
 
 def test_config_advertises_codex_and_explicit_launch_preserves_public_coder_isolation(
-    make_operator_client, monkeypatch, tmp_path: Path
+    make_operator_client, tmp_path: Path
 ) -> None:
     haku_id = "00000000-0000-4000-8000-000000000001"
     coder_id = "00000000-0000-4000-8000-000000000002"
-    monkeypatch.setenv("TEST_HAKU_TOKEN", "haku-token")
-    monkeypatch.setenv("TEST_CODER_TOKEN", "coder-token")
-    monkeypatch.setenv("TEST_HAKU_OPERATOR", "operator-sub")
-    monkeypatch.setenv("TEST_CODER_OPERATOR", "operator-sub")
     claude_prompt = tmp_path / "claude.md.j2"
     coder_prompt = tmp_path / "coder.md.j2"
     claude_prompt.write_text("Haku session {{ session_id }} in {{ workspace }}", encoding="utf-8")
@@ -123,22 +119,22 @@ def test_config_advertises_codex_and_explicit_launch_preserves_public_coder_isol
             {"id": "public-coder", "auto_approval_policy": "manual", "allowed_harnesses": ["codex_app_server"]},
         ],
         "default_access_profile_id": "haku",
-        "static_agents": [
-            {
+        "static_agents": {
+            "haku": {
                 "agent_id": haku_id,
                 "display_name": "Haku",
-                "token_env_var": "TEST_HAKU_TOKEN",
-                "operator_subject_env": "TEST_HAKU_OPERATOR",
+                "token": "haku-token",
+                "operator_subject": "operator-sub",
                 "access_profile_id": "haku",
             },
-            {
+            "public_coder": {
                 "agent_id": coder_id,
                 "display_name": "public-coder-agent",
-                "token_env_var": "TEST_CODER_TOKEN",
-                "operator_subject_env": "TEST_CODER_OPERATOR",
+                "token": "coder-token",
+                "operator_subject": "operator-sub",
                 "access_profile_id": "public-coder",
             },
-        ],
+        },
         "launchable_agents": [
             {"agent_id": haku_id, "system_prompt_template": str(claude_prompt)},
             {"agent_id": coder_id, "system_prompt_template": str(coder_prompt)},
@@ -188,18 +184,14 @@ def test_config_advertises_codex_and_explicit_launch_preserves_public_coder_isol
     ):
         pass
 
-    monkeypatch.setenv("TEST_OTHER_TOKEN", "other-token")
-    monkeypatch.setenv("TEST_OTHER_OPERATOR", "operator-sub")
     shared_profile_config = copy.deepcopy(shared_config)
-    shared_profile_config["static_agents"].append(
-        {
-            "agent_id": "00000000-0000-4000-8000-000000000003",
-            "display_name": "other-public-coder-shell",
-            "token_env_var": "TEST_OTHER_TOKEN",
-            "operator_subject_env": "TEST_OTHER_OPERATOR",
-            "access_profile_id": "public-coder",
-        }
-    )
+    shared_profile_config["static_agents"]["other"] = {
+        "agent_id": "00000000-0000-4000-8000-000000000003",
+        "display_name": "other-public-coder-shell",
+        "token": "other-token",
+        "operator_subject": "operator-sub",
+        "access_profile_id": "public-coder",
+    }
     shared_profile_file = write_config(tmp_path / "console-shared-codex-profile.yaml", shared_profile_config)
     with (
         pytest.raises(ValueError, match="dedicated access profile"),
@@ -209,8 +201,8 @@ def test_config_advertises_codex_and_explicit_launch_preserves_public_coder_isol
 
 
 def test_deployment_metadata_comes_from_runtime_image_tags(make_operator_client, monkeypatch) -> None:
-    monkeypatch.setenv("HAKU_CONSOLE_IMAGE_TAG", "devel-20260713014452-83da566")
-    monkeypatch.setenv("HAKU_CONSOLE_STATIC_IMAGE_TAG", "devel-20260713015518-bfad4bf")
+    monkeypatch.setenv("HAKU_CONSOLE__IMAGE_TAG", "devel-20260713014452-83da566")
+    monkeypatch.setenv("HAKU_CONSOLE__STATIC_IMAGE_TAG", "devel-20260713015518-bfad4bf")
 
     with make_operator_client() as c:
         assert c.get("/api/deployment").json() == {

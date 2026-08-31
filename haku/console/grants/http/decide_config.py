@@ -5,11 +5,9 @@ colocated egress proxy presents, the Console-owned egress credential registry (#
 the inert placeholder a sandbox presents, the headers the proxy scans for it, the principal
 allowed to redeem it, and the exact origins it may be redeemed at — and the configuration-file
 HTTP grants (#4941): the reviewed allowances ``HttpDecideService`` evaluates before database
-grants. Secret values stay
-in env-var references like every other console-only bearer; handles, placeholders, match headers,
-and grant entries are inert and committable by design (#4884 placeholder ruling).
-``load_egress_decide`` reads the references once at startup and hands ``HttpDecideService`` the
-resolved values. The section also carries the deploy's ``prohibited_cidrs`` — inert address
+grants. Pydantic overlays secret values directly at their typed leaves; handles, placeholders,
+match headers, and grant entries are inert and committable by design (#4884 placeholder ruling).
+The section also carries the deploy's ``prohibited_cidrs`` — inert address
 policy the decide service enforces on resolved answers beyond its always-on prohibited classes
 (#4948).
 """
@@ -17,7 +15,6 @@ policy the decide service enforces on resolved answers beyond its always-on proh
 from __future__ import annotations
 
 import logging
-import os
 import re
 from ipaddress import IPv4Network, IPv6Network
 
@@ -25,7 +22,6 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 
 from haku.console.grants.http.models import CREDENTIAL_HANDLE_PATTERN, HttpOrigin, HttpRequestCoverage, HttpScheme
 from haku.console.grants.principal import ConfigGrantPrincipal
-from util.env import EnvironmentVariableName
 
 logger = logging.getLogger(__name__)
 
@@ -77,15 +73,16 @@ class EgressCredentialEntry(BaseModel):
     A temporary HTTP grant redeems the credential by naming ``handle``
     (`grants.http.models.GrantSpec.credential_handle`); the decide endpoint then emits the
     ``placeholder`` → real-value substitution for requests the grant admits, but only for its
-    ``principal`` at an origin in ``origins`` — the #4670 redemption binding. Everything
-    here except the env-referenced value is inert: safe to commit, log, and show to Agents.
+    ``principal`` at an origin in ``origins`` — the #4670 redemption binding. The secret ``value``
+    is supplied through Pydantic's nested environment overlay; every other
+    field is inert and safe to commit, log, and show to Agents.
 
     Presentation (``placeholder``, ``match_headers``) deliberately lives on this reviewed entry,
     not on grants: the Agent-driven grant path can only ever name a handle, so no grant — however
     shaped or mistakenly approved — can influence where or how the credential's bytes are
     injected. A bad grant's blast radius stays "may redeem this handle at its configured
     origins", never "may change its presentation". A credential needing a second presentation is
-    a second entry sharing the same ``value_env_var`` under its own handle and placeholder.
+    a second entry receiving the same secret value under its own handle and placeholder.
     """
 
     handle: str = Field(
@@ -106,8 +103,9 @@ class EgressCredentialEntry(BaseModel):
             "way it is inert — committable and loggable; only the redeemed value is secret."
         ),
     )
-    value_env_var: EnvironmentVariableName = Field(
-        description="Env reference holding the real value; two presentations of one credential share it."
+    value: SecretStr | None = Field(
+        default=None,
+        description="Real value overlaid by nested settings; absent leaves this presentation unprovisioned.",
     )
     match_headers: frozenset[str] = Field(
         min_length=1,
@@ -209,10 +207,8 @@ class EgressDecideConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
 
-    decision_endpoint_token_env_var: EnvironmentVariableName = Field(
-        description="Env reference holding the shared decision endpoint token."
-    )
-    credentials: list[EgressCredentialEntry] = Field(default_factory=list)
+    decision_endpoint_token: SecretStr
+    credentials: dict[str, EgressCredentialEntry] = Field(default_factory=dict)
     grants: list[EgressConfigGrantEntry] = Field(default_factory=list)
     prohibited_cidrs: frozenset[IPv4Network | IPv6Network] = Field(
         default_factory=frozenset,
@@ -226,20 +222,14 @@ class EgressDecideConfig(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _distinct_env_references(self) -> EgressDecideConfig:
-        identity_env_vars = [self.decision_endpoint_token_env_var]
-        # Credential entries may share a value_env_var with each other — that is how one credential
-        # carries a second presentation — but never with an identity secret.
-        if set(identity_env_vars) & {entry.value_env_var for entry in self.credentials}:
-            raise ValueError("egress credential env vars must not reference identity secrets")
-        return self
-
-    @model_validator(mode="after")
     def _coherent_credential_registry(self) -> EgressDecideConfig:
-        handles = [entry.handle for entry in self.credentials]
+        for slot in self.credentials:
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", slot):
+                raise ValueError(f"invalid egress credential slot {slot!r}")
+        handles = [entry.handle for entry in self.credentials.values()]
         if len(set(handles)) != len(handles):
             raise ValueError("egress credential handles must be distinct")
-        placeholders = [entry.placeholder for entry in self.credentials]
+        placeholders = [entry.placeholder for entry in self.credentials.values()]
         # Substitutions are substring swaps, so one placeholder containing another would make the
         # emitted substitution set order-dependent and corrupting.
         for placeholder in placeholders:
@@ -256,7 +246,7 @@ class EgressDecideConfig(BaseModel):
         ids = [entry.id for entry in self.grants]
         if len(set(ids)) != len(ids):
             raise ValueError("configuration grant entry ids must be distinct")
-        handles = {entry.handle for entry in self.credentials}
+        handles = {entry.handle for entry in self.credentials.values()}
         for entry in self.grants:
             if entry.credential_handle is not None and entry.credential_handle not in handles:
                 raise ValueError(
@@ -289,11 +279,10 @@ class LoadedEgressDecide(BaseModel):
 
 
 def load_egress_decide(config: EgressDecideConfig) -> LoadedEgressDecide:
-    """Read the decide endpoint's env-referenced secrets.
+    """Validate the decide endpoint's typed secrets.
 
-    The endpoint authentication secret fails loud at startup: an unset decision-endpoint-token var
-    raises, because without it the colocated fence cannot authenticate. A registry credential
-    (``config.credentials``) whose value var is unset is instead
+    The endpoint authentication secret is required by the settings model. A registry credential
+    (``config.credentials``) whose value is absent is instead
     skipped with a warning, and the endpoint still serves reachability verdicts and every other
     credential. This is fail-safe, not fail-open: a fenced sandbox only ever holds the inert
     placeholder, so a request whose credential was skipped simply sends the placeholder upstream —
@@ -304,23 +293,18 @@ def load_egress_decide(config: EgressDecideConfig) -> LoadedEgressDecide:
     value equal to any configured placeholder would make the "inert" placeholder itself the
     secret, so that is refused the same way.
     """
-    configured_env_var = str(config.decision_endpoint_token_env_var)
-    decision_endpoint_token = os.environ.get(configured_env_var)
-    if not decision_endpoint_token:
-        raise RuntimeError(f"missing decision endpoint token env var {configured_env_var}")
+    decision_endpoint_token = config.decision_endpoint_token.get_secret_value()
     identity_tokens = {decision_endpoint_token}
-    placeholders = {entry.placeholder for entry in config.credentials}
+    placeholders = {entry.placeholder for entry in config.credentials.values()}
     loaded_credentials: list[LoadedEgressCredential] = []
-    for credential in config.credentials:
-        value = os.environ.get(credential.value_env_var)
-        if not value:
+    for slot, credential in config.credentials.items():
+        if credential.value is None:
             # Skipped, not fatal (see docstring): fail-safe because the sandbox only ever holds the
             # inert placeholder, so a request that would have redeemed this credential passes the
             # placeholder through unchanged and it is worthless upstream (#4884 ruling).
-            logger.warning(
-                "skipping egress credential %s: value env var %s is unset", credential.handle, credential.value_env_var
-            )
+            logger.warning("skipping unprovisioned egress credential %s in slot %s", credential.handle, slot)
             continue
+        value = credential.value.get_secret_value()
         if value in identity_tokens:
             raise RuntimeError("duplicate egress decide credential values")
         if value in placeholders:
@@ -329,12 +313,12 @@ def load_egress_decide(config: EgressDecideConfig) -> LoadedEgressDecide:
             LoadedEgressCredential(
                 handle=credential.handle,
                 placeholder=credential.placeholder,
-                value=SecretStr(value),
+                value=credential.value,
                 match_headers=credential.match_headers,
                 principal=credential.principal,
                 origins=credential.origins,
             )
         )
     return LoadedEgressDecide(
-        decision_endpoint_token=SecretStr(decision_endpoint_token), credentials=loaded_credentials, grants=config.grants
+        decision_endpoint_token=config.decision_endpoint_token, credentials=loaded_credentials, grants=config.grants
     )

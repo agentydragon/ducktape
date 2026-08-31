@@ -1,4 +1,4 @@
-"""Config and env-reference loading contracts of the egress decide endpoint's credentials."""
+"""Typed-settings contracts of the egress decide endpoint's credentials."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def _credential_entry(**overrides: Any) -> EgressCredentialEntry:
     fields: dict[str, Any] = {
         "handle": "github-bot",
         "placeholder": "github-token-placeholder",
-        "value_env_var": "EGRESS_CREDENTIAL_GITHUB_BOT",
+        "value": "ghp-real-value",
         "match_headers": frozenset({"Authorization"}),
         "principal": AgentGrantPrincipal(agent_id=_AGENT),
         "origins": frozenset({_ORIGIN}),
@@ -40,24 +40,25 @@ def _credential_entry(**overrides: Any) -> EgressCredentialEntry:
     return EgressCredentialEntry(**{**fields, **overrides})
 
 
-def test_egress_decide_config_requires_distinct_env_references() -> None:
-    with pytest.raises(ValueError, match="identity secrets"):
-        EgressDecideConfig(
-            decision_endpoint_token_env_var="EGRESS_TOKEN",
-            credentials=[_credential_entry(value_env_var="EGRESS_TOKEN")],
-        )
+def test_egress_decide_config_requires_distinct_secret_values() -> None:
+    config = EgressDecideConfig(
+        decision_endpoint_token=_DECISION_ENDPOINT_TOKEN,
+        credentials={"github_bot": _credential_entry(value=_DECISION_ENDPOINT_TOKEN)},
+    )
+    with pytest.raises(RuntimeError, match="duplicate"):
+        load_egress_decide(config)
 
 
-def test_egress_decide_config_accepts_decision_endpoint_token_env_var_name() -> None:
+def test_egress_decide_config_accepts_typed_decision_endpoint_token() -> None:
     assert (
         EgressDecideConfig.model_validate(
-            {"decision_endpoint_token_env_var": "EGRESS_DECISION_ENDPOINT_TOKEN"}
-        ).decision_endpoint_token_env_var
-        == "EGRESS_DECISION_ENDPOINT_TOKEN"
+            {"decision_endpoint_token": _DECISION_ENDPOINT_TOKEN}
+        ).decision_endpoint_token.get_secret_value()
+        == _DECISION_ENDPOINT_TOKEN
     )
     with pytest.raises(ValidationError, match="extra_forbidden"):
         EgressDecideConfig.model_validate(
-            {"unexpected_credentials": [], "decision_endpoint_token_env_var": "EGRESS_DECISION_ENDPOINT_TOKEN"}
+            {"unexpected_credentials": [], "decision_endpoint_token": _DECISION_ENDPOINT_TOKEN}
         )
 
 
@@ -70,62 +71,60 @@ def test_credential_entry_canonicalizes_and_validates_match_headers() -> None:
 
 
 def test_credential_registry_requires_coherent_handles_and_placeholders() -> None:
-    other = {"value_env_var": "EGRESS_CREDENTIAL_OTHER", "principal": AgentGrantPrincipal(agent_id=_AGENT)}
+    other = {"value": "other-real-value", "principal": AgentGrantPrincipal(agent_id=_AGENT)}
     with pytest.raises(ValueError, match="handles must be distinct"):
         EgressDecideConfig(
-            decision_endpoint_token_env_var="EGRESS_TOKEN",
-            credentials=[_credential_entry(), _credential_entry(placeholder="other-token-placeholder", **other)],
+            decision_endpoint_token=_DECISION_ENDPOINT_TOKEN,
+            credentials={
+                "github_bot": _credential_entry(),
+                "other": _credential_entry(placeholder="other-token-placeholder", **other),
+            },
         )
     # A placeholder containing another would make the substring-swap substitutions order-dependent.
     with pytest.raises(ValueError, match="placeholder"):
         EgressDecideConfig(
-            decision_endpoint_token_env_var="EGRESS_TOKEN",
-            credentials=[
-                _credential_entry(),
-                _credential_entry(handle="github-bot-wide", placeholder="github-token-placeholder-wide", **other),
-            ],
+            decision_endpoint_token=_DECISION_ENDPOINT_TOKEN,
+            credentials={
+                "github_bot": _credential_entry(),
+                "github_bot_wide": _credential_entry(
+                    handle="github-bot-wide", placeholder="github-token-placeholder-wide", **other
+                ),
+            },
         )
 
 
 def test_prohibited_cidrs_parse_as_networks_and_default_empty() -> None:
     config = EgressDecideConfig.model_validate(
-        {"decision_endpoint_token_env_var": "EGRESS_TOKEN", "prohibited_cidrs": ["10.96.0.0/12", "fd00:10::/64"]}
+        {"decision_endpoint_token": _DECISION_ENDPOINT_TOKEN, "prohibited_cidrs": ["10.96.0.0/12", "fd00:10::/64"]}
     )
     assert config.prohibited_cidrs == frozenset({IPv4Network("10.96.0.0/12"), IPv6Network("fd00:10::/64")})
-    assert EgressDecideConfig(decision_endpoint_token_env_var="EGRESS_TOKEN").prohibited_cidrs == frozenset()
+    assert EgressDecideConfig(decision_endpoint_token=_DECISION_ENDPOINT_TOKEN).prohibited_cidrs == frozenset()
     with pytest.raises(ValidationError):  # host bits set: an address, not a range
         EgressDecideConfig.model_validate(
-            {"decision_endpoint_token_env_var": "EGRESS_TOKEN", "prohibited_cidrs": ["10.96.0.1/12"]}
+            {"decision_endpoint_token": _DECISION_ENDPOINT_TOKEN, "prohibited_cidrs": ["10.96.0.1/12"]}
         )
 
 
-def test_load_egress_decide_reads_env_references_and_fails_loud(monkeypatch: pytest.MonkeyPatch) -> None:
-    config = EgressDecideConfig(decision_endpoint_token_env_var="EGRESS_DECISION_ENDPOINT_TOKEN_A")
-    monkeypatch.delenv("EGRESS_DECISION_ENDPOINT_TOKEN_A", raising=False)
-    with pytest.raises(RuntimeError, match="EGRESS_DECISION_ENDPOINT_TOKEN_A"):
-        load_egress_decide(config)
-
-    monkeypatch.setenv("EGRESS_DECISION_ENDPOINT_TOKEN_A", _DECISION_ENDPOINT_TOKEN)
+def test_load_egress_decide_reads_typed_secret() -> None:
+    config = EgressDecideConfig(decision_endpoint_token=_DECISION_ENDPOINT_TOKEN)
     loaded = load_egress_decide(config)
     assert loaded.decision_endpoint_token.get_secret_value() == _DECISION_ENDPOINT_TOKEN
 
 
-def test_second_presentation_shares_the_value_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
-    """One credential, two presentations: two entries over one env reference, each with its own
+def test_second_presentation_shares_the_value() -> None:
+    """One credential, two presentations: two entries over one value, each with its own
     handle, placeholder, and match headers."""
     config = EgressDecideConfig(
-        decision_endpoint_token_env_var="EGRESS_DECISION_ENDPOINT_TOKEN",
-        credentials=[
-            _credential_entry(),
-            _credential_entry(
+        decision_endpoint_token=_DECISION_ENDPOINT_TOKEN,
+        credentials={
+            "github_bot": _credential_entry(),
+            "github_bot_api_key": _credential_entry(
                 handle="github-bot-api-key",
                 placeholder="github-api-key-placeholder",
                 match_headers=frozenset({"x-api-key"}),
             ),
-        ],
+        },
     )
-    monkeypatch.setenv("EGRESS_DECISION_ENDPOINT_TOKEN", _DECISION_ENDPOINT_TOKEN)
-    monkeypatch.setenv("EGRESS_CREDENTIAL_GITHUB_BOT", "ghp-real-value")
 
     bearer, api_key = load_egress_decide(config).credentials
 
@@ -152,12 +151,12 @@ def _config_grant(**overrides: Any) -> EgressConfigGrantEntry:
 def test_config_grant_entries_validate_fail_loud() -> None:
     with pytest.raises(ValueError, match="ids must be distinct"):
         EgressDecideConfig(
-            decision_endpoint_token_env_var="EGRESS_TOKEN",
+            decision_endpoint_token=_DECISION_ENDPOINT_TOKEN,
             grants=[_config_grant(), _config_grant(methods=frozenset({HttpMethod.POST}))],
         )
     with pytest.raises(ValueError, match="unknown credential handle"):
         EgressDecideConfig(
-            decision_endpoint_token_env_var="EGRESS_TOKEN", grants=[_config_grant(credential_handle="ghost")]
+            decision_endpoint_token=_DECISION_ENDPOINT_TOKEN, grants=[_config_grant(credential_handle="ghost")]
         )
     with pytest.raises(ValueError, match="path_regex"):
         _config_grant(path_regex="([unclosed")
@@ -204,8 +203,8 @@ def test_pattern_only_grant_matches_origins_and_requires_some_origin() -> None:
 
 def test_overlapping_configuration_grants_are_deliberately_legal() -> None:
     config = EgressDecideConfig(
-        decision_endpoint_token_env_var="EGRESS_TOKEN",
-        credentials=[_credential_entry()],
+        decision_endpoint_token=_DECISION_ENDPOINT_TOKEN,
+        credentials={"github_bot": _credential_entry()},
         grants=[
             _config_grant(id="broad"),
             _config_grant(id="credentialed", path_regex="/repos/.*", credential_handle="github-bot"),
@@ -228,20 +227,17 @@ def test_config_grant_allow_prohibited_address_defaults_off_and_parses() -> None
     assert parsed.allow_prohibited_address is True
 
 
-def test_load_egress_decide_passes_configuration_grants_through(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_load_egress_decide_passes_configuration_grants_through() -> None:
     """Configuration grants carry no secrets, so loading preserves the reviewed entry."""
     config = EgressDecideConfig(
-        decision_endpoint_token_env_var="EGRESS_DECISION_ENDPOINT_TOKEN",
-        credentials=[_credential_entry()],
+        decision_endpoint_token=_DECISION_ENDPOINT_TOKEN,
+        credentials={"github_bot": _credential_entry()},
         grants=[_config_grant(credential_handle="github-bot")],
     )
-    monkeypatch.setenv("EGRESS_DECISION_ENDPOINT_TOKEN", _DECISION_ENDPOINT_TOKEN)
-    monkeypatch.setenv("EGRESS_CREDENTIAL_GITHUB_BOT", "ghp-real-value")
-
     assert load_egress_decide(config).grants == config.grants
 
 
-def test_github_spike_configuration_grants(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_github_spike_configuration_grants() -> None:
     """The #4943 GitHub spike shape: Agent haku reaches api.github.com + github.com through config
     grants, redeeming the bot credential at both — Bearer on the API, git-over-HTTPS Basic on
     github.com (one registry entry: both are Authorization presentations of one placeholder).
@@ -252,11 +248,12 @@ def test_github_spike_configuration_grants(monkeypatch: pytest.MonkeyPatch) -> N
         yaml.safe_load(
             textwrap.dedent(
                 """
-                decision_endpoint_token_env_var: HAKU_DECISION_ENDPOINT_TOKEN
+                decision_endpoint_token: shared-decision-endpoint-token
                 credentials:
-                  - handle: github-bot
+                  github_bot:
+                    handle: github-bot
                     placeholder: github-token-placeholder
-                    value_env_var: HAKU_EGRESS_CREDENTIAL_GITHUB_BOT
+                    value: ghp-real-value
                     match_headers: [authorization]
                     principal: {kind: agent, agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2}
                     origins:
@@ -281,8 +278,6 @@ def test_github_spike_configuration_grants(monkeypatch: pytest.MonkeyPatch) -> N
             )
         )
     )
-    monkeypatch.setenv("HAKU_DECISION_ENDPOINT_TOKEN", _DECISION_ENDPOINT_TOKEN)
-    monkeypatch.setenv("HAKU_EGRESS_CREDENTIAL_GITHUB_BOT", "ghp-real-value")
     loaded = load_egress_decide(config)
 
     api_entry, git_entry = loaded.grants
@@ -300,25 +295,28 @@ def test_github_spike_configuration_grants(monkeypatch: pytest.MonkeyPatch) -> N
         assert entry.origins <= credential.origins
 
 
-def test_load_egress_credentials_present_value_conflicts_fail_loud(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_load_egress_credentials_present_value_conflicts_fail_loud() -> None:
     """Absence is tolerated (see the skip test), but a present-but-conflicting registry value is a
     misconfiguration or attack and still raises: it may not duplicate an identity secret nor equal a
     configured placeholder."""
     config = EgressDecideConfig(
-        decision_endpoint_token_env_var="EGRESS_DECISION_ENDPOINT_TOKEN", credentials=[_credential_entry()]
+        decision_endpoint_token=_DECISION_ENDPOINT_TOKEN,
+        credentials={"github_bot": _credential_entry(value=_DECISION_ENDPOINT_TOKEN)},
     )
-    monkeypatch.setenv("EGRESS_DECISION_ENDPOINT_TOKEN", _DECISION_ENDPOINT_TOKEN)
-
-    monkeypatch.setenv("EGRESS_CREDENTIAL_GITHUB_BOT", _DECISION_ENDPOINT_TOKEN)
     with pytest.raises(RuntimeError, match="duplicate"):
         load_egress_decide(config)
 
     # A value equal to a configured placeholder would make the "inert" placeholder the secret.
-    monkeypatch.setenv("EGRESS_CREDENTIAL_GITHUB_BOT", "github-token-placeholder")
+    config = EgressDecideConfig(
+        decision_endpoint_token=_DECISION_ENDPOINT_TOKEN,
+        credentials={"github_bot": _credential_entry(value="github-token-placeholder")},
+    )
     with pytest.raises(RuntimeError, match="placeholder"):
         load_egress_decide(config)
 
-    monkeypatch.setenv("EGRESS_CREDENTIAL_GITHUB_BOT", "ghp-real-value")
+    config = EgressDecideConfig(
+        decision_endpoint_token=_DECISION_ENDPOINT_TOKEN, credentials={"github_bot": _credential_entry()}
+    )
     (loaded,) = load_egress_decide(config).credentials
     assert loaded.handle == "github-bot"
     assert loaded.placeholder == "github-token-placeholder"
@@ -335,34 +333,21 @@ def test_configuration_entries_reject_session_principals() -> None:
         _credential_entry(principal=SessionGrantPrincipal(session_id=UUID(int=1)))
 
 
-def test_load_egress_decide_skips_credential_with_unset_env_var(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
-    """A registry credential whose value env var is unset is skipped with a warning, not fatal: the
-    endpoint still loads the decision endpoint token and every registry credential whose var is set."""
+def test_load_egress_decide_skips_unprovisioned_credential(caplog: pytest.LogCaptureFixture) -> None:
+    """An absent registry value is skipped without blocking provisioned entries."""
     config = EgressDecideConfig(
-        decision_endpoint_token_env_var="EGRESS_DECISION_ENDPOINT_TOKEN",
-        credentials=[
-            _credential_entry(),
-            _credential_entry(
-                handle="gitlab-bot",
-                placeholder="gitlab-token-placeholder",
-                value_env_var="EGRESS_CREDENTIAL_GITLAB_BOT",
-            ),
-        ],
+        decision_endpoint_token=_DECISION_ENDPOINT_TOKEN,
+        credentials={
+            "github_bot": _credential_entry(),
+            "gitlab_bot": _credential_entry(handle="gitlab-bot", placeholder="gitlab-token-placeholder", value=None),
+        },
     )
-    monkeypatch.setenv("EGRESS_DECISION_ENDPOINT_TOKEN", _DECISION_ENDPOINT_TOKEN)
-    monkeypatch.setenv("EGRESS_CREDENTIAL_GITHUB_BOT", "ghp-real-value")
-    monkeypatch.delenv("EGRESS_CREDENTIAL_GITLAB_BOT", raising=False)
 
     with caplog.at_level(logging.WARNING):
         loaded = load_egress_decide(config)
 
     assert [credential.handle for credential in loaded.credentials] == ["github-bot"]
-    assert any(
-        record.levelno == logging.WARNING and "EGRESS_CREDENTIAL_GITLAB_BOT" in record.getMessage()
-        for record in caplog.records
-    )
+    assert any(record.levelno == logging.WARNING and "gitlab-bot" in record.getMessage() for record in caplog.records)
 
 
 if __name__ == "__main__":

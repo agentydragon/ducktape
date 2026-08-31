@@ -14,11 +14,11 @@ Two Authentik OAuth2 providers, minted by `tf/gitops/agent-machine-access` (appl
 upstream), write their client secrets + the operator session-signing secret into the
 `haku-console-oidc` Secret; single-user access is Authentik's application access policy.
 The MCP issuer/callback URL is derived from the console's canonical
-`HAKU_CONSOLE_PUBLIC_BASE_URL` plus `/mcp`; it is not separately configurable. Root
+`HAKU_CONSOLE__PUBLIC_BASE_URL` plus `/mcp`; it is not separately configurable. Root
 `/.well-known/oauth-*` discovery points clients to those namespaced MCP OAuth endpoints, while
 operator browser OAuth remains under `/auth/*` with its own provider and session.
 The OIDCProxy's dynamic-client-registration + token state (shared across the two replicas) is
-backed by the console's own Postgres (`HAKU_CONSOLE_MCP_OAUTH__PERSISTENCE__KIND=postgres`,
+backed by the console's own Postgres (`HAKU_CONSOLE__MCP_OAUTH__PERSISTENCE__KIND=postgres`,
 py-key-value's `PostgreSQLStore` auto-creating a `mcp_oauth_kv` table) — no separate valkey, unlike
 the grocy/tana MCP facades. Deviation from those facades: the operator browser login is the console's
 own app-native OIDC (not an outpost and not a separate SPA), so a 401 from `/api/*` bounces the
@@ -142,7 +142,8 @@ reviewed transparent auto-approved tools; `create_event` always remains operator
 **Deploy prerequisites (operator, one time):**
 
 1. **Gmail OAuth client secret.** The existing `haku-console-google-client-credentials` Secret
-   (keys `client_id`, `client_secret`) supplies `HAKU_CONSOLE_GOOGLE_MAIL_CLIENT_{ID,SECRET}`.
+   (keys `client_id`, `client_secret`) supplies the nested
+   `HAKU_CONSOLE__OPERATOR_CONNECTION_PROVIDERS__GOOGLE_MAIL__CLIENT_{ID,SECRET}` settings.
    It is the restricted-scope Gmail project's client, independent of Airlock's
    `google-client-credentials`.
 2. **Calendar OAuth client secret.** The separate `haku-console` Google Cloud project/client requests
@@ -186,23 +187,21 @@ the reviewed read-only tool names for Haku. The same entry denies the Copilot de
    repositories. Do not substitute a PAT or the OAuth client embedded in GitHub's local MCP binary.
 2. Put the App's `client_id` and `client_secret` in a new SOPS-encrypted Secret named
    `haku-console-github-mcp-client-credentials`, with those exact keys. Add that manifest to this
-   directory's `kustomization.yaml`. The Deployment already reflects the values as
-   `HAKU_CONSOLE_GITHUB_MCP_CLIENT_{ID,SECRET}` and tolerates the Secret being absent until this
-   step is complete.
-3. Add the following server to `mcp.servers` in `config.yaml`, then reconcile the Console:
+   directory's `kustomization.yaml`. The Deployment overlays the values directly at
+   `HAKU_CONSOLE__MCP__SERVERS__GITHUB__BACKEND__AUTH__CLIENT_REGISTRATION__CLIENT_{ID,SECRET}`
+   and tolerates the Secret being absent until this step is complete.
+3. Keep the existing keyed `mcp.servers.github` entry in `config.yaml`. Its non-secret shape is:
 
    ```yaml
-   - id: github
+   github:
+     id: github
      backend:
        kind: remote_mcp
        url: https://api.githubcopilot.com/mcp/
        auth:
          kind: remote_server_oauth
-         scopes: [] # App permissions are the least-privilege boundary; do not request legacy broad scopes.
          client_registration:
            kind: preregistered
-           client_id_env_var: HAKU_CONSOLE_GITHUB_MCP_CLIENT_ID
-           client_secret_env_var: HAKU_CONSOLE_GITHUB_MCP_CLIENT_SECRET
            token_endpoint_auth_method: client_secret_post
    ```
 

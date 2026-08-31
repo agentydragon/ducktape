@@ -5,10 +5,9 @@
 # fail on any drift, an extra entry, or a console-only key.
 git_ca_bundle: /etc/ssl/certs/ca-certificates.crt
 recall_indexes:
-  - index_id: haku-state
+  haku_state:
+    index_id: haku-state
     index_type: git
     repo_url: http://forgejo-http.forgejo:3000/haku/haku-state.git
     branch: main
     mirror_path: /tmp/haku-recall-index/haku-state.git
-    username_env_var: HAKU_CONSOLE_HAKU_STATE_GIT_USERNAME
-    password_env_var: HAKU_CONSOLE_HAKU_STATE_GIT_PASSWORD

@@ -41,7 +41,6 @@ py_library(
     deps = [
         ":models",
         "//haku/console/grants:principal",
-        "//util:env",
         "@pypi//pydantic",
     ],
 )

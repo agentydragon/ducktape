@@ -51,15 +51,15 @@ def _config(**overrides: object) -> dict[str, object]:
             {"id": "review", "auto_approval_policy": "manual"},
         ],
         "default_access_profile_id": "chat",
-        "static_agents": [
-            {
+        "static_agents": {
+            "console": {
                 "agent_id": str(_AGENT),
                 "display_name": "Console Agent",
-                "token_env_var": "TOKEN",
-                "operator_subject_env": "OPERATOR",
+                "token": "token",
+                "operator_subject": "operator",
                 "access_profile_id": "chat",
             }
-        ],
+        },
         "launchable_agents": [{"agent_id": str(_AGENT), "system_prompt_template": "/prompt"}],
     }
     value.update(overrides)
@@ -146,22 +146,22 @@ def test_chat_runtimes_key_is_rejected() -> None:
 def test_launchable_agent_requires_its_own_runtime_registration() -> None:
     second = UUID("00000000-0000-4000-8000-000000000002")
     static_agents = _config()["static_agents"]
-    assert isinstance(static_agents, list)
+    assert isinstance(static_agents, dict)
     runtime = _runtime()
     with pytest.raises(ValidationError, match="has no configured harness registration"):
         ConsoleConfigFile.model_validate(
             _config(
                 harnesses={"claude_code": runtime},
-                static_agents=[
-                    *static_agents,
-                    {
+                static_agents={
+                    **static_agents,
+                    "second": {
                         "agent_id": str(second),
                         "display_name": "Second Console Agent",
-                        "token_env_var": "SECOND_TOKEN",
-                        "operator_subject_env": "OPERATOR",
+                        "token": "second-token",
+                        "operator_subject": "operator",
                         "access_profile_id": "chat",
                     },
-                ],
+                },
                 launchable_agents=[
                     {"agent_id": str(_AGENT), "system_prompt_template": "/prompt"},
                     {"agent_id": str(second), "system_prompt_template": "/second-prompt"},

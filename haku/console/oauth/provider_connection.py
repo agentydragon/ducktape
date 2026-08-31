@@ -10,13 +10,12 @@ Parallel to ``mcp/operator_oauth`` (per-Operator, Postgres-backed, self-refreshi
 fixed pre-registered clients: no Dynamic Client Registration and no authorization-server
 metadata discovery. The provider catalog and non-secret metadata live in
 ``provider_connection_registry``; deploy config associates each connection with a named provider
-instance whose client_id/secret come from environment variables and never enter the database.
+instance whose client_id/secret come from typed settings and never enter the database.
 """
 
 from __future__ import annotations
 
 import datetime
-import os
 import secrets
 from functools import partial
 from typing import Annotated, Literal, cast
@@ -239,21 +238,12 @@ async def _refresh_token(
 
 
 def load_provider_clients(config: ConsoleConfigFile) -> dict[str, ProviderOAuthClientConfig]:
-    """Resolve configured provider client secrets once, skipping wholly absent optional clients."""
-    clients: dict[str, ProviderOAuthClientConfig] = {}
-    for name, definition in config.operator_connection_providers.items():
-        client_id = os.environ.get(definition.client_id_env_var)
-        client_secret = os.environ.get(definition.client_secret_env_var)
-        if client_id is None and client_secret is None:
-            continue
-        if not client_id:
-            raise RuntimeError(f"missing provider client id env var {definition.client_id_env_var} for {name!r}")
-        if not client_secret:
-            raise RuntimeError(
-                f"missing provider client secret env var {definition.client_secret_env_var} for {name!r}"
-            )
-        clients[name] = ProviderOAuthClientConfig(client_id=client_id, client_secret=client_secret)
-    return clients
+    """Return provisioned provider clients, skipping wholly absent optional credentials."""
+    return {
+        name: ProviderOAuthClientConfig(client_id=definition.client_id, client_secret=definition.client_secret)
+        for name, definition in config.operator_connection_providers.items()
+        if definition.client_id is not None and definition.client_secret is not None
+    }
 
 
 class PostgresProviderConnectionStore:

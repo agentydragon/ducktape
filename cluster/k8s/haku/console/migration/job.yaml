@@ -65,7 +65,7 @@ spec:
                   name: haku-console-db-app
                   key: dbname
             # The migration command deliberately consumes no other Console setting or secret.
-            - name: HAKU_CONSOLE_DATABASE_URL
+            - name: HAKU_CONSOLE__DATABASE_URL
               value: "postgresql+asyncpg://$(HAKU_CONSOLE_DB_USER):$(HAKU_CONSOLE_DB_PASSWORD)@$(HAKU_CONSOLE_DB_HOST):$(HAKU_CONSOLE_DB_PORT)/$(HAKU_CONSOLE_DB_NAME)"
           resources:
             requests:

@@ -46,8 +46,6 @@ from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 _OPERATOR_SUBJECT = "authentik-user-42"
 _OPERATOR_USERNAME = "agentydragon"
 _AGENT_TOKEN = "haku-static-token"
-_AGENT_TOKEN_ENV = "HAKU_CONSOLE_TOKEN_EXCHANGE_TEST_AGENT_TOKEN"
-_AGENT_OPERATOR_ENV = "HAKU_CONSOLE_TOKEN_EXCHANGE_TEST_OPERATOR_SUBJECT"
 _PROXY_CLIENT_ID = "grocy-proxy-client"
 
 
@@ -169,21 +167,21 @@ def _console_config(path: Path, downstream_url: str) -> Path:
     return write_config(
         path,
         {
-            "static_agents": [
-                {
+            "static_agents": {
+                "haku": {
                     "agent_id": "20000000-0000-4000-8000-000000000001",
                     "display_name": "Haku",
-                    "token_env_var": _AGENT_TOKEN_ENV,
-                    "operator_subject_env": _AGENT_OPERATOR_ENV,
+                    "token": _AGENT_TOKEN,
+                    "operator_subject": _OPERATOR_SUBJECT,
                     "access_profile_id": "no_auto_approval",
                 }
-            ],
+            },
             "auto_approval_policies": [{"id": "no_auto_approval", "type": "never"}],
             "access_profiles": [{"id": "no_auto_approval", "auto_approval_policy": "no_auto_approval"}],
             "default_access_profile_id": "no_auto_approval",
             "mcp": {
-                "servers": [
-                    {
+                "servers": {
+                    "grocy_test": {
                         "id": "grocy-test",
                         "backend": {
                             "kind": "remote_mcp",
@@ -194,7 +192,7 @@ def _console_config(path: Path, downstream_url: str) -> Path:
                             },
                         },
                     }
-                ]
+                }
             },
         },
     )
@@ -234,14 +232,8 @@ def oidc_key_pair() -> tuple[RSAPrivateKey, RSAPublicKey]:
 
 @pytest.fixture
 async def token_chain_harness(
-    migrated_db_url: str,
-    migrated_sessions,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    oidc_key_pair: tuple[RSAPrivateKey, RSAPublicKey],
+    migrated_db_url: str, migrated_sessions, tmp_path: Path, oidc_key_pair: tuple[RSAPrivateKey, RSAPublicKey]
 ) -> AsyncIterator[_TokenChainHarness]:
-    monkeypatch.setenv(_AGENT_TOKEN_ENV, _AGENT_TOKEN)
-    monkeypatch.setenv(_AGENT_OPERATOR_ENV, _OPERATOR_SUBJECT)
     private_key, public_key = oidc_key_pair
     idp_port, backend_port, downstream_port, console_port = (pick_free_port() for _ in range(4))
     idp_base = f"http://127.0.0.1:{idp_port}"

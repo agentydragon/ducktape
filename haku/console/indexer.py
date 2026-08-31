@@ -32,15 +32,16 @@ import signal
 from contextlib import AbstractAsyncContextManager
 from enum import StrEnum
 from pathlib import Path
+from typing import Any
 
 from openai import AsyncOpenAI
-from pydantic import Field, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AliasChoices, Field, SecretStr
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 from sqlalchemy import create_engine, make_url, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from haku.console.database_schema import ConversationItem
-from haku.console.indexer_config import load_indexer_config
+from haku.console.indexer_config import IndexerConfigFile
 from haku.console.recall_index_sync import RecallEmbeddingMaintenance, RecallIndexMaintenance
 from haku.recall_index.config import EmbedderConfig, GitRecallIndexDefinition, RecallIndexSettings
 from haku.recall_index.git_tree import configure_ca_trust
@@ -57,21 +58,30 @@ class IndexerRole(StrEnum):
     EMBED = "embed"
 
 
+class _IndexerConfigFileSettings(BaseSettings):
+    model_config = SettingsConfigDict(extra="ignore")
+
+    config_file: Path = Field(validation_alias="HAKU_INDEXER_CONFIG_FILE")
+
+
 class _WorkerSettings(BaseSettings):
-    """Env-driven settings shared by both roles (prefix ``HAKU_INDEXER_``).
+    """YAML-backed settings shared by both roles, overlaid by ``HAKU_INDEXER__*``.
 
     Deliberately not the console's ``Settings``: the worker must be startable without operator
     OIDC, Web Push, routine, or connector credentials — requiring those here would re-grow the
     credential surface the extraction removes.
     """
 
-    model_config = SettingsConfigDict(env_prefix="HAKU_INDEXER_", env_nested_delimiter="__")
+    model_config = SettingsConfigDict(env_prefix="HAKU_INDEXER__", env_nested_delimiter="__", extra="ignore")
 
     # The worker's narrow role, not the console's application owner.
     database_url: SecretStr
 
+    def __init__(self, **values: Any) -> None:
+        super().__init__(**values)
 
-class ChunkSettings(_WorkerSettings):
+
+class ChunkSettings(IndexerConfigFile, _WorkerSettings):
     """The chunk role: sweep the indexes the mounted config file defines into chunks.
 
     One instance, one config slice (#4886): each per-index Deployment mounts only its own index's
@@ -84,8 +94,31 @@ class ChunkSettings(_WorkerSettings):
     # The pod's own slice of the deploy-owned registry, derivation-tested against the console's
     # `recall_indexes` (test_deployment_config) so the console's readers and this role's writers
     # stay on the same registry entry and Git credential slots.
-    config_file: Path
+    config_file: Path = Field(validation_alias=AliasChoices("config_file", "HAKU_INDEXER_CONFIG_FILE"))
     recall_index: RecallIndexSettings = Field(default_factory=RecallIndexSettings)
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        config_file = init_settings().get("config_file")
+        if config_file is None:
+            config_file = _IndexerConfigFileSettings().config_file
+        config_file = Path(config_file)
+        if not config_file.is_file():
+            raise RuntimeError(f"indexer config file does not exist: {config_file}")
+        return (
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            YamlConfigSettingsSource(settings_cls, yaml_file=config_file),
+            file_secret_settings,
+        )
 
 
 class EmbedSettings(_WorkerSettings):
@@ -130,16 +163,20 @@ async def async_main(settings: ChunkSettings | EmbedSettings) -> None:
         sessions = async_sessionmaker(engine, expire_on_commit=False)
         stage: AbstractAsyncContextManager[None]
         if isinstance(settings, ChunkSettings):
-            config = load_indexer_config(settings.config_file)
             if any(
                 isinstance(index, GitRecallIndexDefinition) and index.repo_url.startswith("https://")
-                for index in config.recall_indexes
+                for index in settings.recall_indexes.values()
             ):
-                configure_ca_trust(config.git_ca_bundle)
+                configure_ca_trust(settings.git_ca_bundle)
             stage = RecallIndexMaintenance(
-                engine, sessions, indexes=config.recall_indexes, budget=settings.recall_index.chunk_budget
+                engine,
+                sessions,
+                indexes=tuple(settings.recall_indexes.values()),
+                budget=settings.recall_index.chunk_budget,
             ).run()
-            logger.info("haku-indexer chunking %s", ", ".join(index.index_id for index in config.recall_indexes))
+            logger.info(
+                "haku-indexer chunking %s", ", ".join(index.index_id for index in settings.recall_indexes.values())
+            )
         else:
             stage = RecallEmbeddingMaintenance(
                 sessions,

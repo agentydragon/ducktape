@@ -86,7 +86,7 @@ py_library(
     name = "token_support",
     srcs = ["token_support.py"],
     deps = [
-        "//haku/console:config",
+        "//haku/console:settings",
         "@pypi//httpx",
         "@pypi//mcp",
         "@pypi//pydantic",

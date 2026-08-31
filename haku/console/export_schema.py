@@ -25,9 +25,10 @@ from uuid import UUID
 from pydantic import SecretStr, TypeAdapter
 
 from haku.console.app import create_app
-from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig, Settings
+from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig
 from haku.console.identity.authorization import StaticAgentDefinition, fingerprint_static_token
 from haku.console.session.conversation_views import ConversationFollowMessage
+from haku.console.settings import Settings
 
 # The component the follow socket's messages are published under, and what the frontend's
 # `ConversationFollowMessage` in `frontend/client.ts` resolves to.

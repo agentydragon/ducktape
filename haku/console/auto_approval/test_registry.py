@@ -4,6 +4,7 @@ The config here spans every policy kind on purpose -- several tests (e.g. the mu
 searches) exist specifically to verify a policy composes correctly through `any_of` from more than
 one access profile, which a per-evaluator unit test wouldn't cover."""
 
+from typing import Any
 from unittest.mock import Mock
 from uuid import UUID
 
@@ -56,13 +57,18 @@ _EXACT_TOOLS = {
     "google_calendar": ["get_event", "list_events", "list_event_instances"],
     "grocy-sf": ["products_list"],
 }
-_SERVER_CONFIGS = [
-    {
+_SERVER_CONFIGS: dict[str, dict[str, Any]] = {
+    server_id.replace("-", "_"): {
         "id": server_id,
         "backend": {"kind": "remote_mcp", "url": f"https://{server_id}.test/mcp", "auth": {"kind": "none"}},
     }
     for server_id in _EXACT_TOOLS
-] + [{"id": "github", "backend": {"kind": "remote_mcp", "url": "https://github.test/mcp", "auth": {"kind": "none"}}}]
+} | {
+    "github": {
+        "id": "github",
+        "backend": {"kind": "remote_mcp", "url": "https://github.test/mcp", "auth": {"kind": "none"}},
+    }
+}
 _GITHUB_TOOL_ARGUMENTS: dict[str, dict[str, object]] = {
     "actions_get": {"method": "list_workflow_runs"},
     "actions_list": {"method": "list_workflow_runs"},
@@ -138,15 +144,15 @@ _CONFIG = ConsoleConfigFile.model_validate(
             {"id": "manual", "auto_approval_policy": "none"},
         ],
         "default_access_profile_id": "manual",
-        "static_agents": [
-            {
+        "static_agents": {
+            "test": {
                 "agent_id": str(AGENT_ACTOR.agent_id),
                 "display_name": "Test Agent",
-                "token_env_var": "TEST_AGENT_TOKEN",
-                "operator_subject_env": "TEST_AGENT_OPERATOR",
+                "token": "test-agent-token",
+                "operator_subject": "test-agent-operator",
                 "access_profile_id": "haku",
             }
-        ],
+        },
     }
 )
 _POLICIES = AutoApprovalPolicyRegistry(_CONFIG)
@@ -371,15 +377,15 @@ def test_profile_config_rejects_unknown_static_agent_profile() -> None:
         ConsoleConfigFile.model_validate(
             {
                 **_MANUAL_AUTHORITY_CONFIG,
-                "static_agents": [
-                    {
+                "static_agents": {
+                    "test": {
                         "agent_id": str(AGENT_ACTOR.agent_id),
                         "display_name": "Test Agent",
-                        "token_env_var": "TEST_AGENT_TOKEN",
-                        "operator_subject_env": "TEST_AGENT_OPERATOR",
+                        "token": "test-agent-token",
+                        "operator_subject": "test-agent-operator",
                         "access_profile_id": "missing",
                     }
-                ],
+                },
             }
         )
 
@@ -402,7 +408,12 @@ def test_kubernetes_server_requires_authorization_configuration() -> None:
             {
                 **_MANUAL_AUTHORITY_CONFIG,
                 "mcp": {
-                    "servers": [{"id": "kubernetes", "backend": {"kind": "in_process", "credential": {"kind": "none"}}}]
+                    "servers": {
+                        "kubernetes": {
+                            "id": "kubernetes",
+                            "backend": {"kind": "in_process", "credential": {"kind": "none"}},
+                        }
+                    }
                 },
             }
         )
@@ -413,14 +424,14 @@ def test_static_agent_access_profile_assignment_is_required() -> None:
         ConsoleConfigFile.model_validate(
             {
                 **_MANUAL_AUTHORITY_CONFIG,
-                "static_agents": [
-                    {
+                "static_agents": {
+                    "test": {
                         "agent_id": str(AGENT_ACTOR.agent_id),
                         "display_name": "Test Agent",
-                        "token_env_var": "TEST_AGENT_TOKEN",
-                        "operator_subject_env": "TEST_AGENT_OPERATOR",
+                        "token": "test-agent-token",
+                        "operator_subject": "test-agent-operator",
                     }
-                ],
+                },
             }
         )
 
@@ -731,19 +742,23 @@ async def test_lookup_errors_are_logged_and_fail_closed(caplog: pytest.LogCaptur
 _GRANT_READS_REGISTRY = AutoApprovalPolicyRegistry(
     ConsoleConfigFile.model_validate(
         {
-            "mcp": {"servers": [{"id": "grants", "backend": {"kind": "in_process", "credential": {"kind": "none"}}}]},
+            "mcp": {
+                "servers": {
+                    "grants": {"id": "grants", "backend": {"kind": "in_process", "credential": {"kind": "none"}}}
+                }
+            },
             "auto_approval_policies": [{"id": "grants_own_list", "type": "grant_self_list", "server": "grants"}],
             "access_profiles": [{"id": "haku", "auto_approval_policy": "grants_own_list"}],
             "default_access_profile_id": "haku",
-            "static_agents": [
-                {
+            "static_agents": {
+                "test": {
                     "agent_id": str(AGENT_ACTOR.agent_id),
                     "display_name": "Test Agent",
-                    "token_env_var": "TEST_AGENT_TOKEN",
-                    "operator_subject_env": "TEST_AGENT_OPERATOR",
+                    "token": "test-agent-token",
+                    "operator_subject": "test-agent-operator",
                     "access_profile_id": "haku",
                 }
-            ],
+            },
         }
     )
 )
@@ -794,7 +809,11 @@ async def test_list_grants_auto_approves_only_the_explicit_self_scope() -> None:
 _OWN_REVOKE_REGISTRY = AutoApprovalPolicyRegistry(
     ConsoleConfigFile.model_validate(
         {
-            "mcp": {"servers": [{"id": "grants", "backend": {"kind": "in_process", "credential": {"kind": "none"}}}]},
+            "mcp": {
+                "servers": {
+                    "grants": {"id": "grants", "backend": {"kind": "in_process", "credential": {"kind": "none"}}}
+                }
+            },
             "auto_approval_policies": [
                 {"id": "grants_own_revoke", "type": "exact_tools", "tools": {"grants": ["revoke_grants"]}},
                 {"id": "haku_v1", "type": "any_of", "policies": ["grants_own_revoke"]},

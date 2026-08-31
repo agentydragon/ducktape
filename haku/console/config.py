@@ -1,15 +1,13 @@
-"""Harness settings for the Haku console (env-driven, prefix ``HAKU_CONSOLE_``)."""
+"""Typed process configuration shared by Haku Console settings models."""
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
@@ -105,7 +103,7 @@ class OperatorOidcConfig(BaseModel):
 
     The console authenticates the operator's browser itself (Authentik authorization-code flow →
     signed session cookie). Agent access to `/mcp` uses its own MultiAuth and is unaffected.
-    Reads `HAKU_CONSOLE_OPERATOR_OIDC__{ISSUER,CLIENT_ID,CLIENT_SECRET,SESSION_SECRET}`. The redirect
+    Reads `HAKU_CONSOLE__OPERATOR_OIDC__{ISSUER,CLIENT_ID,CLIENT_SECRET,SESSION_SECRET}`. The redirect
     URI is built from the top-level `public_base_url` + `/auth/callback`.
 
     Authorization is delegated to Authentik: the application's access-policy binding (a single-user
@@ -419,10 +417,10 @@ class HostexecConfig(BaseModel):
 
 
 class NodeDaemonDefinition(BaseModel):
-    """One outbound node daemon and the secret slot used to authenticate it."""
+    """One outbound node daemon and the bearer used to authenticate it."""
 
     display_name: str
-    token_env_var: str
+    token: SecretStr
     backends: list[str] = Field(min_length=1)
 
 
@@ -444,28 +442,10 @@ class NodeDaemonsConfig(BaseModel):
         return self
 
 
-class Settings(BaseSettings):
-    # env_nested_delimiter so launch_routine.{routine_id,token} read from
-    # HAKU_CONSOLE_LAUNCH_ROUTINE__{ROUTINE_ID,TOKEN}.
-    model_config = SettingsConfigDict(env_prefix="HAKU_CONSOLE_", env_nested_delimiter="__")
+class ConsoleProcessConfig(BaseModel):
+    """Process-local fields combined with the deploy catalog by ``settings.Settings``."""
 
-    @classmethod
-    def settings_customise_sources(
-        cls,
-        settings_cls: type[BaseSettings],
-        init_settings: PydanticBaseSettingsSource,
-        env_settings: PydanticBaseSettingsSource,
-        dotenv_settings: PydanticBaseSettingsSource,
-        file_secret_settings: PydanticBaseSettingsSource,
-    ) -> tuple[PydanticBaseSettingsSource, ...]:
-        """Load non-secret deployment settings from shared Console YAML below env overrides."""
-        sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings, dotenv_settings]
-        if config_file := os.environ.get("HAKU_CONSOLE_CONFIG_FILE"):
-            sources.append(
-                YamlConfigSettingsSource(settings_cls, yaml_file=config_file, yaml_config_section="settings")
-            )
-        sources.append(file_secret_settings)
-        return tuple(sources)
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     # Optional directory holding the built React SPA (index.html + assets), served
     # same-origin by FastAPI for direct local/dev fallback. Production leaves this
@@ -476,6 +456,8 @@ class Settings(BaseSettings):
     # It is intentionally a file rather than an env var: Flux can update the static
     # Deployment and this metadata without rolling the API Deployment.
     static_image_tag_file: Path | None = None
+    image_tag: str | None = None
+    static_image_tag: str | None = None
 
     # Capability tier. launch_routine enables POST /api/capabilities/launch-routine
     # (None → the capability returns 503).
@@ -492,12 +474,9 @@ class Settings(BaseSettings):
     # WebSocket origin checks. Required: there is no unauthenticated harness mode.
     public_base_url: str
 
-    # YAML file for required deploy-time console configuration that does not belong
-    # in env vars. Secret values stay in env/Kubernetes Secret references; this file
-    # names connected MCP servers, their env-backed credential slots, composable auto-approval
-    # policies, static machine `agents` (id + env-referenced bearer + operator subject + policy),
-    # Claude harness wiring, and the `hostexec` host map (in-scope machines + exec URLs/audiences).
-    config_file: Path
+    # Bootstrap path for the YAML settings source. It deliberately retains its established
+    # single-underscore environment name while ordinary settings use HAKU_CONSOLE__*.
+    config_file: Path = Field(validation_alias=AliasChoices("config_file", "HAKU_CONSOLE_CONFIG_FILE"))
 
     # Non-secret runner topology selected by Console for every launched Agent. The runner turns
     # this into an ephemeral tokenFile kubeconfig backed by the exact-session bearer.
@@ -515,7 +494,7 @@ class Settings(BaseSettings):
     # stores are always constructed; migrations are applied once at startup (see app.main).
     database_url: SecretStr
 
-    # VAPID identity for Web Push. Reads HAKU_CONSOLE_WEB_PUSH__{PRIVATE_KEY_PEM,SUBJECT}.
+    # VAPID identity for Web Push. Reads HAKU_CONSOLE__WEB_PUSH__{PRIVATE_KEY_PEM,SUBJECT}.
     # Unset → the console never sends push notifications and the subscribe endpoints return 503.
     web_push: WebPushConfig | None = None
 
@@ -540,13 +519,13 @@ class Settings(BaseSettings):
     # Required when the config file lists the `haku_index` server, and unused otherwise: the
     # console refuses to start with search configured and nowhere to embed a query.
     embedder: EmbedderConfig | None = None
-    # One configuration feeds every index reader and writer; HAKU_CONSOLE_RECALL_INDEX__CHUNK_BUDGET__*.
+    # One configuration feeds every index reader and writer; HAKU_CONSOLE__RECALL_INDEX__CHUNK_BUDGET__*.
     recall_index: RecallIndexSettings = Field(default_factory=RecallIndexSettings)
 
     # OAuth for Agent admission to the MCP server: an Authentik-backed OIDCProxy handling MCP OAuth
     # dance (DCR + PKCE) for claude.ai / the `claude` CLI, composed with the static agent bearer via
-    # MultiAuth. Reads HAKU_CONSOLE_MCP_OAUTH__{OIDC_ISSUER,OIDC_CLIENT_ID,OIDC_CLIENT_SECRET} plus
-    # HAKU_CONSOLE_MCP_OAUTH__PERSISTENCE__*; its public URL is derived from top-level
+    # MultiAuth. Reads HAKU_CONSOLE__MCP_OAUTH__{OIDC_ISSUER,OIDC_CLIENT_ID,OIDC_CLIENT_SECRET} plus
+    # HAKU_CONSOLE__MCP_OAUTH__PERSISTENCE__*; its public URL is derived from top-level
     # public_base_url + MCP_PATH. Unset → the static bearer is the only accepted credential (no
     # OAuth, and therefore no OAuth store).
     mcp_oauth: McpOAuthConfig | None = None

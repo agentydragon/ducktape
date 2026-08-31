@@ -474,7 +474,6 @@ py_library(
     deps = [
         "//haku/console/harnesses:kind",
         "@pypi//pydantic",
-        "@pypi//pyyaml",
     ],
 )
 

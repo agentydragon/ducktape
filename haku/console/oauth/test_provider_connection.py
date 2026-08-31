@@ -56,10 +56,10 @@ async def store(
         token_states=PostgresTokenStateStore(migrated_sessions, operator_identity_store=migrated_identity_store),
         provider_definitions={
             GOOGLE_MAIL: OperatorConnectionProviderDefinition(
-                kind=GOOGLE, client_id_env_var="MAIL_CLIENT_ID", client_secret_env_var="MAIL_CLIENT_SECRET"
+                kind=GOOGLE, client_id=MAIL_CLIENT_ID, client_secret=SecretStr("mail-secret")
             ),
             GOOGLE_CALENDAR: OperatorConnectionProviderDefinition(
-                kind=GOOGLE, client_id_env_var="CALENDAR_CLIENT_ID", client_secret_env_var="CALENDAR_CLIENT_SECRET"
+                kind=GOOGLE, client_id=CALENDAR_CLIENT_ID, client_secret=SecretStr("calendar-secret")
             ),
         },
         provider_clients={
@@ -234,41 +234,21 @@ async def test_access_token_for_unconnected_is_none(store: PostgresProviderConne
     assert await store.access_token_for(connection=GOOGLE_MAIL, operator_id=operator_id) is None
 
 
-async def test_load_provider_clients_skips_absent_optional_client(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_load_provider_clients_skips_absent_optional_client() -> None:
     config = ConsoleConfigFile.model_validate(
-        {
-            **_MANUAL_AUTHORITY_CONFIG,
-            "operator_connection_providers": {
-                GOOGLE_MAIL: {
-                    "kind": "google",
-                    "client_id_env_var": "MAIL_CLIENT_ID",
-                    "client_secret_env_var": "MAIL_CLIENT_SECRET",
-                }
-            },
-        }
+        {**_MANUAL_AUTHORITY_CONFIG, "operator_connection_providers": {GOOGLE_MAIL: {"kind": "google"}}}
     )
-    monkeypatch.delenv("MAIL_CLIENT_ID", raising=False)
-    monkeypatch.delenv("MAIL_CLIENT_SECRET", raising=False)
     assert load_provider_clients(config) == {}
 
 
-async def test_load_provider_clients_rejects_partial_client(monkeypatch: pytest.MonkeyPatch) -> None:
-    config = ConsoleConfigFile.model_validate(
-        {
-            **_MANUAL_AUTHORITY_CONFIG,
-            "operator_connection_providers": {
-                GOOGLE_MAIL: {
-                    "kind": "google",
-                    "client_id_env_var": "MAIL_CLIENT_ID",
-                    "client_secret_env_var": "MAIL_CLIENT_SECRET",
-                }
-            },
-        }
-    )
-    monkeypatch.setenv("MAIL_CLIENT_ID", MAIL_CLIENT_ID)
-    monkeypatch.delenv("MAIL_CLIENT_SECRET", raising=False)
-    with pytest.raises(RuntimeError, match="MAIL_CLIENT_SECRET"):
-        load_provider_clients(config)
+async def test_load_provider_clients_rejects_partial_client() -> None:
+    with pytest.raises(ValueError, match="require both client_id and client_secret"):
+        ConsoleConfigFile.model_validate(
+            {
+                **_MANUAL_AUTHORITY_CONFIG,
+                "operator_connection_providers": {GOOGLE_MAIL: {"kind": "google", "client_id": MAIL_CLIENT_ID}},
+            }
+        )
 
 
 def _provider_store(token: str | None) -> Any:

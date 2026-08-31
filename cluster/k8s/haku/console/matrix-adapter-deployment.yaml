@@ -70,22 +70,22 @@ spec:
             # The narrow haku_matrix_adapter role (db/matrix-adapter-role-secret.yaml),
             # never the application owner: the worker cannot read the approval ledger,
             # OAuth state, or session frames.
-            - name: HAKU_MATRIX_ADAPTER_DATABASE_URL
+            - name: HAKU_MATRIX_ADAPTER__DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: haku-console-db-matrix-adapter
                   key: DATABASE_URL
-            - name: HAKU_MATRIX_ADAPTER_MATRIX__HOMESERVER
+            - name: HAKU_MATRIX_ADAPTER__MATRIX__HOMESERVER
               value: http://matrix-synapse.matrix.svc.cluster.local:8008
-            - name: HAKU_MATRIX_ADAPTER_MATRIX__USER_ID
+            - name: HAKU_MATRIX_ADAPTER__MATRIX__USER_ID
               value: "@haku:allegedly.works"
-            - name: HAKU_MATRIX_ADAPTER_MATRIX__OPERATOR_USER_ID
+            - name: HAKU_MATRIX_ADAPTER__MATRIX__OPERATOR_USER_ID
               value: "@agentydragon:allegedly.works"
             # The Authentik sub for the MXID above; Matrix has no OIDC identity of its
             # own, so this pair is the whole sender-to-Operator mapping. One key of the
             # console's OIDC Secret — the sub is shared state, and the client secrets in
             # that Secret's other keys never reach this pod's env.
-            - name: HAKU_MATRIX_ADAPTER_MATRIX__OPERATOR_SUBJECT
+            - name: HAKU_MATRIX_ADAPTER__MATRIX__OPERATOR_SUBJECT
               valueFrom:
                 secretKeyRef:
                   name: haku-console-oidc
@@ -93,15 +93,15 @@ spec:
             # The bot credential, reflected in from the matrix namespace. Required —
             # running the sync loop is this pod's whole job, so kubelet holds the pod
             # until the reflector lands it rather than starting an idle worker.
-            - name: HAKU_MATRIX_ADAPTER_MATRIX__PASSWORD
+            - name: HAKU_MATRIX_ADAPTER__MATRIX__PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: haku-matrix-bot-password
                   key: password
-            # Must equal the console's HAKU_CONSOLE_OPERATOR_IDENTITY__TRUST_DOMAIN: the
+            # Must equal the console's HAKU_CONSOLE__OPERATOR_IDENTITY__TRUST_DOMAIN: the
             # operator subject resolves through anchor rows keyed by it, written at
             # console login.
-            - name: HAKU_MATRIX_ADAPTER_OPERATOR_IDENTITY_TRUST_DOMAIN
+            - name: HAKU_MATRIX_ADAPTER__OPERATOR_IDENTITY_TRUST_DOMAIN
               value: auth.allegedly.works/authentik-user-id/v1
           resources:
             requests:

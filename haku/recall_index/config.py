@@ -9,10 +9,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, SecretStr, model_validator
+from pydantic import BaseModel, Field, SecretStr
 
 from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
-from util.env import EnvironmentVariableName
 
 
 class EmbedderConfig(BaseModel):
@@ -65,23 +64,23 @@ class RecallIndexDefinition(BaseModel):
     index_id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9-]*$")
 
 
+class GitCredentials(BaseModel):
+    """Credentials for one private Git source, injected through nested settings."""
+
+    username: str = Field(min_length=1)
+    password: SecretStr
+
+
 class GitRecallIndexDefinition(RecallIndexDefinition):
     """A Git logical index, fetched into an untrusted disposable bare mirror."""
 
     index_type: Literal["git"] = "git"
     repo_url: str
     branch: str = "main"
-    username_env_var: EnvironmentVariableName | None = None
-    password_env_var: EnvironmentVariableName | None = None
+    credentials: GitCredentials | None = None
     # A bare mirror, on ephemeral pod storage by default: losing it costs a clone, not an
     # embedding, since the chunk cache is content-addressed and lives in Postgres.
     mirror_path: Path = Path("/tmp/haku-recall-index/mirror.git")
-
-    @model_validator(mode="after")
-    def _require_complete_credentials(self) -> GitRecallIndexDefinition:
-        if (self.username_env_var is None) != (self.password_env_var is None):
-            raise ValueError("Git recall index credentials require both username_env_var and password_env_var")
-        return self
 
 
 class ChatRecallIndexDefinition(RecallIndexDefinition):

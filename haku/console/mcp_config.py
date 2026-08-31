@@ -9,7 +9,6 @@ credential where one applies. The tool-call application service, `McpServerDispa
 
 from __future__ import annotations
 
-import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -18,18 +17,12 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-import yaml
 from fastmcp import FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
-from haku.console.config import (
-    HarnessesConfig,
-    HostexecConfig,
-    KubernetesAuthorizationConfig,
-    NodeDaemonsConfig,
-    Settings,
-)
+from haku.console.channels.matrix.config import MatrixLaunchConfig
+from haku.console.config import HarnessesConfig, HostexecConfig, KubernetesAuthorizationConfig, NodeDaemonsConfig
 from haku.console.grants.http.decide_config import EgressDecideConfig
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.identity.naming import normalize_agent_name
@@ -38,7 +31,6 @@ from haku.console.tool_call_actor import RuntimeActor
 from haku.recall_index.config import ConfiguredRecallIndex, GitRecallIndexDefinition
 from haku.sandbox.config import SandboxEnvironmentConfig
 from mcp_infra.prefix import MCPMountPrefix
-from util.env import EnvironmentVariableName
 
 
 class McpServerNotFoundError(LookupError):
@@ -46,13 +38,19 @@ class McpServerNotFoundError(LookupError):
 
 
 class OperatorConnectionProviderDefinition(BaseModel):
-    """A deploy-named OAuth application whose secret values come from environment variables."""
+    """A deploy-named OAuth application, optionally provisioned by nested settings."""
 
     model_config = ConfigDict(extra="forbid")
 
     kind: ProviderConnectionKind
-    client_id_env_var: EnvironmentVariableName
-    client_secret_env_var: EnvironmentVariableName
+    client_id: str | None = Field(default=None, min_length=1)
+    client_secret: SecretStr | None = None
+
+    @model_validator(mode="after")
+    def _complete_credentials(self) -> OperatorConnectionProviderDefinition:
+        if (self.client_id is None) != (self.client_secret is None):
+            raise ValueError("operator connection provider credentials require both client_id and client_secret")
+        return self
 
 
 class OperatorConnectionDefinition(BaseModel):
@@ -101,9 +99,8 @@ class DynamicOAuthClientRegistration(BaseModel):
 class PreregisteredOAuthClient(BaseModel):
     """Use a deploy-provisioned OAuth client and skip Dynamic Client Registration.
 
-    Public PKCE clients use ``client_id``. Confidential clients may instead take their id and
-    secret from deploy-injected environment variables, keeping the credential out of the catalog
-    ConfigMap and Git history.
+    Public PKCE clients use ``client_id``. Confidential clients additionally receive
+    ``client_secret`` through nested settings, keeping it out of the catalog ConfigMap and Git.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -117,18 +114,15 @@ class PreregisteredOAuthClient(BaseModel):
     # redirect_uri validation secure each caller's auth code exchange independently even though the
     # client_id is the same for all. A public client normally declares this directly; a
     # confidential client can source it from an injected Secret instead.
-    client_id: str | None = Field(default=None, min_length=1)
-    client_id_env_var: EnvironmentVariableName | None = None
-    client_secret_env_var: EnvironmentVariableName | None = None
+    client_id: str = Field(min_length=1)
+    client_secret: SecretStr | None = None
     token_endpoint_auth_method: Literal["client_secret_basic", "client_secret_post"] | None = None
 
     @model_validator(mode="after")
     def _validate_credential_source(self) -> PreregisteredOAuthClient:
-        if (self.client_id is None) == (self.client_id_env_var is None):
-            raise ValueError("preregistered OAuth client requires exactly one of client_id or client_id_env_var")
-        if (self.client_secret_env_var is None) != (self.token_endpoint_auth_method is None):
+        if (self.client_secret is None) != (self.token_endpoint_auth_method is None):
             raise ValueError(
-                "client_secret_env_var and token_endpoint_auth_method must be configured together for a confidential client"
+                "client_secret and token_endpoint_auth_method must be configured together for a confidential client"
             )
         return self
 
@@ -155,11 +149,10 @@ class OperatorLoginIdentityCredential(BaseModel):
 
 
 class StaticBearerAuth(BaseModel):
-    """Execute with a fixed, non-operator bearer the console holds — the env-referenced secret
-    resolved by `_credential_token`."""
+    """Execute with a fixed, non-operator bearer held directly in typed settings."""
 
     kind: Literal["static_bearer"] = "static_bearer"
-    bearer_token_secret: str
+    token: SecretStr
 
 
 class NoCredential(BaseModel):
@@ -222,7 +215,7 @@ def _server_catalog_refresh_interval(server: McpServerEntry, default_seconds: fl
 
 
 class ConsoleMcpConfig(BaseModel):
-    servers: list[McpServerEntry] = Field(default_factory=list)
+    servers: dict[str, McpServerEntry] = Field(default_factory=dict)
 
 
 type AutoApprovalPolicyId = Annotated[str, Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")]
@@ -377,19 +370,19 @@ class LaunchableAgent(BaseModel):
 
 
 class StaticAgentEntry(BaseModel):
-    """Controller-owned identity and secret reference for one static Agent slot.
+    """Controller-owned identity and credentials for one static Agent slot.
 
     The UUID is the durable Agent identity. The display name is presentation only, globally reserved
-    under Haku's compatibility-caseless normalization. Secret and owner values remain env references.
+    under Haku's compatibility-caseless normalization. Pydantic injects the secret and owner
+    values directly into the slot selected by the surrounding mapping key.
     """
 
     agent_id: UUID
     display_name: str
-    token_env_var: str
-    # External deploy contract retained for safe image/config rollout: the value is Authentik's
-    # stable OIDC `sub`/user_id seed. It is resolved to an Operator UUID once at startup and is
-    # never live request authority.
-    operator_subject_env: str
+    token: SecretStr
+    # Authentik's stable OIDC `sub`/user_id seed. It is resolved to an Operator UUID once at
+    # startup and is never live request authority.
+    operator_subject: str = Field(min_length=1)
     # Static Agents choose an explicit capability profile. OAuth/DCR Agents select one in the
     # browser enrollment decision alongside their display name.
     access_profile_id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
@@ -427,7 +420,8 @@ class ConsoleConfigFile(BaseModel):
     default_access_profile_id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
     operator_connection_providers: dict[str, OperatorConnectionProviderDefinition] = Field(default_factory=dict)
     operator_connections: dict[str, OperatorConnectionDefinition] = Field(default_factory=dict)
-    static_agents: list[StaticAgentEntry] = Field(default_factory=list)
+    static_agents: dict[str, StaticAgentEntry] = Field(default_factory=dict)
+    matrix_launch: MatrixLaunchConfig | None = None
     # Only these durable identities may be selected by the launch API.  Keeping this separate from
     # static_agents makes the launch boundary explicit and leaves room for OAuth Agents later.
     launchable_agents: list[LaunchableAgent] = Field(default_factory=list)
@@ -440,7 +434,7 @@ class ConsoleConfigFile(BaseModel):
     # Declared source configuration, not a harness convention. This is intentionally in the
     # deploy-owned non-secret catalog: adding a new source is a reviewed Git change, and matching
     # credentials remain environment references on that entry.
-    recall_indexes: tuple[ConfiguredRecallIndex, ...] = ()
+    recall_indexes: dict[str, ConfiguredRecallIndex] = Field(default_factory=dict)
     # Standing Kubernetes policy is selected by the same deploy-managed access profile that owns
     # the Agent's other durable authority. Unset keeps the internal proxy endpoint fail-closed.
     kubernetes_authorization: KubernetesAuthorizationConfig | None = None
@@ -475,7 +469,9 @@ class ConsoleConfigFile(BaseModel):
     def _require_unique_identity(self) -> ConsoleConfigFile:
         index_ids: set[str] = set()
         mirror_paths: set[str] = set()
-        for index in self.recall_indexes:
+        for slot, index in self.recall_indexes.items():
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", slot):
+                raise ValueError(f"invalid recall index slot {slot!r}")
             if index.index_id in index_ids:
                 raise ValueError(f"duplicate recall index id {index.index_id!r}")
             index_ids.add(index.index_id)
@@ -486,7 +482,9 @@ class ConsoleConfigFile(BaseModel):
                 mirror_paths.add(mirror_path)
         server_ids: set[str] = set()
         server_prefixes: set[MCPMountPrefix] = set()
-        for server in self.mcp.servers:
+        for slot, server in self.mcp.servers.items():
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", slot):
+                raise ValueError(f"invalid MCP server slot {slot!r}")
             prefix = server_tool_prefix(server.id)
             if server.id in server_ids:
                 raise ValueError(f"duplicate MCP server id {server.id!r}")
@@ -504,14 +502,9 @@ class ConsoleConfigFile(BaseModel):
                         f"MCP server {server.id!r} references unknown operator connection {credential.connection!r}"
                     )
 
-        provider_env_vars: set[str] = set()
-        for name, provider in self.operator_connection_providers.items():
+        for name in self.operator_connection_providers:
             if not re.fullmatch(r"[a-z][a-z0-9_]*", name):
                 raise ValueError(f"invalid operator connection provider name {name!r}")
-            for env_var in (provider.client_id_env_var, provider.client_secret_env_var):
-                if env_var in provider_env_vars:
-                    raise ValueError(f"duplicate operator connection provider env var {env_var!r}")
-                provider_env_vars.add(env_var)
 
         for name, connection in self.operator_connections.items():
             if not re.fullmatch(r"[a-z][a-z0-9_]*", name):
@@ -521,7 +514,9 @@ class ConsoleConfigFile(BaseModel):
 
         agent_ids: set[UUID] = set()
         name_keys: set[str] = set()
-        for agent in self.static_agents:
+        for slot, agent in self.static_agents.items():
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", slot):
+                raise ValueError(f"invalid static Agent slot {slot!r}")
             name_key = normalize_agent_name(agent.display_name).reservation_key
             if agent.agent_id in agent_ids:
                 raise ValueError(f"duplicate static Agent id {agent.agent_id}")
@@ -602,9 +597,9 @@ class ConsoleConfigFile(BaseModel):
                     f"{sorted(unknown_kubernetes_profiles)!r}"
                 )
 
-        configured_recall_indexes = {index.index_id for index in self.recall_indexes}
+        configured_recall_indexes = {index.index_id for index in self.recall_indexes.values()}
         configured_in_process_servers = {
-            server.id for server in self.mcp.servers if isinstance(server.backend, InProcessBackend)
+            server.id for server in self.mcp.servers.values() if isinstance(server.backend, InProcessBackend)
         }
         if "kubernetes" in configured_in_process_servers and self.kubernetes_authorization is None:
             raise ValueError("the Kubernetes in-process server requires Kubernetes authorization configuration")
@@ -621,7 +616,7 @@ class ConsoleConfigFile(BaseModel):
                     f"{sorted(unknown_in_process_servers)!r}"
                 )
 
-        for agent in self.static_agents:
+        for agent in self.static_agents.values():
             if agent.access_profile_id not in profiles:
                 raise ValueError(
                     f"static Agent {agent.agent_id} references unknown access profile {agent.access_profile_id!r}"
@@ -630,12 +625,12 @@ class ConsoleConfigFile(BaseModel):
         if len(configured_launchable_ids) != len(self.launchable_agents):
             raise ValueError("duplicate launchable Agent id")
         launchable_ids = frozenset(entry.agent_id for entry in self.launchable_agents)
-        static_ids = {agent.agent_id for agent in self.static_agents}
+        static_ids = {agent.agent_id for agent in self.static_agents.values()}
         unknown_launchable = launchable_ids - static_ids
         if unknown_launchable:
             raise ValueError(f"launchable Agents are not configured static Agents: {sorted(unknown_launchable)!r}")
         if self.harnesses is not None:
-            static_by_id = {agent.agent_id: agent for agent in self.static_agents}
+            static_by_id = {agent.agent_id: agent for agent in self.static_agents.values()}
             configured_identities = {(harness.agent_id, harness.kind) for harness in self.harnesses.registrations}
             runtime_agent_ids = {agent_id for agent_id, _kind in configured_identities}
             unknown_runtime_agents = runtime_agent_ids - static_ids
@@ -695,52 +690,34 @@ def server_tool_prefix(server_id: str) -> MCPMountPrefix:
     return MCPMountPrefix(sanitized)
 
 
-def load_console_config(path: Path) -> ConsoleConfigFile:
-    """Parse the deploy-owned console config file."""
-    if not path.is_file():
-        raise RuntimeError(f"haku-console config file does not exist: {path}")
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return ConsoleConfigFile.model_validate(raw)
+def _load_servers(config: ConsoleConfigFile) -> list[McpServerEntry]:
+    return list(config.mcp.servers.values())
 
 
-def _load_servers(settings: Settings) -> list[McpServerEntry]:
-    return load_console_config(settings.config_file).mcp.servers
-
-
-def load_static_agents(settings: Settings) -> list[LoadedStaticAgent]:
-    """Read static-agent credentials and controller-fed external user keys from env.
-
-    Raises if a named env var is missing — a misconfigured agent fails loud at startup rather than
-    silently accepting no callers. Resolve once (create_app) and reuse; do not read per request."""
+def load_static_agents(config: ConsoleConfigFile) -> list[LoadedStaticAgent]:
+    """Validate static-agent credentials once before canonical Operator resolution."""
     loaded: list[LoadedStaticAgent] = []
     seen_tokens: set[str] = set()
-    for entry in load_console_config(settings.config_file).static_agents:
-        token = os.environ.get(entry.token_env_var)
-        if not token:
-            raise RuntimeError(f"missing token env var {entry.token_env_var} for Agent {entry.agent_id}")
+    for slot, entry in config.static_agents.items():
+        token = entry.token.get_secret_value()
         if token in seen_tokens:
             raise RuntimeError("duplicate static agent bearer tokens")
         seen_tokens.add(token)
-        external_user_key = os.environ.get(entry.operator_subject_env)
-        if not external_user_key:
-            raise RuntimeError(
-                f"missing operator external-user-key env var {entry.operator_subject_env} for Agent {entry.agent_id}"
-            )
         loaded.append(
             LoadedStaticAgent(
                 agent_id=entry.agent_id,
                 display_name=entry.display_name,
-                secret_reference=entry.token_env_var,
-                token=SecretStr(token),
-                operator_external_user_key=external_user_key,
+                secret_reference=slot,
+                token=entry.token,
+                operator_external_user_key=entry.operator_subject,
                 access_profile_id=entry.access_profile_id,
             )
         )
     return loaded
 
 
-def _server_entry(settings: Settings, server_id: str) -> McpServerEntry:
-    for server in _load_servers(settings):
+def _server_entry(config: ConsoleConfigFile, server_id: str) -> McpServerEntry:
+    for server in _load_servers(config):
         if server.id == server_id:
             return server
     raise McpServerNotFoundError(f"unknown MCP server: {server_id}")
@@ -748,19 +725,6 @@ def _server_entry(settings: Settings, server_id: str) -> McpServerEntry:
 
 def _operator_oauth_enabled(server: McpServerEntry) -> bool:
     return isinstance(server.backend, RemoteMcpBackend) and isinstance(server.backend.auth, RemoteServerOAuthAuth)
-
-
-def _credential_env_name(bearer_token_secret: str) -> str:
-    suffix = re.sub(r"[^A-Za-z0-9]+", "_", bearer_token_secret).strip("_").upper()
-    return f"HAKU_CONSOLE_MCP_CREDENTIAL_{suffix}"
-
-
-def _credential_token(server_id: str, bearer_token_secret: str) -> str:
-    env_name = _credential_env_name(bearer_token_secret)
-    token = os.environ.get(env_name)
-    if not token:
-        raise RuntimeError(f"missing MCP bearer token env var {env_name} for MCP server {server_id}")
-    return token
 
 
 # A server reached over an in-process FastMCP instance instead of a remote URL (see
@@ -800,7 +764,7 @@ def const_in_process_server(mcp: FastMCP) -> InProcessServerRegistration:
 
 def validate_in_process_server_bindings(config: ConsoleConfigFile, registrations: InProcessServers) -> None:
     """Reject missing implementations and incompatible in-process credential bindings."""
-    for server in config.mcp.servers:
+    for server in config.mcp.servers.values():
         if not isinstance(server.backend, InProcessBackend):
             continue
         registration = registrations.get(server.id)
