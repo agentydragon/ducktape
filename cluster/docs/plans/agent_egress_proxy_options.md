@@ -8,6 +8,9 @@ updated when the converged system changes.
 Tracking issue: [#4670](https://github.com/agentydragon/ducktape/issues/4670).
 The authentication split and session-bearer work landed under
 [#5139](https://github.com/agentydragon/ducktape/issues/5139).
+The adapter and topology decision is being reconsidered under
+[#5306](https://github.com/agentydragon/ducktape/issues/5306) after finding iron-proxy's
+per-request gRPC transform and polling control-plane seams.
 
 ## Research question
 
@@ -47,9 +50,14 @@ two-facade `/api/internal/http/authorize` plus
 
 ### Rejected adapters
 
-- **iron-proxy:** no per-request hook mechanism, so it cannot ask Console
-  anything. It remains a separate static fence while the colocated proxy is
-  introduced.
+- **iron-proxy:** this rejection's premise was wrong: the repository's pinned
+  `c90f4fe` revision already exposes a per-request gRPC `TransformService` that
+  can reject or rewrite CONNECTs, requests, and responses. Current upstream
+  also polls a configurable control plane for hot-swapped policy. Whether those
+  seams can preserve Haku's authenticated session identity, non-secret
+  placeholders, DNS pinning, and fail-closed Console-outage behavior is the
+  open decision in [#5306](https://github.com/agentydragon/ducktape/issues/5306).
+  The deployed adapter remains mitmproxy until that decision is made.
 - **Squid:** lacks h2 MITM, and its response-caching advantage is a v1
   non-goal. Its helper/conformance questions died with the Squid spike.
 - **ICAP:** the REQMOD seam was implemented for Squid, but it fell with that
