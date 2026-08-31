@@ -179,9 +179,10 @@ py_test(
     name = "test_indexer_runtime_deps",
     srcs = ["test_indexer_runtime_deps.py"],
     deps = [
+        ":conftest",
         ":indexer",
+        "//:conftest",
         "@pypi//pydantic",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
