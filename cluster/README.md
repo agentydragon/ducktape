@@ -132,8 +132,9 @@ split, secret flow, NetworkPolicy template, and tombstone rules.
 Revived 2026-08-26. Each device runs a small importer that reads its own aw-server over
 REST and pushes into the central one over a bearer-gated write route — the repo-owned,
 idempotent replacement for the `aw-sync`/Syncthing transport that could not produce a
-canonical central dataset. The central store and write route are live; rugged and wyrm2
-feed it. Design and remaining rollout: <docs/activitywatch/README.md> and
+canonical central dataset. The central store, bearer API routes, and Authentik-protected
+human UI are live; rugged, wyrm2, iguana, and atlas are configured as device importers.
+Design and remaining transport hardening: <docs/activitywatch/README.md> and
 <docs/activitywatch/revival-plan.md>.
 
 ## Repository Structure

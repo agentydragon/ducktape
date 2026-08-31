@@ -14,20 +14,6 @@ GPU/gaming, but needs a logged-in seat0 session); Guacamole via Authentik RAC
 (`x/linux_rac/` — passwordless browser desktop via a sealed SSH key + SSO; greenfield,
 not deployed). Roll the chosen approach to the other NixOS hosts once settled.
 
-## Design a future general-purpose Syncthing topology
-
-The former ActivityWatch-only Syncthing topology (`wyrm2`, `iguana`, `rugged`,
-and `atlas` sending to the cluster receiver) was retired: upstream `aw-sync`
-cannot safely import the receive-only data. Its Home Manager services are
-disabled and its cluster manifests are retained under `cluster/k8s/x/`.
-
-The old general-purpose wyrm2 configuration is backed up locally at
-`~/backups/syncthing/2026-07-11-pre-declarative-reset` and is intentionally not
-managed or restarted.
-
-Before adding folders or peers, decide the target cluster topology, identity
-ownership, folder ownership, and recovery procedure.
-
 ## Consider wiring Codex OTEL export
 
 Codex supports native OTLP exporters via `[otel]` in `config.toml`, including

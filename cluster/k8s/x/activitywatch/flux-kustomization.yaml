@@ -6,9 +6,8 @@ metadata:
 spec:
   # Revived 2026-08-26: the central aw-server is fed by the repo-owned
   # instance-to-instance importer (@ducktape_activitywatch//importer) over a
-  # bearer-gated write route, replacing aw-sync. The cluster Syncthing receiver and
-  # the old aw-sync importer-cronjob are gone; the desktop-side Syncthing/certs
-  # retirement is the follow-up (cluster/docs/activitywatch/revival-plan.md).
+  # bearer-gated write route, replacing aw-sync. The cluster Syncthing receiver,
+  # importer cronjob, and desktop Syncthing transport are gone.
   retryInterval: 1m
   interval: 10m
   timeout: 5m

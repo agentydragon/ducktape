@@ -7,16 +7,14 @@ resources:
   - alloy-otlp-httproute.yaml
   - grocy-sf-httproute.yaml
   - grocy-vallejo-httproute.yaml
+  - activitywatch-httproute.yaml
   - agents-mitmproxy-httproute.yaml
   - proxmox-httproute.yaml
   - google-workspace-mcp-httproute.yaml
   - plaid-mcp-httproute.yaml
-  - archivebox-httproute.yaml
   - goldilocks-httproute.yaml
-  - tandoor-httproute.yaml
   - sdr-httproute.yaml
   - adsb-httproute.yaml
-  - openhands-httproute.yaml
   - fava-httproute.yaml
   # haku-console owns its OAuth and uses a direct HTTPRoute; haku-ui stays proxied.
   - haku-ui-httproute.yaml

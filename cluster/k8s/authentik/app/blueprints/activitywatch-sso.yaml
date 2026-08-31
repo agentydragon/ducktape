@@ -1,18 +1,18 @@
 version: 1
 metadata:
-  name: SSO - OpenHands
+  name: SSO - ActivityWatch
   labels:
-    blueprints.goauthentik.io/description: "OpenHands proxy provider, application, and single-user access binding"
+    blueprints.goauthentik.io/description: "ActivityWatch read-only web UI proxy provider, application, and single-user access binding"
 
 entries:
   - model: authentik_providers_proxy.proxyprovider
-    id: openhands-provider
+    id: activitywatch-provider
     state: present
     identifiers:
-      name: openhands
+      name: activitywatch
     attrs:
-      external_host: "https://openhands.allegedly.works"
-      internal_host: "http://openhands.openhands.svc.cluster.local:3000"
+      external_host: "https://activitywatch.allegedly.works"
+      internal_host: "http://activitywatch-readonly.activitywatch.svc.cluster.local:5600"
       mode: proxy
       authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
       authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
@@ -20,20 +20,20 @@ entries:
       access_token_validity: "hours=24"
 
   - model: authentik_core.application
-    id: openhands-app
+    id: activitywatch-app
     state: present
     identifiers:
-      slug: openhands
+      slug: activitywatch
     attrs:
-      name: OpenHands
-      provider: !KeyOf openhands-provider
-      meta_description: "AI software development agent"
-      meta_launch_url: "https://openhands.allegedly.works"
+      name: ActivityWatch
+      provider: !KeyOf activitywatch-provider
+      meta_description: "Personal activity history"
+      meta_launch_url: "https://activitywatch.allegedly.works"
       open_in_new_tab: true
 
   - model: authentik_policies.policybinding
     state: present
     identifiers:
-      target: !KeyOf openhands-app
+      target: !KeyOf activitywatch-app
       user: !Find [authentik_core.user, [username, agentydragon]]
       order: 0

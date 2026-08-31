@@ -217,10 +217,6 @@ default `/tmp`); the bootstrap Job runs the rotator image
 (`ghcr.io/agentydragon/attic-jwt-rotation`) instead, kubectl-execing into
 the live attic pod to mint JWTs and curling the REST API for cache CRUD.
 
-The `signing-key` Secret mounted at `/var/lib/secrets` in the attic
-deployment is vestigial — leftover from a prior nix-serve/harmonia setup.
-attic only reads keys from its DB. Schedule for removal in a follow-up.
-
 The previous incarnation of this repo had a plaintext private signing key
 checked into `cluster/terraform/main/nix-cache-key.json`. The cache it
 described was never actually created in attic, so the leaked key never

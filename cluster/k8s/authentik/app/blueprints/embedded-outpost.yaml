@@ -33,11 +33,8 @@ entries:
         - !Find [authentik_providers_proxy.proxyprovider, [name, goldilocks]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, google-workspace-mcp]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, plaid-link]]
-        - !Find [authentik_providers_proxy.proxyprovider, [name, archivebox]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, sdr]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, adsb]]
-        - !Find [authentik_providers_proxy.proxyprovider, [name, openhands]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, fava]]
         # haku-console owns its own OAuth; haku-ui is a different app and stays proxied.
         - !Find [authentik_providers_proxy.proxyprovider, [name, haku-ui]]
-        - !Find [authentik_providers_proxy.proxyprovider, [name, tandoor]]

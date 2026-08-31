@@ -1,73 +1,23 @@
-# ActivityWatch revival plan
+# ActivityWatch transport hardening
 
-Burn-down for turning ingestion back on after the 2026-08-17 retirement
-([README](README.md)). Each step leaves this list when its PR lands; the plan is
-done — and deleted — when the central store is being fed correctly again and the
-[README](README.md) no longer says "retired".
+The current topology and operating contract are the single source of truth in
+[`README.md`](README.md). The importer rollout is complete; this page keeps only the
+remaining transport-boundary decision and a short historical record.
 
-## Target
+## Remaining
 
-One central aw-server is the sole writer of its own SQLite file. Each device runs a
-small importer that reads the device's own aw-server over the REST API and writes
-the central one the same way — the correct shape of what upstream `aw-sync`
-attempted: read-only at the source, provenance from the machine's identity,
-idempotent on insert. Re-running inserts nothing.
+- **Make the write route ingest-only.** Incremental runs still read the destination for
+  their bounded reconciliation window. Once the importer has a separate cursor or
+  another way to avoid destination reads, restrict the write route to write methods;
+  until then, a leaked write token can read history as well as ingest.
 
-The importer that meets it exists: `@ducktape_activitywatch//importer`. Given a
-source and a destination aw-server and a device id, it folds every source bucket
-into `<device>::<bucket>` on the destination, deduping on
-`(device, bucket, starttime, endtime, canonical-data)`, and only ever GETs from the
-source. Normal runs reconcile a bounded overlap before the destination's newest
-event; an explicit `--full-reconcile` mode repairs older gaps. Its test starts two
-real aw-servers and imports between them.
+Agent credential hygiene (rotator-issued short-lived read tokens) and moving the central
+DB off `local-path-proxmox` remain storage/deployment debt in the README, not blockers
+for ingestion.
 
-Reading the device's authoritative aw-server directly — instead of an `aw-sync`
-staging copy — is also what removes the heartbeat amplification that retired the old
-design: the server has already coalesced heartbeats into stored events, and the
-importer dedups any residue.
+## Historical rollout
 
-## Landed
-
-- **Importer auth** (#4742): the importer reaches an HTTPS, bearer-gated central via
-  `--dest-url` + `AW_DEST_TOKEN` (env only, never argv).
-- **Cluster write path**: the central aw-server is revived behind a bearer-checking
-  write-proxy sidecar, reached at `https://activitywatch-write.allegedly.works`. The
-  shared token is a dual-recipient SOPS secret (cluster-secrets + the synced
-  desktops' user keys), so one value serves both the proxy and each desktop's
-  `AW_DEST_TOKEN`. aw-server itself and the Authentik read path are untouched, and
-  the cluster Syncthing receiver and old aw-sync cronjob are removed rather than
-  revived.
-- **Packaging** (#4746): `aw-importer` ships as a CI-released artifact plus a guarded
-  nix package; `release.yml` runs `aw_importer_test` before publishing, which is the
-  module's only CI coverage (the PR `//...` sweep skips this `.bazelignore`d module).
-- **Desktop scheduling (rugged canary)**: `nix/home/services/activitywatch.nix` runs
-  the importer on a timer against the central write route, `AW_DEST_TOKEN` from the
-  shared Secret, replacing the aw-sync push. rugged is importer-only.
-- **Canary proven + second device**: rugged imports end-to-end — window/afk/web/tmux land
-  under `rugged::…` on the central, deduped and idempotent (a re-run inserts only genuinely
-  new events). wyrm2 is enabled as a second device (`wyrm2::…`) to exercise multi-device
-  separation. The write-proxy needed a raised `client_max_body_size` (#4756): the importer
-  POSTs a whole bucket per request and the ~10 MB backfill blew past nginx's 1 MB default.
-- **All desktops enabled**: iguana and atlas join rugged and wyrm2 as importer devices
-  (`iguana::…` / `atlas::…`). Config-only — the shared write token already reaches both
-  hosts' user keys — so each starts feeding the central on its next `switch`.
-- **Batched inserts**: the importer POSTs a bucket's new events in fixed-size batches
-  (`INSERT_BATCH_SIZE`), so a first backfill is many bounded requests, not one ~10 MB one —
-  the write-proxy's 256 MB cap is now a safety ceiling, not a dependency, and could be
-  lowered.
-- **Incremental reconciliation**: routine runs use the destination's newest event as a
-  durable cursor, re-read a one-hour overlap, and insert missing events oldest-first.
-  The systemd timer is persistent so a missed run is caught up after a desktop wakes;
-  a long-lived polling daemon is unnecessary because aw-server exposes no change stream.
-
-## What's left
-
-1. **Make the write route ingest-only.** Incremental runs still need destination GET access
-   for their bounded reconciliation window. Once the importer has a separate cursor or
-   another way to avoid destination reads, restrict the write route to write methods; today
-   a leaked token can read history, not just ingest.
-
-## Not blocking
-
-Agent credential hygiene (rotator-issued short-lived tokens) and moving the central
-DB off `local-path-proxmox` stay in the [README](README.md)'s debt list, not here.
+- 2026-08-26: replaced the mutating, non-idempotent `aw-sync`/Syncthing transport with
+  the repo-owned REST importer, preserving source provenance and add-only reconciliation.
+- 2026-08-26: enabled rugged, wyrm2, iguana, and atlas as importer devices behind the
+  shared bearer-gated write route.

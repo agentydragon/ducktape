@@ -1,0 +1,36 @@
+version: 1
+metadata:
+  name: Retire suspended application SSO
+  labels:
+    blueprints.goauthentik.io/description: "Delete Authentik objects for applications whose workloads are retired or suspended"
+
+entries:
+  - model: authentik_core.application
+    state: absent
+    identifiers:
+      slug: tandoor
+
+  - model: authentik_providers_proxy.proxyprovider
+    state: absent
+    identifiers:
+      name: tandoor
+
+  - model: authentik_core.application
+    state: absent
+    identifiers:
+      slug: openhands
+
+  - model: authentik_providers_proxy.proxyprovider
+    state: absent
+    identifiers:
+      name: openhands
+
+  - model: authentik_core.application
+    state: absent
+    identifiers:
+      slug: archivebox
+
+  - model: authentik_providers_proxy.proxyprovider
+    state: absent
+    identifiers:
+      name: archivebox

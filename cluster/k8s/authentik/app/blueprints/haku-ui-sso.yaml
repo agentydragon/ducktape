@@ -31,7 +31,7 @@ entries:
       meta_launch_url: "https://haku-ui.allegedly.works"
       open_in_new_tab: true
 
-  # Restrict access to the single user agentydragon (mirrors haku-dashboard).
+  # Restrict access to the single user agentydragon.
   - model: authentik_policies.policybinding
     state: present
     identifiers:

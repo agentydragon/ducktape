@@ -18,11 +18,10 @@ hardening is tracked in [revival-plan.md](revival-plan.md).
 **History.** The previous transport — desktop `aw-sync` staging databases shipped through
 Syncthing into a cluster receiver and imported by an `aw-sync` CronJob — was retired
 2026-08-17: upstream `aw-sync` mutated its SQLite inputs, collapsed provenance, and was
-not idempotent, so it could not produce a canonical central dataset. The Authentik-fronted
-human query route (`activitywatch.allegedly.works`) and the agent OAuth client-credential
-mint went with it; reviving those means re-enabling the HTTPRoute parked in
-`cluster/k8s/x/activitywatch/retained/` and re-creating the deleted Terraform (git
-history, #4271). Records from that era, kept for their lessons:
+not idempotent, so it could not produce a canonical central dataset. The old Authentik
+human route and agent OAuth client-credential mint were removed with that deployment.
+The human route is now restored as the Authentik proxy described below; agents use the
+separate bearer-gated read route. Records from that era, kept for their lessons:
 
 - [Importer canary](importer-canary.md): the live `aw-sync` pull canary that forced the
   retirement — source mutation, provenance collisions, heartbeat amplification.
@@ -40,24 +39,24 @@ Bazel-built `@ducktape_activitywatch//:image`) with device id `activitywatch-clu
 SQLite at `/data/db.sqlite3` on `activitywatch-data` (`local-path-proxmox`, 10Gi), plus
 two nginx sidecars that are its only auth — aw-server itself has none:
 
-| Port | Container        | Auth                     | Allowed                    | Reached via                                     |
-| ---- | ---------------- | ------------------------ | -------------------------- | ----------------------------------------------- |
-| 5600 | `aw-server`      | none                     | everything                 | pod-local (probes + sidecars)                   |
-| 5601 | `readonly-proxy` | none (Authentik fronted) | GET + POST `/api/0/query/` | CNP: Authentik server pods; public route parked |
-| 5602 | `bearer-proxy`   | `AW_WRITE_TOKEN`         | all methods                | `activitywatch-write.allegedly.works`           |
-| 5603 | `bearer-proxy`   | `AW_READ_TOKEN`          | GET + POST `/api/0/query/` | `activitywatch-read.allegedly.works`            |
+| Port | Container        | Auth              | Allowed                    | Reached via                                   |
+| ---- | ---------------- | ----------------- | -------------------------- | --------------------------------------------- |
+| 5600 | `aw-server`      | none              | everything                 | pod-local (probes + sidecars)                 |
+| 5601 | `readonly-proxy` | Authentik fronted | GET + POST `/api/0/query/` | `activitywatch.allegedly.works` via Authentik |
+| 5602 | `bearer-proxy`   | `AW_WRITE_TOKEN`  | all methods                | `activitywatch-write.allegedly.works`         |
+| 5603 | `bearer-proxy`   | `AW_READ_TOKEN`   | GET + POST `/api/0/query/` | `activitywatch-read.allegedly.works`          |
 
-The two hostnames are HTTPRoutes on the shared `cluster-gateway`; the CiliumNetworkPolicy
-admits only kube-apiserver probes (5600), Authentik (5601), and the Gateway (5602/5603),
-with DNS-only egress. Both tokens are SOPS Secrets next to the manifests: the write token
+The three public hostnames are HTTPRoutes on the shared `cluster-gateway`: the human UI is
+Authentik-fronted, while the read and write API routes are bearer-gated. The
+CiliumNetworkPolicy admits only kube-apiserver probes (5600), Authentik (5601), and the
+Gateway (5602/5603), with DNS-only egress. Both tokens are SOPS Secrets next to the manifests: the write token
 is dual-recipient (cluster-secrets + the desktops' user age keys), so one value serves
 the proxy and every desktop's `AW_DEST_TOKEN`; the read token is also reflected into
 `haku-egress-proxy` for the iron proxy (below). The write route currently allows GET
 because the importer reads the destination to dedup, so a leaked write token can read
 history too; it becomes write-only once the importer syncs incrementally
-([revival-plan.md](revival-plan.md)). The image tag is pinned in `deployment.yaml`; the
-Flux image-automation manifests are `.disabled` in `retained/` alongside the Authentik
-HTTPRoute.
+([revival-plan.md](revival-plan.md)). The image tag is pinned in `deployment.yaml` and
+updated through the normal image-automation configuration.
 
 **Device transport** (`nix/home/services/activitywatch.nix`): each synced desktop runs a
 local `aw-server` under systemd, `awatcher` for window/AFK capture, and `aw-watcher-tmux`;
@@ -71,8 +70,9 @@ in (tracked in `cluster/k8s/TODO.md`).
 
 ## Query Auth
 
-The only public read surface today is the bearer-gated read route below; humans have no
-browse route until the retired Authentik path (§ History) is revived.
+Humans browse through the Authentik-protected `activitywatch.allegedly.works` route.
+Agents use the bearer-gated read route below; it is deliberately separate from the human
+session path.
 
 Gotchas (bite every consumer): `POST /api/0/query` requires the **trailing slash**
 (`/api/0/query/`; nginx 301s otherwise and a redirected POST degrades to GET); transient
