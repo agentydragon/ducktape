@@ -49,10 +49,21 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: monitoring
           podSelector:
-            matchExpressions:
-              - key: app.kubernetes.io/name
-                operator: In
-                values: [grafana, alloy]
+            matchLabels:
+              # Grafana Operator's generated Deployment uses app=grafana.
+              app: grafana
+      ports:
+        - port: 8123
+          protocol: TCP
+        - port: 9363
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: alloy
       ports:
         - port: 8123
           protocol: TCP
