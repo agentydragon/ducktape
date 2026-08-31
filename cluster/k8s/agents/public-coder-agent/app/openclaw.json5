@@ -52,9 +52,9 @@
     restart: false,
   },
   channels: {
-      // The Matrix plugin's guarded fetch reads this field explicitly; generic
-      // HTTP(S)_PROXY is not enough. Keep it equal to Deployment HTTPS_PROXY:
-      // the same proxy also performs Matrix login-password substitution.
+    // The Matrix plugin's guarded fetch reads this field explicitly; generic
+    // HTTP(S)_PROXY is not enough. Keep it equal to Deployment HTTPS_PROXY:
+    // the same proxy also performs Matrix login-password substitution.
     matrix: {
       enabled: true,
       homeserver: "https://matrix.allegedly.works",
