@@ -115,10 +115,7 @@ def test_public_coder_agent_models_match_litellm_codex_routes() -> None:
     providers = config["models"]["providers"]
     assert providers["litellm"]["api"] == "openai-responses"
     assert set(providers) == {"litellm"}
-    assert [model["id"] for model in providers["litellm"]["models"]] == [
-        *OPENCLAW_CODEX_MODELS,
-        *_OPENCLAW_GEMINI_IDS,
-    ]
+    assert [model["id"] for model in providers["litellm"]["models"]] == [*OPENCLAW_CODEX_MODELS, *_OPENCLAW_GEMINI_IDS]
     assert config["agents"]["defaults"]["model"]["primary"] in {
         f"litellm/{model_id}" for model_id in OPENCLAW_CODEX_MODELS
     }
