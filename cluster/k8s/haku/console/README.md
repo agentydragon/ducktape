@@ -284,7 +284,7 @@ The fenced-workload-facing listener is `:8888` (`egress-proxy-service.yaml`,
   `haku/sandbox/TODO.md`.
 - **`haku-egress-github-token`** (ESO) — the `github-bot` registry credential (#4951). The Console holds
   the real value and substitutes it into decide responses; the sandbox only ever holds
-  `github-token-placeholder`. Synced from the same `github-token` remote the retiring iron fence reads,
+  `github-token-placeholder`. Synced from the same `github-agentydragon-agent` remote the retiring iron fence reads,
   via the dedicated `github-agentydragon-agent` SecretStore. Optional: an unset value is
   skipped with a warning (#4970), so a not-yet-synced Secret degrades the `github-bot` handle rather
   than crash-looping — the endpoint still serves reachability verdicts.
