@@ -9,6 +9,7 @@ spec:
       dashboards: grafana
   datasource:
     name: Mimir
+    uid: mimir
     type: prometheus
     access: proxy
     url: http://mimir-gateway.monitoring.svc.cluster.local/prometheus
