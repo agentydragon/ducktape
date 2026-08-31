@@ -6,36 +6,36 @@ metadata:
     annotations:
         description: Shared credential for the ducktape-ci Forgejo registry tenant. username/password read by tf/gitops/forgejo-images; .dockerconfigjson is auto-reflected as a kubelet imagePullSecret to every namespace in the reflection-auto-namespaces list below, while flux-system uses its reflected copy for ImageRepository authentication. Reflector rather than an ExternalSecret against kubernetes-flux-system-secret-store, because that store grants a namespace read access to every Secret in flux-system; this grants one dockerconfigjson.
         reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: flux-system,activitywatch,aiquota,airlock,cli-proxy-api,codex-pod,cpap-sync,grocy-sf,grocy-vallejo,ha-mcp,haku-egress-proxy,haku-mailbox,haku-openclaw-spike,haku-console,haku-runtime-sandbox,litellm,loki-read-proxy,manifold-mcp,plaid-mcp,postscanmail-mcp,public-coder-agent,squid-egress-spike,study-casino,tana-mcp,osm-mcp,agent-workspaces,haku-sandbox
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: flux-system,activitywatch,aiquota,airlock,cli-proxy-api,codex-pod,cpap-sync,grocy-sf,grocy-vallejo,ha-mcp,haku-egress-proxy,haku-mailbox,haku-openclaw-spike,haku-console,haku-runtime-sandbox,litellm,loki-read-proxy,manifold-mcp,plaid-mcp,postscanmail-mcp,public-coder-agent,squid-egress-spike,study-casino,tana-mcp,osm-mcp,agent-workspaces,haku-sandbox,monitoring
         reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: flux-system,activitywatch,aiquota,airlock,cli-proxy-api,codex-pod,cpap-sync,grocy-sf,grocy-vallejo,ha-mcp,haku-egress-proxy,haku-mailbox,haku-openclaw-spike,haku-console,haku-runtime-sandbox,litellm,loki-read-proxy,manifold-mcp,plaid-mcp,postscanmail-mcp,public-coder-agent,squid-egress-spike,study-casino,tana-mcp,osm-mcp,agent-workspaces,haku-sandbox
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: flux-system,activitywatch,aiquota,airlock,cli-proxy-api,codex-pod,cpap-sync,grocy-sf,grocy-vallejo,ha-mcp,haku-egress-proxy,haku-mailbox,haku-openclaw-spike,haku-console,haku-runtime-sandbox,litellm,loki-read-proxy,manifold-mcp,plaid-mcp,postscanmail-mcp,public-coder-agent,squid-egress-spike,study-casino,tana-mcp,osm-mcp,agent-workspaces,haku-sandbox,monitoring
 type: kubernetes.io/dockerconfigjson
 stringData:
-    username: ENC[AES256_GCM,data:XnlwU6aDs5umRek=,iv:SVT9j83TeU4WjSTzqJ7zdTxFLMf0eX78nHZnhAR5kHI=,tag:vwptNL3WK11WPFJOGVWN6A==,type:str]
-    password: ENC[AES256_GCM,data:PpEuvheNJZeujkAGgtEqlltbcDLgCOxCDPPI0/u71cmRICfTatGT7fhmR9hKmg==,iv:9MOhUL9LjXbnuMZ6ALCttBTRNHkpoBjRCm2ZdHQa1zw=,tag:1ujfbi7k9ey/P+2a1ZQoCw==,type:str]
-    .dockerconfigjson: ENC[AES256_GCM,data:jsm/1+7rOwXk6Gw+YStUNj4zXcMdIh+hb6f082JrZRbzxxHEKTg0C34oR6ZjSUFKJBIZakFcOiqjxqcNRhbs+X6lLPJsjnmSp6srPF1YKF7GHkIkRh50R4Q9WP6g9AB4Q67A4+WURwsUXL5GUZHuEdACC6uz6zkuCYRwwUpealf8N/+3BRVc8D3xdFzZmT6EEyR/RCIfLQLeiOYeY5ltEkrh906rgxEExfu15qxKn0h65NLjlbjOb5hbrLyDX+anSW1GeF2+Eguqm9RCm6vXSa3+,iv:xX4sWAkwEc8D+oeK2uwOQsWwcF2oTTLozBdQNo1uMrw=,tag:qzDlNwLoRWSXvLYnPrvGtA==,type:str]
+    .dockerconfigjson: ENC[AES256_GCM,data:YMUIE9+iCqTzvTTHxie1D8WTgH85ibJCHpnrwHNUZE41O/Agf+cpSu1N8I0wbmBmJwZH+dkl6214pcNr1j10EF8gV/p/DrU1MdhYWBRdWsAYEVRTKGtlZ1q/q3JGwZRvPH2OXnIV2t2Ku6CHpvcCwYxkeMz0XCGkOJgGHVTchz69RxdkpjzzII+VdVs/UpodwqYWBMVUbxlzBnAHseGQSrQeFIciw/ZsDVDML91+YjRGDdVpaQf5fgBU1YHU5q1O7OqpObQ50RDi8G0HXbuWpH5Q,iv:mbopXU4JKmA1Baebmcfw2FiJYTWO/7DrojV3bSvBwo4=,tag:aBWXFhIJ8ZQ1c3jUerlTnw==,type:str]
+    password: ENC[AES256_GCM,data:rXQSlSrUoJ1JbxW2PRLnngdGuV+qM9UsDvrRH4argXPfvfTZWGiN82322KUvLA==,iv:cnivwtkvCTZrbq/QMrLkiD3dg2tp7Bli1L65EEPABrk=,tag:C2eICnp7p7z6gm4QQB9/nw==,type:str]
+    username: ENC[AES256_GCM,data:NUCkAOi8NEaOcdQ=,iv:NZLDUWPZs+x4zTFJwu8YSnOQGSkkKSSDNOYl+bjrEUs=,tag:f44hNl23MTO04ysttrw+Fw==,type:str]
 sops:
     age:
         - enc: |
             -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBYQjdaYUxzb0puRWk2QmJP
-            LzFLempWSThIZEI5UlZ2VWMvd2NKV0VBclRRClRuRndXNE8wSEoydEVwR0djdGVD
-            bXpzSitwUzRyUnowaFdRc01oRXM4Q00KLS0tIDY1ZGErZTl0a1pua1NpUURRZnFv
-            d2NZMFJua0tZVHVKYWZoYy9PY2RudTgKykQT/oFXgdpQ62YtD0xUUKD5O/topvgt
-            C3i2kExuxZdl7YfGLgCXA1846wcbmPNMS0M9OnsgsWTOUoOJ9RIZTw==
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSByRVVTcnUzVlpLWW1lc0FY
+            UTI3bjlSL2xaSDhPME43eHNVSE85Umxzc2pVClI0WDNXdWpqc1BMc1RqaS9NdnJL
+            RE8yc3lhNzk5VTBBNGdYMWpyUEVqeXcKLS0tIG5OcEFuZktYVGM1ZVlNSk5TNmZE
+            TnNIb3E3U0FlSElaSHFJMGtsTGF1T3cK3rtIA70Dd60Zt9X/Fb8NA0UXGXOfDjZA
+            B8hlZY3/OHI7E4Z5obs47GX9H25R/O7CdkWvTsk77/IZOAn6HqQRZg==
             -----END AGE ENCRYPTED FILE-----
           recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
         - enc: |
             -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBWQ2swTmtlVC9MMjV2YXFQ
-            VlkwYjUxWkk3Mld2SGduM083VmQyc05JQW1vClJydC9wQ05TT3VKc2E3L1k3ZW9n
-            MEw1OXFFTmFJS1dOQTFiMjNuVWJ5WjAKLS0tIFFzNnYrd05neXMwN3pwb1lIRHhx
-            WGUrTTlPVDFPZ2VkUVU4TTIwQzNUNlEKIFzTAeLjuhaaxeTB6bC1elCl2DUuTNvw
-            KhYGFz54ckj8EovEvZ620fbC8N9S53cLfsiFl1Zq6Dzow8m1uknqNg==
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB2dEhhZ2VWQjY2SHFIaVVQ
+            UXBzNis5SkJZWGpSV2RFSEZ4L2VZSkk5NGdFCndRNkdkTXRLaEZsUmcrQkxGZHZR
+            RXlUa3NqSHRoOWpmOG1xS1FOSFcxa1EKLS0tIGF6MTJKV240QWJyb2s3aThlNDE0
+            NXZnTm9MUG5rSGVaR2J4dXQ3YVRTeDAKWtiFzJC4eSmJG8Rp7bNLo0+nhM6PnXkF
+            yqoql1aLbvWRpQOPW40cgvdN0VCnV0bdsUw2011p2EIHJd+BzzymYA==
             -----END AGE ENCRYPTED FILE-----
           recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
     encrypted_regex: ^(data|stringData)$
-    lastmodified: "2026-08-28T08:19:38Z"
-    mac: ENC[AES256_GCM,data:PPFtkjBS17VrjAEnOV4GutoksRZl2sxn6I/RpDybq8vMBP6LFOXXffsMVime4yU8Ujc6CwDwhnE5MUf23PCGIWCyRpAP0FBxLXYWEaoqlMvvfE/OiMnVapzLdOztFrBpJVBDurrxemDqOqwCyGp2x49H/PbGDuRP2Yg2vfUHHOk=,iv:VoJMslY+ajE/3YLKVwMrnn/9mgb20IBsUy24It82820=,tag:zXCBfV+wZ00Q/TNEYrI7jg==,type:str]
+    lastmodified: "2026-08-31T05:18:22Z"
+    mac: ENC[AES256_GCM,data:gJgeByP1kWGSIej04VUC5Rh0frsmuXm/qpE4mBfQDTn9E6Po6tSSIbz0P0LUyc0QUwrkUmb9rBgMltVNruWdvwc6UcTsv6YXXJzL1GlgsP7cUoZ9MEci8HvZKJ3KTDA0fkfUFG3penXyTwxbA0B6Ow5h3UWhZ3CCfZJ8UpDY49Q=,iv:42d+ajB/j3JcoIBNtOj5D4JZTd2o77BOuSxVqsc/xZY=,tag:SAb0SehQFw033MH53R14vQ==,type:str]
     mac_only_encrypted: true
     version: 3.13.3
