@@ -56,7 +56,7 @@ spec:
         # `last-good` backup and, on startup, compares the file it finds against
         # it; a seeded config that lacks keys the gateway has since added to its
         # own copy is treated as a destructive external edit, so the backup is
-        # restored and the seed is set aside as `openclaw.json.clobbered.<ts>`.
+        # restored and the seed is set aside as `openclaw.json5.clobbered.<ts>`.
         # Once anything writes config through the gateway — `openclaw config
         # set`, the control UI, a plugin — every subsequent deploy of this
         # ConfigMap is silently ignored. That is not hypothetical: it is why this
@@ -73,8 +73,8 @@ spec:
             - sh
             - -c
             - |
-              cp /cfg/openclaw.json /state/openclaw.json
-              rm -f /state/openclaw.json.last-good /state/openclaw.json.bak*
+              cp /cfg/openclaw.json5 /state/openclaw.json5
+              rm -f /state/openclaw.json5.last-good /state/openclaw.json5.bak*
           volumeMounts:
             - name: cfg
               mountPath: /cfg
@@ -85,9 +85,13 @@ spec:
           image: ghcr.io/agentydragon/openclaw:devel-20260830234554-2e3c950 # {"$imagepolicy": "flux-system:openclaw"}
           env:
             # The image does not set HOME to the state dir; without it the
-            # gateway looks for openclaw.json elsewhere and exits "Missing config".
+            # gateway looks under the wrong home directory and exits "Missing config".
             - name: HOME
               value: /home/openclaw
+            # Keep the declarative source visibly JSON5 while retaining the
+            # same state-PVC placement and init-container ownership semantics.
+            - name: OPENCLAW_CONFIG_PATH
+              value: /home/openclaw/.openclaw/openclaw.json5
             - name: NPM_CONFIG_PREFIX
               value: /home/openclaw/.local
             - name: NPM_CONFIG_CACHE

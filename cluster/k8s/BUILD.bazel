@@ -33,7 +33,7 @@ filegroup(
     srcs = [
         "agents/haku-openclaw-spike/app/deployment.yaml",
         "agents/haku-openclaw-spike/app/openclaw.json",
-        "agents/public-coder-agent/app/openclaw.json",
+        "agents/public-coder-agent/app/openclaw.json5",
     ],
     visibility = ["//cluster/k8s/litellm/app:__pkg__"],
 )

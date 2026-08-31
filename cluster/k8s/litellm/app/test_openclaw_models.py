@@ -19,7 +19,7 @@ from cluster.k8s.litellm.app.model_rosters import (
 )
 from util.bazel.runfiles import get_required_path
 
-_PUBLIC_CODER_AGENT_CONFIG = "ducktape/cluster/k8s/agents/public-coder-agent/app/openclaw.json"
+_PUBLIC_CODER_AGENT_CONFIG = "ducktape/cluster/k8s/agents/public-coder-agent/app/openclaw.json5"
 _HAKU_OPENCLAW_CONFIG = "ducktape/cluster/k8s/agents/haku-openclaw-spike/app/openclaw.json"
 _HAKU_OPENCLAW_DEPLOYMENT = "ducktape/cluster/k8s/agents/haku-openclaw-spike/app/deployment.yaml"
 _LITELLM_CONFIG = "ducktape/cluster/k8s/litellm/app/proxy-config.yaml"

@@ -23,7 +23,7 @@ configMapGenerator:
     # Deployment for three hours.
     namespace: public-coder-agent
     files:
-      - openclaw.json
+      - openclaw.json5
   - name: public-coder-agent-kubeconfig
     namespace: public-coder-agent
     files:

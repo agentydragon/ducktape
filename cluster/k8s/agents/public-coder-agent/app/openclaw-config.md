@@ -1,9 +1,8 @@
-# `openclaw.json`
+# `openclaw.json5`
 
 Declarative OpenClaw config, planted into the state PVC by an
-init container. JSON takes no comments, so the rationale lives here.
-
-Declarative OpenClaw config, planted into the state PVC by an init container.
+init container. The JSON5 comments in the config carry rationale alongside
+the values.
 
 OpenClaw defaults every conversation to a new backing session at 04:00 local
 time, even when the visible dashboard thread is unchanged. It has no disabled
@@ -25,7 +24,7 @@ local fallback password and the Deployment exposes it as
 `OPENCLAW_GATEWAY_PASSWORD`; OpenClaw deliberately accepts that password only
 for direct local requests after proxy authentication is inapplicable. Do not
 replace this with loopback proxy-header trust or commit the generated value to
-`openclaw.json`.
+`openclaw.json5`.
 
 The agent uses Codex subscription models through one LiteLLM key. Only the 5.6
 group is offered. contextWindow/maxTokens are measured, not
