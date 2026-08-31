@@ -6,10 +6,7 @@ metadata:
 spec:
   interval: 10m
   path: ./cluster/k8s/external-creds
-  # CLEANUP(added 2026-08-30): Restore pruning after consumer ServiceAccounts
-  # and SecretStores have moved to, and are inventoried by, their consumer
-  # Kustomizations.
-  prune: false
+  prune: true
   decryption:
     provider: sops
     secretRef:
