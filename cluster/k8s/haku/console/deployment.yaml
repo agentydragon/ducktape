@@ -127,9 +127,9 @@ spec:
             # commits selected by this pod manifest.
             - name: HAKU_CONSOLE__IMAGE_TAG
               value: devel-20260831050403-69b52bc # {"$imagepolicy": "flux-system:haku-console:tag"}
-            - name: HAKU_CONSOLE_AIQUOTA_URL
+            - name: HAKU_CONSOLE__AIQUOTA_URL
               value: "http://aiquota-api.cli-proxy-api.svc.cluster.local:8080"
-            - name: HAKU_CONSOLE_AIQUOTA_BEARER_TOKEN
+            - name: HAKU_CONSOLE__AIQUOTA_BEARER_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: aiquota-api-bearer-haku-console
