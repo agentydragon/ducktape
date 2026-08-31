@@ -29,3 +29,5 @@ spec:
       secure: false
       validateSql: true
       queryTimeout: 60
+    secureJsonData:
+      password: ${password}
