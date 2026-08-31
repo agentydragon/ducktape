@@ -1,10 +1,17 @@
 {
+  // This file is the GitOps source of truth. The app init container copies it
+  // into the state PVC; OPENCLAW_CONFIG_PATH points OpenClaw back at that copy.
   agents: {
     defaults: {
       userTimezone: "America/Los_Angeles",
+      // The working path is Codex subscription -> CLIProxyAPI -> LiteLLM's
+      // native Responses endpoint. Keep this on the measured 5.6 roster.
       model: {
         primary: "litellm/chatgpt/oai-responses/gpt-5.6-luna",
       },
+      // Measured against the live route: all three 5.6 models fail just above
+      // 372k total context. The 50k floor is OpenClaw's tier for that window.
+      // OpenClaw 2026.8 retires this setting; remove it when the image moves.
       compaction: {
         reserveTokensFloor: 50000,
       },
@@ -18,6 +25,8 @@
       },
       skills: [],
       verboseDefault: "full",
+      // Memory uses LiteLLM's OpenAI-compatible embeddings route; keep it out
+      // of the public egress proxy because LiteLLM is an in-cluster Service.
       memorySearch: {
         enabled: true,
         sources: ["memory"],
@@ -43,17 +52,27 @@
     restart: false,
   },
   channels: {
+      // The Matrix plugin's guarded fetch reads this field explicitly; generic
+      // HTTP(S)_PROXY is not enough. Keep it equal to Deployment HTTPS_PROXY:
+      // the same proxy also performs Matrix login-password substitution.
     matrix: {
       enabled: true,
       homeserver: "https://matrix.allegedly.works",
       proxy: "http://public-coder-agent-proxy.public-coder-agent.svc.cluster.local:8080",
       userId: "@public-coder-agent:allegedly.works",
+      // MATRIX_PASSWORD is intentionally absent: OpenClaw reads the stable
+      // placeholder from the environment, while iron-proxy swaps the real
+      // password only in Matrix's login body. The resulting access token is
+      // cached in the state PVC.
       dm: {
         policy: "allowlist",
         allowFrom: ["@agentydragon:allegedly.works"],
+        // A room is the stable conversation boundary; threaded replies keep
+        // concurrent Matrix DMs independent.
         sessionScope: "per-room",
       },
       groupPolicy: "disabled",
+      // Matrix DMs arrive as invites, so classify them only after joining.
       autoJoin: "always",
       threadReplies: "always",
     },
@@ -65,8 +84,14 @@
     },
   },
   gateway: {
+    // Authentik reaches the pod over the cluster network, hence "lan" rather
+    // than loopback. The ingress NetworkPolicy, not this bind address, is the
+    // trust boundary. Valid bind values are loopback, lan, tailnet, auto, custom.
     auth: {
       mode: "trusted-proxy",
+      // Browser requests arrive with Authentik identity headers. Backend and
+      // subagent calls use the local gateway password from the Deployment;
+      // never put that generated password in this file.
       trustedProxy: {
         allowLoopback: true,
         allowUsers: ["agentydragon"],
@@ -95,6 +120,9 @@
   },
   models: {
     providers: {
+      // One provider intentionally covers both working model families. Codex
+      // uses openai-responses and chatgpt/oai-responses/* through CLIProxyAPI;
+      // Gemini uses the same LiteLLM Responses surface. No Anthropic provider.
       litellm: {
         agentRuntime: {
           id: "openclaw",
@@ -103,6 +131,8 @@
         apiKey: "${OPENCLAW_LITELLM_API_KEY}",
         baseUrl: "http://litellm.litellm.svc.cluster.local:4000/v1",
         models: [
+          // contextWindow/maxTokens are measured serving limits, not vendor
+          // marketing values; keep them synchronized with test_openclaw_models.py.
           {
             contextWindow: 372000,
             id: "chatgpt/oai-responses/gpt-5.6-luna",
@@ -135,6 +165,8 @@
             name: "Gemini 3.7 Flash (Google AI via LiteLLM)",
             reasoning: true,
           },
+          // gemini-3.1-pro-preview was removed from the shared roster on
+          // 2026-08-30: Google returned RESOURCE_EXHAUSTED with quota 0.
           {
             contextWindow: 1048576,
             id: "google/oai-chat/gemini-3.5-flash-lite",
@@ -152,6 +184,10 @@
   },
   mcp: {
     servers: {
+      // Haku fans out tools/list to many upstreams (~194 tools, ~733 KB), so
+      // its catalog needs more than OpenClaw's 1.5s default. The token is an
+      // inert placeholder here; iron-proxy substitutes the controller-owned
+      // credential only for this host.
       "haku-console": {
         url: "https://haku.allegedly.works/mcp",
         transport: "streamable-http",
@@ -163,6 +199,8 @@
         // of OpenClaw surfacing an MCP protocol-level timeout.
         requestTimeoutMs: 70000,
         headers: {
+          // Keep interpolation syntax; mcp doctor may flag this as a literal,
+          // but the runtime expands it and iron-proxy audits the substitution.
           Authorization: "Bearer ${HAKU_CONSOLE_TOKEN}",
         },
       },
@@ -170,6 +208,9 @@
   },
   plugins: {
     entries: {
+      // Matrix and Brave are bundled into the image as trusted plugins. Do not
+      // re-add them through plugins.load.paths: Matrix state storage rejects
+      // config-loaded copies, and Brave must remain image-pinned.
       matrix: {
         enabled: true,
       },
@@ -177,18 +218,15 @@
         enabled: true,
         config: {
           webSearch: {
-            // This resolves to the non-secret placeholder in the OpenClaw Pod;
-            // iron-proxy replaces it only at Brave's API endpoint.
+            // The pod sees only a placeholder; iron-proxy replaces it only at
+            // Brave's API endpoint.
             apiKey: { source: "env", id: "BRAVE_API_KEY" },
             mode: "web",
           },
         },
       },
-      // Disabled: unused on this headless agent. The companion-device/"node"
-      // stack (canvas, device-pair, file-transfer, talk-voice) only activates
-      // once a phone/desktop app pairs to the gateway, which cannot happen
-      // here; phone-control drives a paired Android device; ollama adds a
-      // local-model provider this agent does not use (it runs on LiteLLM).
+      // Disabled on this headless agent: companion-device plugins need a paired
+      // phone/desktop, phone-control needs Android, and Ollama is not used.
       canvas: {
         enabled: false,
       },
@@ -221,6 +259,8 @@
     },
   },
   session: {
+    // OpenClaw permits only daily/idle resets. A 100-year idle timeout makes
+    // automatic rollover unreachable while preserving /new and /reset.
     reset: {
       mode: "idle",
       idleMinutes: 52560000,
