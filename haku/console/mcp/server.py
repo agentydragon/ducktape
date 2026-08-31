@@ -80,12 +80,14 @@ from haku.console.mcp.tool_call_service import (
     ToolCallStateConflictError,
 )
 from haku.console.mcp_config import (
+    DynamicOAuthClientRegistration,
     InProcessBackend,
     InProcessCredential,
     McpServerEntry,
     McpServerNotFoundError,
     NoCredential,
     OperatorConnectionCredential,
+    PreregisteredOAuthClient,
     RemoteMcpBackend,
     RemoteServerOAuthAuth,
     StaticBearerAuth,
@@ -194,8 +196,31 @@ class StaticBearerAuthStatus(BaseModel):
     kind: Literal["static_bearer"] = "static_bearer"
 
 
+class DynamicOAuthClientRegistrationStatus(BaseModel):
+    kind: Literal["dynamic"] = "dynamic"
+    client_name: str
+
+
+class PreregisteredOAuthClientStatus(BaseModel):
+    """Safe projection of a pre-registered client: omit its client id and secret."""
+
+    kind: Literal["preregistered"] = "preregistered"
+    token_endpoint_auth_method: Literal["client_secret_basic", "client_secret_post"] | None = None
+
+
+type OAuthClientRegistrationStatus = Annotated[
+    DynamicOAuthClientRegistrationStatus | PreregisteredOAuthClientStatus, Field(discriminator="kind")
+]
+
+
+class RemoteServerOAuthAuthStatus(BaseModel):
+    kind: Literal["remote_server_oauth"] = "remote_server_oauth"
+    client_registration: OAuthClientRegistrationStatus
+    scopes: list[str] | None = None
+
+
 type RemoteMcpAuthStatus = Annotated[
-    RemoteServerOAuthAuth | StaticBearerAuthStatus | NoCredential, Field(discriminator="kind")
+    RemoteServerOAuthAuthStatus | StaticBearerAuthStatus | NoCredential, Field(discriminator="kind")
 ]
 
 
@@ -246,6 +271,19 @@ def _backend_status(backend: RemoteMcpBackend | InProcessBackend) -> McpBackendS
     match backend:
         case RemoteMcpBackend(auth=StaticBearerAuth()):
             return RemoteMcpBackendStatus(url=backend.url, auth=StaticBearerAuthStatus())
+        case RemoteMcpBackend(auth=RemoteServerOAuthAuth() as auth):
+            match auth.client_registration:
+                case DynamicOAuthClientRegistration() as registration:
+                    projected: OAuthClientRegistrationStatus = DynamicOAuthClientRegistrationStatus(
+                        client_name=registration.client_name
+                    )
+                case PreregisteredOAuthClient() as registration:
+                    projected = PreregisteredOAuthClientStatus(
+                        token_endpoint_auth_method=registration.token_endpoint_auth_method
+                    )
+            return RemoteMcpBackendStatus(
+                url=backend.url, auth=RemoteServerOAuthAuthStatus(client_registration=projected, scopes=auth.scopes)
+            )
         case RemoteMcpBackend():
             return RemoteMcpBackendStatus(url=backend.url, auth=backend.auth)
         case InProcessBackend():

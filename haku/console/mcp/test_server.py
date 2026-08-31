@@ -1253,6 +1253,21 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
                             "https://also-must-not-be-contacted.invalid/mcp", _dynamic_remote_oauth()
                         ),
                     },
+                    "preregistered_remote": {
+                        "id": "preregistered-remote",
+                        "backend": _remote_backend(
+                            "https://preregistered.invalid/mcp",
+                            {
+                                "kind": "remote_server_oauth",
+                                "client_registration": {
+                                    "kind": "preregistered",
+                                    "client_id": "must-not-be-reflected",
+                                    "client_secret": "must-not-be-reflected",
+                                    "token_endpoint_auth_method": "client_secret_post",
+                                },
+                            },
+                        ),
+                    },
                     "gmail": {
                         "id": "gmail",
                         "backend": _in_process_backend(
@@ -1359,6 +1374,19 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
         },
         "connection": {"server_id": "unconnected-remote", "username": "operator", "state": {"status": "unconnected"}},
     }
+    assert statuses["preregistered-remote"].model_dump(mode="json") == {
+        "server_id": "preregistered-remote",
+        "backend": {
+            "kind": "remote_mcp",
+            "url": "https://preregistered.invalid/mcp",
+            "auth": {
+                "kind": "remote_server_oauth",
+                "client_registration": {"kind": "preregistered", "token_endpoint_auth_method": "client_secret_post"},
+                "scopes": None,
+            },
+        },
+        "connection": None,
+    }
     assert statuses["gmail"].model_dump(mode="json") == {
         "server_id": "gmail",
         "backend": {
@@ -1388,7 +1416,9 @@ async def test_list_mcp_servers_passively_reports_persisted_connection_state(
     serialized = response.model_dump_json()
     assert "access_token" not in serialized
     assert "refresh_token" not in serialized
-    assert "client_secret" not in serialized
+    assert '"client_id":' not in serialized
+    assert '"client_secret":' not in serialized
+    assert "must-not-be-reflected" not in serialized
     assert "static-remote-token" not in serialized
     oauth_statuses.assert_called_once()
     provider_statuses.assert_called_once()

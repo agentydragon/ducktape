@@ -320,28 +320,26 @@ def _service(
     in_process_servers: InProcessServers | None = None,
 ) -> ToolCallApplicationService:
     token_states = PostgresTokenStateStore(sessions, operator_identity_store=identity_store)
+    configured_servers = servers or [
+        {
+            "id": "operator-backend",
+            "backend": {
+                "kind": "remote_mcp",
+                "url": "https://backend.invalid/mcp",
+                "auth": {
+                    "kind": "remote_server_oauth",
+                    "client_registration": {"kind": "dynamic", "client_name": "Haku Console"},
+                },
+            },
+        }
+    ]
     config_file = write_config(
         tmp_path / "tool-call-service.yaml",
         {
             "auto_approval_policies": [{"id": "manual", "type": "never"}],
             "access_profiles": [{"id": "manual", "auto_approval_policy": "manual"}],
             "default_access_profile_id": "manual",
-            "mcp": {
-                "servers": servers
-                or [
-                    {
-                        "id": "operator-backend",
-                        "backend": {
-                            "kind": "remote_mcp",
-                            "url": "https://backend.invalid/mcp",
-                            "auth": {
-                                "kind": "remote_server_oauth",
-                                "client_registration": {"kind": "dynamic", "client_name": "Haku Console"},
-                            },
-                        },
-                    }
-                ]
-            },
+            "mcp": {"servers": {server["id"].replace("-", "_"): server for server in configured_servers}},
         },
     )
     return ToolCallApplicationService(
