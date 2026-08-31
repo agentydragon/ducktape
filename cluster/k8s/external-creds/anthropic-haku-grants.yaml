@@ -1,6 +1,6 @@
 # Source-controlled grants for the canonical Anthropic Haku credential. Each
-# binding explicitly approves one consumer ServiceAccount; consumer-local
-# ServiceAccounts and SecretStores live with those consumers.
+# binding explicitly approves one consumer ServiceAccount. Consumer-local
+# identities live with consumers; external-secrets-config owns the store.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -23,7 +23,7 @@ roleRef:
   name: llm-anthropic-haku-reader
 subjects:
   - kind: ServiceAccount
-    name: llm-anthropic-haku-reader
+    name: external-creds-reader
     namespace: litellm
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -37,5 +37,5 @@ roleRef:
   name: llm-anthropic-haku-reader
 subjects:
   - kind: ServiceAccount
-    name: llm-anthropic-haku-reader
+    name: external-creds-reader
     namespace: flux-system

@@ -11,8 +11,8 @@ metadata:
 spec:
   refreshInterval: 1h
   secretStoreRef:
-    kind: SecretStore
-    name: github-agentydragon-agent
+    kind: ClusterSecretStore
+    name: kubernetes-external-creds-secret-store
   target:
     name: haku-claude-github-token
     creationPolicy: Owner

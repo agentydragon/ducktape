@@ -1,5 +1,5 @@
 # Source-controlled grant for the canonical Groq credential. The consumer
-# ServiceAccount and SecretStore live with LiteLLM.
+# identity lives with LiteLLM; external-secrets-config owns the store.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -22,5 +22,5 @@ roleRef:
   name: llm-groq-reader
 subjects:
   - kind: ServiceAccount
-    name: llm-groq-reader
+    name: external-creds-reader
     namespace: litellm

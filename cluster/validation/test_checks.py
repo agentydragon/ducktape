@@ -23,12 +23,19 @@ def _cluster_with(doc: dict) -> ParsedCluster:
 
 
 def _external_creds_cluster(
-    k8s_dir: Path, supplier_docs: list[dict], consumer_docs: list[dict], consumer_depends_on_supplier: bool = True
+    k8s_dir: Path,
+    supplier_docs: list[dict],
+    consumer_docs: list[dict],
+    store_docs: list[dict] | None = None,
+    consumer_depends_on_supplier: bool = True,
 ) -> ParsedCluster:
-    consumer_dependencies = [DependsOn(name="external-creds")] if consumer_depends_on_supplier else []
+    consumer_dependencies = [DependsOn(name="external-secrets-config")]
+    if consumer_depends_on_supplier:
+        consumer_dependencies.append(DependsOn(name="external-creds"))
     return ParsedCluster(
         flux_kustomizations={
             "claude-rbac": FluxKustomizationSpec(path="./cluster/k8s/claude-rbac"),
+            "external-secrets-config": FluxKustomizationSpec(path="./cluster/k8s/external-secrets/config"),
             "external-creds": FluxKustomizationSpec(
                 path="./cluster/k8s/external-creds", depends_on=[DependsOn(name="claude-rbac")]
             ),
@@ -38,6 +45,10 @@ def _external_creds_cluster(
             KustomizeBuildResult(
                 kustomization_path=k8s_dir / "external-creds/kustomization.yaml",
                 resources=parse_k8s_resources(supplier_docs),
+            ),
+            KustomizeBuildResult(
+                kustomization_path=k8s_dir / "external-secrets/config/kustomization.yaml",
+                resources=parse_k8s_resources(store_docs or [_central_store()]),
             ),
             KustomizeBuildResult(
                 kustomization_path=k8s_dir / "consumer/kustomization.yaml", resources=parse_k8s_resources(consumer_docs)
@@ -61,21 +72,47 @@ def _source_binding() -> dict:
         "kind": "RoleBinding",
         "metadata": {"name": "credential-consumer-reader", "namespace": "ducktape-flux"},
         "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": "credential-reader"},
-        "subjects": [{"kind": "ServiceAccount", "name": "credential-reader", "namespace": "consumer"}],
+        "subjects": [{"kind": "ServiceAccount", "name": "external-creds-reader", "namespace": "consumer"}],
     }
 
 
-def _consumer_store(service_account_namespace: str | None = None) -> dict:
-    service_account = {"name": "credential-reader"}
+def _central_store(service_account_namespace: str | None = None, namespaces: list[str] | None = None) -> dict:
+    service_account = {"name": "external-creds-reader"}
     if service_account_namespace is not None:
         service_account["namespace"] = service_account_namespace
+    return {
+        "apiVersion": "external-secrets.io/v1",
+        "kind": "ClusterSecretStore",
+        "metadata": {"name": "kubernetes-external-creds-secret-store"},
+        "spec": {
+            "conditions": [{"namespaces": namespaces or ["consumer"]}],
+            "provider": {
+                "kubernetes": {"auth": {"serviceAccount": service_account}, "remoteNamespace": "ducktape-flux"}
+            },
+        },
+    }
+
+
+def _consumer_external_secret() -> dict:
+    return {
+        "apiVersion": "external-secrets.io/v1",
+        "kind": "ExternalSecret",
+        "metadata": {"name": "credential", "namespace": "consumer"},
+        "spec": {"secretStoreRef": {"kind": "ClusterSecretStore", "name": "kubernetes-external-creds-secret-store"}},
+    }
+
+
+def _consumer_store() -> dict:
     return {
         "apiVersion": "external-secrets.io/v1",
         "kind": "SecretStore",
         "metadata": {"name": "credential", "namespace": "consumer"},
         "spec": {
             "provider": {
-                "kubernetes": {"auth": {"serviceAccount": service_account}, "remoteNamespace": "ducktape-flux"}
+                "kubernetes": {
+                    "auth": {"serviceAccount": {"name": "external-creds-reader"}},
+                    "remoteNamespace": "ducktape-flux",
+                }
             }
         },
     }
@@ -176,7 +213,7 @@ def test_forgejo_image_namespace_missing_from_either_reflector_list_is_flagged(m
     assert missing_annotation in errors[0]
 
 
-def test_external_credential_supplier_and_consumer_split_passes(tmp_path: Path) -> None:
+def test_external_credential_central_store_and_source_approval_pass(tmp_path: Path) -> None:
     cluster = _external_creds_cluster(
         tmp_path,
         [
@@ -184,28 +221,50 @@ def test_external_credential_supplier_and_consumer_split_passes(tmp_path: Path) 
             _source_role(),
             _source_binding(),
         ],
-        [_consumer_store()],
+        [_consumer_external_secret()],
     )
     assert check_external_credential_ownership(cluster, tmp_path) == []
 
 
 def test_external_credential_supplier_rejects_consumer_store(tmp_path: Path) -> None:
-    cluster = _external_creds_cluster(tmp_path, [_source_role(), _source_binding(), _consumer_store()], [])
+    cluster = _external_creds_cluster(tmp_path, [_source_role(), _source_binding(), _central_store()], [])
     errors = check_external_credential_ownership(cluster, tmp_path)
-    assert any("consumer-owned SecretStore" in error for error in errors)
+    assert any("consumer-owned ClusterSecretStore" in error for error in errors)
 
 
-def test_external_credential_store_cannot_borrow_cross_namespace_identity(tmp_path: Path) -> None:
+def test_external_credential_store_requires_referent_identity(tmp_path: Path) -> None:
     cluster = _external_creds_cluster(
-        tmp_path, [_source_role(), _source_binding()], [_consumer_store(service_account_namespace="approved")]
+        tmp_path,
+        [_source_role(), _source_binding()],
+        [_consumer_external_secret()],
+        store_docs=[_central_store(service_account_namespace="approved")],
     )
     errors = check_external_credential_ownership(cluster, tmp_path)
-    assert any("must omit the ServiceAccount namespace" in error for error in errors)
+    assert any(
+        "must omit the ServiceAccount namespace so ESO uses referent authentication" in error for error in errors
+    )
+
+
+def test_external_credential_namespace_store_is_rejected(tmp_path: Path) -> None:
+    cluster = _external_creds_cluster(tmp_path, [_source_role(), _source_binding()], [_consumer_store()])
+    errors = check_external_credential_ownership(cluster, tmp_path)
+    assert any("use external-secrets-config's shared ClusterSecretStore" in error for error in errors)
+
+
+def test_external_credential_store_conditions_match_source_approvals(tmp_path: Path) -> None:
+    cluster = _external_creds_cluster(
+        tmp_path,
+        [_source_role(), _source_binding()],
+        [_consumer_external_secret()],
+        store_docs=[_central_store(namespaces=["consumer", "unapproved"])],
+    )
+    errors = check_external_credential_ownership(cluster, tmp_path)
+    assert any("namespace conditions must equal the source-approved namespaces" in error for error in errors)
 
 
 def test_external_credential_store_requires_supplier_dependency(tmp_path: Path) -> None:
     cluster = _external_creds_cluster(
-        tmp_path, [_source_role(), _source_binding()], [_consumer_store()], consumer_depends_on_supplier=False
+        tmp_path, [_source_role(), _source_binding()], [_consumer_external_secret()], consumer_depends_on_supplier=False
     )
     errors = check_external_credential_ownership(cluster, tmp_path)
     assert any("does not depend on external-creds" in error for error in errors)

@@ -266,14 +266,38 @@ class SecretStoreProvider(BaseModel):
     kubernetes: SecretStoreKubernetesProvider | None = None
 
 
+class SecretStoreCondition(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    namespaces: list[str] = Field(default_factory=list)
+
+
 class SecretStoreSpec(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
+    conditions: list[SecretStoreCondition] = Field(default_factory=list)
     provider: SecretStoreProvider = Field(default_factory=SecretStoreProvider)
 
 
 class SecretStoreResource(K8sResource):
     spec: SecretStoreSpec = Field(default_factory=SecretStoreSpec)
+
+
+class ExternalSecretStoreRef(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    kind: str = "SecretStore"
+    name: str = ""
+
+
+class ExternalSecretSpec(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+
+    secret_store_ref: ExternalSecretStoreRef = Field(default_factory=ExternalSecretStoreRef)
+
+
+class ExternalSecretResource(K8sResource):
+    spec: ExternalSecretSpec = Field(default_factory=ExternalSecretSpec)
 
 
 class FluxSourceRef(BaseModel):
@@ -385,6 +409,8 @@ _KIND_MODELS: dict[str, type[K8sResource]] = {
     "RoleBinding": RoleBindingResource,
     "Secret": SecretResource,
     "SecretStore": SecretStoreResource,
+    "ClusterSecretStore": SecretStoreResource,
+    "ExternalSecret": ExternalSecretResource,
     "CiliumNetworkPolicy": CiliumPolicyResource,
     "CiliumClusterwideNetworkPolicy": CiliumPolicyResource,
     "CronJob": CronJobResource,

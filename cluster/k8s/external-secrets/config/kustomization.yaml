@@ -4,4 +4,5 @@ resources:
   - external-secrets-config.yaml
   - airlock-secret-store.yaml
   - claude-sandbox-secret-store.yaml
+  - external-creds-secret-store.yaml
   - flux-system-secret-store.yaml
