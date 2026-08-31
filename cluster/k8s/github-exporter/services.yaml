@@ -14,7 +14,7 @@ spec:
     github_account: agentydragon
   ports:
     - name: http
-      port: 9171
+      port: 9172
       targetPort: http
       protocol: TCP
 ---
@@ -34,6 +34,6 @@ spec:
     github_account: agentydragon-agent
   ports:
     - name: http
-      port: 9171
+      port: 9172
       targetPort: http
       protocol: TCP

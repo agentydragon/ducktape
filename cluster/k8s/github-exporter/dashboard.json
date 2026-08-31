@@ -35,7 +35,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "100 * github_rate_remaining{resource=\"graphql\"} / on (github_account, resource) github_rate_limit{resource=\"graphql\"}",
+          "expr": "100 * github_graphql_rate_remaining / on (github_account) github_graphql_rate_limit",
           "legendFormat": "{{github_account}}",
           "range": true,
           "refId": "A"
@@ -59,14 +59,14 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "github_rate_remaining{resource=\"graphql\"}",
+          "expr": "github_graphql_rate_remaining",
           "legendFormat": "{{github_account}} remaining",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
-          "expr": "github_rate_limit{resource=\"graphql\"}",
+          "expr": "github_graphql_rate_limit",
           "legendFormat": "{{github_account}} limit",
           "range": true,
           "refId": "B"
@@ -74,33 +74,9 @@
       ],
       "title": "GraphQL quota history",
       "type": "timeseries"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "mimir" },
-      "fieldConfig": {
-        "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1 }, "unit": "short" },
-        "overrides": []
-      },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 16 },
-      "id": 3,
-      "options": {
-        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom" },
-        "tooltip": { "mode": "multi", "sort": "none" }
-      },
-      "targets": [
-        {
-          "editorMode": "code",
-          "expr": "github_rate_remaining",
-          "legendFormat": "{{github_account}} / {{resource}}",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Remaining quota by API resource",
-      "type": "timeseries"
     }
   ],
-  "refresh": "5m",
+  "refresh": "1m",
   "schemaVersion": 41,
   "tags": ["github", "quotas"],
   "time": { "from": "now-7d", "to": "now" },

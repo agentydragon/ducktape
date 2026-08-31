@@ -44,3 +44,5 @@ spec:
       namespace: ducktape-flux
     - name: external-creds
       namespace: ducktape-flux
+    - name: forgejo-images
+      namespace: ducktape-flux
