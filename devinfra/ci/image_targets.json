@@ -101,6 +101,11 @@
       "test": "//grocy_mcp/...",
       "registry": "forgejo"
     },
+    "github-graphql-rate-exporter": {
+      "target": "//cluster/exporters/github_graphql_rate_limit:image",
+      "test": "//cluster/exporters/github_graphql_rate_limit/...",
+      "registry": "forgejo"
+    },
     "haku-console": {
       "target": "//haku/console:server_image",
       "test": "//haku/console/..."
