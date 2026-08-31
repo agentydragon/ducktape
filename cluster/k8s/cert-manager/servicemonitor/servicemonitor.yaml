@@ -9,7 +9,8 @@ spec:
       app.kubernetes.io/instance: cert-manager
       app.kubernetes.io/component: controller
   endpoints:
-    - port: http-metrics
+    # ServiceMonitor.port matches the Service port name, not the targetPort.
+    - port: tcp-prometheus-servicemonitor
       path: /metrics
       interval: 30s
 ---
@@ -24,6 +25,7 @@ spec:
       app.kubernetes.io/instance: cert-manager
       app.kubernetes.io/component: webhook
   endpoints:
-    - port: http-metrics
+    # ServiceMonitor.port matches the Service port name, not the targetPort.
+    - port: metrics
       path: /metrics
       interval: 30s
