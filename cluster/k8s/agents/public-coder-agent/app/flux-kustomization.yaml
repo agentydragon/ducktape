@@ -29,6 +29,8 @@ spec:
       namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
+    - name: external-creds
+      namespace: ducktape-flux
     - name: litellm-keys-tf
       namespace: ducktape-flux
   healthChecks:
