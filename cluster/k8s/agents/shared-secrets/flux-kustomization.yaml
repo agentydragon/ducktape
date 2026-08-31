@@ -6,7 +6,10 @@ metadata:
 spec:
   interval: 10m
   path: ./cluster/k8s/agents/shared-secrets
-  prune: true
+  # CLEANUP(added 2026-08-30): Restore pruning once external-creds owns
+  # claude-sandbox/github-token and this Kustomization's live inventory no
+  # longer lists it.
+  prune: false
   sourceRef:
     kind: GitRepository
     name: ducktape
