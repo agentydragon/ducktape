@@ -175,6 +175,17 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_indexer_runtime_deps",
+    srcs = ["test_indexer_runtime_deps.py"],
+    deps = [
+        ":indexer",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "indexer",
     srcs = ["indexer.py"],
@@ -191,6 +202,7 @@ py_library(
         "@pypi//psycopg",  # keep: runtime-only — SQLAlchemy's psycopg dialect imports it dynamically for the sync schema probe
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
+        "@pypi//pyyaml",  # keep: YamlConfigSettingsSource imports yaml dynamically
         "@pypi//sqlalchemy",
     ],
 )
