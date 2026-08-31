@@ -228,25 +228,6 @@ have been retired. The remaining Kubernetes MCP endpoints are:
 | `kubectl-passthrough-mcp` | HTTP      | OAuth passthrough (public client, PKCE) | caller's own OIDC group permissions |
 | `kubectl-machine-mcp`     | HTTP      | OAuth passthrough (machine credentials) | caller's own OIDC group permissions |
 
-### Historical `.mcp.json` for the retired scoped server
-
-```json
-{
-  "mcpServers": {
-    "kubectl-sandbox": {
-      "type": "http",
-      "url": "https://kubectl-sandbox-mcp.allegedly.works/mcp",
-      "oauth": {
-        "clientId": "kubectl-sandbox-mcp",
-        "callbackPort": 8080
-      }
-    }
-  }
-}
-```
-
-No `client_secret`. No DCR. Just PKCE + pre-registered client_id.
-
 Equivalent CLI:
 
 ```bash
