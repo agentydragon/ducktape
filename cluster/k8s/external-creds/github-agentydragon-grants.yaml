@@ -1,0 +1,55 @@
+# Source-controlled grants for the agentydragon GitHub PAT. Each binding
+# explicitly approves one consumer ServiceAccount. Consumer-local identities
+# live with consumers; external-secrets-config owns the store.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: github-agentydragon-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["github-agentydragon"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-agentydragon-flux-system-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-agentydragon-reader
+subjects:
+  - kind: ServiceAccount
+    name: external-creds-reader
+    namespace: flux-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-agentydragon-agents-infra-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-agentydragon-reader
+subjects:
+  - kind: ServiceAccount
+    name: external-creds-reader
+    namespace: agents-infra
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-agentydragon-nix-cache-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-agentydragon-reader
+subjects:
+  - kind: ServiceAccount
+    name: external-creds-reader
+    namespace: nix-cache

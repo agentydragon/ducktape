@@ -5,6 +5,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
+  retryInterval: 1m
   path: ./cluster/k8s/agents/authentik-jwt-rotation
   prune: true
   sourceRef:
@@ -13,8 +14,15 @@ spec:
 
     namespace: ducktape-flux
   dependsOn:
-    - name: github-secrets-sync-secrets
+    - name: external-creds
+      namespace: ducktape-flux
+    - name: external-secrets-config
       namespace: ducktape-flux
     - name: agent-machine-access-tf
       namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: github-secrets-sync-pat
+      namespace: agents-infra
   timeout: 2m

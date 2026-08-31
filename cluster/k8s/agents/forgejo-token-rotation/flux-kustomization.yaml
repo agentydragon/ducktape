@@ -13,8 +13,6 @@ spec:
 
     namespace: ducktape-flux
   dependsOn:
-    - name: github-secrets-sync-secrets
-      namespace: ducktape-flux
     - name: authentik-jwt-rotation # owns the agents-infra namespace
       namespace: ducktape-flux
     - name: forgejo-claude

@@ -5,6 +5,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   interval: 10m
+  retryInterval: 1m
   path: ./cluster/k8s/agents/attic-jwt-rotation
   prune: true
   sourceRef:
@@ -16,8 +17,13 @@ spec:
     # nix-cache provides the attic deployment that the rotators kubectl-exec into.
     - name: nix-cache
       namespace: ducktape-flux
-    # github-secrets-sync provides the GitHub PAT (reflected from flux-system to
-    # nix-cache by emberstack reflector via reflection-auto-namespaces).
-    - name: github-secrets-sync-secrets
+    - name: external-creds
       namespace: ducktape-flux
+    - name: external-secrets-config
+      namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: github-secrets-sync-pat
+      namespace: nix-cache
   timeout: 2m

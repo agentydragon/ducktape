@@ -8,5 +8,7 @@ resources:
   - gemini-grants.yaml
   - github-agentydragon-agent.sops.yaml
   - github-agentydragon-agent-grants.yaml
+  - github-agentydragon.sops.yaml
+  - github-agentydragon-grants.yaml
   - groq.sops.yaml
   - groq-grants.yaml

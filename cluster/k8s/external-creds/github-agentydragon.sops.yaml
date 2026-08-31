@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: github-agentydragon
+    namespace: ducktape-flux
+    annotations:
+        description: Fine-grained GitHub PAT for the agentydragon account. Approved consumers receive namespace-local copies through External Secrets Operator.
+type: Opaque
+stringData:
+    token: ENC[AES256_GCM,data:DX1XvUNeyo+n2lmYd7BXXK5OdYR1OQtgzHaTbcWVNAfWPnCVbPQYltzvp4npOsAlTVq1S1N4QFfS0fD10rqfyuGN7DzW+ybE1ZWKMPzWjzwyUvGDvHhrt9lQx80i,iv:HaFKzDmBERV15BcSVo50mom+GLuPevbRjUzSrOs6gqM=,tag:K4VAS1vS4VqhSwOFuZtG7g==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB1MG5GcWZpd0hNQ05ySGVT
+            OVpYTDIxcDJtMDZJdlQ3cjhrR1VYTVd4anpRCmxxb24zQlZyeVJUbTF2UGNIS0Mz
+            dFpmWEtHazVKKzdYdG1WbWIvQmtJNk0KLS0tIDRNQXdpdkpmY2N6dExnRFd1QVFE
+            dzg2dlhIVGtjeEQ2aTNPTjA0Q2NvSUUKzvCEyxEigGcglquGyZigeRWr7tN5K/4W
+            xB/Q6sMY6bt3s0YLMcyNHnOkMwKt5s/z5OAc/xFMahBYhqzSXYcKUQ==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBKYmE0S05LWTQvdnJKS010
+            ZEFVQWEyMzcrYU5HLzNFdG56OXJvQk1CbFZBClluaVJYblNxZExzNXllN2N6cTA3
+            WjRtUmhDY3VEcFRpYm43VHFCdmxTRkkKLS0tIC9ENlZ5dFBKZDZwQ2M4RExKMUtO
+            dUJpR2dEZUQ5SW9mM1BJVFJGUlg2ZWcKe7bcXSC7S/114Eoom+z/hm49MgYzr1Ff
+            PwzmA3A+lcLqgld6k3HzSAHhCGNSfJqCJ6CtIzKebm1EONFQQ5OWeA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-08-31T04:23:07Z"
+    mac: ENC[AES256_GCM,data:OJa4AJMymsNvMyehS+XpCOsCqhCpzNWmrhs84W484Pl3unUTFe76op4xwFnZO2czopoIqAM91Ti9LxjQ/cc2SZUqPhRfPQ589ZW+tegqARtqSCLXK+kP3lAIUXF9fVZGjwiS5Nk1P+R9ypPUvx5VS0nf7uMpKQajarieLUaKaWo=,iv:kjxppsK81xEwL8LDZfQyb24tjBjZbcHIO8F4RRwsSSs=,tag:g5/0mIwg75WDBbvPXRGHcg==,type:str]
+    version: 3.13.3

@@ -1,7 +1,9 @@
 # GitHub Secrets Sync PAT
 
-`github-secrets-sync-pat` is a fine-grained GitHub PAT stored as a SOPS-managed
-Kubernetes Secret in `flux-system`.
+`github-secrets-sync-pat` is a fine-grained GitHub PAT. Its canonical encrypted
+Secret is `external-creds/github-agentydragon.sops.yaml` in `ducktape-flux`.
+External Secrets Operator creates namespace-local `github-secrets-sync-pat`
+copies for the approved consumers.
 
 The token should be scoped to selected repositories:
 
@@ -26,8 +28,9 @@ modules and token-rotation jobs. If those ownership boundaries need to tighten,
 split this into purpose-specific PATs instead of removing individual permissions
 from the shared token.
 
-The token is reflected from `flux-system` into `agents-infra` and `nix-cache`
-because the JWT rotation CronJobs consume it there.
+The source grants explicitly approve `flux-system`, `agents-infra`, and
+`nix-cache`. Each namespace owns its `external-creds-reader` ServiceAccount and
+ExternalSecret; Reflector is not part of this credential's distribution path.
 
 `PROPS_REGISTRY_URL` existed in GitHub before Terraform owned it, so
 `tf/gitops/github-secrets-sync/main.tf` includes an import block for
