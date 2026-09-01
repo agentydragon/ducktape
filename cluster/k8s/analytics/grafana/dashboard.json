@@ -64,6 +64,33 @@
       ],
       "title": "Raw upstream observation metadata",
       "type": "table"
+    },
+    {
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2 },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 30 },
+      "id": 4,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "format": 0,
+          "queryType": "sql",
+          "rawSql": "SELECT observed_at AS time, max(extra_spend_used_usd) AS used_usd, max(extra_spend_limit_usd) AS monthly_limit_usd FROM aiquota.aiquota_windows WHERE provider = 'claude' AND extra_spend_enabled = true AND $__timeFilter(observed_at) GROUP BY observed_at ORDER BY time",
+          "refId": "A"
+        }
+      ],
+      "title": "Claude extra usage (current billing month)",
+      "type": "timeseries"
     }
   ],
   "refresh": "5m",
