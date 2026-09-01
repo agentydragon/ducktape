@@ -1,8 +1,8 @@
-load("@aspect_rules_js//js:defs.bzl", "js_binary")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@rules_proto//proto:defs.bzl", "proto_library")
-load("@rules_proto_grpc_js//:defs.bzl", "js_grpc_library")
+load("@rules_proto_grpc_js//:defs.bzl", "js_grpc_web_library")
 load("@rules_proto_grpc_python//:defs.bzl", "python_grpc_library")
+load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -21,8 +21,8 @@ python_grpc_library(
     protos = [":greeting_proto"],
 )
 
-js_grpc_library(
-    name = "greeting_js_grpc",
+js_grpc_web_library(
+    name = "greeting_js_grpc_web",
     output_mode = "NO_PREFIX",
     protos = [":greeting_proto"],
 )
@@ -45,6 +45,19 @@ py_binary(
     deps = [":server"],
 )
 
+py_library(
+    name = "static_server",
+    srcs = ["static_server.py"],
+    deps = ["@rules_python//python/runfiles"],
+)
+
+py_binary(
+    name = "static_server_bin",
+    data = [":bundle"],
+    main_module = "x.grpc_demo.static_server",
+    deps = [":static_server"],
+)
+
 ts_config(
     name = "tsconfig",
     src = "tsconfig.json",
@@ -54,24 +67,22 @@ ts_library(
     name = "frontend",
     srcs = ["frontend.ts"],
     tsconfig = ":tsconfig",
-    deps = [
-        ":greeting_js_grpc",
-        "//:node_modules/@grpc/grpc-js",
-        "//:node_modules/@types/node",
-        "//:node_modules/google-protobuf",
-    ],
+    deps = [":greeting_js_grpc_web"],
 )
 
-js_binary(
-    name = "frontend_bin",
-    data = [
-        "package.json",
-        ":frontend",
-        ":greeting_js_grpc",
-        "//:node_modules/@grpc/grpc-js",
-        "//:node_modules/google-protobuf",
-    ],
-    entry_point = "frontend.js",
+spa_bundle(
+    name = "bundle",
+    entry_point = "frontend.ts",
+    index_html = "index.html",
+    minify = False,
+    visibility = ["//visibility:public"],
+    deps = [":frontend"],
+)
+
+alias(
+    name = "grpcwebproxy",
+    actual = "@com_github_improbable_eng_grpc_web//go/grpcwebproxy:grpcwebproxy",
+    visibility = ["//visibility:public"],
 )
 
 py_test(
