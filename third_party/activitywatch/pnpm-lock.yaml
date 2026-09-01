@@ -122,6 +122,9 @@ importers:
       pinia:
         specifier: ^2.0.13
         version: 2.3.1(typescript@5.9.3)(vue@2.7.16)
+      vue-demi:
+        specifier: ^0.14.10
+        version: 0.14.10(vue@2.7.16)
       propagating-hammerjs:
         specifier: ^1.4.7
         version: 1.5.0

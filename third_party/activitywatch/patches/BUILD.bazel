@@ -2,5 +2,4 @@ exports_files([
     "aw-webui-hermetic-proxy-build.patch",
     "aw-server-rust-rustls.patch",
     "aw-server-rust-sw-route.patch",
-    "vue-demi-has-injection-context.patch",
 ])

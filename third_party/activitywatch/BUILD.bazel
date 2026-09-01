@@ -9,10 +9,24 @@ Load for local testing:
   docker run --rm -p 5600:5600 -v /tmp/aw-data:/data aw-server:latest
 """
 
+load("@aspect_rules_js//js:defs.bzl", "js_test")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+js_test(
+    name = "vue_demi_vue2_test",
+    data = [
+        "@aw_webui//:node_modules/pinia",
+        "@aw_webui//:node_modules/vue",
+        "@aw_webui//:node_modules/vue-demi",
+        "@aw_webui//:package.json",
+    ],
+    entry_point = "vue_demi_vue2_test.mjs",
+    env = {"AW_WEBUI_PACKAGE_JSON": "$(rootpath @aw_webui//:package.json)"},
+    no_copy_to_bin = ["@aw_webui//:package.json"],
+)
 
 sh_test(
     name = "webui_dist_test",
@@ -24,6 +38,7 @@ sh_test(
 test_suite(
     name = "tests",
     tests = [
+        ":vue_demi_vue2_test",
         ":webui_dist_test",
         "@aw_server_rust//:aw_sync_tests",
     ],

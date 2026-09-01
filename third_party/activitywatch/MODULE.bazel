@@ -40,17 +40,17 @@ npm_activitywatch.npm_translate_lock(
     bins = {
         "@vue/cli-service": ["vue-cli-service=./bin/vue-cli-service.js"],
     },
+    # vue-demi ships in Vue 3 mode and selects its Vue 2.7 implementation in
+    # postinstall. Run only that allowlisted lifecycle hook: without it Pinia
+    # exposes state as {value: ...} refs and the web UI fails during startup.
+    lifecycle_hooks = {
+        "*": [],
+        "vue-demi": ["postinstall"],
+    },
     # link_workspace must point to @aw_webui so generated store-target labels
     # resolve in the http_archive where npm_link_all_packages() creates them.
     link_workspace = "aw_webui",
     npmrc = "//:.npmrc",
-    # vue-demi's postinstall switches lib/index.mjs to the correct Vue version
-    # variant, but lifecycle hooks are disabled in sandboxed builds. Patch the
-    # default (Vue 3) stub to add the missing hasInjectionContext export that
-    # pinia@2.1.7 imports.
-    patches = {
-        "vue-demi@0.14.10": ["//patches:vue-demi-has-injection-context.patch"],
-    },
     pnpm_lock = "//:pnpm-lock.yaml",
     # aw-webui imports axios directly (via NewReleaseNotification.vue) but
     # axios is only a dependency of aw-client, not aw-webui itself.
@@ -65,7 +65,7 @@ npm_activitywatch.npm_translate_lock(
         # to expose this transitive package.
         "yargs@16.2.0": [""],
     },
-    run_lifecycle_hooks = False,
+    run_lifecycle_hooks = True,
     update_pnpm_lock = False,
     use_pnpm = "@pnpm//:package/bin/pnpm.cjs",
 )

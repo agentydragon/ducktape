@@ -11,7 +11,10 @@ load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
 load("@npm_aw_webui//:@vue/cli-service/package_json.bzl", vue_cli_service_bin = "bin")
 load("@npm_aw_webui//:defs.bzl", "npm_link_all_packages")
 
-exports_files(["package-lock.json"])
+exports_files([
+    "package-lock.json",
+    "package.json",
+])
 
 npm_link_all_packages(name = "node_modules")
 

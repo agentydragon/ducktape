@@ -8,7 +8,8 @@
   "type": "module",
   "pnpm": {
     "onlyBuiltDependencies": [
-      "esbuild"
+      "esbuild",
+      "vue-demi"
     ]
   },
   "scripts": {
@@ -76,6 +77,7 @@
     "vue-datetime": "^1.0.0-beta.13",
     "vuedraggable": "^2.24.3",
     "weekstart": "^1.0.1",
+    "vue-demi": "^0.14.10",
     "xss": "^1.0.14"
   },
   "devDependencies": {
