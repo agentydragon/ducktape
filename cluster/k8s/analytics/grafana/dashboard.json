@@ -7,44 +7,21 @@
   "panels": [
     {
       "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
-      "fieldConfig": {
-        "defaults": {
-          "max": 100,
-          "min": 0,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 20 },
-              { "color": "green", "value": 50 }
-            ]
-          },
-          "unit": "percent"
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
       "id": 1,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "horizontal",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "textMode": "auto",
-        "wideLayout": true
-      },
+      "options": { "cellHeight": "sm", "showHeader": true },
       "targets": [
         {
           "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
-          "format": 1,
+          "format": 0,
           "queryType": "sql",
-          "rawSql": "SELECT observed_at AS time, remaining_percent AS value, concat(provider, ' ', if(empty(window_name), concat(toString(window_seconds / 3600), 'h'), window_name)) AS metric FROM aiquota.aiquota_windows WHERE $__timeFilter(observed_at) ORDER BY metric, observed_at",
+          "rawSql": "SELECT provider, if(empty(window_name), '(default)', window_name) AS window, formatReadableTimeDelta(toUInt64(argMax(window_seconds, observed_at))) AS duration, round(argMax(remaining_percent, observed_at), 1) AS remaining_percent, round(argMax(used_percent, observed_at), 1) AS used_percent, formatReadableTimeDelta(toUInt64(argMax(reset_seconds, observed_at))) AS resets_in, formatDateTime(max(observed_at), '%Y-%m-%d %H:%i:%S') AS last_observed_at FROM aiquota.aiquota_windows WHERE $__timeFilter(observed_at) GROUP BY provider, window_name, window_seconds ORDER BY provider, window_seconds, window_name",
           "refId": "A"
         }
       ],
-      "title": "Quota remaining",
-      "type": "stat"
+      "title": "Current quota by provider and window",
+      "type": "table"
     },
     {
       "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
@@ -52,7 +29,7 @@
         "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2 }, "unit": "percent" },
         "overrides": []
       },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 6 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 10 },
       "id": 2,
       "options": {
         "legend": { "calcs": ["lastNotNull", "min"], "displayMode": "table", "placement": "bottom" },
@@ -63,17 +40,17 @@
           "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
           "format": 1,
           "queryType": "sql",
-          "rawSql": "SELECT observed_at AS time, remaining_percent AS value, concat(provider, ' ', if(empty(window_name), concat(toString(window_seconds / 3600), 'h'), window_name)) AS metric FROM aiquota.aiquota_windows WHERE $__timeFilter(observed_at) ORDER BY metric, observed_at",
+          "rawSql": "SELECT observed_at AS time, remaining_percent AS value, concat(provider, ' / ', if(empty(window_name), '(default)', window_name), ' / ', formatReadableTimeDelta(toUInt64(window_seconds))) AS metric FROM aiquota.aiquota_windows WHERE $__timeFilter(observed_at) ORDER BY metric, observed_at",
           "refId": "A"
         }
       ],
-      "title": "Quota history",
+      "title": "Quota remaining by provider and window",
       "type": "timeseries"
     },
     {
       "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
       "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 16 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 20 },
       "id": 3,
       "options": { "cellHeight": "sm", "showHeader": true },
       "targets": [
