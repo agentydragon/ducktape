@@ -38,7 +38,7 @@ npm_activitywatch = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm",
 npm_activitywatch.npm_translate_lock(
     name = "npm_aw_webui",
     bins = {
-        "vite": ["vite=./bin/vite.js"],
+        "@vue/cli-service": ["vue-cli-service=./bin/vue-cli-service.js"],
     },
     # link_workspace must point to @aw_webui so generated store-target labels
     # resolve in the http_archive where npm_link_all_packages() creates them.
@@ -54,9 +54,16 @@ npm_activitywatch.npm_translate_lock(
     pnpm_lock = "//:pnpm-lock.yaml",
     # aw-webui imports axios directly (via NewReleaseNotification.vue) but
     # axios is only a dependency of aw-client, not aw-webui itself.
-    # pnpm strict mode hides phantom deps; hoist axios so vite/rollup can resolve it.
+    # pnpm strict mode hides phantom deps; hoist axios so webpack can resolve it.
     public_hoist_packages = {
         "axios": [""],
+        # webpack loaders and source files rely on npm's flat tree for these
+        # packages; select the versions exposed at the root of package-lock.json.
+        "autoprefixer@10.4.27": [""],
+        "d3-shape@3.2.0": [""],
+        # vue.config.js imports yargs, but upstream relies on npm's flat tree
+        # to expose this transitive package.
+        "yargs@16.2.0": [""],
     },
     run_lifecycle_hooks = False,
     update_pnpm_lock = False,
@@ -130,6 +137,16 @@ use_repo(oci, "distroless_cc_debian13", "distroless_cc_debian13_linux_amd64")
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
+# aw-webui's media directory is a nested submodule. Pull its exact pinned commit
+# so the Bazel build performs the same logo-copy prebuild step as upstream.
+http_archive(
+    name = "aw_media",
+    build_file = "//:aw-media.BUILD.bazel",
+    sha256 = "68437b9877321dee09f9419445d99c8aefa6bceac8439ac11228cd9ccbaab437",
+    strip_prefix = "media-a45151442aa33ed13d4fff8163bbb9b9e7636cee",
+    urls = ["https://github.com/ActivityWatch/media/archive/a45151442aa33ed13d4fff8163bbb9b9e7636cee.tar.gz"],
+)
+
 # aw-webui: frontend for aw-server-rust, pinned to the submodule commit used by
 # aw-server-rust @ 0094c14. BUILD file is overlaid.
 _AW_WEBUI_COMMIT = "0a43547efaaea5eb9c7cf82e3029d1ce1793a8d2"
@@ -137,11 +154,8 @@ _AW_WEBUI_COMMIT = "0a43547efaaea5eb9c7cf82e3029d1ce1793a8d2"
 http_archive(
     name = "aw_webui",
     build_file = "//:aw-webui.BUILD.bazel",
-    # aw-webui references /logo.png (Header.vue template, vite-plugin-pwa
-    # manifest) but does not ship the file. A 1x1 transparent PNG keeps vite happy.
     patch_args = ["-p1"],
-    patch_cmds = ["mkdir -p static && echo iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQI12NgAAIABQAABjE+ibYAAAAASUVORK5CYII= | base64 -d > static/logo.png"],
-    patches = ["//patches:aw-webui-proxy-compatible-pwa.patch"],
+    patches = ["//patches:aw-webui-hermetic-proxy-build.patch"],
     sha256 = "28f2286c9c7ea8459fca8bed56eff35d0e657a23f9d94bd07e841dd7eb5c3e81",
     strip_prefix = "aw-webui-" + _AW_WEBUI_COMMIT,
     urls = ["https://github.com/ActivityWatch/aw-webui/archive/" + _AW_WEBUI_COMMIT + ".tar.gz"],
@@ -156,10 +170,6 @@ http_archive(
     patch_args = ["-p1"],
     patches = [
         "//patches:aw-server-rust-rustls.patch",
-        # Serve the modern aw-webui (Vite + vite-plugin-pwa) output: /assets/,
-        # /manifest.webmanifest, /registerSW.js, /sw.js. Workbox is inlined by
-        # the webui patch, so these stable root paths cover the whole bundle.
-        "//patches:aw-server-rust-vite-assets-routes.patch",
     ],
     sha256 = "e707a2e76af0ca98e724686e3ee39a6d63cd7b4a0addb0f521f6923f997ba168",
     strip_prefix = "aw-server-rust-" + _AW_SERVER_RUST_COMMIT,

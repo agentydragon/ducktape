@@ -1,0 +1,6 @@
+"""Files consumed from aw-webui's pinned ActivityWatch/media submodule."""
+
+exports_files([
+    "logo/logo.png",
+    "logo/logo.svg",
+])

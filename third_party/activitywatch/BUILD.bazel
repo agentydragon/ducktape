@@ -29,8 +29,8 @@ test_suite(
     ],
 )
 
-# The aw-webui frontend bundle is built by @aw_webui//:dist (a js_run_binary
-# declared in aw-webui.BUILD.bazel).  It is wired into the Rust build via
+# The aw-webui frontend bundle is built by @aw_webui//:dist using upstream's
+# Vue CLI production path. It is wired into the Rust build via
 # crate.annotation in MODULE.bazel so aw-server embeds all assets at compile
 # time.  No additional targets are needed here for the JS side.
 

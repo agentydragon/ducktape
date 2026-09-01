@@ -1,36 +1,56 @@
 """Injected BUILD file for the @aw_webui http_archive.
 
-Runs `vite build` to produce the frontend bundle at :dist (a TreeArtifact).
-The Rust binary (aw-server) embeds this at compile time via rust-embed's
-interpolate-folder-path feature (controlled by AW_WEBUI_DIR env var).
+Runs upstream's Vue CLI production build to produce :dist (a TreeArtifact).
+The Rust binary embeds this at compile time through AW_WEBUI_DIR.
 
 Build the bundle:
   bazel build @aw_webui//:dist
 """
 
 load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
+load("@npm_aw_webui//:@vue/cli-service/package_json.bzl", vue_cli_service_bin = "bin")
 load("@npm_aw_webui//:defs.bzl", "npm_link_all_packages")
-load("@npm_aw_webui//:vite/package_json.bzl", vite_bin = "bin")
 
 exports_files(["package-lock.json"])
 
 npm_link_all_packages(name = "node_modules")
 
-# Vite binary — declared here so node_modules are in its RUNFILES.
-vite_bin.vite_binary(
-    name = "vite",
+vue_cli_service_bin.vue_cli_service_binary(
+    name = "vue_cli_service",
     visibility = ["//visibility:public"],
 )
 
-# Run `vite build` to produce dist/.
-# chdir = "." normalises to "external/<canonical-repo-name>" for external repos,
-# which is the directory in BAZEL_BINDIR where node_modules and copied sources live.
+# aw-webui's Makefile copies these files from its media submodule before build.
+genrule(
+    name = "logo_png",
+    srcs = ["@aw_media//:logo/logo.png"],
+    outs = ["static/logo.png"],
+    cmd = "cp $< $@",
+)
+
+genrule(
+    name = "logo_svg",
+    srcs = ["@aw_media//:logo/logo.svg"],
+    outs = ["static/logo.svg"],
+    cmd = "cp $< $@",
+)
+
+# Reproduce aw-webui's `npm run build`, whose webpack-era output layout is the
+# one aw-server-rust serves natively. chdir = "." normalizes to the external
+# repository's directory in BAZEL_BINDIR, alongside node_modules and sources.
 js_run_binary(
     name = "dist",
     srcs = [
+        ".eslintignore",
+        ".eslintrc.json",
+        "babel.config.cjs",
         "index.html",
         "package.json",
-        "vite.config.js",
+        "tsconfig.json",
+        "tsconfig.node.json",
+        "vue.config.js",
+        ":logo_png",
+        ":logo_svg",
         ":node_modules",
     ] + glob(
         [
@@ -41,18 +61,17 @@ js_run_binary(
     ),
     args = [
         "build",
-        "--outDir",
+        "--dest",
         "dist",
-        "--emptyOutDir",
     ],
     chdir = ".",
     env = {
         "NODE_ENV": "production",
-        # Stable placeholder so the build is hermetic (avoids shelling out to
-        # `git rev-parse`).
-        "COMMIT_HASH": "bazel",
+        # The source is an archive, not a Git checkout. Inject the exact pinned
+        # revision instead of letting vue.config.js shell out to Git.
+        "COMMIT_HASH": "0a43547",
     },
     out_dirs = ["dist"],
-    tool = ":vite",
+    tool = ":vue_cli_service",
     visibility = ["//visibility:public"],
 )

@@ -1,0 +1,33 @@
+diff --git a/vue.config.js b/vue.config.js
+index 47ff8dc..90ddf57 100644
+--- a/vue.config.js
++++ b/vue.config.js
+@@ -12 +12,3 @@
+-const _COMMIT_HASH = child_process.execSync('git rev-parse --short HEAD').toString().trim();
++const _COMMIT_HASH =
++  process.env.COMMIT_HASH ||
++  child_process.execSync('git rev-parse --short HEAD').toString().trim();
+@@ -79,2 +81,3 @@
+   pwa: {
++    manifestCrossorigin: 'use-credentials',
+     name: 'ActivityWatch',
+@@ -85 +88 @@
+-      //maskIcon: 'logo.png',
++      maskIcon: null,
+diff --git a/src/main.js b/src/main.js
+index f0a5f7b..0b06394 100644
+--- a/src/main.js
++++ b/src/main.js
+@@ -1,2 +1,12 @@
+ import 'core-js/stable';
+ import 'regenerator-runtime/runtime';
++
++// This server build does not register a service worker. Remove registrations
++// left by the former Vite build so browsers stop retrying its unsupported
++// /sw.js and Workbox asset graph.
++if ('serviceWorker' in navigator) {
++  navigator.serviceWorker
++    .getRegistrations()
++    .then(registrations => Promise.all(registrations.map(registration => registration.unregister())))
++    .catch(error => console.warn('Unable to unregister legacy service worker', error));
++}
