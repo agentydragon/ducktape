@@ -12,10 +12,21 @@ Load for local testing:
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+sh_test(
+    name = "webui_dist_test",
+    srcs = ["webui_dist_test.sh"],
+    args = ["$(rootpath @aw_webui//:dist)"],
+    data = ["@aw_webui//:dist"],
+)
 
 test_suite(
-    name = "aw_sync_tests",
-    tests = ["@aw_server_rust//:aw_sync_tests"],
+    name = "tests",
+    tests = [
+        ":webui_dist_test",
+        "@aw_server_rust//:aw_sync_tests",
+    ],
 )
 
 # The aw-webui frontend bundle is built by @aw_webui//:dist (a js_run_binary

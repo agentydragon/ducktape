@@ -6,6 +6,7 @@ module(
 bazel_dep(name = "package_metadata", version = "0.0.6")
 bazel_dep(name = "rules_oci", version = "2.3.0")
 bazel_dep(name = "rules_pkg", version = "1.2.0")
+bazel_dep(name = "rules_shell", version = "0.6.1")
 bazel_dep(name = "aspect_rules_js", version = "2.9.2")
 bazel_dep(name = "rules_nodejs", version = "6.7.5")
 bazel_dep(name = "rules_rust", version = "0.70.0")
@@ -138,7 +139,9 @@ http_archive(
     build_file = "//:aw-webui.BUILD.bazel",
     # aw-webui references /logo.png (Header.vue template, vite-plugin-pwa
     # manifest) but does not ship the file. A 1x1 transparent PNG keeps vite happy.
+    patch_args = ["-p1"],
     patch_cmds = ["mkdir -p static && echo iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQI12NgAAIABQAABjE+ibYAAAAASUVORK5CYII= | base64 -d > static/logo.png"],
+    patches = ["//patches:aw-webui-proxy-compatible-pwa.patch"],
     sha256 = "28f2286c9c7ea8459fca8bed56eff35d0e657a23f9d94bd07e841dd7eb5c3e81",
     strip_prefix = "aw-webui-" + _AW_WEBUI_COMMIT,
     urls = ["https://github.com/ActivityWatch/aw-webui/archive/" + _AW_WEBUI_COMMIT + ".tar.gz"],
@@ -154,8 +157,8 @@ http_archive(
     patches = [
         "//patches:aw-server-rust-rustls.patch",
         # Serve the modern aw-webui (Vite + vite-plugin-pwa) output: /assets/,
-        # /manifest.webmanifest, /registerSW.js, /sw.js. Upstream's routes only
-        # cover the webpack-era /css, /js, /static, /manifest.json layout.
+        # /manifest.webmanifest, /registerSW.js, /sw.js. Workbox is inlined by
+        # the webui patch, so these stable root paths cover the whole bundle.
         "//patches:aw-server-rust-vite-assets-routes.patch",
     ],
     sha256 = "e707a2e76af0ca98e724686e3ee39a6d63cd7b4a0addb0f521f6923f997ba168",

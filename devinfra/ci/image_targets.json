@@ -12,7 +12,7 @@
     },
     "aw-server": {
       "target": "@ducktape_activitywatch//:image",
-      "test": "@ducktape_activitywatch//:aw_sync_tests",
+      "test": "@ducktape_activitywatch//:tests",
       "registry": "forgejo"
     },
     "augur": {

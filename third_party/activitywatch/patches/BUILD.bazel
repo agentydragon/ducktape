@@ -1,4 +1,5 @@
 exports_files([
+    "aw-webui-proxy-compatible-pwa.patch",
     "aw-server-rust-rustls.patch",
     "aw-server-rust-vite-assets-routes.patch",
     "vue-demi-has-injection-context.patch",
