@@ -4,6 +4,8 @@ resources:
   - analysis-ai.sops.yaml
   - anthropic-haku.sops.yaml
   - anthropic-haku-grants.yaml
+  - cerebras.sops.yaml
+  - cerebras-grants.yaml
   - gemini.sops.yaml
   - gemini-grants.yaml
   - github-agentydragon-agent.sops.yaml

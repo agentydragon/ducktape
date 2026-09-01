@@ -14,6 +14,7 @@ upstream model:
 - `tana/ant-messages/*` — Tana account via tana-litellm, an Anthropic Messages
   passthrough
 - `google/oai-chat/*` / `google/oai-embeddings/*` — Google AI key (Gemini)
+- `cerebras/oai-chat/*` — Cerebras public inference API key
 
 A shape slug is `<definer>-<protocol>` (ant-messages, oai-responses, oai-chat,
 oai-embeddings): the shape segment names a wire protocol, and wire protocols are
@@ -52,6 +53,7 @@ class Provider(StrEnum):
     ANTHROPIC_MAX20 = "anthropic-max20"
     TANA = "tana"
     GOOGLE = "google"
+    CEREBRAS = "cerebras"
 
 
 class ApiShape(StrEnum):
@@ -148,6 +150,12 @@ OPENCLAW_CODEX_MODELS: list[str] = [
 # Terraform key and public-coder-agent's OpenClaw catalog; both are pinned
 # against this list.
 GEMINI_MODELS: list[str] = ["gemini-3.7-flash", "gemini-3.5-flash-lite"]
+
+# Cerebras public models. Verified against the unauthenticated public catalog at
+# https://api.cerebras.ai/public/v1/models on 2026-08-31. Dedicated Endpoint-only
+# models are intentionally excluded because this credential accesses the public API.
+CEREBRAS_MODELS: list[str] = ["gemma-4-31b", "gpt-oss-120b"]
+CEREBRAS_VISION_MODELS: frozenset[str] = frozenset({"gemma-4-31b"})
 
 # Gemini embeddings, same key as the chat lineup. Added for OpenClaw memory search,
 # whose index needs an embedding backend and had none — see

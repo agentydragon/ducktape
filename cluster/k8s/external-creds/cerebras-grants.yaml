@@ -1,0 +1,26 @@
+# Source-controlled grant for the canonical Cerebras credential. The consumer
+# identity lives with LiteLLM; external-secrets-config owns the store.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: llm-cerebras-reader
+  namespace: ducktape-flux
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["llm-cerebras"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: llm-cerebras-litellm-reader
+  namespace: ducktape-flux
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: llm-cerebras-reader
+subjects:
+  - kind: ServiceAccount
+    name: external-creds-reader
+    namespace: litellm
