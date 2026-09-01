@@ -25,6 +25,14 @@ spec:
       nodeSelector:
         # Same public-node selector as Cilium's hostNetwork Gateway Envoy tier.
         topology.kubernetes.io/region: hil
+      # This is the per-public-node MX entry point: hostPort 25 must remain
+      # present on every public OVH node while the control-plane taint is rolled
+      # out. The backend Deployment is movable; this DaemonSet is the explicit
+      # control-plane exception until the public-node roster is redesigned.
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
       containers:
         - name: nginx
           image: nginxinc/nginx-unprivileged:1.27-alpine@sha256:28d91bdce70ad09025ea901458fdd149259d8e05982ade79d4ef2c0d9470eb48
