@@ -23,12 +23,17 @@ spec:
           cores: 2
         resources:
           requests:
-            memory: 1Gi
+            # The guest currently has substantial headroom at this size. Keep
+            # the appliance small while KubeVirt over-reserves USB host devices
+            # as VFIO memory overhead.
+            memory: 768Mi
         firmware:
           bootloader:
             efi:
               secureBoot: false
         devices:
+          # This appliance has no graphical console.
+          autoattachGraphicsDevice: false
           disks:
             - name: rootdisk
               bootOrder: 1
