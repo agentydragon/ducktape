@@ -18,6 +18,11 @@ spec:
       # Co-located with SeaweedFS and attic-db on OVH kimsufi workers.
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      # Stateless S3-backed service; allow control-plane nodes as overflow capacity.
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
       containers:
         - name: attic
           # TODO: Pin to a versioned tag once attic publishes semver releases.

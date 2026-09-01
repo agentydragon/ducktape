@@ -44,6 +44,11 @@ spec:
       # available during a home outage. Ollama requests can cross the mesh to wyrm2.
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      # Stateless service; allow control-plane nodes as overflow capacity.
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
       # Spread the two replicas across nodes: co-located, a single drain takes
       # the Service to zero backends, which in-cluster clients see as an
       # immediate EPERM on connect (same end state as the 2026-08-09 outage).
