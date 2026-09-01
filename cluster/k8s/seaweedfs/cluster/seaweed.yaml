@@ -27,9 +27,9 @@ spec:
   # service (Unimplemented), so every Bucket CR landed Failed regardless
   # of whether the bucket was fresh or pre-existing. The seaweedfs-operator
   # 1.0.19 image imports SeaweedFS at commit a1e5eb9da (between 4.23 and
-  # 4.24), so 4.29 matches the operator's expected wire surface.
+  # 4.24), so 4.44 remains compatible with the operator's expected wire surface.
   #
-  # Upgrade safety: changelog scan from 3.93 to 4.29 found no on-disk
+  # Upgrade safety: changelog scan from 3.93 to 4.44 found no on-disk
   # format changes (leveldb2 filer store, volume .dat/.idx, s3-config.json
   # all stable), no breaking gRPC changes (only additions to filer_pb /
   # master_pb / iam_pb), and split-brain prevention via persistent
