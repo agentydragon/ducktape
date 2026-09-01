@@ -36,6 +36,9 @@ spec:
     # The app must serve (with its DB) before keys can mint.
     - name: litellm
       namespace: ducktape-flux
+    # Terraform writes the shared experiment key into this namespace.
+    - name: litellm-cheap-experiments-namespace
+      namespace: ducktape-flux
     - name: tofu-controller
       namespace: ducktape-flux
     - name: tofu-state-db

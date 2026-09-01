@@ -108,6 +108,31 @@ locals {
     "google/oai-chat/gemini-3.7-flash",
     "google/oai-chat/gemini-3.5-flash-lite",
   ]
+  # Shared by agents only through an expiring Haku Console Kubernetes grant. This
+  # is intentionally an exact, cheap-model-only set rather than a provider-wide
+  # prefix or wildcard. The Ollama names cover every model/context/protocol variant
+  # emitted by the main proxy config.
+  cheap_experiments_models = [
+    "google/oai-chat/gemini-3.7-flash",
+    "google/oai-chat/gemini-3.5-flash-lite",
+    "google/oai-embeddings/gemini-embedding-2",
+    "google/oai-embeddings/gemini-embedding-001",
+    "gpt-oss-20b-128k-openai-chat",
+    "gpt-oss-20b-128k-ollama-native",
+    "gpt-oss-20b-256k-openai-chat",
+    "gpt-oss-20b-256k-ollama-native",
+    "gpt-oss-20b-512k-openai-chat",
+    "gpt-oss-20b-512k-ollama-native",
+    "gpt-oss-20b-1m-openai-chat",
+    "gpt-oss-20b-1m-ollama-native",
+    "gpt-oss-120b-128k-openai-chat",
+    "gpt-oss-120b-128k-ollama-native",
+    "gemma4-31b-it-q8_0-128k-openai-chat",
+    "gemma4-31b-it-q8_0-128k-ollama-native",
+    "anthropic-api/ant-messages/claude-haiku-4-5-20251001",
+    "chatgpt/ant-messages/gpt-5.6-luna",
+    "chatgpt/oai-responses/gpt-5.6-luna",
+  ]
 }
 
 # One static key per worker lane, held by that lane's llm-proxy (never by workers —
@@ -117,6 +142,37 @@ locals {
 # The former Haku dispatch-lane keys and workers-LiteLLM credentials were
 # retired with the dispatch plane. Agent workspaces and the public coder retain
 # separately scoped Codex keys below.
+
+# ============================================================================
+# cheap-experiments — shared low-cost key for temporary agent experiments
+# ============================================================================
+# Agents receive this Secret only through an expiring Haku Console Kubernetes grant.
+# There is deliberately no reflector copy or standing RoleBinding: the grant names
+# both the namespace and Secret, and LiteLLM enforces the model allowlist below.
+
+resource "litellm_key" "cheap_experiments" {
+  key_alias       = "cheap-experiments"
+  models          = local.cheap_experiments_models
+  max_budget      = 50
+  budget_duration = "30d"
+  metadata = {
+    consumer = "haku-console-temporary-agent-experiments"
+  }
+}
+
+resource "kubernetes_secret" "cheap_experiments" {
+  metadata {
+    name      = "litellm-key-cheap-experiments"
+    namespace = "litellm-cheap-experiments"
+    annotations = {
+      description = "LiteLLM virtual key for temporary agent experiments; Google, Ollama, Anthropic Haiku, and OpenAI Luna only"
+    }
+  }
+
+  data = {
+    api-key = litellm_key.cheap_experiments.key
+  }
+}
 
 # ============================================================================
 # codex-pod — OpenAI/ChatGPT-backend key for the interactive codex agent pod

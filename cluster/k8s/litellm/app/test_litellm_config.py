@@ -285,6 +285,27 @@ def test_terraform_claude_allowlist_matches_the_anthropic_model_list() -> None:
     ]
 
 
+def test_terraform_cheap_experiments_allowlist_is_the_intended_low_cost_subset() -> None:
+    expected_ollama = {
+        entry["model_name"] for tag, ctx_variants in _MODELS for entry in _model_entries(tag, ctx_variants)
+    }
+    expected_google = {exposed_name(Provider.GOOGLE, ApiShape.OAI_CHAT, model) for model in GEMINI_MODELS} | {
+        exposed_name(Provider.GOOGLE, ApiShape.OAI_EMBEDDINGS, model) for model in GEMINI_EMBEDDING_MODELS
+    }
+    expected = (
+        expected_ollama
+        | expected_google
+        | {
+            exposed_name(Provider.ANTHROPIC_API, ApiShape.ANT_MESSAGES, "claude-haiku-4-5-20251001"),
+            exposed_name(Provider.CHATGPT, ApiShape.ANT_MESSAGES, "gpt-5.6-luna"),
+            exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, "gpt-5.6-luna"),
+        }
+    )
+
+    tf_locals = _litellm_keys_locals()
+    assert set(tf_locals["cheap_experiments_models"]) == expected
+
+
 # main.tf's own comment: "Model names must match generated model_name entries in
 # cluster/k8s/litellm/app/proxy-config.yaml". These are the remaining live-key
 # locals that spell names out literally, so every element must resolve.
@@ -295,6 +316,7 @@ _TF_LITERAL_MODEL_LOCALS = [
     "claude_client_models",
     "embedding_client_models",
     "gemini_client_models",
+    "cheap_experiments_models",
 ]
 
 

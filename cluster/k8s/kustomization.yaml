@@ -285,6 +285,7 @@ resources:
 
   # --- litellm ---
   - litellm/namespace/flux-kustomization.yaml
+  - litellm-cheap-experiments/namespace/flux-kustomization.yaml
   - external-creds/flux-kustomization.yaml
   - litellm/secrets/flux-kustomization.yaml
   - litellm/db/flux-kustomization.yaml

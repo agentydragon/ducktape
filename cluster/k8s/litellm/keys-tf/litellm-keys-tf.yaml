@@ -1,4 +1,4 @@
-# Mints the Haku worker-lane LiteLLM virtual keys (tf/gitops/litellm-keys).
+# Mints the Haku and agent-worker LiteLLM virtual keys (tf/gitops/litellm-keys).
 # Needs the master key (litellm-api-key CR) and a serving LiteLLM with its
 # virtual-key DB; tofu-controller retries on its interval until LiteLLM is up.
 apiVersion: infra.contrib.fluxcd.io/v1alpha2
