@@ -34,7 +34,7 @@ spec:
   # all stable), no breaking gRPC changes (only additions to filer_pb /
   # master_pb / iam_pb), and split-brain prevention via persistent
   # ClusterID is single-master-friendly (auto-generates on first start).
-  image: chrislusf/seaweedfs:4.29
+  image: chrislusf/seaweedfs:4.44
   volumeServerDiskCount: 1
 
   master:
