@@ -178,7 +178,7 @@ endpoints:
 
   - name: Nix Cache
     group: services
-    url: https://cache.allegedly.works/nix-cache-info
+    url: https://cache.allegedly.works/public/nix-cache-info
     interval: 60s
     conditions:
       - "[STATUS] == 200"
