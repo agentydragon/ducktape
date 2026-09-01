@@ -1,0 +1,89 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@rules_proto_grpc_js//:defs.bzl", "js_grpc_library")
+load("@rules_proto_grpc_python//:defs.bzl", "python_grpc_library")
+load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+proto_library(
+    name = "greeting_proto",
+    srcs = ["greeting.proto"],
+    strip_import_prefix = "/x/grpc_demo",
+)
+
+python_grpc_library(
+    name = "greeting_python_grpc",
+    generate_pyi = True,
+    output_mode = "NO_PREFIX",
+    protos = [":greeting_proto"],
+)
+
+js_grpc_library(
+    name = "greeting_js_grpc",
+    output_mode = "NO_PREFIX",
+    protos = [":greeting_proto"],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    deps = [
+        ":greeting_python_grpc",
+        "@grpc//src/python/grpcio/grpc:grpcio",
+        "@pypi//protobuf",
+        "@pypi//typing_extensions",
+    ],
+)
+
+py_binary(
+    name = "server_bin",
+    legacy_create_init = False,
+    main_module = "x.grpc_demo.server",
+    deps = [":server"],
+)
+
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+)
+
+ts_library(
+    name = "frontend",
+    srcs = ["frontend.ts"],
+    tsconfig = ":tsconfig",
+    deps = [
+        ":greeting_js_grpc",
+        "//:node_modules/@grpc/grpc-js",
+        "//:node_modules/@types/node",
+        "//:node_modules/google-protobuf",
+    ],
+)
+
+js_binary(
+    name = "frontend_bin",
+    data = [
+        "package.json",
+        ":frontend",
+        ":greeting_js_grpc",
+        "//:node_modules/@grpc/grpc-js",
+        "//:node_modules/google-protobuf",
+    ],
+    entry_point = "frontend.js",
+)
+
+py_test(
+    name = "test_server",
+    srcs = ["test_server.py"],
+    deps = [
+        ":greeting_python_grpc",
+        ":server",
+        "@grpc//src/python/grpcio/grpc:grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//typing_extensions",
+    ],
+)
