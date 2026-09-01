@@ -1,0 +1,34 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+exports_files(
+    ["forgejo.py"],
+    visibility = ["//skills/forgejo:__pkg__"],
+)
+
+py_library(
+    name = "forgejo_lib",
+    srcs = ["forgejo.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "cli",
+    main_module = "skills.forgejo.scripts.forgejo",
+    visibility = ["//visibility:public"],
+    deps = [":forgejo_lib"],
+)
+
+py_test(
+    name = "test_forgejo",
+    srcs = ["test_forgejo.py"],
+    deps = [
+        ":forgejo_lib",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

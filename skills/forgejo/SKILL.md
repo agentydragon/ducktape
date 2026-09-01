@@ -63,7 +63,7 @@ the `event` field before using one run to explain another.
 The `logs` subcommand (below) answers "why did this run fail?"; `timing` answers "why is CI
 slow?" — a per-job duration distribution over recent tasks. The script is self-contained
 (PEP 723 inline deps), so `uv run` fetches `httpx` + `pydantic` on the fly; in-repo,
-`bb run //skills/forgejo:cli -- timing …` works too:
+`bb run //skills/forgejo/scripts:cli -- timing …` works too:
 
 ```bash
 uv run skills/forgejo/scripts/forgejo.py timing --owner "$OWNER" --repo "$REPO"

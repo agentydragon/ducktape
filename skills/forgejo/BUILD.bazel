@@ -1,46 +1,15 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//skills:defs.bzl", "skill_package")
-
-# skill_package(preserve_paths = True) requires same-package files, so scripts/
-# must stay part of this package rather than getting a generated BUILD.
-# gazelle:exclude scripts
-# gazelle:resolve py skills.forgejo.scripts.forgejo //skills/forgejo:forgejo_lib
-
-# keep: srcs lives in the excluded scripts/; the resolve above points here
-py_library(
-    name = "forgejo_lib",
-    srcs = ["scripts/forgejo.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "@pypi//httpx",
-        "@pypi//pydantic",
-    ],
-)
+load("//skills:defs.bzl", "skill_mapping", "skill_package")
 
 skill_package(
     name = "forgejo",
-    srcs = [
-        "SKILL.md",
-        "scripts/forgejo.py",
-    ],
-)
-
-py_binary(
-    name = "cli",
-    imports = ["../.."],
-    main_module = "skills.forgejo.scripts.forgejo",
-    visibility = ["//visibility:public"],
-    deps = [":forgejo_lib"],
-)
-
-# keep: srcs lives in the excluded scripts/ tree; this target is deliberately manual
-py_test(
-    name = "test_forgejo",
-    srcs = ["scripts/test_forgejo.py"],
-    deps = [
-        ":forgejo_lib",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
+    contents = [
+        skill_mapping(
+            srcs = ["SKILL.md"],
+            preserve_paths = True,
+        ),
+        skill_mapping(
+            srcs = ["//skills/forgejo/scripts:forgejo.py"],
+            prefix = "scripts",
+        ),
     ],
 )
