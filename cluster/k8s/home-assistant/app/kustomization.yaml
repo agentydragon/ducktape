@@ -8,6 +8,7 @@ resources:
   - onboarding-job.yaml
   - httproute.yaml
   - monitoring.yaml
+  - networkpolicy.yaml
   - volsync-backup.yaml
 generatorOptions:
   disableNameSuffixHash: true

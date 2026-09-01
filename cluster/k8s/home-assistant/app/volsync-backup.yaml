@@ -1,56 +1,35 @@
-# Crash-consistent copies of the OptiPlex-local state into replicated
-# SeaweedFS storage. Home Assistant's own backup integration remains the source
-# of application-consistent restore points inside home-assistant-config.
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: home-assistant-config-backup
-  namespace: home-assistant
-spec:
-  accessModes: [ReadWriteOnce]
-  storageClassName: seaweedfs-ovh
-  resources:
-    requests:
-      storage: 32Gi
----
-apiVersion: volsync.backube/v1alpha1
-kind: ReplicationDestination
-metadata:
-  name: home-assistant-config-backup
-  namespace: home-assistant
-spec:
-  rsyncTLS:
-    destinationPVC: home-assistant-config-backup
-    copyMethod: Direct
-    serviceType: ClusterIP
-    moverSecurityContext:
-      runAsUser: 0
-      runAsGroup: 0
-      seccompProfile:
-        type: RuntimeDefault
-    moverAffinity:
-      nodeAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-          nodeSelectorTerms:
-            - matchExpressions:
-                - key: topology.kubernetes.io/zone
-                  operator: In
-                  values: [hil-ovh]
----
+# Encrypted, deduplicated snapshots of Home Assistant's OptiPlex-local state
+# in the dedicated SeaweedFS S3 bucket. Home Assistant's own backup integration
+# remains the source of application-consistent restore points in this PVC.
 apiVersion: volsync.backube/v1alpha1
 kind: ReplicationSource
 metadata:
-  name: home-assistant-config-backup
+  name: home-assistant-config-restic
   namespace: home-assistant
 spec:
   sourcePVC: home-assistant-config
   trigger:
     schedule: "17 */6 * * *"
-  rsyncTLS:
+  restic:
+    repository: home-assistant-config-restic
     copyMethod: Direct
-    keySecret: volsync-rsync-tls-home-assistant-config-backup
-    address: volsync-rsync-tls-dst-home-assistant-config-backup.home-assistant.svc
-    port: 8000
+    pruneIntervalDays: 7
+    retain:
+      daily: 7
+      weekly: 4
+      monthly: 6
+    cacheStorageClassName: local-path-home-ssd
+    cacheAccessModes: [ReadWriteOnce]
+    cacheCapacity: 1Gi
+    moverPodLabels:
+      app.kubernetes.io/name: home-assistant-config-restic
+    moverResources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
     moverSecurityContext:
       runAsUser: 0
       runAsGroup: 0

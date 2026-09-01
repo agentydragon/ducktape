@@ -392,6 +392,7 @@ resources:
   - seaweedfs/wayback-archive-bucket/flux-kustomization.yaml
   - seaweedfs/public-coder-agent-backups-bucket/flux-kustomization.yaml
   - seaweedfs/haku-openclaw-spike-backups-bucket/flux-kustomization.yaml
+  - seaweedfs/home-assistant-backups-bucket/flux-kustomization.yaml
   - seaweedfs/public-s3/flux-kustomization.yaml
   - seaweedfs/monitoring/flux-kustomization.yaml
   - seaweedfs-csi/flux-kustomization.yaml

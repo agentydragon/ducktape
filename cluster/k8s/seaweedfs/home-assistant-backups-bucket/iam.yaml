@@ -1,0 +1,28 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: home-assistant-backups
+  namespace: seaweedfs
+spec:
+  seaweedRef:
+    name: seaweedfs
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: home-assistant-backups
+  namespace: seaweedfs
+spec:
+  seaweedRef:
+    name: seaweedfs
+  identityRef:
+    name: home-assistant-backups
+  # Generate credentials directly where VolSync consumes them. The repository
+  # Secret's SOPS-managed fields provide the Restic endpoint and password.
+  secretRef:
+    name: home-assistant-config-restic
+    namespace: home-assistant
+    accessKeyField: AWS_ACCESS_KEY_ID
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+  reclaimPolicy: Retain

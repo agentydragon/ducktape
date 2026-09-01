@@ -1,0 +1,28 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: seaweedfs-home-assistant-backups-bucket
+  namespace: ducktape-flux
+spec:
+  interval: 10m
+  retryInterval: 1m
+  path: ./cluster/k8s/seaweedfs/home-assistant-backups-bucket
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  dependsOn:
+    - name: seaweedfs-cluster
+      namespace: ducktape-flux
+  wait: true
+  timeout: 5m
+  healthChecks:
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: Bucket
+      name: home-assistant-backups
+      namespace: seaweedfs

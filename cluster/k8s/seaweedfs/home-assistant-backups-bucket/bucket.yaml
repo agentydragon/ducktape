@@ -1,0 +1,15 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: home-assistant-backups
+  namespace: seaweedfs
+spec:
+  name: home-assistant-backups
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  # Restic retention/pruning is managed by VolSync, not by Bucket deletion.
+  reclaimPolicy: Retain
+  access:
+    - user: home-assistant-backups
+      actions: [Read, Write, List, Tagging]
