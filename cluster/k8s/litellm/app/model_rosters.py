@@ -14,6 +14,7 @@ upstream model:
 - `tana/ant-messages/*` — Tana account via tana-litellm, an Anthropic Messages
   passthrough
 - `google/oai-chat/*` / `google/oai-embeddings/*` — Google AI key (Gemini)
+- `mistral/oai-chat/*` — Mistral API key
 
 A shape slug is `<definer>-<protocol>` (ant-messages, oai-responses, oai-chat,
 oai-embeddings): the shape segment names a wire protocol, and wire protocols are
@@ -52,6 +53,7 @@ class Provider(StrEnum):
     ANTHROPIC_MAX20 = "anthropic-max20"
     TANA = "tana"
     GOOGLE = "google"
+    MISTRAL = "mistral"
 
 
 class ApiShape(StrEnum):
@@ -148,6 +150,20 @@ OPENCLAW_CODEX_MODELS: list[str] = [
 # Terraform key and public-coder-agent's OpenClaw catalog; both are pinned
 # against this list.
 GEMINI_MODELS: list[str] = ["gemini-3.7-flash", "gemini-3.5-flash-lite"]
+
+# Current chat-capable models listed in Mistral's API configuration guide on
+# 2026-08-31. This is the complete chat roster exposed through the cheap-
+# experiments key; account-specific fine-tuned models are intentionally excluded.
+MISTRAL_MODELS: list[str] = [
+    "mistral-medium-latest",
+    "zai-glm-5-2",
+    "mistral-large-latest",
+    "mistral-small-latest",
+    "codestral-latest",
+    "ministral-14b-latest",
+    "ministral-8b-latest",
+    "ministral-3b-latest",
+]
 
 # Gemini embeddings, same key as the chat lineup. Added for OpenClaw memory search,
 # whose index needs an embedding backend and had none — see

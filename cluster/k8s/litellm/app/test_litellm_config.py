@@ -14,6 +14,7 @@ from cluster.k8s.litellm.app.model_rosters import (
     CODEX_MEASURED_MODELS,
     GEMINI_EMBEDDING_MODELS,
     GEMINI_MODELS,
+    MISTRAL_MODELS,
     TANA_MODELS,
     ApiShape,
     Provider,
@@ -39,6 +40,9 @@ _MODELS: list[tuple[str, list[tuple[str, int | None]]]] = [
 # GROQ_API_KEY env var (litellm-groq-key secret). Free tier.
 GROQ_CHAT_MODELS: list[str] = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
 GROQ_WHISPER_MODELS: list[str] = ["whisper-large-v3", "whisper-large-v3-turbo"]
+
+# Mistral chat models. Key from the MISTRAL_API_KEY env var
+# (litellm-mistral-key secret). The roster is maintained in model_rosters.py.
 
 # Tana (Tana-UI models, TANA_MODELS in model_rosters.py) fronted through the DB-less
 # tana-litellm proxy. tana-litellm is a standard LiteLLM that speaks /v1/messages and
@@ -107,6 +111,15 @@ def _gemini_embedding_entries() -> Iterator[dict]:
             "model_name": exposed_name(Provider.GOOGLE, ApiShape.OAI_EMBEDDINGS, model),
             "litellm_params": {"model": f"gemini/{model}", "api_key": "os.environ/GEMINI_API_KEY"},
             "model_info": {"mode": "embedding"},
+        }
+
+
+def _mistral_entries() -> Iterator[dict]:
+    for model in MISTRAL_MODELS:
+        yield {
+            "model_name": exposed_name(Provider.MISTRAL, ApiShape.OAI_CHAT, model),
+            "litellm_params": {"model": f"mistral/{model}", "api_key": "os.environ/MISTRAL_API_KEY"},
+            "model_info": {"mode": "chat", "supports_function_calling": True},
         }
 
 
@@ -228,6 +241,7 @@ def _expected_main_config() -> dict:
     model_list.extend(_groq_entries())
     model_list.extend(_gemini_chat_entries())
     model_list.extend(_gemini_embedding_entries())
+    model_list.extend(_mistral_entries())
 
     # Master key and Langfuse credentials are injected as env vars in the
     # Deployment; not repeated here.
@@ -292,9 +306,11 @@ def test_terraform_cheap_experiments_allowlist_is_the_intended_low_cost_subset()
     expected_google = {exposed_name(Provider.GOOGLE, ApiShape.OAI_CHAT, model) for model in GEMINI_MODELS} | {
         exposed_name(Provider.GOOGLE, ApiShape.OAI_EMBEDDINGS, model) for model in GEMINI_EMBEDDING_MODELS
     }
+    expected_mistral = {exposed_name(Provider.MISTRAL, ApiShape.OAI_CHAT, model) for model in MISTRAL_MODELS}
     expected = (
         expected_ollama
         | expected_google
+        | expected_mistral
         | {
             exposed_name(Provider.ANTHROPIC_API, ApiShape.ANT_MESSAGES, "claude-haiku-4-5-20251001"),
             exposed_name(Provider.CHATGPT, ApiShape.ANT_MESSAGES, "gpt-5.6-luna"),

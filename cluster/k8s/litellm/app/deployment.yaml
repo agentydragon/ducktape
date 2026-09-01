@@ -110,6 +110,12 @@ spec:
                 secretKeyRef:
                   name: litellm-gemini-key
                   key: GEMINI_API_KEY
+            # Mistral API key for the Mistral model roster.
+            - name: MISTRAL_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-mistral-key
+                  key: MISTRAL_API_KEY
             # CLIProxyAPI client key for the codex-* upstream models (ESO mirror of
             # cli-proxy-api-client-key; see secrets/cliproxy-client-key-eso.yaml).
             - name: CLIPROXY_CLIENT_KEY

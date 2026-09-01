@@ -366,6 +366,62 @@ model_list:
       api_key: os.environ/GEMINI_API_KEY
     model_info:
       mode: embedding
+  - model_name: mistral/oai-chat/mistral-medium-latest
+    litellm_params:
+      model: mistral/mistral-medium-latest
+      api_key: os.environ/MISTRAL_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+  - model_name: mistral/oai-chat/zai-glm-5-2
+    litellm_params:
+      model: mistral/zai-glm-5-2
+      api_key: os.environ/MISTRAL_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+  - model_name: mistral/oai-chat/mistral-large-latest
+    litellm_params:
+      model: mistral/mistral-large-latest
+      api_key: os.environ/MISTRAL_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+  - model_name: mistral/oai-chat/mistral-small-latest
+    litellm_params:
+      model: mistral/mistral-small-latest
+      api_key: os.environ/MISTRAL_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+  - model_name: mistral/oai-chat/codestral-latest
+    litellm_params:
+      model: mistral/codestral-latest
+      api_key: os.environ/MISTRAL_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+  - model_name: mistral/oai-chat/ministral-14b-latest
+    litellm_params:
+      model: mistral/ministral-14b-latest
+      api_key: os.environ/MISTRAL_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+  - model_name: mistral/oai-chat/ministral-8b-latest
+    litellm_params:
+      model: mistral/ministral-8b-latest
+      api_key: os.environ/MISTRAL_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
+  - model_name: mistral/oai-chat/ministral-3b-latest
+    litellm_params:
+      model: mistral/ministral-3b-latest
+      api_key: os.environ/MISTRAL_API_KEY
+    model_info:
+      mode: chat
+      supports_function_calling: true
 litellm_settings:
   drop_params: true
   callbacks:

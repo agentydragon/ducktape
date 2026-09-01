@@ -111,12 +111,20 @@ locals {
   # Shared by agents only through an expiring Haku Console Kubernetes grant. This
   # is intentionally an exact, cheap-model-only set rather than a provider-wide
   # prefix or wildcard. The Ollama names cover every model/context/protocol variant
-  # emitted by the main proxy config.
+  # emitted by the main proxy config; Mistral is the current free-tier roster.
   cheap_experiments_models = [
     "google/oai-chat/gemini-3.7-flash",
     "google/oai-chat/gemini-3.5-flash-lite",
     "google/oai-embeddings/gemini-embedding-2",
     "google/oai-embeddings/gemini-embedding-001",
+    "mistral/oai-chat/mistral-medium-latest",
+    "mistral/oai-chat/zai-glm-5-2",
+    "mistral/oai-chat/mistral-large-latest",
+    "mistral/oai-chat/mistral-small-latest",
+    "mistral/oai-chat/codestral-latest",
+    "mistral/oai-chat/ministral-14b-latest",
+    "mistral/oai-chat/ministral-8b-latest",
+    "mistral/oai-chat/ministral-3b-latest",
     "gpt-oss-20b-128k-openai-chat",
     "gpt-oss-20b-128k-ollama-native",
     "gpt-oss-20b-256k-openai-chat",
@@ -165,7 +173,7 @@ resource "kubernetes_secret" "cheap_experiments" {
     name      = "litellm-key-cheap-experiments"
     namespace = "litellm-cheap-experiments"
     annotations = {
-      description = "LiteLLM virtual key for temporary agent experiments; Google, Ollama, Anthropic Haiku, and OpenAI Luna only"
+      description = "LiteLLM virtual key for temporary agent experiments; Mistral, Google, Ollama, Anthropic Haiku, and OpenAI Luna only"
     }
   }
 

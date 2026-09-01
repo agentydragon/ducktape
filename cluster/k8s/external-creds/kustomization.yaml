@@ -12,3 +12,5 @@ resources:
   - github-agentydragon-grants.yaml
   - groq.sops.yaml
   - groq-grants.yaml
+  - mistral.sops.yaml
+  - mistral-grants.yaml

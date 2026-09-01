@@ -1,0 +1,37 @@
+# Paste the Mistral API key below, then encrypt this file in place with:
+#   sops -e -i cluster/k8s/external-creds/mistral.sops.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+    name: llm-mistral
+    namespace: ducktape-flux
+    annotations:
+        ducktape.allegedly.works/credential-class: external-llm
+        description: Mistral API key for agentydragon's personal user; free tier only
+type: Opaque
+stringData:
+    api-key: ENC[AES256_GCM,data:D5zWbajEG/UCUgG3PiKGKWb61ZYrBMIQq17+jDVtcMI=,iv:HApHLRh2a7NoL3/QgsbbpFl+KSyxITwuMKE1S6XN+dM=,tag:Br34nZMpWV5SmKfiqonu0A==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB4MmtLS1BEZnVodXBRd21C
+            TGJMcG5NZEJkbElDemU3QXk2UEZTZjJ2QXcwCkZlVmd5TEY5NUN4N1BHWWZSUmgw
+            Z0VlYXNDM3Q4TmkzMHpRWW9YTEs4blUKLS0tIGlvS2xTZ3h1QzhHRTk1dkM5bEU4
+            WG9HUlRRNVZpSnJDUVpTaEF6ZjZJQzgK+4qJsp8aM0LKFTqLnSsnbQYJk9RNBCpO
+            IyA632PlscyWvNzuozKxD23l4f/QoZ8aPide6hHIBjwqHCz71QU5tQ==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBqOVBlNklVM3gwZElZS0FF
+            M2tBcytueU1SQjhMN3IzMUlrT294U0xHOURVCnBLcENsQ3BTNmp5akxIRHZRZmVr
+            aVV3WVo5UExEQS93V3NJdVlrYTFOLzQKLS0tIHdEYXVWQ3M5NXhTSXJSMlg4ZUJH
+            a2d1N01GbFJTR2hpS21HK1hwaWMzRFEK9PblAoXK0figNzf/yDesEqQObZUHs9wM
+            1M9pX8Z6NYFfTlRlmnIygE+12vcA8tOFSwnw9PQSKbn9wmwmRicfcA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-01T01:21:17Z"
+    mac: ENC[AES256_GCM,data:aw9iKyu28LG4nnJgPJXN0ZnCv9J9mhxGfjSA4SxaTBz2YJT9mBFvDb1mOBX+AeV0GuWw7PFpGkjpb3lHx2Inn+Pca2AkAt6U7aRkz/F+2L/duVOT5oGHB51IX3KSuAqV48+nUn4dGClHJOGDv0ebu99kl8XVopPYt7fnJdguFrU=,iv:/PH1JIl12CUwXYAWbEQj2zHJDvgEeNIUYh7sic27AV4=,tag:fV64WMT7jbD8qrMD4v9T7A==,type:str]
+    version: 3.13.3
