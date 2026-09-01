@@ -7,7 +7,7 @@ spec:
   interval: 24h
   url: https://github.com/seaweedfs/seaweedfs-csi-driver
   ref:
-    tag: v1.4.14
+    tag: v1.4.29
   ignore: |
     /*
     !/deploy/helm/seaweedfs-csi-driver
@@ -67,8 +67,8 @@ spec:
     #
     # The knob that would bound this properly is `weed mount -writeBufferSizeMB`
     # (a real accountant with a disk evictor, weed/mount/weedfs.go). The CSI driver
-    # does not pass it -- it is absent from buildMountArgs' argsMap on v1.4.14,
-    # v1.4.15 and master -- so it is unreachable without an upstream change.
+    # does not pass it -- it is absent from buildMountArgs' argsMap on v1.4.29,
+    # so it is unreachable without an upstream change.
     #
     # NOTE: GOMEMLIMIT is not an alternative here. The env var is inherited by every
     # forked weed-mount child and applied per process, so a pod-level budget divided
@@ -84,11 +84,11 @@ spec:
     # already mounted keep 128 until their weed-mount process restarts.
     concurrentWriters: 64
 
-    # Chart appVersion (v1.4.15) doesn't exist on Docker Hub yet; pin both
-    # plugin and mount-service images to the latest published tag.
+    # Keep the image tags explicit and in sync with the source tag so the
+    # deployed plugin and mount-service versions are auditable.
     seaweedfsCsiPlugin:
       image: chrislusf/seaweedfs-csi-driver
-      tag: v1.4.14
+      tag: v1.4.29
 
     # Restrict the FUSE mount service + CSI node daemons to OVH kimsufi
     # nodes. Pods consuming seaweedfs-ovh PVCs must schedule on OVH; we
@@ -97,7 +97,7 @@ spec:
     mountService:
       enabled: true
       image: chrislusf/seaweedfs-mount
-      tag: v1.4.14
+      tag: v1.4.29
       # QoS / eviction protection. Without requests this pod is BestEffort: the
       # kubelet's first eviction target and the kernel OOM-killer's first victim
       # (max oom_score_adj) under node memory pressure. It holds the weed-mount
