@@ -6,6 +6,7 @@ metadata:
   annotations:
     description: Dedicated namespace for the temporary-grant LiteLLM agent key.
 spec:
+  retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/litellm-cheap-experiments/namespace
   prune: true
