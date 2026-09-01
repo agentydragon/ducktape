@@ -80,7 +80,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count(kube_customresource_flux_kustomization_ready{namespace=~\"$namespace\",status!=\"True\"})",
+          "expr": "sum(kube_customresource_flux_kustomization_ready{namespace=~\"$namespace\",status!=\"True\"})",
           "instant": true,
           "legendFormat": "not ready"
         }
