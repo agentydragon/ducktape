@@ -38,9 +38,9 @@
       "targets": [
         {
           "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
-          "format": 1,
+          "format": 0,
           "queryType": "sql",
-          "rawSql": "SELECT observed_at AS time, remaining_percent AS value, concat(provider, ' / ', if(empty(window_name), '(default)', window_name), ' / ', formatReadableTimeDelta(toUInt64(window_seconds))) AS metric FROM aiquota.aiquota_windows WHERE $__timeFilter(observed_at) ORDER BY metric, observed_at",
+          "rawSql": "SELECT observed_at AS time, remaining_percent AS value, concat(provider, ' / ', if(empty(window_name), '(default)', window_name), ' / ', formatReadableTimeDelta(toUInt64(window_seconds))) AS metric FROM aiquota.aiquota_windows WHERE $__timeFilter(observed_at) ORDER BY time, metric",
           "refId": "A"
         }
       ],
