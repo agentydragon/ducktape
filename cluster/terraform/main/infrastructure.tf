@@ -325,7 +325,8 @@ resource "local_file" "kubeconfig" {
     "https://localhost:7445",
     local.kubeconfig_cluster_endpoint
   )
-  filename = "${path.module}/kubeconfig"
+  filename        = "${path.module}/kubeconfig"
+  file_permission = "0600"
 }
 
 # Write talosconfig to file
