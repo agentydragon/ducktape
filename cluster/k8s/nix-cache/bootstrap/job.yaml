@@ -20,6 +20,11 @@ spec:
       # against deploy/attic. The bootstrap subcommand doesn't touch SOPS or
       # git, so it doesn't need the rotator's github-pat.
       serviceAccountName: attic-jwt-rotator
+      # Keep the registry credential explicit on the Pod. The Secret is
+      # reflected into nix-cache; this avoids relying on ServiceAccount
+      # admission timing for the image pull.
+      imagePullSecrets:
+        - name: forgejo-images-creds
       restartPolicy: OnFailure
       securityContext:
         runAsNonRoot: true
