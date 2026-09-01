@@ -69,7 +69,7 @@ let
   # container, plus a deliberately compact set of tools repeatedly needed for
   # public-repository and GitOps work. The image is not the full devshell:
   # heavyweight, infrequently-used tooling such as checkov stays available via
-  # `nix develop` on the dedicated devbox.
+  # the repository's development shell.
   #
   # `gh` normally reads GH_TOKEN/GITHUB_TOKEN, but OpenClaw deliberately strips
   # those names from executed commands. GH_PAT is the proxy-substituted,
@@ -101,7 +101,6 @@ let
       markdownlint-cli2
       nixfmt
       nodejs_22
-      openssh # SSH access to the dedicated public-coder-devbox.
       pre-commit
       python3
       ruff

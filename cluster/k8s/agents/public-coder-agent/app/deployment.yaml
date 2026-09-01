@@ -226,9 +226,6 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /home/openclaw/.openclaw
-            - name: devbox-ssh-secret
-              mountPath: /run/secrets/public-coder-devbox-ssh
-              readOnly: true
             # Kubeconfig with a non-secret placeholder. iron-proxy substitutes the Agent's Haku
             # bearer only for haku-kubeapi.allegedly.works; no Kubernetes credential is mounted.
             - name: kubeconfig
@@ -275,13 +272,6 @@ spec:
         - name: kubeconfig
           configMap:
             name: public-coder-agent-kubeconfig
-        - name: devbox-ssh-secret
-          secret:
-            secretName: public-coder-devbox-ssh
-            # The pod's fsGroup makes these source files readable by the
-            # non-root agent (uid 1000), which copies the key into its writable
-            # home with mode 0600 before using SSH.
-            defaultMode: 0440
         - name: cfg
           configMap:
             name: public-coder-agent-config

@@ -53,11 +53,3 @@ spec:
               app.kubernetes.io/name: litellm
       ports:
         - { port: 4000, protocol: TCP }
-    # Private in-cluster SSH to the dedicated NixOS devbox. This is intentionally
-    # not an external SSH route; the VM's own egress remains proxy-fenced.
-    - to:
-        - podSelector:
-            matchLabels:
-              kubevirt.io/domain: public-coder-devbox
-      ports:
-        - { port: 22, protocol: TCP }

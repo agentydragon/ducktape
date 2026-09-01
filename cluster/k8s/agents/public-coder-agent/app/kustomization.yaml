@@ -4,7 +4,6 @@ resources:
   - external-creds-reader.yaml
   - github-token-eso.yaml
   - gateway-password-eso.yaml
-  - public-coder-devbox-ssh.sops.yaml
   - pvc.yaml
   - pvc-v2.yaml
   - deployment.yaml

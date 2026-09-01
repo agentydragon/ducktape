@@ -1,9 +1,0 @@
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-  - host-key.sops.yaml
-  - vm-images-s3-reader.yaml
-  - virtualmachine.yaml
-  - service.yaml
-  - networkpolicy-ingress.yaml
-  - cnp-egress.yaml

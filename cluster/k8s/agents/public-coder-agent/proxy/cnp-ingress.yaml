@@ -1,8 +1,7 @@
 # The proxy confers every credential it mediates to callers that present the corresponding
-# non-secret placeholder. Keep that capability reachable only from the two intended clients:
-# the OpenClaw Agent pod and its KubeVirt devbox. In particular, namespace co-tenancy is not
-# authority to use this Service, and the metrics port remains closed until a reviewed scraper
-# needs it.
+# non-secret placeholder. Keep that capability reachable only from the OpenClaw Agent pod.
+# Namespace co-tenancy is not authority to use this Service, and the metrics port remains closed
+# until a reviewed scraper needs it.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -17,9 +16,6 @@ spec:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: public-coder-agent
             k8s:app.kubernetes.io/name: public-coder-agent
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: public-coder-agent
-            k8s:kubevirt.io/domain: public-coder-devbox
       toPorts:
         - ports:
             - port: "8080"

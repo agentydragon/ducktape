@@ -50,15 +50,6 @@ rules:
   - apiGroups: ["source.toolkit.fluxcd.io"]
     resources: ["gitrepositories", "ocirepositories"]
     verbs: ["get", "list", "watch"]
-  # The agent's managed devbox is a KubeVirt VM backed by a CDI DataVolume.
-  # These reads reveal its lifecycle/import status without exposing Secrets or
-  # giving the agent control-plane write or console access.
-  - apiGroups: ["kubevirt.io"]
-    resources: ["virtualmachines"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["cdi.kubevirt.io"]
-    resources: ["datavolumes"]
-    verbs: ["get", "list", "watch"]
   # Pod metrics (metrics.k8s.io) — nodes_top / pods_top equivalents.
   - apiGroups: ["metrics.k8s.io"]
     resources: ["pods"]

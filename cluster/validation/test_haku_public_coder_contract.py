@@ -201,13 +201,7 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
                 "k8s:io.kubernetes.pod.namespace": "public-coder-agent",
                 "k8s:app.kubernetes.io/name": "public-coder-agent",
             }.items()
-        ),
-        frozenset(
-            {
-                "k8s:io.kubernetes.pod.namespace": "public-coder-agent",
-                "k8s:kubevirt.io/domain": "public-coder-devbox",
-            }.items()
-        ),
+        )
     }
     assert one(ingress_rule["toPorts"])["ports"] == [{"port": "8080", "protocol": "TCP"}]
 
