@@ -151,18 +151,35 @@ OPENCLAW_CODEX_MODELS: list[str] = [
 # against this list.
 GEMINI_MODELS: list[str] = ["gemini-3.7-flash", "gemini-3.5-flash-lite"]
 
-# Current chat-capable models listed in Mistral's API configuration guide on
-# 2026-08-31. This is the complete chat roster exposed through the cheap-
-# experiments key; account-specific fine-tuned models are intentionally excluded.
+# Mistral chat models that accepted a minimal completion with the cluster's API
+# key on 2026-08-31. Catalog entries that returned 403 are intentionally
+# excluded; account-specific fine-tuned models are excluded as well.
 MISTRAL_MODELS: list[str] = [
-    "mistral-medium-latest",
-    "zai-glm-5-2",
-    "mistral-large-latest",
-    "mistral-small-latest",
+    "codestral-2508",
     "codestral-latest",
+    "magistral-medium-latest",
+    "magistral-small-latest",
     "ministral-14b-latest",
+    "ministral-14b-2512",
     "ministral-8b-latest",
+    "ministral-8b-2512",
     "ministral-3b-latest",
+    "ministral-3b-2512",
+    "mistral-code-fim-latest",
+    "mistral-code-latest",
+    "mistral-medium",
+    "mistral-medium-2604",
+    "mistral-medium-3",
+    "mistral-medium-3-5",
+    "mistral-medium-3.5",
+    "mistral-medium-latest",
+    "mistral-small-2603",
+    "mistral-small-latest",
+    "mistral-vibe-cli-fast",
+    "mistral-vibe-cli-latest",
+    "mistral-vibe-cli-with-tools",
+    "voxtral-small-2507",
+    "voxtral-small-latest",
 ]
 
 # Gemini embeddings, same key as the chat lineup. Added for OpenClaw memory search,
