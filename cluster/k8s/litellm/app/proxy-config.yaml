@@ -366,21 +366,6 @@ model_list:
       api_key: os.environ/GEMINI_API_KEY
     model_info:
       mode: embedding
-  - model_name: cerebras/oai-chat/gemma-4-31b
-    litellm_params:
-      model: cerebras/gemma-4-31b
-      api_key: os.environ/CEREBRAS_API_KEY
-    model_info:
-      mode: chat
-      supports_function_calling: true
-      supports_vision: true
-  - model_name: cerebras/oai-chat/gpt-oss-120b
-    litellm_params:
-      model: cerebras/gpt-oss-120b
-      api_key: os.environ/CEREBRAS_API_KEY
-    model_info:
-      mode: chat
-      supports_function_calling: true
 litellm_settings:
   drop_params: true
   callbacks:

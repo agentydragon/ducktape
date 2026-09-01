@@ -111,10 +111,8 @@ locals {
   # Shared by agents only through an expiring Haku Console Kubernetes grant. This
   # is intentionally an exact, cheap-model-only set rather than a provider-wide
   # prefix or wildcard. The Ollama names cover every model/context/protocol variant
-  # emitted by the main proxy config; Cerebras is the public free-tier roster.
+  # emitted by the main proxy config.
   cheap_experiments_models = [
-    "cerebras/oai-chat/gemma-4-31b",
-    "cerebras/oai-chat/gpt-oss-120b",
     "google/oai-chat/gemini-3.7-flash",
     "google/oai-chat/gemini-3.5-flash-lite",
     "google/oai-embeddings/gemini-embedding-2",
@@ -167,7 +165,7 @@ resource "kubernetes_secret" "cheap_experiments" {
     name      = "litellm-key-cheap-experiments"
     namespace = "litellm-cheap-experiments"
     annotations = {
-      description = "LiteLLM virtual key for temporary agent experiments; Cerebras, Google, Ollama, Anthropic Haiku, and OpenAI Luna only"
+      description = "LiteLLM virtual key for temporary agent experiments; Google, Ollama, Anthropic Haiku, and OpenAI Luna only"
     }
   }
 

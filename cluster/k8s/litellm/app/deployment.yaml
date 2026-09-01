@@ -110,12 +110,6 @@ spec:
                 secretKeyRef:
                   name: litellm-gemini-key
                   key: GEMINI_API_KEY
-            # Cerebras key for the public Cerebras model roster.
-            - name: CEREBRAS_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: litellm-cerebras-key
-                  key: CEREBRAS_API_KEY
             # CLIProxyAPI client key for the codex-* upstream models (ESO mirror of
             # cli-proxy-api-client-key; see secrets/cliproxy-client-key-eso.yaml).
             - name: CLIPROXY_CLIENT_KEY
