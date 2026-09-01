@@ -1,5 +1,5 @@
 # gazelle:exclude read_waveforms.py
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 exports_files([
     "parse_str_edf.py",
@@ -20,4 +20,16 @@ py_library(
     name = "generate_test_edf",
     srcs = ["generate_test_edf.py"],
     visibility = ["//cpap/skill:__pkg__"],
+)
+
+py_test(
+    name = "test_parse_str_edf",
+    srcs = ["test_parse_str_edf.py"],
+    deps = [
+        ":generate_test_edf",
+        ":parse_str_edf",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
