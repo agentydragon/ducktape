@@ -88,7 +88,7 @@ kubectl uncordon talos-vps-cp-1
 
 Do this after pve-cp-0 is stable (post-reboot).
 
-### 5. NoSchedule taints for VPS nodes — NOT DONE
+### 5. NoSchedule taints for VPS nodes — NOT DONE (#5361)
 
 VPS CPs lack `NoSchedule` taints. During the outage, workload pods OOMed them.
 Need to add taints in TF config patches for VPS nodes.

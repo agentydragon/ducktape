@@ -372,7 +372,7 @@ All items verified:
 
 ## TODOs
 
-- [ ] Add `NoSchedule` taints to VPS control plane nodes (prevent OOM cascade)
+- [ ] Add `NoSchedule` taints to VPS control plane nodes (prevent OOM cascade; #5361)
 - [ ] File upstream bug on `kvm@vger.kernel.org` with bisect data + `clearcpuid=510`
       finding, CC Manali Shukla and Sean Christopherson
 - [ ] File Talos issue linking to the upstream bug

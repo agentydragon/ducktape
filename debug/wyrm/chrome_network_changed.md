@@ -54,7 +54,7 @@ Moving containerd wouldn't help; moving Cilium would break all pod routing.
 ### Cluster-level
 
 1. Fix pve-cp-0 stalls — see <debug/kernel-6.18-amd-kvm-stall.md>
-2. Add `NoSchedule` taints to VPS control plane nodes (prevent OOM cascade)
+2. Add `NoSchedule` taints to VPS control plane nodes (prevent OOM cascade; #5361)
 3. Clean up stale VolumeAttachments for `talos-pve-gpu-worker-0`
 
 ## Cluster Outage — 2026-03-30
@@ -68,7 +68,7 @@ leader → full cluster outage. Recovered by rebooting + cordoning VPS nodes.
 ## TODOs
 
 - [ ] Consider `firejail --net=<iface>` for Chrome permanently
-- [ ] Add `NoSchedule` taints to VPS nodes
+- [ ] Add `NoSchedule` taints to VPS nodes (tracked in #5361)
 - [ ] Clean up stale VolumeAttachments for `talos-pve-gpu-worker-0`
 - [ ] Bring `rugged` back online
 

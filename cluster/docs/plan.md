@@ -43,10 +43,10 @@ editing a route.
       etcd-on-NVMe move — Stage 2 of <plans/ovh_storage_tiering.md>, whose SeaweedFS
       volume-tiering foundation landed 2026-07. Full RCA + remediation tracking:
       <lessons_learned/2026_06_19_etcd_hdd_io_contention.md>. The immediate
-      `ovh-ns103656` control-plane `NoSchedule` taint is intentionally narrower:
-      **TODO:** once every workload explicitly approved to run on a control plane has
-      a named toleration and owner, restore `allowSchedulingOnControlPlanes = false`
-      on all control planes.
+      `ovh-ns103656` control-plane `NoSchedule` taint is intentionally narrower.
+      Tracking issue #5361 covers the remaining rollout: enumerate workloads that
+      cannot move, add explicit tolerations and owners for those residents, then
+      restore `allowSchedulingOnControlPlanes = false` on all control planes.
 - [ ] **Investigate whether to re-enable VPA/Goldilocks recommendations.**
       Forgejo's namespace is Goldilocks-enabled and has a generated
       `goldilocks-forgejo` VPA, but the VPA control-plane deployments in

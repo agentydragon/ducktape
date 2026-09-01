@@ -29,9 +29,10 @@ etcd quorum. Treat this as an active reliability incident, not a clean drain.
   migration decisions.
 
 Compare subsequent `NotReady` frequency/duration, lease-PUT and apiserver latency, and
-`/dev/sda` utilization/queue/bytes against this baseline. Only restore the default
-control-plane taint on every CP after each intentionally permitted CP workload has a
-named toleration and owner.
+`/dev/sda` utilization/queue/bytes against this baseline. Tracking issue #5361 covers
+the remaining rollout: enumerate workloads that cannot move, add explicit tolerations
+and owners for those residents, then restore the default control-plane taint on every
+CP.
 
 ## 2026-06-28 recurrence — escalated to a real outage
 
