@@ -10,8 +10,6 @@ import pytest_bazel
 from pydantic import TypeAdapter, ValidationError
 
 from haku.console.grants.kubernetes.models import (
-    AllNamespacesGrantScope,
-    ClusterGrantScope,
     Grant,
     GrantScope,
     NamespacesGrantScope,
@@ -19,7 +17,6 @@ from haku.console.grants.kubernetes.models import (
     Rule,
     validate_grant_scope_rules,
 )
-from haku.console.grants.kubernetes.service import rule_covers, rules_cover, scope_covers
 from haku.console.grants.principal import AgentGrantPrincipal
 
 
@@ -71,19 +68,6 @@ def test_rule_rejects_mixed_or_empty_shape() -> None:
         Rule(api_groups=("",), resources=("pods",), verbs=("get",), non_resource_urls=("/healthz",))
 
 
-def test_scope_supports_exact_or_all_namespaces_without_implying_cluster_scope() -> None:
-    exact = NamespacesGrantScope(namespaces=("diagnostics", "public-coder-agent"))
-    requested = NamespacesGrantScope(namespaces=("diagnostics",))
-    other = NamespacesGrantScope(namespaces=("default",))
-    all_namespaces = AllNamespacesGrantScope()
-    cluster = ClusterGrantScope()
-
-    assert scope_covers(exact, requested)
-    assert not scope_covers(exact, other)
-    assert scope_covers(all_namespaces, requested)
-    assert not scope_covers(all_namespaces, cluster)
-
-
 def test_scope_is_a_discriminated_union_consistent_with_rule_kind() -> None:
     adapter: TypeAdapter[GrantScope] = TypeAdapter(GrantScope)
     with pytest.raises(ValidationError, match="at least 1 item"):
@@ -109,38 +93,6 @@ def test_agent_grant_principal_may_differ_from_lifecycle_owner() -> None:
     )
 
     assert grant.principal == AgentGrantPrincipal(agent_id=UUID(int=3))
-
-
-def test_matching_is_conservative_about_resource_names() -> None:
-    all_pods = resource_rule()
-    one_pod = resource_rule(resource_names=("pod-a",))
-    other_pod = resource_rule(resource_names=("pod-b",))
-
-    assert rule_covers(all_pods, one_pod)
-    assert not rule_covers(one_pod, other_pod)
-    assert not rule_covers(one_pod, all_pods)
-
-
-def test_matching_allows_only_explicit_wildcards() -> None:
-    granted = Rule(api_groups=("*",), resources=("*",), verbs=("*",))
-    requested = Rule(api_groups=("apps",), resources=("deployments/status",), verbs=("patch",))
-
-    assert rule_covers(granted, requested)
-    assert not rule_covers(Rule(api_groups=("apps",), resources=("deployments",), verbs=("patch",)), requested)
-
-
-def test_non_resource_urls_use_exact_or_terminal_prefix_matching() -> None:
-    granted = Rule(verbs=("get",), non_resource_urls=("/version", "/api/*"))
-
-    assert rule_covers(granted, Rule(verbs=("get",), non_resource_urls=("/version", "/api/v1")))
-    assert not rule_covers(granted, Rule(verbs=("get",), non_resource_urls=("/apis",)))
-
-
-def test_rules_cover_requires_every_request_rule() -> None:
-    granted = (resource_rule(),)
-    requested = (resource_rule(), Rule(verbs=("list",), api_groups=("",), resources=("pods",)))
-
-    assert not rules_cover(granted, requested)
 
 
 if __name__ == "__main__":

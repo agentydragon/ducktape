@@ -194,20 +194,6 @@ py_binary(
 )
 
 py_test(
-    name = "test_launch_identity_config",
-    srcs = ["test_launch_identity_config.py"],
-    deps = [
-        "//:conftest",
-        "//haku/console:conftest",
-        "//haku/console:mcp_config",
-        "//haku/console/harnesses:kind",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_reflection_cache",
     srcs = ["test_reflection_cache.py"],
     deps = [

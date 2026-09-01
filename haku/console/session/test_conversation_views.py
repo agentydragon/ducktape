@@ -12,11 +12,12 @@ from haku.console.conversation.conversation_event import FrameRange
 from haku.console.conversation.item_reads import ToolCallItem
 from haku.console.conversation.item_vocabulary import ToolOutcome
 from haku.console.conversation.prompt_origin import SPA_ORIGIN
-from haku.console.database_schema import SessionFrame
+from haku.console.database_schema import Session, SessionFrame
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.session import conversation_views
 from haku.console.session.session_frames import FrameDirection, SessionFrameKind
 from haku.console.session.setup_output import SETUP_OUTPUT_KIND, setup_output_frame
+from haku.console.session.status import SessionStatus
 from haku.console.session.store import RunnerConnectionAuthentication
 from haku.console.x.conversation_events import CallRef, ItemSegment, ToolCallCompleted, ToolCallStarted
 
@@ -143,6 +144,36 @@ def test_the_inspector_keeps_native_payloads_opaque() -> None:
     assert [(frame.kind, frame.payload) for frame in page.frames] == [(row.kind, row.payload) for row in _INSPECTED]
     assert all("native_kind" not in frame.model_fields_set for frame in page.frames)
     assert all("unprojected" not in frame.model_fields_set for frame in page.frames)
+
+
+def test_responding_is_layered_on_top_of_the_row_derivation() -> None:
+    """An open turn upgrades only a ready session; terminal row status stays terminal."""
+    now = datetime.now(UTC)
+    ready = Session(
+        session_id=uuid4(),
+        operator_id=uuid4(),
+        conversation_id=uuid4(),
+        bridge_token_fingerprint=b"fingerprint",
+        bridge_connected_at=now,
+        lease_expires_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+    ended = Session(
+        session_id=uuid4(),
+        operator_id=ready.operator_id,
+        conversation_id=uuid4(),
+        bridge_token_fingerprint=b"fingerprint",
+        bridge_connected_at=now,
+        lease_expires_at=now,
+        ended_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+
+    assert conversation_views.live_status(ready, responding=True) is SessionStatus.RESPONDING
+    assert conversation_views.live_status(ready, responding=False) is SessionStatus.READY
+    assert conversation_views.live_status(ended, responding=True) is SessionStatus.CLOSED
 
 
 if __name__ == "__main__":

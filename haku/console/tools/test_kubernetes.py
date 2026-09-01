@@ -4,7 +4,7 @@ The service answers the ``grants`` server's ``kubernetes_can_i`` tool (#4918); h
 directly, so the SAR→grant fallback observes durable state — active grants created directly in the
 store — rather than call forwarding. The only stand-in is the SubjectAccessReview client: the
 in-cluster Kubernetes API is a genuine external boundary. The tool's wiring onto the ``grants``
-server, and grant lifecycle (create/list/…), are exercised in ``test_grants.py``; here the store is
+server, and grant lifecycle (create/list/…), are exercised in ``test_models.py``; here the store is
 seeded only to prove ``can_i`` reflects active grants.
 """
 
@@ -293,7 +293,7 @@ def test_can_i_namespaced_builtin_without_declaration_still_rejects(console: _Co
 def test_can_i_unknown_unnamespaced_kind_rejects_with_one_line_tool_error(console: _Console) -> None:
     """A kind outside the built-in set still must declare its scope; the service raises one clean
     ``ToolError`` line (FastMCP renders it as a single message — covered end to end for the tool in
-    ``test_grants.py``), not a multi-line pydantic trace.
+    ``test_models.py``), not a multi-line pydantic trace.
 
     ``nodes`` in group ``longhorn.io`` also pins that inference matches on (api_group, resource):
     the core ``nodes`` kind is cluster-scoped while Longhorn's is namespaced.

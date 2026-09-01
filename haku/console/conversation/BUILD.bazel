@@ -214,23 +214,6 @@ py_test(
 )
 
 py_test(
-    name = "test_log_concurrency",
-    size = "medium",  # provisions a Postgres database per test
-    srcs = ["test_log_concurrency.py"],
-    deps = [
-        ":conftest",
-        ":conversation_event",
-        ":log",
-        "//:conftest",
-        "//haku/console:conftest",
-        "//haku/console:database_schema",
-        "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
     name = "test_live_updates",
     size = "medium",  # provisions a Postgres database per test
     srcs = ["test_live_updates.py"],
@@ -290,6 +273,7 @@ py_library(
 
 py_test(
     name = "test_log",
+    size = "medium",  # provisions a Postgres database per test
     srcs = ["test_log.py"],
     deps = [
         ":conftest",
@@ -306,6 +290,7 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 

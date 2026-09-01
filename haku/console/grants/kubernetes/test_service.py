@@ -9,8 +9,15 @@ import pytest
 import pytest_bazel
 
 from haku.console.grants.envelope import GrantNotFoundError, GrantStatus, derive_status
-from haku.console.grants.kubernetes.models import Grant, GrantSpec, NamespacesGrantScope, Rule
-from haku.console.grants.kubernetes.service import GrantService
+from haku.console.grants.kubernetes.models import (
+    AllNamespacesGrantScope,
+    ClusterGrantScope,
+    Grant,
+    GrantSpec,
+    NamespacesGrantScope,
+    Rule,
+)
+from haku.console.grants.kubernetes.service import GrantService, rule_covers, rules_cover, scope_covers
 from haku.console.grants.principal import (
     AgentGrantPrincipal,
     GrantPrincipal,
@@ -27,8 +34,8 @@ _SCOPE = NamespacesGrantScope(namespaces=("default", "diagnostics"))
 _DEFAULT_SCOPE = NamespacesGrantScope(namespaces=("default",))
 
 
-def _rule(verb: str = "get") -> Rule:
-    return Rule(api_groups=("",), resources=("pods",), verbs=(verb,))
+def _rule(verb: str = "get", **kwargs: object) -> Rule:
+    return Rule(api_groups=("",), resources=("pods",), verbs=(verb,), **kwargs)
 
 
 class FakeRepository:
@@ -418,6 +425,51 @@ async def test_match_returns_the_earliest_expiration_bound() -> None:
     assert decision.grant_id == second.grant_id
     assert decision.expires_at == second.expires_at
     assert decision.grant_id != first.grant_id
+
+
+def test_scope_supports_exact_or_all_namespaces_without_implying_cluster_scope() -> None:
+    exact = NamespacesGrantScope(namespaces=("diagnostics", "public-coder-agent"))
+    requested = NamespacesGrantScope(namespaces=("diagnostics",))
+    other = NamespacesGrantScope(namespaces=("default",))
+    all_namespaces = AllNamespacesGrantScope()
+    cluster = ClusterGrantScope()
+
+    assert scope_covers(exact, requested)
+    assert not scope_covers(exact, other)
+    assert scope_covers(all_namespaces, requested)
+    assert not scope_covers(all_namespaces, cluster)
+
+
+def test_matching_is_conservative_about_resource_names() -> None:
+    all_pods = _rule()
+    one_pod = _rule(resource_names=("pod-a",))
+    other_pod = _rule(resource_names=("pod-b",))
+
+    assert rule_covers(all_pods, one_pod)
+    assert not rule_covers(one_pod, other_pod)
+    assert not rule_covers(one_pod, all_pods)
+
+
+def test_matching_allows_only_explicit_wildcards() -> None:
+    granted = Rule(api_groups=("*",), resources=("*",), verbs=("*",))
+    requested = Rule(api_groups=("apps",), resources=("deployments/status",), verbs=("patch",))
+
+    assert rule_covers(granted, requested)
+    assert not rule_covers(Rule(api_groups=("apps",), resources=("deployments",), verbs=("patch",)), requested)
+
+
+def test_non_resource_urls_use_exact_or_terminal_prefix_matching() -> None:
+    granted = Rule(verbs=("get",), non_resource_urls=("/version", "/api/*"))
+
+    assert rule_covers(granted, Rule(verbs=("get",), non_resource_urls=("/version", "/api/v1")))
+    assert not rule_covers(granted, Rule(verbs=("get",), non_resource_urls=("/apis",)))
+
+
+def test_rules_cover_requires_every_request_rule() -> None:
+    granted = (_rule(),)
+    requested = (_rule(), Rule(verbs=("list",), api_groups=("",), resources=("pods",)))
+
+    assert not rules_cover(granted, requested)
 
 
 if __name__ == "__main__":

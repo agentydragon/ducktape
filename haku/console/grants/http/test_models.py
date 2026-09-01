@@ -9,7 +9,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from haku.console.grants.envelope import GrantStatus, derive_status
+from haku.console.grants.envelope import GrantStatus
 from haku.console.grants.http.models import Grant, GrantSpec, HttpMethod, HttpOrigin, HttpRequestCoverage, HttpScheme
 from haku.console.grants.principal import AgentGrantPrincipal
 
@@ -149,15 +149,6 @@ def test_grant_spec_allow_prohibited_address_defaults_off_and_round_trips() -> N
     assert flagged.allow_prohibited_address is True
     assert flagged.model_dump(mode="json")["allow_prohibited_address"] is True
     assert GrantSpec.model_validate(flagged.model_dump(mode="json")) == flagged
-
-
-def test_status_is_derived_from_one_end_fact_and_the_clock() -> None:
-    early = datetime.datetime(2026, 8, 21, 0, 30, tzinfo=datetime.UTC)
-    assert derive_status(ended_at=None, expires_at=_EXPIRES, now=_CREATED) is GrantStatus.ACTIVE
-    assert derive_status(ended_at=None, expires_at=_EXPIRES, now=_EXPIRES) is GrantStatus.EXPIRED
-    assert derive_status(ended_at=early, expires_at=_EXPIRES, now=_EXPIRES) is GrantStatus.ENDED
-    # Expiration wins over an end action recorded at or past the time bound.
-    assert derive_status(ended_at=_EXPIRES, expires_at=_EXPIRES, now=_EXPIRES) is GrantStatus.EXPIRED
 
 
 def _grant_payload() -> dict[str, object]:

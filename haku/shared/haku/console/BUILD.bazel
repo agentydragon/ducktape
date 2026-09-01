@@ -2,6 +2,8 @@ load("@rules_python//python:defs.bzl", "py_library")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(["test_tool_calls.py"])
+
 # Haku Console's operator audit records and agent-facing MCP discovery/correlation metadata.
 # Single source of truth for the console and haku-state's MCP adapter.
 #

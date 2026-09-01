@@ -69,21 +69,6 @@ py_library(
 )
 
 py_test(
-    name = "test_grants",
-    srcs = ["test_grants.py"],
-    deps = [
-        ":models",
-        "//:conftest",
-        "//haku/console:conftest",
-        "//haku/console/grants:envelope",
-        "//haku/console/grants:principal",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_service",
     srcs = ["test_service.py"],
     deps = [
@@ -183,6 +168,21 @@ py_test(
         "//haku/grants:authorization",
         "@pypi//fastapi",
         "@pypi//httpx",  # keep: starlette.testclient runtime requirement, not a direct import
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_models",
+    srcs = ["test_models.py"],
+    deps = [
+        ":models",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console/grants:envelope",
+        "//haku/console/grants:principal",
+        "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

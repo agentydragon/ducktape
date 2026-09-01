@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 import pytest_bazel
 
+from haku.console import app
 from haku.console.conftest import write_config
 
 
@@ -259,6 +260,48 @@ def test_spa_route_deep_link_serves_index(make_client, tmp_path: Path) -> None:
             assert resp.status_code == 200
             assert "id='root'" in resp.text
             assert resp.headers["cache-control"] == "no-store"
+
+
+def test_image_command_dispatches_migration_without_starting_the_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    called: list[str] = []
+    monkeypatch.setattr(app, "migration_main", lambda: called.append("migrate"))
+    monkeypatch.setattr(app, "main", lambda: called.append("serve"))
+
+    app.run_command(["migrate"])
+
+    assert called == ["migrate"]
+
+
+def test_server_startup_checks_schema_without_applying_migrations(monkeypatch: pytest.MonkeyPatch) -> None:
+    class DatabaseUrl:
+        @staticmethod
+        def get_secret_value() -> str:
+            return "postgresql+asyncpg://approval_store:secret@db.example/approval_store"
+
+    class TestSettings:
+        database_url = DatabaseUrl()
+
+    checked: list[str] = []
+
+    async def serve_without_binding(_app: object) -> None:
+        pass
+
+    monkeypatch.setattr(app, "Settings", TestSettings)
+    monkeypatch.setattr(app, "load_static_agents", lambda settings: [])
+    monkeypatch.setattr(app, "verify_schema", checked.append)
+    monkeypatch.setattr(app, "create_app", lambda settings, loaded_static_agents: object())
+    # The schema check under test runs before main() serves; stub the serve step so the test
+    # neither binds a port nor enters the event loop.
+    monkeypatch.setattr(app, "_serve", serve_without_binding)
+
+    app.main()
+
+    assert checked == ["postgresql+asyncpg://approval_store:secret@db.example/approval_store"]
+
+
+def test_image_command_rejects_unknown_modes() -> None:
+    with pytest.raises(SystemExit, match="usage"):
+        app.run_command(["unknown"])
 
 
 if __name__ == "__main__":

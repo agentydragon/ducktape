@@ -67,21 +67,6 @@ py_library(
 )
 
 py_test(
-    name = "test_grants",
-    srcs = ["test_grants.py"],
-    deps = [
-        ":models",
-        ":service",
-        "//:conftest",
-        "//haku/console:conftest",
-        "//haku/console/grants:principal",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_service",
     srcs = ["test_service.py"],
     deps = [
@@ -168,5 +153,19 @@ py_library(
         "//haku/console/grants:principal",
         "//haku/console/identity:agent_bearer_authority",
         "//haku/grants:authorization",
+    ],
+)
+
+py_test(
+    name = "test_models",
+    srcs = ["test_models.py"],
+    deps = [
+        ":models",
+        "//:conftest",
+        "//haku/console:conftest",
+        "//haku/console/grants:principal",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

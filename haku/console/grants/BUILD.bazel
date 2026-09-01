@@ -119,3 +119,14 @@ py_library(
         "@pypi//fastapi",
     ],
 )
+
+py_test(
+    name = "test_envelope",
+    srcs = ["test_envelope.py"],
+    deps = [
+        ":envelope",
+        "//:conftest",
+        "//haku/console:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)

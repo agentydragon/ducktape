@@ -4,17 +4,21 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Sequence
-from uuid import UUID
+from dataclasses import dataclass
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
-from fastmcp import Client
+from fastmcp import Client, FastMCP
 from fastmcp.client.client import CallToolResult
 from more_itertools import one
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.conversation.conversation_event import TurnAnswered
+from haku.console.conftest import console_sessions, operator_identity_store
+from haku.console.conversation.conversation_event import TurnAnswered, TurnOutcome
 from haku.console.conversation.item_reads import FromFrames, Item, MessageItem
-from haku.console.conversation.item_vocabulary import ItemStatus
+from haku.console.conversation.item_vocabulary import ItemStatus, ItemType
+from haku.console.conversation.reader import ConversationReads
 from haku.console.conversation.reads import (
     ChannelAttachment,
     FrameRecord,
@@ -31,8 +35,10 @@ from haku.console.conversation_read_access import (
     ConversationReadScope,
     ProfileScopedReads,
 )
+from haku.console.database_schema import Conversation, ConversationItem, ConversationTurn, Session
 from haku.console.grants.principal import RequestPrincipal
 from haku.console.harnesses.kind import HarnessKind
+from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.mcp.execution import (
     AgentMcpExecutionCaller,
     McpExecutionContext,
@@ -43,8 +49,9 @@ from haku.console.mcp.in_process_server_access import InProcessServerAccessPolic
 from haku.console.mcp_config import AccessProfile
 from haku.console.session.session_frames import SessionFrameKind
 from haku.console.session.status import SessionStatus
+from haku.console.session.store import Store
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
-from haku.console.tools.conversations import FramePage, ItemPage, SessionPage, build_mcp
+from haku.console.tools.conversations import HAKU_CONVERSATIONS_SERVER_ID, FramePage, ItemPage, SessionPage, build_mcp
 
 SESSION = UUID("11111111-1111-1111-1111-111111111111")
 CONVERSATION = UUID("44444444-4444-4444-4444-444444444444")
@@ -508,6 +515,292 @@ async def test_a_session_id_that_is_not_an_id_is_refused_here() -> None:
 
     assert result.is_error
     assert reader.queries == []
+
+
+# The session-outcome contract also belongs to the conversations server. These cases use the
+# migrated store and the real profile-DAG read scope, unlike the in-memory surface tests above.
+_OUTCOME_ORCHESTRATOR = "haku"
+_OUTCOME_WORKER_PROFILE = "public-coder"
+_OUTCOME_OUTSIDER = "outsider"
+_OUTCOME_PROFILES = (
+    AccessProfile(
+        id=_OUTCOME_ORCHESTRATOR,
+        auto_approval_policy="manual",
+        in_process_server_ids={HAKU_CONVERSATIONS_SERVER_ID},
+        can_read_profiles={_OUTCOME_WORKER_PROFILE},
+    ),
+    AccessProfile(id=_OUTCOME_WORKER_PROFILE, auto_approval_policy="manual"),
+    AccessProfile(
+        id=_OUTCOME_OUTSIDER, auto_approval_policy="manual", in_process_server_ids={HAKU_CONVERSATIONS_SERVER_ID}
+    ),
+)
+_OUTCOME_ACCESS = InProcessServerAccessPolicy(_OUTCOME_PROFILES)
+_OUTCOME_READS = ConversationReadAccessPolicy(_OUTCOME_PROFILES)
+_OUTCOME_WORKER_AGENT = UUID("40000000-0000-4000-8000-00000000cc01")
+_OUTCOME_ORCHESTRATOR_AGENT = UUID("40000000-0000-4000-8000-00000000cc02")
+_OUTCOME_FAR_FUTURE = datetime.datetime(2999, 1, 1, tzinfo=datetime.UTC)
+
+
+def _outcome_now() -> datetime.datetime:
+    return datetime.datetime.now(datetime.UTC)
+
+
+@dataclass(frozen=True, slots=True)
+class _OutcomeEnv:
+    sessions: async_sessionmaker[AsyncSession]
+    store: Store
+    mcp: FastMCP
+    operator_id: UUID
+    worker_agent_id: UUID
+
+
+@pytest.fixture
+async def outcome_env(migrated_db_url: str) -> _OutcomeEnv:
+    sessions = console_sessions(migrated_db_url)
+    identity_store = operator_identity_store(migrated_db_url)
+    operator_id = await identity_store.resolve_configured_external_user_key("worker-op")
+    authority = PostgresAgentAuthority(
+        sessions,
+        public_base_url="https://haku.test",
+        operator_identity_store=identity_store,
+        access_profiles=(_OUTCOME_ORCHESTRATOR, _OUTCOME_WORKER_PROFILE, _OUTCOME_OUTSIDER),
+        default_access_profile_id=_OUTCOME_WORKER_PROFILE,
+    )
+    await authority.reconcile_static_agents(
+        [
+            StaticAgentDefinition(
+                agent_id=_OUTCOME_WORKER_AGENT,
+                display_name="Public Coder",
+                operator_id=operator_id,
+                secret_reference="env:HAKU_CONSOLE_TEST_WORKER_TOKEN",
+                token_fingerprint=fingerprint_static_token("worker-result-token"),
+                access_profile_id=_OUTCOME_WORKER_PROFILE,
+            )
+        ]
+    )
+    store = Store(sessions)
+    return _OutcomeEnv(
+        sessions=sessions,
+        store=store,
+        mcp=build_mcp(ConversationReads(store), access=_OUTCOME_ACCESS, conversation_reads=_OUTCOME_READS),
+        operator_id=operator_id,
+        worker_agent_id=_OUTCOME_WORKER_AGENT,
+    )
+
+
+async def _outcome_seed_session(
+    env: _OutcomeEnv, *, ready: bool, profile: str = _OUTCOME_WORKER_PROFILE
+) -> tuple[UUID, UUID]:
+    """A worker conversation and its session, `ready` (live) or idle (dispatched, unstarted)."""
+    now = _outcome_now()
+    conversation_id, session_id = uuid4(), uuid4()
+    async with env.sessions.begin() as db:
+        db.add(
+            Conversation(
+                conversation_id=conversation_id,
+                operator_id=env.operator_id,
+                agent_id=env.worker_agent_id,
+                access_profile_id=profile,
+                harness_kind=HarnessKind.CODEX_APP_SERVER,
+                created_at=now,
+                next_event_seq=1,
+            )
+        )
+        await db.flush()
+        live = (
+            {
+                "bridge_token_fingerprint": session_id.bytes,
+                "bridge_connected_at": now,
+                "lease_expires_at": _OUTCOME_FAR_FUTURE,
+            }
+            if ready
+            else {}
+        )
+        db.add(
+            Session(
+                session_id=session_id,
+                operator_id=env.operator_id,
+                conversation_id=conversation_id,
+                created_at=now,
+                updated_at=now,
+                **live,
+            )
+        )
+    return session_id, conversation_id
+
+
+async def _outcome_seed_turn(
+    env: _OutcomeEnv,
+    conversation_id: UUID,
+    session_id: UUID,
+    *,
+    outcome: TurnOutcome | None,
+    failure: str | None = None,
+) -> UUID:
+    now = _outcome_now()
+    ended = outcome is not None
+    turn_id = uuid4()
+    async with env.sessions.begin() as db:
+        db.add(
+            ConversationTurn(
+                turn_id=turn_id,
+                conversation_id=conversation_id,
+                session_id=session_id,
+                first_seq=1,
+                last_seq=2 if ended else None,
+                first_frame_seq=1,
+                last_frame_seq=2 if ended else None,
+                started_at=now,
+                ended_at=now if ended else None,
+                outcome=outcome,
+                failure=failure,
+            )
+        )
+    return turn_id
+
+
+async def _outcome_seed_message(
+    env: _OutcomeEnv, conversation_id: UUID, session_id: UUID, text: str, turn_id: UUID | None = None
+) -> None:
+    now = _outcome_now()
+    async with env.sessions.begin() as db:
+        db.add(
+            ConversationItem(
+                item_id=uuid4(),
+                conversation_id=conversation_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                item_type=ItemType.MESSAGE,
+                status=ItemStatus.COMPLETE,
+                opened_seq=3,
+                closed_seq=4,
+                item_text=text,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+
+def _outcome_meta(profile: str) -> dict[str, object]:
+    caller = AgentMcpExecutionCaller(
+        principal=RequestPrincipal(agent_id=_OUTCOME_ORCHESTRATOR_AGENT, session_id=None, access_profile_id=profile)
+    )
+    return mcp_execution_request_meta(
+        McpExecutionContext(caller=caller, tool_call_id="tc_test", approving_operator_id=None, approval_policy_id=None)
+    )
+
+
+async def _outcome_call(
+    env: _OutcomeEnv, session_id: UUID, *, profile: str = _OUTCOME_ORCHESTRATOR, raise_on_error: bool = False
+):
+    async with Client(env.mcp) as client:
+        return await client.call_tool(
+            "session_outcome",
+            {"session_id": str(session_id)},
+            meta=_outcome_meta(profile),
+            raise_on_error=raise_on_error,
+        )
+
+
+async def _outcome_result(
+    env: _OutcomeEnv, session_id: UUID, *, profile: str = _OUTCOME_ORCHESTRATOR
+) -> SessionOutcome:
+    return SessionOutcome.model_validate((await _outcome_call(env, session_id, profile=profile)).structured_content)
+
+
+async def test_a_dispatched_session_with_no_turn_yet_reports_real_status(outcome_env: _OutcomeEnv) -> None:
+    session_id, _ = await _outcome_seed_session(outcome_env, ready=False)
+
+    result = await _outcome_result(outcome_env, session_id)
+
+    assert result.status is SessionStatus.IDLE
+    assert result.latest_turn is None
+
+
+async def test_an_open_turn_reports_running_shape(outcome_env: _OutcomeEnv) -> None:
+    session_id, conversation_id = await _outcome_seed_session(outcome_env, ready=True)
+    await _outcome_seed_turn(outcome_env, conversation_id, session_id, outcome=None)
+
+    result = await _outcome_result(outcome_env, session_id)
+
+    assert result.status is SessionStatus.READY
+    assert result.latest_turn is not None
+    assert result.latest_turn.ended_at is None
+    assert result.latest_turn.end is None
+
+
+async def test_a_session_with_an_answered_turn_reports_the_final_message(outcome_env: _OutcomeEnv) -> None:
+    """An answered turn does not close a still-live one-shot worker session."""
+    session_id, conversation_id = await _outcome_seed_session(outcome_env, ready=True)
+    turn_id = await _outcome_seed_turn(outcome_env, conversation_id, session_id, outcome=TurnOutcome.ANSWERED)
+    await _outcome_seed_message(
+        outcome_env, conversation_id, session_id, "Opened the PR: https://example.test/pr/7", turn_id
+    )
+
+    assert await outcome_env.store.status(session_id) is SessionStatus.READY
+    result = await _outcome_result(outcome_env, session_id)
+
+    assert result.status is SessionStatus.READY
+    assert result.latest_turn is not None
+    assert result.latest_turn.end is not None
+    assert result.latest_turn.end.outcome is TurnOutcome.ANSWERED
+    assert result.final_message == "Opened the PR: https://example.test/pr/7"
+
+
+async def test_an_aborted_turn_reports_aborted_without_a_final_message(outcome_env: _OutcomeEnv) -> None:
+    session_id, conversation_id = await _outcome_seed_session(outcome_env, ready=True)
+    await _outcome_seed_turn(outcome_env, conversation_id, session_id, outcome=TurnOutcome.ABORTED)
+
+    result = await _outcome_result(outcome_env, session_id)
+
+    assert result.status is SessionStatus.READY
+    assert result.latest_turn is not None
+    assert result.latest_turn.end is not None
+    assert result.latest_turn.end.outcome is TurnOutcome.ABORTED
+    assert result.final_message is None
+
+
+async def test_a_failed_session_carries_its_error(outcome_env: _OutcomeEnv) -> None:
+    session_id, _ = await _outcome_seed_session(outcome_env, ready=True)
+    await outcome_env.store.fail(session_id, "sandbox runner disconnected")
+
+    result = await _outcome_result(outcome_env, session_id)
+
+    assert result.status is SessionStatus.FAILED
+    assert result.error == "sandbox runner disconnected"
+    assert result.final_message is None
+
+
+async def test_a_failed_turn_preserves_its_real_outcome(outcome_env: _OutcomeEnv) -> None:
+    session_id, conversation_id = await _outcome_seed_session(outcome_env, ready=True)
+    await _outcome_seed_turn(
+        outcome_env, conversation_id, session_id, outcome=TurnOutcome.FAILED, failure="the model returned an error"
+    )
+
+    result = await _outcome_result(outcome_env, session_id)
+
+    assert result.status is SessionStatus.READY
+    assert result.latest_turn is not None
+    assert result.latest_turn.end is not None
+    assert result.latest_turn.end.outcome is TurnOutcome.FAILED
+
+
+async def test_a_session_outside_the_read_scope_is_refused(outcome_env: _OutcomeEnv) -> None:
+    session_id, conversation_id = await _outcome_seed_session(outcome_env, ready=True)
+    turn_id = await _outcome_seed_turn(outcome_env, conversation_id, session_id, outcome=TurnOutcome.ANSWERED)
+    await _outcome_seed_message(outcome_env, conversation_id, session_id, "secret", turn_id)
+
+    result = await _outcome_call(outcome_env, session_id, profile=_OUTCOME_OUTSIDER, raise_on_error=False)
+
+    assert result.is_error
+    assert "conversation access denied" in str(result.content)
+
+
+async def test_an_unknown_session_is_refused(outcome_env: _OutcomeEnv) -> None:
+    result = await _outcome_call(outcome_env, uuid4(), raise_on_error=False)
+
+    assert result.is_error
+    assert "worker session not found" in str(result.content)
 
 
 if __name__ == "__main__":

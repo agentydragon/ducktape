@@ -1,11 +1,4 @@
-"""`sessions.status` is a derivation of the row's facts, identical in Python and SQL.
-
-The matrix walks every reachable fact combination and asserts the member it derives — through the
-ORM instance, through a SQL select of `Session.status`, and through the SQL set filters the store's
-queries use — so the two arms of the hybrid cannot drift apart, and a new member cannot land in one
-arm only. The constraint tests pin the fact shapes the derivation relies on: the combinations no
-writer may record because the vocabulary cannot say them.
-"""
+"""Database-backed contracts for the session lifecycle derivation and constraints."""
 
 from __future__ import annotations
 
@@ -22,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from haku.console.database_schema import Conversation, Session
 from haku.console.harnesses.kind import HarnessKind
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
-from haku.console.session.conversation_views import live_status
 from haku.console.session.status import (
     ENDED_SESSION_STATUSES,
     LEASED_SESSION_STATUSES,
@@ -123,8 +115,6 @@ async def test_the_row_facts_derive_the_same_member_in_python_and_sql(
         selected = await db.scalar(select(Session.status).where(Session.session_id == session_id))
         assert selected is expected
 
-        # By name too: `session_identity` reads `row.status` off a multi-column select, so the
-        # expression must carry the column's label, not an anonymous one.
         named = (
             await db.execute(select(Session.session_id, Session.status).where(Session.session_id == session_id))
         ).one()
@@ -140,7 +130,6 @@ async def test_the_row_facts_derive_the_same_member_in_python_and_sql(
 async def test_the_set_filters_the_store_queries_by_agree_with_the_python_sets(
     migrated_sessions: async_sessionmaker[AsyncSession], operator_id: UUID, facts: _Facts, expected: SessionStatus
 ) -> None:
-    """`OPEN`/`ENDED`/`LEASED` are the store's SQL predicates; membership must match the derivation."""
     async with migrated_sessions.begin() as db:
         session_id = await _insert_session(db, operator_id, facts)
 
@@ -150,22 +139,6 @@ async def test_the_set_filters_the_store_queries_by_agree_with_the_python_sets(
                 select(Session.session_id).where(Session.session_id == session_id, Session.status.in_(statuses))
             )
             assert (matched == session_id) is (expected in statuses)
-
-
-async def test_responding_is_layered_on_top_of_the_row_derivation(
-    migrated_sessions: async_sessionmaker[AsyncSession], operator_id: UUID
-) -> None:
-    """An open turn upgrades only a ready session; an ended row keeps its terminal member."""
-    async with migrated_sessions.begin() as db:
-        ready = await db.get(Session, await _insert_session(db, operator_id, _Facts(allocated=True, attached=True)))
-        ended = await db.get(
-            Session, await _insert_session(db, operator_id, _Facts(allocated=True, attached=True, ended=True))
-        )
-        assert ready is not None
-        assert ended is not None
-        assert live_status(ready, responding=True) is SessionStatus.RESPONDING
-        assert live_status(ready, responding=False) is SessionStatus.READY
-        assert live_status(ended, responding=True) is SessionStatus.CLOSED
 
 
 async def test_fact_shapes_the_vocabulary_cannot_say_are_unwritable(
@@ -199,14 +172,10 @@ async def test_fact_shapes_the_vocabulary_cannot_say_are_unwritable(
         with pytest.raises(IntegrityError, match=constraint):
             await write_row(**columns)
 
-    # An error is how an ended session ended; a live session cannot carry one.
     await rejected("ck_sessions_error_ended", error="but still live")
-    # A runner cannot have attached to a session that was never allocated a credential.
     await rejected("ck_sessions_connected_allocated", bridge_connected_at=_NOW)
-    # "Live but unreclaimable": a still-running session holds its credential and lease together.
     await rejected("ck_sessions_allocation_lease", bridge_token_fingerprint=b"fp")
     await rejected("ck_sessions_allocation_lease", lease_expires_at=_NOW)
-    # Claim cleanup is only ever recorded against a session that has ended.
     await rejected("ck_sessions_claim_cleanup_ended", claim_cleaned_at=_NOW)
 
 

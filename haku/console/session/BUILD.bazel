@@ -202,6 +202,7 @@ py_test(
         ":conversation_views",
         ":session_frames",
         ":setup_output",
+        ":status",
         ":store",
         "//:conftest",
         "//haku/console:conftest",

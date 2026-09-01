@@ -12,21 +12,6 @@ filegroup(
 )
 
 py_test(
-    name = "test_command",
-    size = "medium",
-    srcs = ["test_command.py"],
-    deps = [
-        "//:conftest",
-        "//haku/console:app",
-        "//haku/console:conftest",
-        "//haku/console:database_migrate",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_recall_index_schema",
     size = "medium",
     srcs = ["test_recall_index_schema.py"],
