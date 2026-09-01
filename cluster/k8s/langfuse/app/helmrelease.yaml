@@ -37,6 +37,13 @@ spec:
         signUpDisabled: false
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      # Langfuse is stateless at the pod level and uses external storage. Allow
+      # control-plane nodes as overflow capacity, while the affinity below keeps
+      # ordinary placement on workers.
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
       # Soft anti-affinity off control-plane nodes (their etcd is on a rotational
       # HDD; co-located I/O starves etcd fsync — 2026-06-28 outage).
       # TODO(etcd-hdd-contention): proper fix tracked in cluster/docs/plan.md.

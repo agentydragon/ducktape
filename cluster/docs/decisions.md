@@ -28,6 +28,32 @@ pinned `zone: hil-ovh`, on `local-path-ovh` or `local-path-ovh-ssd`) and
 Proxmox-single (1 instance, `local-path`). See <cnpg_conventions.md>. Known
 deviation: `study-casino-db` runs 3 instances across OVH nodes.
 
+## Control-plane scheduling
+
+OVH Talos control-plane nodes carry the default
+`node-role.kubernetes.io/control-plane:NoSchedule` taint. A workload may tolerate
+that taint only as an explicit, owner-reviewed overflow exception in its GitOps
+manifest. The exception uses `operator: Exists` with `effect: NoSchedule`; it does
+not add a `NoExecute` toleration and does not remove the node taint.
+
+An overflow exception must satisfy all of these rules:
+
+- Keep the workload's OVH `region`/`zone` placement constraints explicit.
+- Prefer non-control-plane nodes with soft node affinity on
+  `node-role.kubernetes.io/control-plane` / `DoesNotExist`, so control planes are
+  used only when ordinary worker placement cannot fit.
+- Do not use `local-path-*`, `hostPath`, or `emptyDir` volumes. Those write to the
+  node-local disk and can contend with etcd, especially on the HDD-backed
+  `ovh-ns103656` control plane. Prefer stateless workloads or SeaweedFS-backed
+  application PVCs instead.
+- Record the workload-specific rationale next to the manifest's toleration and
+  review any generated child pod template as part of the same change.
+
+This is a scheduling fallback, not a general invitation to place application
+workloads on control planes. The Langfuse web/worker pods and Paperless app are
+explicit exceptions because their manifests use no local-path, hostPath, or
+emptyDir storage.
+
 ## OVH-Only Resilience Invariants
 
 **Rule**: These services MUST work with OVH only (Proxmox completely down). No
