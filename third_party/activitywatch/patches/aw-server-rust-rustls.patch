@@ -10,8 +10,13 @@ index f875e41..45c5f84 100644
 +reqwest = { version = "0.12", default-features = false, features = ["json", "blocking", "rustls-tls-native-roots"] }
  dirs = "6"
  gethostname = "0.4.3"
+
+@@ -27,14 +27,11 @@ gethostname = "0.4.3"
+ clap = { version = "4.1", features = ["derive"], optional = true }
+ ctrlc = { version = "3.4.5", optional = true }
  
-@@ -32,9 +32,6 @@ aw-models = { path = "../aw-models" }
+ aw-server = { path = "../aw-server" }
+ aw-models = { path = "../aw-models" }
  aw-datastore = { path = "../aw-datastore" }
  aw-client-rust = { path = "../aw-client-rust" }
  
@@ -20,4 +25,4 @@ index f875e41..45c5f84 100644
 -
  [target.'cfg(target_os="android")'.dependencies]
  jni = { version = "0.21", default-features = false }
- 
+ android_logger = "0.13"

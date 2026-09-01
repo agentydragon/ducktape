@@ -31,3 +31,29 @@ index f0a5f7b..0b06394 100644
 +    .then(registrations => Promise.all(registrations.map(registration => registration.unregister())))
 +    .catch(error => console.warn('Unable to unregister legacy service worker', error));
 +}
+diff --git a/static/sw.js b/static/sw.js
+new file mode 100644
+index 0000000..18cc03e
+--- /dev/null
++++ b/static/sw.js
+@@ -0,0 +1,20 @@
++// Retire the service worker installed by Ducktape's former Vite build. Existing
++// registrations fetch this exact URL when checking for updates, so it must stay
++// available until those clients have replaced and unregistered the old worker.
++self.addEventListener('install', () => self.skipWaiting());
++
++self.addEventListener('activate', event => {
++  event.waitUntil(
++    Promise.all([
++      self.registration.unregister(),
++      caches.keys().then(keys => Promise.all(keys.map(key => caches.delete(key)))),
++      self.clients
++        .matchAll({ type: 'window' })
++        .then(clients =>
++          Promise.all(
++            clients.map(client => client.navigate(client.url))
++          )
++        ),
++    ])
++  );
++});

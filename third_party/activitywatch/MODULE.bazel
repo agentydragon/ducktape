@@ -148,21 +148,21 @@ http_archive(
 )
 
 # aw-webui: frontend for aw-server-rust, pinned to the submodule commit used by
-# aw-server-rust @ 0094c14. BUILD file is overlaid.
-_AW_WEBUI_COMMIT = "0a43547efaaea5eb9c7cf82e3029d1ce1793a8d2"
+# aw-server-rust @ c8533a0. BUILD file is overlaid.
+_AW_WEBUI_COMMIT = "3cbe34999addfb199c4afb3725494e0db26c00f5"
 
 http_archive(
     name = "aw_webui",
     build_file = "//:aw-webui.BUILD.bazel",
     patch_args = ["-p1"],
     patches = ["//patches:aw-webui-hermetic-proxy-build.patch"],
-    sha256 = "28f2286c9c7ea8459fca8bed56eff35d0e657a23f9d94bd07e841dd7eb5c3e81",
+    sha256 = "98cf5b4edbfe2c82de359a0819953bad7694d2cc13e4a09eaabcdd6d08d85c54",
     strip_prefix = "aw-webui-" + _AW_WEBUI_COMMIT,
     urls = ["https://github.com/ActivityWatch/aw-webui/archive/" + _AW_WEBUI_COMMIT + ".tar.gz"],
 )
 
 # aw-server-rust: Rust backend that embeds aw-webui at compile time via rust-embed.
-_AW_SERVER_RUST_COMMIT = "0094c1408b28de87344af97102ea80e4ce65fc02"
+_AW_SERVER_RUST_COMMIT = "c8533a0019ea86312b9dffc8a0dd3ae8483abae2"
 
 http_archive(
     name = "aw_server_rust",
@@ -171,7 +171,7 @@ http_archive(
     patches = [
         "//patches:aw-server-rust-rustls.patch",
     ],
-    sha256 = "e707a2e76af0ca98e724686e3ee39a6d63cd7b4a0addb0f521f6923f997ba168",
+    sha256 = "7ddbcdbfee7f58c290728a0357a06ca6cedf303a69e5fef8f18dfd5f394e3463",
     strip_prefix = "aw-server-rust-" + _AW_SERVER_RUST_COMMIT,
     urls = ["https://github.com/ActivityWatch/aw-server-rust/archive/" + _AW_SERVER_RUST_COMMIT + ".tar.gz"],
 )

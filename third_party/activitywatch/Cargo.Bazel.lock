@@ -1,5 +1,5 @@
 {
-  "checksum": "ef90e4a93aa8a3fe411651afd1b0b25a9737b45f5194d8942a7cfaeb0ea62fa0",
+  "checksum": "c853807361127d2efeca4a671719d2c0edd41b712d46f7e813538eae25fbe264",
   "crates": {
     "addr2line 0.24.2": {
       "name": "addr2line",
@@ -1444,6 +1444,10 @@
             {
               "id": "criterion 0.5.1",
               "target": "criterion"
+            },
+            {
+              "id": "proptest 1.11.0",
+              "target": "proptest"
             }
           ],
           "selects": {}
@@ -1550,6 +1554,10 @@
             {
               "id": "log-panics 2.1.0",
               "target": "log_panics"
+            },
+            {
+              "id": "regex 1.11.1",
+              "target": "regex"
             },
             {
               "id": "rocket 0.5.1",
@@ -1737,6 +1745,10 @@
           "selects": {
             "cfg(target_os = \"android\")": [
               {
+                "id": "android_logger 0.13.3",
+                "target": "android_logger"
+              },
+              {
                 "id": "jni 0.21.1",
                 "target": "jni"
               }
@@ -1787,6 +1799,10 @@
             {
               "id": "log 0.4.27",
               "target": "log"
+            },
+            {
+              "id": "lru 0.18.1",
+              "target": "lru"
             },
             {
               "id": "serde 1.0.228",
@@ -2082,6 +2098,7 @@
         ],
         "crate_features": {
           "common": [
+            "default",
             "std"
           ],
           "selects": {}
@@ -2181,6 +2198,7 @@
         ],
         "crate_features": {
           "common": [
+            "default",
             "std"
           ],
           "selects": {}
@@ -2195,14 +2213,14 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
-    "bitflags 2.9.1": {
+    "bitflags 2.13.1": {
       "name": "bitflags",
-      "version": "2.9.1",
+      "version": "2.13.1",
       "package_url": "https://github.com/bitflags/bitflags",
       "repository": {
         "Http": {
-          "url": "https://static.crates.io/crates/bitflags/2.9.1/download",
-          "sha256": "1b8e56985ec62d17e9c1001dc89c88ecd7dc08e47eba5ec7c29c7b5eeecde967"
+          "url": "https://static.crates.io/crates/bitflags/2.13.1/download",
+          "sha256": "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da"
         }
       },
       "targets": [
@@ -2248,7 +2266,7 @@
           }
         },
         "edition": "2021",
-        "version": "2.9.1"
+        "version": "2.13.1"
       },
       "license": "MIT OR Apache-2.0",
       "license_ids": [
@@ -4373,7 +4391,7 @@
         "deps": {
           "common": [
             {
-              "id": "bitflags 2.9.1",
+              "id": "bitflags 2.13.1",
               "target": "bitflags"
             },
             {
@@ -5353,6 +5371,44 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
+    "foldhash 0.2.0": {
+      "name": "foldhash",
+      "version": "0.2.0",
+      "package_url": "https://github.com/orlp/foldhash",
+      "repository": {
+        "Http": {
+          "url": "https://static.crates.io/crates/foldhash/0.2.0/download",
+          "sha256": "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "foldhash",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "foldhash",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "edition": "2021",
+        "version": "0.2.0"
+      },
+      "license": "Zlib",
+      "license_ids": [
+        "Zlib"
+      ],
+      "license_file": "LICENSE"
+    },
     "form_urlencoded 1.2.1": {
       "name": "form_urlencoded",
       "version": "1.2.1",
@@ -6247,6 +6303,12 @@
         "compile_data_glob": [
           "**"
         ],
+        "crate_features": {
+          "common": [
+            "std"
+          ],
+          "selects": {}
+        },
         "deps": {
           "common": [
             {
@@ -6661,6 +6723,73 @@
         ],
         "edition": "2021",
         "version": "0.15.4"
+      },
+      "license": "MIT OR Apache-2.0",
+      "license_ids": [
+        "Apache-2.0",
+        "MIT"
+      ],
+      "license_file": "LICENSE-APACHE"
+    },
+    "hashbrown 0.17.1": {
+      "name": "hashbrown",
+      "version": "0.17.1",
+      "package_url": "https://github.com/rust-lang/hashbrown",
+      "repository": {
+        "Http": {
+          "url": "https://static.crates.io/crates/hashbrown/0.17.1/download",
+          "sha256": "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "hashbrown",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "hashbrown",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "crate_features": {
+          "common": [
+            "allocator-api2",
+            "default",
+            "default-hasher",
+            "equivalent",
+            "inline-more",
+            "raw-entry"
+          ],
+          "selects": {}
+        },
+        "deps": {
+          "common": [
+            {
+              "id": "allocator-api2 0.2.21",
+              "target": "allocator_api2"
+            },
+            {
+              "id": "equivalent 1.0.2",
+              "target": "equivalent"
+            },
+            {
+              "id": "foldhash 0.2.0",
+              "target": "foldhash"
+            }
+          ],
+          "selects": {}
+        },
+        "edition": "2024",
+        "version": "0.17.1"
       },
       "license": "MIT OR Apache-2.0",
       "license_ids": [
@@ -8600,7 +8729,7 @@
         "deps": {
           "common": [
             {
-              "id": "bitflags 2.9.1",
+              "id": "bitflags 2.13.1",
               "target": "bitflags"
             },
             {
@@ -9497,7 +9626,7 @@
         "deps": {
           "common": [
             {
-              "id": "bitflags 2.9.1",
+              "id": "bitflags 2.13.1",
               "target": "bitflags"
             },
             {
@@ -9960,6 +10089,60 @@
         },
         "edition": "2018",
         "version": "0.5.6"
+      },
+      "license": "MIT",
+      "license_ids": [
+        "MIT"
+      ],
+      "license_file": "LICENSE"
+    },
+    "lru 0.18.1": {
+      "name": "lru",
+      "version": "0.18.1",
+      "package_url": "https://github.com/jeromefroe/lru-rs.git",
+      "repository": {
+        "Http": {
+          "url": "https://static.crates.io/crates/lru/0.18.1/download",
+          "sha256": "0b6180140927ee907000b0aa540091f6ea512ead4447c92b8fc35bc72788a5a6"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "lru",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "lru",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "crate_features": {
+          "common": [
+            "default",
+            "hashbrown"
+          ],
+          "selects": {}
+        },
+        "deps": {
+          "common": [
+            {
+              "id": "hashbrown 0.17.1",
+              "target": "hashbrown"
+            }
+          ],
+          "selects": {}
+        },
+        "edition": "2015",
+        "version": "0.18.1"
       },
       "license": "MIT",
       "license_ids": [
@@ -10495,7 +10678,7 @@
         "deps": {
           "common": [
             {
-              "id": "bitflags 2.9.1",
+              "id": "bitflags 2.13.1",
               "target": "bitflags"
             },
             {
@@ -12458,6 +12641,146 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
+    "proptest 1.11.0": {
+      "name": "proptest",
+      "version": "1.11.0",
+      "package_url": "https://github.com/proptest-rs/proptest",
+      "repository": {
+        "Http": {
+          "url": "https://static.crates.io/crates/proptest/1.11.0/download",
+          "sha256": "4b45fcc2344c680f5025fe57779faef368840d0bd1f42f216291f0dc4ace4744"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "proptest",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "proptest",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "crate_features": {
+          "common": [
+            "bit-set",
+            "default",
+            "fork",
+            "regex-syntax",
+            "rusty-fork",
+            "std",
+            "tempfile",
+            "timeout"
+          ],
+          "selects": {}
+        },
+        "deps": {
+          "common": [
+            {
+              "id": "bit-set 0.8.0",
+              "target": "bit_set"
+            },
+            {
+              "id": "bit-vec 0.8.0",
+              "target": "bit_vec"
+            },
+            {
+              "id": "bitflags 2.13.1",
+              "target": "bitflags"
+            },
+            {
+              "id": "num-traits 0.2.19",
+              "target": "num_traits"
+            },
+            {
+              "id": "rand 0.9.4",
+              "target": "rand"
+            },
+            {
+              "id": "rand_chacha 0.9.0",
+              "target": "rand_chacha"
+            },
+            {
+              "id": "rand_xorshift 0.4.0",
+              "target": "rand_xorshift"
+            },
+            {
+              "id": "regex-syntax 0.8.5",
+              "target": "regex_syntax"
+            },
+            {
+              "id": "rusty-fork 0.3.1",
+              "target": "rusty_fork"
+            },
+            {
+              "id": "tempfile 3.20.0",
+              "target": "tempfile"
+            },
+            {
+              "id": "unarray 0.1.4",
+              "target": "unarray"
+            }
+          ],
+          "selects": {}
+        },
+        "edition": "2021",
+        "version": "1.11.0"
+      },
+      "license": "MIT OR Apache-2.0",
+      "license_ids": [
+        "Apache-2.0",
+        "MIT"
+      ],
+      "license_file": "LICENSE-APACHE"
+    },
+    "quick-error 1.2.3": {
+      "name": "quick-error",
+      "version": "1.2.3",
+      "package_url": "http://github.com/tailhook/quick-error",
+      "repository": {
+        "Http": {
+          "url": "https://static.crates.io/crates/quick-error/1.2.3/download",
+          "sha256": "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "quick_error",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "quick_error",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "edition": "2015",
+        "version": "1.2.3"
+      },
+      "license": "MIT/Apache-2.0",
+      "license_ids": [
+        "Apache-2.0",
+        "MIT"
+      ],
+      "license_file": "LICENSE-APACHE"
+    },
     "quinn 0.11.9": {
       "name": "quinn",
       "version": "0.11.9",
@@ -13010,6 +13333,14 @@
         "compile_data_glob": [
           "**"
         ],
+        "crate_features": {
+          "common": [
+            "alloc",
+            "os_rng",
+            "std"
+          ],
+          "selects": {}
+        },
         "deps": {
           "common": [
             {
@@ -13224,8 +13555,72 @@
         "compile_data_glob": [
           "**"
         ],
+        "crate_features": {
+          "common": [
+            "os_rng",
+            "std"
+          ],
+          "selects": {}
+        },
+        "deps": {
+          "common": [
+            {
+              "id": "getrandom 0.3.3",
+              "target": "getrandom"
+            }
+          ],
+          "selects": {}
+        },
         "edition": "2021",
         "version": "0.9.5"
+      },
+      "license": "MIT OR Apache-2.0",
+      "license_ids": [
+        "Apache-2.0",
+        "MIT"
+      ],
+      "license_file": "LICENSE-APACHE"
+    },
+    "rand_xorshift 0.4.0": {
+      "name": "rand_xorshift",
+      "version": "0.4.0",
+      "package_url": "https://github.com/rust-random/rngs",
+      "repository": {
+        "Http": {
+          "url": "https://static.crates.io/crates/rand_xorshift/0.4.0/download",
+          "sha256": "513962919efc330f829edb2535844d1b912b0fbe2ca165d613e4e8788bb05a5a"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "rand_xorshift",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "rand_xorshift",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "deps": {
+          "common": [
+            {
+              "id": "rand_core 0.9.5",
+              "target": "rand_core"
+            }
+          ],
+          "selects": {}
+        },
+        "edition": "2021",
+        "version": "0.4.0"
       },
       "license": "MIT OR Apache-2.0",
       "license_ids": [
@@ -13446,7 +13841,7 @@
         "deps": {
           "common": [
             {
-              "id": "bitflags 2.9.1",
+              "id": "bitflags 2.13.1",
               "target": "bitflags"
             }
           ],
@@ -14843,7 +15238,7 @@
         "deps": {
           "common": [
             {
-              "id": "bitflags 2.9.1",
+              "id": "bitflags 2.13.1",
               "target": "bitflags"
             },
             {
@@ -15216,7 +15611,7 @@
         "deps": {
           "common": [
             {
-              "id": "bitflags 2.9.1",
+              "id": "bitflags 2.13.1",
               "target": "bitflags"
             },
             {
@@ -15689,6 +16084,73 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
+    "rusty-fork 0.3.1": {
+      "name": "rusty-fork",
+      "version": "0.3.1",
+      "package_url": "https://github.com/altsysrq/rusty-fork",
+      "repository": {
+        "Http": {
+          "url": "https://static.crates.io/crates/rusty-fork/0.3.1/download",
+          "sha256": "cc6bf79ff24e648f6da1f8d1f011e9cac26491b619e6b9280f2b47f1774e6ee2"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "rusty_fork",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "rusty_fork",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "crate_features": {
+          "common": [
+            "timeout",
+            "wait-timeout"
+          ],
+          "selects": {}
+        },
+        "deps": {
+          "common": [
+            {
+              "id": "fnv 1.0.7",
+              "target": "fnv"
+            },
+            {
+              "id": "quick-error 1.2.3",
+              "target": "quick_error"
+            },
+            {
+              "id": "tempfile 3.20.0",
+              "target": "tempfile"
+            },
+            {
+              "id": "wait-timeout 0.2.1",
+              "target": "wait_timeout"
+            }
+          ],
+          "selects": {}
+        },
+        "edition": "2018",
+        "version": "0.3.1"
+      },
+      "license": "MIT/Apache-2.0",
+      "license_ids": [
+        "Apache-2.0",
+        "MIT"
+      ],
+      "license_file": "LICENSE-APACHE"
+    },
     "ryu 1.0.20": {
       "name": "ryu",
       "version": "1.0.20",
@@ -16153,7 +16615,7 @@
         "deps": {
           "common": [
             {
-              "id": "bitflags 2.9.1",
+              "id": "bitflags 2.13.1",
               "target": "bitflags"
             },
             {
@@ -19408,7 +19870,7 @@
         "deps": {
           "common": [
             {
-              "id": "bitflags 2.9.1",
+              "id": "bitflags 2.13.1",
               "target": "bitflags"
             },
             {
@@ -19959,6 +20421,45 @@
         },
         "edition": "2018",
         "version": "0.10.4"
+      },
+      "license": "MIT OR Apache-2.0",
+      "license_ids": [
+        "Apache-2.0",
+        "MIT"
+      ],
+      "license_file": "LICENSE-APACHE"
+    },
+    "unarray 0.1.4": {
+      "name": "unarray",
+      "version": "0.1.4",
+      "package_url": "https://github.com/cameron1024/unarray",
+      "repository": {
+        "Http": {
+          "url": "https://static.crates.io/crates/unarray/0.1.4/download",
+          "sha256": "eaea85b334db583fe3274d12b4cd1880032beab409c0d774be044d4480ab9a94"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "unarray",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "unarray",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "edition": "2018",
+        "version": "0.1.4"
       },
       "license": "MIT OR Apache-2.0",
       "license_ids": [
@@ -20656,6 +21157,56 @@
         ],
         "edition": "2015",
         "version": "0.9.5"
+      },
+      "license": "MIT/Apache-2.0",
+      "license_ids": [
+        "Apache-2.0",
+        "MIT"
+      ],
+      "license_file": "LICENSE-APACHE"
+    },
+    "wait-timeout 0.2.1": {
+      "name": "wait-timeout",
+      "version": "0.2.1",
+      "package_url": "https://github.com/alexcrichton/wait-timeout",
+      "repository": {
+        "Http": {
+          "url": "https://static.crates.io/crates/wait-timeout/0.2.1/download",
+          "sha256": "09ac3b126d3914f9849036f826e054cbabdc8519970b8998ddaf3b5bd3c65f11"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "wait_timeout",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "wait_timeout",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "deps": {
+          "common": [],
+          "selects": {
+            "cfg(unix)": [
+              {
+                "id": "libc 0.2.174",
+                "target": "libc"
+              }
+            ]
+          }
+        },
+        "edition": "2015",
+        "version": "0.2.1"
       },
       "license": "MIT/Apache-2.0",
       "license_ids": [
@@ -24984,6 +25535,7 @@
     "libc 0.2.174",
     "log 0.4.27",
     "log-panics 2.1.0",
+    "lru 0.18.1",
     "mpsc_requests 0.3.4",
     "openssl-sys 0.9.116",
     "phf 0.11.3",
@@ -25007,6 +25559,7 @@
   ],
   "direct_dev_deps": [
     "criterion 0.5.1",
+    "proptest 1.11.0",
     "tokio-test 0.4.4"
   ],
   "unused_patches": []
