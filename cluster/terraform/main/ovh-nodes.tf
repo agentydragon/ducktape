@@ -272,18 +272,12 @@ resource "ovh_dedicated_server_reboot_task" "kimsufi_to_talos" {
 # TALOS MACHINE CONFIGURATION
 
 locals {
-  # OVH KS-5 control planes are also storage-bearing nodes. Keep them schedulable
-  # so existing OVH-local workloads and local-path PVs can continue to run there.
-  kimsufi_controlplane_cluster_config = merge(local.common_cluster_config, {
-    allowSchedulingOnControlPlanes = true
-  })
-
-  # Restore the default NoSchedule control-plane taint on the HDD etcd anchor
-  # first. The SSD control planes remain temporarily schedulable until every
-  # allowed resident has an explicit toleration and ownership decision.
+  # Kimsufi control planes consume the common control-plane config, including
+  # Talos' default NoSchedule taint. Workloads that intentionally remain there
+  # must carry an explicit owner-reviewed toleration.
   kimsufi_controlplane_cluster_config_base_by_node = {
     for k, v in merge(local.kimsufi_servers, local.kimsufi_cp_servers) :
-    k => k == "ovh-ns103656" ? local.common_cluster_config : local.kimsufi_controlplane_cluster_config
+    k => local.common_cluster_config
     if v.role == "controlplane"
   }
 
