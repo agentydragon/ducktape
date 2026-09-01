@@ -170,6 +170,7 @@ http_archive(
     patch_args = ["-p1"],
     patches = [
         "//patches:aw-server-rust-rustls.patch",
+        "//patches:aw-server-rust-sw-route.patch",
     ],
     sha256 = "7ddbcdbfee7f58c290728a0357a06ca6cedf303a69e5fef8f18dfd5f394e3463",
     strip_prefix = "aw-server-rust-" + _AW_SERVER_RUST_COMMIT,

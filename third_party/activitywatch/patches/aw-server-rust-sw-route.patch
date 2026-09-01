@@ -1,0 +1,25 @@
+diff --git a/aw-server/src/endpoints/mod.rs b/aw-server/src/endpoints/mod.rs
+--- a/aw-server/src/endpoints/mod.rs
++++ b/aw-server/src/endpoints/mod.rs
+@@ -107,6 +107,11 @@ fn root_manifest(state: &State<ServerState>) -> Option<(ContentType, Vec<u8>)> {
+     get_file("manifest.json".into(), state)
+ }
+ 
++#[get("/sw.js")]
++fn root_legacy_service_worker(state: &State<ServerState>) -> Option<(ContentType, Vec<u8>)> {
++    get_file("sw.js".into(), state)
++}
++
+ #[get("/")]
+ fn server_info(config: &State<AWConfig>, state: &State<ServerState>) -> Json<Info> {
+     #[allow(clippy::or_fun_call)]
+@@ -167,7 +172,8 @@ pub fn build_rocket(server_state: ServerState, config: AWConfig) -> rocket::Rock
+                 // custom static files
+                 root_dark,
+                 root_logo,
+-                root_manifest
++                root_manifest,
++                root_legacy_service_worker
+             ],
+         )
+         .mount("/api/0/info", routes![server_info])
