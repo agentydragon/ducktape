@@ -92,6 +92,13 @@ with the sequence as the SSE id so a reconnecting browser resumes from where it 
 events pass through unchanged; the raw view is a client-side filter over them and
 `source_sequences` links a derived event to its frames.
 
+The bridge introduces no second schema. SSE payloads are the proto-JSON encoding of the exact
+`Event` messages in `protocol.proto`, and command bodies are proto-JSON of the client messages;
+the browser's TypeScript types are generated from the same file with protobuf-es. What the bridge
+owns is routing and framing only. Check whether Connect's Python server is usable for the unary
+and server-streaming shape; if it is, the commands and the event stream come with generated
+clients, and if not, plain REST with proto-JSON bodies is the same contract by hand.
+
 Tested against a local runner with the scripted model, reusing `runner/testing/`; the app's tests
 never need a cluster for this part. Depends on I2's `ListSessions`.
 
@@ -128,6 +135,12 @@ Depends on C1 and C2 producing an image; the manifests can be authored earlier.
 - **Transport security on the runner port:** Cilium policy between the app namespace and the
   sandbox Pods is the v0 control. Authentication on the port itself waits for the credentialed
   readiness gate.
+- **No gRPC-Web or Connect proxy in front of the runners:** browsers cannot carry the
+  bidirectional `Attach`, and a standard proxy would still need per-sandbox routing to Pod
+  addresses that change on every resume. The app stays the one HTTP surface; the schema is shared
+  through proto-JSON and generated types instead. Splitting `Attach` into a server-streaming
+  `Open` plus unary commands waits for a second, non-browser client that wants it, since the
+  stream is what identifies the controlling attachment today.
 
 ## Left out on purpose
 
