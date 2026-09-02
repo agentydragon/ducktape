@@ -174,6 +174,8 @@ locals {
 # Agents receive this Secret only through an expiring Haku Console Kubernetes grant.
 # There is deliberately no reflector copy or standing RoleBinding: the grant names
 # both the namespace and Secret, and LiteLLM enforces the model allowlist below.
+# The one standing copy is kubernetes_secret.cheap_experiments_agentplane_staging
+# below, read by the Agentplane staging runner Pods as their API key.
 
 resource "litellm_key" "cheap_experiments" {
   key_alias       = "cheap-experiments"
@@ -191,6 +193,25 @@ resource "kubernetes_secret" "cheap_experiments" {
     namespace = "litellm-cheap-experiments"
     annotations = {
       description = "LiteLLM virtual key for temporary agent experiments; Mistral, Google, Ollama, Anthropic Haiku, and OpenAI Luna only"
+    }
+  }
+
+  data = {
+    api-key = litellm_key.cheap_experiments.key
+  }
+}
+
+# Standing copy for the Agentplane staging runners (cluster/k8s/agentplane-staging):
+# the agentplane-runner SandboxTemplate reads it as ANTHROPIC_AUTH_TOKEN and
+# OPENAI_API_KEY. Not reflected — written straight into the namespace, so the
+# agentplane-staging Namespace must exist before this applies. The key's budget
+# and model allowlist above are the kill switch.
+resource "kubernetes_secret" "cheap_experiments_agentplane_staging" {
+  metadata {
+    name      = "litellm-key-cheap-experiments"
+    namespace = "agentplane-staging"
+    annotations = {
+      description = "Standing copy of the cheap-experiments LiteLLM virtual key for the Agentplane staging runner Pods; the key's budget and model allowlist (tf/gitops/litellm-keys) are the kill switch"
     }
   }
 

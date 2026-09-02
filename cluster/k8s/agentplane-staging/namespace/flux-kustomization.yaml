@@ -1,0 +1,22 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: agentplane-staging-namespace
+  namespace: ducktape-flux
+  annotations:
+    description: Agentplane staging namespace + quota for sandboxed runner Pods and the integration app.
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 2m
+  path: ./cluster/k8s/agentplane-staging/namespace
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: v1
+      kind: Namespace
+      name: agentplane-staging

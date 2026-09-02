@@ -39,3 +39,4 @@ resources:
   - rtl-tcp-image.yaml
   - wayback-archive-image.yaml
   - haku-managed-agent-image.yaml
+  - agentplane-runner-image.yaml

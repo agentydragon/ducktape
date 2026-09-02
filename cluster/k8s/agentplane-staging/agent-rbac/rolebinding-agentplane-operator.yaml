@@ -1,0 +1,28 @@
+# Subjects are the agent identity set of the generate-agent-diagnostics-readers
+# Kyverno policy (cluster/k8s/kyverno/policies/), kept identical so the
+# namespace label and this binding grant to the same principals.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-agentplane-operator
+  namespace: agentplane-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-operator
+subjects:
+  - kind: Group
+    name: oidc-ksbx-groups:haku
+    apiGroup: rbac.authorization.k8s.io
+  - kind: Group
+    name: haku:access-profile:haku
+    apiGroup: rbac.authorization.k8s.io
+  - kind: ServiceAccount
+    name: haku
+    namespace: haku-sandbox
+  - kind: Group
+    name: oidc-ksbx-groups:kubectl-sandbox-users
+    apiGroup: rbac.authorization.k8s.io
+  - kind: Group
+    name: haku:access-profile:public-coder
+    apiGroup: rbac.authorization.k8s.io

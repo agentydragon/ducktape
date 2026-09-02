@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agentplane-staging
+  labels:
+    name: agentplane-staging
+    # Runner Pods are Sandbox-owned, not Deployments; nothing here is VPA-managed.
+    goldilocks.fairwinds.com/enabled: "false"
+    # Standing agent access to metadata and logs (Kyverno-generated bindings);
+    # write access lives in ../agent-rbac.
+    rbac.ducktape.io/agent-readable-logs: "true"
+  annotations:
+    description: Agentplane staging - sandboxed runner Pods (one per SandboxClaim) plus, later, the integration app that drives them.

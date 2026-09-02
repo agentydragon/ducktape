@@ -1,0 +1,97 @@
+# Agentplane runner sandbox: one Pod per SandboxClaim, driven by the
+# integration app over port 7000. No warm pool. The Pod is pinned to wyrm2
+# (region proxmox) so the local-path-proxmox state PVC binds where it runs; a
+# suspended Sandbox (operatingMode: Suspended) drops the Pod and keeps the PVC,
+# so it resumes only there. Both harnesses reach models through the cluster
+# LiteLLM with the cheap-experiments key. networkPolicyManagement is Unmanaged
+# because the CiliumNetworkPolicy next to this file is the runner's fence.
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxTemplate
+metadata:
+  name: agentplane-runner
+  namespace: agentplane-staging
+spec:
+  networkPolicyManagement: Unmanaged
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-runner
+    spec:
+      dnsPolicy: ClusterFirst
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: runner
+          image: git.allegedly.works/ducktape-ci/agentplane-runner:devel-placeholder # {"$imagepolicy": "flux-system:agentplane-runner"}
+          command:
+            - /usr/local/bin/agentplane-runner
+          args:
+            - --state-dir
+            - /state
+            - --listen
+            - 0.0.0.0:7000
+            - --claude-binary
+            - /usr/local/bin/claude
+            - --anthropic-base-url
+            - $(LITELLM_URL)
+            - --codex-binary
+            - /opt/codex/bin/codex
+            - --openai-base-url
+            - $(LITELLM_URL)/v1
+          ports:
+            - name: runner
+              containerPort: 7000
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: LITELLM_URL
+              value: http://litellm.litellm.svc.cluster.local:4000
+            # cheap-experiments LiteLLM virtual key (tf/gitops/litellm-keys):
+            # capped budget, cheap models only; its budget and allowlist are
+            # the kill switch for everything a runner can spend.
+            - name: ANTHROPIC_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-key-cheap-experiments
+                  key: api-key
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-key-cheap-experiments
+                  key: api-key
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          volumeMounts:
+            - name: state
+              mountPath: /state
+  volumeClaimTemplatesPolicy: Overrides
+  volumeClaimTemplates:
+    - metadata:
+        name: state
+      spec:
+        storageClassName: local-path-proxmox
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi

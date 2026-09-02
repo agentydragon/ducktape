@@ -1,0 +1,21 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: agentplane-staging-agent-rbac
+  namespace: ducktape-flux
+  annotations:
+    description: Agent RBAC for agentplane-staging. Lightweight — a Role + RoleBinding giving the agent identities standing claim/sandbox/exec/port-forward access. Depends on namespace existing + agent RBAC base.
+spec:
+  interval: 10m
+  path: ./cluster/k8s/agentplane-staging/agent-rbac
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  timeout: 2m
+  dependsOn:
+    - name: agentplane-staging-namespace
+      namespace: ducktape-flux
+    - name: claude-rbac
+      namespace: ducktape-flux
