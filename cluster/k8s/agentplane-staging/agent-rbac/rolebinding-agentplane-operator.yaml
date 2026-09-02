@@ -1,6 +1,7 @@
-# Subjects are the agent identity set of the generate-agent-diagnostics-readers
-# Kyverno policy (cluster/k8s/kyverno/policies/), kept identical so the
-# namespace label and this binding grant to the same principals.
+# Subjects are the Haku agent's identities and the interactive kubectl sandbox
+# group, as the generate-agent-diagnostics-readers Kyverno policy
+# (cluster/k8s/kyverno/policies/) names them; the public-coder lane is left
+# out, since it has no business in staging runners.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -22,7 +23,4 @@ subjects:
     namespace: haku-sandbox
   - kind: Group
     name: oidc-ksbx-groups:kubectl-sandbox-users
-    apiGroup: rbac.authorization.k8s.io
-  - kind: Group
-    name: haku:access-profile:public-coder
     apiGroup: rbac.authorization.k8s.io
