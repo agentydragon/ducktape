@@ -104,7 +104,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                 <Badge color={STATE_COLORS[row.state] ?? "blue"}>{row.state}</Badge>
               </Table.Td>
               <Table.Td>
-                {row.node_name ?? "—"} {row.pod_ip ? `(${row.pod_ip})` : ""}
+                {row.node_name ?? "—"} {row.pod?.ip ? `(${row.pod.ip})` : ""}
               </Table.Td>
               <Table.Td>
                 <Group gap="xs">

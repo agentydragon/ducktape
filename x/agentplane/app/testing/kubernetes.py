@@ -148,12 +148,31 @@ def sandbox(
     }
 
 
-def pod(name: str, *, phase: str, ready: bool, ip: str | None) -> k8s_client.V1Pod:
+def pod(name: str, *, phase: str, ready: bool, ip: str | None, waiting_reason: str | None = None) -> k8s_client.V1Pod:
+    """A runner Pod as the kubelet reports it: running and ready, or held up by `waiting_reason`."""
+    state = (
+        k8s_client.V1ContainerState(running=k8s_client.V1ContainerStateRunning())
+        if waiting_reason is None
+        else k8s_client.V1ContainerState(
+            waiting=k8s_client.V1ContainerStateWaiting(reason=waiting_reason, message=f"{waiting_reason} on {name}")
+        )
+    )
     return k8s_client.V1Pod(
         metadata=k8s_client.V1ObjectMeta(name=name, creation_timestamp=datetime(2026, 9, 1, 12, 0, 10, tzinfo=UTC)),
+        spec=k8s_client.V1PodSpec(containers=[k8s_client.V1Container(name="runner")], node_name="test-node"),
         status=k8s_client.V1PodStatus(
             phase=phase,
             pod_ip=ip,
             conditions=[k8s_client.V1PodCondition(type="Ready", status="True" if ready else "False")],
+            container_statuses=[
+                k8s_client.V1ContainerStatus(
+                    name="runner",
+                    image="registry.test/agentplane-runner:test",
+                    image_id="",
+                    ready=ready,
+                    restart_count=0,
+                    state=state,
+                )
+            ],
         ),
     )

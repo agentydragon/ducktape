@@ -46,7 +46,8 @@ def test_list_reports_state_and_hides_archived_by_default(client: TestClient) ->
 def test_get_returns_the_row_or_404(client: TestClient) -> None:
     row = client.get("/sandboxes/live").json()
 
-    assert (row["state"], row["pod_ip"], row["provider"]) == ("running", "10.0.0.7", "claude")
+    assert (row["state"], row["pod"]["ip"], row["provider"]) == ("running", "10.0.0.7", "claude")
+    assert row["pod"]["containers"][0]["state"] == "running"
     assert client.get("/sandboxes/nope").status_code == 404
 
 

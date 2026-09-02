@@ -33,7 +33,7 @@ _READY = {"conditions": [{"type": "Ready", "status": "True", "reason": "PodReady
 def _populate_one_of_each_state(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api) -> None:
     custom_objects.objects[("sandboxes", "podless")] = sandbox("podless")
     custom_objects.objects[("sandboxes", "starting")] = sandbox("starting")
-    core_v1.pods["starting"] = pod("starting", phase="Pending", ready=False, ip=None)
+    core_v1.pods["starting"] = pod("starting", phase="Pending", ready=False, ip=None, waiting_reason="ImagePullBackOff")
     custom_objects.objects[("sandboxes", "live")] = sandbox(
         "live", provider=Provider.CODEX, model="cheap-codex", status=_READY
     )
@@ -65,11 +65,26 @@ async def test_list_derives_each_provisioning_state_from_the_sandbox_and_its_pod
     }
     live = views["live"]
     assert (live.provider, live.model) == (Provider.CODEX, "cheap-codex")
-    assert (live.node_name, live.pod_phase, live.pod_ip) == ("test-node", "Running", "10.0.0.7")
+    assert live.pod is not None
+    assert (live.node_name, live.pod.phase, live.pod.ip, live.pod.node_name) == (
+        "test-node",
+        "Running",
+        "10.0.0.7",
+        "test-node",
+    )
     assert [(condition.type, condition.status, condition.reason) for condition in live.conditions] == [
         ("Ready", "True", "PodReady")
     ]
-    assert (views["podless"].pod_phase, views["podless"].conditions) == (None, [])
+    assert [(container.name, container.state, container.ready) for container in live.pod.containers] == [
+        ("runner", "running", True)
+    ]
+    # A Pod held up by its image is visible as such, so the app can say why nothing is running.
+    starting = views["starting"].pod
+    assert starting is not None
+    assert [(container.state, container.reason, container.message) for container in starting.containers] == [
+        ("waiting", "ImagePullBackOff", "ImagePullBackOff on starting")
+    ]
+    assert (views["podless"].pod, views["podless"].conditions) == (None, [])
     assert views["shelved"].archived
     assert not views["live"].archived
 
@@ -92,7 +107,8 @@ async def test_get_reads_one_sandbox_and_refuses_foreign_or_missing_ones(
 
     view = await inventory.get("live")
 
-    assert (view.state, view.pod_ip) == (ProvisioningState.RUNNING, "10.0.0.7")
+    assert view.pod is not None
+    assert (view.state, view.pod.ip) == (ProvisioningState.RUNNING, "10.0.0.7")
     with pytest.raises(SandboxNotFoundError):
         await inventory.get("foreign")
     with pytest.raises(SandboxNotFoundError):
