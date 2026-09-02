@@ -166,9 +166,12 @@ The first recovery claim is narrow:
 Keep workspace survival as a separate assertion. Do not call bridge-journal replay or prompt resend
 native resume.
 
-Active-turn process death, uncertain side effects, queue survival, Pod replacement, central reconnect,
-bridge replacement, and Sandbox suspension are follow-up experiments. Until evidence exists, do not
-blindly resend an input whose native admission is uncertain.
+The runner adds reconnect from a cursor, runner replacement with the loss reported, and
+`InputUncertain` for an input whose admission it cannot settle
+([`../runner/SPEC.md`](../runner/SPEC.md)). Active-turn side-effect reconciliation, queue
+survival, Pod replacement, and Sandbox suspension are the next experiments
+([`runner_sandbox_and_app.md`](runner_sandbox_and_app.md)). Do not blindly resend an input whose
+native admission is uncertain.
 
 ## Future central service
 

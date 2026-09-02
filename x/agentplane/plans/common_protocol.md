@@ -114,7 +114,7 @@ Post-capture adapter work must remain separate from:
 - the Agentplane REST/OpenAPI and SSE/WebSocket API;
 - Thread/Input/Turn persistence and any PostgreSQL schema;
 - Kubernetes/Agent Sandbox lifecycle and Pod replacement;
-- bridge reconnect cursors, leases, fencing, or uncertain-input recovery;
+- leases and fencing (reconnect cursors and uncertain-input reporting are the runner's);
 - authorization, credentials, approvals, or subscription adapters; and
 - conversation UI and Haku Console integration.
 

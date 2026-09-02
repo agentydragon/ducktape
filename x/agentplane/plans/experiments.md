@@ -1,7 +1,7 @@
 # Agentplane experiments
 
-Status: **native drivers, the live probe, and the scripted harness tests are in place; the thin
-shared adapter seam is next**.
+Status: **native drivers, the live probe, the scripted harness tests, and the runner over both
+adapters are in place; the next experiments run the runner inside a Sandbox**.
 
 The native capture work is no longer an open discovery task. The Claude/Codex drivers live under
 [`../native/`](../native/), the live-capture probe under [`../capture/`](../capture/), and the
@@ -85,23 +85,22 @@ The pinned harnesses show these constraints:
 These are observations from the currently pinned harnesses for adapter design. The bridge must not manufacture retry, steering,
 acknowledgement, or successful completion semantics that the native process did not emit.
 
-## Next post-capture experiments
+## Next experiments
 
-The next focused work package is the thin shared stdio protocol and both provider adapters. Use the
-scripted tests and real binaries to answer only what that package needs:
+The runner answered the adapter-seam questions; its contract is [`../runner/SPEC.md`](../runner/SPEC.md)
+and its tests are the interaction scripts under [`../runner/`](../runner/). The next experiments
+are the ones a runner inside an Agent Sandbox raises, listed in
+[`runner_sandbox_and_app.md`](runner_sandbox_and_app.md):
 
-1. Which native start/resume, submit, interrupt, and event operations have stable behavioral
-   equivalents?
-2. What admission, progress, completion, failure, and process-survival evidence should the shared
-   seam expose without hiding provider-specific details?
-3. How should supported-differently or unsupported steering and queue behavior be represented?
-4. Which native continuity identifiers must be retained to resume a replacement idle process?
-5. What is the smallest adapter-level contract that can be proven by the scripted tests before
-   introducing the standalone Agentplane service?
+1. Does a Pod's SIGTERM give the runner enough grace to stop both harnesses through stdin close, so
+   Claude Code's transcript is written before the Pod goes?
+2. After `operatingMode: Suspended` and resume, does `Open` on the replacement Pod resume the native
+   conversation with the earlier turn in the model's context, and does the client's cursor carry
+   across the Pod change without gap or duplicate?
+3. What does a real model endpoint (LiteLLM) change compared with the scripted upstream: retry
+   timing, stream shapes, and any frame the wire models decode as `Unknown*`?
 
-Do not add a neutral timeline, retry policy, central state machine, or persistence schema merely to
-answer these questions. The live probe is the authority on provider behavior; the scripted tests are
-the pinned contract.
+The live probe is the authority on provider behavior; the scripted tests are the pinned contract.
 
 ## Refreshing harness evidence
 
@@ -158,15 +157,12 @@ Semantic expectations belong in the scripted tests.
 
 ## Deferred experiments
 
-These remain outside the capture and adapter slice:
+These remain outside the current slices:
 
 - multiple pending prompts and durable dequeue policy;
-- active-turn process death and side-effect reconciliation;
-- central-server reconnect or bridge-log replay;
-- Pod replacement, Sandbox suspension, PVC lifecycle, or Service topology;
+- active-turn process death and side-effect reconciliation beyond `PROCESS_LOST`;
 - Thread/Input/Turn persistence, PostgreSQL, and common timeline projection;
 - leases, fencing, authentication, mTLS, credentials, approvals, or subscription adapters; and
-- the standalone Agentplane API, conversation UI, and Haku Console integration.
+- the conversation UI and Haku Console integration.
 
-They become worthwhile only after the shared seam is proven with the real captured behaviors and a
-concrete product failure or decision requires them.
+They become worthwhile only when a concrete product failure or decision requires them.

@@ -18,6 +18,7 @@ the runner that serves both harnesses behind one gRPC contract ([`../runner/`](.
 - [A2A suitability evaluation](a2a.md)
 - [Focused experiments](experiments.md)
 - [Agentplane task DAG](task_dag.md)
+- [Runner in a Sandbox, and the first integration app](runner_sandbox_and_app.md)
 - [Asynchronous approvals and notification delivery](async_approvals.md)
 - [Agent access to external systems](external_access.md)
 - [Product-surface inventory](product_surface.md)
@@ -75,5 +76,5 @@ The native transcript and model transcript are the evidence. Do not add redundan
 SHA fields, timestamps, parsed copies, checksum files, or manifest inventories. File order supplies
 ordering; provider-native ids remain in the provider transcript.
 
-The common protocol and central persistence model are intentionally deferred until the captures show
-what Claude and Codex actually have in common.
+The common protocol is the runner; the central persistence model stays deferred until a feature of
+the integration app cannot work from Kubernetes and the runner's session logs alone.
