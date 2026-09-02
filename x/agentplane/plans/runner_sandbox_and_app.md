@@ -65,6 +65,14 @@ runner port; nothing else in either direction. No warm pool: the app creates a `
 sandbox. Suspension is the Sandbox's `operatingMode: Suspended`, which the spike showed replaces
 the Pod and keeps the PVC.
 
+Sandbox PVCs live on wyrm2, which has the memory to spare: the claim uses `local-path-proxmox`
+(region `proxmox` is wyrm2's label; `local-path-home-ssd` selects the OptiPlex and retains its
+volumes, neither of which is wanted here), and the template's `nodeSelector` names the same
+region so `WaitForFirstConsumer` binds the volume where the Pod runs. Its `Delete` reclaim policy
+is what makes deleting a sandbox free its disk. The runner Pod is therefore pinned to one node,
+and a suspended sandbox resumes only there; a zone-neutral local-path class spanning OVH and home
+is a possible later change that would only alter the class name here.
+
 Model access is the `cheap-experiments` LiteLLM key, which caps spend and allows only the cheap
 models; both harnesses get it as their API key with LiteLLM as the endpoint. That key is today
 handed out only through expiring Haku grants, by design; staging gets a standing copy as a second

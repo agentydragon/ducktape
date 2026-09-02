@@ -192,8 +192,9 @@ personal context.
   every harness through the stdin-close ladder before exiting; a runner test covers the RPC and the
   signal path.
 - **I3 staging namespace:** `cluster/k8s/agentplane-staging/` carries the namespace, the
-  `SandboxTemplate`, a standing copy of the `cheap-experiments` LiteLLM key for the runner
-  Pods, Cilium policy, and the agent's standing access: the namespace is labeled
+  `SandboxTemplate` with its PVC on wyrm2 (`local-path-proxmox`, `Delete` reclaim), a standing
+  copy of the `cheap-experiments` LiteLLM key for the runner Pods, Cilium policy, and the agent's
+  standing access: the namespace is labeled
   agent-readable for metadata and logs, and a per-service `agent-rbac/` binding lets the
   existing agent identities create and delete claims, suspend and resume sandboxes, exec into
   runner Pods, and port-forward. The cluster validator passes and a claim reaches Ready once
