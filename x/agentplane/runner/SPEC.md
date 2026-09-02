@@ -80,11 +80,11 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   harness's transcript. Resending it is the client's decision.
 - A harness that exits on its own is reported the same way, as `HarnessExited` with the exit code
   instead of `HarnessLost`.
-- A runner that receives SIGTERM stops every running harness the way `Shutdown` does, without
-  interrupting turns, records `HarnessExited` with `stopped_by_runner`, and exits. The stop ladder
-  waits five seconds per step (stdin close, SIGTERM, SIGKILL), so whatever supervises the runner
-  must allow it at least that before killing it; a harness killed outright is `HarnessLost` on the
-  next start instead.
+- A runner that receives SIGTERM stops every running harness through the stop ladder (stdin
+  close, then SIGTERM, then SIGKILL, five seconds per step) without interrupting an active turn
+  first, records `HarnessExited` with `stopped_by_runner`, then stops its server with a five-second
+  grace and exits. Whatever supervises the runner must allow it at least twenty seconds before
+  killing it; a harness killed outright is `HarnessLost` on the next start instead.
 
 ## What the harnesses do not promise
 
