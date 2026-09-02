@@ -9,15 +9,20 @@ from typing import Annotated, cast
 
 import typer
 import uvicorn
+from fastapi.staticfiles import StaticFiles
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 
+from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.app.api import create_app
 from x.agentplane.app.bridge import RunnerBridge, runner_address
 from x.agentplane.app.inventory import SandboxInventory
 
 app = typer.Typer(add_completion=False)
+
+# The built frontend, a runfiles data dependency of this module's library.
+FRONTEND = "_main/x/agentplane/app/frontend/dist"
 
 
 @app.command()
@@ -59,8 +64,11 @@ async def async_main(
             core_v1=CoreV1Api(api),
         )
         bridge = RunnerBridge(address_of=runner_address(inventory, runner_port))
+        app = create_app(inventory, bridge)
+        # The SPA, mounted last so the API routes above it win; index.html answers the rest.
+        app.mount("/", StaticFiles(directory=get_required_path(FRONTEND), html=True), name="frontend")
         try:
-            await uvicorn.Server(uvicorn.Config(create_app(inventory, bridge), host=host, port=port)).serve()
+            await uvicorn.Server(uvicorn.Config(app, host=host, port=port)).serve()
         finally:
             await bridge.close()
 
