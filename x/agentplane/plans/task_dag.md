@@ -22,9 +22,8 @@ systems; real upstream credentials are a later gate.
   [`../capture/`](../capture/)); the runner protocol and service
   ([`../runner/`](../runner/), [`../runner/SPEC.md`](../runner/SPEC.md)) with a durable
   per-session log, cursor reattach, idempotent inputs, and restart recovery, pinned by one set of
-  interaction scripts run against both binaries.
-- **In review:** typed wire models for both harness vocabularies and the `py_grpc_library` macro
-  ([agentydragon/ducktape#5401](https://github.com/agentydragon/ducktape/pull/5401)).
+  interaction scripts run against both binaries; typed wire models for both harness vocabularies
+  and the `py_grpc_library` macro that generates the protocol stubs.
 - **Next:** the runner in an Agent Sandbox and the first integration app,
   [`runner_sandbox_and_app.md`](runner_sandbox_and_app.md). Its packages are the ready-now nodes
   below; four of them can start today in parallel.
@@ -37,7 +36,6 @@ systems; real upstream credentials are a later gate.
 ```mermaid
 flowchart TB
     classDef completed fill:#dcfce7,stroke:#15803d,color:#14532d,stroke-width:2px
-    classDef review fill:#fef9c3,stroke:#a16207,color:#713f12,stroke-width:2px
     classDef ready fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a,stroke-width:3px
     classDef next fill:#e0f2fe,stroke:#0369a1,color:#0c4a6e,stroke-width:2px
     classDef milestone fill:#ede9fe,stroke:#6d28d9,color:#4c1d95,stroke-width:2px
@@ -47,7 +45,6 @@ flowchart TB
     S0["Sandbox proxy/identity<br/>completed evidence"]:::completed
     A["Native drivers + scripted harness tests"]:::completed
     B["Runner protocol + both adapters<br/>durable log, reattach, restart recovery"]:::completed
-    BW["Typed wire models, py_grpc_library<br/>#5401"]:::review
 
     subgraph pod["Runner in a Sandbox"]
         I1["I1 Runner image<br/>both harnesses, Docker smoke test"]:::ready
@@ -95,7 +92,7 @@ flowchart TB
     AC["Stretch<br/>Haku-ready policy enforcement<br/>private context, least privilege, resilient controls"]:::future
     W["Stretch<br/>hardened Kubernetes/Authentik deployment"]:::future
 
-    A --> B --> BW
+    A --> B
     B --> I1
     B --> I2
     I1 --> I4
@@ -127,7 +124,7 @@ flowchart TB
     S0 -. suspend/resume evidence .-> I3
 ```
 
-Legend: green is landed; yellow is in review; the bold blue nodes are ready to start now, in
+Legend: green is landed; the bold blue nodes are ready to start now, in
 parallel; light blue is next work blocked only on a node in this slice; purple is a milestone;
 orange diamonds are unresolved decisions requiring Rai's product or design input; gray is
 conditional or stretch work.
