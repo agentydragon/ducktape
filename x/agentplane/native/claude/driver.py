@@ -2,26 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any
 from uuid import uuid4
 
-
-def initialize() -> dict[str, Any]:
-    return {"type": "control_request", "request_id": f"capture-{uuid4().hex}", "request": {"subtype": "initialize"}}
+from x.agentplane.native.claude import wire
 
 
-def user_frame(text: str, *, message_uuid: str | None = None) -> dict[str, Any]:
-    return {
-        "type": "user",
-        "message": {"role": "user", "content": text},
-        "parent_tool_use_id": None,
-        "uuid": message_uuid or str(uuid4()),
-    }
+def initialize() -> wire.InitializeRequest:
+    return wire.InitializeRequest()
 
 
-def interrupt(*, cancel_queued: bool) -> dict[str, Any]:
-    return {
-        "type": "control_request",
-        "request_id": f"capture-{uuid4().hex}",
-        "request": {"subtype": "interrupt", "reason": "capture", "cancel_queued": cancel_queued},
-    }
+def user_frame(text: str, *, message_uuid: str | None = None) -> wire.UserInput:
+    return wire.UserInput(message=wire.UserMessage(role="user", content=text), uuid=message_uuid or str(uuid4()))
+
+
+def interrupt(*, cancel_queued: bool, reason: str = "capture") -> wire.InterruptRequest:
+    return wire.InterruptRequest(request=wire.InterruptBody(reason=reason, cancel_queued=cancel_queued))

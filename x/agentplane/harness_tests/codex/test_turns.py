@@ -8,7 +8,7 @@ from x.agentplane.harness_tests.codex import frames, responses_sse as sse
 from x.agentplane.harness_tests.codex.harness import EFFORT, MODEL, CodexHarness
 from x.agentplane.harness_tests.codex.requests import ResponsesRequest
 from x.agentplane.harness_tests.scripted_upstream import ScriptedUpstream
-from x.agentplane.native.codex import driver, scenarios
+from x.agentplane.native.codex import driver, scenarios, wire
 
 TOOLS = ["exec_command", "write_stdin", "request_user_input"]
 
@@ -48,7 +48,7 @@ def test_baseline_turn(codex: CodexHarness, upstream: ScriptedUpstream) -> None:
         assert process.alive()
     captured = process.stdout_frames()
     frames.assert_success(captured, "CAPTURE_BASELINE_OK")
-    frames.assert_item_lifecycles(captured, "userMessage")
+    frames.assert_item_lifecycles(captured, wire.UserMessageItem)
     assert len(upstream.observed) == 1
     upstream.assert_quiescent()
 

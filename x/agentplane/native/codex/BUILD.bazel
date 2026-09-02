@@ -1,10 +1,11 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//x/agentplane:__subpackages__"])
 
 py_library(
     name = "driver",
     srcs = ["driver.py"],
+    deps = [":wire"],
 )
 
 py_library(
@@ -13,5 +14,26 @@ py_library(
     deps = [
         ":driver",
         "//x/agentplane/native:process",
+    ],
+)
+
+py_library(
+    name = "wire",
+    srcs = ["wire.py"],
+    deps = [
+        "//x/agentplane/native:tagged",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_wire",
+    srcs = ["test_wire.py"],
+    deps = [
+        ":driver",
+        ":wire",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

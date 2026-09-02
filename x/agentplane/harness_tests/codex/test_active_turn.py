@@ -8,7 +8,7 @@ from x.agentplane.harness_tests.codex import frames, responses_sse as sse
 from x.agentplane.harness_tests.codex.harness import EFFORT, MODEL, CodexHarness
 from x.agentplane.harness_tests.codex.requests import ResponsesRequest
 from x.agentplane.harness_tests.scripted_upstream import ScriptedUpstream
-from x.agentplane.native.codex import driver, scenarios
+from x.agentplane.native.codex import driver, scenarios, wire
 
 WAIT_COMMAND = 'sh -c \'printf "wait_started\\n"; sleep 3; printf "wait_finished\\n"\''
 SECOND_INPUT = "Reply ONLY SECOND_INPUT_OBSERVED after current work."
@@ -55,7 +55,7 @@ def test_second_input_during_a_tool_joins_the_running_turn(codex: CodexHarness, 
         assert process.alive()
     captured = process.stdout_frames()
     frames.assert_success(captured, "SECOND_INPUT_OBSERVED")
-    assert len(frames.assert_item_lifecycles(captured, "userMessage")) == 2
+    assert len(frames.assert_item_lifecycles(captured, wire.UserMessageItem)) == 2
     assert len(frames.completed_turns(captured)) == 1
     upstream.assert_quiescent()
 

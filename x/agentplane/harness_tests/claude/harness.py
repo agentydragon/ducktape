@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from x.agentplane.harness_tests.scripted_upstream import ScriptedUpstream
-from x.agentplane.native.claude import scenarios
+from x.agentplane.native.claude import scenarios, wire
 from x.agentplane.native.process import NativeProcess
 
 # A routed name in the shape a LiteLLM deployment gives Claude Code; the family suffix lets it
@@ -54,15 +54,12 @@ def dynamic_loader() -> str:
     raise RuntimeError("Bazel Python has no ELF interpreter")
 
 
-def _allow_permission(frame: dict[str, Any]) -> dict[str, Any] | None:
-    request = frame.get("request")
-    if not isinstance(request, dict) or request.get("subtype") != "can_use_tool":
-        return None
-    return {
-        "type": "control_response",
-        "response": {
-            "subtype": "success",
-            "request_id": frame["request_id"],
-            "response": {"behavior": "allow", "updatedInput": request.get("input")},
-        },
-    }
+def _allow_permission(frame: dict[str, Any]) -> wire.ControlResponse | None:
+    match wire.parse_frame(frame):
+        case wire.ControlRequestFrame(request_id=request_id, request=wire.CanUseTool(input=tool_input)):
+            return wire.ControlResponse(
+                response=wire.ControlResponseBody(
+                    subtype="success", request_id=request_id, response={"behavior": "allow", "updatedInput": tool_input}
+                )
+            )
+    return None

@@ -2,41 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
 from x.agentplane.harness_tests.scripted_upstream import UpstreamRequest
-
-
-class TextBlock(BaseModel):
-    type: Literal["text"]
-    text: str
-
-
-class ThinkingBlock(BaseModel):
-    type: Literal["thinking"]
-    thinking: str
-    signature: str
-
-
-class ToolUseBlock(BaseModel):
-    type: Literal["tool_use"]
-    id: str
-    name: str
-    input: dict[str, Any]
-
-
-class ToolResultBlock(BaseModel):
-    type: Literal["tool_result"]
-    tool_use_id: str
-    content: str | list[TextBlock]
-    is_error: bool = False
-
-    @property
-    def text(self) -> str:
-        return self.content if isinstance(self.content, str) else "".join(block.text for block in self.content)
-
+from x.agentplane.native.claude.blocks import TextBlock, ThinkingBlock, ToolResultBlock, ToolUseBlock
 
 ContentBlock = Annotated[TextBlock | ThinkingBlock | ToolUseBlock | ToolResultBlock, Field(discriminator="type")]
 

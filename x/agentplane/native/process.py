@@ -60,7 +60,7 @@ class NativeProcess:
         self.process: subprocess.Popen[bytes] | None = None
         self.frames: queue.Queue[str] = queue.Queue()
         self.threads: list[threading.Thread] = []
-        self.frame_handler: Callable[[dict[str, Any]], dict[str, Any] | None] | None = None
+        self.frame_handler: Callable[[dict[str, Any]], BaseModel | None] | None = None
         self._stdin_lock = threading.Lock()
 
     def start(self) -> None:
@@ -89,10 +89,10 @@ class NativeProcess:
     def __exit__(self, *_: object) -> None:
         self.close()
 
-    def write(self, frame: dict[str, Any]) -> None:
+    def write(self, frame: BaseModel) -> None:
         assert self.process is not None
         assert self.process.stdin is not None
-        payload = json.dumps(frame, separators=(",", ":")).encode()
+        payload = frame.model_dump_json(by_alias=True).encode()
         write_jsonl(self.logs / "stdin.jsonl", text_record(payload))
         with self._stdin_lock:
             self.process.stdin.write(payload + b"\n")

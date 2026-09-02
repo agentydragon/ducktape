@@ -24,6 +24,7 @@ py_library(
     name = "frames",
     testonly = True,
     srcs = ["frames.py"],
+    deps = ["//x/agentplane/native/codex:wire"],
 )
 
 py_library(
@@ -68,6 +69,7 @@ py_test(
         "//x/agentplane/harness_tests:scripted_upstream",
         "//x/agentplane/native/codex:driver",
         "//x/agentplane/native/codex:scenarios",
+        "//x/agentplane/native/codex:wire",
         "@pypi//pytest_bazel",
     ],
 )
@@ -92,6 +94,7 @@ py_test(
         "//x/agentplane/harness_tests:conftest",
         "//x/agentplane/harness_tests:scripted_upstream",
         "//x/agentplane/native/codex:scenarios",
+        "//x/agentplane/native/codex:wire",
         "@pypi//pytest_bazel",
     ],
 )
@@ -116,6 +119,7 @@ py_test(
         "//x/agentplane/harness_tests:conftest",
         "//x/agentplane/harness_tests:scripted_upstream",
         "//x/agentplane/native/codex:scenarios",
+        "//x/agentplane/native/codex:wire",
         "@pypi//pytest_bazel",
     ],
 )
@@ -141,6 +145,7 @@ py_test(
         "//x/agentplane/harness_tests:scripted_upstream",
         "//x/agentplane/native/codex:driver",
         "//x/agentplane/native/codex:scenarios",
+        "//x/agentplane/native/codex:wire",
         "@pypi//pytest_bazel",
     ],
 )

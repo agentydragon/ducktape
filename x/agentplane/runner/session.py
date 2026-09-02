@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel
+
 from x.agentplane.runner import protocol_pb2 as pb
 from x.agentplane.runner.adapter import HarnessAdapter
 from x.agentplane.runner.config import RunnerConfig
@@ -209,14 +211,16 @@ class Session:
             await self.log.wait_beyond(cursor)
             cursor = self.log.last_sequence
 
-    async def write_native(self, frame: Frame) -> None:
+    async def write_native(self, frame: BaseModel) -> None:
         if self.process is None or not self.running:
             raise HarnessGoneError("the harness is not running")
-        line = json.dumps(frame, separators=(",", ":"))
+        line = frame.model_dump_json(by_alias=True)
         self.emit(pb.Native(direction=pb.DIRECTION_TO_HARNESS, line=line), sources=[])
         await self.process.write_line(line)
 
-    async def request(self, frame: Frame, *, matches: Callable[[Frame], bool], timeout_s: float = 60) -> NativeFrame:
+    async def request(
+        self, frame: BaseModel, *, matches: Callable[[Frame], bool], timeout_s: float = 60
+    ) -> NativeFrame:
         """Write a frame and return the first later frame `matches` accepts."""
         waiter: asyncio.Future[NativeFrame] = asyncio.get_running_loop().create_future()
         self._waiters.append((matches, waiter))

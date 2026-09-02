@@ -65,7 +65,7 @@ def test_stream_lost_after_visible_text_is_retried_without_streaming(
         upstream.respond(raw, sse.message_stream([sse.Text("POST_FAILURE_FOLLOW_UP_OK")], model=MODEL))
         assert scenarios.await_result(process)["result"] == "POST_FAILURE_FOLLOW_UP_OK"
     captured = process.stdout_frames()
-    assert [terminal["is_error"] for terminal in frames.terminals(captured)] == [False, False]
+    assert [terminal.is_error for terminal in frames.terminals(captured)] == [False, False]
     assert frames.assistant_texts(captured) == ["POST_FAILURE_FIRST_OK", "POST_FAILURE_FOLLOW_UP_OK"]
     upstream.assert_quiescent()
 
@@ -91,13 +91,9 @@ def test_retry_exhaustion_fails_the_turn_and_the_process_accepts_the_next_input(
         upstream.respond(raw, sse.message_stream([sse.Text("POST_EXHAUSTION_FOLLOW_UP_OK")], model=MODEL))
         assert scenarios.await_result(process)["result"] == "POST_EXHAUSTION_FOLLOW_UP_OK"
     captured = process.stdout_frames()
-    frames.assert_failure(
-        captured[: captured.index(frames.terminals(captured)[0]) + 1],
-        result_fragment="API Error",
-        terminal_reason="api_error",
-    )
+    frames.assert_failure(frames.terminals(captured)[0], result_fragment="API Error", terminal_reason="api_error")
     assert len(frames.retry_notices(captured)) == scenarios.MAX_RETRIES
-    assert [terminal["is_error"] for terminal in frames.terminals(captured)] == [True, False]
+    assert [terminal.is_error for terminal in frames.terminals(captured)] == [True, False]
     frames.assert_success(captured, "POST_EXHAUSTION_FOLLOW_UP_OK")
     upstream.assert_quiescent()
 

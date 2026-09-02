@@ -10,7 +10,7 @@ from x.agentplane.harness_tests.codex import frames, responses_sse as sse
 from x.agentplane.harness_tests.codex.harness import EFFORT, MODEL, CodexHarness
 from x.agentplane.harness_tests.codex.requests import ResponsesRequest
 from x.agentplane.harness_tests.scripted_upstream import ScriptedUpstream
-from x.agentplane.native.codex import scenarios
+from x.agentplane.native.codex import scenarios, wire
 
 PROBE_FAILURE = (
     'sh -c \'printf "probe stdout before failure\\n"; printf "probe stderr before failure\\n" >&2; exit 23\''
@@ -66,11 +66,15 @@ def test_parallel_shell_commands_report_output_and_exit_codes(codex: CodexHarnes
         assert process.alive()
     captured = process.stdout_frames()
     frames.assert_success(captured, "SHELL_PROBE_DONE")
-    commands = frames.assert_item_lifecycles(captured, "commandExecution")
+    commands = frames.assert_item_lifecycles(captured, wire.CommandExecutionItem)
     assert len(commands) == 2
-    assert any(item.get("status") == "completed" and item.get("exitCode") == 0 for item in commands), commands
-    assert any(item.get("status") == "failed" and item.get("exitCode") == 23 for item in commands), commands
-    assert any("PROBE_STDOUT" in item.get("aggregatedOutput", "") for item in commands), commands
+    assert any(item.status is wire.CommandExecutionStatus.COMPLETED and item.exit_code == 0 for item in commands), (
+        commands
+    )
+    assert any(item.status is wire.CommandExecutionStatus.FAILED and item.exit_code == 23 for item in commands), (
+        commands
+    )
+    assert any("PROBE_STDOUT" in (item.aggregated_output or "") for item in commands), commands
     upstream.assert_quiescent()
 
 
@@ -130,9 +134,9 @@ def test_file_edit_round_trip_changes_the_workspace(codex: CodexHarness, upstrea
         assert scenarios.await_turn_completed(process)["params"]["turn"]["status"] == "completed"
     captured = process.stdout_frames()
     frames.assert_success(captured, "FILE_EDIT_DONE")
-    commands = frames.assert_item_lifecycles(captured, "commandExecution")
+    commands = frames.assert_item_lifecycles(captured, wire.CommandExecutionItem)
     # Codex wraps each exec_command in a login shell.
-    assert [shlex.split(item["command"])[-1] for item in commands] == [
+    assert [shlex.split(item.command)[-1] for item in commands] == [
         "cat editable.txt",
         "printf 'after\\n' > editable.txt",
         "cat editable.txt",

@@ -64,7 +64,7 @@ def test_interrupt_aborts_the_in_flight_model_call(claude: ClaudeHarness, upstre
         assert result["is_error"] is True
         assert process.alive()
     captured = process.stdout_frames()
-    frames.assert_failure(captured, result_fragment="", terminal_reason="aborted_streaming")
+    frames.assert_failure(frames.terminals(captured)[-1], result_fragment="", terminal_reason="aborted_streaming")
     assert not frames.tool_uses(captured)
     upstream.assert_quiescent()
 

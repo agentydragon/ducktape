@@ -8,6 +8,11 @@ py_library(
     deps = ["@pypi//pydantic"],
 )
 
+py_library(
+    name = "tagged",
+    srcs = ["tagged.py"],
+)
+
 py_test(
     name = "test_process",
     srcs = ["test_process.py"],

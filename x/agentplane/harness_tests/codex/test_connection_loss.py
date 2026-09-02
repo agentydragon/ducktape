@@ -8,7 +8,7 @@ from x.agentplane.harness_tests.codex import frames, responses_sse as sse
 from x.agentplane.harness_tests.codex.harness import EFFORT, MODEL, CodexHarness
 from x.agentplane.harness_tests.codex.requests import ResponsesRequest
 from x.agentplane.harness_tests.scripted_upstream import Refuse, ScriptedUpstream
-from x.agentplane.native.codex import scenarios
+from x.agentplane.native.codex import scenarios, wire
 
 
 def test_stream_lost_before_content_is_retried(codex: CodexHarness, upstream: ScriptedUpstream) -> None:
@@ -36,7 +36,7 @@ def test_stream_lost_before_content_is_retried(codex: CodexHarness, upstream: Sc
         assert process.alive()
     captured = process.stdout_frames()
     frames.assert_success(captured, "CONNECTION_RETRY_OK")
-    assert [error["willRetry"] for error in frames.errors(captured)] == [True]
+    assert [error.will_retry for error in frames.errors(captured)] == [True]
     assert len(frames.agent_texts(captured)) == 1
     upstream.assert_quiescent()
 
@@ -80,7 +80,7 @@ def test_stream_lost_after_visible_text_is_retried_and_the_thread_continues(
         assert scenarios.await_turn_completed(process)["params"]["turn"]["status"] == "completed"
     captured = process.stdout_frames()
     frames.assert_success(captured, "POST_FAILURE_FOLLOW_UP_OK")
-    assert [turn["status"] for turn in frames.completed_turns(captured)] == ["completed", "completed"]
+    assert [turn.status for turn in frames.completed_turns(captured)] == [wire.TurnStatus.COMPLETED] * 2
     upstream.assert_quiescent()
 
 
@@ -114,8 +114,11 @@ def test_retry_exhaustion_fails_the_turn_and_the_thread_accepts_the_next_input(
         upstream.respond(raw, sse.response_stream([sse.Message("POST_EXHAUSTION_FOLLOW_UP_OK")], model=MODEL))
         assert scenarios.await_turn_completed(process)["params"]["turn"]["status"] == "completed"
     captured = process.stdout_frames()
-    assert [error["willRetry"] for error in frames.errors(captured)] == [True] * scenarios.MAX_RETRIES + [False]
-    assert [turn["status"] for turn in frames.completed_turns(captured)] == ["failed", "completed"]
+    assert [error.will_retry for error in frames.errors(captured)] == [True] * scenarios.MAX_RETRIES + [False]
+    assert [turn.status for turn in frames.completed_turns(captured)] == [
+        wire.TurnStatus.FAILED,
+        wire.TurnStatus.COMPLETED,
+    ]
     frames.assert_success(captured, "POST_EXHAUSTION_FOLLOW_UP_OK")
     upstream.assert_quiescent()
 

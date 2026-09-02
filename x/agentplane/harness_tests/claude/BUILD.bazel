@@ -24,6 +24,10 @@ py_library(
     name = "frames",
     testonly = True,
     srcs = ["frames.py"],
+    deps = [
+        "//x/agentplane/native/claude:blocks",
+        "//x/agentplane/native/claude:wire",
+    ],
 )
 
 py_library(
@@ -34,6 +38,7 @@ py_library(
         "//x/agentplane/harness_tests:scripted_upstream",
         "//x/agentplane/native:process",
         "//x/agentplane/native/claude:scenarios",
+        "//x/agentplane/native/claude:wire",
     ],
 )
 
@@ -43,6 +48,7 @@ py_library(
     srcs = ["requests.py"],
     deps = [
         "//x/agentplane/harness_tests:scripted_upstream",
+        "//x/agentplane/native/claude:blocks",
         "@pypi//pydantic",
     ],
 )

@@ -16,7 +16,7 @@ TOOLS = ("Bash", "Edit", "Read")
 def launch_handshake(process: NativeProcess) -> dict[str, Any]:
     frame = driver.initialize()
     process.write(frame)
-    request_id = frame["request_id"]
+    request_id = frame.request_id
     reply = process.await_frame(
         lambda item: (
             item.get("type") == "control_response"
@@ -32,7 +32,7 @@ def send(process: NativeProcess, text: str) -> str:
     """Write one native user frame; returns its uuid."""
     frame = driver.user_frame(text)
     process.write(frame)
-    return str(frame["uuid"])
+    return frame.uuid
 
 
 def await_result(process: NativeProcess, *, timeout_s: float = 120) -> dict[str, Any]:
@@ -71,8 +71,7 @@ def interrupt(process: NativeProcess, *, cancel_queued: bool) -> dict[str, Any]:
     process.write(request)
     return process.await_frame(
         lambda item: (
-            item.get("type") == "control_response"
-            and item.get("response", {}).get("request_id") == request["request_id"]
+            item.get("type") == "control_response" and item.get("response", {}).get("request_id") == request.request_id
         ),
         timeout=30,
     )

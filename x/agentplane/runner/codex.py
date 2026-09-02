@@ -15,9 +15,9 @@ from __future__ import annotations
 import itertools
 import json
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from x.agentplane.native.codex import driver, scenarios
+from x.agentplane.native.codex import driver, scenarios, wire
 from x.agentplane.runner import protocol_pb2 as pb
 from x.agentplane.runner.adapter import HarnessAdapter
 from x.agentplane.runner.config import CodexLaunch
@@ -29,12 +29,12 @@ if TYPE_CHECKING:
     from x.agentplane.runner.session import Frame, Session
 
 _TURN_STATUSES = {
-    "completed": pb.TURN_STATUS_COMPLETED,
-    "interrupted": pb.TURN_STATUS_INTERRUPTED,
-    "failed": pb.TURN_STATUS_FAILED,
+    wire.TurnStatus.COMPLETED: pb.TURN_STATUS_COMPLETED,
+    wire.TurnStatus.INTERRUPTED: pb.TURN_STATUS_INTERRUPTED,
+    wire.TurnStatus.FAILED: pb.TURN_STATUS_FAILED,
 }
-# Fields of a completed tool item that describe its outcome rather than its arguments.
-_OUTCOME_FIELDS = frozenset({"id", "type", "status", "aggregatedOutput", "exitCode", "durationMs", "processId"})
+# Fields of an unmodeled tool item that describe its outcome rather than its arguments.
+_OUTCOME_FIELDS = frozenset({"status", "aggregatedOutput", "exitCode", "durationMs", "processId"})
 
 
 class CodexAdapter(HarnessAdapter):
@@ -43,7 +43,7 @@ class CodexAdapter(HarnessAdapter):
         self.launch = launch
         self._thread_id = session.record.native_session_id or ""
         self._request_ids = (f"agentplane-{n}" for n in itertools.count(1))
-        self._items: dict[str, int] = {}
+        self._items: set[str] = set()
 
     def command(self) -> list[str]:
         return scenarios.command(str(self.launch.binary), endpoint=self.launch.base_url)
@@ -64,7 +64,9 @@ class CodexAdapter(HarnessAdapter):
         await self.session.write_native(driver.initialized())
         record = self.session.record
         if self._thread_id:
-            frame = driver.thread_resume(next(self._request_ids), thread_id=self._thread_id)
+            frame: wire.ThreadStartRequest | wire.ThreadResumeRequest = driver.thread_resume(
+                next(self._request_ids), thread_id=self._thread_id
+            )
         else:
             frame = driver.thread_start(
                 next(self._request_ids),
@@ -73,25 +75,27 @@ class CodexAdapter(HarnessAdapter):
                 effort=record.reasoning_effort,
                 persist=True,
             )
-        response = await self._request(frame)
-        if "error" in response.frame:
-            raise RuntimeError(f"Codex refused {frame['method']}: {response.frame['error']}")
-        self._thread_id = str(_dict(_dict(response.frame.get("result")).get("thread")).get("id", ""))
-        if not self._thread_id:
-            raise RuntimeError(f"Codex {frame['method']} returned no thread id")
+        response, _ = await self._request(frame)
+        if response.error is not None:
+            raise RuntimeError(f"Codex refused {frame.method}: {response.error.message}")
+        if response.result is None:
+            raise RuntimeError(f"Codex {frame.method} returned no result")
+        self._thread_id = wire.ThreadResult.model_validate(response.result).thread.id
         return self._thread_id
 
     async def submit(self, input_id: str, text: str) -> None:
         self.session.emit(pb.InputSubmitted(input_id=input_id), sources=[])
-        response = await self._request(driver.turn_start(next(self._request_ids), thread_id=self._thread_id, text=text))
-        if "error" in response.frame:
-            reason = str(_dict(response.frame.get("error")).get("message", response.frame["error"]))
-            self.session.emit(pb.InputRejected(input_id=input_id, reason=reason), sources=[response.sequence])
+        response, sequence = await self._request(
+            driver.turn_start(next(self._request_ids), thread_id=self._thread_id, text=text)
+        )
+        if response.error is not None or response.result is None:
+            reason = response.error.message if response.error is not None else "turn/start returned no result"
+            self.session.emit(pb.InputRejected(input_id=input_id, reason=reason), sources=[sequence])
             return
-        turn_id = str(_dict(_dict(response.frame.get("result")).get("turn")).get("id", ""))
+        turn_id = wire.TurnResult.model_validate(response.result).turn.id
         if turn_id != self.session.active_turn_id:
-            self.session.emit(pb.TurnStarted(turn_id=turn_id), sources=[response.sequence])
-        self.session.emit(pb.InputAccepted(input_id=input_id, turn_id=turn_id), sources=[response.sequence])
+            self.session.emit(pb.TurnStarted(turn_id=turn_id), sources=[sequence])
+        self.session.emit(pb.InputAccepted(input_id=input_id, turn_id=turn_id), sources=[sequence])
 
     async def interrupt(self) -> None:
         await self._request(
@@ -99,107 +103,86 @@ class CodexAdapter(HarnessAdapter):
         )
 
     async def on_frame(self, frame: Frame) -> None:
-        method = frame.get("method")
-        if not isinstance(method, str):
-            return
-        if "id" in frame:
-            # Approvals, user-input requests, and elicitations have no answer path here; a refusal
-            # keeps the turn moving instead of blocking it forever.
-            await self.session.write_native(
-                {
-                    "id": frame["id"],
-                    "error": {"code": -32601, "message": f"the agentplane runner does not answer {method}"},
-                }
-            )
-            return
-        params = _dict(frame.get("params"))
-        match method:
-            case "turn/started":
-                turn_id = str(_dict(params.get("turn")).get("id", ""))
-                if turn_id and turn_id != self.session.active_turn_id:
-                    self.session.emit(pb.TurnStarted(turn_id=turn_id))
-            case "turn/completed":
-                turn = _dict(params.get("turn"))
-                status = str(turn.get("status", ""))
-                if status not in _TURN_STATUSES:
-                    raise ValueError(f"unknown Codex turn {status=}")
-                error = str(_dict(turn.get("error")).get("message", ""))
-                self.session.emit(
-                    pb.TurnCompleted(turn_id=str(turn.get("id", "")), status=_TURN_STATUSES[status], error=error)
+        match wire.parse_frame(frame):
+            case wire.ServerRequest(id=request_id, method=method):
+                # Approvals, user-input requests, and elicitations have no answer path here; a
+                # refusal keeps the turn moving instead of blocking it forever.
+                await self.session.write_native(
+                    wire.ErrorResponse(
+                        id=request_id,
+                        error=wire.RpcError(code=-32601, message=f"the agentplane runner does not answer {method}"),
+                    )
                 )
-            case "item/started":
-                self._item_started(_dict(params.get("item")))
-            case "item/completed":
-                self._item_completed(_dict(params.get("item")))
-            case "item/agentMessage/delta" | "item/reasoning/summaryTextDelta":
-                self.session.emit(
-                    pb.TextDelta(item_id=str(params.get("itemId", "")), text=str(params.get("delta", "")))
-                )
-            case "item/commandExecution/outputDelta":
-                self.session.emit(
-                    pb.ToolOutputDelta(item_id=str(params.get("itemId", "")), text=str(params.get("delta", "")))
-                )
+            case wire.TurnStarted(params=params):
+                if params.turn.id != self.session.active_turn_id:
+                    self.session.emit(pb.TurnStarted(turn_id=params.turn.id))
+            case wire.TurnCompleted(params=params):
+                turn = params.turn
+                if turn.status not in _TURN_STATUSES:
+                    raise ValueError(f"turn/completed with {turn.status=}")
+                error = turn.error.message if turn.error is not None else ""
+                self.session.emit(pb.TurnCompleted(turn_id=turn.id, status=_TURN_STATUSES[turn.status], error=error))
+            case wire.ItemStarted(params=params):
+                self._item_started(params.item)
+            case wire.ItemCompleted(params=params):
+                self._item_completed(params.item)
+            case wire.AgentMessageDelta(params=params) | wire.ReasoningSummaryTextDelta(params=params):
+                self.session.emit(pb.TextDelta(item_id=params.item_id, text=params.delta))
+            case wire.CommandExecutionOutputDelta(params=params):
+                self.session.emit(pb.ToolOutputDelta(item_id=params.item_id, text=params.delta))
 
-    def _item_started(self, item: Frame) -> None:
-        item_id, item_type = str(item.get("id", "")), str(item.get("type", ""))
-        if item_type == "userMessage" or item_id in self._items:
+    def _item_started(self, item: wire.Item) -> None:
+        if isinstance(item, wire.UserMessageItem) or item.id in self._items:
             return
-        match item_type:
-            case "agentMessage":
-                kind, tool_name = pb.ITEM_KIND_ASSISTANT_TEXT, ""
-            case "reasoning":
-                kind, tool_name = pb.ITEM_KIND_REASONING, ""
-            case _:
-                kind, tool_name = pb.ITEM_KIND_TOOL_CALL, item_type
-        self._items[item_id] = kind
-        self.session.emit(pb.ItemStarted(item_id=item_id, kind=kind, tool_name=tool_name))
-        if kind == pb.ITEM_KIND_TOOL_CALL:
-            arguments = {key: value for key, value in item.items() if key not in _OUTCOME_FIELDS}
-            self.session.emit(pb.ToolArguments(item_id=item_id, arguments_json=json.dumps(arguments)))
+        self._items.add(item.id)
+        match item:
+            case wire.AgentMessageItem():
+                self.session.emit(pb.ItemStarted(item_id=item.id, kind=pb.ITEM_KIND_ASSISTANT_TEXT))
+            case wire.ReasoningItem():
+                self.session.emit(pb.ItemStarted(item_id=item.id, kind=pb.ITEM_KIND_REASONING))
+            case wire.CommandExecutionItem():
+                self.session.emit(pb.ItemStarted(item_id=item.id, kind=pb.ITEM_KIND_TOOL_CALL, tool_name=item.type))
+                arguments: dict[str, object] = {"command": item.command, "cwd": item.cwd}
+                self.session.emit(pb.ToolArguments(item_id=item.id, arguments_json=json.dumps(arguments)))
+            case wire.UnknownItem():
+                self.session.emit(pb.ItemStarted(item_id=item.id, kind=pb.ITEM_KIND_TOOL_CALL, tool_name=item.type))
+                arguments = {key: value for key, value in _extras(item).items() if key not in _OUTCOME_FIELDS}
+                self.session.emit(pb.ToolArguments(item_id=item.id, arguments_json=json.dumps(arguments)))
 
-    def _item_completed(self, item: Frame) -> None:
-        item_id, item_type = str(item.get("id", "")), str(item.get("type", ""))
-        if item_type == "userMessage":
+    def _item_completed(self, item: wire.Item) -> None:
+        if isinstance(item, wire.UserMessageItem):
             return
         self._item_started(item)
-        match item_type:
-            case "agentMessage":
-                self.session.emit(pb.ItemCompleted(item_id=item_id, text=str(item.get("text", ""))))
-            case "reasoning":
-                summary = item.get("summary")
-                text = "\n".join(str(part) for part in summary) if isinstance(summary, list) else ""
-                self.session.emit(pb.ItemCompleted(item_id=item_id, text=text))
-            case "commandExecution":
-                output = item.get("aggregatedOutput")
+        match item:
+            case wire.AgentMessageItem(text=text):
+                self.session.emit(pb.ItemCompleted(item_id=item.id, text=text))
+            case wire.ReasoningItem(summary=summary):
+                self.session.emit(pb.ItemCompleted(item_id=item.id, text="\n".join(summary)))
+            case wire.CommandExecutionItem():
                 self.session.emit(
                     pb.ItemCompleted(
-                        item_id=item_id,
+                        item_id=item.id,
                         tool=pb.ToolResult(
-                            output=output if isinstance(output, str) else "",
-                            succeeded=item.get("status") == "completed",
+                            output=item.aggregated_output or "",
+                            succeeded=item.status is wire.CommandExecutionStatus.COMPLETED,
                         ),
                     )
                 )
-            case _:
-                outcome = {
-                    key: value
-                    for key, value in item.items()
-                    if key in _OUTCOME_FIELDS or key not in self._arguments(item)
-                }
+            case wire.UnknownItem():
+                outcome = {key: value for key, value in _extras(item).items() if key in _OUTCOME_FIELDS}
                 self.session.emit(
                     pb.ItemCompleted(
-                        item_id=item_id,
-                        tool=pb.ToolResult(output=json.dumps(outcome), succeeded=item.get("status") == "completed"),
+                        item_id=item.id,
+                        tool=pb.ToolResult(output=json.dumps(outcome), succeeded=outcome.get("status") == "completed"),
                     )
                 )
 
-    @staticmethod
-    def _arguments(item: Frame) -> dict[str, Any]:
-        return {key: value for key, value in item.items() if key not in _OUTCOME_FIELDS}
+    async def _request(self, frame: wire.Outbound) -> tuple[wire.Response, int]:
+        """Send a request and return its response with the Native sequence it arrived as."""
+        request_id = frame.id if not isinstance(frame, wire.InitializedNotification) else None
+        native = await self.session.request(frame, matches=lambda candidate: candidate.get("id") == request_id)
+        return wire.Response.model_validate(native.frame), native.sequence
 
-    async def _request(self, frame: Frame) -> Any:
-        return await self.session.request(frame, matches=lambda candidate: candidate.get("id") == frame["id"])
 
-
-def _dict(value: object) -> Frame:
-    return value if isinstance(value, dict) else {}
+def _extras(item: wire.UnknownItem) -> dict[str, object]:
+    return dict(item.model_extra or {})

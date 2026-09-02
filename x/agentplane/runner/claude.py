@@ -16,10 +16,11 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from x.agentplane.native.claude import driver, scenarios
+from x.agentplane.native.claude import driver, scenarios, wire
+from x.agentplane.native.claude.blocks import Block, TextBlock, ThinkingBlock, ToolResultBlock, ToolUseBlock, blocks_of
 from x.agentplane.runner import protocol_pb2 as pb
 from x.agentplane.runner.adapter import HarnessAdapter
 from x.agentplane.runner.config import ClaudeLaunch
@@ -29,12 +30,6 @@ from x.agentplane.runner.config import ClaudeLaunch
 
 if TYPE_CHECKING:
     from x.agentplane.runner.session import Frame, Session
-
-_ITEM_KINDS = {
-    "text": pb.ITEM_KIND_ASSISTANT_TEXT,
-    "thinking": pb.ITEM_KIND_REASONING,
-    "tool_use": pb.ITEM_KIND_TOOL_CALL,
-}
 
 
 class ClaudeAdapter(HarnessAdapter):
@@ -50,7 +45,7 @@ class ClaudeAdapter(HarnessAdapter):
         # Blocks already completed per message id, so non-streamed `assistant` frames get the same
         # item ids the stream would have given them.
         self._blocks_completed: dict[str, int] = {}
-        self._items: dict[str, int] = {}
+        self._items: set[str] = set()
 
     def command(self) -> list[str]:
         resume_id = self.session.record.native_session_id
@@ -79,7 +74,7 @@ class ClaudeAdapter(HarnessAdapter):
     async def handshake(self) -> str:
         initialize = driver.initialize()
         await self.session.request(
-            initialize, matches=lambda frame: _control_response_for(frame, initialize["request_id"])
+            initialize, matches=lambda frame: _control_response_for(frame, initialize.request_id)
         )
         return self._native_session_id
 
@@ -87,48 +82,45 @@ class ClaudeAdapter(HarnessAdapter):
         if not self.session.active_turn_id:
             self.session.emit(pb.TurnStarted(turn_id=f"turn-{uuid4().hex}"), sources=[])
         frame = driver.user_frame(text)
-        self._pending[str(frame["uuid"])] = input_id
+        self._pending[frame.uuid] = input_id
         self.session.emit(pb.InputSubmitted(input_id=input_id), sources=[])
         await self.session.write_native(frame)
 
     async def interrupt(self) -> None:
-        await self.session.write_native(driver.interrupt(cancel_queued=False))
+        await self.session.write_native(driver.interrupt(cancel_queued=False, reason="agentplane"))
 
     async def on_frame(self, frame: Frame) -> None:
-        match frame.get("type"):
-            case "control_request":
-                await self._answer_control_request(frame)
-            case "command_lifecycle":
-                if frame.get("state") == "queued" and (
-                    input_id := self._pending.pop(str(frame.get("command_uuid")), None)
-                ):
+        match wire.parse_frame(frame):
+            case wire.ControlRequestFrame() as request:
+                await self._answer_control_request(request)
+            case wire.CommandLifecycleFrame(state=wire.CommandState.QUEUED, command_uuid=command_uuid):
+                if input_id := self._pending.pop(command_uuid, None):
                     self.session.emit(pb.InputAccepted(input_id=input_id, turn_id=self._turn_id()))
-            case "stream_event":
-                self._on_stream_event(_dict(frame.get("event")))
-            case "assistant":
-                self._on_assistant(_dict(frame.get("message")))
-            case "user":
-                self._on_user(_dict(frame.get("message")))
-            case "result":
-                self._on_result(frame)
+            case wire.StreamEventFrame(event=event):
+                self._on_stream_event(event)
+            case wire.AssistantFrame(message=message):
+                self._on_assistant(message)
+            case wire.UserFrame(message=message):
+                self._on_user(message)
+            case wire.ResultFrame() as result:
+                self._on_result(result)
 
-    async def _answer_control_request(self, frame: Frame) -> None:
-        request = _dict(frame.get("request"))
-        request_id = frame.get("request_id", "")
-        if request.get("subtype") == "can_use_tool":
-            response: dict[str, Any] = {
-                "subtype": "success",
-                "request_id": request_id,
-                "response": {"behavior": "allow", "updatedInput": request.get("input", {})},
-            }
-        else:
-            # Dialogs, hooks, and MCP callbacks have no answer path here; a refusal keeps the turn moving.
-            response = {
-                "subtype": "error",
-                "request_id": request_id,
-                "error": f"the agentplane runner does not answer {request.get('subtype')!r} requests",
-            }
-        await self.session.write_native({"type": "control_response", "response": response})
+    async def _answer_control_request(self, frame: wire.ControlRequestFrame) -> None:
+        match frame.request:
+            case wire.CanUseTool(input=tool_input):
+                body = wire.ControlResponseBody(
+                    subtype="success",
+                    request_id=frame.request_id,
+                    response={"behavior": "allow", "updatedInput": tool_input},
+                )
+            case wire.UnknownControlRequest(subtype=subtype):
+                # Dialogs, hooks, and MCP callbacks have no answer path here; a refusal keeps the turn moving.
+                body = wire.ControlResponseBody(
+                    subtype="error",
+                    request_id=frame.request_id,
+                    error=f"the agentplane runner does not answer {subtype!r} requests",
+                )
+        await self.session.write_native(wire.ControlResponse(response=body))
 
     def _turn_id(self) -> str:
         """The active turn, or a new one for output the harness produces on its own, such as a
@@ -137,105 +129,81 @@ class ClaudeAdapter(HarnessAdapter):
             self.session.emit(pb.TurnStarted(turn_id=f"turn-{uuid4().hex}"))
         return self.session.active_turn_id
 
-    def _on_stream_event(self, event: Frame) -> None:
-        match event.get("type"):
-            case "message_start":
-                self._message_id = str(_dict(event.get("message")).get("id", ""))
+    def _on_stream_event(self, event: wire.StreamEvent) -> None:
+        match event:
+            case wire.MessageStart(message=message):
+                self._message_id = message.id
                 self._block_items = {}
-            case "content_block_start":
-                block = _dict(event.get("content_block"))
-                index = int(event.get("index", 0))
-                item_id = self._item_id(block, index)
+            case wire.ContentBlockStart(index=index, content_block=block):
+                item_id = self._item_id(block, index, self._message_id)
                 self._block_items[index] = item_id
                 self._start_item(item_id, block)
-            case "content_block_delta":
-                delta = _dict(event.get("delta"))
-                item_id = self._block_items.get(int(event.get("index", 0)), "")
-                match delta.get("type"):
-                    case "text_delta":
-                        self.session.emit(pb.TextDelta(item_id=item_id, text=str(delta.get("text", ""))))
-                    case "thinking_delta":
-                        self.session.emit(pb.TextDelta(item_id=item_id, text=str(delta.get("thinking", ""))))
-                    case "input_json_delta":
-                        self.session.emit(
-                            pb.ToolArgumentsDelta(item_id=item_id, partial_json=str(delta.get("partial_json", "")))
-                        )
+            case wire.ContentBlockDelta(index=index, delta=delta):
+                item_id = self._block_items.get(index, "")
+                match delta:
+                    case wire.TextDelta(text=text) | wire.ThinkingDelta(thinking=text):
+                        self.session.emit(pb.TextDelta(item_id=item_id, text=text))
+                    case wire.InputJsonDelta(partial_json=partial_json):
+                        self.session.emit(pb.ToolArgumentsDelta(item_id=item_id, partial_json=partial_json))
 
-    def _on_assistant(self, message: Frame) -> None:
-        message_id = str(message.get("id", ""))
-        for block in _blocks(message):
-            index = self._blocks_completed.get(message_id, 0)
-            self._blocks_completed[message_id] = index + 1
-            item_id = self._item_id(block, index, message_id=message_id)
+    def _on_assistant(self, message: wire.AssistantMessage) -> None:
+        for block in message.content:
+            index = self._blocks_completed.get(message.id, 0)
+            self._blocks_completed[message.id] = index + 1
+            item_id = self._item_id(block, index, message.id)
             if item_id not in self._items:
                 self._start_item(item_id, block)
-            match block.get("type"):
-                case "text":
-                    self.session.emit(pb.ItemCompleted(item_id=item_id, text=str(block.get("text", ""))))
-                case "thinking":
-                    self.session.emit(pb.ItemCompleted(item_id=item_id, text=str(block.get("thinking", ""))))
-                case "tool_use":
-                    self.session.emit(
-                        pb.ToolArguments(item_id=item_id, arguments_json=json.dumps(block.get("input", {})))
+            match block:
+                case TextBlock(text=text) | ThinkingBlock(thinking=text):
+                    self.session.emit(pb.ItemCompleted(item_id=item_id, text=text))
+                case ToolUseBlock(input=tool_input):
+                    self.session.emit(pb.ToolArguments(item_id=item_id, arguments_json=json.dumps(tool_input)))
+
+    def _on_user(self, message: wire.UserMessage) -> None:
+        for block in blocks_of(message.content):
+            if isinstance(block, ToolResultBlock):
+                self.session.emit(
+                    pb.ItemCompleted(
+                        item_id=block.tool_use_id, tool=pb.ToolResult(output=block.text, succeeded=not block.is_error)
                     )
-
-    def _on_user(self, message: Frame) -> None:
-        for block in _blocks(message):
-            if block.get("type") != "tool_result":
-                continue
-            self.session.emit(
-                pb.ItemCompleted(
-                    item_id=str(block.get("tool_use_id", "")),
-                    tool=pb.ToolResult(
-                        output=_result_text(block.get("content")), succeeded=not block.get("is_error", False)
-                    ),
                 )
-            )
 
-    def _on_result(self, frame: Frame) -> None:
+    def _on_result(self, result: wire.ResultFrame) -> None:
         if not self.session.active_turn_id:
             return
-        terminal_reason = str(frame.get("terminal_reason", ""))
-        if terminal_reason.startswith("aborted"):
+        if (result.terminal_reason or "").startswith("aborted"):
             status, error = pb.TURN_STATUS_INTERRUPTED, ""
-        elif frame.get("is_error"):
-            status, error = pb.TURN_STATUS_FAILED, str(frame.get("result", ""))
+        elif result.is_error:
+            status, error = pb.TURN_STATUS_FAILED, result.result or ""
         else:
             status, error = pb.TURN_STATUS_COMPLETED, ""
         self.session.emit(pb.TurnCompleted(turn_id=self.session.active_turn_id, status=status, error=error))
 
-    def _item_id(self, block: Frame, index: int, *, message_id: str | None = None) -> str:
-        if block.get("type") == "tool_use":
-            return str(block.get("id", ""))
-        return f"{message_id if message_id is not None else self._message_id}#{index}"
+    @staticmethod
+    def _item_id(block: Block, index: int, message_id: str) -> str:
+        return block.id if isinstance(block, ToolUseBlock) else f"{message_id}#{index}"
 
-    def _start_item(self, item_id: str, block: Frame) -> None:
-        kind = _ITEM_KINDS.get(str(block.get("type")), pb.ITEM_KIND_UNSPECIFIED)
-        self._items[item_id] = kind
+    def _start_item(self, item_id: str, block: Block) -> None:
+        match block:
+            case TextBlock():
+                kind, tool_name = pb.ITEM_KIND_ASSISTANT_TEXT, ""
+            case ThinkingBlock():
+                kind, tool_name = pb.ITEM_KIND_REASONING, ""
+            case ToolUseBlock(name=name):
+                kind, tool_name = pb.ITEM_KIND_TOOL_CALL, name
+            case _:
+                # Tool results complete items rather than start them; unknown block kinds stay
+                # native evidence only.
+                return
+        self._items.add(item_id)
         self._turn_id()
-        self.session.emit(pb.ItemStarted(item_id=item_id, kind=kind, tool_name=str(block.get("name", ""))))
+        self.session.emit(pb.ItemStarted(item_id=item_id, kind=kind, tool_name=tool_name))
 
 
 def _control_response_for(frame: Frame, request_id: str) -> bool:
-    return frame.get("type") == "control_response" and _dict(frame.get("response")).get("request_id") == request_id
-
-
-def _dict(value: object) -> Frame:
-    return value if isinstance(value, dict) else {}
-
-
-def _blocks(message: Frame) -> list[Frame]:
-    content = message.get("content")
-    if isinstance(content, str):
-        return [{"type": "text", "text": content}]
-    return [block for block in content if isinstance(block, dict)] if isinstance(content, list) else []
-
-
-def _result_text(content: object) -> str:
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        return "".join(
-            str(block.get("text", "")) for block in content if isinstance(block, dict) and block.get("type") == "text"
-        )
-    return ""
+    response = frame.get("response")
+    return (
+        frame.get("type") == "control_response"
+        and isinstance(response, dict)
+        and response.get("request_id") == request_id
+    )

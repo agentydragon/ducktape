@@ -14,7 +14,7 @@ def launch_handshake(
 ) -> dict[str, Any]:
     initialize = driver.initialize("capture-1")
     process.write(initialize)
-    init_response = process.await_frame(lambda item: item.get("id") == "capture-1", timeout=30)
+    init_response = process.await_frame(lambda item: item.get("id") == initialize.id, timeout=30)
     process.write(driver.initialized())
     start = driver.thread_start("capture-2", cwd=cwd, model=model, effort=effort, persist=persist)
     process.write(start)

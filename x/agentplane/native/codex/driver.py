@@ -2,68 +2,62 @@
 
 from __future__ import annotations
 
-from typing import Any
+from x.agentplane.native.codex import wire
 
 # This replaces Codex's broad default coding-agent policy while preserving the
 # app-server's native tool behavior for each scenario.
 BASE_INSTRUCTIONS = "You are a concise test assistant. Follow user requests using the available tools."
 
 
-def initialize(request_id: str) -> dict[str, Any]:
-    return {
-        "method": "initialize",
-        "id": request_id,
-        "params": {"clientInfo": {"name": "agentplane-capture", "version": "0.1"}, "capabilities": None},
-    }
+def initialize(request_id: str) -> wire.InitializeRequest:
+    return wire.InitializeRequest(
+        id=request_id,
+        params=wire.InitializeParams(client_info=wire.ClientInfo(name="agentplane-capture", version="0.1")),
+    )
 
 
-def initialized() -> dict[str, Any]:
-    return {"method": "initialized"}
+def initialized() -> wire.InitializedNotification:
+    return wire.InitializedNotification()
 
 
-def thread_start(request_id: str, *, cwd: str, model: str, effort: str, persist: bool = False) -> dict[str, Any]:
-    return {
-        "method": "thread/start",
-        "id": request_id,
-        "params": {
-            "cwd": cwd,
-            "approvalPolicy": "never",
-            "sandbox": "danger-full-access",
+def thread_start(
+    request_id: str, *, cwd: str, model: str, effort: str, persist: bool = False
+) -> wire.ThreadStartRequest:
+    return wire.ThreadStartRequest(
+        id=request_id,
+        params=wire.ThreadStartParams(
+            cwd=cwd,
+            approval_policy="never",
+            sandbox="danger-full-access",
             # Non-resume probes do not need a stored rollout, thread title, or session history.
-            "ephemeral": not persist,
-            "model": model,
+            ephemeral=not persist,
+            model=model,
             # Replaces the broad default coding-agent policy in recorded model requests.
-            "baseInstructions": BASE_INSTRUCTIONS,
-            "config": {"model_reasoning_effort": effort},
-        },
-    }
+            base_instructions=BASE_INSTRUCTIONS,
+            config={"model_reasoning_effort": effort},
+        ),
+    )
 
 
-def thread_resume(request_id: str, *, thread_id: str) -> dict[str, Any]:
+def thread_resume(request_id: str, *, thread_id: str) -> wire.ThreadResumeRequest:
     """Load a persisted thread after a new app-server process starts."""
-    return {"method": "thread/resume", "id": request_id, "params": {"threadId": thread_id}}
+    return wire.ThreadResumeRequest(id=request_id, params=wire.ThreadResumeParams(thread_id=thread_id))
 
 
-def turn_start(request_id: str, *, thread_id: str, text: str) -> dict[str, Any]:
-    return {
-        "method": "turn/start",
-        "id": request_id,
-        "params": {"threadId": thread_id, "input": [{"type": "text", "text": text, "text_elements": []}]},
-    }
+def turn_start(request_id: str, *, thread_id: str, text: str) -> wire.TurnStartRequest:
+    return wire.TurnStartRequest(
+        id=request_id, params=wire.TurnStartParams(thread_id=thread_id, input=[wire.TextInput(text=text)])
+    )
 
 
-def steer(request_id: str, *, thread_id: str, turn_id: str, text: str) -> dict[str, Any]:
-    return {
-        "method": "turn/steer",
-        "id": request_id,
-        "params": {
-            "threadId": thread_id,
-            # The steer is rejected unless this names the currently active turn.
-            "expectedTurnId": turn_id,
-            "input": [{"type": "text", "text": text, "text_elements": []}],
-        },
-    }
+def steer(request_id: str, *, thread_id: str, turn_id: str, text: str) -> wire.TurnSteerRequest:
+    return wire.TurnSteerRequest(
+        id=request_id,
+        params=wire.TurnSteerParams(thread_id=thread_id, expected_turn_id=turn_id, input=[wire.TextInput(text=text)]),
+    )
 
 
-def interrupt(request_id: str, *, thread_id: str, turn_id: str) -> dict[str, Any]:
-    return {"method": "turn/interrupt", "id": request_id, "params": {"threadId": thread_id, "turnId": turn_id}}
+def interrupt(request_id: str, *, thread_id: str, turn_id: str) -> wire.TurnInterruptRequest:
+    return wire.TurnInterruptRequest(
+        id=request_id, params=wire.TurnInterruptParams(thread_id=thread_id, turn_id=turn_id)
+    )
