@@ -234,7 +234,8 @@ the scenario under test; a bridge that turns any of these on must widen the rost
 - **Skills and slash commands**: Claude `--disable-slash-commands`; Codex `skills.bundled.enabled = false`,
   `skills.include_instructions = false`. They add a catalog block to every prompt.
 - **Plugins, hooks, settings files**: Claude `--safe-mode`, `--setting-sources=`; Codex hooks unconfigured.
-  Hooks would require answering `hook_callback` / `hook/*` and change tool timing.
+  Hooks would require answering `hook_callback` / `hook/*` and change tool timing; what each
+  harness offers is in [hooks](../../docs/hooks.md).
 - **MCP servers**: Claude `--strict-mcp-config` with no `--mcp-config`; Codex none configured. Tool
   rosters must stay the fixed lists the tests assert (`Bash,Edit,Read`; `exec_command`, `write_stdin`,
   `request_user_input`).
