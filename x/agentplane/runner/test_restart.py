@@ -18,6 +18,8 @@ from x.agentplane.runner.client import RunnerClient
 from x.agentplane.runner.testing import events, launches
 from x.agentplane.runner.testing.scripted_model import ScriptedModel, Text
 
+# gazelle:include_dep @pypi//protobuf  # the stub chain of protocol_pb2's .pyi
+
 
 @dataclass
 class RunnerProcess:

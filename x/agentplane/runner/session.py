@@ -22,6 +22,8 @@ from x.agentplane.runner.event_log import EventLog, Observation
 from x.agentplane.runner.harness_process import HarnessProcess
 from x.agentplane.runner.store import SessionRecord, SessionStore
 
+# gazelle:include_dep @pypi//protobuf  # the stub chain of protocol_pb2's .pyi
+
 logger = logging.getLogger(__name__)
 
 Frame = dict[str, Any]

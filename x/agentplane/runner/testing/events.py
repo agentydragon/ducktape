@@ -6,6 +6,8 @@ from collections.abc import Callable, Sequence
 
 from x.agentplane.runner import protocol_pb2 as pb
 
+# gazelle:include_dep @pypi//protobuf  # the stub chain of protocol_pb2's .pyi
+
 
 def kind(event: pb.Event) -> str:
     return event.WhichOneof("observation") or ""

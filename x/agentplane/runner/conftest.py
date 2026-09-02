@@ -20,6 +20,9 @@ from x.agentplane.runner.testing.claude_model import ClaudeModel
 from x.agentplane.runner.testing.codex_model import CodexModel
 from x.agentplane.runner.testing.scripted_model import ScriptedModel
 
+# gazelle:include_dep @pypi//protobuf  # the stub chain of protocol_pb2's .pyi
+# gazelle:include_dep @pypi//grpcio  # the stub chain of protocol_pb2_grpc's .pyi
+
 
 @pytest.fixture(params=["claude", "codex"])
 def provider(request: pytest.FixtureRequest) -> str:

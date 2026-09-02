@@ -22,6 +22,8 @@ from x.agentplane.runner import protocol_pb2 as pb
 from x.agentplane.runner.adapter import HarnessAdapter
 from x.agentplane.runner.config import CodexLaunch
 
+# gazelle:include_dep @pypi//protobuf  # the stub chain of protocol_pb2's .pyi
+
 if TYPE_CHECKING:
     from x.agentplane.runner.session import Frame, Session
 

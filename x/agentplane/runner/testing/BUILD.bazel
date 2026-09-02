@@ -45,6 +45,7 @@ py_library(
         "//x/agentplane/harness_tests/codex:harness",
         "//x/agentplane/runner:config",
         "//x/agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
     ],
 )
 

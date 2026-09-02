@@ -114,6 +114,7 @@ py_library(
         "//x/agentplane/native/claude:driver",
         "//x/agentplane/native/claude:scenarios",
         "//x/agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
     ],
 )
 
@@ -124,6 +125,7 @@ py_library(
         "//x/agentplane/runner:protocol_pb2",
         "//x/agentplane/runner:protocol_pb2_grpc",
         "@pypi//grpcio",
+        "@pypi//protobuf",
     ],
 )
 
@@ -137,6 +139,7 @@ py_library(
         "//x/agentplane/native/codex:driver",
         "//x/agentplane/native/codex:scenarios",
         "//x/agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
     ],
 )
 
@@ -161,6 +164,7 @@ py_library(
         "//x/agentplane/runner/testing:launches",
         "//x/agentplane/runner/testing:scripted_model",
         "@pypi//grpcio",
+        "@pypi//protobuf",
         "@pypi//pytest",
     ],
 )
@@ -202,6 +206,7 @@ py_library(
         "//x/agentplane/runner:protocol_pb2",
         "//x/agentplane/runner:protocol_pb2_grpc",
         "@pypi//grpcio",
+        "@pypi//protobuf",
     ],
 )
 
@@ -215,6 +220,7 @@ py_library(
         ":harness_process",
         ":store",
         "//x/agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
     ],
 )
 
@@ -223,6 +229,7 @@ py_library(
     srcs = ["store.py"],
     deps = [
         "//x/agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
         "@pypi//pydantic",
     ],
 )
@@ -247,6 +254,7 @@ py_test(
         "//x/agentplane/runner:protocol_pb2",
         "//x/agentplane/runner/testing:events",
         "//x/agentplane/runner/testing:scripted_model",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -275,6 +283,7 @@ py_test(
         "//x/agentplane/runner/testing:events",
         "//x/agentplane/runner/testing:launches",
         "//x/agentplane/runner/testing:scripted_model",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -300,6 +309,7 @@ py_test(
         "//x/agentplane/runner:protocol_pb2",
         "//x/agentplane/runner/testing:events",
         "//x/agentplane/runner/testing:scripted_model",
+        "@pypi//protobuf",
         "@pypi//pytest_bazel",
     ],
 )

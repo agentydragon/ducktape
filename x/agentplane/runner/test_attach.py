@@ -10,6 +10,8 @@ from x.agentplane.runner.client import RunnerClient, RunnerError
 from x.agentplane.runner.testing import events
 from x.agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
 
+# gazelle:include_dep @pypi//protobuf  # the stub chain of protocol_pb2's .pyi
+
 WAIT_COMMAND = 'sh -c \'printf "wait_started\\n"; sleep 3; printf "wait_finished\\n"\''
 
 

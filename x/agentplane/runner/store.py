@@ -10,6 +10,9 @@ from pydantic import BaseModel, Field
 
 from x.agentplane.runner import protocol_pb2 as pb
 
+# gazelle:include_dep @pypi//protobuf  # the stub chain of protocol_pb2's .pyi
+
+
 _SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
