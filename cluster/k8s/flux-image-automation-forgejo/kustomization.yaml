@@ -21,7 +21,6 @@ resources:
   - haku-openclaw-spike-image.yaml
   - codex-pod-image.yaml
   - iron-proxy-image.yaml
-  - squid-ssl-image.yaml
   - haku-matrix-adapter-image.yaml
   - grocy-user-perms-provisioner-image.yaml
   - osm-mcp-image.yaml

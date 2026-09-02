@@ -207,5 +207,4 @@ This is a spike, not infrastructure. The active cluster wiring and live objects
 are retired; this archive keeps the experiment's findings and suspended Flux
 declarations as reference material. Delete the archive together with
 `cluster/images/squid-ssl/`, the workflow, and the two
-`flux-image-automation-forgejo/squid-ssl-*` files when that reference is no
-longer useful.
+Squid image automation declaration when that reference is no longer useful.
