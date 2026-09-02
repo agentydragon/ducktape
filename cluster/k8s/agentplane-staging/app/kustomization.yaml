@@ -3,4 +3,9 @@ kind: Kustomization
 resources:
   - sandboxtemplate-agentplane-runner.yaml
   - sandboxwarmpool-agentplane-runner.yaml
+  - serviceaccount-agentplane-app.yaml
+  - role-agentplane-app.yaml
+  - rolebinding-agentplane-app.yaml
+  - deployment-agentplane-app.yaml
+  - service-agentplane-app.yaml
   - networkpolicy.yaml

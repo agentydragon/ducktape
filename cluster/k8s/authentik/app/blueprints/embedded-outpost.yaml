@@ -38,3 +38,4 @@ entries:
         - !Find [authentik_providers_proxy.proxyprovider, [name, fava]]
         # haku-console owns its own OAuth; haku-ui is a different app and stays proxied.
         - !Find [authentik_providers_proxy.proxyprovider, [name, haku-ui]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, agentplane-staging]]

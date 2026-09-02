@@ -1,0 +1,13 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-app
+  namespace: agentplane-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-app
+subjects:
+  - kind: ServiceAccount
+    name: agentplane-app
+    namespace: agentplane-staging

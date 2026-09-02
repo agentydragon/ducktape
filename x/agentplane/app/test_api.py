@@ -107,6 +107,10 @@ def test_delete_removes_the_claim(client: TestClient, custom_objects: FakeCustom
     assert client.delete("/sandboxes/live").status_code == 404
 
 
+def test_healthz_answers_outside_the_schema(client: TestClient) -> None:
+    assert client.get("/healthz").status_code == 204
+
+
 def test_openapi_schema_names_every_operation(client: TestClient) -> None:
     paths = client.get("/openapi.json").json()["paths"]
 

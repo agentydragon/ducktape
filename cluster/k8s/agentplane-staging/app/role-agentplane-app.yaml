@@ -1,0 +1,18 @@
+# The app's own identity over the namespace's inventory: claims are created and
+# deleted, sandboxes are patched for suspend and resume, and the runner Pod's
+# address is read to dial it. No exec, logs, or Secrets.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-app
+  namespace: agentplane-staging
+rules:
+  - apiGroups: ["extensions.agents.x-k8s.io"]
+    resources: ["sandboxclaims"]
+    verbs: ["create", "get", "list", "watch", "patch", "delete"]
+  - apiGroups: ["extensions.agents.x-k8s.io"]
+    resources: ["sandboxes"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]

@@ -84,6 +84,11 @@ def create_app(inventory: SandboxInventory, bridge: runner_bridge.RunnerBridge) 
     app.include_router(router)
     app.include_router(runner_bridge.router)
 
+    @app.get("/healthz", include_in_schema=False)
+    async def healthz() -> Response:
+        # The Deployment's probe: the process serves; the inventory's own reachability is per request.
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
     @app.exception_handler(SandboxNotFoundError)
     async def _not_found(_request: Request, error: SandboxNotFoundError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": str(error)})

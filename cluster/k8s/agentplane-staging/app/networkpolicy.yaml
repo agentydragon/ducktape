@@ -38,3 +38,44 @@ spec:
         - ports:
             - port: "4000"
               protocol: TCP
+---
+# The app takes browser traffic only through the Authentik proxy outpost, and
+# reaches DNS, the API server for the inventory, and the runner Pods on 7000.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-app
+  namespace: agentplane-staging
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-app
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: authentik
+            app.kubernetes.io/name: authentik
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-runner
+      toPorts:
+        - ports:
+            - port: "7000"
+              protocol: TCP

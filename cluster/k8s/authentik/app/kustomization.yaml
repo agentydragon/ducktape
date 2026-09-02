@@ -30,4 +30,5 @@ configMapGenerator:
       - blueprints/fava-sso.yaml
       - blueprints/activitywatch-sso.yaml
       - blueprints/haku-ui-sso.yaml
+      - blueprints/agentplane-staging-sso.yaml
     namespace: authentik

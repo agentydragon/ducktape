@@ -1,0 +1,73 @@
+# The Agentplane integration app: the sandbox inventory over this namespace's
+# SandboxClaims and the runner bridge that dials each runner Pod on port 7000.
+# It persists nothing; Kubernetes is the inventory and the runner's log is the
+# history. Reached through the Authentik proxy outpost (the HTTPRoute lives in
+# cluster/k8s/authentik/proxy-routes); an agent reaches it by port-forward
+# through the agent-rbac binding. One replica: the bridge holds live runner
+# attachments in memory, and a second replica would supersede them.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentplane-app
+  namespace: agentplane-staging
+  labels:
+    app.kubernetes.io/name: agentplane-app
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-app
+    spec:
+      serviceAccountName: agentplane-app
+      automountServiceAccountToken: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: app
+          image: git.allegedly.works/ducktape-ci/agentplane-app:devel-placeholder # {"$imagepolicy": "flux-system:agentplane-app"}
+          imagePullPolicy: IfNotPresent
+          args:
+            - --namespace=agentplane-staging
+            - --warm-pool=agentplane-runner
+            - --runner-port=7000
+            - --host=0.0.0.0
+            - --port=8080
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]

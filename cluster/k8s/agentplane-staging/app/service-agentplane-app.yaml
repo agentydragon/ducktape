@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: agentplane-app
+  namespace: agentplane-staging
+  labels:
+    app.kubernetes.io/name: agentplane-app
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: agentplane-app
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

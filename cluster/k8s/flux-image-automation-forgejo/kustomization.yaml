@@ -40,3 +40,4 @@ resources:
   - wayback-archive-image.yaml
   - haku-managed-agent-image.yaml
   - agentplane-runner-image.yaml
+  - agentplane-app-image.yaml
