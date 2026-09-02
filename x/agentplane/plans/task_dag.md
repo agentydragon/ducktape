@@ -145,7 +145,7 @@ parallel; light blue is next work blocked only on a node in this slice; purple i
 orange diamonds are unresolved decisions requiring Rai's product or design input; gray is
 conditional or stretch work.
 
-Ready now, with no edge between them: **I1**, **I2**, **I3**, **C1**, **R5**. C2 needs only I2's
+Ready now, with no edge between them: **I1**, **I2**, **I3**, **C1**. C2 needs only I2's
 `ListSessions`, and its tests run against a local runner with the scripted model, so it can start
 as soon as that RPC's shape is agreed. C3 and C4 wait on C1 and C2 only for their API schema and
 image; their manifests and page skeletons can be drafted alongside. T1 needs only C2, since the

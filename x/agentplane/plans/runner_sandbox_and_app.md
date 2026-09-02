@@ -99,7 +99,8 @@ owns is routing and framing only. Check whether Connect's Python server is usabl
 and server-streaming shape; if it is, the commands and the event stream come with generated
 clients, and if not, plain REST with proto-JSON bodies is the same contract by hand.
 
-Tested against a local runner with the scripted model, reusing `runner/testing/`; the app's tests
+Tested against a local runner with the scripted model, reusing
+[`../runner/testing/`](../runner/testing/); the app's tests
 never need a cluster for this part. Depends on I2's `ListSessions`.
 
 ### C3. UI
