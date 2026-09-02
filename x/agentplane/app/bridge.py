@@ -272,6 +272,10 @@ class RunnerBridge:
             feed = self._live_feed(key)
             if feed is not None and feed.attachment is not None:
                 await command(feed.attachment)
+                if ends_stream and feed.task is not None:
+                    # Shutdown answers once the harness has stopped and the stream has ended, so a
+                    # caller that lists sessions next sees the harness stopped.
+                    await feed.task
                 return
             attachment = await (await self._client(sandbox)).attach(session_id)
             await command(attachment)
