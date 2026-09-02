@@ -13,7 +13,6 @@ the runner that serves both harnesses behind one gRPC contract ([`../runner/`](.
 
 - [Focused architecture](architecture.md)
 - [Claude and Codex protocol notes](provider_protocols.md)
-- [Deferred common protocol notes](common_protocol.md)
 - [Implementation reuse and prior art](implementation_reuse.md)
 - [A2A suitability evaluation](a2a.md)
 - [Focused experiments](experiments.md)
@@ -29,6 +28,7 @@ the runner that serves both harnesses behind one gRPC contract ([`../runner/`](.
 - [Live capture probe README](../capture/README.md)
 - [Scripted harness tests README](../harness_tests/README.md)
 - [Runner README](../runner/README.md) and [runner SPEC](../runner/SPEC.md)
+- [Common protocol: what the seam owns and the vocabulary above it](../docs/common_protocol.md)
 
 ## v0 scope
 

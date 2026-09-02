@@ -38,7 +38,6 @@ later.
 ```mermaid
 flowchart TB
     classDef completed fill:#dcfce7,stroke:#15803d,color:#14532d,stroke-width:2px
-    classDef review fill:#fef9c3,stroke:#a16207,color:#713f12,stroke-width:2px
     classDef ready fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a,stroke-width:3px
     classDef next fill:#e0f2fe,stroke:#0369a1,color:#0c4a6e,stroke-width:2px
     classDef milestone fill:#ede9fe,stroke:#6d28d9,color:#4c1d95,stroke-width:2px
@@ -63,8 +62,6 @@ flowchart TB
         C4["C4 App deployment<br/>namespace RBAC, Authentik route"]:::next
         C5["C5 Archive<br/>out of the active view, history kept"]:::next
     end
-
-    R5["R5 RBE Claude launcher cleanup<br/>#5403"]:::review
 
     F0["First functioning Agentplane<br/>both providers in sandboxes, driven and replayed from the app"]:::milestone
 
@@ -143,7 +140,7 @@ flowchart TB
     S0 -. suspend/resume evidence .-> I3
 ```
 
-Legend: green is landed; yellow is in review; the bold blue nodes are ready to start now, in
+Legend: green is landed; the bold blue nodes are ready to start now, in
 parallel; light blue is next work blocked only on a node in this slice; purple is a milestone;
 orange diamonds are unresolved decisions requiring Rai's product or design input; gray is
 conditional or stretch work.
@@ -212,9 +209,6 @@ personal context.
   Pod is torn down by suspension, and its PVC and session log stay, so unarchiving resumes it.
   Archive is never deletion. Once T1 holds the trajectory, the flag moves to the thread record
   and an archived sandbox may be deleted without losing anything.
-- **R5 RBE launcher cleanup:** the Claude harness tests run on RBE without the Nix ELF-loader
-  workaround in [`../harness_tests/claude/harness.py`](../harness_tests/claude/harness.py);
-  drivers and assertions unchanged.
 - **First functioning Agentplane (F0):** from the app, both providers run in sandboxes, a session is
   driven, left, and replayed, a sandbox survives suspend and resume with its conversation, and the
   raw frames behind any event are one click away.
