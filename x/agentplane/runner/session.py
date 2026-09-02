@@ -154,7 +154,14 @@ class Session:
                 asyncio.create_task(self._read_stderr(process), name=f"{self.session_id}-stderr"),
             ]
             resumed = self.record.native_session_id is not None
-            native_session_id = await adapter.handshake()
+            try:
+                native_session_id = await adapter.handshake()
+            except BaseException:  # cleanup, then the failure reaches Open
+                self._stopping = True
+                await process.stop()
+                await asyncio.gather(*self._tasks, return_exceptions=True)
+                self.process, self.adapter = None, None
+                raise
             if self.record.native_session_id != native_session_id:
                 self.record.native_session_id = native_session_id
                 self.store.write(self.session_id, self.record)

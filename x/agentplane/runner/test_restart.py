@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import ctypes
+import errno
 import os
 import signal
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -45,10 +47,23 @@ class RunnerProcess:
             await self.process.wait()
 
 
+# Bazel's Python is built without os.pidfd_open; the syscall itself is on every kernel this runs on.
+_SYS_PIDFD_OPEN = 434
+
+
+def _pidfd_open(pid: int) -> int:
+    libc = ctypes.CDLL(None, use_errno=True)
+    fd = int(libc.syscall(_SYS_PIDFD_OPEN, pid, 0))
+    if fd < 0:
+        code = ctypes.get_errno()
+        raise (ProcessLookupError if code == errno.ESRCH else OSError)(code, os.strerror(code))
+    return fd
+
+
 async def _exited(pid: int) -> None:
     """Wait for a process that is not our child: its pidfd becomes readable when it exits."""
     try:
-        fd = os.pidfd_open(pid)
+        fd = _pidfd_open(pid)
     except ProcessLookupError:
         return
     loop = asyncio.get_running_loop()

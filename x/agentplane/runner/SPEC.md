@@ -7,9 +7,9 @@ page is what the runner guarantees about it.
 
 ## Sessions
 
-- A session is one native conversation. Its id is client-chosen (`[A-Za-z0-9][A-Za-z0-9._-]*`)
-  and the runner keeps everything about it under `<state_dir>/sessions/<session_id>/`: the
-  harness's own persistence and the runner's session log.
+- A session is one native conversation. Its id is client-chosen, up to 128 characters of
+  `[A-Za-z0-9._-]` starting alphanumeric, and the runner keeps everything about it under
+  `<state_dir>/sessions/<session_id>/`: the harness's own persistence and the runner's session log.
 - `Open` with an unknown id creates the session from `spec`; with a known id it attaches, and a
   supplied `spec` must equal the stored one. Open starts the harness when it is not running,
   resuming the native conversation when the session has one.
@@ -23,7 +23,7 @@ page is what the runner guarantees about it.
   `last_sequence`, the log position at attach time.
 - The runner then replays every event with a sequence greater than `Open.after_sequence`, in
   order, and continues with live events. A client that passes the last sequence it processed sees
-  neither a gap nor a duplicate.
+  neither a gap nor a duplicate; a cursor beyond `last_sequence` ends the stream with an error.
 - One attachment controls a session at a time. A newer `Open` supersedes the current one, whose
   stream ends with an error.
 - `Detach`, or a dropped connection, ends the stream and nothing else. The harness keeps running

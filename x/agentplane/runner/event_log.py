@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -18,6 +19,8 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.message import Message
 
 from x.agentplane.runner import protocol_pb2 as pb
+
+logger = logging.getLogger(__name__)
 
 Observation = (
     pb.HarnessStarted
@@ -79,12 +82,29 @@ class EventLog:
         self.path = path
         self._events: list[pb.Event] = []
         if path.exists():
-            with path.open("rb") as existing:
-                for line in existing:
-                    if line.strip():
-                        self._events.append(ParseDict(json.loads(line), pb.Event()))
+            self._load()
         self._file = path.open("ab")
         self._changed = asyncio.Event()
+
+    def _load(self) -> None:
+        """Read the log back. A final line an interrupted append left incomplete is dropped and
+        truncated away, so the next append starts a fresh line; a bad line anywhere else is
+        corruption and refuses the log."""
+        data = self.path.read_bytes()
+        offset = 0
+        for raw in data.split(b"\n"):
+            line = raw.strip()
+            if line:
+                try:
+                    self._events.append(ParseDict(json.loads(line), pb.Event()))
+                except ValueError as error:
+                    if offset + len(raw) < len(data):
+                        raise ValueError(f"corrupt session log {self.path} at byte {offset}") from error
+                    logger.warning("%s: dropping an incomplete final line of %d bytes", self.path, len(raw))
+                    with self.path.open("r+b") as existing:
+                        existing.truncate(offset)
+                    return
+            offset += len(raw) + 1
 
     @property
     def last_sequence(self) -> int:

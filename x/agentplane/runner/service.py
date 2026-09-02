@@ -112,6 +112,12 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
             logger.exception("session %s: open failed", first.open.session_id)
             yield pb.ServerMessage(error=f"open failed: {error}")
             return
+        if first.open.after_sequence > session.log.last_sequence:
+            yield pb.ServerMessage(
+                error=f"after_sequence {first.open.after_sequence} is beyond the session log, "
+                f"whose last sequence is {session.log.last_sequence}"
+            )
+            return
         attachment = session.attach()
         yield pb.ServerMessage(
             attached=pb.Attached(

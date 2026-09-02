@@ -59,7 +59,8 @@ message Open {
   // session, and spec, when present, must equal the stored one.
   string session_id = 1;
   SessionSpec spec = 2;
-  // Events with a greater sequence are replayed before live events; 0 replays the whole log.
+  // Events with a greater sequence are replayed before live events; 0 replays the whole log. A
+  // value beyond the log's last sequence ends the stream with an error.
   uint64 after_sequence = 3;
 }
 
