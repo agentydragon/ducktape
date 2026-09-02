@@ -84,10 +84,10 @@ Depends on C2 and C3 producing the image.
   container as environment, the same operational convenience the `agent-workspaces` Codex lane
   uses. The credentialless egress design in [the ADR](adr_sandbox_proxy_gateway.md) governs
   external systems, not the model endpoint.
-- **No app persistence in this slice:** Kubernetes holds the inventory, including the archived
-  flag, and the runner holds the history. Sandboxes are disposable and trajectories are not, so persistence is planned rather
-  than avoided: it enters with the trajectory-persistence node in [the DAG](task_dag.md), which
-  needs only the runner bridge and can start alongside the UI and deployment.
+- **Persistence is the trajectory store, nothing else:** Kubernetes holds the inventory,
+  including the archived flag; the runner holds the live session; PostgreSQL holds the copy of
+  every event that outlives the sandbox. The app stores no product state beyond that until a
+  feature needs it.
 - **Transport security on the runner port:** Cilium policy between the app namespace and the
   sandbox Pods is the v0 control. Authentication on the port itself waits for the credentialed
   readiness gate.

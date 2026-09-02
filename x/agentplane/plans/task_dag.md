@@ -72,11 +72,11 @@ flowchart TB
     F0["First functioning Agentplane<br/>both providers in sandboxes, driven and replayed from the app"]:::milestone
 
     subgraph traj["Trajectories outlive sandboxes"]
-        T1["T1 Trajectory persistence<br/>session log + native frames copied out of the sandbox<br/>keyed by thread, sandbox, agent"]:::future
+        T1["T1 Trajectory persistence<br/>session log + native frames copied out of the sandbox<br/>keyed by thread, sandbox, agent"]:::inflight
         T2["T2 Named threads<br/>a small model proposes, the user edits"]:::future
         T3["T3 Search and lookup over past interactions<br/>what happened, why, which agent"]:::future
     end
-    D["Rai decision<br/>conversation app: separate deployment or Haku Console host?"]:::decision
+    D["Decided<br/>conversation app: a separate deployment"]:::completed
     E["Conversation app<br/>timeline and live control over persisted threads"]:::future
     F["Product milestone<br/>persisted history, honest outcomes, real users"]:::milestone
 
@@ -157,8 +157,8 @@ is published to staging. T1 needs only C2, since the bridge already reads the fu
 for F0, but nothing stops it starting alongside C4.
 
 The orange nodes are deliberately limited to choices that change downstream implementation
-ordering. `D` is assumed answered as "separate deployment" for this slice, since the integration
-app is a separate client by construction; the decision remains open for the conversation app.
+ordering. `D` is decided: the conversation app stays a separate deployment, at least for now.
+T1's store is PostgreSQL (a CNPG cluster beside the runner Pods; staging's is disposable).
 External-event scope is decided: approval decisions and other notifications reach a thread as
 inputs ([`async_approvals.md`](async_approvals.md)). A "no" choice should close or defer that
 branch rather than create speculative scaffolding.
