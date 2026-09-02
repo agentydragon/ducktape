@@ -4,9 +4,11 @@ Nothing is reshaped. SSE payloads and command bodies are the proto-JSON encoding
 protocol's own messages, so a browser reads the vocabulary of `protocol.proto` and the raw `Native`
 frames pass through untouched. The bridge owns routing and framing only.
 
-One live attachment per session is kept while a browser streams it, and commands go through that
-attachment; when nobody is streaming, a command uses a short-lived attachment of its own. A fresh
-Open would otherwise supersede the browser's stream.
+The runner takes one attachment per session, so the bridge holds one while any browser tab streams
+the session and fans its events out to every tab: a tab opened later, or reconnecting from its last
+event id, is served the history the attachment has read and then follows live. Commands go through
+that attachment; when nobody is streaming, a command uses a short-lived attachment of its own. A
+fresh Open would supersede the shared attachment, so it is refused while a stream is live.
 """
 
 from __future__ import annotations
@@ -37,6 +39,9 @@ KEEPALIVE_S = 15
 
 # Sandbox name to the `host:port` of its runner.
 AddressOf = Callable[[str], Awaitable[str]]
+
+# What a subscriber reads: the runner's events, then the exception that ended the attachment.
+Inbox = asyncio.Queue[pb.Event | Exception]
 
 
 class SandboxNotReachableError(Exception):
@@ -77,12 +82,52 @@ def runner_address(inventory: SandboxInventory, port: int) -> AddressOf:
     return address_of
 
 
+class Feed:
+    """The one attachment of a streamed session, read from the start of its log, and the tabs on it.
+
+    The attachment's `seen` is the history a late subscriber replays from; the runner's whole log is
+    held while the session is streamed, which is the size of one conversation."""
+
+    def __init__(self, attachment: Attachment, name: str) -> None:
+        self.attachment = attachment
+        self.subscribers: set[Inbox] = set()
+        self.ended: Exception | None = None
+        self.reader = asyncio.create_task(self._pump(), name=name)
+
+    async def _pump(self) -> None:
+        try:
+            while True:
+                event = await self.attachment.next_event()
+                for inbox in self.subscribers:
+                    inbox.put_nowait(event)
+        except Exception as error:  # the stream's end, delivered in order behind the events
+            self.ended = error
+            for inbox in self.subscribers:
+                inbox.put_nowait(error)
+
+    def subscribe(self, after_sequence: int) -> tuple[list[pb.Event], Inbox]:
+        """The events already read past the cursor, and the queue the rest arrive on; taken in one
+        step, so nothing falls between them."""
+        inbox: Inbox = asyncio.Queue()
+        self.subscribers.add(inbox)
+        if self.ended is not None:
+            inbox.put_nowait(self.ended)
+        return [event for event in self.attachment.seen if event.sequence > after_sequence], inbox
+
+    async def close(self) -> None:
+        self.reader.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await self.reader
+        self.attachment.cancel()
+
+
 class RunnerBridge:
     def __init__(self, *, address_of: AddressOf) -> None:
         self._address_of = address_of
         self._clients: dict[str, RunnerClient] = {}
-        self._live: dict[tuple[str, str], Attachment] = {}
-        # gRPC stream writes must not interleave: one command at a time per session.
+        self._feeds: dict[tuple[str, str], Feed] = {}
+        # gRPC stream writes must not interleave: one command at a time per session, and a feed is
+        # created or dropped under the same lock.
         self._locks: dict[tuple[str, str], asyncio.Lock] = {}
 
     async def _client(self, sandbox: str) -> RunnerClient:
@@ -98,7 +143,7 @@ class RunnerBridge:
         """Create the session and start its harness; the browser's stream attaches afterwards."""
         key = (sandbox, session_id)
         async with self._lock(key):
-            if key in self._live:
+            if key in self._feeds:
                 raise SessionStreamingError(sandbox, session_id)
             attachment = await (await self._client(sandbox)).attach(session_id, spec=spec)
             await attachment.detach()
@@ -127,9 +172,9 @@ class RunnerBridge:
     ) -> None:
         key = (sandbox, session_id)
         async with self._lock(key):
-            live = self._live.get(key)
-            if live is not None:
-                await command(live)
+            feed = self._feeds.get(key)
+            if feed is not None:
+                await command(feed.attachment)
                 return
             attachment = await (await self._client(sandbox)).attach(session_id)
             await command(attachment)
@@ -140,21 +185,17 @@ class RunnerBridge:
     async def events(self, sandbox: str, session_id: str, *, after_sequence: int) -> AsyncIterator[bytes]:
         """The SSE stream: `attached`, then one `event` per runner event with its sequence as the SSE
         id, then `end` or `error`. A browser reconnecting with Last-Event-ID resumes without a gap."""
-        attachment = await (await self._client(sandbox)).attach(session_id, after_sequence=after_sequence)
         key = (sandbox, session_id)
-        self._live[key] = attachment
-        inbox: asyncio.Queue[pb.Event | Exception] = asyncio.Queue()
-
-        async def pump() -> None:
-            try:
-                while True:
-                    inbox.put_nowait(await attachment.next_event())
-            except Exception as error:  # the stream's end, delivered in order behind the events
-                inbox.put_nowait(error)
-
-        reader = asyncio.create_task(pump(), name=f"sse-{sandbox}-{session_id}")
+        async with self._lock(key):
+            feed = self._feeds.get(key)
+            if feed is None:
+                feed = Feed(await (await self._client(sandbox)).attach(session_id), name=f"sse-{sandbox}-{session_id}")
+                self._feeds[key] = feed
+            replay, inbox = feed.subscribe(after_sequence)
         try:
-            yield _frame("attached", MessageToDict(attachment.attached))
+            yield _frame("attached", MessageToDict(feed.attachment.attached))
+            for event in replay:
+                yield _frame("event", MessageToDict(event), event_id=event.sequence)
             while True:
                 try:
                     item = await asyncio.wait_for(inbox.get(), timeout=KEEPALIVE_S)
@@ -162,6 +203,10 @@ class RunnerBridge:
                     yield b": keepalive\n\n"
                     continue
                 match item:
+                    case pb.Event() if item.sequence <= after_sequence:
+                        # A feed opened for this tab replays the runner's whole log; the cursor
+                        # applies to those events too, not only to the ones already read.
+                        continue
                     case pb.Event():
                         yield _frame("event", MessageToDict(item), event_id=item.sequence)
                     case StreamClosedError():
@@ -173,12 +218,11 @@ class RunnerBridge:
                     case _:
                         raise item
         finally:
-            if self._live.get(key) is attachment:
-                del self._live[key]
-            reader.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await reader
-            attachment.cancel()
+            feed.subscribers.discard(inbox)
+            async with self._lock(key):
+                if not feed.subscribers and self._feeds.get(key) is feed:
+                    del self._feeds[key]
+                    await feed.close()
 
     async def close(self) -> None:
         await asyncio.gather(*(client.close() for client in self._clients.values()))

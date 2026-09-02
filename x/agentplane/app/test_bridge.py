@@ -1,5 +1,6 @@
 """One browser-shaped script over the bridge against a local runner, run for both harnesses: open a
-session, stream it, send an input while streaming, reconnect from the last event id, shut down."""
+session, stream it, send an input while streaming, open a second tab on the same session, reconnect
+from the last event id, shut down."""
 
 from __future__ import annotations
 
@@ -30,6 +31,7 @@ from x.agentplane.runner.testing.scripted_model import ScriptedModel, Text
 SANDBOX = "bridge-test-sandbox"
 SESSION = "bridge-1"
 SESSIONS = f"/sandboxes/{SANDBOX}/sessions"
+EVENTS = f"{SESSIONS}/{SESSION}/events"
 
 
 @dataclass(frozen=True)
@@ -58,6 +60,16 @@ async def next_message(lines: AsyncIterator[str]) -> SseMessage:
             case "data":
                 data = value
     raise AssertionError("the stream ended without a message")
+
+
+async def read_until(lines: AsyncIterator[str], key: str) -> list[SseMessage]:
+    """Events up to and including the first whose payload carries `key`."""
+    seen: list[SseMessage] = []
+    while True:
+        message = await next_message(lines)
+        seen.append(message)
+        if key in message.data:
+            return seen
 
 
 @pytest.fixture
@@ -93,7 +105,7 @@ async def app_url(runner: RunnerHandle, inventory: SandboxInventory) -> AsyncIte
         await bridge.close()
 
 
-async def test_the_bridge_streams_a_turn_and_resumes_from_the_last_event_id(
+async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_event_id(
     app_url: str, model: ScriptedModel, spec: pb.SessionSpec
 ) -> None:
     async with httpx.AsyncClient(base_url=app_url, timeout=60) as http:
@@ -102,10 +114,9 @@ async def test_the_bridge_streams_a_turn_and_resumes_from_the_last_event_id(
         assert opened.json()["harness"] == "HARNESS_STATE_RUNNING"
         assert [row["sessionId"] for row in (await http.get(SESSIONS)).json()] == [SESSION]
 
-        seen: list[SseMessage] = []
-        async with http.stream("GET", f"{SESSIONS}/{SESSION}/events") as stream:
-            lines = stream.aiter_lines()
-            assert (await next_message(lines)).event == "attached"
+        async with http.stream("GET", EVENTS) as first_tab:
+            first = first_tab.aiter_lines()
+            assert (await next_message(first)).event == "attached"
             # A fresh Open would supersede this stream, so opening again while streaming is refused.
             reopened = await http.post(SESSIONS, json={"session_id": SESSION, "spec": MessageToDict(spec)})
             assert reopened.status_code == 409, reopened.text
@@ -114,23 +125,40 @@ async def test_the_bridge_streams_a_turn_and_resumes_from_the_last_event_id(
             )
             assert accepted.status_code == 202, accepted.text
             model.reply(await model.request(), Text("BRIDGE_OK"))
-            while True:
-                message = await next_message(lines)
-                seen.append(message)
-                if "turnCompleted" in message.data:
-                    break
-        # Every runner event, in order, from the start of the session's log: replay and live alike.
-        assert [message.id for message in seen] == list(range(1, len(seen) + 1))
-        assert all(message.event == "event" for message in seen)
-        assert seen[-1].data["turnCompleted"]["status"] == "TURN_STATUS_COMPLETED"
-        assert any("native" in message.data for message in seen)
-        completed = [message.data["itemCompleted"] for message in seen if "itemCompleted" in message.data]
-        assert [item["text"] for item in completed] == ["BRIDGE_OK"]
+            seen = await read_until(first, "turnCompleted")
+            # Every runner event, in order, from the start of the session's log: replay and live alike.
+            assert [message.id for message in seen] == list(range(1, len(seen) + 1))
+            assert all(message.event == "event" for message in seen)
+            assert seen[-1].data["turnCompleted"]["status"] == "TURN_STATUS_COMPLETED"
+            assert any("native" in message.data for message in seen)
+            completed = [message.data["itemCompleted"] for message in seen if "itemCompleted" in message.data]
+            assert [item["text"] for item in completed] == ["BRIDGE_OK"]
+
+            # A second tab on the same session loads the history the first one saw, then both follow
+            # the next turn live; the runner sees one attachment, so the first tab is not superseded.
+            async with http.stream("GET", EVENTS) as second_tab:
+                second = second_tab.aiter_lines()
+                assert (await next_message(second)).event == "attached"
+                assert await read_until(second, "turnCompleted") == seen
+                accepted = await http.post(
+                    f"{SESSIONS}/{SESSION}/inputs",
+                    json={"inputId": "input-2", "text": "Reply with exactly: BRIDGE_TWO"},
+                )
+                assert accepted.status_code == 202, accepted.text
+                model.reply(await model.request(), Text("BRIDGE_TWO"))
+                on_first, on_second = await asyncio.gather(
+                    read_until(first, "turnCompleted"), read_until(second, "turnCompleted")
+                )
+                assert on_first == on_second
+                assert on_first[0].id == len(seen) + 1
+                assert [
+                    message.data["itemCompleted"]["text"] for message in on_first if "itemCompleted" in message.data
+                ] == ["BRIDGE_TWO"]
 
         # A browser reconnecting sends the last id it saw; the next event follows it without a gap.
         cut = seen[len(seen) // 2].id
         assert cut is not None
-        async with http.stream("GET", f"{SESSIONS}/{SESSION}/events", headers={"Last-Event-ID": str(cut)}) as stream:
+        async with http.stream("GET", EVENTS, headers={"Last-Event-ID": str(cut)}) as stream:
             lines = stream.aiter_lines()
             assert (await next_message(lines)).event == "attached"
             assert (await next_message(lines)).id == cut + 1
