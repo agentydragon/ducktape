@@ -305,7 +305,7 @@ Authentik secret stays in Vault/ESO until Authentik is fully turned off.
 
 ## Authelia user provisioning (still current)
 
-Authelia is deployed (`k8s/authelia/`) with users in a static `users.yml`
+Authelia's retained manifests are under `k8s/x/authelia/`, with users in a static `users.yml`
 ConfigMap, passwords argon2id-hashed — config-as-code: add/change a user by
 editing the file and pushing; Reloader restarts the pod. Runtime self-service
 (password reset, profile changes) was rejected: it needs a writable `users.yml`

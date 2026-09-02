@@ -4,8 +4,9 @@ metadata:
   name: authelia-namespace
   namespace: ducktape-flux
 spec:
+  suspend: true
   interval: 10m
-  path: ./cluster/k8s/authelia/namespace
+  path: ./cluster/k8s/x/authelia/namespace
   prune: true
   sourceRef:
     kind: GitRepository

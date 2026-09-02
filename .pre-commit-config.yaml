@@ -293,6 +293,8 @@ repos:
             cluster/k8s/x/haku/dispatch/dispatcher/zones\.yaml|
             # Helm values files consumed via configMapGenerator, not K8s manifests
             cluster/k8s/.*/ccm-values\.yaml|
+            # Authelia configuration files consumed via configMapGenerator, not K8s manifests
+            cluster/k8s/x/authelia/app/(configuration|users)\.yml|
             # rotate.py rotation list, mounted via configMapGenerator, not a K8s manifest
             cluster/k8s/agents/authentik-jwt-rotation/rotations\.yaml|
             cluster/k8s/agents/forgejo-token-rotation/tokens\.yaml|
