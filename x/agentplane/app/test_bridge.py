@@ -106,6 +106,9 @@ async def test_the_bridge_streams_a_turn_and_resumes_from_the_last_event_id(
         async with http.stream("GET", f"{SESSIONS}/{SESSION}/events") as stream:
             lines = stream.aiter_lines()
             assert (await next_message(lines)).event == "attached"
+            # A fresh Open would supersede this stream, so opening again while streaming is refused.
+            reopened = await http.post(SESSIONS, json={"session_id": SESSION, "spec": MessageToDict(spec)})
+            assert reopened.status_code == 409, reopened.text
             accepted = await http.post(
                 f"{SESSIONS}/{SESSION}/inputs", json={"inputId": "input-1", "text": "Reply with exactly: BRIDGE_OK"}
             )

@@ -12,6 +12,7 @@ Open would otherwise supersede the browser's stream.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -50,6 +51,13 @@ class MalformedMessageError(Exception):
     """A request body is not the proto-JSON of the message the route takes."""
 
 
+class SessionStreamingError(Exception):
+    """A browser is streaming the session, so a fresh Open would supersede it."""
+
+    def __init__(self, sandbox: str, session_id: str) -> None:
+        super().__init__(f"session {session_id!r} of sandbox {sandbox!r} is being streamed; detach it first")
+
+
 class NewSession(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -74,6 +82,8 @@ class RunnerBridge:
         self._address_of = address_of
         self._clients: dict[str, RunnerClient] = {}
         self._live: dict[tuple[str, str], Attachment] = {}
+        # gRPC stream writes must not interleave: one command at a time per session.
+        self._locks: dict[tuple[str, str], asyncio.Lock] = {}
 
     async def _client(self, sandbox: str) -> RunnerClient:
         address = await self._address_of(sandbox)
@@ -86,10 +96,17 @@ class RunnerBridge:
 
     async def open_session(self, sandbox: str, session_id: str, spec: pb.SessionSpec) -> pb.Attached:
         """Create the session and start its harness; the browser's stream attaches afterwards."""
-        attachment = await (await self._client(sandbox)).attach(session_id, spec=spec)
-        await attachment.detach()
-        await attachment.drain_until_end()
-        return attachment.attached
+        key = (sandbox, session_id)
+        async with self._lock(key):
+            if key in self._live:
+                raise SessionStreamingError(sandbox, session_id)
+            attachment = await (await self._client(sandbox)).attach(session_id, spec=spec)
+            await attachment.detach()
+            await attachment.drain_until_end()
+            return attachment.attached
+
+    def _lock(self, key: tuple[str, str]) -> asyncio.Lock:
+        return self._locks.setdefault(key, asyncio.Lock())
 
     async def send(self, sandbox: str, session_id: str, message: pb.Input) -> None:
         await self._command(sandbox, session_id, lambda attachment: attachment.send(message.input_id, message.text))
@@ -108,15 +125,17 @@ class RunnerBridge:
         *,
         ends_stream: bool = False,
     ) -> None:
-        live = self._live.get((sandbox, session_id))
-        if live is not None:
-            await command(live)
-            return
-        attachment = await (await self._client(sandbox)).attach(session_id)
-        await command(attachment)
-        if not ends_stream:
-            await attachment.detach()
-        await attachment.drain_until_end()
+        key = (sandbox, session_id)
+        async with self._lock(key):
+            live = self._live.get(key)
+            if live is not None:
+                await command(live)
+                return
+            attachment = await (await self._client(sandbox)).attach(session_id)
+            await command(attachment)
+            if not ends_stream:
+                await attachment.detach()
+            await attachment.drain_until_end()
 
     async def events(self, sandbox: str, session_id: str, *, after_sequence: int) -> AsyncIterator[bytes]:
         """The SSE stream: `attached`, then one `event` per runner event with its sequence as the SSE
@@ -157,6 +176,8 @@ class RunnerBridge:
             if self._live.get(key) is attachment:
                 del self._live[key]
             reader.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await reader
             attachment.cancel()
 
     async def close(self) -> None:

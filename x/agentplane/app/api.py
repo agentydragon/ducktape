@@ -101,6 +101,10 @@ def create_app(inventory: SandboxInventory, bridge: runner_bridge.RunnerBridge) 
         # The runner refused an Open or a command: an unknown session, a spec mismatch, a bad cursor.
         return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
 
+    @app.exception_handler(runner_bridge.SessionStreamingError)
+    async def _streaming(_request: Request, error: runner_bridge.SessionStreamingError) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
+
     @app.exception_handler(runner_bridge.MalformedMessageError)
     async def _malformed(_request: Request, error: runner_bridge.MalformedMessageError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
