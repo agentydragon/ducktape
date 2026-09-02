@@ -76,7 +76,10 @@ and token per grant removes the need:
 Real tokens come from TokenRequest with a short TTL the proxy refreshes, so nothing long-lived
 exists to leak. The same guarantee holds for any target the egress fence fronts, since header
 substitution works the same for GitHub or Forgejo tokens; it does not hold where the agent must
-possess the real credential, which under the fence model is nowhere.
+possess the real credential. The one known case is BuildBuddy, whose API key rides inside the
+Bazel gRPC protocol as a remote header rather than at the HTTP edge, so the fence cannot substitute
+it and the agent holds the real key. Accepted: the key is low-sensitivity and unresolved rather
+than unresolvable.
 
 ## Choosing
 
