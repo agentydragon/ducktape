@@ -1,0 +1,267 @@
+// Runner protocol: one contract over the native Claude Code and Codex harnesses.
+//
+// A session is one native conversation the runner owns. Its state lives in the runner's state
+// directory: the harness's own persistence (Claude config dir, Codex home) and the runner's session
+// log, an append-only record of every Event below. A client reaches a session over one Attach
+// stream. The first client message is Open; the runner answers with Attached, replays the session
+// log after the client's cursor, then streams live events. Every event carries a session-scoped
+// sequence that survives reconnects and runner restarts, so a client that resumes from the last
+// sequence it processed sees neither a gap nor a duplicate.
+//
+// The vocabulary names a provider only in SessionSpec.provider. The harness's own frames are still
+// delivered verbatim as Native events, in both directions, and every derived event lists the Native
+// sequences it came from, so provider detail is one lookup away without leaking into the contract.
+//
+// Inputs. An Input is reported as InputSubmitted when the runner takes it, then InputAccepted once
+// the harness has taken it into its transcript, or InputRejected. An input while no turn is active
+// starts a turn (TurnStarted precedes its InputAccepted); an input while a turn is active joins that
+// turn, and the harness decides where in the model's context it lands. input_id is client-chosen
+// and idempotent: an Input whose id the session log already settled is not written again, and the
+// runner re-emits that input's outcome so a client that retried after a lost connection learns the
+// original result.
+//
+// Harness lifecycle. Open starts the harness if it is not running, resuming the native conversation
+// when the session has one. Shutdown interrupts an active turn, stops the harness, reports
+// HarnessExited, and ends the stream; the session stays resumable. Detach, or a dropped connection,
+// ends the stream only: the harness keeps running and its events keep accruing in the log. A runner
+// that restarts and finds a session it had running reports HarnessLost, TurnCompleted with
+// PROCESS_LOST for an active turn, and InputUncertain for each input that was submitted but never
+// settled; a client sees those on its next Attach.
+//
+// One attachment controls a session at a time. A newer Open supersedes the current one, whose
+// stream ends with an error.
+
+syntax = "proto3";
+
+package ducktape.agentplane.runner.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service Runner {
+  rpc Attach(stream ClientMessage) returns (stream ServerMessage);
+}
+
+enum Provider {
+  PROVIDER_UNSPECIFIED = 0;
+  PROVIDER_CLAUDE = 1;
+  PROVIDER_CODEX = 2;
+}
+
+message SessionSpec {
+  Provider provider = 1;
+  string cwd = 2;
+  string model = 3;
+  string reasoning_effort = 4;
+}
+
+message Open {
+  // Client-chosen. An unknown id creates the session from spec; a known id attaches to the existing
+  // session, and spec, when present, must equal the stored one.
+  string session_id = 1;
+  SessionSpec spec = 2;
+  // Events with a greater sequence are replayed before live events; 0 replays the whole log.
+  uint64 after_sequence = 3;
+}
+
+message Input {
+  string input_id = 1;
+  string text = 2;
+}
+
+// Ends the active turn; ignored when no turn is active.
+message Interrupt {}
+
+// Stops the harness and ends the stream. The session stays resumable.
+message Shutdown {}
+
+// Ends the stream; the harness keeps running.
+message Detach {}
+
+message ClientMessage {
+  oneof command {
+    Open open = 1;
+    Input input = 2;
+    Interrupt interrupt = 3;
+    Shutdown shutdown = 4;
+    Detach detach = 5;
+  }
+}
+
+enum HarnessState {
+  HARNESS_STATE_UNSPECIFIED = 0;
+  HARNESS_STATE_RUNNING = 1;
+  HARNESS_STATE_STOPPED = 2;
+}
+
+message Attached {
+  string session_id = 1;
+  SessionSpec spec = 2;
+  // The last sequence in the session log at attach time; greater sequences are live.
+  uint64 last_sequence = 3;
+  HarnessState harness = 4;
+  // Empty when no turn is active.
+  string active_turn_id = 5;
+}
+
+enum TurnStatus {
+  TURN_STATUS_UNSPECIFIED = 0;
+  TURN_STATUS_COMPLETED = 1;
+  TURN_STATUS_INTERRUPTED = 2;
+  TURN_STATUS_FAILED = 3;
+  // The harness was gone before it reported a terminal turn result.
+  TURN_STATUS_PROCESS_LOST = 4;
+}
+
+enum ItemKind {
+  ITEM_KIND_UNSPECIFIED = 0;
+  ITEM_KIND_ASSISTANT_TEXT = 1;
+  ITEM_KIND_REASONING = 2;
+  ITEM_KIND_TOOL_CALL = 3;
+}
+
+enum Direction {
+  DIRECTION_UNSPECIFIED = 0;
+  DIRECTION_TO_HARNESS = 1;
+  DIRECTION_FROM_HARNESS = 2;
+}
+
+message HarnessStarted {
+  // The harness resumed the session's native conversation rather than starting a fresh one.
+  bool resumed = 1;
+  // Process id on the runner's host, for operators and for tests that kill it.
+  int32 pid = 2;
+}
+
+message HarnessExited {
+  int32 exit_code = 1;
+  // The runner stopped it, for a Shutdown or its own shutdown; otherwise the harness ended on its own.
+  bool stopped_by_runner = 2;
+}
+
+// The runner restarted and found the harness gone; its exit status is unknown.
+message HarnessLost {}
+
+message HarnessStderr {
+  string text = 1;
+}
+
+// The runner took the input and is writing it to the harness; admission is pending.
+message InputSubmitted {
+  string input_id = 1;
+}
+
+// The harness took the input into its transcript, as part of turn_id.
+message InputAccepted {
+  string input_id = 1;
+  string turn_id = 2;
+}
+
+message InputRejected {
+  string input_id = 1;
+  string reason = 2;
+}
+
+// The runner restarted after submitting the input and before the harness settled it; the harness
+// may or may not have taken it. Resending it is the client's decision.
+message InputUncertain {
+  string input_id = 1;
+}
+
+message TurnStarted {
+  string turn_id = 1;
+}
+
+message TurnCompleted {
+  string turn_id = 1;
+  TurnStatus status = 2;
+  // Set for FAILED and PROCESS_LOST.
+  string error = 3;
+}
+
+// One unit of assistant output within a turn: a text block, a reasoning block, or a tool call.
+message ItemStarted {
+  string item_id = 1;
+  ItemKind kind = 2;
+  // The harness's own name for the tool; set for TOOL_CALL items only.
+  string tool_name = 3;
+}
+
+// Text of an ASSISTANT_TEXT or REASONING item, in order; concatenation is the item's text so far.
+message TextDelta {
+  string item_id = 1;
+  string text = 2;
+}
+
+// A fragment of a TOOL_CALL item's arguments JSON, in order, for harnesses that stream it.
+message ToolArgumentsDelta {
+  string item_id = 1;
+  string partial_json = 2;
+}
+
+// The complete arguments of a TOOL_CALL item, as a JSON object.
+message ToolArguments {
+  string item_id = 1;
+  string arguments_json = 2;
+}
+
+// Output of a running TOOL_CALL item, in order, for harnesses that stream it.
+message ToolOutputDelta {
+  string item_id = 1;
+  string text = 2;
+}
+
+message ToolResult {
+  string output = 1;
+  bool succeeded = 2;
+}
+
+message ItemCompleted {
+  string item_id = 1;
+  oneof outcome {
+    // ASSISTANT_TEXT and REASONING: the item's complete text.
+    string text = 2;
+    ToolResult tool = 3;
+  }
+}
+
+// One harness frame exactly as it crossed the pipe, without its trailing newline.
+message Native {
+  Direction direction = 1;
+  string line = 2;
+}
+
+message Event {
+  // Strictly increasing within a session, across attachments and runner restarts.
+  uint64 sequence = 1;
+  google.protobuf.Timestamp at = 2;
+  // Native events this derived event came from; empty for Native events themselves.
+  repeated uint64 source_sequences = 3;
+  oneof observation {
+    HarnessStarted harness_started = 4;
+    HarnessExited harness_exited = 5;
+    HarnessLost harness_lost = 6;
+    HarnessStderr harness_stderr = 7;
+    InputSubmitted input_submitted = 8;
+    InputAccepted input_accepted = 9;
+    InputRejected input_rejected = 10;
+    InputUncertain input_uncertain = 11;
+    TurnStarted turn_started = 12;
+    TurnCompleted turn_completed = 13;
+    ItemStarted item_started = 14;
+    TextDelta text_delta = 15;
+    ToolArgumentsDelta tool_arguments_delta = 16;
+    ToolArguments tool_arguments = 17;
+    ToolOutputDelta tool_output_delta = 18;
+    ItemCompleted item_completed = 19;
+    Native native = 20;
+  }
+}
+
+message ServerMessage {
+  oneof message {
+    Attached attached = 1;
+    Event event = 2;
+    // The stream ends after an error: a malformed command, a spec mismatch, or a newer attachment.
+    string error = 3;
+  }
+}

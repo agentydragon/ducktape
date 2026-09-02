@@ -113,7 +113,22 @@ def interrupt_active_turn(process: NativeProcess, *, with_queued_input: bool) ->
     }
 
 
-def command(binary: str, *, model: str, resume_id: str | None = None) -> list[str]:
+def command(
+    binary: str,
+    *,
+    model: str,
+    resume_id: str | None = None,
+    session_id: str | None = None,
+    replay_user_messages: bool = False,
+    effort: str | None = None,
+) -> list[str]:
+    """`session_id` fixes a fresh session's id; with `resume_id` the resumed session keeps its own.
+
+    `replay_user_messages` makes the harness echo each user frame back with `isReplay`, and it also
+    emits a `command_lifecycle` frame (queued, started, completed) per user frame uuid.
+    """
+    if resume_id and session_id:
+        raise ValueError("a resumed session keeps its id; pass resume_id or session_id, not both")
     result = [
         binary,
         # --safe-mode blocks plugins and hooks from adding their prompt/tool bulk.
@@ -147,6 +162,12 @@ def command(binary: str, *, model: str, resume_id: str | None = None) -> list[st
     ]
     if resume_id:
         result.extend(["--resume", resume_id])
+    if session_id:
+        result.extend(["--session-id", session_id])
+    if replay_user_messages:
+        result.append("--replay-user-messages")
+    if effort:
+        result.extend(["--effort", effort])
     return result
 
 

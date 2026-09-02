@@ -1,6 +1,6 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-package(default_visibility = ["//x/agentplane/harness_tests:__subpackages__"])
+package(default_visibility = ["//x/agentplane:__subpackages__"])
 
 py_library(
     name = "anthropic_sse",

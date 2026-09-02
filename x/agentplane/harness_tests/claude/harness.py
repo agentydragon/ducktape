@@ -26,7 +26,7 @@ class ClaudeHarness:
     base_environment: dict[str, str]
 
     def start(self, upstream: ScriptedUpstream, *, resume_id: str | None = None) -> NativeProcess:
-        command = [_dynamic_loader(), *scenarios.command(self.binary, model=MODEL, resume_id=resume_id)]
+        command = [dynamic_loader(), *scenarios.command(self.binary, model=MODEL, resume_id=resume_id)]
         environment = {
             **self.base_environment,
             **scenarios.environment(endpoint=upstream.origin, token="test-key", config_dir=str(self.config)),
@@ -36,7 +36,7 @@ class ClaudeHarness:
         return process
 
 
-def _dynamic_loader() -> str:
+def dynamic_loader() -> str:
     # TODO: run Claude in RBE without this Nix ELF-loader workaround.
     data = Path(sys.executable).resolve().read_bytes()
     if data[:4] != b"\x7fELF":
