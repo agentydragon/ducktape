@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agentplane visual harness</title>
+    <link rel="stylesheet" href="../../../../../util/testing/frontend_visual/test-fonts.css" />
+    <link rel="stylesheet" href="./bundle.css" />
+    <style>
+      /* Deterministic screenshots: Mantine transitions and the streaming badge's pulse are off. */
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0s !important;
+        animation-delay: 0s !important;
+        transition-duration: 0s !important;
+        transition-delay: 0s !important;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- visual-test-lib screenshots #app; the harness mounts the app here instead of #root. -->
+    <div id="app"></div>
+    <script src="./bundle.js"></script>
+  </body>
+</html>

@@ -1,3 +1,5 @@
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_js//js:defs.bzl", "js_test")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 load("//devinfra/js:openapi.bzl", "js_openapi_schema")
@@ -132,3 +134,78 @@ vitest_bin.vitest_test(
         "//:node_modules/vitest",
     ],
 )
+
+# Visual render-health tests: the app mounted by visual/harness.tsx on canned inventory and runner
+# events (fetch and EventSource stubbed, nothing on the network), one scenario per js_test, the
+# PNG published for PR visual review on the shared //util/testing/frontend_visual machinery.
+ts_library(
+    name = "visual_harness_lib",
+    srcs = ["visual/harness.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":app",
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+    ],
+)
+
+# A classic script (iife) so visual/index.html loads it from file:// without module CORS.
+esbuild(
+    name = "visual_bundle",
+    config = {"jsx": "automatic"},
+    entry_point = "visual/harness.js",
+    format = "iife",
+    minify = False,
+    output = "visual/bundle.js",
+    output_css = "visual/bundle.css",
+    platform = "browser",
+    sourcemap = "linked",
+    target = ["es2022"],
+    deps = [":visual_harness_lib"],
+)
+
+# Single-file views so $(rootpath) resolves to one path each.
+filegroup(
+    name = "visual_bundle_js",
+    srcs = ["visual/bundle.js"],
+)
+
+filegroup(
+    name = "visual_bundle_css",
+    srcs = ["visual/bundle.css"],
+)
+
+VISUAL_DATA = [
+    "visual/index.html",
+    ":visual_bundle_css",
+    ":visual_bundle_js",
+    "//util/testing/frontend_visual:fonts",
+    "//util/testing/frontend_visual:fonts_conf",
+    "//util/testing/frontend_visual:visual_test_lib",
+    "@playwright_browsers//:chromium-headless-shell",
+]
+
+[
+    js_test(
+        name = "visual_%s" % scenario,
+        size = "small",
+        data = VISUAL_DATA,
+        entry_point = "visual/visual_test_%s.mjs" % scenario,
+        env = {
+            "HARNESS_PATH": "$(rootpath :visual_bundle_js)",
+            "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+            "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
+            "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
+        },
+        no_copy_to_bin = VISUAL_DATA,
+    )
+    for scenario in [
+        "sandboxes",
+        "sandbox",
+        "session",
+    ]
+]

@@ -43,6 +43,7 @@ js_library(
         "//props/frontend:__pkg__",
         "//props/frontend/src:__subpackages__",
         "//study_casino/frontend:__pkg__",
+        "//x/agentplane/app/frontend:__pkg__",
     ],
     deps = [
         ":capture",
