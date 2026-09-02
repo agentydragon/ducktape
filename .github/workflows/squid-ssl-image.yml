@@ -2,8 +2,8 @@
 # only mainstream distro whose squid package is built --with-openssl; Ubuntu's is
 # gnutls and refuses ssl-bump.
 #
-# CLEANUP(added 2026-08-10): delete alongside cluster/images/squid-ssl and
-#   cluster/k8s/x/squid-egress-spike when the spike concludes.
+# CLEANUP(added 2026-08-10): delete alongside cluster/images/squid-ssl and the
+#   archived spike snapshot when the reference is no longer useful.
 name: Squid SSL Image
 
 on:

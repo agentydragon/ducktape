@@ -27,9 +27,8 @@
 # curl and openssl are kept in the image on purpose: this is a spike whose whole
 # point is exec'ing in and driving requests through the proxy.
 #
-# CLEANUP(added 2026-08-10): delete with cluster/k8s/x/squid-egress-spike
-#   once the spike has answered its questions and either graduates to a real
-#   fence or is abandoned. See that directory's README for the question list.
+# CLEANUP(added 2026-08-10): delete with the archived spike snapshot once the
+#   reference is no longer useful. See its README for the question list.
 FROM debian:testing@sha256:8fe7e20ebb14e121fa7abd75c2d8de93f2fc2e9ce1f92748f10257b29350d276
 
 RUN apt-get update \

@@ -1,5 +1,9 @@
 # Squid egress-proxy spike
 
+Archived after the spike was retired. Its Flux declarations are suspended
+historical records; this directory is not reconciled by the active cluster
+configuration.
+
 Throwaway spike deciding whether **one Squid per fence** can replace the
 iron-proxy + cache split as Haku's egress fence. Rationale, alternatives and the
 earlier 3.5 results: <../../../docs/plans/agent_egress_proxy_options.md>.
@@ -177,7 +181,7 @@ scoping the `deny` did not disturb the path it shares with the `add`.
 The image is private, and the `forgejo-images-creds` pull secret reaches this
 namespace by **reflector mirroring** — `squid-egress-spike` must appear in both
 `reflection-allowed-namespaces` and `reflection-auto-namespaces` on
-<../../forgejo-images/registry-creds.sops.yaml>. That is a grant of one
+<../../../k8s/forgejo-images/registry-creds.sops.yaml>. That is a grant of one
 dockerconfigjson and nothing else, and it is the mechanism
 <../../../docs/container-images.md> § Forgejo-hosted images prescribes.
 
@@ -199,7 +203,9 @@ as any first-push image here — see <../../../docs/container-images.md>.
 
 ## Disposal
 
-This is a spike, not infrastructure. When it has answered its questions, delete
-the whole directory, `cluster/images/squid-ssl/`, the workflow, the two
-`flux-image-automation-forgejo/squid-ssl-*` files, and the root kustomization
-entries. The `CLEANUP` markers in those files say the same.
+This is a spike, not infrastructure. The active cluster wiring and live objects
+are retired; this archive keeps the experiment's findings and suspended Flux
+declarations as reference material. Delete the archive together with
+`cluster/images/squid-ssl/`, the workflow, and the two
+`flux-image-automation-forgejo/squid-ssl-*` files when that reference is no
+longer useful.

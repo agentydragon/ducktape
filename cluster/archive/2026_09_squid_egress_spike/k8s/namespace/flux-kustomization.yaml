@@ -7,7 +7,7 @@ spec:
   # Retired by operator request; keep the declaration paused while live objects are removed.
   suspend: true
   interval: 1h
-  path: ./cluster/k8s/x/squid-egress-spike/namespace
+  path: ./cluster/archive/2026_09_squid_egress_spike/k8s/namespace
   prune: false
   sourceRef:
     kind: GitRepository

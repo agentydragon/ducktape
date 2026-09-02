@@ -11,7 +11,7 @@ spec:
   interval: 10m
   retryInterval: 1m
   timeout: 5m
-  path: ./cluster/k8s/x/squid-egress-spike/app
+  path: ./cluster/archive/2026_09_squid_egress_spike/k8s/app
   prune: true
   wait: true
   sourceRef:
