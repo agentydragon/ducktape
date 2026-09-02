@@ -1,8 +1,2 @@
-users:
-  agentydragon:
-    disabled: false
-    displayname: Rai
-    password: "$argon2id$v=19$m=65536,t=3,p=4$MVhDbXVsbVlRWEZBYXJEYw$RvPVzC3v3jALA18WLANQvUKPDk9UR/HXMINxFX3XtY4"
-    email: agentydragon@gmail.com
-    groups:
-      - admins
+# Placeholder only. Provision a real user database before reactivating Authelia.
+users: {}

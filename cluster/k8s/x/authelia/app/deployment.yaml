@@ -18,7 +18,7 @@ spec:
         app.kubernetes.io/name: authelia
       annotations:
         configmap.reloader.stakater.com/reload: authelia-config
-        secret.reloader.stakater.com/reload: authelia-secrets
+        secret.reloader.stakater.com/reload: authelia-secrets,authelia-jwks
     spec:
       nodeSelector:
         topology.kubernetes.io/region: hil
