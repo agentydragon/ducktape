@@ -42,6 +42,7 @@ class RunnerProcess:
             await _exited(pid)
 
     async def stop(self) -> None:
+        """SIGTERM, as a Pod's termination sends it; the runner stops its harnesses before exiting."""
         if self.process.returncode is None:
             self.process.send_signal(signal.SIGTERM)
             await self.process.wait()
@@ -137,6 +138,52 @@ async def test_a_restarted_runner_reports_the_loss_and_resumes_the_conversation(
     request = await model.request()
     assert request.user_texts == ["Reply with exactly: SEED_OK", "Reply with exactly: RESUMED_OK"]
     assert request.assistant_texts == ["SEED_OK"]
+    model.reply(request, Text("RESUMED_OK"))
+    done = await second.until(events.turn_completed)
+    assert done.turn_completed.status == pb.TURN_STATUS_COMPLETED
+    events.assert_contiguous([*first.seen, *second.seen])
+    await second.shutdown()
+    await second.drain_until_end()
+    await client.close()
+    model.assert_quiescent()
+
+
+async def test_sigterm_stops_the_harness_cleanly_and_the_next_runner_resumes(
+    start_runner: Callable[[], Awaitable[RunnerProcess]], model: ScriptedModel, spec: pb.SessionSpec
+) -> None:
+    first_runner = await start_runner()
+    client = RunnerClient(first_runner.target)
+    first = await client.attach("sigterm-1", spec=spec)
+    await first.send("input-1", "Reply with exactly: SEED_OK")
+    model.reply(await model.request(), Text("SEED_OK"))
+    await first.until(events.turn_completed)
+    (running,) = await client.list_sessions()
+    assert running.session_id == "sigterm-1"
+    assert running.harness == pb.HARNESS_STATE_RUNNING
+    assert running.spec == spec
+    # Native frames after the turn's result may still be arriving.
+    assert running.last_sequence >= first.cursor
+    await first.detach()
+    await first.drain_until_end()
+    await client.close()
+    # The runner exits only after the stop ladder has reaped every harness.
+    await first_runner.stop()
+
+    second_runner = await start_runner()
+    client = RunnerClient(second_runner.target)
+    (stopped,) = await client.list_sessions()
+    assert stopped.harness == pb.HARNESS_STATE_STOPPED
+    assert stopped.last_sequence > first.cursor
+    second = await client.attach("sigterm-1", after_sequence=first.cursor)
+    exited = await second.until(events.is_kind("harness_exited"))
+    assert exited.harness_exited.stopped_by_runner
+    started = await second.until(events.is_kind("harness_started"))
+    assert started.harness_started.resumed
+    assert not events.of_kind(second.seen, "harness_lost")
+    assert not events.of_kind(second.seen, "input_uncertain")
+    await second.send("input-2", "Reply with exactly: RESUMED_OK")
+    request = await model.request()
+    assert request.user_texts == ["Reply with exactly: SEED_OK", "Reply with exactly: RESUMED_OK"]
     model.reply(request, Text("RESUMED_OK"))
     done = await second.until(events.turn_completed)
     assert done.turn_completed.status == pb.TURN_STATUS_COMPLETED

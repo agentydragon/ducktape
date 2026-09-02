@@ -39,6 +39,9 @@ import "google/protobuf/timestamp.proto";
 
 service Runner {
   rpc Attach(stream ClientMessage) returns (stream ServerMessage);
+  // Every session in the runner's state directory. Session ids are client-chosen, so this is how a
+  // client that keeps no record of its own finds them again.
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
 }
 
 enum Provider {
@@ -102,6 +105,21 @@ message Attached {
   HarnessState harness = 4;
   // Empty when no turn is active.
   string active_turn_id = 5;
+}
+
+message ListSessionsRequest {}
+
+message SessionSummary {
+  string session_id = 1;
+  SessionSpec spec = 2;
+  uint64 last_sequence = 3;
+  HarnessState harness = 4;
+  // Empty when no turn is active.
+  string active_turn_id = 5;
+}
+
+message ListSessionsResponse {
+  repeated SessionSummary sessions = 1;
 }
 
 enum TurnStatus {

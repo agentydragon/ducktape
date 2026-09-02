@@ -90,10 +90,28 @@ class Runner:
     async def stop(self) -> None:
         await asyncio.gather(*(session.stop() for session in self.sessions.values()))
 
+    def summaries(self) -> list[pb.SessionSummary]:
+        return [
+            pb.SessionSummary(
+                session_id=session.session_id,
+                spec=session.record.spec(),
+                last_sequence=session.log.last_sequence,
+                harness=pb.HARNESS_STATE_RUNNING if session.running else pb.HARNESS_STATE_STOPPED,
+                active_turn_id=session.active_turn_id,
+            )
+            for session in sorted(self.sessions.values(), key=lambda session: session.session_id)
+        ]
+
 
 class RunnerService(protocol_pb2_grpc.RunnerServicer):
     def __init__(self, runner: Runner) -> None:
         self.runner = runner
+
+    async def ListSessions(  # noqa: N802  # gRPC names servicer methods after the RPC
+        self, request: pb.ListSessionsRequest, context: grpc.aio.ServicerContext
+    ) -> pb.ListSessionsResponse:
+        del request, context
+        return pb.ListSessionsResponse(sessions=self.runner.summaries())
 
     async def Attach(  # noqa: N802  # gRPC names servicer methods after the RPC
         self, request_iterator: AsyncIterator[pb.ClientMessage], context: grpc.aio.ServicerContext

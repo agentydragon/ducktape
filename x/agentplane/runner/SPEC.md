@@ -15,6 +15,8 @@ page is what the runner guarantees about it.
   resuming the native conversation when the session has one.
 - A session survives the runner process. A runner that starts on a state directory loads every
   session in it; what the previous runner had running is reported as lost (below).
+- `ListSessions` returns every session in the state directory with its spec, harness state,
+  active turn, and last sequence, so a client that keeps no record of its own finds them again.
 
 ## Attachments
 
@@ -78,6 +80,11 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   harness's transcript. Resending it is the client's decision.
 - A harness that exits on its own is reported the same way, as `HarnessExited` with the exit code
   instead of `HarnessLost`.
+- A runner that receives SIGTERM stops every running harness the way `Shutdown` does, without
+  interrupting turns, records `HarnessExited` with `stopped_by_runner`, and exits. The stop ladder
+  waits five seconds per step (stdin close, SIGTERM, SIGKILL), so whatever supervises the runner
+  must allow it at least that before killing it; a harness killed outright is `HarnessLost` on the
+  next start instead.
 
 ## What the harnesses do not promise
 
