@@ -38,13 +38,7 @@ js_test(
 js_library(
     name = "visual_test_lib",
     srcs = ["visual-test-lib.mjs"],
-    visibility = [
-        "//airlock/frontend:__pkg__",
-        "//props/frontend:__pkg__",
-        "//props/frontend/src:__subpackages__",
-        "//study_casino/frontend:__pkg__",
-        "//x/agentplane/app/frontend:__pkg__",
-    ],
+    visibility = ["//visibility:public"],
     deps = [
         ":capture",
         ":launcher",
