@@ -147,6 +147,9 @@ async def test_open_rejects_a_mismatched_spec(client: RunnerClient, spec: pb.Ses
         await client.attach("spec-1", spec=other)
     with pytest.raises(RunnerError, match="does not exist"):
         await client.attach("spec-2")
+    relative = pb.SessionSpec(provider=spec.provider, cwd="work/../elsewhere", model=spec.model)
+    with pytest.raises(RunnerError, match="absolute"):
+        await client.attach("spec-3", spec=relative)
 
 
 if __name__ == "__main__":

@@ -54,10 +54,19 @@ export function SessionView({
       setRaw((events) => [...events, event]);
       setState((current) => reduce(current, event));
     });
-    source.addEventListener("end", () => setStatus("stream ended"));
+    // The runner ending the stream is final: a reconnect would Open the session again, which
+    // restarts a shut-down harness. Only a dropped connection is left to EventSource's own retry.
+    source.addEventListener("end", () => {
+      source.close();
+      setStatus("stream ended");
+    });
     source.addEventListener("error", (message: globalThis.Event) => {
-      const detail = "data" in message ? String((message as MessageEvent<string>).data) : "";
-      setStatus(detail ? `runner: ${detail}` : "reconnecting");
+      if ("data" in message) {
+        source.close();
+        setStatus(`runner: ${String((message as MessageEvent<string>).data)}`);
+      } else {
+        setStatus("reconnecting");
+      }
     });
     return () => source.close();
   }, [sandbox, sessionId]);

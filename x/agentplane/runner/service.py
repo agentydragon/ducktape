@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator
+from pathlib import PurePosixPath
 
 import grpc
 
@@ -78,6 +79,8 @@ class Runner:
                 raise OpenError("spec.provider must be CLAUDE or CODEX")
             if not request.spec.cwd or not request.spec.model:
                 raise OpenError("spec.cwd and spec.model are required")
+            if not PurePosixPath(request.spec.cwd).is_absolute():
+                raise OpenError(f"spec.cwd must be an absolute path, not {request.spec.cwd!r}")
             record = SessionRecord.from_spec(request.spec)
             self.store.write(session_id, record)
             session = Session(

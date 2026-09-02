@@ -36,10 +36,11 @@ export interface SessionState {
   items: Record<string, Item>;
   inputs: InputState[];
   stderr: string[];
-  lastSequence: number;
+  /** The wire's decimal string: a uint64 is not safely a JS number. */
+  lastSequence: string;
 }
 
-export const EMPTY: SessionState = { harness: null, turns: [], items: {}, inputs: [], stderr: [], lastSequence: 0 };
+export const EMPTY: SessionState = { harness: null, turns: [], items: {}, inputs: [], stderr: [], lastSequence: "0" };
 
 function item(state: SessionState, id: string): Item {
   return (
@@ -69,7 +70,7 @@ function withInput(state: SessionState, id: string, update: Partial<InputState>)
 }
 
 export function reduce(previous: SessionState, event: Event): SessionState {
-  const state: SessionState = { ...previous, lastSequence: Number(event.sequence ?? "0") };
+  const state: SessionState = { ...previous, lastSequence: event.sequence ?? "0" };
   if (event.harnessStarted) return { ...state, harness: "running" };
   if (event.harnessExited) return { ...state, harness: "stopped" };
   if (event.harnessLost) return { ...state, harness: "lost" };

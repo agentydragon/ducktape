@@ -22,7 +22,8 @@ from x.agentplane.app.inventory import SandboxInventory
 app = typer.Typer(add_completion=False)
 
 # The built frontend, a runfiles data dependency of this module's library.
-FRONTEND = "_main/x/agentplane/app/frontend/dist"
+# The bundle's entry; runfiles resolve files, not directories, so the mount is its parent.
+FRONTEND_INDEX = "_main/x/agentplane/app/frontend/dist/index.html"
 
 
 @app.command()
@@ -66,7 +67,7 @@ async def async_main(
         bridge = RunnerBridge(address_of=runner_address(inventory, runner_port))
         app = create_app(inventory, bridge)
         # The SPA, mounted last so the API routes above it win; index.html answers the rest.
-        app.mount("/", StaticFiles(directory=get_required_path(FRONTEND), html=True), name="frontend")
+        app.mount("/", StaticFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
         try:
             await uvicorn.Server(uvicorn.Config(app, host=host, port=port)).serve()
         finally:

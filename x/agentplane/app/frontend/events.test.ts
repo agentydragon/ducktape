@@ -24,7 +24,7 @@ describe("reduce", () => {
   it("folds a turn's events into items in order, with streamed text and tool results", () => {
     const state = script.reduce(reduce, EMPTY);
     expect(state.harness).toBe("running");
-    expect(state.lastSequence).toBe(14);
+    expect(state.lastSequence).toBe("14");
     expect(state.turns).toEqual([
       { id: "t1", status: "TURN_STATUS_COMPLETED", error: "", itemIds: ["m#0", "toolu_1"] },
     ]);
