@@ -1,7 +1,8 @@
 # Common protocol: post-capture design notes
 
-Status: **native drivers and scripted harness tests are in place; the shared seam is the next
-focused implementation slice**.
+Status: **the shared seam is in place as the runner under [`../runner/`](../runner/), with its
+contract in [`../runner/SPEC.md`](../runner/SPEC.md); what remains here is the evidence contract and
+the product nouns the service seam will introduce**.
 
 The native drivers under [`../native/`](../native/), the scripted tests under
 [`../harness_tests/`](../harness_tests/), and the live probe under [`../capture/`](../capture/)
@@ -41,22 +42,14 @@ semantics the providers did not demonstrate.
 
 ## What the shared seam may own next
 
-The next implementation package is one thin stdio protocol plus a Claude adapter and a Codex
-adapter. It should expose only operations and observations that the scripted harness tests can prove
-with the real binaries. A small candidate surface is:
-
-```text
-start_or_resume(...)
-submit(...)
-steer(...)       # only where the provider supports a meaningful native operation
-interrupt(...)
-events()
-```
-
-The seam may report provider capability and provider-specific terminal/error outcomes. It must not
-silently turn a second input into steering, emulate retry, redispatch an uncertain input, or present
-an unsupported operation as successful. Native provider IDs should remain available to callers
-where they are needed for correlation and resume.
+The seam is one bidirectional gRPC stream per attachment, `Attach`, over session-scoped
+commands (`Open`, `Input`, `Interrupt`, `Shutdown`, `Detach`) and sequenced events; the contract
+is [`../runner/SPEC.md`](../runner/SPEC.md). It exposes only behavior the scripted tests prove with
+the real binaries, and its own tests are one interaction script per scenario run against both
+harnesses, so a caller never switches on the provider. There is no steer verb: both harnesses take
+an input during a turn into that turn, so one `Input` covers both. The seam does not emulate
+retry, redispatch an uncertain input, or present an unsupported operation as successful; provider
+ids and frames stay available as `Native` events for correlation.
 
 The shared driver protocol is an internal stdio boundary. It is distinct from the browser-facing
 Agentplane API and does not decide Thread naming, archive presentation, timeline UX, or HTTP/SSE/WebSocket

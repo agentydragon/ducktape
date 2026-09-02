@@ -206,6 +206,26 @@ id keeps the classic `exec_command` function-call shape the tests assert.
 | External agent config import | `externalAgentConfig/*`                                                                                                                                                  | no                        |                                                                                                            |
 | Fuzzy file search            | `fuzzyFileSearch`, `fuzzyFileSearch/*`                                                                                                                                   | no                        | UI helper                                                                                                  |
 
+## What the runner consumes
+
+The runner in `x/agentplane/runner/` translates these surfaces into its protocol; everything else
+stays evidence in `Native` events. Observed with the pinned builds while writing it:
+
+- Claude: `--session-id` fixes a fresh session's id, so the runner never waits for one;
+  `--replay-user-messages` also emits `command_lifecycle` frames (`queued`, `started`,
+  `completed`) per user frame uuid, and `queued` arrives on receipt even for an input the harness
+  later delivers inside a running tool's result; `--effort` is accepted; `stream_event`
+  `content_block_start`/deltas map to item lifecycle and `assistant` frames complete each block;
+  `can_use_tool` is answered with allow, every other control request with an error; the transcript
+  is written on clean exit, so a harness killed outright loses the conversation since its last
+  write.
+- Codex: `turn/start` during a turn returns the running turn's id; `turn/started`,
+  `item/started`, `item/*/delta`, `item/completed`, and `turn/completed` drive the lifecycle;
+  server requests (approvals, user input, elicitation) are answered with a JSON-RPC error; a
+  `commandExecution` item that outlives its first read completes with `aggregatedOutput: null`;
+  `turn/interrupt` completes the turn as `interrupted` but leaves an in-flight streamed model
+  connection open.
+
 ## Deliberately unsupported
 
 Configured off in `scenarios.command`/`scenarios.config` so recorded model requests contain only

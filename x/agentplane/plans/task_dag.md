@@ -21,7 +21,11 @@ real upstream credentials are a later gate.
   against a loopback model each test scripts one request at a time
   (`bbr test //x/agentplane/harness_tests/...`), and [`../capture/`](../capture/) is the live probe
   whose logs are read when a script is authored or repaired. No recordings are committed.
-- **Next:** give one agent end-to-end ownership of the shared stdio protocol and both provider adapters.
+- **The shared runner protocol is in place:** [`../runner/`](../runner/) serves both harnesses
+  behind one gRPC contract ([`../runner/SPEC.md`](../runner/SPEC.md)) with a durable per-session
+  log, cursor-based reattach, idempotent inputs, and restart recovery, pinned by one set of
+  interaction scripts run against both binaries (`bbr test //x/agentplane/runner/...`).
+- **Next:** the standalone Agentplane service seam over the runner.
 - **Access-control scope is intentionally deferred:** the current Ducktape work can use its existing
   broad internet boundary and scoped GitHub credential for `agentydragon-agent`; that convenience is
   not a policy model for the private, high-context Haku agent.
@@ -38,7 +42,7 @@ flowchart TB
 
     S0["Sandbox proxy/identity<br/>completed evidence"]:::completed
     A["Native drivers + scripted harness tests<br/>landed"]:::completed
-    B["Shared stdio protocol<br/>+ both provider adapters"]:::next
+    B["Shared runner protocol<br/>+ both provider adapters<br/>landed"]:::completed
     C["Standalone Agentplane service seam<br/>records, runner bridge, REST/SSE"]:::next
     D["Rai decision<br/>initial conversation-app hosting boundary"]:::decision
     E["Conversation app/UI<br/>Thread naming, archive, timeline, live control"]:::next
@@ -80,8 +84,8 @@ flowchart TB
     S0 -. informs .-> J
 ```
 
-Legend: green is landed work (the sandbox spike's evidence and the native drivers with their
-scripted tests); blue is the next focused work; purple is the first
+Legend: green is landed work (the sandbox spike's evidence, the native drivers with their
+scripted tests, and the runner protocol); blue is the next focused work; purple is the first
 functioning-product milestone; orange diamonds are unresolved decisions requiring Rai's product or
 design input; gray is conditional or stretch work.
 
@@ -112,9 +116,9 @@ personal context.
   Git as reference material for authoring or repairing a script, never as test inputs. A harness
   bump or newly tested protocol area requires a probe run, human inspection of the differences
   against the scripted expectations, and a script update.
-- **Shared protocol + adapters:** one stdio contract justified by captured native frames, with both
-  Claude and Codex adapters exercised through the same shared seam. This is one agent-owned package,
-  not separate provider projects.
+- **Shared protocol + adapters:** one gRPC contract justified by observed native frames, with both
+  Claude and Codex adapters exercised through the same interaction scripts. Landed as
+  [`../runner/`](../runner/); its contract is [`../runner/SPEC.md`](../runner/SPEC.md).
 - **Standalone service seam:** Agentplane owns its service, API, persistence, runner bridge, and
   deployment boundary without importing Haku Console. The first service path starts a runner, accepts
   an Input, streams events, persists enough history for refresh, and reports failure honestly.
@@ -158,6 +162,8 @@ personal context.
 - Native provider scenarios and the scripted-test workflow: [`experiments.md`](experiments.md), the
   [native driver README](../native/README.md), the [harness tests README](../harness_tests/README.md),
   and the [live capture probe README](../capture/README.md).
+- The runner protocol and its tests: [runner README](../runner/README.md) and
+  [runner SPEC](../runner/SPEC.md).
 - Sandbox identity and egress evidence: [sandbox spike README](../sandbox-spike/README.md) and [egress
   ADR](adr_sandbox_proxy_gateway.md).
 - Product/API layering and deferred capabilities: [`product_surface.md`](product_surface.md) and

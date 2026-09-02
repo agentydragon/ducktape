@@ -5,8 +5,9 @@ harness bridge/controller; it is not a Haku implementation refactor.
 
 Agentplane runs native Claude Code and Codex harnesses in replaceable Kubernetes workloads and
 speaks their structured machine protocols. The first slice is in place: native drivers for both
-harnesses ([`../native/`](../native/)), a live-capture probe ([`../capture/`](../capture/)), and
-scripted behavioral tests against a loopback model ([`../harness_tests/`](../harness_tests/)).
+harnesses ([`../native/`](../native/)), a live-capture probe ([`../capture/`](../capture/)),
+scripted behavioral tests against a loopback model ([`../harness_tests/`](../harness_tests/)), and
+the runner that serves both harnesses behind one gRPC contract ([`../runner/`](../runner/)).
 
 ## Documents
 
@@ -26,6 +27,7 @@ scripted behavioral tests against a loopback model ([`../harness_tests/`](../har
 - [Native driver README](../native/README.md)
 - [Live capture probe README](../capture/README.md)
 - [Scripted harness tests README](../harness_tests/README.md)
+- [Runner README](../runner/README.md) and [runner SPEC](../runner/SPEC.md)
 
 ## v0 scope
 

@@ -6,9 +6,10 @@ provider's frame constructors, step functions (send input, await a result, steer
 resume), and the launch `command()`/`environment()` both consumers share. There is no
 provider-neutral facade here.
 
-Two consumers: the live-capture probe in <../capture/README.md>, which runs a scenario against a
-real model, and the scripted tests in <../harness_tests/README.md>, which run the same steps against
-a loopback model the test controls.
+Three consumers: the live-capture probe in <../capture/README.md>, which runs a scenario against a
+real model; the scripted tests in <../harness_tests/README.md>, which run the same steps against a
+loopback model the test controls; and the runner in <../runner/README.md>, which reuses the frame
+constructors and launch configuration behind its provider-neutral protocol.
 
 What each harness exposes on its protocol, and which of it the tests cover:
 <docs/protocol_roster.md>.
