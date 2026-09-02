@@ -268,6 +268,9 @@ py_test(
 
 py_test(
     name = "test_image_packaging",
+    # Decompresses every layer of the image, the harness binaries included: 36s on an idle
+    # worker, past small's 60s on a loaded one (devel at 7d1c8033).
+    size = "medium",
     srcs = ["test_image_packaging.py"],
     data = [":image_rloc"],  # keep: the OCI layout the test inspects
     deps = [
