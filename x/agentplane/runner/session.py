@@ -148,7 +148,10 @@ class Session:
             if self.running:
                 return
             adapter = self.make_adapter(self)
-            process = HarnessProcess(adapter.command(), cwd=Path(self.record.cwd), environment=adapter.environment())
+            # The session's working directory is the spec's; a fresh one is created for the harness.
+            cwd = Path(self.record.cwd)
+            await asyncio.to_thread(cwd.mkdir, parents=True, exist_ok=True)
+            process = HarnessProcess(adapter.command(), cwd=cwd, environment=adapter.environment())
             await process.start()
             self.process, self.adapter, self._stopping = process, adapter, False
             self._tasks = [

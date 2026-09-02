@@ -12,7 +12,8 @@ page is what the runner guarantees about it.
   `<state_dir>/sessions/<session_id>/`: the harness's own persistence and the runner's session log.
 - `Open` with an unknown id creates the session from `spec`; with a known id it attaches, and a
   supplied `spec` must equal the stored one. Open starts the harness when it is not running,
-  resuming the native conversation when the session has one.
+  resuming the native conversation when the session has one, and creates `spec.cwd` when it does
+  not exist yet.
 - A session survives the runner process. A runner that starts on a state directory loads every
   session in it; what the previous runner had running is reported as lost (below).
 - `ListSessions` returns every session in the state directory with its spec, harness state,
