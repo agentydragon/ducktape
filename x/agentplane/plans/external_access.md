@@ -43,9 +43,40 @@ The common case is a mix, split by operation class rather than by system:
   this: `create_grant` asks for exact origins, or namespaces plus verbs, with a duration and a
   rationale, and one approval yields standing authority the target then enforces per call. Approval
   cost is paid once per grant, not once per call.
+- **Agent-requested grants.** The agent asks for additional authority on its own identity, the
+  operator approves once, and the target enforces from then on. This keeps the apiserver's
+  authorization semantics where they belong; the risk is authority issued that cannot be revoked
+  in time. See § Revocation guarantee for minted grants.
 - **Broker refuses what delegation already covers.** The Kubernetes redundancy auto-deny is the
   general rule: when the caller's own identity covers a request, the brokered path denies with a
   pointer to the direct path, so the privileged credential is never spent where a scoped one works.
+
+## Revocation guarantee for minted grants
+
+Authority in Kubernetes is the token times the bindings, and either can be cut at the apiserver.
+"Issued but not revocable" therefore means the reconciler is down or lagging. The guard is a third
+cut under Haku's control alone: the agent never holds the real credential, only a placeholder, and
+the proxy substitutes the real one while Haku's ledger says the grant is active. This is the
+sandbox spike's proxy-only secret delivery applied to grants.
+
+The gate must not depend on scope matching, or the proxy ends up reimplementing the apiserver's
+path-to-resource mapping. On revocation, live RBAC may still be broader than the ledger, so a
+SubjectAccessReview cannot tell a still-valid request from a revoked one. Minting one ServiceAccount
+and token per grant removes the need:
+
+- **Issue:** create the ServiceAccount and bindings; enable substitution only once a
+  SubjectAccessReview for a probe request inside the grant's scope answers yes, so the agent never
+  sees reconciliation-lag 403s.
+- **Use:** the agent holds one placeholder per grant, bound to the sandbox identity so it is useless
+  elsewhere; the proxy swaps in that grant's token. The apiserver does all authorization.
+- **Revoke:** flip the ledger first, which stops substitution at once; delete the ServiceAccount and
+  bindings afterward, with an alarm if they outlive a grace period. Reconciliation lag is harmless
+  because the credential is already dead to the agent.
+
+Real tokens come from TokenRequest with a short TTL the proxy refreshes, so nothing long-lived
+exists to leak. The same guarantee holds for any target the egress fence fronts, since header
+substitution works the same for GitHub or Forgejo tokens; it does not hold where the agent must
+possess the real credential, which under the fence model is nowhere.
 
 ## Choosing
 
@@ -81,7 +112,7 @@ operations fall where.
 
 | System                                       | Delegated identity                                                         | Broker needed for                                           |
 | -------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| Kubernetes                                   | ServiceAccount + RBAC via grants; SAR-checked                              | anything the agent's RBAC does not cover                    |
+| Kubernetes                                   | one ServiceAccount per grant, proxy-substituted; SAR-checked               | anything the agent's RBAC does not cover                    |
 | GitHub                                       | fine-grained token or App installation per repo                            | public-repository policy across search; writes under review |
 | Forgejo                                      | scoped tokens (controller-minted)                                          | nothing identified yet                                      |
 | HTTP egress                                  | fence allowlist by origin; path-level allowlists are the natural extension | origins outside the allowlist                               |
