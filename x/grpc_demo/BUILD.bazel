@@ -8,6 +8,10 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
+# The generated Python modules use unqualified imports with output_mode = "NO_PREFIX".
+# gazelle:resolve py greeting_pb2 :greeting_python_grpc
+# gazelle:resolve py greeting_pb2_grpc :greeting_python_grpc
+
 proto_library(
     name = "greeting_proto",
     srcs = ["greeting.proto"],
@@ -38,11 +42,9 @@ py_library(
     srcs = ["server.py"],
     deps = [
         ":auth",
-        ":greeting_python_grpc",
-        "@grpc//src/python/grpcio/grpc:grpcio",
-        "@pypi//cryptography",
-        "@pypi//protobuf",
-        "@pypi//typing_extensions",
+        "//x/grpc_demo:greeting_python_grpc",
+        "@pypi//grpcio",
+        "@pypi//protobuf",  # keep: generated protobuf stubs import google.protobuf
     ],
 )
 
@@ -101,13 +103,13 @@ py_test(
     srcs = ["test_server.py"],
     deps = [
         ":auth",
-        ":greeting_python_grpc",
         ":server",
-        "@grpc//src/python/grpcio/grpc:grpcio",
-        "@pypi//protobuf",
+        "//:conftest",
+        "//x/grpc_demo:greeting_python_grpc",
+        "@pypi//grpcio",
+        "@pypi//protobuf",  # keep: generated protobuf stubs import google.protobuf
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//typing_extensions",
     ],
 )
 
@@ -116,6 +118,7 @@ py_test(
     srcs = ["test_auth.py"],
     deps = [
         ":auth",
+        "//:conftest",
         "@pypi//cryptography",
         "@pypi//pyjwt",
         "@pypi//pytest",
