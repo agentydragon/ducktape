@@ -4,6 +4,8 @@ metadata:
   name: squid-egress-spike-namespace
   namespace: ducktape-flux
 spec:
+  # Retired by operator request; keep the declaration paused while live objects are removed.
+  suspend: true
   interval: 1h
   path: ./cluster/k8s/x/squid-egress-spike/namespace
   prune: false

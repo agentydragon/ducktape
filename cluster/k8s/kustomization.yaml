@@ -104,8 +104,6 @@ resources:
   - agents/haku-egress-proxy/flux-kustomization.yaml
   - agents/haku-openclaw-spike/app/flux-kustomization.yaml
   - agents/haku-openclaw-spike/backup/flux-kustomization.yaml
-  - x/squid-egress-spike/namespace/flux-kustomization.yaml
-  - x/squid-egress-spike/app/flux-kustomization.yaml
   - agents/loki-read-proxy/flux-kustomization.yaml # namespace-filtered read-only Loki queries for Haku
   - agents/public-coder-agent/namespace/flux-kustomization.yaml
   - agents/public-coder-agent/proxy/flux-kustomization.yaml

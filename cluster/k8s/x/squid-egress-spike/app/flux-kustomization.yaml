@@ -6,6 +6,8 @@ metadata:
   annotations:
     description: Squid ssl_bump spike — destination-scoped credential substitution, proxy-stamped identity, and memory caching, measured against a header-echoing origin.
 spec:
+  # Retired by operator request; keep the declaration paused while live objects are removed.
+  suspend: true
   interval: 10m
   retryInterval: 1m
   timeout: 5m
