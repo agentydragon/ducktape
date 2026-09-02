@@ -635,9 +635,9 @@ def _preview_img(url: str) -> str:
     return f'<img src="{url}" width="260">'
 
 
-def _with_diff_previews(base: str, review_tests: list[ReviewTest], url: str) -> str:
-    """Append up to two modified-asset before/after/diff tables and up to two new-asset
-    previews, respecting the byte budget."""
+def _previews(review_tests: list[ReviewTest], url: str, limit: int) -> list[str]:
+    """Up to `limit` modified-asset before/after/diff tables, then up to `limit` new-asset
+    previews; the lines to append after the target list."""
     modified = [
         (asset.changed_fraction or 0.0, test.slug, asset)
         for test in review_tests
@@ -646,41 +646,81 @@ def _with_diff_previews(base: str, review_tests: list[ReviewTest], url: str) -> 
     ]
     modified.sort(key=lambda item: item[0], reverse=True)
     new = [(test.slug, asset) for test in review_tests for asset in test.assets if asset.classification == "new"]
-    if not modified and not new:
-        return base
-    for limit in (2, 1):
-        lines: list[str] = []
-        if modified:
-            lines += ["", "### Top changes"]
-            for fraction, slug, asset in modified[:limit]:
-                test_url = f"{url}tests/{slug}"
-                # Dimension changes produce no diff overlay (the images can't be
-                # compared pixel-for-pixel), so that cell degrades to text.
-                diff_cell = (
-                    _preview_img(f"{test_url}/diff/{asset.path}")
-                    if not asset.dimension_changed
-                    else "_(dimensions changed)_"
-                )
-                lines += [
-                    "",
-                    f"`{asset.label}` · {fraction:.1%} changed",
-                    "",
-                    "| Before | After | Diff |",
-                    "| --- | --- | --- |",
-                    f"| {_preview_img(f'{test_url}/baseline/{asset.path}')} "
-                    f"| {_preview_img(f'{test_url}/{asset.path}')} "
-                    f"| {diff_cell} |",
-                ]
-        if new:
-            # No baseline to compare against — one image each, not a before/after/diff table.
-            lines += ["", "### New screenshots"]
-            for slug, asset in new[:limit]:
-                test_url = f"{url}tests/{slug}"
-                lines += ["", f"`{asset.label}`", "", _preview_img(f"{test_url}/{asset.path}")]
-        body = base + "\n" + "\n".join(lines)
+    lines: list[str] = []
+    if modified:
+        lines += ["", "### Top changes"]
+        for fraction, slug, asset in modified[:limit]:
+            test_url = f"{url}tests/{slug}"
+            # Dimension changes produce no diff overlay (the images can't be
+            # compared pixel-for-pixel), so that cell degrades to text.
+            diff_cell = (
+                _preview_img(f"{test_url}/diff/{asset.path}")
+                if not asset.dimension_changed
+                else "_(dimensions changed)_"
+            )
+            lines += [
+                "",
+                f"`{asset.label}` · {fraction:.1%} changed",
+                "",
+                "| Before | After | Diff |",
+                "| --- | --- | --- |",
+                f"| {_preview_img(f'{test_url}/baseline/{asset.path}')} "
+                f"| {_preview_img(f'{test_url}/{asset.path}')} "
+                f"| {diff_cell} |",
+            ]
+    if new:
+        # No baseline to compare against — one image each, not a before/after/diff table.
+        lines += ["", "### New screenshots"]
+        for slug, asset in new[:limit]:
+            test_url = f"{url}tests/{slug}"
+            lines += ["", f"`{asset.label}`", "", _preview_img(f"{test_url}/{asset.path}")]
+    return lines
+
+
+def _target_list(review_tests: list[ReviewTest], url: str, *, collapse_unchanged: bool) -> list[str]:
+    """One bullet per target with changes; the unchanged ones folded under a `<details>` so the
+    list reads as what changed, and can be dropped to a count when the budget is tight."""
+
+    def bullet(test: ReviewTest) -> str:
+        counts = test.summary or ClassificationCounts()
+        return f"- [`{test.target_label}`]({url}tests/{test.slug}/index.html): {_format_test_counts(counts)}"
+
+    changed = [
+        test for test in review_tests if _format_test_counts(test.summary or ClassificationCounts()) != "unchanged"
+    ]
+    unchanged = [test for test in review_tests if test not in changed]
+    lines = [bullet(test) for test in changed]
+    if unchanged:
+        plural = "" if len(unchanged) == 1 else "s"
+        if collapse_unchanged:
+            lines += [
+                "",
+                "<details>",
+                f"<summary>{len(unchanged)} unchanged target{plural}</summary>",
+                "",
+                *(bullet(test) for test in unchanged),
+                "",
+                "</details>",
+            ]
+        else:
+            lines += ["", f"{len(unchanged)} unchanged target{plural}."]
+    return lines
+
+
+def _with_target_list_and_previews(head: list[str], review_tests: list[ReviewTest], url: str) -> str:
+    """The comment within budget: previews are what a reviewer opens the comment for, so the
+    collapsed unchanged list goes first when something has to give, then the preview count."""
+    for collapse_unchanged, limit in ((True, 2), (True, 1), (False, 2), (False, 1)):
+        body = "\n".join(
+            [
+                *head,
+                *_target_list(review_tests, url, collapse_unchanged=collapse_unchanged),
+                *_previews(review_tests, url, limit),
+            ]
+        )
         if len(body) <= COMMENT_BUDGET:
             return body
-    return base
+    return "\n".join([*head, *_target_list(review_tests, url, collapse_unchanged=False)])
 
 
 def _format_test_counts(counts: ClassificationCounts) -> str:
@@ -785,10 +825,7 @@ def success_comment_body(
         f"{totals.unchanged} unchanged. [Open visual review]({page_url}).",
         "",
     ]
-    for test in review_tests:
-        counts = test.summary or ClassificationCounts()
-        lines.append(f"- [`{test.target_label}`]({url}tests/{test.slug}/index.html): {_format_test_counts(counts)}")
-    return _with_diff_previews("\n".join(lines), review_tests, url)
+    return _with_target_list_and_previews(lines, review_tests, url)
 
 
 def no_visual_comment_body(

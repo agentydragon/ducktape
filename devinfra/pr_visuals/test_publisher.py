@@ -925,6 +925,46 @@ def test_success_comment_body_shows_new_previews_when_nothing_modified() -> None
     assert body.count("<img ") == 2
 
 
+def test_success_comment_body_folds_unchanged_targets_and_keeps_the_new_preview() -> None:
+    """A sweep over many untouched targets must not push the one new screenshot out of the
+    comment: the unchanged targets fold under a details block, and the preview stays."""
+    review_tests = [
+        ReviewTest(
+            target_label=f"//untouched{index}:visuals",
+            slug=f"untouched-{index}",
+            title=f"Untouched {index}",
+            summary=ClassificationCounts(unchanged=4),
+            assets=[ReviewAsset(path="a.png", label="a", classification="unchanged")],
+        )
+        for index in range(22)
+    ] + [
+        ReviewTest(
+            target_label="//ex:visuals",
+            slug="ex-visuals-abcdef",
+            title="Ex",
+            summary=ClassificationCounts(new=1),
+            assets=[ReviewAsset(path="fresh.png", label="fresh", classification="new")],
+        )
+    ]
+    body = success_comment_body(
+        repository="r",
+        commit_sha="0123456789abcdef0123456789abcdef01234567",
+        url="https://v/commits/sha/",
+        review_tests=review_tests,
+        base_sha="f" * 40,
+    )
+    lines = body.splitlines()
+    assert "### New screenshots" in lines
+    assert "tests/ex-visuals-abcdef/fresh.png" in body
+    assert "<summary>22 unchanged targets</summary>" in lines
+    # The changed target is listed in the open, before the fold.
+    assert lines.index(
+        "- [`//ex:visuals`](https://v/commits/sha/tests/ex-visuals-abcdef/index.html): 1 new"
+    ) < lines.index("<details>")
+    assert "- [`//untouched0:visuals`](https://v/commits/sha/tests/untouched-0/index.html): unchanged" in lines
+    assert len(body) <= COMMENT_BUDGET
+
+
 def test_success_comment_body_shows_both_modified_and_new_previews() -> None:
     review_tests = [
         ReviewTest(
