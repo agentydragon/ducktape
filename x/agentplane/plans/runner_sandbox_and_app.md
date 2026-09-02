@@ -129,9 +129,10 @@ Depends on C1 and C2 producing an image; the manifests can be authored earlier.
   environment, the same operational convenience the `agent-workspaces` Codex lane uses. The
   credentialless egress design in [the ADR](adr_sandbox_proxy_gateway.md) governs external systems,
   not the model endpoint.
-- **No app persistence:** Kubernetes holds the inventory, the runner holds the history. The first
-  feature that cannot work that way (names, cross-sandbox search, history after deletion)
-  introduces a database, not before.
+- **No app persistence in this slice:** Kubernetes holds the inventory, the runner holds the
+  history. Sandboxes are disposable and trajectories are not, so persistence is planned rather
+  than avoided: it enters with the trajectory-persistence node in [the DAG](task_dag.md), which
+  needs only the runner bridge and can start alongside the UI and deployment.
 - **Transport security on the runner port:** Cilium policy between the app namespace and the
   sandbox Pods is the v0 control. Authentication on the port itself waits for the credentialed
   readiness gate.
@@ -144,6 +145,7 @@ Depends on C1 and C2 producing an image; the manifests can be authored earlier.
 
 ## Left out on purpose
 
-Thread naming, archive, and timeline presentation (the conversation app); read-only follower
-attachments; log compaction; approvals and external access; multiple runners per sandbox; warm
-pools. Each has a node in [the DAG](task_dag.md) with what it waits on.
+Trajectory persistence, named threads, and search; archive and timeline presentation (the
+conversation app); read-only follower attachments; log compaction; approvals and external access;
+multiple runners per sandbox; warm pools. Each has a node in [the DAG](task_dag.md) with what it
+waits on.

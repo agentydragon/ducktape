@@ -13,7 +13,9 @@ Rai can open a separate integration app backed by Agentplane, create a sandbox r
 or Codex runner, send an Input, watch response and tool activity arrive, detach and come back to
 what happened since, suspend and resume the sandbox with the conversation intact, and read the raw
 native frames behind any event. The first functioning product is credentialless toward external
-systems; real upstream credentials are a later gate.
+systems; real upstream credentials are a later gate. Sandboxes are disposable, trajectories are
+not: what an agent did, and why, outlives the sandbox it ran in, under a name, and is searchable
+later.
 
 ## Current status
 
@@ -36,6 +38,7 @@ systems; real upstream credentials are a later gate.
 ```mermaid
 flowchart TB
     classDef completed fill:#dcfce7,stroke:#15803d,color:#14532d,stroke-width:2px
+    classDef review fill:#fef9c3,stroke:#a16207,color:#713f12,stroke-width:2px
     classDef ready fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a,stroke-width:3px
     classDef next fill:#e0f2fe,stroke:#0369a1,color:#0c4a6e,stroke-width:2px
     classDef milestone fill:#ede9fe,stroke:#6d28d9,color:#4c1d95,stroke-width:2px
@@ -60,12 +63,17 @@ flowchart TB
         C4["C4 App deployment<br/>namespace RBAC, Authentik route"]:::next
     end
 
-    R5["R5 RBE Claude launcher cleanup<br/>drop the Nix ELF-loader workaround"]:::ready
+    R5["R5 RBE Claude launcher cleanup<br/>#5403"]:::review
 
     F0["First functioning Agentplane<br/>both providers in sandboxes, driven and replayed from the app"]:::milestone
 
+    subgraph traj["Trajectories outlive sandboxes"]
+        T1["T1 Trajectory persistence<br/>session log + native frames copied out of the sandbox<br/>keyed by thread, sandbox, agent"]:::future
+        T2["T2 Named threads<br/>a small model proposes, the user edits"]:::future
+        T3["T3 Search and lookup over past interactions<br/>what happened, why, which agent"]:::future
+    end
     D["Rai decision<br/>conversation app: separate deployment or Haku Console host?"]:::decision
-    E["Conversation app<br/>names, archive, timeline, persisted product records"]:::future
+    E["Conversation app<br/>archive, timeline, live control over persisted threads"]:::future
     F["Product milestone<br/>persisted history, honest outcomes, real users"]:::milestone
 
     G["Rai decision<br/>second viewer on one session needed?"]:::decision
@@ -107,7 +115,15 @@ flowchart TB
     I4 --> F0
     C3 --> F0
     C4 --> F0
-    F0 --> D --> E --> F
+    C2 --> T1
+    T1 --> T2
+    T1 --> T3
+    F0 --> D
+    D --> E
+    T1 --> E
+    T2 --> E
+    E --> F
+    T3 --> F
     F0 --> G -->|yes| R1
     F0 --> J --> P
     P -->|yes| K --> R
@@ -124,7 +140,7 @@ flowchart TB
     S0 -. suspend/resume evidence .-> I3
 ```
 
-Legend: green is landed; the bold blue nodes are ready to start now, in
+Legend: green is landed; yellow is in review; the bold blue nodes are ready to start now, in
 parallel; light blue is next work blocked only on a node in this slice; purple is a milestone;
 orange diamonds are unresolved decisions requiring Rai's product or design input; gray is
 conditional or stretch work.
@@ -132,7 +148,9 @@ conditional or stretch work.
 Ready now, with no edge between them: **I1**, **I2**, **I3**, **C1**, **R5**. C2 needs only I2's
 `ListSessions`, and its tests run against a local runner with the scripted model, so it can start
 as soon as that RPC's shape is agreed. C3 and C4 wait on C1 and C2 only for their API schema and
-image; their manifests and page skeletons can be drafted alongside.
+image; their manifests and page skeletons can be drafted alongside. T1 needs only C2, since the
+bridge already reads the full session log; it is not required for F0, but nothing stops it
+starting alongside C3 and C4.
 
 The orange nodes are deliberately limited to choices that change downstream implementation
 ordering. `D` is assumed answered as "separate deployment" for this slice, since the integration
@@ -193,8 +211,18 @@ personal context.
 - **First functioning Agentplane (F0):** from the app, both providers run in sandboxes, a session is
   driven, left, and replayed, a sandbox survives suspend and resume with its conversation, and the
   raw frames behind any event are one click away.
-- **Conversation app (E):** names, archive, timeline, and the persisted product records they need,
-  as a client of the same API; generated names and archive presentation stay in this layer.
+- **T1 trajectory persistence:** a thread's session log and native frames are copied out of the
+  sandbox into durable storage as they arrive, keyed by thread, sandbox, and agent, so deleting
+  the sandbox loses nothing and a thread can be read without a runner; the store is the app's
+  first database, chosen when this lands (PostgreSQL is the default expectation). Haku's session
+  store and recall index are prior art for the shape, not a dependency.
+- **T2 named threads:** a small model proposes a name from the first turn, the user can edit it,
+  and the name lives on the thread record; naming never touches the runner or the harness.
+- **T3 search and lookup:** find past interactions by text and by what an agent did; answer "what
+  happened here", "why did the agent do that", and "which agent did this" from the persisted
+  trajectory, with the raw frames one step away.
+- **Conversation app (E):** archive, timeline, and live control over persisted threads, as a
+  client of the same API; archive presentation stays in this layer.
 - **Secure egress and credentialed readiness:** one narrow synthetic operation proves the fixed sidecar
   to trusted gateway path before any real upstream credential is enabled. Real credentials remain only
   at the gateway; durable freshness/replay, per-Sandbox/Thread binding, rotation, runner-port
@@ -220,7 +248,8 @@ personal context.
   presentation, and timeline behavior. It may remain separate or later be hosted by Haku Console, but
   must not create shared runtime, route, frontend, or persistence coupling.
 - Do not add a persistence schema, UI projection, Kubernetes controller, credential path, or
-  approval framework ahead of the first test or feature that cannot pass without it.
+  approval framework ahead of the first test or feature that cannot pass without it. Trajectory
+  persistence (T1) is that feature for the database: it enters with T1, not before.
 - Do not enable real upstream credentials until the secure-egress and credentialed-readiness gates pass.
 - One runner per sandbox and one attachment per session are acceptable for the first functioning
   product. Multi-Agent rooms, subscriptions, external events, advanced retention, and provider
