@@ -28,11 +28,19 @@ js_grpc_web_library(
 )
 
 py_library(
+    name = "auth",
+    srcs = ["auth.py"],
+    deps = ["@pypi//pyjwt"],
+)
+
+py_library(
     name = "server",
     srcs = ["server.py"],
     deps = [
+        ":auth",
         ":greeting_python_grpc",
         "@grpc//src/python/grpcio/grpc:grpcio",
+        "@pypi//cryptography",
         "@pypi//protobuf",
         "@pypi//typing_extensions",
     ],
@@ -67,7 +75,10 @@ ts_library(
     name = "frontend",
     srcs = ["frontend.ts"],
     tsconfig = ":tsconfig",
-    deps = [":greeting_js_grpc_web"],
+    deps = [
+        ":greeting_js_grpc_web",
+        "//:node_modules/oidc-client-ts",
+    ],
 )
 
 spa_bundle(
@@ -89,6 +100,7 @@ py_test(
     name = "test_server",
     srcs = ["test_server.py"],
     deps = [
+        ":auth",
         ":greeting_python_grpc",
         ":server",
         "@grpc//src/python/grpcio/grpc:grpcio",
@@ -96,5 +108,17 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//typing_extensions",
+    ],
+)
+
+py_test(
+    name = "test_auth",
+    srcs = ["test_auth.py"],
+    deps = [
+        ":auth",
+        "@pypi//cryptography",
+        "@pypi//pyjwt",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
