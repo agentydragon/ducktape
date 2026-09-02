@@ -33,8 +33,8 @@ may proceed in parallel and rebase. Packages that have landed leave this list.
 
 Manual milestone, run by the agent on staging: create a claim, attach, run one turn on each
 provider against LiteLLM, detach, suspend, resume, reattach from the cursor, and see the earlier
-turn in the resumed conversation. This is the live-probe continuity check deferred from the runner PR. Write what was
-observed into the runner SPEC where it changes a guarantee.
+turn in the resumed conversation. This is the live-probe continuity check deferred from the runner
+PR. Write what was observed into the runner SPEC where it changes a guarantee.
 
 ### C2. Runner bridge
 

@@ -45,6 +45,7 @@ flowchart TB
     classDef completed fill:#dcfce7,stroke:#15803d,color:#14532d,stroke-width:2px
     classDef ready fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a,stroke-width:3px
     classDef next fill:#e0f2fe,stroke:#0369a1,color:#0c4a6e,stroke-width:2px
+    classDef inflight fill:#fef9c3,stroke:#a16207,color:#713f12,stroke-width:2px
     classDef milestone fill:#ede9fe,stroke:#6d28d9,color:#4c1d95,stroke-width:2px
     classDef decision fill:#ffedd5,stroke:#c2410c,color:#7c2d12,stroke-width:2px,stroke-dasharray:5 3
     classDef future fill:#f3f4f6,stroke:#6b7280,color:#374151
@@ -62,9 +63,9 @@ flowchart TB
 
     subgraph app["Integration app v0"]
         C1["C1 Sandbox inventory<br/>list, create, suspend, resume, delete"]:::completed
-        C2["C2 Runner bridge<br/>REST + SSE over Attach, fan-out to every tab"]:::ready
-        C3["C3 UI<br/>sandboxes, session stream, raw view, input, interrupt"]:::ready
-        C4["C4 App deployment into staging<br/>RBAC, Authentik route, agent-reachable API"]:::ready
+        C2["C2 Runner bridge<br/>REST + SSE over Attach, fan-out to every tab"]:::inflight
+        C3["C3 UI<br/>sandboxes, session stream, raw view, input, interrupt"]:::inflight
+        C4["C4 App deployment into staging<br/>RBAC, Authentik route, agent-reachable API"]:::inflight
         C5["C5 Archive<br/>out of the active view, history kept"]:::completed
     end
 
@@ -145,14 +146,14 @@ flowchart TB
     S0 -. suspend/resume evidence .-> I3
 ```
 
-Legend: green is landed; the bold blue nodes are ready to start now, in
-parallel; light blue is next work blocked only on a node in this slice; purple is a milestone;
+Legend: green is landed; yellow is in flight, with a PR open; the bold blue nodes are ready to
+start now, in parallel; light blue is next work blocked only on a node in this slice; purple is a
+milestone;
 orange diamonds are unresolved decisions requiring Rai's product or design input; gray is
 conditional or stretch work.
 
-In flight, with no edge between them: **C2** and **C3** are in review as stacked PRs, **C4**
-is drafted on top of them, and **I4** can run on staging as soon as the runner image is published
-there. T1 needs only C2, since the bridge already reads the full session log; it is not required
+In flight as stacked PRs: **C2**, **C3**, and **C4**. Ready now: **I4**, since the runner image
+is published to staging. T1 needs only C2, since the bridge already reads the full session log; it is not required
 for F0, but nothing stops it starting alongside C4.
 
 The orange nodes are deliberately limited to choices that change downstream implementation
