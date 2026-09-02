@@ -39,23 +39,24 @@ One schema shape for every Haku tool, auto-approved or not:
   "status": "pending",
   "submitted_at": "2026-09-02T08:14:03Z",
   "now": "2026-09-02T08:14:03Z",
-  "queue_last_viewed_at": "2026-09-02T03:10:41Z",
   "message": "Not auto-approved; the operator has been notified. Pending means unanswered, not refused: answers usually take hours. Keep working; the decision and any result arrive as a later input. Use get_tool_call to check early or withdraw_tool_call if this is no longer needed."
 }
 ```
 
-| `status`    | Meaning                                              | Carries                       |
-| ----------- | ---------------------------------------------------- | ----------------------------- |
-| `completed` | Auto-approved or approved, executed, result attached | `result`                      |
-| `pending`   | Waiting for the operator                             | timestamps, presence, message |
-| `running`   | Approved, execution in progress                      | `decided_at`                  |
-| `denied`    | Operator or policy refused                           | `decided_at`, `message`       |
-| `withdrawn` | Agent retracted it                                   | `withdrawal_reason`           |
-| `failed`    | Approved but execution failed                        | `error`                       |
+| `status`    | Meaning                                              | Carries                 |
+| ----------- | ---------------------------------------------------- | ----------------------- |
+| `completed` | Auto-approved or approved, executed, result attached | `result`                |
+| `pending`   | Waiting for the operator                             | timestamps, message     |
+| `running`   | Approved, execution in progress                      | `decided_at`            |
+| `denied`    | Operator or policy refused                           | `decided_at`, `message` |
+| `withdrawn` | Agent retracted it                                   | `withdrawal_reason`     |
+| `failed`    | Approved but execution failed                        | `error`                 |
 
 Timestamps are data the model reads instead of inferring: `submitted_at` and `now` on every
-response, `queue_last_viewed_at` when Haku can report it honestly. "Pending for two minutes, queue
-last viewed five hours ago" says the operator is not looking, not that they refused.
+response, so "pending for two minutes" is read as the operator not looking yet, not as a refusal.
+An operator-presence field is undecided: "queue last viewed" has no clear meaning when approvals
+come from notification buttons rather than the queue view. If one is added, the honest candidate is
+the time of the operator's last decision on any call, which every approval channel updates.
 
 Lifecycle tools:
 
@@ -91,11 +92,10 @@ Decisions are one source among several that want to reach a thread: GitHub activ
 messages, subscriptions. A batcher sits in front of thread input:
 
 - collects events per thread, tagged with source, kind, and ids;
-- debounces: holds while a turn is active and for a short quiet window after the first event, then
-  delivers one input carrying every held event in arrival order;
-- never merges events, so each item keeps its own ids and the model can act on them separately;
-- lets urgency bypass the window where a source declares it (an interrupt-worthy event is a
-  separate decision, not a batcher feature).
+- debounces with one constant window of a few seconds after the first event, then delivers one
+  input carrying every held event in arrival order; no urgency levels, since an event that misses
+  the window simply rides the next input;
+- never merges events, so each item keeps its own ids and the model can act on them separately.
 
 Five approvals clicked in one sitting arrive as one input, not five turns.
 
@@ -129,7 +129,7 @@ the input, facts, decision split is what to keep either way.
 
 1. Haku console: uniform argument schema with optional `rationale`; uniform result envelope; drop
    the gated-tool envelope and `wait_for_result_ms`.
-2. Haku console: `get_tool_call` gains `wait_for` and `wait_ms`; `queue_last_viewed_at` if honest.
+2. Haku console: `get_tool_call` gains `wait_for` and `wait_ms`.
 3. Haku console: decision events (approved, denied, completed, failed) published for Agentplane.
 4. Agentplane: decision delivery by thread state with the machine envelope; system prompt text.
 5. Agentplane: notification batcher with per-thread debounce.
