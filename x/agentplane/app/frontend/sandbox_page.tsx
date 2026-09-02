@@ -1,20 +1,12 @@
 import { Badge, Button, Code, Group, Select, Stack, Switch, Table, Text, TextInput, Title } from "@mantine/core";
 import { useCallback, useEffect, useState } from "react";
 
-import {
-  api,
-  displayableError,
-  listSessions,
-  openSession,
-  type Condition,
-  type SandboxView,
-  type SessionSummary,
-} from "./client";
+import { create } from "@bufbuild/protobuf";
 
-const PROVIDER_ENUM: Record<string, "PROVIDER_CLAUDE" | "PROVIDER_CODEX"> = {
-  claude: "PROVIDER_CLAUDE",
-  codex: "PROVIDER_CODEX",
-};
+import { api, displayableError, listSessions, openSession, type Condition, type SandboxView } from "./client";
+import { HarnessState, Provider, SessionSpecSchema, type SessionSummary } from "./protocol_pb";
+
+const PROVIDER_ENUM: Record<string, Provider> = { claude: Provider.CLAUDE, codex: Provider.CODEX };
 
 function ConditionsTable({ conditions }: { conditions: Condition[] }): JSX.Element {
   return (
@@ -134,15 +126,19 @@ export function SandboxPage({
     return () => clearInterval(timer);
   }, [refresh]);
 
-  async function create(): Promise<void> {
+  async function createSession(): Promise<void> {
     if (!sandbox) return;
     try {
-      await openSession(name, sessionId, {
-        provider: PROVIDER_ENUM[sandbox.provider],
-        cwd: `/state/workspaces/${sessionId}`,
-        model: sandbox.model,
-        reasoningEffort: effort,
-      });
+      await openSession(
+        name,
+        sessionId,
+        create(SessionSpecSchema, {
+          provider: PROVIDER_ENUM[sandbox.provider],
+          cwd: `/state/workspaces/${sessionId}`,
+          model: sandbox.model,
+          reasoningEffort: effort,
+        })
+      );
       onOpenSession(sessionId);
     } catch (reason: unknown) {
       setError(displayableError(reason));
@@ -171,7 +167,7 @@ export function SandboxPage({
           value={effort}
           onChange={(v) => v && setEffort(v)}
         />
-        <Button onClick={() => void create()} disabled={!sandbox || sandbox.state !== "running" || !sessionId}>
+        <Button onClick={() => void createSession()} disabled={!sandbox || sandbox.state !== "running" || !sessionId}>
           New session
         </Button>
       </Group>
@@ -188,13 +184,13 @@ export function SandboxPage({
           {sessions.map((session) => (
             <Table.Tr key={session.sessionId}>
               <Table.Td>
-                <Button variant="subtle" onClick={() => onOpenSession(session.sessionId ?? "")}>
+                <Button variant="subtle" onClick={() => onOpenSession(session.sessionId)}>
                   {session.sessionId}
                 </Button>
               </Table.Td>
-              <Table.Td>{session.harness}</Table.Td>
+              <Table.Td>{HarnessState[session.harness]}</Table.Td>
               <Table.Td>{session.activeTurnId || "—"}</Table.Td>
-              <Table.Td>{session.lastSequence ?? "0"}</Table.Td>
+              <Table.Td>{String(session.lastSequence)}</Table.Td>
             </Table.Tr>
           ))}
         </Table.Tbody>

@@ -1,13 +1,13 @@
 /**
  * Folds the runner's events into what the session view renders. The events are the runner
- * protocol's own (`Event` from the generated schema); this is a projection for one screen, not a
- * second vocabulary, and the raw events stay available beside it.
+ * protocol's own (`Event` from protocol.proto); this is a projection for one screen, not a second
+ * vocabulary, and the raw events stay available beside it.
  */
-import type { Event } from "./client";
+import { ItemKind, TurnStatus, type Event } from "./protocol_pb";
 
 export interface Item {
   id: string;
-  kind: string;
+  kind: ItemKind;
   toolName: string;
   /** Streamed text or reasoning, or a tool call's streamed arguments. */
   text: string;
@@ -19,7 +19,7 @@ export interface Item {
 
 export interface Turn {
   id: string;
-  status: string | null;
+  status: TurnStatus | null;
   error: string;
   itemIds: string[];
 }
@@ -46,7 +46,7 @@ function item(state: SessionState, id: string): Item {
   return (
     state.items[id] ?? {
       id,
-      kind: "",
+      kind: ItemKind.UNSPECIFIED,
       toolName: "",
       text: "",
       argumentsJson: "",
@@ -70,70 +70,70 @@ function withInput(state: SessionState, id: string, update: Partial<InputState>)
 }
 
 export function reduce(previous: SessionState, event: Event): SessionState {
-  const state: SessionState = { ...previous, lastSequence: event.sequence ?? "0" };
-  if (event.harnessStarted) return { ...state, harness: "running" };
-  if (event.harnessExited) return { ...state, harness: "stopped" };
-  if (event.harnessLost) return { ...state, harness: "lost" };
-  if (event.harnessStderr) return { ...state, stderr: [...state.stderr, event.harnessStderr.text ?? ""] };
-  if (event.inputSubmitted) return withInput(state, event.inputSubmitted.inputId ?? "", { state: "submitted" });
-  if (event.inputAccepted) return withInput(state, event.inputAccepted.inputId ?? "", { state: "accepted" });
-  if (event.inputRejected)
-    return withInput(state, event.inputRejected.inputId ?? "", {
-      state: "rejected",
-      detail: event.inputRejected.reason ?? "",
-    });
-  if (event.inputUncertain) return withInput(state, event.inputUncertain.inputId ?? "", { state: "uncertain" });
-  if (event.turnStarted)
-    return {
-      ...state,
-      turns: [...state.turns, { id: event.turnStarted.turnId ?? "", status: null, error: "", itemIds: [] }],
-    };
-  if (event.turnCompleted) {
-    const { turnId, status, error } = event.turnCompleted;
-    return {
-      ...state,
-      turns: state.turns.map((turn) =>
-        turn.id === turnId ? { ...turn, status: status ?? null, error: error ?? "" } : turn
-      ),
-    };
+  const state: SessionState = { ...previous, lastSequence: String(event.sequence) };
+  const observation = event.observation;
+  switch (observation.case) {
+    case "harnessStarted":
+      return { ...state, harness: "running" };
+    case "harnessExited":
+      return { ...state, harness: "stopped" };
+    case "harnessLost":
+      return { ...state, harness: "lost" };
+    case "harnessStderr":
+      return { ...state, stderr: [...state.stderr, observation.value.text] };
+    case "inputSubmitted":
+      return withInput(state, observation.value.inputId, { state: "submitted" });
+    case "inputAccepted":
+      return withInput(state, observation.value.inputId, { state: "accepted" });
+    case "inputRejected":
+      return withInput(state, observation.value.inputId, { state: "rejected", detail: observation.value.reason });
+    case "inputUncertain":
+      return withInput(state, observation.value.inputId, { state: "uncertain" });
+    case "turnStarted":
+      return {
+        ...state,
+        turns: [...state.turns, { id: observation.value.turnId, status: null, error: "", itemIds: [] }],
+      };
+    case "turnCompleted": {
+      const { turnId, status, error } = observation.value;
+      return { ...state, turns: state.turns.map((turn) => (turn.id === turnId ? { ...turn, status, error } : turn)) };
+    }
+    case "itemStarted": {
+      const { itemId, kind, toolName } = observation.value;
+      const started = { ...item(state, itemId), kind, toolName };
+      const turns = state.turns.map((turn, index) =>
+        index === state.turns.length - 1 ? { ...turn, itemIds: [...turn.itemIds, started.id] } : turn
+      );
+      return { ...withItem(state, started), turns };
+    }
+    case "textDelta": {
+      const current = item(state, observation.value.itemId);
+      return withItem(state, { ...current, text: current.text + observation.value.text });
+    }
+    case "toolArgumentsDelta": {
+      const current = item(state, observation.value.itemId);
+      return withItem(state, { ...current, argumentsJson: current.argumentsJson + observation.value.partialJson });
+    }
+    case "toolArguments": {
+      const current = item(state, observation.value.itemId);
+      return withItem(state, { ...current, argumentsJson: observation.value.argumentsJson });
+    }
+    case "toolOutputDelta": {
+      const current = item(state, observation.value.itemId);
+      return withItem(state, { ...current, output: current.output + observation.value.text });
+    }
+    case "itemCompleted": {
+      const { itemId, outcome } = observation.value;
+      const current = item(state, itemId);
+      return withItem(state, {
+        ...current,
+        completed: true,
+        text: outcome.case === "text" ? outcome.value : current.text,
+        output: outcome.case === "tool" ? outcome.value.output : current.output,
+        succeeded: outcome.case === "tool" ? outcome.value.succeeded : current.succeeded,
+      });
+    }
+    default:
+      return state;
   }
-  if (event.itemStarted) {
-    const { itemId, kind, toolName } = event.itemStarted;
-    const started = { ...item(state, itemId ?? ""), kind: kind ?? "", toolName: toolName ?? "" };
-    const turns = state.turns.map((turn, index) =>
-      index === state.turns.length - 1 ? { ...turn, itemIds: [...turn.itemIds, started.id] } : turn
-    );
-    return { ...withItem(state, started), turns };
-  }
-  if (event.textDelta) {
-    const current = item(state, event.textDelta.itemId ?? "");
-    return withItem(state, { ...current, text: current.text + (event.textDelta.text ?? "") });
-  }
-  if (event.toolArgumentsDelta) {
-    const current = item(state, event.toolArgumentsDelta.itemId ?? "");
-    return withItem(state, {
-      ...current,
-      argumentsJson: current.argumentsJson + (event.toolArgumentsDelta.partialJson ?? ""),
-    });
-  }
-  if (event.toolArguments) {
-    const current = item(state, event.toolArguments.itemId ?? "");
-    return withItem(state, { ...current, argumentsJson: event.toolArguments.argumentsJson ?? "" });
-  }
-  if (event.toolOutputDelta) {
-    const current = item(state, event.toolOutputDelta.itemId ?? "");
-    return withItem(state, { ...current, output: current.output + (event.toolOutputDelta.text ?? "") });
-  }
-  if (event.itemCompleted) {
-    const { itemId, text, tool } = event.itemCompleted;
-    const current = item(state, itemId ?? "");
-    return withItem(state, {
-      ...current,
-      completed: true,
-      text: text ?? current.text,
-      output: tool?.output ?? current.output,
-      succeeded: tool ? (tool.succeeded ?? false) : current.succeeded,
-    });
-  }
-  return state;
 }

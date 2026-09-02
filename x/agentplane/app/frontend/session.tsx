@@ -1,17 +1,20 @@
 import { Badge, Button, Code, Group, Paper, ScrollArea, Stack, Switch, Text, Textarea, Title } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
 
-import { displayableError, eventsUrl, interruptSession, sendInput, shutdownSession, type Event } from "./client";
-import { EMPTY, reduce, type Item, type SessionState } from "./events";
+import { fromJson, toJsonString, type JsonValue } from "@bufbuild/protobuf";
 
-const KIND_LABELS: Record<string, string> = {
-  ITEM_KIND_ASSISTANT_TEXT: "assistant",
-  ITEM_KIND_REASONING: "reasoning",
-  ITEM_KIND_TOOL_CALL: "tool",
+import { displayableError, eventsUrl, interruptSession, sendInput, shutdownSession } from "./client";
+import { EMPTY, reduce, type Item, type SessionState } from "./events";
+import { Direction, EventSchema, ItemKind, TurnStatus, type Event } from "./protocol_pb";
+
+const KIND_LABELS: Partial<Record<ItemKind, string>> = {
+  [ItemKind.ASSISTANT_TEXT]: "assistant",
+  [ItemKind.REASONING]: "reasoning",
+  [ItemKind.TOOL_CALL]: "tool",
 };
 
 function ItemView({ item }: { item: Item }): JSX.Element {
-  const label = KIND_LABELS[item.kind] ?? item.kind;
+  const label = KIND_LABELS[item.kind] ?? ItemKind[item.kind];
   return (
     <Paper withBorder p="sm">
       <Group gap="xs">
@@ -50,7 +53,7 @@ export function SessionView({
     const source = new EventSource(eventsUrl(sandbox, sessionId));
     source.addEventListener("attached", () => setStatus("attached"));
     source.addEventListener("event", (message: MessageEvent<string>) => {
-      const event = JSON.parse(message.data) as Event;
+      const event = fromJson(EventSchema, JSON.parse(message.data) as JsonValue);
       setRaw((events) => [...events, event]);
       setState((current) => reduce(current, event));
     });
@@ -113,10 +116,10 @@ export function SessionView({
         <Stack>
           {showRaw
             ? raw.map((event) => (
-                <Code key={event.sequence} block>
-                  {event.native
-                    ? `${event.sequence} ${event.native.direction} ${event.native.line}`
-                    : `${event.sequence} ${JSON.stringify(event)}`}
+                <Code key={String(event.sequence)} block>
+                  {event.observation.case === "native"
+                    ? `${event.sequence} ${Direction[event.observation.value.direction]} ${event.observation.value.line}`
+                    : `${event.sequence} ${toJsonString(EventSchema, event)}`}
                 </Code>
               ))
             : state.turns.map((turn) => (
@@ -125,8 +128,10 @@ export function SessionView({
                     <Text size="sm" c="dimmed">
                       turn {turn.id}
                     </Text>
-                    {turn.status && (
-                      <Badge color={turn.status === "TURN_STATUS_COMPLETED" ? "green" : "orange"}>{turn.status}</Badge>
+                    {turn.status !== null && (
+                      <Badge color={turn.status === TurnStatus.COMPLETED ? "green" : "orange"}>
+                        {TurnStatus[turn.status]}
+                      </Badge>
                     )}
                     {turn.error && <Text c="red">{turn.error}</Text>}
                   </Group>

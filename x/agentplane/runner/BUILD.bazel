@@ -9,6 +9,9 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//visibility:public"])
 
+# The frontend generates its TypeScript from the same file (//x/agentplane/app/frontend:protocol_pb).
+exports_files(["protocol.proto"])
+
 # gazelle:resolve py x.agentplane.runner.protocol_pb2 //x/agentplane/runner:protocol_pb2
 # gazelle:resolve py x.agentplane.runner.protocol_pb2_grpc //x/agentplane/runner:protocol_pb2_grpc
 

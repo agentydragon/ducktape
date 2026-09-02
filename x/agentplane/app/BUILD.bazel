@@ -152,31 +152,6 @@ py_library(
         ":api",
         ":bridge",
         ":inventory",
-        ":proto_schema",
-        "//x/agentplane/runner:protocol_pb2",
-        "@pypi//protobuf",
-    ],
-)
-
-py_library(
-    name = "proto_schema",
-    srcs = ["proto_schema.py"],
-    deps = ["@pypi//protobuf"],
-)
-
-py_test(
-    name = "test_proto_schema",
-    srcs = ["test_proto_schema.py"],
-    deps = [
-        ":conftest",
-        ":export_schema",
-        ":proto_schema",
-        "//:conftest",
-        "//x/agentplane/runner:protocol_pb2",
-        "@pypi//jsonschema",
-        "@pypi//protobuf",
-        "@pypi//pytest_bazel",
-        "@pypi//referencing",
     ],
 )
 

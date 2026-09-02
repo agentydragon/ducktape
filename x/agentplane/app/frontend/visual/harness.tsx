@@ -7,11 +7,27 @@
 import "./network";
 import "@mantine/core/styles.css";
 
+import { create, toJson, toJsonString, type MessageInitShape } from "@bufbuild/protobuf";
 import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";
 
 import App from "../app";
-import type { Attached, Event, SandboxView, SessionSpec, SessionSummary } from "../client";
+import type { SandboxView } from "../client";
+import {
+  AttachedSchema,
+  Direction,
+  EventSchema,
+  HarnessState,
+  ItemKind,
+  Provider,
+  SessionSpecSchema,
+  SessionSummarySchema,
+  TurnStatus,
+  type Attached,
+  type Event,
+  type SessionSpec,
+  type SessionSummary,
+} from "../protocol_pb";
 import { routes } from "./network";
 
 // visual-test-lib freezes the wall clock before this bundle runs, so relative ages stay put.
@@ -89,47 +105,68 @@ const SANDBOXES: SandboxView[] = [
   },
 ];
 
-const SPEC: SessionSpec = {
-  provider: "PROVIDER_CLAUDE",
+const SPEC: SessionSpec = create(SessionSpecSchema, {
+  provider: Provider.CLAUDE,
   cwd: "/state/work",
   model: "harness-model-cheap",
   reasoningEffort: "low",
-};
+});
 
 const SESSIONS: SessionSummary[] = [
-  { sessionId: "s-1", spec: SPEC, lastSequence: "14", harness: "HARNESS_STATE_RUNNING", activeTurnId: "" },
-  { sessionId: "s-0", spec: SPEC, lastSequence: "31", harness: "HARNESS_STATE_STOPPED", activeTurnId: "" },
+  create(SessionSummarySchema, { sessionId: "s-1", spec: SPEC, lastSequence: 14n, harness: HarnessState.RUNNING }),
+  create(SessionSummarySchema, { sessionId: "s-0", spec: SPEC, lastSequence: 31n, harness: HarnessState.STOPPED }),
 ];
 
-const ATTACHED: Attached = { sessionId: "s-1", spec: SPEC, lastSequence: "14", harness: "HARNESS_STATE_RUNNING" };
+const ATTACHED: Attached = create(AttachedSchema, {
+  sessionId: "s-1",
+  spec: SPEC,
+  lastSequence: 14n,
+  harness: HarnessState.RUNNING,
+});
+
+function event(sequence: number, observation: MessageInitShape<typeof EventSchema>["observation"]): Event {
+  return create(EventSchema, { sequence: BigInt(sequence), observation });
+}
 
 const EVENTS: Event[] = [
-  { sequence: "1", harnessStarted: { resumed: false, pid: 7 } },
-  { sequence: "2", inputSubmitted: { inputId: "i1" } },
-  { sequence: "3", turnStarted: { turnId: "t1" } },
-  { sequence: "4", inputAccepted: { inputId: "i1", turnId: "t1" } },
-  { sequence: "5", itemStarted: { itemId: "r#0", kind: "ITEM_KIND_REASONING" } },
-  { sequence: "6", textDelta: { itemId: "r#0", text: "The user wants the files listed." } },
-  { sequence: "7", itemCompleted: { itemId: "r#0", text: "The user wants the files listed." } },
-  { sequence: "8", itemStarted: { itemId: "toolu_1", kind: "ITEM_KIND_TOOL_CALL", toolName: "Bash" } },
-  { sequence: "9", toolArguments: { itemId: "toolu_1", argumentsJson: '{"command": "ls"}' } },
-  { sequence: "10", native: { direction: "DIRECTION_FROM_HARNESS", line: '{"type":"tool_use","name":"Bash"}' } },
-  { sequence: "11", itemCompleted: { itemId: "toolu_1", tool: { output: "README.md\nsrc\n", succeeded: true } } },
-  { sequence: "12", itemStarted: { itemId: "m#0", kind: "ITEM_KIND_ASSISTANT_TEXT" } },
-  { sequence: "13", textDelta: { itemId: "m#0", text: "Two entries: README.md and src." } },
-  { sequence: "14", itemCompleted: { itemId: "m#0", text: "Two entries: README.md and src." } },
-  { sequence: "15", turnCompleted: { turnId: "t1", status: "TURN_STATUS_COMPLETED" } },
-  { sequence: "16", inputSubmitted: { inputId: "i2" } },
-  { sequence: "17", turnStarted: { turnId: "t2" } },
-  { sequence: "18", inputAccepted: { inputId: "i2", turnId: "t2" } },
-  { sequence: "19", itemStarted: { itemId: "m#1", kind: "ITEM_KIND_ASSISTANT_TEXT" } },
-  { sequence: "20", textDelta: { itemId: "m#1", text: "Reading src now" } },
+  event(1, { case: "harnessStarted", value: { resumed: false, pid: 7 } }),
+  event(2, { case: "inputSubmitted", value: { inputId: "i1" } }),
+  event(3, { case: "turnStarted", value: { turnId: "t1" } }),
+  event(4, { case: "inputAccepted", value: { inputId: "i1", turnId: "t1" } }),
+  event(5, { case: "itemStarted", value: { itemId: "r#0", kind: ItemKind.REASONING } }),
+  event(6, { case: "textDelta", value: { itemId: "r#0", text: "The user wants the files listed." } }),
+  event(7, {
+    case: "itemCompleted",
+    value: { itemId: "r#0", outcome: { case: "text", value: "The user wants the files listed." } },
+  }),
+  event(8, { case: "itemStarted", value: { itemId: "toolu_1", kind: ItemKind.TOOL_CALL, toolName: "Bash" } }),
+  event(9, { case: "toolArguments", value: { itemId: "toolu_1", argumentsJson: '{"command": "ls"}' } }),
+  event(10, {
+    case: "native",
+    value: { direction: Direction.FROM_HARNESS, line: '{"type":"tool_use","name":"Bash"}' },
+  }),
+  event(11, {
+    case: "itemCompleted",
+    value: { itemId: "toolu_1", outcome: { case: "tool", value: { output: "README.md\nsrc\n", succeeded: true } } },
+  }),
+  event(12, { case: "itemStarted", value: { itemId: "m#0", kind: ItemKind.ASSISTANT_TEXT } }),
+  event(13, { case: "textDelta", value: { itemId: "m#0", text: "Two entries: README.md and src." } }),
+  event(14, {
+    case: "itemCompleted",
+    value: { itemId: "m#0", outcome: { case: "text", value: "Two entries: README.md and src." } },
+  }),
+  event(15, { case: "turnCompleted", value: { turnId: "t1", status: TurnStatus.COMPLETED } }),
+  event(16, { case: "inputSubmitted", value: { inputId: "i2" } }),
+  event(17, { case: "turnStarted", value: { turnId: "t2" } }),
+  event(18, { case: "inputAccepted", value: { inputId: "i2", turnId: "t2" } }),
+  event(19, { case: "itemStarted", value: { itemId: "m#1", kind: ItemKind.ASSISTANT_TEXT } }),
+  event(20, { case: "textDelta", value: { itemId: "m#1", text: "Reading src now" } }),
 ];
 
 routes.push(
   ["GET", /^\/sandboxes$/, () => SANDBOXES],
   ["GET", /^\/sandboxes\/([^/]+)$/, (match) => SANDBOXES.find((row) => row.name === match[1])],
-  ["GET", /^\/sandboxes\/([^/]+)\/sessions$/, () => SESSIONS]
+  ["GET", /^\/sandboxes\/([^/]+)\/sessions$/, () => SESSIONS.map((session) => toJson(SessionSummarySchema, session))]
 );
 
 /** One attached stream: the canned events, then silence, the way a session mid-turn looks. */
@@ -142,9 +179,11 @@ class ReplayingEventSource extends EventTarget {
     this.url = url;
     // After the view's listeners are attached, which happens right after construction.
     setTimeout(() => {
-      this.dispatchEvent(new MessageEvent("attached", { data: JSON.stringify(ATTACHED) }));
+      this.dispatchEvent(new MessageEvent("attached", { data: toJsonString(AttachedSchema, ATTACHED) }));
       for (const event of EVENTS) {
-        this.dispatchEvent(new MessageEvent("event", { data: JSON.stringify(event), lastEventId: event.sequence }));
+        this.dispatchEvent(
+          new MessageEvent("event", { data: toJsonString(EventSchema, event), lastEventId: String(event.sequence) })
+        );
       }
     }, 0);
   }

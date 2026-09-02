@@ -3,6 +3,7 @@ load("@aspect_rules_js//js:defs.bzl", "js_test")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 load("//devinfra/js:openapi.bzl", "js_openapi_schema")
+load("//devinfra/js:proto.bzl", "ts_proto_library")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
@@ -15,8 +16,16 @@ ts_config(
     src = "tsconfig.json",
 )
 
-# TypeScript types from the app's OpenAPI document, which carries the inventory's models and the
-# runner protocol's messages (published from protocol.proto by //x/agentplane/app:export_schema).
+# The runner protocol's messages, generated from protocol.proto itself: what the bridge's routes
+# carry as proto-JSON, and what the session view folds.
+ts_proto_library(
+    name = "protocol_pb",
+    proto = "//x/agentplane/runner:protocol.proto",
+    tsconfig = TSCONFIG,
+)
+
+# TypeScript types from the app's OpenAPI document: the inventory's models and routes. The bridge's
+# proto-JSON bodies are plain objects there; protocol_pb types them.
 js_openapi_schema(
     name = "schema",
     generator = "//x/agentplane/app:export_schema_bin",
@@ -27,7 +36,9 @@ ts_library(
     srcs = ["client.ts"],
     tsconfig = TSCONFIG,
     deps = [
+        ":protocol_pb",
         ":schema",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/openapi-fetch",
     ],
 )
@@ -36,7 +47,7 @@ ts_library(
     name = "events",
     srcs = ["events.ts"],
     tsconfig = TSCONFIG,
-    deps = [":client"],
+    deps = [":protocol_pb"],
 )
 
 ts_library(
@@ -44,8 +55,9 @@ ts_library(
     srcs = ["events.test.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
         ":events",
+        ":protocol_pb",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
     ],
 )
@@ -68,6 +80,8 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":protocol_pb",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -81,6 +95,8 @@ ts_library(
     deps = [
         ":client",
         ":events",
+        ":protocol_pb",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -148,6 +164,8 @@ ts_library(
     deps = [
         ":app",
         ":client",
+        ":protocol_pb",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
