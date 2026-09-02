@@ -1,4 +1,7 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//x/agentplane:__subpackages__"])
 
@@ -175,4 +178,36 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//referencing",
     ],
+)
+
+# The app image: the API, the bridge, and the bundled SPA it serves, on debian slim as user 1000.
+# Published as agentplane-app (devinfra/ci/image_targets.json) and run by the Deployment in
+# cluster/k8s/agentplane-staging.
+aspect_py_binary(
+    name = "app_image_bin",
+    main = "main.py",
+    deps = [":main"],
+)
+
+py_image_layer(
+    name = "app_layers",
+    binary = ":app_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("app_image_bin"),
+    env = py_image_env(
+        binary_name = "app_image_bin",
+        extra_env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
+    ),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [
+        ":app_layers",
+        "//third_party/debian_slim:cacerts",
+    ],
+    user = "1000:1000",
 )

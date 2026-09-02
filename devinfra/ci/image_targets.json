@@ -214,6 +214,11 @@
       "target": "//x/agentplane/runner:image",
       "test": "//x/agentplane/runner/...",
       "registry": "forgejo"
+    },
+    "agentplane-app": {
+      "target": "//x/agentplane/app:image",
+      "test": "//x/agentplane/app/...",
+      "registry": "forgejo"
     }
   }
 }
