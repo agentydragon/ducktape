@@ -109,6 +109,7 @@ def test_delete_removes_the_claim(client: TestClient, custom_objects: FakeCustom
 
 def test_healthz_answers_outside_the_schema(client: TestClient) -> None:
     assert client.get("/healthz").status_code == 204
+    assert "/healthz" not in client.get("/openapi.json").json()["paths"]
 
 
 def test_openapi_schema_names_every_operation(client: TestClient) -> None:

@@ -74,6 +74,7 @@ spec:
         - kube-apiserver
     - toEndpoints:
         - matchLabels:
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
             app.kubernetes.io/name: agentplane-runner
       toPorts:
         - ports:
