@@ -56,8 +56,8 @@ flowchart TB
 
     H["Rai decision<br/>is multi-Agent collaboration or Room semantics needed?"]:::decision
     N["Stretch<br/>multi-Agent collaboration / Room projection"]:::future
-    X["Rai decision<br/>should subscriptions or external events be first-class inputs?"]:::decision
-    Y["Stretch<br/>delivery envelopes, subscriptions, external events"]:::future
+    X["Decided<br/>approval decisions and notifications arrive as thread inputs"]:::completed
+    Y["Async approvals + notification batcher<br/>async_approvals.md"]:::future
     Z["Rai decision<br/>what explicit Haku Console integration is needed?"]:::decision
     U["Stretch<br/>Haku Console link, adapter, or enveloped message path"]:::future
     AA["Rai decision<br/>what permission and policy model is acceptable for private Haku?"]:::decision
@@ -87,7 +87,9 @@ design input; gray is conditional or stretch work.
 
 The orange nodes are deliberately limited to choices that change downstream implementation ordering:
 initial app hosting, dynamic policy/approval, stronger isolation, reliability priority, collaboration
-semantics, external-event scope, Haku Console integration mode, and private-Haku permission policy. A
+semantics, Haku Console integration mode, and private-Haku permission policy. External-event scope is
+decided: approval decisions and other notifications reach a thread as inputs
+([`async_approvals.md`](async_approvals.md)). A
 “no” choice should close or defer that branch rather than create speculative scaffolding.
 
 The `P`/`K` path is only the narrow access decision needed for a credentialed Agentplane egress
@@ -160,3 +162,5 @@ personal context.
   ADR](adr_sandbox_proxy_gateway.md).
 - Product/API layering and deferred capabilities: [`product_surface.md`](product_surface.md) and
   [`architecture.md`](architecture.md).
+- Asynchronous approvals, decision delivery, and the notification batcher:
+  [`async_approvals.md`](async_approvals.md).
