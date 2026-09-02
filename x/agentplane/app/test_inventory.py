@@ -7,6 +7,7 @@ import re
 import pytest
 import pytest_bazel
 
+from x.agentplane.app import inventory as inventory_module
 from x.agentplane.app.inventory import (
     ARCHIVED_LABEL,
     MANAGED_LABEL,
@@ -126,6 +127,18 @@ async def test_create_labels_the_claim_and_references_the_pool(
         "warmPoolRef": {"name": "agentplane-test-pool"},
         "lifecycle": {"shutdownPolicy": "Retain"},
     }
+
+
+async def test_create_draws_another_suffix_when_the_name_is_taken(
+    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    custom_objects.objects[("sandboxclaims", "box-aaaaa")] = claim("box-aaaaa")
+    monkeypatch.setattr(inventory_module, "_suffix", iter(["aaaaa", "bbbbb"]).__next__)
+
+    created = await inventory.create(NewSandbox(slug="box", provider=Provider.CLAUDE, model="m"))
+
+    assert created.name == "box-bbbbb"
+    assert ("sandboxclaims", "box-bbbbb") in custom_objects.objects
 
 
 async def test_create_names_each_sandbox_uniquely(inventory: SandboxInventory) -> None:

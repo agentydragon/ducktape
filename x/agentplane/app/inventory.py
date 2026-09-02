@@ -19,6 +19,7 @@ from typing import Annotated
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt
 
 from util.kubernetes import CustomObjectsClient
 
@@ -36,6 +37,8 @@ _MERGE_PATCH = "application/merge-patch+json"
 # Five lowercase alphanumerics, like `generateName`; the slug bound keeps the name a DNS label.
 _SUFFIX_LENGTH = 5
 _SUFFIX_ALPHABET = string.ascii_lowercase + string.digits
+# A suffix can collide with a live claim; the next attempt draws another.
+_CREATE_ATTEMPTS = 3
 _SLUG_MAX_LENGTH = 63 - 1 - _SUFFIX_LENGTH
 
 Slug = Annotated[
@@ -215,22 +218,26 @@ class SandboxInventory:
         return _view(claim, sandbox, pod)
 
     async def create(self, spec: NewSandbox) -> SandboxView:
-        suffix = "".join(secrets.choice(_SUFFIX_ALPHABET) for _ in range(_SUFFIX_LENGTH))
-        body = {
-            "apiVersion": f"{_CLAIM_API[0]}/{_CLAIM_API[1]}",
-            "kind": "SandboxClaim",
-            "metadata": {
-                "name": f"{spec.slug}-{suffix}",
-                "labels": {MANAGED_LABEL: "true", PROVIDER_LABEL: spec.provider},
-                "annotations": {MODEL_ANNOTATION: spec.model},
-            },
-            # No shutdownTime and Retain: the app owns deletion, nothing expires a sandbox behind it.
-            "spec": {"warmPoolRef": {"name": self._warm_pool}, "lifecycle": {"shutdownPolicy": "Retain"}},
-        }
-        created = await self._custom_objects.create_namespaced_custom_object(
-            *_CLAIM_API, self._namespace, _CLAIMS_PLURAL, body
-        )
-        return _view(_Claim.model_validate(created), None, None)
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(_CREATE_ATTEMPTS), retry=retry_if_exception(_is_conflict), reraise=True
+        ):
+            with attempt:
+                body = {
+                    "apiVersion": f"{_CLAIM_API[0]}/{_CLAIM_API[1]}",
+                    "kind": "SandboxClaim",
+                    "metadata": {
+                        "name": f"{spec.slug}-{_suffix()}",
+                        "labels": {MANAGED_LABEL: "true", PROVIDER_LABEL: spec.provider},
+                        "annotations": {MODEL_ANNOTATION: spec.model},
+                    },
+                    # No shutdownTime and Retain: the app owns deletion, nothing expires a sandbox behind it.
+                    "spec": {"warmPoolRef": {"name": self._warm_pool}, "lifecycle": {"shutdownPolicy": "Retain"}},
+                }
+                created = await self._custom_objects.create_namespaced_custom_object(
+                    *_CLAIM_API, self._namespace, _CLAIMS_PLURAL, body
+                )
+                return _view(_Claim.model_validate(created), None, None)
+        raise AssertionError("unreachable: AsyncRetrying either returns or reraises")
 
     async def suspend(self, name: str) -> None:
         await self._set_operating_mode(name, OperatingMode.SUSPENDED)
@@ -307,6 +314,14 @@ class SandboxInventory:
             if error.status == 404:
                 return None
             raise
+
+
+def _suffix() -> str:
+    return "".join(secrets.choice(_SUFFIX_ALPHABET) for _ in range(_SUFFIX_LENGTH))
+
+
+def _is_conflict(error: BaseException) -> bool:
+    return isinstance(error, k8s_client.ApiException) and error.status == 409
 
 
 def _view(claim: _Claim, sandbox: _Sandbox | None, pod: k8s_client.V1Pod | None) -> SandboxView:

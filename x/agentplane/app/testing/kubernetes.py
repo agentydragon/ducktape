@@ -54,6 +54,8 @@ class FakeCustomObjectsApi:
         del group, version
         assert namespace == NAMESPACE
         stored = {**body, "metadata": {**body["metadata"], "creationTimestamp": "2026-09-02T10:00:00Z"}}
+        if (plural, stored["metadata"]["name"]) in self.objects:
+            raise k8s_client.ApiException(status=409, reason="AlreadyExists")
         self.objects[(plural, stored["metadata"]["name"])] = stored
         return stored
 

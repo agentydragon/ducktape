@@ -24,6 +24,7 @@ py_library(
         "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
+        "@pypi//tenacity",
     ],
 )
 
