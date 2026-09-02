@@ -24,8 +24,9 @@ def tool_uses(frames: list[Frame]) -> list[ToolUseBlock]:
     ]
 
 
-def tool_results(frames: list[Frame]) -> list[dict[str, Any]]:
-    """The harness's structured `tool_use_result` of each tool round trip."""
+def tool_results(frames: list[Frame]) -> list[dict[str, Any] | str]:
+    """The harness's `tool_use_result` of each tool round trip: structured on success, a message on
+    failure."""
     return [
         frame.tool_use_result
         for frame in parse(frames)
@@ -55,7 +56,7 @@ def retry_notices(frames: list[Frame]) -> list[wire.SystemFrame]:
     ]
 
 
-def assert_tool_lifecycles(frames: list[Frame], expected_names: list[str]) -> list[dict[str, Any]]:
+def assert_tool_lifecycles(frames: list[Frame], expected_names: list[str]) -> list[dict[str, Any] | str]:
     assert [block.name for block in tool_uses(frames)] == expected_names
     events = [frame.event for frame in parse(frames) if isinstance(frame, wire.StreamEventFrame)]
     assert sum(isinstance(event, wire.ContentBlockStart) for event in events) >= len(expected_names)

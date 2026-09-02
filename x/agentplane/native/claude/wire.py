@@ -24,6 +24,8 @@ class CommandState(enum.StrEnum):
     QUEUED = "queued"
     STARTED = "started"
     COMPLETED = "completed"
+    # A queued input dropped by an interrupt or a failed turn.
+    CANCELLED = "cancelled"
 
 
 # Control requests the harness sends and expects a control response to.
@@ -72,7 +74,9 @@ class CommandLifecycleFrame(BaseModel):
 
     type: Literal["command_lifecycle"]
     command_uuid: str
-    state: CommandState
+    # A state outside CommandState stays a string: the harness is the writer and may add states.
+    # Left-to-right, since smart mode would take the plain string for known states too.
+    state: CommandState | str = Field(union_mode="left_to_right")
     uuid: str
     session_id: str
 
@@ -212,7 +216,8 @@ class UserFrame(BaseModel):
     uuid: str
     session_id: str | None = None
     is_replay: bool = Field(default=False, alias="isReplay")
-    tool_use_result: dict[str, Any] | None = None
+    # Structured for a successful tool, a plain message for a failed one.
+    tool_use_result: dict[str, Any] | str | None = None
 
 
 class ResultFrame(BaseModel):

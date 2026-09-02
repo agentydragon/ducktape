@@ -67,6 +67,11 @@ def test_command_execution_fields_arrive_in_camel_case() -> None:
     item = frame.params.item
     assert isinstance(item, wire.CommandExecutionItem)
     assert item.status is wire.CommandExecutionStatus.FAILED
+    turn = wire.parse_frame(
+        {"method": "turn/completed", "params": {"threadId": "t", "turn": {"id": "u", "status": "paused"}}}
+    )
+    assert isinstance(turn, wire.TurnCompleted)
+    assert turn.params.turn.status == "paused"
     assert item.exit_code == 23
     assert item.aggregated_output == "hi"
 

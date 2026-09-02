@@ -40,6 +40,17 @@ def test_unknown_kinds_decode_to_named_variants_at_every_level() -> None:
     assert isinstance(assistant, wire.AssistantFrame)
     assert isinstance(assistant.message.content[0], UnknownBlock)
 
+    lifecycle = wire.parse_frame(
+        {"type": "command_lifecycle", "command_uuid": "c", "state": "someday", "uuid": "u", "session_id": "s"}
+    )
+    assert isinstance(lifecycle, wire.CommandLifecycleFrame)
+    assert lifecycle.state == "someday"
+    cancelled = wire.parse_frame(
+        {"type": "command_lifecycle", "command_uuid": "c", "state": "cancelled", "uuid": "u", "session_id": "s"}
+    )
+    assert isinstance(cancelled, wire.CommandLifecycleFrame)
+    assert cancelled.state is wire.CommandState.CANCELLED
+
 
 def test_tool_result_text_joins_text_blocks_and_skips_the_rest() -> None:
     frame = wire.parse_frame(
@@ -65,10 +76,27 @@ def test_tool_result_text_joins_text_blocks_and_skips_the_rest() -> None:
     )
     assert isinstance(frame, wire.UserFrame)
     assert not frame.is_replay
+    assert frame.tool_use_result is None
     (block,) = blocks_of(frame.message.content)
     assert isinstance(block, ToolResultBlock)
     assert block.text == "ab"
     assert block.is_error
+
+
+def test_a_failed_tool_result_is_a_message_not_a_record() -> None:
+    frame = wire.parse_frame(
+        {
+            "type": "user",
+            "uuid": "u",
+            "message": {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "t", "content": "x", "is_error": True}],
+            },
+            "tool_use_result": "Error: Exit code 23\nfailing",
+        }
+    )
+    assert isinstance(frame, wire.UserFrame)
+    assert frame.tool_use_result == "Error: Exit code 23\nfailing"
 
 
 def test_streamed_tool_use_carries_its_own_id() -> None:

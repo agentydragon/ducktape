@@ -12,7 +12,7 @@ from __future__ import annotations
 import enum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Discriminator, Tag, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag, TypeAdapter
 from pydantic.alias_generators import to_camel
 
 from x.agentplane.native.tagged import UNKNOWN, tag_or_unknown
@@ -72,7 +72,9 @@ class TurnError(Wire):
 
 class Turn(Wire):
     id: str
-    status: TurnStatus
+    # A status outside TurnStatus stays a string: the harness is the writer and may add statuses.
+    # Left-to-right, since smart mode would take the plain string for known statuses too.
+    status: TurnStatus | str = Field(union_mode="left_to_right")
     error: TurnError | None = None
 
 
@@ -131,7 +133,7 @@ class CommandExecutionItem(Wire):
     id: str
     command: str
     cwd: str
-    status: CommandExecutionStatus
+    status: CommandExecutionStatus | str = Field(union_mode="left_to_right")
     process_id: str | None = None
     aggregated_output: str | None = None
     exit_code: int | None = None

@@ -28,7 +28,7 @@ from x.agentplane.runner.config import CodexLaunch
 if TYPE_CHECKING:
     from x.agentplane.runner.session import Frame, Session
 
-_TURN_STATUSES = {
+_TURN_STATUSES: dict[wire.TurnStatus | str, pb.TurnStatus.ValueType] = {
     wire.TurnStatus.COMPLETED: pb.TURN_STATUS_COMPLETED,
     wire.TurnStatus.INTERRUPTED: pb.TURN_STATUS_INTERRUPTED,
     wire.TurnStatus.FAILED: pb.TURN_STATUS_FAILED,
@@ -118,10 +118,13 @@ class CodexAdapter(HarnessAdapter):
                     self.session.emit(pb.TurnStarted(turn_id=params.turn.id))
             case wire.TurnCompleted(params=params):
                 turn = params.turn
-                if turn.status not in _TURN_STATUSES:
-                    raise ValueError(f"turn/completed with {turn.status=}")
-                error = turn.error.message if turn.error is not None else ""
-                self.session.emit(pb.TurnCompleted(turn_id=turn.id, status=_TURN_STATUSES[turn.status], error=error))
+                status = _TURN_STATUSES.get(turn.status)
+                if status is None:
+                    # A terminal status these models do not know cannot be reported as success.
+                    status, error = pb.TURN_STATUS_FAILED, f"the turn ended with an unrecognized status {turn.status!r}"
+                else:
+                    error = turn.error.message if turn.error is not None else ""
+                self.session.emit(pb.TurnCompleted(turn_id=turn.id, status=status, error=error))
             case wire.ItemStarted(params=params):
                 self._item_started(params.item)
             case wire.ItemCompleted(params=params):

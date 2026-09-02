@@ -246,6 +246,8 @@ class Session:
                 self._translating = event.sequence
                 try:
                     await adapter.on_frame(frame)
+                except Exception:  # a frame the adapter cannot translate must not stop the reader
+                    logger.exception("session %s: frame %d not translated", self.session_id, event.sequence)
                 finally:
                     self._translating = 0
         finally:
