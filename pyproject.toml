@@ -269,6 +269,12 @@ dependencies = [
     "PyHamcrest>=2.1",
     "mypy==1.19.1",
 
+    # Protobuf and gRPC code generation for //x/agentplane/runner: grpcio-tools bundles protoc
+    # and the gRPC Python plugin; mypy-protobuf adds the .pyi stubs mypy reads.
+    "grpcio>=1.83.0",
+    "grpcio-tools>=1.83.0",
+    "mypy-protobuf>=3.6",
+
     # Type stubs for mypy
     "types-PyYAML",
     "types-requests",
@@ -283,6 +289,7 @@ dependencies = [
     "types-jsonschema",
     "types-unidiff",
     "types-protobuf",
+    "types-grpcio",
     "asyncpg-stubs",
     "pandas-stubs",
     "sqlalchemy[mypy]>=2.0.32",
