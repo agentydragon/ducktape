@@ -9,8 +9,9 @@ import grpc
 
 from x.agentplane.runner import protocol_pb2 as pb, protocol_pb2_grpc
 
-# gazelle:include_dep @pypi//protobuf  # the stub chain of protocol_pb2's .pyi
-# gazelle:include_dep @pypi//grpcio  # the stub chain of protocol_pb2_grpc's .pyi
+# The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
+# gazelle:include_dep @pypi//protobuf
+# gazelle:include_dep @pypi//grpcio
 
 
 class RunnerError(Exception):

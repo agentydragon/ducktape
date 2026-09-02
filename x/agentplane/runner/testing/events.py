@@ -6,7 +6,8 @@ from collections.abc import Callable, Sequence
 
 from x.agentplane.runner import protocol_pb2 as pb
 
-# gazelle:include_dep @pypi//protobuf  # the stub chain of protocol_pb2's .pyi
+# The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
+# gazelle:include_dep @pypi//protobuf
 
 
 def kind(event: pb.Event) -> str:

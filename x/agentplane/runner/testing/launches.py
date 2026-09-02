@@ -12,7 +12,8 @@ from x.agentplane.harness_tests.scripted_upstream import ScriptedUpstream
 from x.agentplane.runner import protocol_pb2 as pb
 from x.agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig
 
-# gazelle:include_dep @pypi//protobuf  # the stub chain of protocol_pb2's .pyi
+# The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
+# gazelle:include_dep @pypi//protobuf
 
 PROVIDERS = {"claude": pb.PROVIDER_CLAUDE, "codex": pb.PROVIDER_CODEX}
 CLAUDE_BINARY = "claude_code_cli_linux_x64/claude"

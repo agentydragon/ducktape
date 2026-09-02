@@ -16,8 +16,9 @@ from x.agentplane.runner.config import RunnerConfig
 from x.agentplane.runner.session import Attachment, Session
 from x.agentplane.runner.store import SessionRecord, SessionStore, validate_session_id
 
-# gazelle:include_dep @pypi//protobuf  # the stub chain of protocol_pb2's .pyi
-# gazelle:include_dep @pypi//grpcio  # the stub chain of protocol_pb2_grpc's .pyi
+# The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
+# gazelle:include_dep @pypi//protobuf
+# gazelle:include_dep @pypi//grpcio
 
 logger = logging.getLogger(__name__)
 

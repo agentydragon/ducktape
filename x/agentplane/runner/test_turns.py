@@ -11,7 +11,8 @@ from x.agentplane.runner.client import RunnerClient
 from x.agentplane.runner.testing import events
 from x.agentplane.runner.testing.scripted_model import Reasoning, ScriptedModel, ShellCall, Text
 
-# gazelle:include_dep @pypi//protobuf  # the stub chain of protocol_pb2's .pyi
+# The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
+# gazelle:include_dep @pypi//protobuf
 
 WAIT_COMMAND = 'sh -c \'printf "wait_started\\n"; sleep 3; printf "wait_finished\\n"\''
 
