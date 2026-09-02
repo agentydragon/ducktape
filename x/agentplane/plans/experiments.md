@@ -158,11 +158,6 @@ Semantic expectations belong in the scripted tests.
 
 ## Deferred experiments
 
-One capture-environment cleanup remains explicit: find a supported RBE Claude launcher/toolchain that
-runs the pinned CLI without the current Nix ELF-loader workaround in
-[`../harness_tests/claude/harness.py`](../harness_tests/claude/harness.py). This is
-execution-environment cleanup, not a reason to alter the driver or the scripted assertions.
-
 These remain outside the capture and adapter slice:
 
 - multiple pending prompts and durable dequeue policy;

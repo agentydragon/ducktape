@@ -50,7 +50,6 @@ class ClaudeAdapter(HarnessAdapter):
     def command(self) -> list[str]:
         resume_id = self.session.record.native_session_id
         return [
-            *self.launch.command_prefix,
             *scenarios.command(
                 str(self.launch.binary),
                 model=self.session.record.model,
@@ -58,7 +57,7 @@ class ClaudeAdapter(HarnessAdapter):
                 session_id=None if resume_id else self._native_session_id,
                 replay_user_messages=True,
                 effort=self.session.record.reasoning_effort or None,
-            ),
+            )
         ]
 
     def environment(self) -> Mapping[str, str]:

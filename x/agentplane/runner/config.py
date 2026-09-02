@@ -13,8 +13,6 @@ class ClaudeLaunch:
     # Anthropic Messages endpoint the harness talks to, without a path.
     base_url: str
     auth_token: str
-    # Prepended to the command; the Nix ELF loader under Bazel tests, empty in the runner image.
-    command_prefix: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

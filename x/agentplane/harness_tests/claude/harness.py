@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import struct
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -26,7 +24,8 @@ class ClaudeHarness:
     base_environment: dict[str, str]
 
     def start(self, upstream: ScriptedUpstream, *, resume_id: str | None = None) -> NativeProcess:
-        command = [dynamic_loader(), *scenarios.command(self.binary, model=MODEL, resume_id=resume_id)]
+        # Launched as it ships: the RBE worker's glibc userland is the supported test environment.
+        command = scenarios.command(self.binary, model=MODEL, resume_id=resume_id)
         environment = {
             **self.base_environment,
             **scenarios.environment(endpoint=upstream.origin, token="test-key", config_dir=str(self.config)),
@@ -34,24 +33,6 @@ class ClaudeHarness:
         process = NativeProcess(self.logs, command, cwd=self.workspace, environment=environment)
         process.frame_handler = _allow_permission
         return process
-
-
-def dynamic_loader() -> str:
-    # TODO: run Claude in RBE without this Nix ELF-loader workaround.
-    data = Path(sys.executable).resolve().read_bytes()
-    if data[:4] != b"\x7fELF":
-        raise RuntimeError("Bazel Python is not an ELF executable")
-    program_offset = struct.unpack_from("<Q", data, 32)[0]
-    program_size = struct.unpack_from("<H", data, 54)[0]
-    program_count = struct.unpack_from("<H", data, 56)[0]
-    for index in range(program_count):
-        offset = program_offset + index * program_size
-        if struct.unpack_from("<I", data, offset)[0] != 3:
-            continue
-        interpreter_offset = struct.unpack_from("<Q", data, offset + 8)[0]
-        interpreter_size = struct.unpack_from("<Q", data, offset + 32)[0]
-        return data[interpreter_offset : interpreter_offset + interpreter_size].rstrip(b"\0").decode()
-    raise RuntimeError("Bazel Python has no ELF interpreter")
 
 
 def _allow_permission(frame: dict[str, Any]) -> wire.ControlResponse | None:

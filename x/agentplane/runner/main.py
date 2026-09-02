@@ -30,9 +30,6 @@ def main(
     listen: Annotated[str, typer.Option(help="Bind address; port 0 picks a free one.")] = "127.0.0.1:0",
     claude_binary: Annotated[Path | None, typer.Option(help="Claude Code CLI; omit to refuse Claude sessions.")] = None,
     anthropic_base_url: Annotated[str | None, typer.Option(help="Anthropic Messages endpoint for Claude.")] = None,
-    claude_command_prefix: Annotated[
-        list[str] | None, typer.Option(help="Prepended to the Claude command, e.g. an ELF loader.")
-    ] = None,
     codex_binary: Annotated[Path | None, typer.Option(help="Codex CLI; omit to refuse Codex sessions.")] = None,
     openai_base_url: Annotated[
         str | None, typer.Option(help="OpenAI Responses base URL, including /v1, for Codex.")
@@ -44,10 +41,7 @@ def main(
         if anthropic_base_url is None:
             raise typer.BadParameter("--anthropic-base-url is required with --claude-binary")
         claude = ClaudeLaunch(
-            binary=claude_binary,
-            base_url=anthropic_base_url,
-            auth_token=os.environ["ANTHROPIC_AUTH_TOKEN"],
-            command_prefix=tuple(claude_command_prefix or ()),
+            binary=claude_binary, base_url=anthropic_base_url, auth_token=os.environ["ANTHROPIC_AUTH_TOKEN"]
         )
     codex = None
     if codex_binary is not None:

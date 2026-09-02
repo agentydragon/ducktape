@@ -52,12 +52,7 @@ def config(provider: str, upstream: ScriptedUpstream, *, state_dir: Path, home: 
 
 
 def claude_launch(upstream: ScriptedUpstream) -> ClaudeLaunch:
-    return ClaudeLaunch(
-        binary=get_required_path(CLAUDE_BINARY),
-        base_url=upstream.origin,
-        auth_token=TOKEN,
-        command_prefix=(claude_harness.dynamic_loader(),),
-    )
+    return ClaudeLaunch(binary=get_required_path(CLAUDE_BINARY), base_url=upstream.origin, auth_token=TOKEN)
 
 
 def codex_launch(upstream: ScriptedUpstream) -> CodexLaunch:
@@ -70,8 +65,6 @@ def runner_command(provider: str, upstream: ScriptedUpstream, *, state_dir: Path
     if provider == "claude":
         launch = claude_launch(upstream)
         command += ["--claude-binary", str(launch.binary), "--anthropic-base-url", launch.base_url]
-        for prefix in launch.command_prefix:
-            command += ["--claude-command-prefix", prefix]
     else:
         codex = codex_launch(upstream)
         command += ["--codex-binary", str(codex.binary), "--openai-base-url", codex.base_url]

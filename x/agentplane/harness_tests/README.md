@@ -9,6 +9,11 @@ effects. No model, no credentials, no recorded fixtures.
 bbr test //x/agentplane/harness_tests/...
 ```
 
+The supported test environment is the RBE worker, whose Ubuntu userland runs the pinned binaries
+as they ship; a NixOS host running Bazel locally reaches the same result through nix-ld. Running
+the tests outside Bazel with a Nix-built Python is not supported: the binaries find no
+`/lib64` loader there.
+
 ## Pieces
 
 - `scripted_upstream.py`: a loopback model endpoint the test drives one request at a time.
