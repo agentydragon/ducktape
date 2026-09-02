@@ -27,10 +27,13 @@ later.
   ([`../runner/`](../runner/), [`../runner/SPEC.md`](../runner/SPEC.md)) with a durable
   per-session log, cursor reattach, idempotent inputs, and restart recovery, pinned by one set of
   interaction scripts run against both binaries; typed wire models for both harness vocabularies
-  and the `py_grpc_library` macro that generates the protocol stubs.
-- **Next:** the runner in an Agent Sandbox and the first integration app,
-  [`runner_sandbox_and_app.md`](runner_sandbox_and_app.md). Its packages are the ready-now nodes
-  below; four of them can start today in parallel.
+  and the `py_grpc_library` macro that generates the protocol stubs; the runner image with both
+  harnesses, the runner's Pod contract (`ListSessions`, the SIGTERM ladder), the
+  `agentplane-staging` namespace with its `SandboxTemplate` on the cheap-experiments key and the
+  agent's standing access, and the app's sandbox inventory with archive.
+- **Next:** the rest of the first integration app,
+  [`runner_sandbox_and_app.md`](runner_sandbox_and_app.md): the bridge and UI are in review, the
+  deployment and the first real turn on staging follow.
 - **Access-control scope is intentionally deferred:** the current Ducktape work can use its existing
   broad internet boundary and scoped GitHub credential for `agentydragon-agent`; that convenience is
   not a policy model for the private, high-context Haku agent.
@@ -51,18 +54,18 @@ flowchart TB
     B["Runner protocol + both adapters<br/>durable log, reattach, restart recovery"]:::completed
 
     subgraph pod["Runner in a Sandbox"]
-        I1["I1 Runner image<br/>both harnesses, Docker smoke test"]:::ready
-        I2["I2 Runner pod contract<br/>Pod listen, env config, ListSessions, SIGTERM ladder"]:::ready
-        I3["I3 Staging namespace<br/>sandbox template, PVC, cheap-experiments key,<br/>standing agent access"]:::ready
-        I4["I4 First real turn + suspend/resume continuity<br/>manual milestone"]:::next
+        I1["I1 Runner image<br/>both harnesses, Docker smoke test"]:::completed
+        I2["I2 Runner pod contract<br/>Pod listen, env config, ListSessions, SIGTERM ladder"]:::completed
+        I3["I3 Staging namespace<br/>sandbox template, PVC, cheap-experiments key,<br/>standing agent access"]:::completed
+        I4["I4 First real turn + suspend/resume continuity<br/>manual milestone"]:::ready
     end
 
     subgraph app["Integration app v0"]
-        C1["C1 Sandbox inventory<br/>list, create, suspend, resume, delete"]:::ready
-        C2["C2 Runner bridge<br/>REST + SSE over Attach, raw frames"]:::next
-        C3["C3 UI<br/>sandboxes, session stream, raw view, input, interrupt"]:::next
-        C4["C4 App deployment into staging<br/>RBAC, Authentik route, agent-reachable API"]:::next
-        C5["C5 Archive<br/>out of the active view, history kept"]:::next
+        C1["C1 Sandbox inventory<br/>list, create, suspend, resume, delete"]:::completed
+        C2["C2 Runner bridge<br/>REST + SSE over Attach, fan-out to every tab"]:::ready
+        C3["C3 UI<br/>sandboxes, session stream, raw view, input, interrupt"]:::ready
+        C4["C4 App deployment into staging<br/>RBAC, Authentik route, agent-reachable API"]:::ready
+        C5["C5 Archive<br/>out of the active view, history kept"]:::completed
     end
 
     F0["First functioning Agentplane<br/>both providers in sandboxes, driven and replayed from the app"]:::milestone
@@ -147,12 +150,10 @@ parallel; light blue is next work blocked only on a node in this slice; purple i
 orange diamonds are unresolved decisions requiring Rai's product or design input; gray is
 conditional or stretch work.
 
-Ready now, with no edge between them: **I1**, **I2**, **I3**, **C1**. C2 needs only I2's
-`ListSessions`, and its tests run against a local runner with the scripted model, so it can start
-as soon as that RPC's shape is agreed. C3 and C4 wait on C1 and C2 only for their API schema and
-image; their manifests and page skeletons can be drafted alongside. T1 needs only C2, since the
-bridge already reads the full session log; it is not required for F0, but nothing stops it
-starting alongside C3 and C4.
+In flight, with no edge between them: **C2** and **C3** are in review as stacked PRs, **C4**
+is drafted on top of them, and **I4** can run on staging as soon as the runner image is published
+there. T1 needs only C2, since the bridge already reads the full session log; it is not required
+for F0, but nothing stops it starting alongside C4.
 
 The orange nodes are deliberately limited to choices that change downstream implementation
 ordering. `D` is assumed answered as "separate deployment" for this slice, since the integration
@@ -263,9 +264,10 @@ personal context.
   approval framework ahead of the first test or feature that cannot pass without it. Trajectory
   persistence (T1) is that feature for the database: it enters with T1, not before.
 - Do not enable real upstream credentials until the secure-egress and credentialed-readiness gates pass.
-- One runner per sandbox and one attachment per session are acceptable for the first functioning
-  product. Multi-Agent rooms, subscriptions, external events, advanced retention, and provider
-  migration are not hidden prerequisites.
+- One runner per sandbox and one runner attachment per session are acceptable for the first
+  functioning product; the app fans that attachment out to every browser tab on the session.
+  Multi-Agent rooms, subscriptions, external events, advanced retention, and provider migration
+  are not hidden prerequisites.
 
 ## Detailed plans
 

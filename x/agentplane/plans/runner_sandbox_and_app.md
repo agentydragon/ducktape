@@ -1,9 +1,10 @@
 # Runner in a Sandbox, and the first integration app
 
-Status: **next slice**. The runner protocol under [`../runner/`](../runner/) drives both harnesses
-behind one contract with cursor reattach and restart recovery, proven against a scripted model.
-Nothing runs it in a Pod yet, and nothing speaks it but its tests. This slice puts the runner in an
-Agent Sandbox and builds the smallest app that manages those sandboxes and shows what a session did.
+Status: **in progress**. The runner image, its Pod contract, the `agentplane-staging` namespace,
+and the app's sandbox inventory with archive have landed; what remains is the bridge and UI in
+review, the app's deployment, and the first real turn on staging. What has landed is described by
+[`../runner/SPEC.md`](../runner/SPEC.md), [`../runner/README.md`](../runner/README.md), and
+`cluster/k8s/agentplane-staging/`, not here.
 
 ## Shape
 
@@ -26,83 +27,14 @@ and its history survives; deleting a sandbox deletes its history, and that is th
 ## Work packages
 
 The packages are independent PRs; the dependencies named are the only real ones. Everything else
-may proceed in parallel and rebase.
-
-### I1. Runner image
-
-`//x/agentplane/runner:image`: the runner `py_binary`, the pinned Claude Code and Codex
-distributions Bazel already fetches for the tests (`@claude_code_cli_linux_x64`,
-`@agentplane_codex_cli_linux_x64`), CA certificates, non-root. Registered in
-`devinfra/ci/image_targets.json` for the Forgejo registry like `haku-harness-runner`, with a
-`requires_docker` smoke test that starts the container, attaches over the protocol, and runs one
-scripted turn on each harness. The image carries no credential and no Haku code.
-
-Gate: the smoke test passes on RBE; the image is pushed on `devel`.
-
-### I2. Runner pod contract
-
-What the runner needs to be a long-lived container rather than a test subprocess:
-
-- listen on the Pod address and a fixed port, with the state directory on the PVC;
-- both providers configured from the environment: binaries baked in, LiteLLM base URLs, and the
-  lane keys read from the variables `main.py` already names;
-- a `ListSessions` unary RPC (session id, spec, harness state, last sequence), since session ids
-  are client-chosen and the app keeps no record of its own;
-- SIGTERM stops every harness through the existing stdin-close ladder, so
-  `terminationGracePeriodSeconds` must exceed the ladder's total grace; a session whose harness was
-  stopped that way reports `HarnessExited` with `stopped_by_runner`, not `HarnessLost`;
-- a readiness signal the Pod can probe (the listener accepting connections is enough).
-
-Depends on nothing; lands with or before I1.
-
-### I3. Staging namespace
-
-The first instance is staging, and it is built so the agent can test on it without Rai.
-`cluster/k8s/agentplane-staging/`: the `agentplane-staging` namespace with its quota, a
-`SandboxTemplate` `agentplane-runner` whose Pod runs the I1 image with a PVC for the state
-directory and workspace, and Cilium policy: the Pod reaches DNS and LiteLLM; the app reaches the
-runner port; nothing else in either direction. No warm pool: the app creates a `SandboxClaim` per
-sandbox. Suspension is the Sandbox's `operatingMode: Suspended`, which the spike showed replaces
-the Pod and keeps the PVC.
-
-Sandbox PVCs live on wyrm2, which has the memory to spare: the claim uses `local-path-proxmox`
-(region `proxmox` is wyrm2's label; `local-path-home-ssd` selects the OptiPlex and retains its
-volumes, neither of which is wanted here), and the template's `nodeSelector` names the same
-region so `WaitForFirstConsumer` binds the volume where the Pod runs. Its `Delete` reclaim policy
-is what makes deleting a sandbox free its disk. The runner Pod is therefore pinned to one node,
-and a suspended sandbox resumes only there; a zone-neutral local-path class spanning OVH and home
-is a possible later change that would only alter the class name here.
-
-Model access is the `cheap-experiments` LiteLLM key, which caps spend and allows only the cheap
-models; both harnesses get it as their API key with LiteLLM as the endpoint. That key is today
-handed out only through expiring Haku grants, by design; staging gets a standing copy as a second
-`kubernetes_secret` in `tf/gitops/litellm-keys`, and the key's own budget and allowlist remain the
-kill switch. Which models a session may name is whatever the allowlist carries.
-
-Agent access is standing, not granted per task: the namespace is labeled agent-readable for
-metadata and logs, so the Kyverno-generated bindings cover reads, and a per-service `agent-rbac/`
-binding (the pattern in the agent RBAC base README) grants the existing agent identities
-create and delete on claims, patch on sandboxes for suspend and resume, exec on runner Pods, and
-port-forward, in this namespace only. No new ServiceAccount or token to distribute.
-
-Can be authored before I1 publishes; the Pod comes up once the image exists.
+may proceed in parallel and rebase. Packages that have landed leave this list.
 
 ### I4. First real turn, and continuity across suspension
 
-Manual milestone, after I1 to I3: create a claim, attach, run one turn on each provider against
-LiteLLM, detach, suspend, resume, reattach from the cursor, and see the earlier turn in the resumed
-conversation. This is the live-probe continuity check deferred from the runner PR. Write what was
+Manual milestone, run by the agent on staging: create a claim, attach, run one turn on each
+provider against LiteLLM, detach, suspend, resume, reattach from the cursor, and see the earlier
+turn in the resumed conversation. This is the live-probe continuity check deferred from the runner PR. Write what was
 observed into the runner SPEC where it changes a guarantee.
-
-### C1. Sandbox inventory
-
-The app's Kubernetes side, clean-room (Haku Console's `sandbox_claims.py` is evidence, not a
-dependency): list the claims and sandboxes labeled as Agentplane's with their provisioning state,
-create a claim with the provider and model recorded as labels, suspend, resume, delete. REST with
-an OpenAPI schema. Tested against a fake Kubernetes API or a disposable namespace on RBE, whichever
-the first test needs.
-
-Depends on the CR shapes, which exist today; I3 only names the template.
 
 ### C2. Runner bridge
 
@@ -114,14 +46,12 @@ events pass through unchanged; the raw view is a client-side filter over them an
 
 The bridge introduces no second schema. SSE payloads are the proto-JSON encoding of the exact
 `Event` messages in `protocol.proto`, and command bodies are proto-JSON of the client messages;
-the browser's TypeScript types are generated from the same file with protobuf-es. What the bridge
-owns is routing and framing only. Check whether Connect's Python server is usable for the unary
-and server-streaming shape; if it is, the commands and the event stream come with generated
-clients, and if not, plain REST with proto-JSON bodies is the same contract by hand.
+what the bridge owns is routing and framing only. The runner takes one attachment per session,
+and the bridge holds it while any tab streams the session, fanning its events out: a session open
+in several tabs updates in all of them, and a tab opened later loads the history first.
 
 Tested against a local runner with the scripted model, reusing
-[`../runner/testing/`](../runner/testing/); the app's tests
-never need a cluster for this part. Depends on I2's `ListSessions`.
+[`../runner/testing/`](../runner/testing/); the app's tests never need a cluster for this part.
 
 ### C3. UI
 
@@ -131,18 +61,7 @@ raw-frames toggle, an input box, and interrupt. Honest states: provisioning, run
 harness lost, input uncertain. No names, archive, or timeline product features yet; those are the
 conversation-app package in the DAG.
 
-Depends on C1 and C2's schema.
-
-### C5. Archive
-
-Marking a sandbox archived removes it from the active list and suspends it, so the Pod goes and
-the PVC with the session log stays; unarchiving resumes it. The flag is a label on the claim,
-since Kubernetes is the inventory in this slice, and the list view hides archived sandboxes by
-default. Archive is never deletion: deleting stays a separate, explicit action. When trajectory
-persistence lands, the flag moves to the thread record and archiving a thread no longer needs
-its sandbox to exist.
-
-Depends on C1.
+Depends on C2's schema.
 
 ### C4. App deployment into staging
 
@@ -153,7 +72,7 @@ its sandbox or by port-forward, so the app's flows are testable end to end auton
 production instance is a second copy of the same manifests with its own keys, and does not exist
 until something needs it.
 
-Depends on C1 and C2 producing an image; the manifests can be authored earlier.
+Depends on C2 and C3 producing the image.
 
 ## Decisions taken here
 
