@@ -192,10 +192,13 @@ VISUAL_DATA = [
     "@playwright_browsers//:chromium-headless-shell",
 ]
 
+# medium: a scenario launches Chromium and mounts the unbundled app; alone on a worker it takes
+# 30-40s, and under RBE contention a small test's 60s ran out in the harness's own five-second
+# mount wait.
 [
     js_test(
         name = "visual_%s" % scenario,
-        size = "small",
+        size = "medium",
         data = VISUAL_DATA,
         entry_point = "visual/visual_test_%s.mjs" % scenario,
         env = {
