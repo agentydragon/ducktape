@@ -67,6 +67,7 @@ py_library(
         ":inventory",
         "//x/agentplane/app/testing:kubernetes",
         "//x/agentplane/runner:conftest",
+        "@pypi//psycopg",
         "@pypi//pytest",
     ],
 )

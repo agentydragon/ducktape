@@ -16,7 +16,7 @@ import pytest
 import pytest_bazel
 import uvicorn
 from google.protobuf.json_format import MessageToDict
-from tenacity import AsyncRetrying, retry_if_exception_type, retry_if_result, stop_after_delay, wait_fixed
+from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from x.agentplane.app.api import create_app
 from x.agentplane.app.bridge import RunnerBridge
@@ -188,16 +188,13 @@ async def _stored_events(http: httpx.AsyncClient, thread_id: str, *, until: str)
     """The thread's stored events once one carrying `until` has landed; the feed writes them as
     they arrive, a moment after the runner emitted them."""
     async for attempt in AsyncRetrying(
-        stop=stop_after_delay(30),
-        wait=wait_fixed(0.2),
-        retry=retry_if_result(lambda events: not any(until in event for event in events)),
+        stop=stop_after_delay(30), wait=wait_fixed(0.2), retry=retry_if_exception_type(AssertionError)
     ):
         with attempt:
             response = await http.get(f"/threads/{thread_id}/events")
             assert response.status_code == 200, response.text
             events: list[dict[str, Any]] = response.json()
-        if not attempt.retry_state.outcome.failed:
-            attempt.retry_state.set_result(events)
+            assert any(until in event for event in events), f"no {until} stored yet"
     return events
 
 

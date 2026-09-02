@@ -17,6 +17,8 @@ from x.agentplane.app.inventory import ProvisioningState, SandboxInventory
 from x.agentplane.app.testing.kubernetes import NAMESPACE, TEMPLATE, FakeCoreV1Api, FakeCustomObjectsApi
 from x.agentplane.app.trajectory import TrajectoryStore
 
+# The per-test database is created over psycopg, which SQLAlchemy loads from the URL scheme.
+# gazelle:include_dep @pypi//psycopg
 # The bridge tests run one script against a local runner over both harnesses; those fixtures live
 # with the runner.
 from x.agentplane.runner.conftest import config, model, provider, runner, spec, upstream, workspace
