@@ -204,6 +204,14 @@ def load_oci_image(image: OciImage) -> str:
     return image.tag
 
 
+def container_cli() -> str:
+    """The daemon CLI on PATH: docker, or podman where that is what serves the socket."""
+    cli = shutil.which("docker") or shutil.which("podman")
+    if not cli:
+        raise RuntimeError("Neither docker nor podman CLI found")
+    return cli
+
+
 def push_to_daemon(oci_layout: Path, tag: str) -> None:
     """Load an OCI layout directory into the local Docker daemon.
 
@@ -226,9 +234,7 @@ def push_to_daemon(oci_layout: Path, tag: str) -> None:
 
     docker_manifest = [{"Config": config_blob_rel, "RepoTags": [tag], "Layers": layer_rels}]
 
-    docker = shutil.which("docker") or shutil.which("podman")
-    if not docker:
-        raise RuntimeError("Neither docker nor podman CLI found")
+    docker = container_cli()
 
     # Streamed into `docker load` rather than assembled first: the tarball is the whole image, so
     # buffering it cost one copy to build and another to hand over, and the daemon sat idle until

@@ -13,7 +13,7 @@ import pytest
 import pytest_bazel
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from util.oci import OciImage, load_oci_image
+from util.oci import OciImage, container_cli, load_oci_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from x.agentplane.harness_tests.scripted_upstream import ScriptedUpstream
 from x.agentplane.runner import protocol_pb2 as pb
@@ -31,12 +31,14 @@ WORKSPACE = "/workspace"
 
 
 async def _docker(*args: str, check: bool = True) -> str:
+    """Run the daemon CLI `load_oci_image` loaded the image into, docker or podman."""
+    cli = container_cli()
     process = await asyncio.create_subprocess_exec(
-        "docker", *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
+        cli, *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
     )
     output, _ = await process.communicate()
     if check and process.returncode != 0:
-        raise RuntimeError(f"docker {args[0]} failed with {process.returncode}: {output.decode(errors='replace')}")
+        raise RuntimeError(f"{cli} {args[0]} failed with {process.returncode}: {output.decode(errors='replace')}")
     return output.decode(errors="replace")
 
 
