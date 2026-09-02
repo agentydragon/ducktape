@@ -75,9 +75,9 @@ def runner_address(inventory: SandboxInventory, port: int) -> AddressOf:
 
     async def address_of(name: str) -> str:
         view = await inventory.get(name)
-        if view.state is not ProvisioningState.RUNNING or view.pod_ip is None:
+        if view.state is not ProvisioningState.RUNNING or view.pod is None or view.pod.ip is None:
             raise SandboxNotReachableError(name, view.state)
-        return f"{view.pod_ip}:{port}"
+        return f"{view.pod.ip}:{port}"
 
     return address_of
 

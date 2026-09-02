@@ -6,6 +6,7 @@ export const api: ReturnType<typeof createClient<paths>> = createClient<paths>({
 
 export type SandboxView = components["schemas"]["SandboxView"];
 export type NewSandbox = components["schemas"]["NewSandbox"];
+export type Condition = components["schemas"]["Condition"];
 // The runner protocol's messages, published from protocol.proto under a Runner prefix.
 export type Event = components["schemas"]["RunnerEvent"];
 export type Attached = components["schemas"]["RunnerAttached"];

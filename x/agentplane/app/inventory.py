@@ -94,6 +94,33 @@ class Condition(BaseModel):
     message: str | None = None
 
 
+class ContainerStatus(BaseModel):
+    """One container of the Pod: which of the kubelet's three states it is in, and why."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    state: str = Field(description="waiting, running, or terminated.")
+    reason: str | None = None
+    message: str | None = None
+    ready: bool
+    restart_count: int
+
+
+class PodStatus(BaseModel):
+    """What the kubelet says about the Sandbox's Pod; absent while no Pod exists."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    phase: str | None
+    ip: str | None
+    node_name: str | None
+    reason: str | None = None
+    message: str | None = None
+    conditions: list[Condition]
+    containers: list[ContainerStatus]
+
+
 class SandboxView(BaseModel):
     """One inventory row: the Sandbox's identity plus what it and its Pod say."""
 
@@ -105,10 +132,10 @@ class SandboxView(BaseModel):
     archived: bool
     state: ProvisioningState
     created_at: datetime
+    operating_mode: OperatingMode
     conditions: list[Condition] = Field(description="The Sandbox's own status conditions.")
-    node_name: str | None = None
-    pod_phase: str | None = None
-    pod_ip: str | None = None
+    node_name: str | None = Field(default=None, description="Where the Sandbox controller placed the Pod.")
+    pod: PodStatus | None = None
 
 
 # Kubernetes-boundary models: the subset of each CR the inventory reads, parsed once off the wire.
@@ -287,10 +314,47 @@ def _view(sandbox: _Sandbox, pod: k8s_client.V1Pod | None) -> SandboxView:
         archived=archived,
         state=_state(sandbox, pod, archived=archived),
         created_at=sandbox.metadata.creation_timestamp,
+        operating_mode=sandbox.spec.operating_mode,
         conditions=sandbox.status.conditions,
         node_name=sandbox.status.node_name,
-        pod_phase=pod.status.phase if pod is not None and pod.status is not None else None,
-        pod_ip=pod.status.pod_ip if pod is not None and pod.status is not None else None,
+        pod=_pod_status(pod) if pod is not None else None,
+    )
+
+
+def _pod_status(pod: k8s_client.V1Pod) -> PodStatus:
+    status = pod.status if pod.status is not None else k8s_client.V1PodStatus()
+    return PodStatus(
+        phase=status.phase,
+        ip=status.pod_ip,
+        node_name=pod.spec.node_name if pod.spec is not None else None,
+        reason=status.reason,
+        message=status.message,
+        conditions=[
+            Condition(type=condition.type, status=condition.status, reason=condition.reason, message=condition.message)
+            for condition in status.conditions or []
+        ],
+        containers=[_container_status(container) for container in status.container_statuses or []],
+    )
+
+
+def _container_status(container: k8s_client.V1ContainerStatus) -> ContainerStatus:
+    # Exactly one of the three is set by the kubelet; a status with none is a container not yet scheduled.
+    state = container.state if container.state is not None else k8s_client.V1ContainerState()
+    if state.waiting is not None:
+        name, reason, message = "waiting", state.waiting.reason, state.waiting.message
+    elif state.terminated is not None:
+        name, reason, message = "terminated", state.terminated.reason, state.terminated.message
+    elif state.running is not None:
+        name, reason, message = "running", None, None
+    else:
+        name, reason, message = "waiting", None, None
+    return ContainerStatus(
+        name=container.name,
+        state=name,
+        reason=reason,
+        message=message,
+        ready=container.ready,
+        restart_count=container.restart_count,
     )
 
 

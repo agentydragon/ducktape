@@ -1,12 +1,101 @@
-import { Badge, Button, Group, Select, Stack, Table, Text, TextInput, Title } from "@mantine/core";
+import { Badge, Button, Code, Group, Select, Stack, Switch, Table, Text, TextInput, Title } from "@mantine/core";
 import { useCallback, useEffect, useState } from "react";
 
-import { api, displayableError, listSessions, openSession, type SandboxView, type SessionSummary } from "./client";
+import {
+  api,
+  displayableError,
+  listSessions,
+  openSession,
+  type Condition,
+  type SandboxView,
+  type SessionSummary,
+} from "./client";
 
 const PROVIDER_ENUM: Record<string, "PROVIDER_CLAUDE" | "PROVIDER_CODEX"> = {
   claude: "PROVIDER_CLAUDE",
   codex: "PROVIDER_CODEX",
 };
+
+function ConditionsTable({ conditions }: { conditions: Condition[] }): JSX.Element {
+  return (
+    <Table>
+      <Table.Thead>
+        <Table.Tr>
+          <Table.Th>Condition</Table.Th>
+          <Table.Th>Status</Table.Th>
+          <Table.Th>Reason</Table.Th>
+          <Table.Th>Message</Table.Th>
+        </Table.Tr>
+      </Table.Thead>
+      <Table.Tbody>
+        {conditions.map((condition) => (
+          <Table.Tr key={condition.type}>
+            <Table.Td>{condition.type}</Table.Td>
+            <Table.Td>
+              <Badge color={condition.status === "True" ? "green" : "orange"}>{condition.status}</Badge>
+            </Table.Td>
+            <Table.Td>{condition.reason ?? "—"}</Table.Td>
+            <Table.Td>{condition.message ?? "—"}</Table.Td>
+          </Table.Tr>
+        ))}
+      </Table.Tbody>
+    </Table>
+  );
+}
+
+/** What Kubernetes says about the sandbox: the Sandbox CR's own status, then its Pod's. */
+function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
+  const [raw, setRaw] = useState(false);
+  return (
+    <Stack gap="xs">
+      <Group>
+        <Title order={4}>Status</Title>
+        <Switch label="Raw" checked={raw} onChange={(e) => setRaw(e.currentTarget.checked)} />
+      </Group>
+      {raw ? (
+        <Code block>{JSON.stringify(sandbox, null, 2)}</Code>
+      ) : (
+        <>
+          <Text size="sm">
+            Sandbox {sandbox.operating_mode.toLowerCase()}, created {new Date(sandbox.created_at).toLocaleString()}
+            {sandbox.node_name ? `, placed on ${sandbox.node_name}` : ", not placed"}
+          </Text>
+          {sandbox.conditions.length > 0 && <ConditionsTable conditions={sandbox.conditions} />}
+          {sandbox.pod ? (
+            <>
+              <Text size="sm">
+                Pod {sandbox.pod.phase ?? "unknown"}
+                {sandbox.pod.ip ? ` at ${sandbox.pod.ip}` : ""}
+                {sandbox.pod.node_name ? ` on ${sandbox.pod.node_name}` : ""}
+                {sandbox.pod.reason ? `: ${sandbox.pod.reason}` : ""}
+                {sandbox.pod.message ? ` (${sandbox.pod.message})` : ""}
+              </Text>
+              {sandbox.pod.conditions.length > 0 && <ConditionsTable conditions={sandbox.pod.conditions} />}
+              {sandbox.pod.containers.map((container) => (
+                <Group key={container.name} gap="xs">
+                  <Text size="sm" fw={600}>
+                    {container.name}
+                  </Text>
+                  <Badge color={container.state === "running" ? "green" : "orange"}>{container.state}</Badge>
+                  {container.ready && <Badge variant="light">ready</Badge>}
+                  {container.restart_count > 0 && <Badge color="red">{container.restart_count} restarts</Badge>}
+                  {container.reason && <Text size="sm">{container.reason}</Text>}
+                  {container.message && (
+                    <Text size="sm" c="dimmed">
+                      {container.message}
+                    </Text>
+                  )}
+                </Group>
+              ))}
+            </>
+          ) : (
+            <Text size="sm">No Pod.</Text>
+          )}
+        </>
+      )}
+    </Stack>
+  );
+}
 
 export function SandboxPage({
   name,
@@ -73,6 +162,7 @@ export function SandboxPage({
       {sandbox && sandbox.state !== "running" && (
         <Text>The sandbox is {sandbox.state}; sessions need a running Pod.</Text>
       )}
+      {sandbox && <StatusView sandbox={sandbox} />}
       <Group align="flex-end">
         <TextInput label="Session id" value={sessionId} onChange={(e) => setSessionId(e.currentTarget.value)} />
         <Select
