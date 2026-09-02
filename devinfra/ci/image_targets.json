@@ -209,6 +209,11 @@
     "cpap-sync": {
       "target": "//cpap:image",
       "registry": "forgejo"
+    },
+    "agentplane-runner": {
+      "target": "//x/agentplane/runner:image",
+      "test": "//x/agentplane/runner/...",
+      "registry": "forgejo"
     }
   }
 }

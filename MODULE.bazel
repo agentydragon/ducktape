@@ -425,7 +425,15 @@ apt.install(
     lock = "//haku/runner:trixie_haku_harness_runner.lock.json",
     manifest = "//haku/runner:trixie_haku_harness_runner.yaml",
 )
-use_repo(apt, "gnome_shell_test", "trixie_attic_rotation", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_fc_vm_pod", "trixie_haku_harness_runner", "trixie_wayback_cache")
+
+# Agentplane runner image: git, ripgrep, and curl on debian:trixie-slim beside the runner and both
+# native harnesses.
+apt.install(
+    name = "trixie_agentplane_runner",
+    lock = "//x/agentplane/runner:trixie_agentplane_runner.lock.json",
+    manifest = "//x/agentplane/runner:trixie_agentplane_runner.yaml",
+)
+use_repo(apt, "gnome_shell_test", "trixie_agentplane_runner", "trixie_attic_rotation", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_fc_vm_pod", "trixie_haku_harness_runner", "trixie_wayback_cache")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")

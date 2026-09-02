@@ -1,5 +1,11 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "pkg_mkdirs", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//devinfra/python:grpc.bzl", "py_grpc_library")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -234,4 +240,135 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_test(
+    name = "test_image",
+    size = "large",
+    srcs = ["test_image.py"],
+    data = [":image_rloc"],  # keep: the built image the test loads into Docker
+    requires_docker = True,
+    deps = [
+        ":client",
+        ":conftest",
+        "//:conftest",
+        "//util:oci",
+        "//util/testing:undeclared_outputs",
+        "//x/agentplane/harness_tests:scripted_upstream",
+        "//x/agentplane/runner:protocol_pb2",
+        "//x/agentplane/runner/testing:events",
+        "//x/agentplane/runner/testing:launches",
+        "//x/agentplane/runner/testing:scripted_model",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_image_packaging",
+    srcs = ["test_image_packaging.py"],
+    data = [":image_rloc"],  # keep: the OCI layout the test inspects
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# The runner image: the runner, both pinned native harnesses, and the tools they reach for, on
+# debian slim as user 1000. Published as agentplane-runner (devinfra/ci/image_targets.json) and run
+# by the agentplane-runner SandboxTemplate (cluster/k8s/agentplane-staging).
+aspect_py_binary(
+    name = "runner_image_bin",
+    main = "main.py",
+    deps = [":main"],
+)
+
+py_image_layer(
+    name = "runner_layers",
+    binary = ":runner_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+pkg_files(
+    name = "claude_files",
+    srcs = ["@claude_code_cli_linux_x64//:claude"],
+    attributes = pkg_attributes(
+        gid = 1000,
+        group = "runner",
+        mode = "0555",
+        uid = 1000,
+        user = "runner",
+    ),
+    prefix = "/usr/local/bin",
+)
+
+# The native Codex executable locates its bundled rg/zsh/bwrap resources relative to itself, so the
+# whole distribution tree is kept.
+pkg_files(
+    name = "codex_files",
+    srcs = ["@agentplane_codex_cli_linux_x64//:files"],
+    attributes = pkg_attributes(
+        gid = 1000,
+        group = "runner",
+        mode = "0555",
+        uid = 1000,
+        user = "runner",
+    ),
+    prefix = "/opt/codex",
+    strip_prefix = strip_prefix.from_root(""),
+)
+
+pkg_mkdirs(
+    name = "home_dir",
+    attributes = pkg_attributes(
+        gid = 1000,
+        group = "runner",
+        mode = "0755",
+        uid = 1000,
+        user = "runner",
+    ),
+    dirs = ["/home/runner"],
+)
+
+pkg_tar(
+    name = "harness_layer",
+    srcs = [
+        ":claude_files",
+        ":codex_files",
+        ":home_dir",
+    ],
+    # The path the SandboxTemplate names as the container command.
+    symlinks = {"/usr/local/bin/agentplane-runner": "/x/agentplane/runner/runner_image_bin"},
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("runner_image_bin"),
+    env = py_image_env(
+        binary_name = "runner_image_bin",
+        extra_env = {
+            "HOME": "/home/runner",
+            "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
+        },
+    ),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [
+        ":runner_layers",
+        ":harness_layer",
+        "//third_party/debian_slim:cacerts",
+        "@trixie_agentplane_runner//:flat",
+    ],
+    user = "1000:1000",
+)
+
+oci_layout_rloc(
+    name = "image_rloc",
+    testonly = True,
+    image = ":image",
 )
