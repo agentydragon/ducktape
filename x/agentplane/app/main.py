@@ -14,6 +14,7 @@ from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.app.api import create_app
+from x.agentplane.app.bridge import RunnerBridge, runner_address
 from x.agentplane.app.inventory import SandboxInventory
 
 app = typer.Typer(add_completion=False)
@@ -23,15 +24,27 @@ app = typer.Typer(add_completion=False)
 def main(
     namespace: Annotated[str, typer.Option(help="Namespace holding the SandboxClaims.")],
     warm_pool: Annotated[str, typer.Option(help="SandboxWarmPool every new claim references.")],
+    runner_port: Annotated[int, typer.Option(help="The port every runner Pod listens on.")],
     host: Annotated[str, typer.Option(help="Bind address.")] = "127.0.0.1",
     port: Annotated[int, typer.Option(help="Bind port.")] = 8080,
     kubeconfig: Annotated[Path | None, typer.Option(help="Kubeconfig to use; omit for in-cluster.")] = None,
 ) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    asyncio.run(async_main(namespace=namespace, warm_pool=warm_pool, host=host, port=port, kubeconfig=kubeconfig))
+    asyncio.run(
+        async_main(
+            namespace=namespace,
+            warm_pool=warm_pool,
+            runner_port=runner_port,
+            host=host,
+            port=port,
+            kubeconfig=kubeconfig,
+        )
+    )
 
 
-async def async_main(*, namespace: str, warm_pool: str, host: str, port: int, kubeconfig: Path | None) -> None:
+async def async_main(
+    *, namespace: str, warm_pool: str, runner_port: int, host: str, port: int, kubeconfig: Path | None
+) -> None:
     configuration = k8s_client.Configuration()
     if kubeconfig is None:
         k8s_config.load_incluster_config(client_configuration=configuration)
@@ -45,7 +58,11 @@ async def async_main(*, namespace: str, warm_pool: str, host: str, port: int, ku
             custom_objects=cast(CustomObjectsClient, CustomObjectsApi(api)),
             core_v1=CoreV1Api(api),
         )
-        await uvicorn.Server(uvicorn.Config(create_app(inventory), host=host, port=port)).serve()
+        bridge = RunnerBridge(address_of=runner_address(inventory, runner_port))
+        try:
+            await uvicorn.Server(uvicorn.Config(create_app(inventory, bridge), host=host, port=port)).serve()
+        finally:
+            await bridge.close()
 
 
 if __name__ == "__main__":

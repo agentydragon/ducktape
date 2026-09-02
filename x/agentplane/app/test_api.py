@@ -9,6 +9,7 @@ import pytest_bazel
 from fastapi.testclient import TestClient
 
 from x.agentplane.app.api import create_app
+from x.agentplane.app.bridge import RunnerBridge
 from x.agentplane.app.inventory import ARCHIVED_LABEL, SandboxInventory
 from x.agentplane.app.testing.kubernetes import FakeCoreV1Api, FakeCustomObjectsApi, claim, pod, sandbox
 
@@ -20,7 +21,7 @@ _READY = {"conditions": [{"type": "Ready", "status": "True"}]}
 
 @pytest.fixture
 def client(
-    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
+    inventory: SandboxInventory, bridge: RunnerBridge, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
 ) -> Iterator[TestClient]:
     custom_objects.objects[("sandboxclaims", "live")] = claim("live", status={**_READY, "sandbox": {"name": "sb-live"}})
     custom_objects.objects[("sandboxes", "sb-live")] = sandbox("sb-live")
@@ -30,7 +31,7 @@ def client(
         "shelved", labels={ARCHIVED_LABEL: "true"}, status={**_READY, "sandbox": {"name": "sb-shelved"}}
     )
     custom_objects.objects[("sandboxes", "sb-shelved")] = sandbox("sb-shelved", operating_mode="Suspended")
-    with TestClient(create_app(inventory)) as test_client:
+    with TestClient(create_app(inventory, bridge)) as test_client:
         yield test_client
 
 
@@ -116,6 +117,11 @@ def test_openapi_schema_names_every_operation(client: TestClient) -> None:
         "/sandboxes/{name}/resume",
         "/sandboxes/{name}/archive",
         "/sandboxes/{name}/unarchive",
+        "/sandboxes/{name}/sessions",
+        "/sandboxes/{name}/sessions/{session_id}/events",
+        "/sandboxes/{name}/sessions/{session_id}/inputs",
+        "/sandboxes/{name}/sessions/{session_id}/interrupt",
+        "/sandboxes/{name}/sessions/{session_id}/shutdown",
     }
     assert set(paths["/sandboxes"]) == {"get", "post"}
     assert set(paths["/sandboxes/{name}"]) == {"get", "delete"}

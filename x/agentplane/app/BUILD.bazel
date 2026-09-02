@@ -2,6 +2,9 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//x/agentplane:__subpackages__"])
 
+# gazelle:resolve py x.agentplane.runner.protocol_pb2 //x/agentplane/runner:protocol_pb2
+# gazelle:resolve py x.agentplane.runner.protocol_pb2_grpc //x/agentplane/runner:protocol_pb2_grpc
+
 py_binary(
     name = "main_bin",
     main_module = "x.agentplane.app.main",
@@ -12,7 +15,9 @@ py_library(
     name = "api",
     srcs = ["api.py"],
     deps = [
+        ":bridge",
         ":inventory",
+        "//x/agentplane/runner:client",
         "@pypi//fastapi",
     ],
 )
@@ -32,6 +37,7 @@ py_library(
     srcs = ["main.py"],
     deps = [
         ":api",
+        ":bridge",
         ":inventory",
         "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
@@ -45,8 +51,10 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":bridge",
         ":inventory",
         "//x/agentplane/app/testing:kubernetes",
+        "//x/agentplane/runner:conftest",
         "@pypi//pytest",
     ],
 )
@@ -56,6 +64,7 @@ py_test(
     srcs = ["test_api.py"],
     deps = [
         ":api",
+        ":bridge",
         ":conftest",
         ":inventory",
         "//:conftest",
@@ -77,5 +86,49 @@ py_test(
         "//x/agentplane/app/testing:kubernetes",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "bridge",
+    srcs = ["bridge.py"],
+    deps = [
+        ":inventory",
+        "//x/agentplane/runner:client",
+        "//x/agentplane/runner:protocol_pb2",
+        "@pypi//fastapi",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_bridge",
+    size = "large",
+    srcs = ["test_bridge.py"],
+    data = [
+        "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
+        "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
+    ],
+    target_compatible_with = [
+        # keep: the pinned native harnesses are Linux/x86_64 only.
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":api",
+        ":bridge",
+        ":conftest",
+        ":inventory",
+        "//:conftest",
+        "//x/agentplane/runner:conftest",
+        "//x/agentplane/runner:protocol_pb2",
+        "//x/agentplane/runner/testing:scripted_model",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+        "@pypi//uvicorn",
     ],
 )

@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 
+from x.agentplane.app import bridge as runner_bridge
 from x.agentplane.app.inventory import (
     NewSandbox,
     SandboxInventory,
@@ -14,6 +15,7 @@ from x.agentplane.app.inventory import (
     SandboxNotProvisionedError,
     SandboxView,
 )
+from x.agentplane.runner.client import RunnerError
 
 router = APIRouter(prefix="/sandboxes", tags=["sandboxes"])
 
@@ -75,10 +77,12 @@ async def delete_sandbox(inventory: Inventory, name: str) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-def create_app(inventory: SandboxInventory) -> FastAPI:
+def create_app(inventory: SandboxInventory, bridge: runner_bridge.RunnerBridge) -> FastAPI:
     app = FastAPI(title="Agentplane", version="0")
     app.state.inventory = inventory
+    app.state.bridge = bridge
     app.include_router(router)
+    app.include_router(runner_bridge.router)
 
     @app.exception_handler(SandboxNotFoundError)
     async def _not_found(_request: Request, error: SandboxNotFoundError) -> JSONResponse:
@@ -87,5 +91,18 @@ def create_app(inventory: SandboxInventory) -> FastAPI:
     @app.exception_handler(SandboxNotProvisionedError)
     async def _not_provisioned(_request: Request, error: SandboxNotProvisionedError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
+
+    @app.exception_handler(runner_bridge.SandboxNotReachableError)
+    async def _not_reachable(_request: Request, error: runner_bridge.SandboxNotReachableError) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
+
+    @app.exception_handler(RunnerError)
+    async def _runner_refused(_request: Request, error: RunnerError) -> JSONResponse:
+        # The runner refused an Open or a command: an unknown session, a spec mismatch, a bad cursor.
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
+
+    @app.exception_handler(runner_bridge.MalformedMessageError)
+    async def _malformed(_request: Request, error: runner_bridge.MalformedMessageError) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
 
     return app
