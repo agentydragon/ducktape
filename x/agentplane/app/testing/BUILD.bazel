@@ -1,0 +1,15 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//x/agentplane/app:__pkg__"],
+)
+
+py_library(
+    name = "kubernetes",
+    srcs = ["kubernetes.py"],
+    deps = [
+        "//x/agentplane/app:inventory",
+        "@pypi//kubernetes_asyncio",
+    ],
+)

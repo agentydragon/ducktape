@@ -1,0 +1,81 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//x/agentplane:__subpackages__"])
+
+py_binary(
+    name = "main_bin",
+    main_module = "x.agentplane.app.main",
+    deps = [":main"],
+)
+
+py_library(
+    name = "api",
+    srcs = ["api.py"],
+    deps = [
+        ":inventory",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
+    name = "inventory",
+    srcs = ["inventory.py"],
+    deps = [
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    deps = [
+        ":api",
+        ":inventory",
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//typer",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":inventory",
+        "//x/agentplane/app/testing:kubernetes",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_api",
+    srcs = ["test_api.py"],
+    deps = [
+        ":api",
+        ":conftest",
+        ":inventory",
+        "//:conftest",
+        "//x/agentplane/app/testing:kubernetes",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_inventory",
+    srcs = ["test_inventory.py"],
+    deps = [
+        ":conftest",
+        ":inventory",
+        "//:conftest",
+        "//x/agentplane/app/testing:kubernetes",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
