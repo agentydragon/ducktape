@@ -59,6 +59,15 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
+    # The API server's service proxy, which is how the agent reaches the API (see
+    # ../agent-rbac/role-agentplane-operator.yaml). The API server authorizes the caller before
+    # proxying, so this admits only identities holding services/proxy on this Service.
+    - fromEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
   egress:
     - toEndpoints:
         - matchLabels:

@@ -24,3 +24,10 @@ rules:
   - apiGroups: [""]
     resources: ["pods/log"]
     verbs: ["get"]
+  # The app's API, through the API server's service proxy: the agent's kubeconfig goes through a
+  # proxy that cannot upgrade connections, so port-forward and exec are not a path to it. The
+  # name carries the port, as the proxy subresource is addressed.
+  - apiGroups: [""]
+    resources: ["services/proxy"]
+    resourceNames: ["agentplane-app", "agentplane-app:8080", "agentplane-app:http"]
+    verbs: ["get", "create", "delete"]
