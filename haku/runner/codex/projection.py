@@ -32,7 +32,28 @@ from dataclasses import dataclass, replace
 from typing import Any
 from uuid import UUID, uuid4
 
-from haku.runner.codex.protocol import TURN_COMPLETED, Notification, Request, Response, UnknownMessage, parse_message
+from pydantic import BaseModel, ValidationError
+
+from haku.runner.codex.generated_protocol import (
+    AgentMessageDeltaNotification,
+    AgentMessageThreadItem,
+    CommandExecutionOutputDeltaNotification,
+    CommandExecutionThreadItem,
+    ItemCompletedNotification,
+    ItemStartedNotification,
+    JSONRPCError,
+    JSONRPCNotification,
+    JSONRPCRequest,
+    JSONRPCResponse,
+    McpToolCallResult,
+    McpToolCallThreadItem,
+    ReasoningSummaryTextDeltaNotification,
+    ReasoningThreadItem,
+    Turn,
+    TurnCompletedNotification,
+    UserMessageThreadItem,
+)
+from haku.runner.codex.protocol import TURN_COMPLETED, UnknownMessage, parse_message
 from haku.runner.neutral_operations import (
     FrameRange,
     ItemCompleted,
@@ -85,9 +106,20 @@ class _OpenItem:
     delivered: str = ""
 
 
-def _item(params: Mapping[str, Any]) -> dict[str, Any] | None:
+def _raw_item(params: Mapping[str, Any]) -> dict[str, Any] | None:
     value = params.get("item")
     return value if isinstance(value, dict) else None
+
+
+def _validated_params[ModelT: BaseModel](model: type[ModelT], params: Any, result: Yield, method: str) -> ModelT | None:
+    if not isinstance(params, dict):
+        result.miss(f"{method}/params")
+        return None
+    try:
+        return model.model_validate(params)
+    except ValidationError:
+        result.miss(f"{method}/shape")
+        return None
 
 
 def _span(item: _OpenItem) -> FrameRange:
@@ -136,14 +168,14 @@ class CodexProjector:
         """Fold one app-server stdout message, numbered *frame_seq* by the runner."""
         result = Yield()
         message = parse_message(payload)
-        if isinstance(message, (Request, Response)):
+        if isinstance(message, (JSONRPCRequest, JSONRPCResponse, JSONRPCError)):
             # A local request's answer or a refused server request: recorded on the wire, but the
             # conversation is the notification stream.
             return result.projected()
         if isinstance(message, UnknownMessage):
             result.miss(message.reason)
             return result.projected()
-        assert isinstance(message, Notification)
+        assert isinstance(message, JSONRPCNotification)
         if message.method in _IGNORED_METHODS:
             return result.projected()
         if (params := message.params) is None:
@@ -151,41 +183,46 @@ class CodexProjector:
             return result.projected()
         match message.method:
             case "item/started":
-                self._item_started(result, frame_seq, params)
+                if started := _validated_params(ItemStartedNotification, params, result, message.method):
+                    self._item_started(result, frame_seq, started)
             case "item/agentMessage/delta":
-                self._message_delta(result, frame_seq, params)
+                if message_delta := _validated_params(AgentMessageDeltaNotification, params, result, message.method):
+                    self._message_delta(result, frame_seq, message_delta)
             case "item/reasoning/summaryTextDelta":
-                self._reasoning_delta(result, frame_seq, params)
+                if reasoning_delta := _validated_params(
+                    ReasoningSummaryTextDeltaNotification, params, result, message.method
+                ):
+                    self._reasoning_delta(result, frame_seq, reasoning_delta)
             case "item/commandExecution/outputDelta":
-                self._command_delta(result, frame_seq, params)
+                if command_delta := _validated_params(
+                    CommandExecutionOutputDeltaNotification, params, result, message.method
+                ):
+                    self._command_delta(result, frame_seq, command_delta)
             case "item/completed":
-                self._item_completed(result, frame_seq, params)
+                if completed := _validated_params(ItemCompletedNotification, params, result, message.method):
+                    assert isinstance(params, dict)
+                    self._item_completed(result, frame_seq, completed, params)
             case _ if message.method == TURN_COMPLETED:
-                self._turn_completed(result, frame_seq, params)
+                if turn_completed := _validated_params(TurnCompletedNotification, params, result, message.method):
+                    self._turn_completed(result, frame_seq, turn_completed)
             case _:
                 result.miss(message.method)
         return result.projected()
 
-    def _item_started(self, result: Yield, frame_seq: int, params: Mapping[str, Any]) -> None:
-        item = _item(params)
-        if item is None:
-            result.miss("item/started/item")
-            return
-        item_type, item_id = item.get("type"), item.get("id")
-        if not isinstance(item_type, str) or not isinstance(item_id, str):
-            result.miss("item/started/identity")
-            return
-        if item_type == "agentMessage":
+    def _item_started(self, result: Yield, frame_seq: int, notification: ItemStartedNotification) -> None:
+        item = notification.item
+        item_id = item.id
+        if isinstance(item, AgentMessageThreadItem):
             self._open_message = self._open_prose(result, self._open_message, MessageOpen(), frame_seq, item_id)
-        elif item_type == "reasoning":
+        elif isinstance(item, ReasoningThreadItem):
             self._open_reasoning = self._open_prose(result, self._open_reasoning, ReasoningOpen(), frame_seq, item_id)
-        elif item_type in ("commandExecution", "mcpToolCall"):
+        elif isinstance(item, (CommandExecutionThreadItem, McpToolCallThreadItem)):
             self._start_tool(result, item, frame_seq)
-        elif item_type == "userMessage":
+        elif isinstance(item, UserMessageThreadItem):
             # The request-side prompt, authored by the Console before a backend frame claims it.
             pass
         else:
-            result.miss(f"item/started/{item_type}")
+            result.miss(f"item/started/{item.type}")
 
     def _open_prose(
         self,
@@ -211,11 +248,15 @@ class CodexProjector:
             item_id=runner_id, backend_item_id=item_id, opened_at_frame_seq=frame_seq, last_frame_seq=frame_seq
         )
 
-    def _message_delta(self, result: Yield, frame_seq: int, params: Mapping[str, Any]) -> None:
-        self._open_message = self._prose_delta(result, self._open_message, MessageOpen(), frame_seq, params)
+    def _message_delta(self, result: Yield, frame_seq: int, params: AgentMessageDeltaNotification) -> None:
+        self._open_message = self._prose_delta(
+            result, self._open_message, MessageOpen(), frame_seq, params.itemId, params.delta
+        )
 
-    def _reasoning_delta(self, result: Yield, frame_seq: int, params: Mapping[str, Any]) -> None:
-        self._open_reasoning = self._prose_delta(result, self._open_reasoning, ReasoningOpen(), frame_seq, params)
+    def _reasoning_delta(self, result: Yield, frame_seq: int, params: ReasoningSummaryTextDeltaNotification) -> None:
+        self._open_reasoning = self._prose_delta(
+            result, self._open_reasoning, ReasoningOpen(), frame_seq, params.itemId, params.delta
+        )
 
     def _prose_delta(
         self,
@@ -223,13 +264,10 @@ class CodexProjector:
         open_item: _OpenItem | None,
         item: MessageOpen | ReasoningOpen,
         frame_seq: int,
-        params: Mapping[str, Any],
+        item_id: str,
+        delta: str,
     ) -> _OpenItem | None:
-        item_id, delta = params.get("itemId"), params.get("delta")
         kind = "agentMessage" if isinstance(item, MessageOpen) else "reasoning"
-        if not isinstance(item_id, str) or not isinstance(delta, str):
-            result.miss(f"item/{kind}/delta/shape")
-            return open_item
         if open_item is None:
             open_item = self._open_prose(result, None, item, frame_seq, item_id)
         if open_item.backend_item_id != item_id:
@@ -239,52 +277,40 @@ class CodexProjector:
             result.operations.append(ItemSegment(item_id=open_item.item_id, text=delta, provenance=at(frame_seq)))
         return replace(open_item, last_frame_seq=frame_seq, delivered=open_item.delivered + delta)
 
-    def _command_delta(self, result: Yield, frame_seq: int, params: Mapping[str, Any]) -> None:
-        item_id, delta = params.get("itemId"), params.get("delta")
-        if not isinstance(item_id, str) or not isinstance(delta, str):
-            result.miss("item/commandExecution/outputDelta/shape")
-            return
+    def _command_delta(self, result: Yield, frame_seq: int, params: CommandExecutionOutputDeltaNotification) -> None:
+        item_id, delta = params.itemId, params.delta
         if (runner_id := self._open_calls.get(item_id)) is None:
             result.miss("item/commandExecution/outputDelta/itemId")
             return
         if delta:
             result.operations.append(ItemSegment(item_id=runner_id, text=delta, provenance=at(frame_seq)))
 
-    def _item_completed(self, result: Yield, frame_seq: int, params: Mapping[str, Any]) -> None:
-        item = _item(params)
-        if item is None:
-            result.miss("item/completed/item")
-            return
-        item_type, item_id = item.get("type"), item.get("id")
-        if not isinstance(item_type, str) or not isinstance(item_id, str):
-            result.miss("item/completed/identity")
-            return
-        if item_type == "agentMessage":
+    def _item_completed(
+        self, result: Yield, frame_seq: int, notification: ItemCompletedNotification, params: Mapping[str, Any]
+    ) -> None:
+        item = notification.item
+        item_id = item.id
+        raw_item = _raw_item(params)
+        if isinstance(item, AgentMessageThreadItem):
             self._complete_message(result, item, item_id, frame_seq)
-        elif item_type == "reasoning":
+        elif isinstance(item, ReasoningThreadItem):
             self._complete_reasoning(result, item, item_id, frame_seq)
-        elif item_type in ("commandExecution", "mcpToolCall"):
+        elif isinstance(item, (CommandExecutionThreadItem, McpToolCallThreadItem)):
             if item_id not in self._open_calls and item_id not in self._completed_call_ids:
                 self._start_tool(result, item, frame_seq)
-            self._complete_tool(result, item, item_id, frame_seq)
-        elif item_type == "userMessage":
+            self._complete_tool(result, item, raw_item, item_id, frame_seq)
+        elif isinstance(item, UserMessageThreadItem):
             pass
         else:
-            result.miss(f"item/completed/{item_type}")
+            result.miss(f"item/completed/{item.type}")
 
-    def _complete_message(self, result: Yield, item: Mapping[str, Any], item_id: str, frame_seq: int) -> None:
-        text = item.get("text")
-        if not isinstance(text, str):
-            result.miss("item/completed/agentMessage/text")
-            return
+    def _complete_message(self, result: Yield, item: AgentMessageThreadItem, item_id: str, frame_seq: int) -> None:
+        text = item.text
         self._complete_prose(result, self._open_message, MessageOpen(), MessageCompletion(), item_id, text, frame_seq)
         self._open_message = None
 
-    def _complete_reasoning(self, result: Yield, item: Mapping[str, Any], item_id: str, frame_seq: int) -> None:
-        summary = item.get("summary")
-        if not isinstance(summary, list) or not all(isinstance(part, str) for part in summary):
-            result.miss("item/completed/reasoning/summary")
-            return
+    def _complete_reasoning(self, result: Yield, item: ReasoningThreadItem, item_id: str, frame_seq: int) -> None:
+        summary = item.summary or []
         completion = ReasoningCompletion(disclosure=ReasoningDisclosure.SUMMARY)
         self._complete_prose(
             result, self._open_reasoning, ReasoningOpen(), completion, item_id, "\n\n".join(summary), frame_seq
@@ -331,26 +357,21 @@ class CodexProjector:
             )
         )
 
-    def _start_tool(self, result: Yield, item: Mapping[str, Any], frame_seq: int) -> None:
-        item_type, item_id = item.get("type"), item.get("id")
-        assert isinstance(item_type, str)
-        assert isinstance(item_id, str)
+    def _start_tool(
+        self, result: Yield, item: CommandExecutionThreadItem | McpToolCallThreadItem, frame_seq: int
+    ) -> None:
+        item_id = item.id
         if item_id in self._open_calls:
             return
-        if item_type == "commandExecution":
-            command, cwd = item.get("command"), item.get("cwd")
-            if not isinstance(command, str) or not isinstance(cwd, str):
-                result.miss("item/started/commandExecution/shape")
-                return
+        if isinstance(item, CommandExecutionThreadItem):
             tool_name = "commandExecution"
-            arguments: dict[str, Json] = {"command": command, "cwd": cwd}
+            arguments: dict[str, Json] = {"command": item.command, "cwd": item.cwd}
         else:
-            server, tool, argument_value = item.get("server"), item.get("tool"), item.get("arguments")
-            if not isinstance(server, str) or not isinstance(tool, str) or not isinstance(argument_value, dict):
-                result.miss("item/started/mcpToolCall/shape")
+            tool_name = f"{item.server}/{item.tool}"
+            if not isinstance(item.arguments, dict):
+                result.miss("item/started/mcpToolCall/arguments")
                 return
-            tool_name = f"{server}/{tool}"
-            arguments = argument_value
+            arguments = item.arguments
         runner_id = self._mint_id()
         self._open_calls[item_id] = runner_id
         result.operations.append(
@@ -363,39 +384,36 @@ class CodexProjector:
             )
         )
 
-    def _complete_tool(self, result: Yield, item: Mapping[str, Any], item_id: str, frame_seq: int) -> None:
+    def _complete_tool(
+        self,
+        result: Yield,
+        item: CommandExecutionThreadItem | McpToolCallThreadItem,
+        raw_item: Mapping[str, Any] | None,
+        item_id: str,
+        frame_seq: int,
+    ) -> None:
         if (runner_id := self._open_calls.get(item_id)) is None:
             return
-        item_type = item.get("type")
+        item_type = str(item.type)
         if item_id in self._completed_call_ids:
             result.miss(f"item/completed/{item_type}/duplicate")
             return
-        if item_type == "commandExecution":
-            status = item.get("status")
-            if status not in ("completed", "failed", "declined"):
-                result.miss("item/completed/commandExecution/status")
-                return
+        if isinstance(item, CommandExecutionThreadItem):
+            status = str(item.status)
             structured: Json = {
                 key: value
-                for key, value in item.items()
+                for key, value in (raw_item or {}).items()
                 if key not in ("type", "id", "aggregatedOutput") and _is_json(value)
             }
             outcome = ToolOutcome.SUCCEEDED if status == "completed" else ToolOutcome.FAILED
         else:
-            status = item.get("status")
-            if status not in ("completed", "failed"):
-                result.miss("item/completed/mcpToolCall/status")
-                return
-            error, mcp_result = item.get("error"), item.get("result")
-            if (mcp_result is not None and not isinstance(mcp_result, dict)) or (
-                error is not None and not isinstance(error, dict)
-            ):
-                result.miss("item/completed/mcpToolCall/result")
-                return
-            if rendered := _render_mcp_result(mcp_result):
+            status = str(item.status)
+            if rendered := _render_mcp_result(item.result):
                 result.operations.append(ItemSegment(item_id=runner_id, text=rendered, provenance=at(frame_seq)))
             structured = {
-                key: value for key, value in item.items() if key not in ("type", "id", "arguments") and _is_json(value)
+                key: value
+                for key, value in (raw_item or {}).items()
+                if key not in ("type", "id", "arguments") and _is_json(value)
             }
             outcome = ToolOutcome.SUCCEEDED if status == "completed" else ToolOutcome.FAILED
         self._completed_call_ids.add(item_id)
@@ -409,15 +427,14 @@ class CodexProjector:
             )
         )
 
-    def _turn_completed(self, result: Yield, frame_seq: int, params: Mapping[str, Any]) -> None:
-        turn = params.get("turn") if isinstance(params.get("turn"), dict) else None
-        match turn and turn.get("status"):
+    def _turn_completed(self, result: Yield, frame_seq: int, notification: TurnCompletedNotification) -> None:
+        turn = notification.turn
+        match str(turn.status):
             case "completed":
                 end: TurnEnd = TurnAnswered()
             case "interrupted":
                 end = TurnAborted()
             case "failed":
-                assert turn is not None
                 end = TurnFailed(failure=_failure(turn))
             case _:
                 result.miss("turn/completed/status")
@@ -440,28 +457,22 @@ class CodexProjector:
             self._open_reasoning = None
 
 
-def _failure(turn: Mapping[str, Any]) -> str:
+def _failure(turn: Turn) -> str:
     """Why the turn failed, from `TurnError.message` on the terminal frame.
 
     `additionalDetails` holds the reason instead on the retry notifications Codex sends while it is
     still trying, and is null here; the terminal frame's `message` carries the reason.
     """
-    error = turn.get("error")
-    if error is None:
+    if turn.error is None:
         return "unknown error"
-    if isinstance(error, dict) and isinstance(message := error.get("message"), str):
-        return message
-    return str(error)
+    return turn.error.message
 
 
-def _render_mcp_result(result: Mapping[str, Any] | None) -> str:
+def _render_mcp_result(result: McpToolCallResult | None) -> str:
     if result is None:
         return ""
-    content = result.get("content")
-    if not isinstance(content, list):
-        return ""
     rendered: list[str] = []
-    for part in content:
+    for part in result.content:
         if isinstance(part, dict) and part.get("type") == "text" and isinstance(part.get("text"), str):
             rendered.append(part["text"])
         elif _is_json(part):

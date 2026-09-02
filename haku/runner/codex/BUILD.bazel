@@ -1,9 +1,49 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+# The generated Pydantic module is a genrule output, so Gazelle cannot discover its Python module
+# from a checked-in source file.
+# gazelle:resolve py haku.runner.codex.generated_protocol //haku/runner/codex:generated_protocol
+
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "generate_protocol_models",
+    srcs = ["generate_protocol_models.py"],
+    deps = [
+        "@pypi//datamodel_code_generator",
+    ],
+)
+
+py_binary(
+    name = "generate_protocol_models_bin",
+    main_module = "haku.runner.codex.generate_protocol_models",
+    deps = [":generate_protocol_models"],
+)
+
+genrule(
+    name = "generated_protocol_src",
+    outs = ["generated_protocol.py"],
+    cmd = "$(location :generate_protocol_models_bin) --codex $(location @codex_cli_linux_x64//:binary) --output $@",
+    tools = [
+        ":generate_protocol_models_bin",
+        "@codex_cli_linux_x64//:binary",
+        "@codex_cli_linux_x64//:files",
+    ],
+)
+
+py_library(
+    name = "generated_protocol",
+    srcs = [":generated_protocol_src"],
+    visibility = ["//haku:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
 
 py_library(
     name = "protocol",
     srcs = ["protocol.py"],
     visibility = ["//haku:__subpackages__"],
+    deps = [
+        "//haku/runner/codex:generated_protocol",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
@@ -24,6 +64,8 @@ py_library(
         ":protocol",
         "//haku/runner:neutral_operations",
         "//haku/runner:projection",
+        "//haku/runner/codex:generated_protocol",
+        "@pypi//pydantic",
     ],
 )
 
@@ -38,7 +80,9 @@ py_library(
         "//haku/runner:backend",
         "//haku/runner:protocol",
         "//haku/runner:session_api",
+        "//haku/runner/codex:generated_protocol",
         "@pypi//anyio",
+        "@pypi//pydantic",
     ],
 )
 
@@ -73,6 +117,17 @@ py_test(
         ":projection",
         "//:conftest",
         "//haku/runner:neutral_operations",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_protocol",
+    srcs = ["test_protocol.py"],
+    deps = [
+        ":protocol",
+        "//:conftest",
+        "//haku/runner/codex:generated_protocol",
         "@pypi//pytest_bazel",
     ],
 )

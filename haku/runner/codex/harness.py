@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import anyio
+from pydantic import BaseModel
 
 from haku.runner.backend import (
     ProcessLaunch,
@@ -35,6 +36,24 @@ from haku.runner.backend import (
     read_json_frames,
     shutdown,
     start_process,
+)
+from haku.runner.codex.generated_protocol import (
+    AskForApproval1,
+    ClientInfo,
+    InitializeParams,
+    JSONRPCError,
+    JSONRPCErrorError,
+    JSONRPCNotification,
+    JSONRPCRequest,
+    JSONRPCResponse,
+    SandboxMode,
+    TextUserInput,
+    TextUserInputType,
+    ThreadStartParams,
+    ThreadStartResponse,
+    TurnInterruptParams,
+    TurnStartParams,
+    TurnStartResponse,
 )
 from haku.runner.codex.options import (
     CODEX_DEVELOPER_INSTRUCTIONS_ENV,
@@ -50,11 +69,7 @@ from haku.runner.codex.protocol import (
     TURN_COMPLETED,
     TURN_INTERRUPT,
     TURN_START,
-    Notification,
-    Request,
     RequestId,
-    Response,
-    nested_string,
     parse_message,
 )
 from haku.runner.protocol import HarnessLaunch, Interrupt, PromptDispatch
@@ -65,12 +80,12 @@ logger = logging.getLogger(__name__)
 REQUEST_TIMEOUT_SECONDS = 60.0
 
 # app-server thread/start posture. Full access is deliberate for the runtime pod: the sandbox
-# boundary is the pod itself, not Codex's own jail. These occur once, so they stay string literals
-# rather than a re-derived copy of Codex's pinned config enums.
-_APPROVAL_POLICY = "never"
-_SANDBOX = "danger-full-access"
+# boundary is the pod itself, not Codex's own jail. These values are members of the generated
+# models, so changes to Codex's accepted configuration are visible at this boundary.
+_APPROVAL_POLICY = AskForApproval1.never
+_SANDBOX = SandboxMode.danger_full_access
 
-_CLIENT_INFO = {"name": "haku_runner", "title": "Haku Runner", "version": "0.1.0"}
+_CLIENT_INFO = ClientInfo(name="haku_runner", title="Haku Runner", version="0.1.0")
 
 
 class CodexAppServerError(RuntimeError):
@@ -132,7 +147,7 @@ class CodexHarness:
 class _CodexConversation:
     """One Codex thread's live state: request correlation, the active turn, and the prompt queue."""
 
-    def __init__(self, session: SessionApi, stdin: StdinWriter, thread_params: dict[str, Any]):
+    def __init__(self, session: SessionApi, stdin: StdinWriter, thread_params: ThreadStartParams):
         self._session = session
         self._stdin = stdin
         self._thread_params = thread_params
@@ -148,10 +163,10 @@ class _CodexConversation:
 
     async def handshake(self) -> None:
         """`initialize` → `initialized` → `thread/start`, capturing the one thread's id."""
-        await self._request(INITIALIZE, {"clientInfo": _CLIENT_INFO, "capabilities": None})
+        await self._request(INITIALIZE, InitializeParams(clientInfo=_CLIENT_INFO))
         await self._notify(INITIALIZED)
         started = await self._request(THREAD_START, self._thread_params)
-        self._thread_id = nested_string(_as_object(started, "thread/start result"), "thread", "id")
+        self._thread_id = ThreadStartResponse.model_validate(started).thread.id
 
     async def serve_commands(self) -> None:
         """Turn the console's prompts and interrupts into native `turn/start`/`turn/interrupt`."""
@@ -166,13 +181,13 @@ class _CodexConversation:
     async def on_frame(self, payload: dict[str, Any]) -> None:
         """Record one stdout frame, project its notification, and correlate a response or turn end."""
         message = parse_message(payload)
-        reply = self._refuse(message) if isinstance(message, Request) else None
+        reply = self._refuse(message) if isinstance(message, JSONRPCRequest) else None
         await self._session.observe(payload, self._projector.observe, lambda _payload: reply)
         if reply is not None:
             await self._stdin.write_object(reply)
-        if isinstance(message, Response):
+        if isinstance(message, (JSONRPCResponse, JSONRPCError)):
             self._resolve(message)
-        elif isinstance(message, Notification) and message.method == TURN_COMPLETED:
+        elif isinstance(message, JSONRPCNotification) and message.method == TURN_COMPLETED:
             self._active_turn_id = None
             await self._start_next_if_idle()
 
@@ -193,8 +208,11 @@ class _CodexConversation:
         if self._thread_id is None:
             raise CodexAppServerError("a prompt was dispatched before the Codex thread started")
         request_id, future = self._register()
-        input_item = {"type": "text", "text": dispatch.text, "text_elements": []}
-        frame = {"method": TURN_START, "id": request_id, "params": {"threadId": self._thread_id, "input": [input_item]}}
+        params = TurnStartParams(
+            threadId=self._thread_id,
+            input=[TextUserInput(type=TextUserInputType.text, text=dispatch.text, text_elements=[])],
+        )
+        frame = _request_frame(request_id, TURN_START, params)
         payload = await self._session.admit(
             dispatch.prompt_id, lambda: frame, partial(self._projector.admit, dispatch.prompt_id)
         )
@@ -206,7 +224,7 @@ class _CodexConversation:
             result = await asyncio.wait_for(future, timeout=REQUEST_TIMEOUT_SECONDS)
         finally:
             self._pending.pop(request_id, None)
-        self._active_turn_id = nested_string(_as_object(result, "turn/start result"), "turn", "id")
+        self._active_turn_id = TurnStartResponse.model_validate(result).turn.id
 
     def _compose_interrupt(self) -> dict[str, Any] | None:
         """The `turn/interrupt` for the running turn, or None when no turn is running.
@@ -216,16 +234,16 @@ class _CodexConversation:
         """
         if self._thread_id is None or self._active_turn_id is None:
             return None
-        return {
-            "method": TURN_INTERRUPT,
-            "id": self._mint_request_id(),
-            "params": {"threadId": self._thread_id, "turnId": self._active_turn_id},
-        }
+        return _request_frame(
+            self._mint_request_id(),
+            TURN_INTERRUPT,
+            TurnInterruptParams(threadId=self._thread_id, turnId=self._active_turn_id),
+        )
 
-    async def _request(self, method: str, params: dict[str, Any]) -> Any:
+    async def _request(self, method: str, params: BaseModel) -> Any:
         """One handshake request: inject it into the record, write it, await its response."""
         request_id, future = self._register()
-        frame = {"method": method, "id": request_id, "params": params}
+        frame = _request_frame(request_id, method, params)
         await self._session.inject(frame)
         await self._stdin.write_object(frame)
         try:
@@ -236,7 +254,7 @@ class _CodexConversation:
             self._pending.pop(request_id, None)
 
     async def _notify(self, method: str) -> None:
-        frame = {"method": method}
+        frame = JSONRPCNotification(method=method).model_dump(exclude_none=True)
         await self._session.inject(frame)
         await self._stdin.write_object(frame)
 
@@ -251,24 +269,22 @@ class _CodexConversation:
         self._next_request_id += 1
         return request_id
 
-    def _resolve(self, response: Response) -> None:
-        future = self._pending.get(response.request_id)
+    def _resolve(self, response: JSONRPCResponse | JSONRPCError) -> None:
+        future = self._pending.get(response.id)
         if future is None or future.done():
-            logger.debug("Ignoring a Codex response with no local waiter: %s", response.request_id)
+            logger.debug("Ignoring a Codex response with no local waiter: %s", response.id)
             return
-        if response.error is not None:
-            message = response.error.get("message")
-            reason = message if isinstance(message, str) else "app-server request failed"
-            future.set_exception(CodexAppServerError(reason))
+        if isinstance(response, JSONRPCError):
+            future.set_exception(CodexAppServerError(response.error.message))
         else:
             future.set_result(response.result)
 
-    def _refuse(self, request: Request) -> dict[str, Any]:
+    def _refuse(self, request: JSONRPCRequest) -> dict[str, Any]:
         logger.error("Codex app-server asked for %s, which this runner does not serve", request.method)
-        return {
-            "id": request.request_id,
-            "error": {"code": -32601, "message": f"{request.method} is not supported by this runner"},
-        }
+        return JSONRPCError(
+            id=request.id,
+            error=JSONRPCErrorError(code=-32601, message=f"{request.method} is not supported by this runner"),
+        ).model_dump(exclude_none=True)
 
     def fail_pending(self) -> None:
         for future in self._pending.values():
@@ -277,32 +293,27 @@ class _CodexConversation:
         self._pending.clear()
 
 
-def _thread_params(launch: HarnessLaunch) -> dict[str, Any]:
+def _thread_params(launch: HarnessLaunch) -> ThreadStartParams:
     """The one thread's `thread/start` params, from the launch the console selected.
 
     Model, reasoning effort and developer instructions ride in the launch environment under
     `codex.options`' keys: the runner owns `thread/start` now, so what the console's `CodexThread`
     used to send it travels to the runner rather than staying console-side.
     """
-    params: dict[str, Any] = {
-        "cwd": launch.cwd,
-        "approvalPolicy": _APPROVAL_POLICY,
-        "sandbox": _SANDBOX,
-        "ephemeral": True,
-    }
+    params = ThreadStartParams(cwd=str(launch.cwd), approvalPolicy=_APPROVAL_POLICY, sandbox=_SANDBOX, ephemeral=True)
     if model := launch.environment.get(CODEX_MODEL_ENV):
-        params["model"] = model
+        params.model = model
     if effort := launch.environment.get(CODEX_REASONING_EFFORT_ENV):
-        params["config"] = {"model_reasoning_effort": effort}
+        params.config = {"model_reasoning_effort": effort}
     if instructions := launch.environment.get(CODEX_DEVELOPER_INSTRUCTIONS_ENV):
-        params["developerInstructions"] = instructions
+        params.developerInstructions = instructions
     return params
 
 
-def _as_object(value: Any, what: str) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        raise CodexAppServerError(f"{what} is not an object")
-    return value
+def _request_frame(request_id: str, method: str, params: BaseModel) -> dict[str, Any]:
+    return JSONRPCRequest(
+        id=request_id, method=method, params=params.model_dump(by_alias=True, exclude_none=True)
+    ).model_dump(by_alias=True, exclude_none=True)
 
 
 def codex_harness(executable: Path | None = None) -> CodexHarness:
