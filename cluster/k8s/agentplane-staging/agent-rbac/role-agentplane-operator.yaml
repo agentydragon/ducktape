@@ -26,7 +26,10 @@ rules:
     verbs: ["get"]
   # The app's API, through the API server's service proxy: the agent's kubeconfig goes through a
   # proxy that cannot upgrade connections, so port-forward and exec are not a path to it. The
-  # name carries the port, as the proxy subresource is addressed.
+  # proxy subresource is addressed by the bare Service name or with a port number or port name
+  # appended, so all three spellings are named. The verbs are the HTTP methods the app's API takes:
+  # GET for reads and event streams, POST to create sandboxes and sessions, send inputs, and
+  # suspend or resume, DELETE for the sandboxes the agent made.
   - apiGroups: [""]
     resources: ["services/proxy"]
     resourceNames: ["agentplane-app", "agentplane-app:8080", "agentplane-app:http"]
