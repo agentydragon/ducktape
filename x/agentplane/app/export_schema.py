@@ -27,13 +27,13 @@ PREFIX = "Runner"
 
 
 async def _unreachable(name: str) -> str:
-    raise SandboxNotReachableError(name, ProvisioningState.CLAIM_CREATED)
+    raise SandboxNotReachableError(name, ProvisioningState.WAITING_FOR_POD)
 
 
 def openapi_document() -> dict[str, Any]:
     # Only routes and models shape the document; the inventory's clients are never called.
     inventory = SandboxInventory(
-        namespace="schema", warm_pool="schema", custom_objects=cast(Any, None), core_v1=cast(Any, None)
+        namespace="schema", template="schema", custom_objects=cast(Any, None), core_v1=cast(Any, None)
     )
     document: dict[str, Any] = create_app(inventory, RunnerBridge(address_of=_unreachable)).openapi()
     schemas = document["components"]["schemas"]

@@ -1,5 +1,5 @@
 # What an agent needs to test Agentplane on staging without an operator:
-# create and delete claims, suspend and resume sandboxes (patch), exec into
+# create and delete Sandboxes, suspend and resume them (patch), exec into
 # and port-forward to runner Pods. Reads of metadata and logs come from the
 # Kyverno-generated bindings the namespace label opts into; the pod verbs here
 # are what exec and port-forward need beyond that.
@@ -10,11 +10,11 @@ metadata:
   namespace: agentplane-staging
 rules:
   - apiGroups: ["extensions.agents.x-k8s.io"]
-    resources: ["sandboxclaims"]
-    verbs: ["create", "get", "list", "watch", "delete"]
-  - apiGroups: ["extensions.agents.x-k8s.io"]
+    resources: ["sandboxtemplates"]
+    verbs: ["get"]
+  - apiGroups: ["agents.x-k8s.io"]
     resources: ["sandboxes"]
-    verbs: ["get", "list", "watch", "patch"]
+    verbs: ["create", "get", "list", "watch", "patch", "delete"]
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list", "watch"]

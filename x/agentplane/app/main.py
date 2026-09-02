@@ -28,8 +28,8 @@ FRONTEND_INDEX = "_main/x/agentplane/app/frontend/dist/index.html"
 
 @app.command()
 def main(
-    namespace: Annotated[str, typer.Option(help="Namespace holding the SandboxClaims.")],
-    warm_pool: Annotated[str, typer.Option(help="SandboxWarmPool every new claim references.")],
+    namespace: Annotated[str, typer.Option(help="Namespace holding the Sandboxes.")],
+    template: Annotated[str, typer.Option(help="SandboxTemplate every new Sandbox copies its Pod from.")],
     runner_port: Annotated[int, typer.Option(help="The port every runner Pod listens on.")],
     host: Annotated[str, typer.Option(help="Bind address.")] = "127.0.0.1",
     port: Annotated[int, typer.Option(help="Bind port.")] = 8080,
@@ -38,18 +38,13 @@ def main(
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     asyncio.run(
         async_main(
-            namespace=namespace,
-            warm_pool=warm_pool,
-            runner_port=runner_port,
-            host=host,
-            port=port,
-            kubeconfig=kubeconfig,
+            namespace=namespace, template=template, runner_port=runner_port, host=host, port=port, kubeconfig=kubeconfig
         )
     )
 
 
 async def async_main(
-    *, namespace: str, warm_pool: str, runner_port: int, host: str, port: int, kubeconfig: Path | None
+    *, namespace: str, template: str, runner_port: int, host: str, port: int, kubeconfig: Path | None
 ) -> None:
     configuration = k8s_client.Configuration()
     if kubeconfig is None:
@@ -59,7 +54,7 @@ async def async_main(
     async with ApiClient(configuration=configuration) as api:
         inventory = SandboxInventory(
             namespace=namespace,
-            warm_pool=warm_pool,
+            template=template,
             # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
             custom_objects=cast(CustomObjectsClient, CustomObjectsApi(api)),
             core_v1=CoreV1Api(api),

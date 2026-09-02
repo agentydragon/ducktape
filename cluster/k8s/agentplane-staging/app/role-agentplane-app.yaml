@@ -1,6 +1,6 @@
-# The app's own identity over the namespace's inventory: claims are created and
-# deleted, sandboxes are patched for suspend and resume, and the runner Pod's
-# address is read to dial it. No exec, logs, or Secrets.
+# The app's own identity over the namespace's inventory: Sandboxes are stamped
+# from the template and deleted, patched for suspend, resume, and archive, and
+# the runner Pod's address is read to dial it. No exec, logs, or Secrets.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -8,11 +8,11 @@ metadata:
   namespace: agentplane-staging
 rules:
   - apiGroups: ["extensions.agents.x-k8s.io"]
-    resources: ["sandboxclaims"]
-    verbs: ["create", "get", "list", "watch", "patch", "delete"]
-  - apiGroups: ["extensions.agents.x-k8s.io"]
+    resources: ["sandboxtemplates"]
+    verbs: ["get"]
+  - apiGroups: ["agents.x-k8s.io"]
     resources: ["sandboxes"]
-    verbs: ["get", "list", "watch", "patch"]
+    verbs: ["create", "get", "list", "watch", "patch", "delete"]
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list", "watch"]

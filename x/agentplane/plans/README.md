@@ -53,7 +53,7 @@ Not required for the capture slice:
 
 ## Design boundaries
 
-- Kubernetes/Agent Sandbox owns Claim, Sandbox, Pod, PVC, readiness, suspension, and workload
+- Kubernetes/Agent Sandbox owns Sandbox, Pod, PVC, readiness, suspension, and workload
   lifecycle.
 - Native harnesses own native history, execution semantics, and native resume.
 - The bridge owns native process supervision and protocol I/O.

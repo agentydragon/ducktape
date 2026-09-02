@@ -44,7 +44,7 @@ These are possible follow-up work, not design constraints on the capture experim
 
 Keep one authoritative owner for each fact:
 
-- **Kubernetes/Agent Sandbox** owns Claim, Sandbox, Pod, PVC, readiness, suspension, scheduling, and
+- **Kubernetes/Agent Sandbox** owns Sandbox, Pod, PVC, readiness, suspension, scheduling, and
   workload lifecycle.
 - **The native harness** owns its native session/thread history, queue behavior, tool semantics,
   execution state, and native resume behavior.
@@ -71,9 +71,9 @@ provider continuity from an Agentplane transcript.
 The leading Kubernetes shape is:
 
 ```text
-SandboxClaim -> Sandbox -> Pod, PVC
-                              \
-                               optional separately managed Service
+Sandbox -> Pod, PVC
+       \
+        optional separately managed Service
 ```
 
 Agent Sandbox documentation supports composing a normal Service around Sandbox ports. The pinned

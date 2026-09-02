@@ -10,4 +10,4 @@ metadata:
     # write access lives in ../agent-rbac.
     rbac.ducktape.io/agent-readable-logs: "true"
   annotations:
-    description: Agentplane staging - sandboxed runner Pods (one per SandboxClaim) plus, later, the integration app that drives them.
+    description: Agentplane staging - sandboxed runner Pods (one per Sandbox) and the integration app that drives them.

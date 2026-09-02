@@ -198,14 +198,14 @@ personal context.
   copy of the `cheap-experiments` LiteLLM key for the runner Pods, Cilium policy, and the agent's
   standing access: the namespace is labeled
   agent-readable for metadata and logs, and a per-service `agent-rbac/` binding lets the
-  existing agent identities create and delete claims, suspend and resume sandboxes, exec into
-  runner Pods, and port-forward. The cluster validator passes and a claim reaches Ready once
+  existing agent identities create, suspend, resume, and delete sandboxes, exec into
+  runner Pods, and port-forward. The cluster validator passes and a Sandbox reaches Ready once
   the image is published.
 - **I4 first real turn:** run by the agent on staging without Rai: one turn per provider against
   LiteLLM from inside a sandbox, then detach, suspend, resume, reattach from the cursor, and the
   earlier turn visible in the resumed conversation; observations that change a guarantee go
   into the runner SPEC.
-- **C1 sandbox inventory:** REST with an OpenAPI schema over Agentplane's claims and sandboxes:
+- **C1 sandbox inventory:** REST with an OpenAPI schema over Agentplane's standalone Sandboxes:
   list with provisioning state, create, suspend, resume, delete; tested without a live cluster.
 - **C2 runner bridge:** sessions per sandbox, attach with a cursor, inputs, interrupt, shutdown,
   and SSE with the event sequence as the SSE id; `Native` events pass through; tested against a
@@ -253,7 +253,7 @@ personal context.
 
 ## Ownership and sequencing rules
 
-- Kubernetes/Agent Sandbox owns Claim, Sandbox, Pod, PVC, readiness, suspension, and workload lifecycle.
+- Kubernetes/Agent Sandbox owns Sandbox, Pod, PVC, readiness, suspension, and workload lifecycle.
 - Native harnesses own native history, execution semantics, and provider-native resume.
 - The runner owns harness supervision, the session log, and the protocol; Agentplane's app owns
   the sandbox inventory it derives from Kubernetes, the browser API, and later the live

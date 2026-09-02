@@ -13,7 +13,7 @@ browser (behind Authentik)
    |  REST + SSE
 integration app (Deployment, namespace agentplane-staging)
    |  Kubernetes API              |  runner protocol (gRPC, in-cluster)
-SandboxClaim -> Sandbox -> Pod    |
+Sandbox -> Pod, PVC               |
                   runner container <-+
                     runner process, state dir on the PVC
                     claude / codex child per session
@@ -31,7 +31,7 @@ may proceed in parallel and rebase. Packages that have landed leave this list.
 
 ### I4. First real turn, and continuity across suspension
 
-Manual milestone, run by the agent on staging: create a claim, attach, run one turn on each
+Manual milestone, run by the agent on staging: create a sandbox, attach, run one turn on each
 provider against LiteLLM, detach, suspend, resume, reattach from the cursor, and see the earlier
 turn in the resumed conversation. This is the live-probe continuity check deferred from the runner
 PR. Write what was observed into the runner SPEC where it changes a guarantee.
@@ -66,7 +66,7 @@ Depends on C2's schema.
 ### C4. App deployment into staging
 
 `cluster/k8s/agentplane-staging/`: Deployment, Service, ingress behind Authentik forward-auth, and
-a ServiceAccount with RBAC over claims, sandboxes, and pods in the namespace only. Image registered
+a ServiceAccount with RBAC over sandboxes, the template, and pods in the namespace only. Image registered
 like the runner's. The agent reaches the API from inside the cluster, through the Service from
 its sandbox or by port-forward, so the app's flows are testable end to end autonomously. A
 production instance is a second copy of the same manifests with its own keys, and does not exist

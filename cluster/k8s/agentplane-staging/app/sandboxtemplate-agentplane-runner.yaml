@@ -1,5 +1,6 @@
-# Agentplane runner sandbox: one Pod per SandboxClaim, driven by the
-# integration app over port 7000. No warm pool. The Pod is pinned to wyrm2
+# Agentplane runner sandbox: the Pod and volume every Sandbox the integration
+# app stamps is copied from (the app reads this template at creation; no claim
+# or warm pool references it), driven over port 7000. The Pod is pinned to wyrm2
 # (region proxmox) so the local-path-proxmox state PVC binds where it runs; a
 # suspended Sandbox (operatingMode: Suspended) drops the Pod and keeps the PVC,
 # so it resumes only there. Both harnesses reach models through the cluster

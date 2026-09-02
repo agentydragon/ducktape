@@ -1,5 +1,5 @@
 # The Agentplane integration app: the sandbox inventory over this namespace's
-# SandboxClaims and the runner bridge that dials each runner Pod on port 7000.
+# Sandboxes and the runner bridge that dials each runner Pod on port 7000.
 # It persists nothing; Kubernetes is the inventory and the runner's log is the
 # history. Reached through the Authentik proxy outpost (the HTTPRoute lives in
 # cluster/k8s/authentik/proxy-routes); an agent reaches it by port-forward
@@ -41,7 +41,7 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             - --namespace=agentplane-staging
-            - --warm-pool=agentplane-runner
+            - --template=agentplane-runner
             - --runner-port=7000
             - --host=0.0.0.0
             - --port=8080

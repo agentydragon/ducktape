@@ -9,8 +9,6 @@ const STATE_COLORS: Record<string, string> = {
   running: "green",
   suspended: "gray",
   archived: "gray",
-  claim_created: "yellow",
-  waiting_for_sandbox: "yellow",
   waiting_for_pod: "yellow",
   waiting_for_pod_ready: "yellow",
 };
@@ -88,7 +86,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
             <Table.Th>Provider</Table.Th>
             <Table.Th>Model</Table.Th>
             <Table.Th>State</Table.Th>
-            <Table.Th>Pod</Table.Th>
+            <Table.Th>Node</Table.Th>
             <Table.Th />
           </Table.Tr>
         </Table.Thead>
@@ -106,7 +104,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                 <Badge color={STATE_COLORS[row.state] ?? "blue"}>{row.state}</Badge>
               </Table.Td>
               <Table.Td>
-                {row.pod_name ?? "—"} {row.pod_ip ? `(${row.pod_ip})` : ""}
+                {row.node_name ?? "—"} {row.pod_ip ? `(${row.pod_ip})` : ""}
               </Table.Td>
               <Table.Td>
                 <Group gap="xs">

@@ -11,26 +11,22 @@ from fastapi.testclient import TestClient
 from x.agentplane.app.api import create_app
 from x.agentplane.app.bridge import RunnerBridge
 from x.agentplane.app.inventory import ARCHIVED_LABEL, SandboxInventory
-from x.agentplane.app.testing.kubernetes import FakeCoreV1Api, FakeCustomObjectsApi, claim, pod, sandbox
+from x.agentplane.app.testing.kubernetes import FakeCoreV1Api, FakeCustomObjectsApi, pod, sandbox
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
-
-_READY = {"conditions": [{"type": "Ready", "status": "True"}]}
 
 
 @pytest.fixture
 def client(
     inventory: SandboxInventory, bridge: RunnerBridge, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
 ) -> Iterator[TestClient]:
-    custom_objects.objects[("sandboxclaims", "live")] = claim("live", status={**_READY, "sandbox": {"name": "sb-live"}})
-    custom_objects.objects[("sandboxes", "sb-live")] = sandbox("sb-live")
-    core_v1.pods["sb-live"] = pod("sb-live", phase="Running", ready=True, ip="10.0.0.7")
-    custom_objects.objects[("sandboxclaims", "fresh")] = claim("fresh")
-    custom_objects.objects[("sandboxclaims", "shelved")] = claim(
-        "shelved", labels={ARCHIVED_LABEL: "true"}, status={**_READY, "sandbox": {"name": "sb-shelved"}}
+    custom_objects.objects[("sandboxes", "live")] = sandbox("live")
+    core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
+    custom_objects.objects[("sandboxes", "fresh")] = sandbox("fresh")
+    custom_objects.objects[("sandboxes", "shelved")] = sandbox(
+        "shelved", labels={ARCHIVED_LABEL: "true"}, operating_mode="Suspended"
     )
-    custom_objects.objects[("sandboxes", "sb-shelved")] = sandbox("sb-shelved", operating_mode="Suspended")
     with TestClient(create_app(inventory, bridge)) as test_client:
         yield test_client
 
@@ -39,7 +35,7 @@ def test_list_reports_state_and_hides_archived_by_default(client: TestClient) ->
     response = client.get("/sandboxes")
 
     assert response.status_code == 200
-    assert {row["name"]: row["state"] for row in response.json()} == {"live": "running", "fresh": "claim_created"}
+    assert {row["name"]: row["state"] for row in response.json()} == {"live": "running", "fresh": "waiting_for_pod"}
     assert {row["name"] for row in client.get("/sandboxes", params={"include_archived": "true"}).json()} == {
         "live",
         "fresh",
@@ -60,8 +56,8 @@ def test_create_returns_the_new_row(client: TestClient, custom_objects: FakeCust
     assert response.status_code == 201
     row = response.json()
     assert row["name"].startswith("demo-")
-    assert (row["state"], row["provider"], row["model"]) == ("claim_created", "codex", "cheap")
-    assert ("sandboxclaims", row["name"]) in custom_objects.objects
+    assert (row["state"], row["provider"], row["model"]) == ("waiting_for_pod", "codex", "cheap")
+    assert ("sandboxes", row["name"]) in custom_objects.objects
 
 
 @pytest.mark.parametrize(
@@ -79,7 +75,7 @@ def test_create_rejects_invalid_requests(client: TestClient, custom_objects: Fak
     response = client.post("/sandboxes", json=body)
 
     assert response.status_code == 422
-    assert all(kind != "sandboxclaims" or name in {"live", "fresh", "shelved"} for kind, name in custom_objects.objects)
+    assert all(kind != "sandboxes" or name in {"live", "fresh", "shelved"} for kind, name in custom_objects.objects)
 
 
 def test_suspend_resume_archive_unarchive_apply_in_order(
@@ -93,17 +89,13 @@ def test_suspend_resume_archive_unarchive_apply_in_order(
     assert client.get("/sandboxes/live").json()["state"] == "archived"
     assert client.post("/sandboxes/live/unarchive").status_code == 204
     assert client.get("/sandboxes/live").json()["state"] == "suspended"
-    assert custom_objects.objects[("sandboxes", "sb-live")]["spec"]["operatingMode"] == "Suspended"
-
-
-def test_suspend_before_provisioning_is_a_conflict(client: TestClient) -> None:
-    assert client.post("/sandboxes/fresh/suspend").status_code == 409
+    assert custom_objects.objects[("sandboxes", "live")]["spec"]["operatingMode"] == "Suspended"
     assert client.post("/sandboxes/nope/suspend").status_code == 404
 
 
-def test_delete_removes_the_claim(client: TestClient, custom_objects: FakeCustomObjectsApi) -> None:
+def test_delete_removes_the_sandbox(client: TestClient, custom_objects: FakeCustomObjectsApi) -> None:
     assert client.delete("/sandboxes/live").status_code == 204
-    assert ("sandboxclaims", "live") not in custom_objects.objects
+    assert ("sandboxes", "live") not in custom_objects.objects
     assert client.delete("/sandboxes/live").status_code == 404
 
 

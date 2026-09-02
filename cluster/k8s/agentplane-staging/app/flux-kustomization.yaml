@@ -4,7 +4,7 @@ metadata:
   name: agentplane-staging-app
   namespace: ducktape-flux
   annotations:
-    description: Agentplane integration app (Deployment, Service, RBAC) and the runner SandboxTemplate + Cilium fences in agentplane-staging; the app creates one SandboxClaim per sandbox against a zero-replica pool, so nothing is pre-warmed.
+    description: Agentplane integration app (Deployment, Service, RBAC) and the runner SandboxTemplate + Cilium fences in agentplane-staging; the app stamps one standalone Sandbox per sandbox from the template; no claims or warm pool.
 spec:
   retryInterval: 1m
   interval: 10m

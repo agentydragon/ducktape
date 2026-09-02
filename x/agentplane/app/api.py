@@ -8,13 +8,7 @@ from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response, statu
 from fastapi.responses import JSONResponse
 
 from x.agentplane.app import bridge as runner_bridge
-from x.agentplane.app.inventory import (
-    NewSandbox,
-    SandboxInventory,
-    SandboxNotFoundError,
-    SandboxNotProvisionedError,
-    SandboxView,
-)
+from x.agentplane.app.inventory import NewSandbox, SandboxInventory, SandboxNotFoundError, SandboxView
 from x.agentplane.runner.client import RunnerError
 
 router = APIRouter(prefix="/sandboxes", tags=["sandboxes"])
@@ -92,10 +86,6 @@ def create_app(inventory: SandboxInventory, bridge: runner_bridge.RunnerBridge) 
     @app.exception_handler(SandboxNotFoundError)
     async def _not_found(_request: Request, error: SandboxNotFoundError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": str(error)})
-
-    @app.exception_handler(SandboxNotProvisionedError)
-    async def _not_provisioned(_request: Request, error: SandboxNotProvisionedError) -> JSONResponse:
-        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
 
     @app.exception_handler(runner_bridge.SandboxNotReachableError)
     async def _not_reachable(_request: Request, error: runner_bridge.SandboxNotReachableError) -> JSONResponse:

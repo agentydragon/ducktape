@@ -15,7 +15,16 @@ from kubernetes_asyncio import client as k8s_client
 from x.agentplane.app.inventory import MANAGED_LABEL, MODEL_ANNOTATION, PROVIDER_LABEL, Provider
 
 NAMESPACE = "agentplane-test"
-WARM_POOL = "agentplane-test-pool"
+TEMPLATE = "agentplane-test-runner"
+
+# What the test template carries, and what every Sandbox the inventory creates must copy.
+POD_TEMPLATE: dict[str, Any] = {
+    "metadata": {"labels": {"app.kubernetes.io/name": "agentplane-test-runner"}},
+    "spec": {"containers": [{"name": "runner", "image": "registry.test/agentplane-runner:test"}]},
+}
+VOLUME_CLAIM_TEMPLATES: list[dict[str, Any]] = [
+    {"metadata": {"name": "state"}, "spec": {"resources": {"requests": {"storage": "1Gi"}}}}
+]
 
 
 def merge_patch(target: dict[str, Any], patch: dict[str, Any]) -> None:
@@ -31,7 +40,16 @@ def merge_patch(target: dict[str, Any], patch: dict[str, Any]) -> None:
 
 class FakeCustomObjectsApi:
     def __init__(self) -> None:
-        self.objects: dict[tuple[str, str], dict[str, Any]] = {}
+        self.objects: dict[tuple[str, str], dict[str, Any]] = {
+            ("sandboxtemplates", TEMPLATE): {
+                "metadata": {"name": TEMPLATE, "creationTimestamp": "2026-09-01T11:00:00Z"},
+                "spec": {
+                    "podTemplate": POD_TEMPLATE,
+                    "volumeClaimTemplatesPolicy": "Overrides",
+                    "volumeClaimTemplates": VOLUME_CLAIM_TEMPLATES,
+                },
+            }
+        }
         self.patches: list[tuple[str, str, dict[str, Any]]] = []
         self.deleted: list[tuple[str, str]] = []
 
@@ -53,8 +71,11 @@ class FakeCustomObjectsApi:
     ) -> dict[str, Any]:
         del group, version
         assert namespace == NAMESPACE
+        key = (plural, body["metadata"]["name"])
+        if key in self.objects:
+            raise k8s_client.ApiException(status=409)
         stored = {**body, "metadata": {**body["metadata"], "creationTimestamp": "2026-09-02T10:00:00Z"}}
-        self.objects[(plural, stored["metadata"]["name"])] = stored
+        self.objects[key] = stored
         return stored
 
     async def get_namespaced_custom_object(
@@ -106,12 +127,13 @@ class FakeCoreV1Api:
             raise k8s_client.ApiException(status=404) from None
 
 
-def claim(
+def sandbox(
     name: str,
     *,
     provider: Provider = Provider.CLAUDE,
     model: str = "test-model",
     labels: dict[str, str] | None = None,
+    operating_mode: str = "Running",
     status: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
@@ -121,15 +143,8 @@ def claim(
             "annotations": {MODEL_ANNOTATION: model},
             "creationTimestamp": "2026-09-01T12:00:00Z",
         },
-        "spec": {"warmPoolRef": {"name": WARM_POOL}},
+        "spec": {"podTemplate": POD_TEMPLATE, "operatingMode": operating_mode},
         **({"status": status} if status is not None else {}),
-    }
-
-
-def sandbox(name: str, *, operating_mode: str = "Running") -> dict[str, Any]:
-    return {
-        "metadata": {"name": name, "creationTimestamp": "2026-09-01T12:00:05Z"},
-        "spec": {"operatingMode": operating_mode},
     }
 
 
