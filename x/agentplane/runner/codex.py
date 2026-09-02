@@ -180,10 +180,9 @@ class CodexAdapter(HarnessAdapter):
                     )
                 )
 
-    async def _request(self, frame: wire.Outbound) -> tuple[wire.Response, int]:
+    async def _request(self, frame: wire.Request) -> tuple[wire.Response, int]:
         """Send a request and return its response with the Native sequence it arrived as."""
-        request_id = frame.id if not isinstance(frame, wire.InitializedNotification) else None
-        native = await self.session.request(frame, matches=lambda candidate: candidate.get("id") == request_id)
+        native = await self.session.request(frame, matches=lambda candidate: candidate.get("id") == frame.id)
         return wire.Response.model_validate(native.frame), native.sequence
 
 

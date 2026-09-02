@@ -378,13 +378,13 @@ class ErrorResponse(Wire):
     error: RpcError
 
 
-Outbound = (
+# Outbound frames that carry an id and so get a `Response`; the notification and the error answer
+# to a server request do not.
+Request = (
     InitializeRequest
-    | InitializedNotification
     | ThreadStartRequest
     | ThreadResumeRequest
     | TurnStartRequest
     | TurnSteerRequest
     | TurnInterruptRequest
-    | ErrorResponse
 )

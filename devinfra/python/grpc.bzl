@@ -16,16 +16,16 @@ _TOOLS = "//devinfra/python:protoc"
 _MYPY_PLUGIN = "//devinfra/python:protoc_gen_mypy"
 _MYPY_GRPC_PLUGIN = "//devinfra/python:protoc_gen_mypy_grpc"
 
-def py_grpc_library(name, proto, deps = [], visibility = None):
+def py_grpc_library(name, proto, visibility = None):
     """`<name>_pb2` and `<name>_pb2_grpc` libraries for `proto`, typed for mypy.
 
     Consumers import them as `<package>.<name>_pb2`; gazelle needs a `# gazelle:resolve py` directive
-    for each, since no source file backs them.
+    for each, since no source file backs them. The proto may import only the well-known types bundled
+    with protoc: no other `.proto` is on its include path.
 
     Args:
       name: the module stem, normally the proto's own stem.
       proto: the `.proto` file in this package.
-      deps: further `_pb2` libraries this proto imports.
       visibility: visibility of both libraries.
     """
     native.genrule(
@@ -59,7 +59,7 @@ def py_grpc_library(name, proto, deps = [], visibility = None):
         pyi_srcs = [name + "_pb2.pyi"],
         tags = generated_tags,
         visibility = visibility,
-        deps = ["@pypi//protobuf"] + deps,
+        deps = ["@pypi//protobuf"],
     )
     py_library(
         name = name + "_pb2_grpc",
