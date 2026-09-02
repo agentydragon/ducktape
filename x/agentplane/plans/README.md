@@ -18,6 +18,7 @@ scripted behavioral tests against a loopback model ([`../harness_tests/`](../har
 - [Focused experiments](experiments.md)
 - [Agentplane task DAG](task_dag.md)
 - [Asynchronous approvals and notification delivery](async_approvals.md)
+- [Agent access to external systems](external_access.md)
 - [Product-surface inventory](product_surface.md)
 - [Sandbox egress identity option survey](sandbox_egress_identity_research.md)
 - [ADR: credentialless Sandbox egress](adr_sandbox_proxy_gateway.md)

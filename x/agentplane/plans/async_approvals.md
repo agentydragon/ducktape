@@ -13,7 +13,9 @@ behaviors it relies on are pinned by [`../harness_tests/`](../harness_tests/).
   approval channel: they block the turn with no "come back later" answer, and a harness can only
   execute an approved action if it holds the credential, which the model's own shell can then read.
   Codex's decline additionally carries no text the model sees.
-- **Haku console stays the credential holder and approval broker.** Anything that leaves the
+- **Haku console stays the credential holder and approval broker** for operations that need the
+  operator's credential; where the target's own RBAC can scope the agent, it gets a delegated
+  identity instead ([`external_access.md`](external_access.md)). Anything that leaves the
   sandbox is a Haku tool call. Credentials are injected server-side at execution; the tool result
   is the message channel, which both harnesses pass to the model verbatim.
 - **Submission never blocks.** A call that is not auto-approved returns a stub immediately. The

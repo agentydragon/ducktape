@@ -61,7 +61,7 @@ flowchart TB
     Z["Rai decision<br/>what explicit Haku Console integration is needed?"]:::decision
     U["Stretch<br/>Haku Console link, adapter, or enveloped message path"]:::future
     AA["Rai decision<br/>what permission and policy model is acceptable for private Haku?"]:::decision
-    AB["Stretch<br/>Agent Console access-control track<br/>tool/API permissions, credentials, approvals"]:::future
+    AB["Stretch<br/>Agent Console access-control track<br/>external_access.md"]:::future
     AC["Stretch<br/>Haku-ready policy enforcement<br/>private context, least privilege, resilient controls"]:::future
     W["Stretch<br/>hardened Kubernetes/Authentik deployment"]:::future
 
@@ -164,3 +164,5 @@ personal context.
   [`architecture.md`](architecture.md).
 - Asynchronous approvals, decision delivery, and the notification batcher:
   [`async_approvals.md`](async_approvals.md).
+- Delegated identity versus brokered credentials per external system, and the rule for choosing:
+  [`external_access.md`](external_access.md).
