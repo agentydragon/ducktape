@@ -1,17 +1,16 @@
 # Common protocol: post-capture design notes
 
-Status: **native captures and replay fixtures are integrated; the shared seam is the next focused
-implementation slice**.
+Status: **native drivers and scripted harness tests are in place; the shared seam is the next
+focused implementation slice**.
 
-This document is no longer a pre-capture placeholder. The Claude and Codex capture work has already
-produced live native/upstream observations, provider scenario drivers, and compact upstream replay
-fixtures under [`../capture/`](../capture/). The evidence is now the input to protocol design. The
-remaining capture verification is the focused real-binary behavioral replay gate; it must not be
+The native drivers under [`../native/`](../native/), the scripted tests under
+[`../harness_tests/`](../harness_tests/), and the live probe under [`../capture/`](../capture/)
+supply the provider evidence. That evidence is the input to protocol design; it must not be
 replaced by more bookkeeping or by a speculative compatibility framework.
 
 ## Evidence already available
 
-For both native harnesses, the checked-in behavioral replay set covers:
+For both native harnesses, the scripted tests cover:
 
 - launch and handshake;
 - a baseline streamed turn;
@@ -22,16 +21,18 @@ For both native harnesses, the checked-in behavioral replay set covers:
 - same-process follow-up after a transport failure; and
 - idle native session/thread resume in a new process.
 
-Each live capture preserves the ordered native stdin/stdout/stderr evidence and the complete upstream
-request/response bodies or chunks. Only the compact upstream request/response inputs needed by the
-replay server are checked in. The hand-authored replay tests exercise a fresh pinned harness and
-assert the behavior relevant to the scenario rather than requiring every generated ID, timestamp,
-progress packet, or chunk boundary to be identical. Provider differences remain visible:
+Each test drives a fresh pinned harness against a loopback model it scripts one request at a time:
+it asserts the markers of each upstream request (tool roster, system prompt or instructions, last
+user text, tool-result ids and content, thinking/reasoning echo, steer position, resume transcript,
+`prompt_cache_key`), answers with a built stream, and asserts the native frames and workspace
+effects, rather than requiring every generated ID, timestamp, progress packet, or chunk boundary to
+be identical. Provider differences remain visible:
 
 - Claude and Codex expose different native control and lifecycle frames.
-- Claude's post-visible-content connection loss produced an empty terminal result without observed
-  automatic reconnect in the captured version.
+- With `CLAUDE_CODE_MAX_RETRIES` bounded, Claude retries a stream lost before or after visible text
+  as a non-streaming request.
 - Codex emitted retry notices and eventually a failed turn after repeated losses.
+- Codex `turn/steer` requires `expectedTurnId` and joins the running turn.
 - Steering, queued input, interruption, and resume use provider-native mechanisms and outcomes; they
   are not assumed to be equivalent merely because both providers have a related operation.
 
@@ -41,8 +42,8 @@ semantics the providers did not demonstrate.
 ## What the shared seam may own next
 
 The next implementation package is one thin stdio protocol plus a Claude adapter and a Codex
-adapter. It should expose only operations and observations that the replay tests can prove with the
-real binaries. A small candidate surface is:
+adapter. It should expose only operations and observations that the scripted harness tests can prove
+with the real binaries. A small candidate surface is:
 
 ```text
 start_or_resume(...)
@@ -63,30 +64,26 @@ resource design.
 
 ## Capture evidence contract
 
-When a capture is run, the capture scripts and adapters must continue to preserve:
+When the live probe is run, it must continue to preserve:
 
 - native frames in both directions;
 - complete payloads and framing boundaries;
 - file order within each transcript;
 - provider-native request, session, thread, turn, item, and tool IDs;
 - model request bodies and streamed response chunks;
-- enough process-exit information to diagnose a failed run; and
-- hand-authored behavioral assertions tied to the relevant transcript records.
+- enough process-exit information to diagnose a failed run.
 
-The complete native capture is an investigation artifact, not a permanent Git fixture. Checked-in
-replay data should remain limited to the upstream request/response inputs required by the fake model
-server and the hand-authored tests. Do not add routine byte lengths, hashes, parsed-object copies,
-duplicate timestamps, sequence registries, or outer copies of provider IDs. The ordered payload
-already supplies that information.
+The probe output is an investigation artifact kept outside Git; nothing consumes it mechanically,
+and the behavioral assertions live in the scripted tests. Do not add routine byte lengths, hashes,
+parsed-object copies, duplicate timestamps, sequence registries, or outer copies of provider IDs.
+The ordered payload already supplies that information.
 
 ## Refreshing a pinned harness
 
 When upgrading a Claude/Codex harness or adding coverage for a currently untested protocol area,
-obtain the new pinned binary and run a fresh live capture. Review the native and upstream protocol
-differences, then update the provider driver and behavioral tests only for the behavior we choose to
-support. Replace or add the compact upstream replay inputs and the binary pin together. Do not check
-in the verbose native stdin/stdout/stderr logs; regenerate them from the capture scripts when a
-review needs them.
+obtain the new pinned binary and run the live probe. Compare what the harness now sends with the
+scripted expectations, then update the provider driver and scripted tests only for the behavior we
+choose to support, together with the binary pin. The probe's logs stay outside Git.
 
 ## Product nouns after capture
 
@@ -104,7 +101,7 @@ service can introduce them at its own API boundary after the adapters are proven
 
 ## Decisions enabled by the captures
 
-Before expanding the seam, use the committed tests and fixtures to settle only the decisions needed
+Before expanding the seam, use the scripted tests to settle only the decisions needed
 for the next slice:
 
 - which native operations map cleanly to `submit`, `interrupt`, and `resume`;

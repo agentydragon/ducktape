@@ -96,8 +96,9 @@ needed to address that failure.
 
 ## Native capture is the first vertical slice
 
-The initial implementation lives under `x/agentplane/` and has explicit provider drivers. A live
-capture should produce an inspectable bundle containing:
+The implementation lives under `x/agentplane/`, with explicit provider drivers in
+[`../native/`](../native/) and the live probe in [`../capture/`](../capture/). A live capture
+produces an inspectable bundle containing:
 
 - ordered native frames in both directions;
 - upstream model request bodies and streamed response chunks;
@@ -105,8 +106,8 @@ capture should produce an inspectable bundle containing:
 - process exit status; and
 - hand-authored expected behavior, including tool and workspace effects where relevant.
 
-The live capture is investigation evidence. Keep only the compact upstream request/response inputs
-needed by replay tests in Git; regenerate verbose native logs with the capture scripts when needed.
+The live capture is investigation evidence kept outside Git; the scripted tests in
+[`../harness_tests/`](../harness_tests/) carry the behavioral contract and commit no recordings.
 Do not add redundant lengths, hashes, timestamps, parsed copies, manifest inventories, checksum files,
 or a custom promotion/DLP system.
 
@@ -114,9 +115,9 @@ The upstream capture boundary must never serialize HTTP headers, cookies, enviro
 OAuth state, or credentials. Use a synthetic workspace and ordinary repository secret checks plus a
 small obvious-token guard.
 
-The first real-harness replay test should start a deterministic fake Anthropic/OpenAI upstream
-server, load the captured model exchange, run the real harness, drive its native protocol, and assert
-both sides of the loop. This is more valuable than a large offline artifact validator.
+Each real-harness test starts a loopback Anthropic/OpenAI upstream the test scripts one request at
+a time, runs the real harness, drives its native protocol, and asserts both sides of the loop. This
+is more valuable than a large offline artifact validator.
 
 ## Provider split
 

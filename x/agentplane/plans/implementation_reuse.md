@@ -48,8 +48,8 @@ Appropriate patterns to reuse conceptually:
 - use fake binaries or fake model servers for deterministic tests.
 
 Adapt these to preserve the complete native transcript during a live capture while keeping Claude
-and Codex scenario logic separate. Commit only the compact upstream replay inputs needed by the
-behavioral tests; regenerate verbose native logs with the capture scripts when needed. Do not hide
+and Codex scenario logic separate. Probe logs stay outside Git; the scripted tests under
+[`../harness_tests/`](../harness_tests/) carry the behavioral contract. Do not hide
 provider behavior behind a common state machine before the capture tests show that the behavior is
 shared.
 

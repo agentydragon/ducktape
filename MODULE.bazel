@@ -739,8 +739,8 @@ filegroup(
     urls = ["https://registry.npmjs.org/@openai/codex/-/codex-0.144.1-linux-x64.tgz"],
 )
 
-# Native Claude Code CLI used by Agentplane's hermetic wire-replay tests. The test only
-# grants it a loopback scripted LiteLLM endpoint; no runtime credential is present in Bazel.
+# Native Claude Code CLI driven by Agentplane's scripted harness tests (//x/agentplane/harness_tests).
+# The tests grant it only a loopback scripted model endpoint; no runtime credential is present in Bazel.
 http_archive(
     name = "claude_code_cli_linux_x64",
     build_file_content = 'exports_files(["claude"])',
@@ -749,7 +749,7 @@ http_archive(
     urls = ["https://registry.npmjs.org/@anthropic-ai/claude-code-linux-x64/-/claude-code-linux-x64-2.1.252.tgz"],
 )
 
-# Match the Codex app-server version used to produce Agentplane's capture examples.
+# Codex app-server driven by Agentplane's scripted harness tests (//x/agentplane/harness_tests).
 # Keep Haku's 0.144.1 distribution above isolated from this test-only pin.
 http_archive(
     name = "agentplane_codex_cli_linux_x64",

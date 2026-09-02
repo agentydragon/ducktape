@@ -1,0 +1,17 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_visibility = ["//x/agentplane:__subpackages__"])
+
+py_library(
+    name = "driver",
+    srcs = ["driver.py"],
+)
+
+py_library(
+    name = "scenarios",
+    srcs = ["scenarios.py"],
+    deps = [
+        ":driver",
+        "//x/agentplane/native:process",
+    ],
+)

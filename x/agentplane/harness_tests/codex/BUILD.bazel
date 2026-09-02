@@ -1,0 +1,146 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//x/agentplane/harness_tests:__subpackages__"])
+
+py_library(
+    name = "responses_sse",
+    testonly = True,
+    srcs = ["responses_sse.py"],
+    deps = ["//x/agentplane/harness_tests:scripted_upstream"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":harness",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "frames",
+    testonly = True,
+    srcs = ["frames.py"],
+)
+
+py_library(
+    name = "harness",
+    testonly = True,
+    srcs = ["harness.py"],
+    deps = [
+        "//x/agentplane/harness_tests:scripted_upstream",
+        "//x/agentplane/native:process",
+        "//x/agentplane/native/codex:scenarios",
+    ],
+)
+
+py_library(
+    name = "requests",
+    testonly = True,
+    srcs = ["requests.py"],
+    deps = [
+        "//x/agentplane/harness_tests:scripted_upstream",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_active_turn",
+    size = "medium",
+    srcs = ["test_active_turn.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],  # keep: the pinned native harness the test drives
+    target_compatible_with = [
+        # keep: the pinned native harnesses are Linux/x86_64 only.
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":frames",
+        ":harness",
+        ":requests",
+        ":responses_sse",
+        "//:conftest",
+        "//x/agentplane/harness_tests:conftest",
+        "//x/agentplane/harness_tests:scripted_upstream",
+        "//x/agentplane/native/codex:driver",
+        "//x/agentplane/native/codex:scenarios",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_connection_loss",
+    size = "medium",
+    srcs = ["test_connection_loss.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],  # keep: the pinned native harness the test drives
+    target_compatible_with = [
+        # keep: the pinned native harnesses are Linux/x86_64 only.
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":frames",
+        ":harness",
+        ":requests",
+        ":responses_sse",
+        "//:conftest",
+        "//x/agentplane/harness_tests:conftest",
+        "//x/agentplane/harness_tests:scripted_upstream",
+        "//x/agentplane/native/codex:scenarios",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_tools",
+    size = "medium",
+    srcs = ["test_tools.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],  # keep: the pinned native harness the test drives
+    target_compatible_with = [
+        # keep: the pinned native harnesses are Linux/x86_64 only.
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":frames",
+        ":harness",
+        ":requests",
+        ":responses_sse",
+        "//:conftest",
+        "//x/agentplane/harness_tests:conftest",
+        "//x/agentplane/harness_tests:scripted_upstream",
+        "//x/agentplane/native/codex:scenarios",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_turns",
+    size = "medium",
+    srcs = ["test_turns.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],  # keep: the pinned native harness the test drives
+    target_compatible_with = [
+        # keep: the pinned native harnesses are Linux/x86_64 only.
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":frames",
+        ":harness",
+        ":requests",
+        ":responses_sse",
+        "//:conftest",
+        "//x/agentplane/harness_tests:conftest",
+        "//x/agentplane/harness_tests:scripted_upstream",
+        "//x/agentplane/native/codex:driver",
+        "//x/agentplane/native/codex:scenarios",
+        "@pypi//pytest_bazel",
+    ],
+)

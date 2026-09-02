@@ -1,5 +1,0 @@
-{
-  "provider": "claude",
-  "scenario": "connection_exhaustion",
-  "model": "anthropic-api/ant-messages/claude-haiku-4-5-20251001"
-}

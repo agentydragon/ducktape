@@ -1,5 +1,0 @@
-{
-  "provider": "claude",
-  "scenario": "post_failure_follow_up",
-  "model": "anthropic-api/ant-messages/claude-haiku-4-5-20251001"
-}

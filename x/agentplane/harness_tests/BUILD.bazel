@@ -1,0 +1,34 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_visibility = ["//x/agentplane/harness_tests:__subpackages__"])
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":scripted_upstream",
+        "//x/agentplane/native:process",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "scripted_upstream",
+    testonly = True,
+    srcs = ["scripted_upstream.py"],
+)
+
+test_suite(
+    name = "harness_tests",
+    tests = [
+        "//x/agentplane/harness_tests/claude:test_active_turn",
+        "//x/agentplane/harness_tests/claude:test_connection_loss",
+        "//x/agentplane/harness_tests/claude:test_tools",
+        "//x/agentplane/harness_tests/claude:test_turns",
+        "//x/agentplane/harness_tests/codex:test_active_turn",
+        "//x/agentplane/harness_tests/codex:test_connection_loss",
+        "//x/agentplane/harness_tests/codex:test_tools",
+        "//x/agentplane/harness_tests/codex:test_turns",
+    ],
+)

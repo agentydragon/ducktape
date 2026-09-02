@@ -1,4 +1,4 @@
-"""Record small, direct Claude/Codex protocol examples.
+"""Record small, direct Claude/Codex protocol examples against a real model endpoint.
 
 This is deliberately a discovery script: it writes raw JSONL pipes and LiteLLM bodies,
 not a general runner, fixture framework, or provider-neutral API.
@@ -9,14 +9,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from x.agentplane.capture.llm_recording_proxy import recording_proxy
-from x.agentplane.capture.providers.claude import scenarios as claude
-from x.agentplane.capture.providers.codex import scenarios as codex
-from x.agentplane.capture.providers.shared_capture import NativeCapture, write_jsonl
 from x.agentplane.capture.records import (
     CaptureMetadata,
     ConnectionDroppedRecord,
@@ -24,7 +20,9 @@ from x.agentplane.capture.records import (
     RequestRecord,
     ResponseChunkRecord,
 )
-from x.agentplane.capture.replay import ReplayServer, serve
+from x.agentplane.native.claude import scenarios as claude
+from x.agentplane.native.codex import scenarios as codex
+from x.agentplane.native.process import NativeProcess, serve, write_jsonl
 
 SCENARIOS = (
     "launch",
@@ -41,19 +39,18 @@ SCENARIOS = (
     "post_exhaustion_follow_up",
 )
 
-# The first loss is mid-stream. Subsequent response-header losses also catch Claude's
-# non-streaming fallback. Claude 2.1.252 failed after 12 losses; Codex 0.144.1 after 26.
+# The first loss is mid-stream; subsequent response-header losses also catch Claude's
+# non-streaming fallback. Both harnesses run with a bounded retry budget (MAX_RETRIES in
+# their scenarios modules), so a handful of losses exhausts it.
 _FAULT_PLANS = {
     "connection_retry": ("message_start",),
     "post_failure_follow_up": ("text_delta",),
-    "connection_exhaustion": ("message_start", *("response_headers",) * 11),
-    "post_exhaustion_follow_up": ("message_start", *("response_headers",) * 11),
+    "connection_exhaustion": ("message_start", *("response_headers",) * 8),
+    "post_exhaustion_follow_up": ("message_start", *("response_headers",) * 8),
 }
 
 
 def _fault_plan(provider: str, scenario: str) -> tuple[str, ...]:
-    if provider == "codex" and scenario in {"connection_exhaustion", "post_exhaustion_follow_up"}:
-        return ("response.created", *("response_headers",) * 25)
     if provider == "claude":
         return _FAULT_PLANS.get(scenario, ())
     codex_events = {"message_start": "response.created", "text_delta": "response.output_text.delta"}
@@ -70,7 +67,6 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--credential-file", type=Path, required=True)
     result.add_argument("--workspace", type=Path, required=True)
     result.add_argument("--output", type=Path, required=True)
-    result.add_argument("--replay-from", type=Path, help="serve saved LiteLLM bodies instead of calling --endpoint")
     return result
 
 
@@ -86,31 +82,6 @@ def _prepare(workspace: Path) -> None:
     (workspace / ".claude").mkdir(mode=0o700)
     (workspace / ".codex").mkdir(mode=0o700)
     (workspace / "editable.txt").write_text("before\n")
-
-
-def _proxy(
-    output: Path, upstream: str, provider: str, replay_from: Path | None, *, scenario: str
-) -> tuple[ThreadingHTTPServer, str]:
-    def record(event: RequestRecord | ResponseChunkRecord | ConnectionDroppedRecord | ProxyErrorRecord) -> None:
-        write_jsonl(
-            output / ("llm-requests.jsonl" if isinstance(event, RequestRecord) else "llm-responses.jsonl"), event
-        )
-
-    server = (
-        ReplayServer(replay_from)
-        if replay_from
-        else recording_proxy(upstream=upstream, record=record, disconnect_after_events=_fault_plan(provider, scenario))
-    )
-    origin = f"http://127.0.0.1:{server.server_port}"
-    return server, origin if provider == "claude" else origin + urlsplit(upstream).path.rstrip("/")
-
-
-def _command(provider: str, binary: str, model: str, endpoint: str, *, resume_id: str | None = None) -> list[str]:
-    return (
-        claude.command(binary, model=model, resume_id=resume_id)
-        if provider == "claude"
-        else codex.command(binary, endpoint=endpoint)
-    )
 
 
 def _prompt(scenario: str) -> str:
@@ -137,116 +108,62 @@ def run(args: argparse.Namespace) -> None:
     for name in ("stdin.jsonl", "stdout.jsonl", "stderr.jsonl", "llm-requests.jsonl", "llm-responses.jsonl"):
         (args.output / name).touch(mode=0o600)
     key = _key(args.credential_file)
-    proxy, proxy_endpoint = _proxy(args.output, args.endpoint, args.provider, args.replay_from, scenario=args.scenario)
-    environment = {**os.environ}
-    if args.provider == "claude":
-        environment.update(
-            {
-                "ANTHROPIC_AUTH_TOKEN": key,
-                "ANTHROPIC_BASE_URL": proxy_endpoint,
-                "CLAUDE_CONFIG_DIR": str(args.workspace / ".claude"),
-            }
-        )
-    else:
-        environment.update(
-            {"OPENAI_API_KEY": key, "OPENAI_BASE_URL": proxy_endpoint, "CODEX_HOME": str(args.workspace / ".codex")}
+
+    def record(event: RequestRecord | ResponseChunkRecord | ConnectionDroppedRecord | ProxyErrorRecord) -> None:
+        write_jsonl(
+            args.output / ("llm-requests.jsonl" if isinstance(event, RequestRecord) else "llm-responses.jsonl"), event
         )
 
-    def start_capture(*, resume_id: str | None = None) -> NativeCapture:
-        return NativeCapture(
-            args.output,
-            _command(args.provider, args.binary, args.model, proxy_endpoint, resume_id=resume_id),
-            cwd=args.workspace,
-            environment=environment,
+    proxy = recording_proxy(
+        upstream=args.endpoint, record=record, disconnect_after_events=_fault_plan(args.provider, args.scenario)
+    )
+    origin = f"http://127.0.0.1:{proxy.server_port}"
+    if args.provider == "claude":
+        proxy_endpoint = origin
+        environment = {
+            **os.environ,
+            **claude.environment(endpoint=origin, token=key, config_dir=str(args.workspace / ".claude")),
+        }
+    else:
+        proxy_endpoint = origin + urlsplit(args.endpoint).path.rstrip("/")
+        environment = {
+            **os.environ,
+            **codex.environment(endpoint=proxy_endpoint, token=key, codex_home=str(args.workspace / ".codex")),
+        }
+
+    def start_process(*, resume_id: str | None = None) -> NativeProcess:
+        command = (
+            claude.command(args.binary, model=args.model, resume_id=resume_id)
+            if args.provider == "claude"
+            else codex.command(args.binary, endpoint=proxy_endpoint)
         )
+        return NativeProcess(args.output, command, cwd=args.workspace, environment=environment)
 
     with serve(proxy):
-        with start_capture() as capture:
-            handshake = (
-                claude.launch_handshake(capture)
-                if args.provider == "claude"
-                else codex.launch_handshake(
-                    capture,
+        with start_process() as process:
+            if args.provider == "claude":
+                claude.launch_handshake(process)
+                thread_id = None
+            else:
+                thread_id = codex.launch_handshake(
+                    process,
                     cwd=str(args.workspace),
                     model=args.model,
                     effort="low",
                     persist=args.scenario == "idle_resume",
-                )
-            )
-            if args.scenario in {
-                "baseline",
-                "shell",
-                "file_edits",
-                "connection_retry",
-                "connection_exhaustion",
-                "post_failure_follow_up",
-                "post_exhaustion_follow_up",
-            }:
-                if args.provider == "claude":
-                    claude.submit(
-                        capture, _prompt(args.scenario), timeout_s=600 if "exhaustion" in args.scenario else 120
-                    )
-                else:
-                    codex.submit(
-                        capture, thread_start_response=handshake["thread_start_response"], text=_prompt(args.scenario)
-                    )
-                if args.scenario in {"post_failure_follow_up", "post_exhaustion_follow_up"}:
-                    follow_up = (
-                        "Reply with exactly: POST_FAILURE_FOLLOW_UP_OK"
-                        if args.scenario == "post_failure_follow_up"
-                        else "Reply with exactly: POST_EXHAUSTION_FOLLOW_UP_OK"
-                    )
-                    if args.provider == "claude":
-                        claude.submit(capture, follow_up)
-                    else:
-                        codex.submit_to_thread(
-                            capture,
-                            thread_id=handshake["thread_start_response"]["result"]["thread"]["id"],
-                            request_id="capture-4",
-                            text=follow_up,
-                        )
-            elif args.scenario in {"steering", "second_input"}:
-                if args.provider == "claude":
-                    claude.submit_while_active(
-                        capture, scenario="steering" if args.scenario == "steering" else "normal_submit_while_active"
-                    )
-                else:
-                    codex.submit_while_active(
-                        capture,
-                        thread_start_response=handshake["thread_start_response"],
-                        scenario="steering" if args.scenario == "steering" else "normal_submit_while_active",
-                    )
-            elif args.scenario == "interrupt":
-                if args.provider == "claude":
-                    claude.interrupt(capture, with_queued_input=False)
-                else:
-                    codex.interrupt(
-                        capture, thread_start_response=handshake["thread_start_response"], with_queued_input=False
-                    )
-            elif args.scenario == "idle_resume":
-                if args.provider == "claude":
-                    initial = claude.submit(capture, "Reply with exactly: IDLE_RESUME_SEED_OK")
-                    resume_id = claude.session_id(initial)
-                else:
-                    initial = codex.submit(
-                        capture,
-                        thread_start_response=handshake["thread_start_response"],
-                        text="Reply with exactly: IDLE_RESUME_SEED_OK",
-                    )
-                    thread_id = initial["thread_id"]
+                )["thread_id"]
+            resume_id = _drive(args, process, thread_id)
         if args.scenario == "idle_resume":
-            with start_capture(resume_id=resume_id if args.provider == "claude" else None) as capture:
+            with start_process(resume_id=resume_id) as process:
                 if args.provider == "claude":
-                    claude.launch_handshake(capture)
-                    claude.submit(capture, "Reply with exactly: IDLE_RESUME_OK")
+                    claude.launch_handshake(process)
+                    claude.submit(process, "Reply with exactly: IDLE_RESUME_OK")
                 else:
-                    codex.resume_handshake(capture, thread_id=thread_id)
-                    codex.submit_to_thread(
-                        capture, thread_id=thread_id, request_id="capture-6", text="Reply with exactly: IDLE_RESUME_OK"
+                    assert thread_id is not None
+                    codex.resume_handshake(process, thread_id=thread_id)
+                    codex.submit(
+                        process, thread_id=thread_id, request_id="capture-6", text="Reply with exactly: IDLE_RESUME_OK"
                     )
-        if args.replay_from:
-            assert isinstance(proxy, ReplayServer)
-            proxy.assert_consumed()
         response_rows = [json.loads(line) for line in (args.output / "llm-responses.jsonl").read_text().splitlines()]
         dropped = next((row for row in response_rows if row["kind"] == "connection_dropped"), None)
         if args.scenario in _FAULT_PLANS and dropped is None:
@@ -260,6 +177,52 @@ def run(args: argparse.Namespace) -> None:
         (args.output / "metadata.json").write_text(
             CaptureMetadata(provider=args.provider, scenario=args.scenario, model=args.model).model_dump_json() + "\n"
         )
+
+
+def _drive(args: argparse.Namespace, process: NativeProcess, thread_id: str | None) -> str | None:
+    """Run the scenario's first process; returns the Claude session id an `idle_resume` needs."""
+    if args.scenario == "launch":
+        return None
+    if args.scenario in {"steering", "second_input"}:
+        if args.provider == "claude":
+            claude.submit_while_active(process)
+        else:
+            assert thread_id is not None
+            codex.submit_while_active(process, thread_id=thread_id, scenario=args.scenario)
+        return None
+    if args.scenario == "interrupt":
+        if args.provider == "claude":
+            claude.interrupt_active_turn(process, with_queued_input=False)
+        else:
+            assert thread_id is not None
+            codex.interrupt_active_turn(process, thread_id=thread_id, with_queued_input=False)
+        return None
+    if args.scenario == "idle_resume":
+        if args.provider == "claude":
+            return claude.session_id(claude.submit(process, "Reply with exactly: IDLE_RESUME_SEED_OK")["terminal"])
+        assert thread_id is not None
+        codex.submit(
+            process, thread_id=thread_id, request_id="capture-3", text="Reply with exactly: IDLE_RESUME_SEED_OK"
+        )
+        return None
+    timeout_s = 600 if "exhaustion" in args.scenario else 120
+    if args.provider == "claude":
+        claude.submit(process, _prompt(args.scenario), timeout_s=timeout_s)
+    else:
+        assert thread_id is not None
+        codex.submit(process, thread_id=thread_id, request_id="capture-3", text=_prompt(args.scenario))
+    if args.scenario in {"post_failure_follow_up", "post_exhaustion_follow_up"}:
+        follow_up = (
+            "Reply with exactly: POST_FAILURE_FOLLOW_UP_OK"
+            if args.scenario == "post_failure_follow_up"
+            else "Reply with exactly: POST_EXHAUSTION_FOLLOW_UP_OK"
+        )
+        if args.provider == "claude":
+            claude.submit(process, follow_up)
+        else:
+            assert thread_id is not None
+            codex.submit(process, thread_id=thread_id, request_id="capture-4", text=follow_up)
+    return None
 
 
 def main() -> None:

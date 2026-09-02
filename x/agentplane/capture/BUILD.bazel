@@ -1,21 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
-
-# These are implicit namespace packages, so Gazelle needs explicit labels for
-# their dotted imports rather than deriving them from __init__.py files.
-# gazelle:resolve py x.agentplane.capture.framing //x/agentplane/capture:framing
-# gazelle:resolve py x.agentplane.capture.llm_recording_proxy //x/agentplane/capture:llm_recording_proxy
-# gazelle:resolve py x.agentplane.capture.records //x/agentplane/capture:records
-# gazelle:resolve py x.agentplane.capture.replay //x/agentplane/capture:replay
-# gazelle:resolve py x.agentplane.capture.replay_fixtures //x/agentplane/capture:replay_fixtures
-# gazelle:resolve py x.agentplane.capture.providers.shared_capture //x/agentplane/capture/providers:shared_capture
-# gazelle:resolve py x.agentplane.capture.providers.claude.driver //x/agentplane/capture/providers/claude:driver
-# gazelle:resolve py x.agentplane.capture.providers.claude.scenarios //x/agentplane/capture/providers/claude:scenarios
-# gazelle:resolve py x.agentplane.capture.providers.claude.replay_assertions //x/agentplane/capture/providers/claude:replay_assertions
-# gazelle:resolve py x.agentplane.capture.providers.claude.replay_fixtures //x/agentplane/capture/providers/claude:replay_fixtures
-# gazelle:resolve py x.agentplane.capture.providers.codex.driver //x/agentplane/capture/providers/codex:driver
-# gazelle:resolve py x.agentplane.capture.providers.codex.scenarios //x/agentplane/capture/providers/codex:scenarios
-# gazelle:resolve py x.agentplane.capture.providers.codex.replay_assertions //x/agentplane/capture/providers/codex:replay_assertions
-# gazelle:resolve py x.agentplane.capture.providers.codex.replay_fixtures //x/agentplane/capture/providers/codex:replay_fixtures
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -25,73 +8,51 @@ py_binary(
     deps = [":main"],
 )
 
-test_suite(
-    name = "tests",
-    tests = [
-        ":test_native_replay",
-        "//x/agentplane/capture/tests:test_proxy",
-        "//x/agentplane/capture/tests:test_records",
-        "//x/agentplane/capture/tests:test_replay",
-    ],
-)
-
-test_suite(
-    name = "test_native_replay",
-    tests = [
-        "//x/agentplane/capture/providers/claude:test_native_replay",
-        "//x/agentplane/capture/providers/codex:test_native_replay",
-    ],
-)
-
-py_library(
-    name = "replay_fixtures",
-    testonly = True,
-    srcs = ["replay_fixtures.py"],
-    visibility = ["//x/agentplane/capture:__subpackages__"],
-    deps = [
-        "//util/bazel:runfiles",
-        "//x/agentplane/capture:replay",
-        "//x/agentplane/capture/providers:shared_capture",
-        "@pypi//pytest",
-    ],
-)
-
 py_library(
     name = "framing",
     srcs = ["framing.py"],
-    visibility = ["//x/agentplane/capture:__subpackages__"],
 )
 
 py_library(
     name = "llm_recording_proxy",
     srcs = ["llm_recording_proxy.py"],
-    visibility = ["//x/agentplane/capture:__subpackages__"],
-    deps = ["//x/agentplane/capture:records"],
+    deps = [":records"],
 )
 
 py_library(
     name = "main",
     srcs = ["main.py"],
     deps = [
-        "//x/agentplane/capture:llm_recording_proxy",
-        "//x/agentplane/capture:records",
-        "//x/agentplane/capture:replay",
-        "//x/agentplane/capture/providers:shared_capture",
-        "//x/agentplane/capture/providers/claude:scenarios",
-        "//x/agentplane/capture/providers/codex:scenarios",
+        ":llm_recording_proxy",
+        ":records",
+        "//x/agentplane/native:process",
+        "//x/agentplane/native/claude:scenarios",
+        "//x/agentplane/native/codex:scenarios",
     ],
-)
-
-py_library(
-    name = "replay",
-    srcs = ["replay.py"],
-    visibility = ["//x/agentplane/capture:__subpackages__"],
-    deps = ["//x/agentplane/capture:records"],
 )
 
 py_library(
     name = "records",
     srcs = ["records.py"],
-    visibility = ["//x/agentplane/capture:__subpackages__"],
     deps = ["@pypi//pydantic"],
+)
+
+py_test(
+    name = "test_framing",
+    srcs = ["test_framing.py"],
+    deps = [
+        ":framing",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_llm_recording_proxy",
+    srcs = ["test_llm_recording_proxy.py"],
+    deps = [
+        ":llm_recording_proxy",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
 )

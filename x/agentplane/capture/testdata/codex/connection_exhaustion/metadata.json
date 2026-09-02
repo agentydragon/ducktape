@@ -1,1 +1,0 @@
-{ "provider": "codex", "scenario": "connection_exhaustion", "model": "chatgpt/oai-responses/gpt-5.6-luna" }

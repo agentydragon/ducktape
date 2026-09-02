@@ -1,6 +1,6 @@
 # Claude Code and Codex protocol notes
 
-Status: **provider evidence for the capture drivers**.
+Status: **provider evidence for the native drivers**.
 
 The first implementation speaks each native protocol directly. This document records only the
 facts needed to write the drivers and tests. It does not define a neutral API, compatibility-profile
@@ -11,9 +11,9 @@ system, or product persistence model.
 - Use real stdin/stdout pipes, not PTYs, tmux, pane scraping, or prompt heuristics.
 - Keep Claude and Codex driver state separate until captures demonstrate a useful common seam.
 - Preserve complete native frames and provider-native ids in the ordered transcript during live
-  captures; these verbose native logs are disposable rather than permanent Git fixtures.
-- Capture upstream LLM request bodies and streamed response chunks separately from native frames;
-  retain only the compact upstream inputs needed by replay tests.
+  probe runs; the logs stay outside Git.
+- Record upstream LLM request bodies and streamed response chunks separately from native frames;
+  the scripted tests assert request markers and build responses rather than replaying recordings.
 - Do not serialize HTTP headers, cookies, environment variables, credentials, or OAuth state.
 - Use explicit binary paths or simple environment variables; do not build package-resolution or
   executable-integrity infrastructure.
@@ -22,10 +22,9 @@ system, or product persistence model.
 The existing `haku/runner`, `haku/cli_protocol`, and `haku/console` code is behavior evidence only.
 The new implementation under `x/agentplane/` must not import it.
 
-When a harness version changes or a new protocol area needs coverage, run a fresh capture with the
-new pinned binary, inspect the native and upstream differences, and update the driver/tests only for
-the behavior we choose to pin down. Replace or add the compact replay inputs alongside the binary
-pin; regenerate verbose native logs on demand rather than committing them.
+When a harness version changes or a new protocol area needs coverage, run the live probe with the
+new pinned binary, compare what the harness sends with the scripted expectations, and update the
+driver/tests only for the behavior we choose to pin down, together with the binary pin.
 
 ## Model endpoint boundary
 
@@ -33,9 +32,10 @@ The existing Haku deployment routes Claude's Anthropic Messages traffic and Code
 traffic through LiteLLM and CLIProxyAPI. That is experiment/deployment plumbing. Agentplane does not
 own consumer login, OAuth refresh, credential delivery, or model routing.
 
-The capture proxy should record only request/response bodies and response chunks. A minimal fake
-server should later replay those bodies to a real harness so the native driver can be tested without
-paid inference.
+The recording proxy records only request/response bodies and response chunks. The scripted tests
+stand in for the endpoint with a loopback server the test drives request by request
+([`../harness_tests/scripted_upstream.py`](../harness_tests/scripted_upstream.py)), so the native
+driver is exercised without paid inference.
 
 ## Claude Code
 
@@ -51,7 +51,7 @@ claude
   --input-format stream-json
 ```
 
-The capture driver should use the actual launch arguments supported by the resolved binary and
+The native driver uses the actual launch arguments supported by the resolved binary and
 record the resulting transcript. The wire is newline-delimited JSON over stdin/stdout.
 
 ### Initialization
@@ -163,8 +163,9 @@ and `turn/completed`.
 Use one deterministic command or structured tool for the initial tool scenario. Preserve the native
 item and result messages; do not create a common operation projection yet.
 
-Codex exposes `turn/steer` for an active thread/turn and `turn/interrupt` for interruption. Test the
-native request and the resulting item/turn evidence. A request acknowledgement is not itself a
+Codex exposes `turn/steer` for an active thread/turn (it requires `expectedTurnId` and joins the
+running turn) and `turn/interrupt` for interruption. Test the native request and the resulting
+item/turn evidence. A request acknowledgement is not itself a
 terminal outcome.
 
 A second `turn/start` while a turn is active is a separate experiment from `turn/steer`. Queue

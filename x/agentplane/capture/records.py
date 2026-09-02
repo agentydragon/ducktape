@@ -1,15 +1,10 @@
-"""Pydantic shapes for persisted capture evidence, not native provider frames."""
+"""Pydantic shapes for the persisted upstream model exchange, not native provider frames."""
 
 from __future__ import annotations
 
 from typing import Literal
 
 from pydantic import BaseModel, Field
-
-
-class TextRecord(BaseModel):
-    time_ns: int = Field(ge=0)
-    text: str
 
 
 class RequestRecord(BaseModel):
