@@ -13,6 +13,7 @@ from typing import Any, cast
 from x.agentplane.app.api import create_app
 from x.agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
 from x.agentplane.app.inventory import ProvisioningState, SandboxInventory
+from x.agentplane.app.trajectory import TrajectoryStore
 
 
 async def _unreachable(name: str) -> str:
@@ -24,7 +25,11 @@ def openapi_document() -> dict[str, Any]:
     inventory = SandboxInventory(
         namespace="schema", template="schema", custom_objects=cast(Any, None), core_v1=cast(Any, None)
     )
-    document: dict[str, Any] = create_app(inventory, RunnerBridge(address_of=_unreachable)).openapi()
+    # An engine connects lazily, so a URL nothing listens on is fine for a document.
+    store = TrajectoryStore.connect("postgresql+asyncpg://schema@localhost/schema")
+    document: dict[str, Any] = create_app(
+        inventory, RunnerBridge(address_of=_unreachable, store=store), store
+    ).openapi()
     return document
 
 

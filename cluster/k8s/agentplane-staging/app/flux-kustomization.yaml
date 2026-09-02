@@ -21,6 +21,8 @@ spec:
       namespace: ducktape-flux
     - name: agentplane-staging-namespace
       namespace: ducktape-flux
+    - name: agentplane-staging-db # the app composes its database URL from the CNPG app Secret
+      namespace: ducktape-flux
     - name: forgejo-images # reflects the runner image's pull credential
       namespace: ducktape-flux
     - name: litellm-keys-tf # writes the standing cheap-experiments key copy

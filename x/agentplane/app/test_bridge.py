@@ -1,6 +1,6 @@
 """One browser-shaped script over the bridge against a local runner, run for both harnesses: open a
 session, stream it, send an input while streaming, open a second tab on the same session, reconnect
-from the last event id, shut down."""
+from the last event id, shut down; and the trajectory the store kept of all of it."""
 
 from __future__ import annotations
 
@@ -16,11 +16,12 @@ import pytest
 import pytest_bazel
 import uvicorn
 from google.protobuf.json_format import MessageToDict
-from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
+from tenacity import AsyncRetrying, retry_if_exception_type, retry_if_result, stop_after_delay, wait_fixed
 
 from x.agentplane.app.api import create_app
 from x.agentplane.app.bridge import RunnerBridge
 from x.agentplane.app.inventory import SandboxInventory
+from x.agentplane.app.trajectory import TrajectoryStore
 from x.agentplane.runner import protocol_pb2 as pb
 from x.agentplane.runner.conftest import RunnerHandle
 from x.agentplane.runner.testing.scripted_model import ScriptedModel, Text
@@ -73,7 +74,7 @@ async def read_until(lines: AsyncIterator[str], key: str) -> list[SseMessage]:
 
 
 @pytest.fixture
-async def app_url(runner: RunnerHandle, inventory: SandboxInventory) -> AsyncIterator[str]:
+async def app_url(runner: RunnerHandle, inventory: SandboxInventory, store: TrajectoryStore) -> AsyncIterator[str]:
     """The app served by uvicorn, with the one test sandbox resolving to the local runner. The
     server is real because SSE needs a response that streams, which an in-process ASGI transport
     would buffer."""
@@ -85,9 +86,9 @@ async def app_url(runner: RunnerHandle, inventory: SandboxInventory) -> AsyncIte
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = int(probe.getsockname()[1])
-    bridge = RunnerBridge(address_of=address_of)
+    bridge = RunnerBridge(address_of=address_of, store=store)
     server = uvicorn.Server(
-        uvicorn.Config(create_app(inventory, bridge), host="127.0.0.1", port=port, log_level="warning")
+        uvicorn.Config(create_app(inventory, bridge, store), host="127.0.0.1", port=port, log_level="warning")
     )
     serving = asyncio.create_task(server.serve())
     async for attempt in AsyncRetrying(
@@ -167,6 +168,56 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
         assert stopped.status_code == 202, stopped.text
         (summary,) = (await http.get(SESSIONS)).json()
         assert summary["harness"] == "HARNESS_STATE_STOPPED"
+
+        # The store kept the whole trajectory, readable without the runner: both turns, the raw
+        # frames, and the exit the shutdown caused.
+        (thread,) = (await http.get("/threads")).json()
+        assert (thread["sandbox"], thread["session_id"], thread["model"]) == (SANDBOX, SESSION, spec.model)
+        stored = await _stored_events(http, thread["id"], until="harnessExited")
+        assert [event["sequence"] for event in stored] == [str(n) for n in range(1, len(stored) + 1)]
+        assert [event["itemCompleted"]["text"] for event in stored if "itemCompleted" in event] == [
+            "BRIDGE_OK",
+            "BRIDGE_TWO",
+        ]
+        assert any("native" in event for event in stored)
+        assert (await http.get(f"/threads/{thread['id']}")).json()["last_sequence"] == len(stored)
+    model.assert_quiescent()
+
+
+async def _stored_events(http: httpx.AsyncClient, thread_id: str, *, until: str) -> list[dict[str, Any]]:
+    """The thread's stored events once one carrying `until` has landed; the feed writes them as
+    they arrive, a moment after the runner emitted them."""
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(30),
+        wait=wait_fixed(0.2),
+        retry=retry_if_result(lambda events: not any(until in event for event in events)),
+    ):
+        with attempt:
+            response = await http.get(f"/threads/{thread_id}/events")
+            assert response.status_code == 200, response.text
+            events: list[dict[str, Any]] = response.json()
+        if not attempt.retry_state.outcome.failed:
+            attempt.retry_state.set_result(events)
+    return events
+
+
+async def test_the_feed_records_a_turn_nobody_is_watching(
+    app_url: str, model: ScriptedModel, spec: pb.SessionSpec
+) -> None:
+    """Opening a session starts its feed, so a turn driven over REST alone lands in the store."""
+    async with httpx.AsyncClient(base_url=app_url, timeout=60) as http:
+        opened = await http.post(SESSIONS, json={"session_id": "unwatched", "spec": MessageToDict(spec)})
+        assert opened.status_code == 201, opened.text
+        accepted = await http.post(
+            f"{SESSIONS}/unwatched/inputs", json={"inputId": "input-1", "text": "Reply with exactly: UNWATCHED_OK"}
+        )
+        assert accepted.status_code == 202, accepted.text
+        model.reply(await model.request(), Text("UNWATCHED_OK"))
+        (thread,) = (await http.get("/threads")).json()
+        stored = await _stored_events(http, thread["id"], until="turnCompleted")
+        assert [event["itemCompleted"]["text"] for event in stored if "itemCompleted" in event] == ["UNWATCHED_OK"]
+        assert (await http.post(f"{SESSIONS}/unwatched/shutdown")).status_code == 202
+        assert (await http.get("/threads/00000000-0000-0000-0000-000000000000/events")).status_code == 404
     model.assert_quiescent()
 
 

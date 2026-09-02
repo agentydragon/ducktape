@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response, status
 from fastapi.responses import JSONResponse
+from google.protobuf.json_format import MessageToDict
 
 from x.agentplane.app import bridge as runner_bridge
 from x.agentplane.app.inventory import NewSandbox, SandboxInventory, SandboxNotFoundError, SandboxView
+from x.agentplane.app.trajectory import ThreadView, TrajectoryStore
 from x.agentplane.runner.client import RunnerError
+
+# The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
+# gazelle:include_dep @pypi//protobuf
 
 router = APIRouter(prefix="/sandboxes", tags=["sandboxes"])
 
@@ -71,12 +77,63 @@ async def delete_sandbox(inventory: Inventory, name: str) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-def create_app(inventory: SandboxInventory, bridge: runner_bridge.RunnerBridge) -> FastAPI:
+threads = APIRouter(prefix="/threads", tags=["threads"])
+
+
+def _store(request: Request) -> TrajectoryStore:
+    store = request.app.state.store
+    if not isinstance(store, TrajectoryStore):
+        raise TypeError(f"app.state.store is {type(store).__name__}, not TrajectoryStore")
+    return store
+
+
+Store = Annotated[TrajectoryStore, Depends(_store)]
+
+
+class ThreadNotFoundError(Exception):
+    def __init__(self, thread_id: UUID) -> None:
+        super().__init__(f"no thread {thread_id}")
+
+
+@threads.get("")
+async def list_threads(store: Store) -> list[ThreadView]:
+    """Every persisted thread, newest first; a thread outlives its sandbox."""
+    return await store.list_threads()
+
+
+@threads.get("/{thread_id}")
+async def get_thread(store: Store, thread_id: UUID) -> ThreadView:
+    view = await store.get_thread(thread_id)
+    if view is None:
+        raise ThreadNotFoundError(thread_id)
+    return view
+
+
+@threads.get("/{thread_id}/events")
+async def thread_events(
+    store: Store,
+    thread_id: UUID,
+    after: Annotated[int, Query(ge=0, description="Events with a greater sequence.")] = 0,
+    limit: Annotated[int, Query(ge=1, le=10_000)] = 10_000,
+) -> list[dict[str, object]]:
+    """The stored events as proto-JSON of the runner protocol's Event, in sequence order."""
+    if await store.get_thread(thread_id) is None:
+        raise ThreadNotFoundError(thread_id)
+    return [MessageToDict(event) for event in await store.events(thread_id, after_sequence=after, limit=limit)]
+
+
+def create_app(inventory: SandboxInventory, bridge: runner_bridge.RunnerBridge, store: TrajectoryStore) -> FastAPI:
     app = FastAPI(title="Agentplane", version="0")
     app.state.inventory = inventory
     app.state.bridge = bridge
+    app.state.store = store
     app.include_router(router)
     app.include_router(runner_bridge.router)
+    app.include_router(threads)
+
+    @app.exception_handler(ThreadNotFoundError)
+    async def _thread_not_found(_request: Request, error: ThreadNotFoundError) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": str(error)})
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> Response:

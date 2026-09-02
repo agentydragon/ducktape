@@ -115,6 +115,7 @@ resources:
   # --- agentplane (staging) ---
   - agentplane-staging/namespace/flux-kustomization.yaml
   - agentplane-staging/agent-rbac/flux-kustomization.yaml
+  - agentplane-staging/db/flux-kustomization.yaml
   - agentplane-staging/app/flux-kustomization.yaml
 
   # --- kyverno ---

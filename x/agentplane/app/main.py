@@ -17,7 +17,8 @@ from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.app.api import create_app
 from x.agentplane.app.bridge import RunnerBridge, runner_address
-from x.agentplane.app.inventory import SandboxInventory
+from x.agentplane.app.inventory import ProvisioningState, SandboxInventory
+from x.agentplane.app.trajectory import TrajectoryStore
 
 app = typer.Typer(add_completion=False)
 
@@ -34,17 +35,28 @@ def main(
     host: Annotated[str, typer.Option(help="Bind address.")] = "127.0.0.1",
     port: Annotated[int, typer.Option(help="Bind port.")] = 8080,
     kubeconfig: Annotated[Path | None, typer.Option(help="Kubeconfig to use; omit for in-cluster.")] = None,
+    database_url: Annotated[
+        str, typer.Option(envvar="AGENTPLANE_DATABASE_URL", help="SQLAlchemy asyncpg URL of the trajectory store.")
+    ] = "",
 ) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    if not database_url:
+        raise typer.BadParameter("--database-url (AGENTPLANE_DATABASE_URL) is required")
     asyncio.run(
         async_main(
-            namespace=namespace, template=template, runner_port=runner_port, host=host, port=port, kubeconfig=kubeconfig
+            namespace=namespace,
+            template=template,
+            runner_port=runner_port,
+            host=host,
+            port=port,
+            kubeconfig=kubeconfig,
+            database_url=database_url,
         )
     )
 
 
 async def async_main(
-    *, namespace: str, template: str, runner_port: int, host: str, port: int, kubeconfig: Path | None
+    *, namespace: str, template: str, runner_port: int, host: str, port: int, kubeconfig: Path | None, database_url: str
 ) -> None:
     configuration = k8s_client.Configuration()
     if kubeconfig is None:
@@ -59,14 +71,20 @@ async def async_main(
             custom_objects=cast(CustomObjectsClient, CustomObjectsApi(api)),
             core_v1=CoreV1Api(api),
         )
-        bridge = RunnerBridge(address_of=runner_address(inventory, runner_port))
-        app = create_app(inventory, bridge)
+        store = TrajectoryStore.connect(database_url)
+        await store.ensure_schema()
+        bridge = RunnerBridge(address_of=runner_address(inventory, runner_port), store=store)
+        app = create_app(inventory, bridge, store)
         # The SPA, mounted last so the API routes above it win; index.html answers the rest.
         app.mount("/", StaticFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
         try:
+            await bridge.start(
+                [view.name for view in await inventory.list_sandboxes() if view.state is ProvisioningState.RUNNING]
+            )
             await uvicorn.Server(uvicorn.Config(app, host=host, port=port)).serve()
         finally:
             await bridge.close()
+            await store.close()
 
 
 if __name__ == "__main__":

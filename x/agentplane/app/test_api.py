@@ -12,6 +12,7 @@ from x.agentplane.app.api import create_app
 from x.agentplane.app.bridge import RunnerBridge
 from x.agentplane.app.inventory import ARCHIVED_LABEL, SandboxInventory
 from x.agentplane.app.testing.kubernetes import FakeCoreV1Api, FakeCustomObjectsApi, pod, sandbox
+from x.agentplane.app.trajectory import TrajectoryStore
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
@@ -19,7 +20,11 @@ from x.agentplane.app.testing.kubernetes import FakeCoreV1Api, FakeCustomObjects
 
 @pytest.fixture
 def client(
-    inventory: SandboxInventory, bridge: RunnerBridge, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
+    inventory: SandboxInventory,
+    bridge: RunnerBridge,
+    store: TrajectoryStore,
+    custom_objects: FakeCustomObjectsApi,
+    core_v1: FakeCoreV1Api,
 ) -> Iterator[TestClient]:
     custom_objects.objects[("sandboxes", "live")] = sandbox("live")
     core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
@@ -27,7 +32,7 @@ def client(
     custom_objects.objects[("sandboxes", "shelved")] = sandbox(
         "shelved", labels={ARCHIVED_LABEL: "true"}, operating_mode="Suspended"
     )
-    with TestClient(create_app(inventory, bridge)) as test_client:
+    with TestClient(create_app(inventory, bridge, store)) as test_client:
         yield test_client
 
 
@@ -120,6 +125,9 @@ def test_openapi_schema_names_every_operation(client: TestClient) -> None:
         "/sandboxes/{name}/sessions/{session_id}/inputs",
         "/sandboxes/{name}/sessions/{session_id}/interrupt",
         "/sandboxes/{name}/sessions/{session_id}/shutdown",
+        "/threads",
+        "/threads/{thread_id}",
+        "/threads/{thread_id}/events",
     }
     assert set(paths["/sandboxes"]) == {"get", "post"}
     assert set(paths["/sandboxes/{name}"]) == {"get", "delete"}

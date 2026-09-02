@@ -1,0 +1,25 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: agentplane-staging-db
+  namespace: ducktape-flux
+  annotations:
+    description: The Agentplane trajectory store, a single-instance CNPG PostgreSQL in agentplane-staging.
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 5m
+  path: ./cluster/k8s/agentplane-staging/db
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  dependsOn:
+    - name: agentplane-staging-namespace
+      namespace: ducktape-flux
+    - name: cnpg
+      namespace: ducktape-flux
+    - name: local-path-provisioner
+      namespace: ducktape-flux

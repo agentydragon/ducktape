@@ -1,0 +1,34 @@
+# The trajectory store: every runner event of every session, copied out of the sandbox by the
+# integration app as it arrives, so a thread outlives its sandbox. One instance on wyrm2 beside
+# the runner Pods; staging's database is disposable (the app creates its schema at startup),
+# so there is no migration Job and no backup here. CNPG generates the app credential in the
+# Secret agentplane-db-app, which the Deployment composes into AGENTPLANE_DATABASE_URL.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: agentplane-db
+  namespace: agentplane-staging
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/region: proxmox
+
+  storage:
+    storageClass: local-path-proxmox
+    size: 5Gi
+
+  monitoring:
+    enablePodMonitor: true
+
+  bootstrap:
+    initdb:
+      database: agentplane
+      owner: agentplane
