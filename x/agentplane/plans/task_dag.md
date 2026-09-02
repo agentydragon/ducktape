@@ -83,7 +83,7 @@ flowchart TB
     G["Rai decision<br/>second viewer on one session needed?"]:::decision
     R1["Read-only follower attachments"]:::future
 
-    J["Secure egress integration<br/>fixed sidecar + trusted external gateway"]:::future
+    J["Secure egress integration<br/>per-Pod sidecar wraps traffic with the Pod's SA token;<br/>central proxy holds credentials and egress policy;<br/>first credential: the agentydragon-agent GitHub PAT"]:::next
     P["Rai decision<br/>dynamic per-Thread policy or explicit approval needed?"]:::decision
     K["Conditional access controller<br/>allow / deny / user approval required"]:::future
     R["Rai decision<br/>does the threat model require stronger isolation?"]:::decision
@@ -163,8 +163,13 @@ External-event scope is decided: approval decisions and other notifications reac
 inputs ([`async_approvals.md`](async_approvals.md)). A "no" choice should close or defer that
 branch rather than create speculative scaffolding.
 
-The `P`/`K` path is only the narrow access decision needed for a credentialed Agentplane egress
-deployment. It is not the general Agent Console permission model represented by `AA`/`AB`, and it must
+`J` is decided in shape: the ADR's composition, a per-Pod sidecar that takes unauthenticated
+traffic from the sandbox and forwards it to a central proxy under the Pod-bound ServiceAccount
+token, with the central proxy holding the real credentials and the per-identity egress rules
+(methods, hosts, paths, and which placeholder tokens it substitutes). It is Agentplane's own
+code, not a reuse of Haku's egress proxy, and the integration app shows a sandbox's allowed
+egress, tokens, and decisions. The `P`/`K` path is only the narrow access decision needed for a
+credentialed Agentplane egress deployment. It is not the general Agent Console permission model represented by `AA`/`AB`, and it must
 not be reused as a private-Haku policy language by default. The existing broad Ducktape lane is a
 scoped operational convenience, not evidence that the same grants are safe for an agent with Rai's
 personal context.
