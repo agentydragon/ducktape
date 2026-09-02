@@ -56,30 +56,38 @@ The common case is a mix, split by operation class rather than by system:
 Authority in Kubernetes is the token times the bindings, and either can be cut at the apiserver.
 "Issued but not revocable" therefore means the reconciler is down or lagging. The guard is a third
 cut under Haku's control alone: the agent never holds the real credential, only a placeholder, and
-the proxy substitutes the real one while Haku's ledger says the grant is active. This is the
-sandbox spike's proxy-only secret delivery applied to grants.
+the proxy substitutes the real one only while the identity's RBAC objects match what the ledger
+says they should be. This is the sandbox spike's proxy-only secret delivery applied to grants.
 
-The gate must not depend on scope matching, or the proxy ends up reimplementing the apiserver's
-path-to-resource mapping. On revocation, live RBAC may still be broader than the ledger, so a
-SubjectAccessReview cannot tell a still-valid request from a revoked one. Minting one ServiceAccount
-and token per grant removes the need:
+The gate compares object sets, never requests, so the proxy needs no knowledge of API paths:
 
-- **Issue:** create the ServiceAccount and bindings; enable substitution only once a
-  SubjectAccessReview for a probe request inside the grant's scope answers yes, so the agent never
-  sees reconciliation-lag 403s.
-- **Use:** the agent holds one placeholder per grant, bound to the sandbox identity so it is useless
-  elsewhere; the proxy swaps in that grant's token. The apiserver does all authorization.
-- **Revoke:** flip the ledger first, which stops substitution at once; delete the ServiceAccount and
-  bindings afterward, with an alarm if they outlive a grace period. Reconciliation lag is harmless
-  because the credential is already dead to the agent.
+- **Desired:** the RoleBindings, and the Roles they reference, that the ledger's active grants imply
+  for this identity.
+- **Actual:** every binding in the apiserver whose subjects include the identity, indexed by subject
+  rather than by our own label, so a binding added by hand is seen. Content is compared (`roleRef`,
+  subjects, the referenced Role's rules), not names, so a widened Role is a mismatch.
+- **Equal:** substitute the credential; the apiserver does all per-request authorization.
+- **Not equal, in either direction:** refuse substitution with "permissions are reconciling, retry
+  later", even for a request both sides would allow. An extra binding after a revocation is a
+  mismatch, so lag can never leave authority usable. Unknown state (stale cache, apiserver
+  unreachable) refuses too; that costs availability, never safety.
 
-Real tokens come from TokenRequest with a short TTL the proxy refreshes, so nothing long-lived
-exists to leak. The same guarantee holds for any target the egress fence fronts, since header
-substitution works the same for GitHub or Forgejo tokens; it does not hold where the agent must
-possess the real credential. The one known case is BuildBuddy, whose API key rides inside the
-Bazel gRPC protocol as a remote header rather than at the HTTP edge, so the fence cannot substitute
-it and the agent holds the real key. Accepted: the key is low-sensitivity and unresolved rather
-than unresolvable.
+Issue and revoke are then plain ledger writes followed by reconciliation, with the proxy opening
+or closing on its own as the two sides converge. Real tokens come from TokenRequest with a short
+TTL the proxy refreshes, so nothing long-lived exists to leak, and the placeholder is bound to the
+sandbox identity so it is useless elsewhere.
+
+One identity per grant is an availability optimization, not a correctness requirement: with a
+single identity, revoking any grant pauses all of the agent's Kubernetes access until the
+reconciler lands; with one identity per grant, only the grant being revoked pauses.
+
+The same guarantee holds for any target the egress fence fronts, since header substitution works
+the same for GitHub or Forgejo tokens, with the desired-versus-actual check replaced by whatever
+that target exposes about the token's scope; it does not hold where the agent must possess the
+real credential. The one known case is BuildBuddy, whose API key rides inside the Bazel gRPC
+protocol as a remote header rather than at the HTTP edge, so the fence cannot substitute it and
+the agent holds the real key. Accepted: the key is low-sensitivity and unresolved rather than
+unresolvable.
 
 ## Choosing
 
@@ -115,7 +123,7 @@ operations fall where.
 
 | System                                       | Delegated identity                                                         | Broker needed for                                           |
 | -------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| Kubernetes                                   | one ServiceAccount per grant, proxy-substituted; SAR-checked               | anything the agent's RBAC does not cover                    |
+| Kubernetes                                   | ServiceAccount + RBAC via grants, proxy-substituted while reconciled       | anything the agent's RBAC does not cover                    |
 | GitHub                                       | fine-grained token or App installation per repo                            | public-repository policy across search; writes under review |
 | Forgejo                                      | scoped tokens (controller-minted)                                          | nothing identified yet                                      |
 | HTTP egress                                  | fence allowlist by origin; path-level allowlists are the natural extension | origins outside the allowlist                               |
