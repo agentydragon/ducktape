@@ -154,8 +154,9 @@ def test_loki_proxy_static_allowlist_covers_agent_readable_log_namespaces(
 ) -> None:
     """A Namespace opt-in for Kubernetes pod logs must also permit its Loki logs.
 
-    The proxy remains static and network-isolated; this CI contract makes the
-    GitOps-owned logs label the review point for extending that static policy.
+    A bearer-token request is authorized by the same RBAC the label generates,
+    but anonymous (token-less) callers are judged by this static allowlist; this
+    CI contract makes the GitOps-owned logs label the review point for both.
     """
     deployment = yaml.safe_load((k8s_dir / "agents/loki-read-proxy/deployment.yaml").read_text())
     container = next(item for item in deployment["spec"]["template"]["spec"]["containers"] if item["name"] == "proxy")

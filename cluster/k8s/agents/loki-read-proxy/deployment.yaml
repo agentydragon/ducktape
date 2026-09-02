@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: loki-read-proxy
   annotations:
-    description: "Read-only namespace-filtering Loki query proxy for the Haku agent. Exposes only GET query/query_range and requires an exact allowlisted namespace matcher in every query; Loki itself is auth_enabled:false, so agents must never reach it directly. No auth of its own — the CiliumNetworkPolicy next to it is the access control."
+    description: "Read-only namespace-filtering Loki query proxy for agents. Exposes only GET query/query_range and requires an exact namespace matcher in every query; Loki itself is auth_enabled:false, so agents must never reach it directly. A request with a Kubernetes bearer token is authorized by that token's RBAC (SelfSubjectAccessReview for get pods/log in the namespace); an anonymous request by the static NAMESPACE_ALLOWLIST, fenced by the CiliumNetworkPolicy next to it."
 spec:
   replicas: 1
   selector:
@@ -40,7 +40,9 @@ spec:
               containerPort: 8080
               protocol: TCP
           env:
-            # Namespaces agents may query through this network-isolated proxy.
+            # Namespaces an *anonymous* request may query. A request carrying
+            # a Kubernetes bearer token ignores this list: its namespaces are
+            # authorized by the token's RBAC instead.
             # cluster/validation:test_cluster_integration asserts every
             # Namespace with rbac.ducktape.io/agent-readable-logs=true is
             # included here, so the GitOps label and Loki policy cannot drift.
@@ -58,6 +60,15 @@ spec:
             # directory, which only allows loki-read.
             - name: UPSTREAM_URL
               value: "http://loki-read.loki.svc:3100"
+            # The pod mounts no ServiceAccount token (bearer requests are
+            # authorized with the caller's own token), so the apiserver CA
+            # comes from the kube-root-ca.crt ConfigMap volume below.
+            - name: KUBERNETES_CA_FILE
+              value: /var/run/kube-root-ca/ca.crt
+          volumeMounts:
+            - name: kube-root-ca
+              mountPath: /var/run/kube-root-ca
+              readOnly: true
           resources:
             requests:
               cpu: "50m"
@@ -77,3 +88,7 @@ spec:
               port: http
             initialDelaySeconds: 10
             periodSeconds: 20
+      volumes:
+        - name: kube-root-ca
+          configMap:
+            name: kube-root-ca.crt

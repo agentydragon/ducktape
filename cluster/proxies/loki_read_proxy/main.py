@@ -1,41 +1,61 @@
 """Read-only, namespace-filtering Loki query proxy.
 
 Loki runs with ``auth_enabled: false`` (namespace ``loki``): anyone who can
-reach it can read, write, or delete *all* cluster logs. This proxy gives the
-Haku agent (namespace ``haku-sandbox``) log read access scoped to an
-allowlisted set of namespaces:
+reach it can read, write, or delete *all* cluster logs. This proxy gives
+agents log read access scoped per namespace:
 
 - Only ``GET /loki/api/v1/query_range`` and ``GET /loki/api/v1/query`` are
   exposed. Every other path and method returns 404 — notably ``/series``,
   ``/labels``, ``/tail``, and the delete API.
 - The ``query`` parameter must be a LogQL *log* query whose leading stream
-  selector pins ``namespace`` to an allowlisted value with an exact ``=``
-  matcher (see ``validate_query`` for the security argument).
+  selector pins ``namespace`` with an exact ``=`` matcher (see
+  ``parse_log_query_namespaces`` for the security argument).
+- Each pinned namespace is authorized in one of two ways:
+
+  - ``Authorization: Bearer <kubernetes token>``: the proxy issues a
+    SelfSubjectAccessReview for ``get pods/log`` in that namespace **with the
+    caller's own token**, so the decision is exactly the caller's Kubernetes
+    RBAC (the same ``agent-readable-logs`` RoleBindings that gate
+    ``kubectl logs``). The apiserver authenticates the token; the proxy holds
+    no credential of its own. A token the apiserver rejects answers 401, an
+    RBAC denial 403, and an apiserver that cannot be consulted 502 — never a
+    fall-through to the allowlist below.
+  - No ``Authorization`` header: the namespace must be in the static
+    ``NAMESPACE_ALLOWLIST``. This path exists for callers that mount no
+    Kubernetes token (the Haku sandbox pods) and is fenced by network policy.
+
 - ``limit`` is capped at ``MAX_LIMIT`` (rejected with 400 above it) and
   defaults to ``DEFAULT_LIMIT``; only known-safe parameters are forwarded.
+  The caller's ``Authorization`` header is never forwarded to Loki.
 - An upstream that times out answers 504 and one that is unreachable answers
   502, rather than the bare 500 an unhandled ``httpx`` error would produce.
   Upstream responses that *arrive* pass through with their own status.
 
-The proxy has **no authentication of its own** — access control is the
-CiliumNetworkPolicy in cluster/k8s/agents/loki-read-proxy/ (ingress only from
-``haku-sandbox`` pods, egress only to the Loki gateway plus DNS), together with
-Loki's own ingress policy (cluster/k8s/monitoring/loki/cilium-network-policy.yaml),
+Who may reach the proxy at all is the CiliumNetworkPolicy in
+cluster/k8s/agents/loki-read-proxy/ (ingress only from ``haku-sandbox`` pods,
+egress only to Loki, the kube-apiserver, and DNS), together with Loki's own
+ingress policy (cluster/k8s/monitoring/loki/cilium-network-policy.yaml),
 which admits this proxy but not agent namespaces. Those manifests deploy this
 code; they live under k8s/ because that is where Flux reads config from.
 
 Configuration (env): ``NAMESPACE_ALLOWLIST`` (comma-separated, required),
-``UPSTREAM_URL`` (default ``http://loki-gateway.loki.svc:80``).
+``UPSTREAM_URL`` (default ``http://loki-gateway.loki.svc:80``),
+``KUBERNETES_SERVICE_HOST``/``KUBERNETES_SERVICE_PORT`` (injected by the
+kubelet) and ``KUBERNETES_CA_FILE`` (default: the in-cluster ServiceAccount
+``ca.crt``; the deployment mounts ``kube-root-ca.crt`` there instead because
+it mounts no ServiceAccount token).
 """
 
 import logging
 import os
 import re
+import ssl
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Self
+from pathlib import Path
+from typing import Any, Self
 
 import httpx
 import uvicorn
@@ -51,6 +71,12 @@ MAX_LIMIT = 5000
 # "no response within 30s" can act on it, where a bare timeout cannot.
 UPSTREAM_TIMEOUT_S = 30.0
 
+# Budget for one SelfSubjectAccessReview round trip. Authorization must fail
+# closed quickly rather than hold a query open behind an unresponsive apiserver.
+KUBE_TIMEOUT_S = 5.0
+
+SELF_SUBJECT_ACCESS_REVIEW_PATH = "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews"
+
 # Loki read-API parameters forwarded verbatim; anything else is dropped so the
 # upstream only ever sees parameters this proxy understands. `time` is the
 # instant-query (`/query`) evaluation timestamp.
@@ -62,6 +88,11 @@ _FORWARDED_PARAMS = ("start", "end", "since", "step", "direction", "time")
 _WHITESPACE = " \t\r\n"
 
 _LABEL_NAME_RE = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")
+
+# Kubernetes Namespace names are RFC 1123 labels. A pinned value outside this
+# grammar can name no namespace, so no RBAC decision could ever admit it —
+# reject it structurally instead of asking the apiserver about it.
+_NAMESPACE_NAME_RE = re.compile(r"[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?")
 
 
 class QueryValidationError(Exception):
@@ -84,8 +115,7 @@ class Matcher:
     label: str
     op: MatcherOp
     # Text between the quotes with escape sequences NOT decoded. See
-    # validate_query for why comparing this raw form against the allowlist is
-    # sound.
+    # parse_log_query_namespaces for why authorizing this raw form is sound.
     raw_value: str
 
 
@@ -181,8 +211,12 @@ def _has_unquoted_brace(rest: str) -> bool:
     return False
 
 
-def validate_query(query: str, namespace_allowlist: frozenset[str]) -> None:
-    """Raise QueryValidationError unless ``query`` is a namespace-pinned log query.
+def parse_log_query_namespaces(query: str) -> frozenset[str]:
+    """Return the namespaces ``query`` pins, or raise QueryValidationError.
+
+    Only a log query whose leading stream selector pins ``namespace`` with
+    exact ``=`` matchers passes; the returned values are the raw matcher
+    values, which the caller then authorizes one by one.
 
     Security argument
     =================
@@ -204,9 +238,10 @@ def validate_query(query: str, namespace_allowlist: frozenset[str]) -> None:
     metric query — important because even a metric query that returns no log
     lines would act as a *count oracle* over forbidden namespaces (log volume,
     activity timing). Parsing the leading selector and requiring an exact
-    allowlisted ``namespace=`` matcher then pins the only stream set the query
-    can touch: matchers within one selector are ANDed, so additional matchers
-    (including additional ``namespace`` matchers) can only narrow it further.
+    ``namespace=`` matcher, authorized per caller, then pins the only stream
+    set the query can touch: matchers within one selector are ANDed, so
+    additional matchers (including additional ``namespace`` matchers) can only
+    narrow it further.
     Whatever follows the selector either parses as a pipeline over those
     streams or fails to parse, in which case Loki answers 400 without touching
     any data.
@@ -218,12 +253,12 @@ def validate_query(query: str, namespace_allowlist: frozenset[str]) -> None:
     expressiveness — and it fails closed here rather than relying on Loki's
     parser, should LogQL ever grow a selector-combining construct.
 
-    Comparing the *raw* (undecoded) matcher value against the allowlist is
-    sound: allowlist entries contain no backslashes, so a raw value equal to
-    an entry contains no escape sequences and decodes to itself in all three
-    LogQL string syntaxes, while a value that would only decode *into* an
-    allowlisted name via escapes (e.g. ``"fl\\165x-system"``) differs in raw
-    form and is rejected.
+    Authorizing the *raw* (undecoded) matcher value is sound because the raw
+    value must itself be a valid namespace name (RFC 1123 label): such a value
+    contains no escape sequences and decodes to itself in all three LogQL
+    string syntaxes, while a value that would only decode *into* a real name
+    via escapes (e.g. ``"fl\\165x-system"``) fails the grammar and is
+    rejected.
     """
     stripped = query.strip(_WHITESPACE)
     if not stripped.startswith("{"):
@@ -238,16 +273,23 @@ def validate_query(query: str, namespace_allowlist: frozenset[str]) -> None:
     for matcher in namespace_matchers:
         if matcher.op is not MatcherOp.EQ:
             raise QueryValidationError(f'namespace matchers must use exact "=" (got {matcher.op})')
-        if matcher.raw_value not in namespace_allowlist:
-            raise QueryValidationError(f"namespace {matcher.raw_value!r} is not in the allowlist")
+        if _NAMESPACE_NAME_RE.fullmatch(matcher.raw_value) is None:
+            raise QueryValidationError(f"{matcher.raw_value!r} is not a valid Kubernetes namespace name")
     if _has_unquoted_brace(rest):
         raise QueryValidationError("query must contain exactly one stream selector")
+    return frozenset(m.raw_value for m in namespace_matchers)
 
 
 @dataclass(frozen=True)
 class Settings:
     upstream_url: str
+    # Namespaces readable *without* a bearer token; a token-bearing request is
+    # authorized by Kubernetes RBAC alone and never consults this set.
     namespace_allowlist: frozenset[str]
+    kube_api_url: str
+    # CA bundle that signs the apiserver's serving certificate; None trusts
+    # the system store (an apiserver behind a public-CA certificate).
+    kube_ca_file: Path | None
 
     @classmethod
     def from_env(cls) -> Self:
@@ -257,7 +299,43 @@ class Settings:
         return cls(
             upstream_url=os.environ.get("UPSTREAM_URL", "http://loki-gateway.loki.svc:80"),
             namespace_allowlist=allowlist,
+            kube_api_url=f"https://{os.environ['KUBERNETES_SERVICE_HOST']}:{os.environ['KUBERNETES_SERVICE_PORT']}",
+            kube_ca_file=Path(
+                os.environ.get("KUBERNETES_CA_FILE", "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
+            ),
         )
+
+
+def bearer_token(authorization: str | None) -> str | None:
+    """The token of a ``Bearer`` Authorization header; None when absent.
+
+    Any other scheme, or an empty token, is 401: a caller who tried to
+    authenticate must not silently fall back to the anonymous allowlist.
+    """
+    if authorization is None:
+        return None
+    scheme, _, token = authorization.partition(" ")
+    token = token.strip()
+    if scheme.lower() != "bearer" or not token:
+        raise HTTPException(status_code=401, detail="Authorization header must be 'Bearer <kubernetes token>'")
+    return token
+
+
+def self_subject_access_review(namespace: str) -> dict[str, Any]:
+    """SelfSubjectAccessReview body asking whether the token's subject may read pod logs."""
+    return {
+        "apiVersion": "authorization.k8s.io/v1",
+        "kind": "SelfSubjectAccessReview",
+        "spec": {
+            "resourceAttributes": {
+                "group": "",
+                "namespace": namespace,
+                "resource": "pods",
+                "subresource": "log",
+                "verb": "get",
+            }
+        },
+    }
 
 
 def _validated_limit(raw: str | None) -> int:
@@ -272,19 +350,75 @@ def _validated_limit(raw: str | None) -> int:
     return limit
 
 
-def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
-    """Build the proxy app; tests inject ``transport`` (httpx.MockTransport)."""
+def create_app(
+    settings: Settings,
+    transport: httpx.AsyncBaseTransport | None = None,
+    kube_transport: httpx.AsyncBaseTransport | None = None,
+) -> FastAPI:
+    """Build the proxy app; tests inject the Loki and apiserver transports (httpx.MockTransport)."""
     http_client: httpx.AsyncClient | None = None
+    kube_client: httpx.AsyncClient | None = None
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        nonlocal http_client
+        nonlocal http_client, kube_client
         http_client = httpx.AsyncClient(base_url=settings.upstream_url, timeout=UPSTREAM_TIMEOUT_S, transport=transport)
+        kube_client = httpx.AsyncClient(
+            base_url=settings.kube_api_url,
+            timeout=KUBE_TIMEOUT_S,
+            transport=kube_transport,
+            verify=ssl.create_default_context(cafile=str(settings.kube_ca_file)) if settings.kube_ca_file else True,
+        )
         yield
         await http_client.aclose()
-        http_client = None
+        await kube_client.aclose()
+        http_client = kube_client = None
 
     app = FastAPI(lifespan=lifespan, openapi_url=None, docs_url=None, redoc_url=None)
+
+    async def _review_with_token(token: str, namespace: str) -> None:
+        """Raise unless the apiserver says ``token``'s subject may get pods/log in ``namespace``."""
+        assert kube_client is not None, "httpx client not initialized (lifespan not started)"
+        try:
+            resp = await kube_client.post(
+                SELF_SUBJECT_ACCESS_REVIEW_PATH,
+                json=self_subject_access_review(namespace),
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        except httpx.RequestError as exc:
+            # Includes timeouts: no decision means no access.
+            logger.warning("SelfSubjectAccessReview for %s failed: %s", namespace, exc)
+            raise HTTPException(status_code=502, detail=f"could not consult kube-apiserver: {exc}") from exc
+        if resp.status_code == 401:
+            raise HTTPException(status_code=401, detail="kube-apiserver rejected the bearer token")
+        if resp.status_code not in (200, 201):
+            logger.warning("SelfSubjectAccessReview for %s answered HTTP %s", namespace, resp.status_code)
+            raise HTTPException(status_code=502, detail=f"kube-apiserver answered HTTP {resp.status_code}")
+        status = resp.json().get("status")
+        if not isinstance(status, dict) or not isinstance(status.get("allowed"), bool):
+            raise HTTPException(status_code=502, detail="kube-apiserver returned an incomplete SelfSubjectAccessReview")
+        # allowed + evaluationError means an authorizer errored while another
+        # allowed; like the Console's SAR client, treat that as no decision.
+        if status.get("evaluationError"):
+            logger.warning("SelfSubjectAccessReview for %s: %s", namespace, status["evaluationError"])
+            raise HTTPException(status_code=502, detail="kube-apiserver reported an authorization evaluation error")
+        if not status["allowed"] or status.get("denied"):
+            reason = status.get("reason") or "RBAC denied"
+            raise HTTPException(
+                status_code=403, detail=f"not allowed to get pods/log in namespace {namespace!r}: {reason}"
+            )
+
+    async def _authorize(request: Request, namespaces: frozenset[str]) -> None:
+        token = bearer_token(request.headers.get("authorization"))
+        for namespace in sorted(namespaces):
+            if token is not None:
+                await _review_with_token(token, namespace)
+            elif namespace not in settings.namespace_allowlist:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"namespace {namespace!r} is not in the anonymous allowlist; "
+                    "present a Kubernetes bearer token allowed to get pods/log there",
+                )
 
     async def _proxy(request: Request, upstream_path: str) -> Response:
         match request.query_params.getlist("query"):
@@ -296,10 +430,11 @@ def create_app(settings: Settings, transport: httpx.AsyncBaseTransport | None = 
                 # Refuse ambiguity outright rather than picking one occurrence.
                 raise HTTPException(status_code=400, detail="duplicate query parameter")
         try:
-            validate_query(query, settings.namespace_allowlist)
+            namespaces = parse_log_query_namespaces(query)
         except QueryValidationError as exc:
             logger.info("rejected query %r: %s", query, exc)
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        await _authorize(request, namespaces)
         forwarded = {"query": query, "limit": str(_validated_limit(request.query_params.get("limit")))}
         forwarded |= {
             name: value for name in _FORWARDED_PARAMS if (value := request.query_params.get(name)) is not None

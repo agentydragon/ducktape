@@ -1,13 +1,16 @@
-# The proxy's only access control: it has no auth of its own. Ingress is
-# restricted to Haku sandbox pods; egress is restricted to loki-read
-# (plus DNS), so a compromised proxy cannot pivot anywhere else either.
+# Who may reach the proxy at all. Anonymous requests are authorized only by the
+# proxy's static allowlist, so this ingress fence is their access control;
+# token-bearing requests are additionally authorized by the caller's Kubernetes
+# RBAC. Ingress is restricted to Haku sandbox pods; egress is restricted to
+# loki-read, the kube-apiserver (SelfSubjectAccessReview) and DNS, so a
+# compromised proxy cannot pivot anywhere else either.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   name: loki-read-proxy
   namespace: loki-read-proxy
   annotations:
-    description: "Ingress to the Loki read proxy only from haku-sandbox pods; egress only to loki-read and kube-dns. This policy IS the proxy's access control — the app itself is unauthenticated."
+    description: "Ingress to the Loki read proxy only from haku-sandbox pods; egress only to loki-read, kube-apiserver (SelfSubjectAccessReview for bearer requests) and kube-dns. This policy is the whole access control for anonymous (allowlist) requests."
 spec:
   endpointSelector:
     matchLabels:
@@ -46,4 +49,14 @@ spec:
       toPorts:
         - ports:
             - port: "3100"
+              protocol: TCP
+
+    # kube-apiserver: SelfSubjectAccessReview with the caller's bearer token.
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
               protocol: TCP
