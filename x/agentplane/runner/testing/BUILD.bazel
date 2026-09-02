@@ -1,0 +1,55 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//x/agentplane:__subpackages__"],
+)
+
+py_library(
+    name = "claude_model",
+    srcs = ["claude_model.py"],
+    deps = [
+        ":scripted_model",
+        "//x/agentplane/harness_tests:scripted_upstream",
+        "//x/agentplane/harness_tests/claude:anthropic_sse",
+        "//x/agentplane/harness_tests/claude:harness",
+        "//x/agentplane/harness_tests/claude:requests",
+    ],
+)
+
+py_library(
+    name = "codex_model",
+    srcs = ["codex_model.py"],
+    deps = [
+        ":scripted_model",
+        "//x/agentplane/harness_tests:scripted_upstream",
+        "//x/agentplane/harness_tests/codex:harness",
+        "//x/agentplane/harness_tests/codex:requests",
+        "//x/agentplane/harness_tests/codex:responses_sse",
+    ],
+)
+
+py_library(
+    name = "events",
+    srcs = ["events.py"],
+    deps = ["//x/agentplane/runner:protocol_pb2"],
+)
+
+py_library(
+    name = "launches",
+    srcs = ["launches.py"],
+    deps = [
+        "//util/bazel:runfiles",
+        "//x/agentplane/harness_tests:scripted_upstream",
+        "//x/agentplane/harness_tests/claude:harness",
+        "//x/agentplane/harness_tests/codex:harness",
+        "//x/agentplane/runner:config",
+        "//x/agentplane/runner:protocol_pb2",
+    ],
+)
+
+py_library(
+    name = "scripted_model",
+    srcs = ["scripted_model.py"],
+    deps = ["//x/agentplane/harness_tests:scripted_upstream"],
+)
