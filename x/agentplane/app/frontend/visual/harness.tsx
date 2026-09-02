@@ -1,9 +1,10 @@
 /**
  * Visual-test harness: the app mounted on canned data, nothing on the network. The `?page=` query
- * (set by visual-test-lib) picks the route; `fetch` answers the inventory and session routes from
- * fixtures, and `EventSource` replays one turn of runner events into the session view. The fetch
- * stub keeps the ledger visual-test-lib's `assertNetworkSettled` reads.
+ * (set by visual-test-lib) picks the route; `fetch` (stubbed by network.ts, imported first so the
+ * app's client captures the stub) answers the inventory and session routes from fixtures, and
+ * `EventSource` replays one turn of runner events into the session view.
  */
+import "./network";
 import "@mantine/core/styles.css";
 
 import { MantineProvider } from "@mantine/core";
@@ -11,6 +12,7 @@ import { createRoot } from "react-dom/client";
 
 import App from "../app";
 import type { Attached, Event, SandboxView, SessionSpec, SessionSummary } from "../client";
+import { routes } from "./network";
 
 // visual-test-lib freezes the wall clock before this bundle runs, so relative ages stay put.
 const NOW = Date.now();
@@ -96,44 +98,11 @@ const EVENTS: Event[] = [
   { sequence: "20", textDelta: { itemId: "m#1", text: "Reading src now" } },
 ];
 
-interface Ledger {
-  pending: string[];
-  violations: string[];
-}
-
-const ledger: Ledger = { pending: [], violations: [] };
-(window as unknown as { __visualNetworkLedger__: Ledger }).__visualNetworkLedger__ = ledger;
-
-type Route = [method: string, pattern: RegExp, answer: (match: RegExpMatchArray) => unknown];
-
-const ROUTES: Route[] = [
+routes.push(
   ["GET", /^\/sandboxes$/, () => SANDBOXES],
   ["GET", /^\/sandboxes\/([^/]+)$/, (match) => SANDBOXES.find((row) => row.name === match[1])],
-  ["GET", /^\/sandboxes\/([^/]+)\/sessions$/, () => SESSIONS],
-];
-
-window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-  const url = new URL(
-    typeof input === "string" ? input : input instanceof Request ? input.url : input.href,
-    "http://harness"
-  );
-  const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
-  const key = `${method} ${url.pathname}${url.search}`;
-  ledger.pending.push(key);
-  try {
-    for (const [routeMethod, pattern, answer] of ROUTES) {
-      const match = url.pathname.match(pattern);
-      if (routeMethod !== method || !match) continue;
-      const body = answer(match);
-      if (body === undefined) return Response.json({ detail: `no such sandbox ${match[1]}` }, { status: 404 });
-      return Response.json(body);
-    }
-    ledger.violations.push(`unmatched ${key}`);
-    return Response.json({ detail: "not in the harness" }, { status: 503 });
-  } finally {
-    ledger.pending.splice(ledger.pending.indexOf(key), 1);
-  }
-};
+  ["GET", /^\/sandboxes\/([^/]+)\/sessions$/, () => SESSIONS]
+);
 
 /** One attached stream: the canned events, then silence, the way a session mid-turn looks. */
 class ReplayingEventSource extends EventTarget {

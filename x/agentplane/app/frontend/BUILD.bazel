@@ -140,7 +140,10 @@ vitest_bin.vitest_test(
 # PNG published for PR visual review on the shared //util/testing/frontend_visual machinery.
 ts_library(
     name = "visual_harness_lib",
-    srcs = ["visual/harness.tsx"],
+    srcs = [
+        "visual/harness.tsx",
+        "visual/network.ts",
+    ],
     tsconfig = TSCONFIG,
     deps = [
         ":app",
