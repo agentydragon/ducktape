@@ -12,8 +12,10 @@ two of them is resolved by whoever lands second rebasing.
 Rai can open a separate integration app backed by Agentplane, create a sandbox running one Claude
 or Codex runner, send an Input, watch response and tool activity arrive, detach and come back to
 what happened since, suspend and resume the sandbox with the conversation intact, and read the raw
-native frames behind any event. The first functioning product is credentialless toward external
-systems; real upstream credentials are a later gate. Sandboxes are disposable, trajectories are
+native frames behind any event. The first instance is a staging one on the cheap-experiments
+model key, and the agent working on Agentplane can drive it end to end without Rai: create a
+sandbox, run a turn, read what happened, tear it down. The first functioning product is
+credentialless toward external systems; real upstream credentials are a later gate. Sandboxes are disposable, trajectories are
 not: what an agent did, and why, outlives the sandbox it ran in, under a name, and is searchable
 later.
 
@@ -51,7 +53,7 @@ flowchart TB
     subgraph pod["Runner in a Sandbox"]
         I1["I1 Runner image<br/>both harnesses, Docker smoke test"]:::ready
         I2["I2 Runner pod contract<br/>Pod listen, env config, ListSessions, SIGTERM ladder"]:::ready
-        I3["I3 Sandbox template + namespace<br/>PVC, lane keys, Cilium policy"]:::ready
+        I3["I3 Staging namespace<br/>sandbox template, PVC, cheap-experiments key,<br/>standing agent access"]:::ready
         I4["I4 First real turn + suspend/resume continuity<br/>manual milestone"]:::next
     end
 
@@ -59,7 +61,7 @@ flowchart TB
         C1["C1 Sandbox inventory<br/>list, create, suspend, resume, delete"]:::ready
         C2["C2 Runner bridge<br/>REST + SSE over Attach, raw frames"]:::next
         C3["C3 UI<br/>sandboxes, session stream, raw view, input, interrupt"]:::next
-        C4["C4 App deployment<br/>namespace RBAC, Authentik route"]:::next
+        C4["C4 App deployment into staging<br/>RBAC, Authentik route, agent-reachable API"]:::next
         C5["C5 Archive<br/>out of the active view, history kept"]:::next
     end
 
@@ -189,12 +191,17 @@ personal context.
   takes provider configuration from the environment, answers `ListSessions`, and on SIGTERM stops
   every harness through the stdin-close ladder before exiting; a runner test covers the RPC and the
   signal path.
-- **I3 sandbox template:** `cluster/k8s/agentplane/` carries the namespace, the `SandboxTemplate`,
-  the reflected lane keys, and Cilium policy; the cluster validator passes and a claim from it
-  reaches Ready once the image is published.
-- **I4 first real turn:** one turn per provider against LiteLLM from inside a sandbox, then
-  detach, suspend, resume, reattach from the cursor, and the earlier turn visible in the resumed
-  conversation; observations that change a guarantee go into the runner SPEC.
+- **I3 staging namespace:** `cluster/k8s/agentplane-staging/` carries the namespace, the
+  `SandboxTemplate`, a standing copy of the `cheap-experiments` LiteLLM key for the runner
+  Pods, Cilium policy, and the agent's standing access: the namespace is labeled
+  agent-readable for metadata and logs, and a per-service `agent-rbac/` binding lets the
+  existing agent identities create and delete claims, suspend and resume sandboxes, exec into
+  runner Pods, and port-forward. The cluster validator passes and a claim reaches Ready once
+  the image is published.
+- **I4 first real turn:** run by the agent on staging without Rai: one turn per provider against
+  LiteLLM from inside a sandbox, then detach, suspend, resume, reattach from the cursor, and the
+  earlier turn visible in the resumed conversation; observations that change a guarantee go
+  into the runner SPEC.
 - **C1 sandbox inventory:** REST with an OpenAPI schema over Agentplane's claims and sandboxes:
   list with provisioning state, create, suspend, resume, delete; tested without a live cluster.
 - **C2 runner bridge:** sessions per sandbox, attach with a cursor, inputs, interrupt, shutdown,
@@ -203,8 +210,11 @@ personal context.
 - **C3 UI:** a small SPA over C1 and C2 with the sandbox list and controls, the session stream, a
   raw-frames view, an input box, and interrupt; provisioning, running, suspended, lost, and
   uncertain states shown honestly.
-- **C4 app deployment:** Deployment, Service, Authentik-fronted route, and namespace-scoped RBAC,
-  with the image registered like the runner's.
+- **C4 app deployment into staging:** Deployment, Service, Authentik-fronted route, and
+  namespace-scoped RBAC in `agentplane-staging`, with the image registered like the runner's.
+  The API is reachable to the agent from inside the cluster, so the app's own flows (create,
+  drive, archive, delete) can be exercised autonomously; a production instance is a second
+  copy of the same manifests with its own keys, and does not exist until something needs it.
 - **C5 archive:** a sandbox can be marked archived from the app: it leaves the active list, its
   Pod is torn down by suspension, and its PVC and session log stay, so unarchiving resumes it.
   Archive is never deletion. Once T1 holds the trajectory, the flag moves to the thread record

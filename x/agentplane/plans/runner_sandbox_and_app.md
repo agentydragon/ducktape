@@ -10,13 +10,13 @@ Agent Sandbox and builds the smallest app that manages those sandboxes and shows
 ```text
 browser (behind Authentik)
    |  REST + SSE
-integration app (Deployment, namespace agentplane)
+integration app (Deployment, namespace agentplane-staging)
    |  Kubernetes API              |  runner protocol (gRPC, in-cluster)
 SandboxClaim -> Sandbox -> Pod    |
                   runner container <-+
                     runner process, state dir on the PVC
                     claude / codex child per session
-                    model traffic to LiteLLM with a lane key from a Secret
+                    model traffic to LiteLLM with the cheap-experiments key from a Secret
 ```
 
 Kubernetes is the sandbox inventory and the runner's session log is the history; the app persists
@@ -55,15 +55,27 @@ What the runner needs to be a long-lived container rather than a test subprocess
 
 Depends on nothing; lands with or before I1.
 
-### I3. Sandbox template and namespace
+### I3. Staging namespace
 
-`cluster/k8s/agentplane/`: the `agentplane` namespace with its quota, a `SandboxTemplate`
-`agentplane-runner` whose Pod runs the I1 image with a PVC for the state directory and workspace,
-the LiteLLM lane keys reflected into the namespace (one per provider, minted like the
-`agent-workspaces` Codex key), and Cilium policy: the Pod reaches DNS and LiteLLM; the app namespace
-reaches the runner port; nothing else in either direction. No warm pool: the app creates a
-`SandboxClaim` per sandbox. Suspension is the Sandbox's `operatingMode: Suspended`, which the
-spike showed replaces the Pod and keeps the PVC.
+The first instance is staging, and it is built so the agent can test on it without Rai.
+`cluster/k8s/agentplane-staging/`: the `agentplane-staging` namespace with its quota, a
+`SandboxTemplate` `agentplane-runner` whose Pod runs the I1 image with a PVC for the state
+directory and workspace, and Cilium policy: the Pod reaches DNS and LiteLLM; the app reaches the
+runner port; nothing else in either direction. No warm pool: the app creates a `SandboxClaim` per
+sandbox. Suspension is the Sandbox's `operatingMode: Suspended`, which the spike showed replaces
+the Pod and keeps the PVC.
+
+Model access is the `cheap-experiments` LiteLLM key, which caps spend and allows only the cheap
+models; both harnesses get it as their API key with LiteLLM as the endpoint. That key is today
+handed out only through expiring Haku grants, by design; staging gets a standing copy as a second
+`kubernetes_secret` in `tf/gitops/litellm-keys`, and the key's own budget and allowlist remain the
+kill switch. Which models a session may name is whatever the allowlist carries.
+
+Agent access is standing, not granted per task: the namespace is labeled agent-readable for
+metadata and logs, so the Kyverno-generated bindings cover reads, and a per-service `agent-rbac/`
+binding (the pattern in the agent RBAC base README) grants the existing agent identities
+create and delete on claims, patch on sandboxes for suspend and resume, exec on runner Pods, and
+port-forward, in this namespace only. No new ServiceAccount or token to distribute.
 
 Can be authored before I1 publishes; the Pod comes up once the image exists.
 
@@ -124,11 +136,14 @@ its sandbox to exist.
 
 Depends on C1.
 
-### C4. App deployment
+### C4. App deployment into staging
 
-`cluster/k8s/agentplane/`: Deployment, Service, ingress behind Authentik forward-auth, and a
-ServiceAccount with RBAC over claims, sandboxes, and pods in the `agentplane` namespace only. Image
-registered like the runner's.
+`cluster/k8s/agentplane-staging/`: Deployment, Service, ingress behind Authentik forward-auth, and
+a ServiceAccount with RBAC over claims, sandboxes, and pods in the namespace only. Image registered
+like the runner's. The agent reaches the API from inside the cluster, through the Service from
+its sandbox or by port-forward, so the app's flows are testable end to end autonomously. A
+production instance is a second copy of the same manifests with its own keys, and does not exist
+until something needs it.
 
 Depends on C1 and C2 producing an image; the manifests can be authored earlier.
 
@@ -137,10 +152,11 @@ Depends on C1 and C2 producing an image; the manifests can be authored earlier.
 - **Connection direction:** the app dials the runner Pod's address directly, re-resolving on
   reconnect; Pod replacement changes the address and the session log makes the cursor valid across
   it. A Service per sandbox is not needed until something outside the cluster must reach a runner.
-- **Model access:** LiteLLM virtual keys per provider lane, mounted into the runner container as
-  environment, the same operational convenience the `agent-workspaces` Codex lane uses. The
-  credentialless egress design in [the ADR](adr_sandbox_proxy_gateway.md) governs external systems,
-  not the model endpoint.
+- **Staging first, on the cheap key:** the first instance exists for the agent to test against
+  autonomously, so it runs on the `cheap-experiments` LiteLLM key, mounted into the runner
+  container as environment, the same operational convenience the `agent-workspaces` Codex lane
+  uses. The credentialless egress design in [the ADR](adr_sandbox_proxy_gateway.md) governs
+  external systems, not the model endpoint.
 - **No app persistence in this slice:** Kubernetes holds the inventory, including the archived
   flag, and the runner holds the history. Sandboxes are disposable and trajectories are not, so persistence is planned rather
   than avoided: it enters with the trajectory-persistence node in [the DAG](task_dag.md), which
