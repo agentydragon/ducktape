@@ -113,6 +113,17 @@ conversation-app package in the DAG.
 
 Depends on C1 and C2's schema.
 
+### C5. Archive
+
+Marking a sandbox archived removes it from the active list and suspends it, so the Pod goes and
+the PVC with the session log stays; unarchiving resumes it. The flag is a label on the claim,
+since Kubernetes is the inventory in this slice, and the list view hides archived sandboxes by
+default. Archive is never deletion: deleting stays a separate, explicit action. When trajectory
+persistence lands, the flag moves to the thread record and archiving a thread no longer needs
+its sandbox to exist.
+
+Depends on C1.
+
 ### C4. App deployment
 
 `cluster/k8s/agentplane/`: Deployment, Service, ingress behind Authentik forward-auth, and a
@@ -130,8 +141,8 @@ Depends on C1 and C2 producing an image; the manifests can be authored earlier.
   environment, the same operational convenience the `agent-workspaces` Codex lane uses. The
   credentialless egress design in [the ADR](adr_sandbox_proxy_gateway.md) governs external systems,
   not the model endpoint.
-- **No app persistence in this slice:** Kubernetes holds the inventory, the runner holds the
-  history. Sandboxes are disposable and trajectories are not, so persistence is planned rather
+- **No app persistence in this slice:** Kubernetes holds the inventory, including the archived
+  flag, and the runner holds the history. Sandboxes are disposable and trajectories are not, so persistence is planned rather
   than avoided: it enters with the trajectory-persistence node in [the DAG](task_dag.md), which
   needs only the runner bridge and can start alongside the UI and deployment.
 - **Transport security on the runner port:** Cilium policy between the app namespace and the
@@ -146,7 +157,7 @@ Depends on C1 and C2 producing an image; the manifests can be authored earlier.
 
 ## Left out on purpose
 
-Trajectory persistence, named threads, and search; archive and timeline presentation (the
-conversation app); read-only follower attachments; log compaction; approvals and external access;
+Trajectory persistence, named threads, and search; timeline presentation (the conversation
+app); read-only follower attachments; log compaction; approvals and external access;
 multiple runners per sandbox; warm pools. Each has a node in [the DAG](task_dag.md) with what it
 waits on.

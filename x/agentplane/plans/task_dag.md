@@ -61,6 +61,7 @@ flowchart TB
         C2["C2 Runner bridge<br/>REST + SSE over Attach, raw frames"]:::next
         C3["C3 UI<br/>sandboxes, session stream, raw view, input, interrupt"]:::next
         C4["C4 App deployment<br/>namespace RBAC, Authentik route"]:::next
+        C5["C5 Archive<br/>out of the active view, history kept"]:::next
     end
 
     R5["R5 RBE Claude launcher cleanup<br/>#5403"]:::review
@@ -73,7 +74,7 @@ flowchart TB
         T3["T3 Search and lookup over past interactions<br/>what happened, why, which agent"]:::future
     end
     D["Rai decision<br/>conversation app: separate deployment or Haku Console host?"]:::decision
-    E["Conversation app<br/>archive, timeline, live control over persisted threads"]:::future
+    E["Conversation app<br/>timeline and live control over persisted threads"]:::future
     F["Product milestone<br/>persisted history, honest outcomes, real users"]:::milestone
 
     G["Rai decision<br/>second viewer on one session needed?"]:::decision
@@ -112,6 +113,8 @@ flowchart TB
     C2 --> C3
     C1 --> C4
     C2 --> C4
+    C1 --> C5
+    C5 --> E
     I4 --> F0
     C3 --> F0
     C4 --> F0
@@ -205,6 +208,10 @@ personal context.
   uncertain states shown honestly.
 - **C4 app deployment:** Deployment, Service, Authentik-fronted route, and namespace-scoped RBAC,
   with the image registered like the runner's.
+- **C5 archive:** a sandbox can be marked archived from the app: it leaves the active list, its
+  Pod is torn down by suspension, and its PVC and session log stay, so unarchiving resumes it.
+  Archive is never deletion. Once T1 holds the trajectory, the flag moves to the thread record
+  and an archived sandbox may be deleted without losing anything.
 - **R5 RBE launcher cleanup:** the Claude harness tests run on RBE without the Nix ELF-loader
   workaround in [`../harness_tests/claude/harness.py`](../harness_tests/claude/harness.py);
   drivers and assertions unchanged.
@@ -221,8 +228,8 @@ personal context.
 - **T3 search and lookup:** find past interactions by text and by what an agent did; answer "what
   happened here", "why did the agent do that", and "which agent did this" from the persisted
   trajectory, with the raw frames one step away.
-- **Conversation app (E):** archive, timeline, and live control over persisted threads, as a
-  client of the same API; archive presentation stays in this layer.
+- **Conversation app (E):** timeline and live control over persisted threads, as a client of the
+  same API; how archived threads are presented stays in this layer.
 - **Secure egress and credentialed readiness:** one narrow synthetic operation proves the fixed sidecar
   to trusted gateway path before any real upstream credential is enabled. Real credentials remain only
   at the gateway; durable freshness/replay, per-Sandbox/Thread binding, rotation, runner-port
