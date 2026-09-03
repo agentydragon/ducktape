@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     confdir: Path = Field(description="Writable directory mitmproxy keeps its CA and issued leaves in.")
     token_audience: str = Field(default="agentplane-egress", description="Audience of the sidecars' projected tokens.")
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
-    resync_seconds: float = Field(default=300, description="Watch lifetime; every kind is relisted this often.")
+    resync_seconds: int = Field(default=300, description="Watch lifetime; every kind is relisted this often.")
     identity_cache_seconds: float = Field(default=60, description="Upper bound on how long a token verdict is kept.")
     decision_ring_size: int = Field(default=200, description="Decisions kept per sandbox for /decisions.")
     exempt_networks: list[IPv4Network | IPv6Network] = Field(

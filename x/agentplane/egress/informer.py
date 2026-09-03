@@ -116,7 +116,7 @@ class Informer:
         core_v1: CoreV1Api,
         namespace: str,
         credentials_namespace: str,
-        resync_seconds: float,
+        resync_seconds: int,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._index = index
@@ -197,6 +197,8 @@ class Informer:
         await self._changed(kind)
         watcher = k8s_watch.Watch()
         try:
+            # Integer seconds: the API server parses timeoutSeconds with strconv.ParseInt, so a float
+            # reaches it as "300.0" and every watch is refused with 400.
             async for event in watcher.stream(
                 kind.list, *kind.args, resource_version=version, timeout_seconds=self._resync_seconds
             ):

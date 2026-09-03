@@ -148,7 +148,24 @@ class FakeApiServer:
 
     async def _watch(self, request: web.Request, plural: str) -> web.StreamResponse:
         since = int(request.query.get("resourceVersion", "0"))
-        deadline = asyncio.get_running_loop().time() + float(request.query.get("timeoutSeconds", "300"))
+        # The API server parses timeoutSeconds with strconv.ParseInt and answers 400 for anything
+        # else, so a float reaches it as "300.0" and every watch fails. Refusing it here too keeps
+        # the difference from hiding that.
+        raw_timeout = request.query.get("timeoutSeconds", "300")
+        try:
+            timeout = int(raw_timeout)
+        except ValueError:
+            return web.json_response(
+                {
+                    "kind": "Status",
+                    "status": "Failure",
+                    "code": 400,
+                    "reason": "BadRequest",
+                    "message": f'strconv.ParseInt: parsing "{raw_timeout}": invalid syntax',
+                },
+                status=400,
+            )
+        deadline = asyncio.get_running_loop().time() + timeout
         response = web.StreamResponse(headers={"Content-Type": "application/json"})
         response.enable_chunked_encoding()
         await response.prepare(request)
