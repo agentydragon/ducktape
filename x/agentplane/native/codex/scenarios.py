@@ -8,7 +8,8 @@ from typing import Any
 from x.agentplane.native.codex import driver
 from x.agentplane.native.process import NativeProcess
 
-# The events a hooks capture registers: the ones that can block a turn, plus the session brackets.
+# The events a hooks capture registers: the blocking events a single-agent turn without compaction
+# reaches, plus the session brackets. Subagent and compaction events stay unregistered.
 HOOK_EVENTS = ("SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "SessionEnd")
 
 

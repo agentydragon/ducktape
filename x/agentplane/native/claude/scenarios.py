@@ -12,7 +12,8 @@ SYSTEM_PROMPT = "You are a concise test assistant. Follow user requests using th
 # A preset session title stops Claude's separate title-generating model call.
 SESSION_NAME = "agentplane-capture"
 TOOLS = ("Bash", "Edit", "Read")
-# The events a hooks capture registers: the ones that can block a turn, plus the session brackets.
+# The events a hooks capture registers: the blocking events a single-agent turn without compaction
+# reaches, plus the session brackets. Subagent and compaction events stay unregistered.
 HOOK_EVENTS = ("SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "SessionEnd")
 HOOK_DENIAL = "agentplane capture: this tool call is denied by a PreToolUse hook"
 
