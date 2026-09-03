@@ -12,23 +12,22 @@ from typing import Any, cast
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, Response
+from fastapi import Response
 from fastapi.staticfiles import StaticFiles
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
-from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
+from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
 from pydantic import Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
-from starlette.middleware.sessions import SessionMiddleware
 
 from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
-from x.agentplane.app import auth_routes
 from x.agentplane.app.api import ModelCatalog, create_app
 from x.agentplane.app.bridge import RunnerBridge, runner_address
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
+from x.agentplane.app.identity import TokenReviewer
 from x.agentplane.app.inventory import ProvisioningState, SandboxInventory
-from x.agentplane.app.oidc import build_oauth, load_settings
+from x.agentplane.app.oidc import load_settings
 from x.agentplane.app.trajectory import TrajectoryStore
 
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
@@ -38,10 +37,6 @@ from x.agentplane.app.trajectory import TrajectoryStore
 # The bundle's entry; runfiles resolve files, not directories, so the mount is its parent.
 FRONTEND_INDEX = "_main/x/agentplane/app/frontend/dist/index.html"
 
-
-# SessionMiddleware signs cookies with itsdangerous, imported inside starlette;
-# gazelle cannot see the dependency.
-# gazelle:include_dep @pypi//itsdangerous
 
 logger = logging.getLogger(__name__)
 
@@ -94,9 +89,9 @@ class Settings(BaseSettings):
     egress_admin_timeout: float = Field(
         default=5, description="Seconds to wait for the proxy before showing rules only."
     )
-    agent_port: int = Field(
-        default=8081,
-        description="Second listener, unguarded, for callers the API server proxies; omitted without a login.",
+    token_audience: str = Field(
+        default="agentplane",
+        description="Audience a Kubernetes token must carry to authenticate here, so none is replayable.",
     )
 
     def __init__(self, **values: Any) -> None:
@@ -148,43 +143,24 @@ async def async_main(settings: Settings) -> None:
         await store.ensure_schema()
         bridge = RunnerBridge(address_of=runner_address(inventory, settings.runner_port), store=store)
         oidc = load_settings()
-        decisions = DecisionsClient(admin_http)
-
-        def assemble(*, guarded: bool) -> FastAPI:
-            built = create_app(inventory, bridge, store, settings.models, egress, decisions, oidc if guarded else None)
-            if guarded and oidc is not None:
-                built.add_middleware(
-                    SessionMiddleware,
-                    secret_key=oidc.session_secret,
-                    session_cookie=oidc.cookie_name,
-                    https_only=oidc.secure,
-                    same_site="lax",
-                    max_age=oidc.session_seconds,
-                )
-                built.state.oauth = build_oauth(oidc)
-                built.include_router(auth_routes.router)
-            # The SPA, mounted last so the API routes above it win; index.html answers the rest.
-            built.mount("/", SpaFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
-            return built
-
-        # Two listeners when the app owns its login, because they answer to different proofs: the
-        # public port takes a session cookie, and the port the API server proxies to takes none and
-        # is reachable only from the control plane. One port cannot be both without trusting a
-        # header any host-network process could set.
-        listeners = [uvicorn.Config(assemble(guarded=True), host=settings.host, port=settings.port)]
-        if oidc is not None:
-            listeners.append(uvicorn.Config(assemble(guarded=False), host=settings.host, port=settings.agent_port))
-            logger.info(
-                "OIDC login on :%d (issuer %s); unguarded agent port :%d",
-                settings.port,
-                oidc.issuer,
-                settings.agent_port,
-            )
+        logger.info("browser login: %s", f"OIDC at {oidc.issuer}" if oidc else "none configured")
+        app = create_app(
+            inventory,
+            bridge,
+            store,
+            settings.models,
+            egress,
+            DecisionsClient(admin_http),
+            oidc,
+            TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience),
+        )
+        # The SPA, mounted last so the API routes above it win; index.html answers the rest.
+        app.mount("/", SpaFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
         try:
             await bridge.start(
                 [view.name for view in await inventory.list_sandboxes() if view.state is ProvisioningState.RUNNING]
             )
-            await asyncio.gather(*(uvicorn.Server(config).serve() for config in listeners))
+            await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port)).serve()
         finally:
             await bridge.close()
             await store.close()

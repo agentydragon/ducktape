@@ -7,12 +7,13 @@ from typing import Annotated
 from uuid import UUID
 
 import grpc
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from google.protobuf.json_format import MessageToDict
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from starlette.middleware.sessions import SessionMiddleware
 
-from x.agentplane.app import bridge as runner_bridge
+from x.agentplane.app import auth_routes, bridge as runner_bridge
 from x.agentplane.app.decisions import Decision, DecisionsClient, DecisionsUnavailableError
 from x.agentplane.app.egress import (
     BindingNotFoundError,
@@ -21,13 +22,17 @@ from x.agentplane.app.egress import (
     FluxOwnedBindingError,
     PolicyView,
 )
-from x.agentplane.app.inventory import LabelValue, NewSandbox, SandboxInventory, SandboxNotFoundError, SandboxView
-from x.agentplane.app.oidc import OIDCSettings, require_operator, session_operator
+from x.agentplane.app.identity import Caller, TokenReviewer, require_caller
+from x.agentplane.app.inventory import NewSandbox, SandboxInventory, SandboxNotFoundError, SandboxView
+from x.agentplane.app.oidc import OIDCSettings, build_oauth
 from x.agentplane.app.trajectory import ThreadNotFoundError, ThreadView, TrajectoryStore
 from x.agentplane.runner.client import RunnerError
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
+# SessionMiddleware signs cookies with itsdangerous, imported inside starlette;
+# gazelle cannot see the dependency.
+# gazelle:include_dep @pypi//itsdangerous
 
 router = APIRouter(prefix="/sandboxes", tags=["sandboxes"])
 
@@ -88,36 +93,9 @@ def _decisions(request: Request) -> DecisionsClient:
 
 Decisions = Annotated[DecisionsClient, Depends(_decisions)]
 
-# Set by the Authentik outpost, the only path a browser has to the app; the other path in, the API
-# server's service proxy, carries no user (cluster/k8s/agentplane-staging/app/networkpolicy.yaml).
-OPERATOR_HEADER = "x-authentik-username"
-_LABEL_VALUE = TypeAdapter(LabelValue)
-
-
-def _operator(request: Request) -> str | None:
-    """Whoever the request proves itself to be.
-
-    Two sources, exactly one of them live. With the app owning its login the identity is the signed
-    session cookie, which nothing upstream can forge. Without it the app sits behind a forward-auth
-    proxy and the identity is the header that proxy sets -- trustworthy only because the network
-    policy admits nobody else, which is the weakness the login exists to remove.
-    """
-    if request.app.state.oidc is not None:
-        return session_operator(request)
-    return request.headers.get(OPERATOR_HEADER)
-
-
-def _require_operator(operator: Annotated[str | None, Depends(_operator)]) -> str:
-    """The operator an approval or grant is recorded as; a caller without one may not decide."""
-    if operator is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "no operator identity")
-    try:
-        return _LABEL_VALUE.validate_python(operator)
-    except ValidationError as error:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"operator {operator!r} is not a label value") from error
-
-
-Operator = Annotated[str, Depends(_require_operator)]
+# The identity an approval or grant is recorded as. Two credentials, both cryptographic: the
+# operator's OIDC session, or a Kubernetes token TokenReview vouches for.
+Operator = Annotated[Caller, Depends(require_caller)]
 
 
 @router.get("")
@@ -128,14 +106,11 @@ async def list_sandboxes(
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_sandbox(
-    inventory: Inventory, egress: Egress, spec: NewSandbox, operator: Annotated[str | None, Depends(_operator)]
-) -> SandboxView:
-    """Create the Sandbox; picked policies become one binding it owns, granted by the operator."""
-    by = _require_operator(operator) if spec.policies else None
+async def create_sandbox(inventory: Inventory, egress: Egress, spec: NewSandbox, operator: Operator) -> SandboxView:
+    """Create the Sandbox; picked policies become one binding it owns, granted by the caller."""
     view = await inventory.create(spec)
-    if by is not None:
-        await egress.grant(sandbox=view.name, sandbox_uid=view.uid, policies=spec.policies, by=by)
+    if spec.policies:
+        await egress.grant(sandbox=view.name, sandbox_uid=view.uid, policies=spec.policies, by=operator)
     return view
 
 
@@ -288,7 +263,10 @@ def create_app(
     egress: EgressInventory,
     decisions: DecisionsClient,
     oidc: OIDCSettings | None = None,
+    reviewer: TokenReviewer | None = None,
 ) -> FastAPI:
+    """The whole HTTP surface, guarded. Each of `oidc` and `reviewer` enables one way to authenticate,
+    and an app given neither answers 401 to everything but /healthz."""
     if set(catalog) != set(Provider) or not all(catalog.values()):
         raise ValueError(f"the model catalog needs a non-empty list for every provider: {catalog=}")
     app = FastAPI(title="Agentplane", version="0")
@@ -299,11 +277,23 @@ def create_app(
     app.state.egress = egress
     app.state.decisions = decisions
     app.state.oidc = oidc
-    # With a login of its own, every route below needs one. Without it the app is only reachable
-    # through a forward-auth proxy, which has already done the asking.
-    guard = [Depends(require_operator)] if oidc is not None else []
+    app.state.reviewer = reviewer
+    # Every route needs a caller. There is no unauthenticated path into the API: /healthz is
+    # declared below, outside these routers.
     for api_router in (router, models, runner_bridge.router, threads, egress_router):
-        app.include_router(api_router, dependencies=guard)
+        app.include_router(api_router, dependencies=[Depends(require_caller)])
+    if oidc is not None:
+        app.add_middleware(
+            SessionMiddleware,
+            secret_key=oidc.session_secret,
+            session_cookie=oidc.cookie_name,
+            https_only=oidc.secure,
+            same_site="lax",
+            max_age=oidc.session_seconds,
+        )
+        app.state.oauth = build_oauth(oidc)
+        # Unguarded, because these are how a browser with no credential acquires one.
+        app.include_router(auth_routes.router)
 
     @app.exception_handler(ThreadNotFoundError)
     async def _thread_not_found(_request: Request, error: ThreadNotFoundError) -> JSONResponse:

@@ -21,14 +21,38 @@ bbr test //x/agentplane/app/...
 - `bridge.py`: one runner attachment per streaming session, fanned out to every browser tab, and
   the SSE framing; `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits
   for the frontend's generated client.
+- `identity.py`: who a request is, by whichever credential it carried; `oidc.py` and
+  `auth_routes.py` are the browser's half of that (see below).
 - `trajectory.py`: the PostgreSQL store of threads and their events.
 - `frontend/`: the React SPA on the repo's `ts_library` and esbuild toolchain, with the visual
   scenarios under `frontend/visual/`.
 
+## Authentication
+
+Every route needs a caller; only `/healthz` and the `/auth/*` endpoints answer without one. There
+are two credentials, and both are cryptographic:
+
+- **An operator's OIDC session.** `AGENTPLANE_OIDC_ISSUER` and its siblings register the app as an
+  Authentik client; `/auth/login` runs an authorization-code flow with PKCE and stores the
+  `preferred_username` in a signed `__Host-` cookie. Unsafe methods additionally have to be
+  same-origin, which is the CSRF defence `SameSite=lax` leaves open. Unset the issuer and there is
+  no login at all, which is how the tests and a local run work.
+- **A Kubernetes token.** `Authorization: Bearer <token>` goes to TokenReview, which returns the
+  username the API server vouches for. The token has to carry the app's audience
+  (`--token-audience`, `agentplane`), so a token minted for anything else cannot be replayed here:
+  `kubectl create token <serviceaccount> --audience=agentplane`.
+
+Whichever credential a request carried is what an egress approval or launch-time grant records.
+
+Nothing is inferred from a request header. The app used to trust `x-authentik-username` on the
+grounds that the Authentik outpost was the only way in; the API server's service proxy forwards
+caller-supplied headers, so it was not, and anyone with `services/proxy` on the app's Service
+could approve their own egress bindings.
+
 ## Shape
 
 ```text
-browser (behind Authentik)
+browser (OIDC session)  /  agent (Kubernetes token)
    |  REST + SSE
 integration app (Deployment, namespace agentplane-staging)
    |  Kubernetes API              |  runner protocol (gRPC, in-cluster)

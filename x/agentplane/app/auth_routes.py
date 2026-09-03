@@ -16,7 +16,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict
 
-from x.agentplane.app.oidc import CLIENT_NAME, OIDCSettings, session_operator
+from x.agentplane.app.oidc import CLIENT_NAME, session_operator, settings
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +31,6 @@ class OperatorView(BaseModel):
     username: str
 
 
-def _settings(request: Request) -> OIDCSettings:
-    return cast(OIDCSettings, request.app.state.oidc)
-
-
 def _oauth(request: Request) -> OAuth:
     return cast(OAuth, request.app.state.oauth)
 
@@ -42,7 +38,7 @@ def _oauth(request: Request) -> OAuth:
 @router.get("/login")
 async def login(request: Request) -> RedirectResponse:
     client = _oauth(request).create_client(CLIENT_NAME)
-    return cast(RedirectResponse, await client.authorize_redirect(request, _settings(request).redirect_uri))
+    return cast(RedirectResponse, await client.authorize_redirect(request, settings(request).redirect_uri))
 
 
 @router.get("/callback")
@@ -58,7 +54,7 @@ async def callback(request: Request) -> RedirectResponse:
     claims = token.get("userinfo") or {}
     # Pinned because authlib trusts whatever discovery returned; a token from another issuer that
     # happens to validate must not become a session here.
-    if claims.get("iss") != _settings(request).issuer:
+    if claims.get("iss") != settings(request).issuer:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "id token from an unexpected issuer")
     username = claims.get("preferred_username")
     if not isinstance(username, str) or not username:

@@ -16,9 +16,16 @@ from util.testing.postgres_fixtures import postgres_container
 from x.agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
+from x.agentplane.app.identity import Caller, TokenReviewer
 from x.agentplane.app.inventory import ProvisioningState, SandboxInventory
 from x.agentplane.app.testing.egress_proxy import FakeEgressAdmin
-from x.agentplane.app.testing.kubernetes import NAMESPACE, TEMPLATE, FakeCoreV1Api, FakeCustomObjectsApi
+from x.agentplane.app.testing.kubernetes import (
+    NAMESPACE,
+    TEMPLATE,
+    FakeAuthenticationV1Api,
+    FakeCoreV1Api,
+    FakeCustomObjectsApi,
+)
 from x.agentplane.app.trajectory import TrajectoryStore
 
 # The per-test database is created over psycopg, which SQLAlchemy loads from the URL scheme.
@@ -78,7 +85,25 @@ def inventory(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api) -> S
     )
 
 
-APPROVER = "test-operator"
+# The operator a session names, and the agent a reviewed token names: the two credentials the app
+# accepts, and the two shapes of identity an approval can be recorded as.
+APPROVER = Caller.operator("test-operator")
+AGENT = Caller.kubernetes(f"system:serviceaccount:{NAMESPACE}:test-agent")
+AUDIENCE = "agentplane-test"
+AGENT_TOKEN = "test-agent-token"  # a test literal, not a real credential
+AGENT_AUTH = {"Authorization": f"Bearer {AGENT_TOKEN}"}
+
+
+@pytest.fixture
+def authentication() -> FakeAuthenticationV1Api:
+    api = FakeAuthenticationV1Api()
+    api.issue(AGENT_TOKEN, username=AGENT.name, audiences=[AUDIENCE])
+    return api
+
+
+@pytest.fixture
+def reviewer(authentication: FakeAuthenticationV1Api) -> TokenReviewer:
+    return TokenReviewer(cast(Any, authentication), audience=AUDIENCE)
 
 
 @pytest.fixture

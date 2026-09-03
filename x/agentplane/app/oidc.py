@@ -5,18 +5,17 @@ a token this issuer signed is an operator. The session is a signed cookie and no
 store, no refresh -- because the only thing the app does with an identity is name it in an egress
 approval, and a cookie's own deadline is the revocation the app can honour.
 
-SSO is enabled iff `AGENTPLANE_OIDC_ISSUER` is set. Unset (tests, local runs), the app has no login
-and no guard, which is also how it behaved behind the outpost.
+A login exists iff `AGENTPLANE_OIDC_ISSUER` is set. Unset, a browser has no way in and the only
+credential the app accepts is a Kubernetes token (`identity.py`); the API is guarded either way.
 """
 
 from __future__ import annotations
 
 import logging
 import os
-from typing import cast
 
 from authlib.integrations.starlette_client import OAuth
-from fastapi import HTTPException, Request, status
+from fastapi import Request
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -82,15 +81,12 @@ def build_oauth(settings: OIDCSettings) -> OAuth:
     return oauth
 
 
-def _settings(request: Request) -> OIDCSettings:
-    settings = request.app.state.oidc
-    if not isinstance(settings, OIDCSettings):
-        raise TypeError(f"app.state.oidc is {type(settings).__name__}, not OIDCSettings")
-    return settings
-
-
-def _oauth(request: Request) -> OAuth:
-    return cast(OAuth, request.app.state.oauth)
+def settings(request: Request) -> OIDCSettings:
+    """The app's OIDC settings; only a route or guard that already found a session may ask."""
+    configured = request.app.state.oidc
+    if not isinstance(configured, OIDCSettings):
+        raise TypeError(f"app.state.oidc is {type(configured).__name__}, not OIDCSettings")
+    return configured
 
 
 def session_operator(request: Request) -> str | None:
@@ -102,21 +98,3 @@ def session_operator(request: Request) -> str | None:
         return None
     username = user.get("username")
     return username if isinstance(username, str) else None
-
-
-def require_operator(request: Request) -> str:
-    """Every browser-facing route depends on this: a session, and a same-origin unsafe method.
-
-    The Origin check is the CSRF defence a SameSite=lax cookie leaves open, which is exactly the
-    unsafe methods -- launching a sandbox, approving an egress binding -- that a cross-site form
-    post could otherwise reach.
-    """
-    username = session_operator(request)
-    if username is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "no session; log in at /auth/login")
-    if request.method not in {"GET", "HEAD", "OPTIONS"}:
-        origin = request.headers.get("origin")
-        expected = _settings(request).public_base_url.rstrip("/")
-        if origin is not None and origin.rstrip("/") != expected:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, f"cross-origin {request.method} from {origin!r}")
-    return username

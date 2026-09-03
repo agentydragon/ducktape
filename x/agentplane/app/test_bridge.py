@@ -20,8 +20,10 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from x.agentplane.app.api import Provider, create_app
 from x.agentplane.app.bridge import RunnerBridge
+from x.agentplane.app.conftest import AGENT_AUTH
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
+from x.agentplane.app.identity import TokenReviewer
 from x.agentplane.app.inventory import SandboxInventory
 from x.agentplane.app.trajectory import TrajectoryStore
 from x.agentplane.runner import protocol_pb2 as pb
@@ -82,6 +84,7 @@ async def app_url(
     store: TrajectoryStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
+    reviewer: TokenReviewer,
 ) -> AsyncIterator[str]:
     """The app served by uvicorn, with the one test sandbox resolving to the local runner. The
     server is real because SSE needs a response that streams, which an in-process ASGI transport
@@ -98,7 +101,13 @@ async def app_url(
     server = uvicorn.Server(
         uvicorn.Config(
             create_app(
-                inventory, bridge, store, {provider: ["bridge-model"] for provider in Provider}, egress, decisions
+                inventory,
+                bridge,
+                store,
+                {provider: ["bridge-model"] for provider in Provider},
+                egress,
+                decisions,
+                reviewer=reviewer,
             ),
             host="127.0.0.1",
             port=port,
@@ -124,7 +133,7 @@ async def app_url(
 async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_event_id(
     app_url: str, model: ScriptedModel, spec: pb.SessionSpec
 ) -> None:
-    async with httpx.AsyncClient(base_url=app_url, timeout=60) as http:
+    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         opened = await http.post(SESSIONS, json={"session_id": SESSION, "spec": MessageToDict(spec)})
         assert opened.status_code == 201, opened.text
         assert opened.json()["harness"] == "HARNESS_STATE_RUNNING"
@@ -222,7 +231,7 @@ async def test_the_feed_records_a_turn_nobody_is_watching(
     app_url: str, model: ScriptedModel, spec: pb.SessionSpec
 ) -> None:
     """Opening a session starts its feed, so a turn driven over REST alone lands in the store."""
-    async with httpx.AsyncClient(base_url=app_url, timeout=60) as http:
+    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         opened = await http.post(SESSIONS, json={"session_id": "unwatched", "spec": MessageToDict(spec)})
         assert opened.status_code == 201, opened.text
         accepted = await http.post(
@@ -239,7 +248,7 @@ async def test_the_feed_records_a_turn_nobody_is_watching(
 
 
 async def test_the_bridge_reports_what_the_runner_refuses(app_url: str) -> None:
-    async with httpx.AsyncClient(base_url=app_url, timeout=60) as http:
+    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         unknown = await http.post(f"{SESSIONS}/never-opened/inputs", json={"inputId": "x", "text": "hello"})
         assert unknown.status_code == 409
         assert "does not exist" in unknown.json()["detail"]

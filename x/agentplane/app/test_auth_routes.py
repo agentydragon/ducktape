@@ -1,8 +1,9 @@
-"""The login boundary, walked for real: /auth/login to a hermetic provider and back to /auth/callback.
+"""The two ways in, walked for real: an authorization-code round trip, and a reviewed token.
 
-No hand-minted cookie and no stub app -- the session under test is the one an actual
-authorization-code round trip produced through `create_app`, `SessionMiddleware` and the real
-routers, so what these assert is the boundary a browser meets.
+No hand-minted cookie and no stub app -- the session under test is the one an actual round trip
+produced through `create_app`, `SessionMiddleware` and the real routers, so what these assert is
+the boundary a browser meets. The token path runs against that same app, because on staging it is
+the same app: one port, one guard, two credentials.
 """
 
 from __future__ import annotations
@@ -12,18 +13,19 @@ from collections.abc import AsyncIterator
 import httpx
 import pytest
 import pytest_bazel
-from starlette.middleware.sessions import SessionMiddleware
 
 from util.net import pick_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
-from x.agentplane.app import auth_routes
 from x.agentplane.app.api import Provider, create_app
 from x.agentplane.app.bridge import RunnerBridge
+from x.agentplane.app.conftest import AGENT, AGENT_AUTH
 from x.agentplane.app.decisions import DecisionsClient
-from x.agentplane.app.egress import EgressInventory
+from x.agentplane.app.egress import GRANTED_BY_LABEL, EgressInventory
+from x.agentplane.app.identity import TokenReviewer
 from x.agentplane.app.inventory import SandboxInventory
-from x.agentplane.app.oidc import OIDCSettings, build_oauth
+from x.agentplane.app.oidc import OIDCSettings
+from x.agentplane.app.testing.kubernetes import FakeCustomObjectsApi
 from x.agentplane.app.trajectory import TrajectoryStore
 
 # SessionMiddleware signs cookies with itsdangerous, imported inside starlette;
@@ -37,14 +39,15 @@ MODELS = {Provider.CLAUDE: ["test-claude-model"], Provider.CODEX: ["test-codex-m
 
 
 @pytest.fixture
-async def logged_in(
+async def served(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
     store: TrajectoryStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
-) -> AsyncIterator[tuple[httpx.AsyncClient, str]]:
-    """The app with a login, an IdP behind it, and a browser that has completed the round trip."""
+    reviewer: TokenReviewer,
+) -> AsyncIterator[str]:
+    """The app as staging runs it -- a login and the token path on one port -- and its IdP."""
     private_key, public_key = generate_rsa_keypair()
     idp_port, app_port = pick_free_port(), pick_free_port()
     idp_url, app_url = f"http://127.0.0.1:{idp_port}", f"http://127.0.0.1:{app_port}"
@@ -62,30 +65,18 @@ async def logged_in(
         session_secret=SESSION_SECRET,
         public_base_url=app_url,
     )
-    app = create_app(inventory, bridge, store, MODELS, egress, decisions, oidc)
-    app.add_middleware(
-        SessionMiddleware,
-        secret_key=oidc.session_secret,
-        session_cookie=oidc.cookie_name,
-        https_only=oidc.secure,
-        same_site="lax",
-        max_age=oidc.session_seconds,
-    )
-    app.state.oauth = build_oauth(oidc)
-    app.include_router(auth_routes.router)
-    async with (
-        serve_app(idp, port=idp_port),
-        serve_app(app, port=app_port),
-        httpx.AsyncClient(base_url=app_url, follow_redirects=True) as browser,
-    ):
-        yield browser, app_url
+    app = create_app(inventory, bridge, store, MODELS, egress, decisions, oidc, reviewer)
+    async with serve_app(idp, port=idp_port), serve_app(app, port=app_port):
+        yield app_url
 
 
-async def test_a_request_without_a_session_is_refused_and_the_round_trip_grants_one(
-    logged_in: tuple[httpx.AsyncClient, str],
-) -> None:
-    browser, _ = logged_in
+@pytest.fixture
+async def browser(served: str) -> AsyncIterator[httpx.AsyncClient]:
+    async with httpx.AsyncClient(base_url=served, follow_redirects=True) as client:
+        yield client
 
+
+async def test_a_request_without_a_session_is_refused_and_the_round_trip_grants_one(browser: httpx.AsyncClient) -> None:
     assert (await browser.get("/sandboxes")).status_code == 401
     assert (await browser.get("/auth/me")).status_code == 401
 
@@ -98,18 +89,16 @@ async def test_a_request_without_a_session_is_refused_and_the_round_trip_grants_
     assert (await browser.get("/sandboxes")).status_code == 200
 
 
-async def test_logout_drops_the_session(logged_in: tuple[httpx.AsyncClient, str]) -> None:
-    browser, app_url = logged_in
+async def test_logout_drops_the_session(browser: httpx.AsyncClient, served: str) -> None:
     await browser.get("/auth/login")
 
-    assert (await browser.post("/auth/logout", headers={"Origin": app_url})).url.path == "/"
+    assert (await browser.post("/auth/logout", headers={"Origin": served})).url.path == "/"
     assert (await browser.get("/auth/me")).status_code == 401
     assert (await browser.get("/sandboxes")).status_code == 401
 
 
-async def test_an_unsafe_method_from_another_origin_is_refused(logged_in: tuple[httpx.AsyncClient, str]) -> None:
+async def test_an_unsafe_method_from_another_origin_is_refused(browser: httpx.AsyncClient, served: str) -> None:
     """SameSite=lax still lets a cross-site form post carry the cookie; the Origin check is what does not."""
-    browser, app_url = logged_in
     await browser.get("/auth/login")
     body = {"slug": "demo"}
 
@@ -117,27 +106,40 @@ async def test_an_unsafe_method_from_another_origin_is_refused(logged_in: tuple[
 
     assert refused.status_code == 403
     assert "cross-origin" in refused.json()["detail"]
-    assert (await browser.post("/sandboxes", json=body, headers={"Origin": app_url})).status_code == 201
+    assert (await browser.post("/sandboxes", json=body, headers={"Origin": served})).status_code == 201
 
 
-async def test_the_unguarded_app_the_api_server_proxies_to_has_no_login(
-    inventory: SandboxInventory,
-    bridge: RunnerBridge,
-    store: TrajectoryStore,
-    egress: EgressInventory,
-    decisions: DecisionsClient,
-) -> None:
-    """The second listener answers callers the API server has already authorized, so it asks nothing.
-
-    It is reachable only from the control plane; that is the whole of its protection, and it is why
-    it must never be the port the gateway routes to.
-    """
-    app = create_app(inventory, bridge, store, MODELS, egress, decisions)
-    port = pick_free_port()
-
-    async with serve_app(app, port=port), httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as agent:
+async def test_a_kubernetes_token_reaches_the_same_app_without_a_session(served: str) -> None:
+    """The agent's credential: no cookie, no login, and the identity Kubernetes vouches for."""
+    async with httpx.AsyncClient(base_url=served, headers=AGENT_AUTH) as agent:
         assert (await agent.get("/sandboxes")).status_code == 200
-        assert (await agent.get("/auth/me")).status_code == 404
+        # No Origin check on this path: a token is not ambient, so no site can make a browser send it.
+        created = await agent.post(
+            "/sandboxes", json={"slug": "demo", "policies": []}, headers={"Origin": "https://evil.test"}
+        )
+        assert created.status_code == 201, created.text
+
+    async with httpx.AsyncClient(base_url=served, headers={"Authorization": "Bearer nonsense"}) as stranger:
+        assert (await stranger.get("/sandboxes")).status_code == 401
+
+
+async def test_a_grant_names_whichever_credential_made_it(
+    browser: httpx.AsyncClient, served: str, custom_objects: FakeCustomObjectsApi
+) -> None:
+    """The point of guarding at all: an approval is attributable, and to the right one of the two."""
+    await browser.get("/auth/login")
+    pick = {"policies": ["pypi"]}
+    by_operator = await browser.post("/sandboxes", json={"slug": "byop"} | pick, headers={"Origin": served})
+    async with httpx.AsyncClient(base_url=served, headers=AGENT_AUTH) as agent:
+        by_agent = await agent.post("/sandboxes", json={"slug": "byagent"} | pick)
+
+    granted = {
+        obj["spec"]["approval"]["by"]: obj["metadata"]["labels"][GRANTED_BY_LABEL]
+        for (kind, _name), obj in custom_objects.objects.items()
+        if kind == "egressbindings"
+    }
+    assert (by_operator.status_code, by_agent.status_code) == (201, 201), by_operator.text
+    assert granted == {OPERATOR: OPERATOR, AGENT.name: AGENT.label}
 
 
 if __name__ == "__main__":

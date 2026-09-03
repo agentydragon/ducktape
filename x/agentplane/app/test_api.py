@@ -10,11 +10,12 @@ import pytest
 import pytest_bazel
 from fastapi.testclient import TestClient
 
-from x.agentplane.app.api import OPERATOR_HEADER, Provider, create_app
+from x.agentplane.app.api import Provider, create_app
 from x.agentplane.app.bridge import RunnerBridge
-from x.agentplane.app.conftest import APPROVER
+from x.agentplane.app.conftest import AGENT, AGENT_AUTH
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import GRANTED_BY_LABEL, EgressInventory
+from x.agentplane.app.identity import TokenReviewer
 from x.agentplane.app.inventory import ARCHIVED_LABEL, MANAGED_LABEL, PROFILE_LABEL, SandboxInventory
 from x.agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from x.agentplane.app.testing.kubernetes import (
@@ -37,8 +38,6 @@ from x.agentplane.runner import protocol_pb2 as pb
 TEST_MODELS = {Provider.CLAUDE: ["test-claude-model"], Provider.CODEX: ["test-codex-model"]}
 APPROVED = {"state": "approved", "by": "test-operator", "at": "2026-09-01T12:00:00Z"}
 
-OPERATOR = {OPERATOR_HEADER: APPROVER}
-
 
 @pytest.fixture
 def client(
@@ -49,6 +48,7 @@ def client(
     decisions: DecisionsClient,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
+    reviewer: TokenReviewer,
 ) -> Iterator[TestClient]:
     custom_objects.objects[("sandboxes", "live")] = sandbox("live")
     core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
@@ -74,7 +74,8 @@ def client(
         approval={"state": "pending"},
         granted_by="agent",
     )
-    with TestClient(create_app(inventory, bridge, store, TEST_MODELS, egress, decisions)) as test_client:
+    app = create_app(inventory, bridge, store, TEST_MODELS, egress, decisions, reviewer=reviewer)
+    with TestClient(app, headers=AGENT_AUTH) as test_client:
         yield test_client
 
 
@@ -112,13 +113,7 @@ def test_create_returns_the_new_row(client: TestClient, custom_objects: FakeCust
 def test_create_with_a_profile_and_picked_policies_stamps_the_label_and_grants_one_owned_binding(
     client: TestClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
-    unattributed = client.post("/sandboxes", json={"slug": "demo", "profile": "coder", "policies": ["pypi"]})
-    assert unattributed.status_code == 401
-    assert not any(kind == "sandboxes" and name.startswith("demo-") for kind, name in custom_objects.objects)
-
-    response = client.post(
-        "/sandboxes", json={"slug": "demo", "profile": "coder", "policies": ["pypi"]}, headers=OPERATOR
-    )
+    response = client.post("/sandboxes", json={"slug": "demo", "profile": "coder", "policies": ["pypi"]})
 
     assert response.status_code == 201, response.text
     row = response.json()
@@ -126,7 +121,7 @@ def test_create_with_a_profile_and_picked_policies_stamps_the_label_and_grants_o
     created = custom_objects.objects[("sandboxes", row["name"])]
     assert created["metadata"]["labels"][PROFILE_LABEL] == "coder"
     picked = custom_objects.objects[("egressbindings", f"{row['name']}-picked")]
-    assert picked["metadata"]["labels"] == {GRANTED_BY_LABEL: APPROVER}
+    assert picked["metadata"]["labels"] == {GRANTED_BY_LABEL: AGENT.label}
     assert picked["metadata"]["ownerReferences"][0]["uid"] == created["metadata"]["uid"]
     assert picked["spec"]["policies"] == ["pypi"]
     # The new sandbox sees the seed's selector binding and its own pick.
@@ -188,6 +183,7 @@ def test_a_runner_that_does_not_answer_is_a_503(
     decisions: DecisionsClient,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
+    reviewer: TokenReviewer,
 ) -> None:
     """A Pod with an address but no runner listening yet, as right after a resume."""
     custom_objects.objects[("sandboxes", "live")] = sandbox("live")
@@ -201,11 +197,16 @@ def test_a_runner_that_does_not_answer_is_a_503(
         async def nobody_listens(name: str) -> str:
             return address
 
-        with TestClient(
-            create_app(
-                inventory, RunnerBridge(address_of=nobody_listens, store=store), store, TEST_MODELS, egress, decisions
-            )
-        ) as client:
+        app = create_app(
+            inventory,
+            RunnerBridge(address_of=nobody_listens, store=store),
+            store,
+            TEST_MODELS,
+            egress,
+            decisions,
+            reviewer=reviewer,
+        )
+        with TestClient(app, headers=AGENT_AUTH) as client:
             response = client.get("/sandboxes/live/sessions")
     assert response.status_code == 503
     assert "not answering" in response.json()["detail"]
@@ -259,21 +260,25 @@ def test_egress_decisions_are_502_when_the_proxy_is_unreachable(
     assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["all-managed", "live-asks"]
 
 
-def test_binding_approval_is_recorded_as_the_authentik_user(
+def test_binding_approval_is_recorded_as_the_reviewed_caller(
     client: TestClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
-    unattributed = client.post("/egress/bindings/live-asks/approve")
-    assert unattributed.status_code == 401
-    assert (
-        client.post("/egress/bindings/live-asks/approve", headers={OPERATOR_HEADER: "not a label"}).status_code == 400
-    )
-    assert custom_objects.objects[("egressbindings", "live-asks")]["spec"]["approval"]["state"] == "pending"
-
-    assert client.post("/egress/bindings/live-asks/approve", headers=OPERATOR).status_code == 204
+    assert client.post("/egress/bindings/live-asks/approve").status_code == 204
     assert client.get("/sandboxes/live/egress").json()[1]["approval"] == "approved"
-    assert client.post("/egress/bindings/live-asks/deny", headers=OPERATOR).status_code == 204
-    assert custom_objects.objects[("egressbindings", "live-asks")]["spec"]["approval"]["by"] == APPROVER
-    assert client.post("/egress/bindings/nope/approve", headers=OPERATOR).status_code == 404
+    assert client.post("/egress/bindings/live-asks/deny").status_code == 204
+    # The username TokenReview returned, verbatim; the label is the same identity, colons stripped.
+    assert custom_objects.objects[("egressbindings", "live-asks")]["spec"]["approval"]["by"] == AGENT.name
+    assert client.post("/egress/bindings/nope/approve").status_code == 404
+
+
+def test_every_route_needs_one_of_the_two_credentials(client: TestClient) -> None:
+    """Guarded from the app, not from a proxy in front of it: no header a caller sets is trusted."""
+    assert client.get("/sandboxes", headers={"Authorization": ""}).status_code == 401
+    assert client.get("/sandboxes", headers={"Authorization": "Bearer wrong"}).status_code == 401
+    assert client.post("/egress/bindings/live-asks/approve", headers={"Authorization": ""}).status_code == 401
+    # The forgeable header the API server's service proxy used to forward buys nothing now.
+    assert client.get("/sandboxes", headers={"Authorization": "", "x-authentik-username": "root"}).status_code == 401
+    assert client.get("/healthz", headers={"Authorization": ""}).status_code == 204
 
 
 def test_binding_revocation(client: TestClient) -> None:
@@ -301,14 +306,17 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
     store: TrajectoryStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
+    reviewer: TokenReviewer,
 ) -> None:
     """Over ASGI on this loop, not TestClient's thread: the store's pooled asyncpg connections
     belong to the loop that opened them."""
     spec = pb.SessionSpec(provider=pb.PROVIDER_CLAUDE, cwd="/w", model="test-model")
     thread_id = str(await store.thread("live", "s-1", spec))
     await store.thread("live", "s-2", spec)
-    app = create_app(inventory, bridge, store, TEST_MODELS, egress, decisions)
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
+    app = create_app(inventory, bridge, store, TEST_MODELS, egress, decisions, reviewer=reviewer)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
+    ) as http:
         (found,) = (await http.get("/threads", params={"sandbox": "live", "session_id": "s-1"})).json()
         assert (found["id"], found["name"]) == (thread_id, None)
         assert (await http.get("/threads", params={"sandbox": "other"})).json() == []

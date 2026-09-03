@@ -230,3 +230,35 @@ def pod(name: str, *, phase: str, ready: bool, ip: str | None, waiting_reason: s
             ],
         ),
     )
+
+
+class FakeAuthenticationV1Api:
+    """TokenReview over a table of tokens, answering as the API server does for an unknown one.
+
+    A token whose audiences do not cover what was asked still comes back authenticated, with the
+    intersection: the API server would refuse it outright, and answering the softer way is what
+    exercises the reviewer's own audience check.
+    """
+
+    def __init__(self) -> None:
+        self.tokens: dict[str, tuple[str, list[str]]] = {}
+
+    def issue(self, token: str, *, username: str, audiences: list[str]) -> None:
+        self.tokens[token] = (username, audiences)
+
+    async def create_token_review(self, body: k8s_client.V1TokenReview) -> k8s_client.V1TokenReview:
+        held = self.tokens.get(body.spec.token)
+        if held is None:
+            return k8s_client.V1TokenReview(
+                spec=body.spec,
+                status=k8s_client.V1TokenReviewStatus(authenticated=False, error="[invalid bearer token]"),
+            )
+        username, audiences = held
+        return k8s_client.V1TokenReview(
+            spec=body.spec,
+            status=k8s_client.V1TokenReviewStatus(
+                authenticated=True,
+                audiences=[audience for audience in audiences if audience in (body.spec.audiences or [])],
+                user=k8s_client.V1UserInfo(username=username),
+            ),
+        )

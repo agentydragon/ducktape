@@ -1,0 +1,25 @@
+# The app's second way of authenticating a caller: a Bearer token it hands to TokenReview, getting
+# back the username the API server vouches for. TokenReview is cluster-scoped, so this pair is too;
+# creating a review grants none of the reviewed identity's authority. Named for the namespace
+# because a production Agentplane needs its own pair.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentplane-staging-app-token-reviewer
+rules:
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentplane-staging-app-token-reviewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentplane-staging-app-token-reviewer
+subjects:
+  - kind: ServiceAccount
+    name: agentplane-app
+    namespace: agentplane-staging

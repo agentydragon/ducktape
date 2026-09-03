@@ -24,17 +24,21 @@ py_library(
     name = "api",
     srcs = ["api.py"],
     deps = [
+        ":auth_routes",
         ":bridge",
         ":decisions",
         ":egress",
+        ":identity",
         ":inventory",
         ":oidc",
         ":trajectory",
         "//x/agentplane/runner:client",
         "@pypi//fastapi",
         "@pypi//grpcio",
+        "@pypi//itsdangerous",
         "@pypi//protobuf",
         "@pypi//pydantic",
+        "@pypi//starlette",
     ],
 )
 
@@ -54,10 +58,10 @@ py_library(
     data = ["//x/agentplane/app/frontend:bundle"],  # keep: the SPA the server mounts
     deps = [
         ":api",
-        ":auth_routes",
         ":bridge",
         ":decisions",
         ":egress",
+        ":identity",
         ":inventory",
         ":oidc",
         ":trajectory",
@@ -65,12 +69,10 @@ py_library(
         "//util/bazel:runfiles",
         "@pypi//fastapi",
         "@pypi//httpx",
-        "@pypi//itsdangerous",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
         "@pypi//pyyaml",
-        "@pypi//starlette",
         "@pypi//uvicorn",
     ],
 )
@@ -83,6 +85,7 @@ py_library(
         ":bridge",
         ":decisions",
         ":egress",
+        ":identity",
         ":inventory",
         ":trajectory",
         "//util/testing:postgres",
@@ -107,6 +110,7 @@ py_test(
         ":conftest",
         ":decisions",
         ":egress",
+        ":identity",
         ":inventory",
         ":trajectory",
         "//:conftest",
@@ -169,6 +173,7 @@ py_test(
         ":conftest",
         ":decisions",
         ":egress",
+        ":identity",
         ":inventory",
         ":trajectory",
         "//:conftest",
@@ -283,6 +288,7 @@ py_library(
     name = "egress",
     srcs = ["egress.py"],
     deps = [
+        ":identity",
         ":inventory",
         "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
@@ -331,11 +337,11 @@ py_test(
     srcs = ["test_auth_routes.py"],
     deps = [
         ":api",
-        ":auth_routes",
         ":bridge",
         ":conftest",
         ":decisions",
         ":egress",
+        ":identity",
         ":inventory",
         ":oidc",
         ":trajectory",
@@ -343,10 +349,20 @@ py_test(
         "//util:net",
         "//util/testing:asgi",
         "//util/testing:mock_oidc",
+        "//x/agentplane/app/testing:kubernetes",
         "@pypi//httpx",
         "@pypi//itsdangerous",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "identity",
+    srcs = ["identity.py"],
+    deps = [
+        ":oidc",
+        "@pypi//fastapi",
+        "@pypi//kubernetes_asyncio",
     ],
 )

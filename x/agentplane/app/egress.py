@@ -16,6 +16,7 @@ from kubernetes_asyncio import client as k8s_client
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from util.kubernetes import CustomObjectsClient
+from x.agentplane.app.identity import Caller
 from x.agentplane.app.inventory import Condition, InventoryError
 
 GRANTED_BY_LABEL = "agentplane.allegedly.works/granted-by"
@@ -220,10 +221,10 @@ class EgressInventory:
             key=lambda view: view.name,
         )
 
-    async def approve(self, name: str, *, by: str) -> None:
+    async def approve(self, name: str, *, by: Caller) -> None:
         await self._decide(name, ApprovalState.APPROVED, by)
 
-    async def deny(self, name: str, *, by: str) -> None:
+    async def deny(self, name: str, *, by: Caller) -> None:
         await self._decide(name, ApprovalState.DENIED, by)
 
     async def revoke(self, name: str) -> None:
@@ -235,7 +236,7 @@ class EgressInventory:
             *_EGRESS_API, self._namespace, _BINDINGS_PLURAL, name, body=k8s_client.V1DeleteOptions()
         )
 
-    async def grant(self, *, sandbox: str, sandbox_uid: UUID, policies: list[str], by: str) -> None:
+    async def grant(self, *, sandbox: str, sandbox_uid: UUID, policies: list[str], by: Caller) -> None:
         """The launch-time pick: one approved binding of the sandbox to the policies, approved by
         and labelled as granted by `by`, owned by the Sandbox so its deletion garbage-collects it."""
         body = {
@@ -243,7 +244,7 @@ class EgressInventory:
             "kind": "EgressBinding",
             "metadata": {
                 "name": f"{sandbox}-picked",
-                "labels": {GRANTED_BY_LABEL: by},
+                "labels": {GRANTED_BY_LABEL: by.label},
                 # Not the controller: the Sandbox controller owns the Pod and PVC, and this reference is
                 # for cascading deletion only.
                 "ownerReferences": [
@@ -260,21 +261,21 @@ class EgressInventory:
             "spec": {
                 "subjects": [{"sandbox": {"name": sandbox}}],
                 "policies": policies,
-                "approval": {"state": ApprovalState.APPROVED, "by": by, "at": _now()},
+                "approval": {"state": ApprovalState.APPROVED, "by": by.name, "at": _now()},
             },
         }
         await self._custom_objects.create_namespaced_custom_object(
             *_EGRESS_API, self._namespace, _BINDINGS_PLURAL, body
         )
 
-    async def _decide(self, name: str, state: ApprovalState, by: str) -> None:
+    async def _decide(self, name: str, state: ApprovalState, by: Caller) -> None:
         await self._binding(name)
         await self._custom_objects.patch_namespaced_custom_object(
             *_EGRESS_API,
             self._namespace,
             _BINDINGS_PLURAL,
             name,
-            {"spec": {"approval": {"state": state, "by": by, "at": _now()}}},
+            {"spec": {"approval": {"state": state, "by": by.name, "at": _now()}}},
             _content_type=_MERGE_PATCH,
         )
 

@@ -134,8 +134,8 @@ async def test_approve_and_deny_write_the_approval_as_the_deciding_operator(
     await egress.deny("live-asks", by=APPROVER)
     denied = dict(custom_objects.objects[("egressbindings", "live-asks")]["spec"]["approval"])
 
-    assert (approved["state"], approved["by"]) == ("approved", APPROVER)
-    assert (denied["state"], denied["by"]) == ("denied", APPROVER)
+    assert (approved["state"], approved["by"]) == ("approved", APPROVER.name)
+    assert (denied["state"], denied["by"]) == ("denied", APPROVER.name)
     assert approved["at"].endswith("Z")
     assert denied["at"] >= approved["at"]
     with pytest.raises(BindingNotFoundError):
@@ -166,7 +166,7 @@ async def test_grant_creates_an_approved_binding_the_sandbox_owns(
     await egress.grant(sandbox="live", sandbox_uid=uid, policies=["pypi", "github"], by=APPROVER)
 
     created = custom_objects.objects[("egressbindings", "live-picked")]
-    assert created["metadata"]["labels"] == {GRANTED_BY_LABEL: APPROVER}
+    assert created["metadata"]["labels"] == {GRANTED_BY_LABEL: APPROVER.label}
     (owner,) = created["metadata"]["ownerReferences"]
     assert owner == {
         "apiVersion": "agents.x-k8s.io/v1beta1",
@@ -178,7 +178,7 @@ async def test_grant_creates_an_approved_binding_the_sandbox_owns(
     }
     assert created["spec"]["subjects"] == [{"sandbox": {"name": "live"}}]
     assert created["spec"]["policies"] == ["pypi", "github"]
-    assert (created["spec"]["approval"]["state"], created["spec"]["approval"]["by"]) == ("approved", APPROVER)
+    assert (created["spec"]["approval"]["state"], created["spec"]["approval"]["by"]) == ("approved", APPROVER.name)
     # And the app reads its own grant back like any other binding, not from git.
     (picked,) = [view for view in await egress.bindings_for("live", {}) if view.name == "live-picked"]
     assert (picked.from_git, [policy.name for policy in picked.policies]) == (False, ["pypi", "github"])

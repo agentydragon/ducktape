@@ -8,6 +8,7 @@ resources:
   - serviceaccount-agentplane-app.yaml
   - role-agentplane-app.yaml
   - rolebinding-agentplane-app.yaml
+  - clusterrole-agentplane-staging-app-token-reviewer.yaml
   - deployment-agentplane-app.yaml
   - service-agentplane-app.yaml
   - networkpolicy.yaml
