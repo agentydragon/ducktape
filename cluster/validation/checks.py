@@ -11,6 +11,7 @@ from cluster.validation.cluster import ParsedCluster
 from cluster.validation.k8s import (
     CiliumPolicyResource,
     CronJobResource,
+    EgressBindingResource,
     ExternalSecretResource,
     HelmReleaseResource,
     K8sResource,
@@ -337,3 +338,26 @@ def check_cilium_policy_rules_nonempty(cluster: ParsedCluster) -> list[str]:
                     f"`ingress: [{{}}]`, never an empty list."
                 )
     return errors
+
+
+def check_egress_bindings_resolve_policies(cluster: ParsedCluster) -> list[str]:
+    """Every EgressBinding names EgressPolicies rendered in its own namespace.
+
+    The proxy fails closed: a binding whose policy is missing contributes nothing and only
+    says so in status, so a typo in a seed silently leaves its sandboxes without egress.
+    """
+    policies = {
+        (resource.namespace, resource.name)
+        for result in cluster.build_results
+        for resource in result.resources
+        if resource.kind == "EgressPolicy"
+    }
+    return [
+        f"EgressBinding '{binding.namespace}/{binding.name}' names EgressPolicy '{policy}', "
+        f"which is not rendered in {binding.namespace}"
+        for result in cluster.build_results
+        for binding in result.resources
+        if isinstance(binding, EgressBindingResource)
+        for policy in binding.spec.policies
+        if (binding.namespace, policy) not in policies
+    ]

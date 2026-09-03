@@ -50,6 +50,8 @@ filegroup(
 # Focused validation targets inline these direct-file inputs in their data lists.
 exports_files(
     [
+        "agentplane-crds/crd-egressbindings.yaml",
+        "agentplane-crds/crd-egresspolicies.yaml",
         "agents/public-coder-agent/app/deployment.yaml",
         "agents/public-coder-agent/proxy/cnp-egress.yaml",
         "agents/public-coder-agent/proxy/deployment.yaml",

@@ -1,0 +1,18 @@
+# Every Sandbox the integration app manages (x/agentplane/app/inventory.py stamps the label)
+# may reach public GitHub; nothing else, until another binding says so.
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressBinding
+metadata:
+  name: sandboxes-github-public
+  namespace: agentplane-staging
+spec:
+  subjects:
+    - sandboxSelector:
+        matchLabels:
+          agentplane.allegedly.works/managed: "true"
+  policies:
+    - github-public
+  approval:
+    state: approved
+    by: rai
+    at: "2026-09-03T00:00:00Z"

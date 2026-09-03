@@ -1,0 +1,25 @@
+# TokenReview is cluster-scoped: the proxy presents the sidecar's projected, audience-scoped
+# ServiceAccount token and gets back the Pod it is bound to. Creating a review grants nothing
+# of the reviewed identity's authority. Named for the namespace because a production
+# Agentplane needs its own pair.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentplane-staging-egress-token-reviewer
+rules:
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentplane-staging-egress-token-reviewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentplane-staging-egress-token-reviewer
+subjects:
+  - kind: ServiceAccount
+    name: agentplane-egress
+    namespace: agentplane-staging

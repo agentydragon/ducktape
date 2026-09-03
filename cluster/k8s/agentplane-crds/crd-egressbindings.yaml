@@ -1,0 +1,139 @@
+# Attaches EgressPolicies to subjects: Sandboxes by name or label selector in this slice. A
+# binding contributes nothing until approved, and nothing after it expires; the proxy writes
+# back whether it is active and how many referenced policies resolved. An agent's egress ask is
+# a pending binding; the operator's answer is a change to spec.approval. Shared contract with
+# the proxy (x/agentplane/plans/egress_proxy.md); the kubeconform schema under cluster/schemas/
+# is this file's openAPIV3Schema, pinned by cluster/validation/test_agentplane_crd_schemas.py.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: egressbindings.agentplane.allegedly.works
+spec:
+  group: agentplane.allegedly.works
+  scope: Namespaced
+  names:
+    kind: EgressBinding
+    listKind: EgressBindingList
+    plural: egressbindings
+    singular: egressbinding
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Approval
+          type: string
+          jsonPath: .spec.approval.state
+        - name: Expires
+          type: string
+          jsonPath: .spec.expiresAt
+        - name: Active
+          type: string
+          jsonPath: .status.conditions[?(@.type=="Active")].status
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [subjects, policies, approval]
+              properties:
+                subjects:
+                  type: array
+                  minItems: 1
+                  items:
+                    description: Exactly one of sandbox or sandboxSelector.
+                    type: object
+                    oneOf:
+                      - required: [sandbox]
+                      - required: [sandboxSelector]
+                    properties:
+                      sandbox:
+                        description: One Sandbox in the binding's namespace, by name.
+                        type: object
+                        required: [name]
+                        properties:
+                          name:
+                            type: string
+                            minLength: 1
+                      sandboxSelector:
+                        description: Every Sandbox in the binding's namespace carrying all of these labels.
+                        type: object
+                        required: [matchLabels]
+                        properties:
+                          matchLabels:
+                            type: object
+                            minProperties: 1
+                            additionalProperties:
+                              type: string
+                policies:
+                  description: EgressPolicy names in the binding's namespace.
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    minLength: 1
+                expiresAt:
+                  description: After this instant the binding contributes nothing.
+                  type: string
+                  format: date-time
+                approval:
+                  type: object
+                  required: [state]
+                  properties:
+                    state:
+                      type: string
+                      enum: [pending, approved, denied]
+                    by:
+                      description: Who decided.
+                      type: string
+                    at:
+                      type: string
+                      format: date-time
+            status:
+              type: object
+              properties:
+                observedGeneration:
+                  type: integer
+                  format: int64
+                conditions:
+                  type: array
+                  x-kubernetes-list-type: map
+                  x-kubernetes-list-map-keys: [type]
+                  items:
+                    description: A metav1.Condition; the proxy sets Active.
+                    type: object
+                    required: [type, status, lastTransitionTime, reason, message]
+                    properties:
+                      type:
+                        type: string
+                        maxLength: 316
+                        pattern: '^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$'
+                      status:
+                        type: string
+                        enum: ["True", "False", Unknown]
+                      observedGeneration:
+                        type: integer
+                        format: int64
+                        minimum: 0
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                      reason:
+                        type: string
+                        minLength: 1
+                        maxLength: 1024
+                        pattern: "^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$"
+                      message:
+                        type: string
+                        maxLength: 32768
+                resolvedPolicies:
+                  description: How many of spec.policies name an existing EgressPolicy.
+                  type: integer
+                  minimum: 0

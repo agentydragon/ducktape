@@ -1,0 +1,25 @@
+# What the proxy reads to decide a request: the policies and bindings, the Sandboxes they name,
+# the Pods whose tokens it verifies (a TokenReview proves the Pod; the Pod's owner is the
+# Sandbox), and the credentials the policies reference. The Secret read is namespace-wide for
+# v1: the proxy keeps an informer over the referenced Secrets, and an informer under a
+# resourceNames restriction has to name each Secret in a field selector, which the policies
+# decide at runtime. Every Secret in this namespace is therefore readable by the proxy,
+# including the runners' LiteLLM key and the app's database credential.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-egress
+  namespace: agentplane-staging
+rules:
+  - apiGroups: ["agentplane.allegedly.works"]
+    resources: ["egresspolicies", "egressbindings"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["agentplane.allegedly.works"]
+    resources: ["egressbindings/status"]
+    verbs: ["patch"]
+  - apiGroups: ["agents.x-k8s.io"]
+    resources: ["sandboxes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods", "secrets"]
+    verbs: ["get", "list", "watch"]

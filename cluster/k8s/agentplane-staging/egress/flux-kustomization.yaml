@@ -1,0 +1,27 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: agentplane-staging-egress
+  namespace: ducktape-flux
+  annotations:
+    description: Agentplane secure egress in agentplane-staging - the proxy's identity and RBAC, the GitHub PAT it substitutes, and the seed policy and binding for every managed Sandbox. The proxy Deployment and the sandbox sidecar are not here yet.
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 2m
+  path: ./cluster/k8s/agentplane-staging/egress
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  dependsOn:
+    - name: agentplane-staging-namespace
+      namespace: ducktape-flux
+    - name: agentplane-crds # the seed's EgressPolicy and EgressBinding
+      namespace: ducktape-flux
+    - name: external-creds # the source-side grant on the agentydragon-agent PAT
+      namespace: ducktape-flux
+    - name: external-secrets-config # the ClusterSecretStore the PAT is read through
+      namespace: ducktape-flux

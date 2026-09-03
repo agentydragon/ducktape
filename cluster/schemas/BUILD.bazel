@@ -1,0 +1,8 @@
+# kubeconform schemas for this repo's own CRDs, one file per served version
+# (<group>/<kind>_<version>.json); each is its CRD's openAPIV3Schema, pinned by
+# //cluster/validation:test_agentplane_crd_schemas.
+filegroup(
+    name = "schemas",
+    srcs = glob(["**/*.json"]),
+    visibility = ["//cluster/validation:__pkg__"],
+)

@@ -549,6 +549,22 @@ py_test(
 )
 
 py_test(
+    name = "test_agentplane_crd_schemas",
+    srcs = ["test_agentplane_crd_schemas.py"],
+    data = [
+        "//cluster/k8s:agentplane-crds/crd-egressbindings.yaml",
+        "//cluster/k8s:agentplane-crds/crd-egresspolicies.yaml",
+        "//cluster/schemas",
+    ],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
     name = "test_egress_allowlists",
     srcs = ["test_egress_allowlists.py"],
     data = ["//cluster/k8s:egress_allowlist_files"],

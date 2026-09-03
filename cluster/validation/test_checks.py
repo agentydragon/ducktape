@@ -9,6 +9,7 @@ import pytest_bazel
 
 from cluster.validation.checks import (
     check_cilium_policy_rules_nonempty,
+    check_egress_bindings_resolve_policies,
     check_external_credential_ownership,
     check_forgejo_image_namespace_reflection,
 )
@@ -180,6 +181,48 @@ def test_specs_rules_checked() -> None:
     }
     [error] = check_cilium_policy_rules_nonempty(_cluster_with(doc))
     assert "multi" in error
+
+
+def _egress_policy(namespace: str, name: str) -> dict:
+    return {
+        "apiVersion": "agentplane.allegedly.works/v1alpha1",
+        "kind": "EgressPolicy",
+        "metadata": {"name": name, "namespace": namespace},
+        "spec": {"rules": [{"hosts": ["example.test"]}]},
+    }
+
+
+def _egress_binding(namespace: str, policies: list[str]) -> dict:
+    return {
+        "apiVersion": "agentplane.allegedly.works/v1alpha1",
+        "kind": "EgressBinding",
+        "metadata": {"name": "binding", "namespace": namespace},
+        "spec": {"subjects": [{"sandbox": {"name": "box"}}], "policies": policies, "approval": {"state": "approved"}},
+    }
+
+
+def _egress_cluster(docs: list[dict]) -> ParsedCluster:
+    return ParsedCluster(
+        build_results=[
+            KustomizeBuildResult(
+                kustomization_path=Path("/k8s/egress/kustomization.yaml"), resources=parse_k8s_resources(docs)
+            )
+        ]
+    )
+
+
+def test_egress_binding_resolves_policies_in_its_namespace() -> None:
+    cluster = _egress_cluster([_egress_policy("staging", "github"), _egress_binding("staging", ["github"])])
+    assert check_egress_bindings_resolve_policies(cluster) == []
+
+
+def test_egress_binding_policy_missing_or_in_other_namespace_is_flagged() -> None:
+    # A policy of the right name in another namespace does not count.
+    cluster = _egress_cluster(
+        [_egress_policy("production", "github"), _egress_binding("staging", ["github", "gitlab"])]
+    )
+    errors = check_egress_bindings_resolve_policies(cluster)
+    assert [error.split("'")[3] for error in errors] == ["github", "gitlab"]
 
 
 def test_forgejo_image_namespace_must_be_reflected() -> None:

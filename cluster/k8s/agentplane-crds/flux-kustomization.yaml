@@ -1,0 +1,20 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: agentplane-crds
+  namespace: ducktape-flux
+  annotations:
+    description: Agentplane's own CRDs (EgressPolicy, EgressBinding), cluster-scoped and shared by every Agentplane namespace; the staging seed and the proxy depend on this.
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 2m
+  path: ./cluster/k8s/agentplane-crds
+  # Pruning a CRD deletes every instance with it; removing one is a deliberate manual step, as
+  # for the other CRD Kustomizations (external-secrets-crds, snapshot-controller-crds).
+  prune: false
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux

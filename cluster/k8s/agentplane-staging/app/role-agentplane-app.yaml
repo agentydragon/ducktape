@@ -1,6 +1,8 @@
 # The app's own identity over the namespace's inventory: Sandboxes are stamped
 # from the template and deleted, patched for suspend, resume, and archive, and
-# the runner Pod's address is read to dial it. No exec, logs, or Secrets.
+# the runner Pod's address is read to dial it. Egress policy is shown and
+# bindings are created, approved, denied, and revoked through the API server;
+# the proxy, not the app, enforces them. No exec, logs, or Secrets.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -16,3 +18,9 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: ["agentplane.allegedly.works"]
+    resources: ["egresspolicies", "egressbindings"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["agentplane.allegedly.works"]
+    resources: ["egressbindings"]
+    verbs: ["create", "update", "patch", "delete"]
