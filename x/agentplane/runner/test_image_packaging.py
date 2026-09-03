@@ -1,5 +1,5 @@
-"""The published runner image carries both harnesses, the tools they reach for, and the runner
-entry point at the path the SandboxTemplate names."""
+"""The published runner image carries both harnesses, the tools they reach for, and the runner as
+its entrypoint, which the SandboxTemplate leaves in place and only passes arguments to."""
 
 from __future__ import annotations
 
@@ -48,9 +48,10 @@ def test_image_contains_both_harnesses_and_the_runner_entry_point() -> None:
     # The native Codex executable resolves its resources relative to itself.
     assert "opt/codex/codex-package.json" in members
     assert "etc/ssl/certs/ca-certificates.crt" in members
-    entry = members["usr/local/bin/agentplane-runner"]
-    assert entry.issym()
-    assert entry.linkname == "/x/agentplane/runner/runner_image_bin"
+    # The launcher finds its runfiles next to its own real path, so the entrypoint names it
+    # directly; a symlink in front of it would start a runner that exits at once.
+    assert config["config"]["Entrypoint"] == ["/x/agentplane/runner/runner_image_bin"]
+    assert members["x/agentplane/runner/runner_image_bin"].mode & 0o111
     assert members["home/runner"].isdir()
     assert members["home/runner"].uid == 1000
     environment = dict(entry.split("=", 1) for entry in config["config"]["Env"])

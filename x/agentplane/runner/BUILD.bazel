@@ -348,8 +348,6 @@ pkg_tar(
         ":codex_files",
         ":home_dir",
     ],
-    # The path the SandboxTemplate names as the container command.
-    symlinks = {"/usr/local/bin/agentplane-runner": "/x/agentplane/runner/runner_image_bin"},
 )
 
 oci_image(

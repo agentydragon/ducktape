@@ -35,8 +35,9 @@ spec:
       containers:
         - name: runner
           image: git.allegedly.works/ducktape-ci/agentplane-runner:devel-20260902231819-5464033 # {"$imagepolicy": "flux-system:agentplane-runner"}
-          command:
-            - /usr/local/bin/agentplane-runner
+          # The image's entrypoint is the runner's Bazel launcher, which finds its runfiles next to
+          # its own real path; a command override through a symlink loses them and the container
+          # exits at once. Only the arguments are set here.
           args:
             - --state-dir
             - /state
