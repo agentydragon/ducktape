@@ -85,14 +85,22 @@ Missing:
   delta; an orchestrator wants a turn's outcome and the assistant's final text. The thin
   addition is a kind filter on the events endpoint and on stored events, so the orchestrator
   subscribes to `TurnCompleted` and completed items only.
-- **The judge.** A classifier or a judge agent on a trusted model, reading every message that
-  crosses from a higher tier to a lower one, answering allow, redact, or block with a reason that
-  goes back to the sender as an input. The inbound direction (fleet to Haku) is the prompt-injection
+- **The judge.** An agent on a trusted model that gets each message crossing a tier boundary and
+  decides whether to admit it, answering allow, redact, or block with a reason that goes back
+  to the sender as an input; a classifier only if the agent proves too slow or costly. The inbound direction (fleet to Haku) is the prompt-injection
   direction and gets its own, different check. The judge's decisions are trajectory events, so a
   leak that got through is findable.
 - **The orchestrator's identity on the API.** Haku creates, suspends, and archives sandboxes under
   its own Kubernetes identity, through the same service proxy path the Ducktape agent uses on
-  staging today; which templates that identity may stamp is the whole permission.
+  staging today. What it may create is a permission on that identity, held wherever the app
+  keeps policy; a SandboxTemplate is a Pod shape and carries no permission (Rai).
+- **Messaging in any topology.** Agents message each other back and forth through the same
+  inputs and events, and the graph is a mesh, not a tree: a specialist may talk to a sibling,
+  or back to the orchestrator, under the same tier rules and the same judge on any edge that
+  crosses a tier.
+- **Subscriptions to lifecycle events.** An agent that spawned another subscribes to what happens
+  to it, "this sandbox died" first of all, and gets that as an input; the same delivery path as
+  an approval decision, with the sandbox inventory as the source.
 
 ## 3. An orchestrator with specialists
 
@@ -166,8 +174,9 @@ Missing:
   write code that gets deployed where it can send messages to Haku; if it built the UI to lie,
   it would be lying to itself. So the UI posts as Haku's Kubernetes identity, the envelope names
   `haku-ui` as the source, and Rai's identity is Authentik's business at the UI's edge, not the
-  envelope's. The ingress is the batcher from [`async_approvals.md`](async_approvals.md) with a
-  workload identity on the caller side, feeding the existing inputs route: no new object.
+  envelope's. The UI never gets a direct pipe: the ingress is the batcher from
+  [`async_approvals.md`](async_approvals.md) with a workload identity on the caller side, feeding
+  the existing inputs route: no new object.
 - **Rendering state Haku owns**: the cards and paragraphs are data Haku edits, so "dismiss and
   rewrite" is a write to that state followed by the page re-rendering, not a redeploy.
 
