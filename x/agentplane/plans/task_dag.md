@@ -74,6 +74,8 @@ flowchart TB
         C3["C3 UI<br/>sandboxes, session stream, raw view, input, interrupt"]:::completed
         C4["C4 App deployment into staging<br/>RBAC, Authentik route, agent-reachable API"]:::completed
         C5["C5 Archive<br/>out of the active view, history kept"]:::completed
+        C6["C6 Session view legibility<br/>markdown, the input's own text, folded reasoning,<br/>Enter sends, raw frames in place"]:::ready
+        C7["C7 Lifecycle controls on the sandbox page<br/>suspend there, delete once suspended"]:::ready
     end
 
     F0["First functioning Agentplane<br/>both providers in sandboxes, driven and replayed from the app"]:::completed
@@ -126,6 +128,8 @@ flowchart TB
     C1 --> C4
     C2 --> C4
     C1 --> C5
+    C3 --> C6
+    C1 --> C7
     C5 --> E
     I4 --> F0
     C3 --> F0
@@ -170,8 +174,9 @@ milestone;
 orange diamonds are unresolved decisions requiring Rai's product or design input; gray is
 conditional or stretch work.
 
-Ready now: **J**. **T2** and **T3** are blocked on nothing in code; they start when the
-persisted history has a first reader who needs a name or a search.
+Ready now: **J**, **C6**, and **C7**, which share nothing and can run in parallel. **T2** and **T3** are
+blocked on nothing in code; they start when the persisted history has a first reader who needs a
+name or a search.
 
 The orange nodes are deliberately limited to choices that change downstream implementation
 ordering. `D` is decided: the conversation app stays a separate deployment, at least for now.
@@ -196,6 +201,28 @@ personal context.
 Landed packages are described where they live (§ Current status); what follows is the bar for the
 ones still open.
 
+- **C6 session view legibility:** five things that make a real transcript hard to read today, and
+  they are not all UI work.
+  - **Markdown for assistant text**, which currently renders as literal `**` and backticks.
+  - **Reasoning folded** into a disclosure widget, closed by default, so the answer is not buried
+    under the thinking.
+  - **Enter sends, Ctrl+Enter takes a newline** in the composer, the binding every chat surface
+    already has.
+  - **A user input shows what was typed.** Today it shows only its opaque `input_id`, because
+    `InputSubmitted` carries the id alone ([`../runner/protocol.proto`](../runner/protocol.proto)):
+    so this reaches the wire and the runner before it reaches the SPA, and the choice is whether
+    the runner echoes the text back or the app renders what it sent.
+  - **Raw frames interleave rather than replace.** The switch currently swaps the whole transcript
+    for a flat list of frames, which loses the place you were reading. Instead each frame appears
+    beside the neutral item it produced and disappears again when the switch goes off. That needs
+    the projection to keep the link it discards today — which event sequences fed which item — so
+    it is a change in `events.ts`, not only in the markup.
+- **C7 lifecycle controls on the sandbox page:** the page you are already looking at can suspend
+  the sandbox, and delete it once it is suspended. Today every lifecycle action lives on the list
+  page only (`sandboxes.tsx`), so acting on the sandbox in front of you means navigating away from
+  it. Deleting only a suspended sandbox is a new rule either way: `Inventory.delete` currently
+  takes any state, so the package decides whether the precondition belongs in the API — where it
+  also binds the agent driving staging — or is a UI affordance over an API that stays permissive.
 - **T2 named threads:** a small model proposes a name from the first turn, the user can edit it,
   and the name lives on the thread record; naming never touches the runner or the harness.
 - **T3 search and lookup:** find past interactions by text and by what an agent did; answer "what
