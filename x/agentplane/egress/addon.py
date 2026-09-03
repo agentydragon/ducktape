@@ -15,11 +15,13 @@ from datetime import UTC, datetime
 from ipaddress import ip_address
 
 from mitmproxy import connection, http
+from mitmproxy.proxy import server_hooks
 
 from x.agentplane.egress.decisions import DecisionRecord, DecisionRing, Outcome
 from x.agentplane.egress.identity import IdentityRejectedError, PodIdentityVerifier
 from x.agentplane.egress.policy import CONNECT, Allowed, Decision, Denied, DenyReason, EgressRequest, Index, evaluate
 from x.agentplane.egress.resources import GRANTED_BY_LABEL
+from x.agentplane.egress.upstream import Pin, UpstreamRefusedError, UpstreamResolver
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +29,7 @@ DENIED_HEADER = "x-agentplane-egress"
 
 
 def _refusal(reason: DenyReason) -> http.Response:
-    status = 502 if reason is DenyReason.UNAVAILABLE else 403
+    status = 502 if reason in {DenyReason.UNAVAILABLE, DenyReason.HOST_UNRESOLVED} else 403
     return http.Response.make(status, b"", {DENIED_HEADER: f"denied; reason={reason}"})
 
 
@@ -46,11 +48,13 @@ class EgressAddon:
         index: Index,
         verifier: PodIdentityVerifier,
         ring: DecisionRing,
+        resolver: UpstreamResolver,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._index = index
         self._verifier = verifier
         self._ring = ring
+        self._resolver = resolver
         self._clock = clock
         self._tokens: dict[str, str] = {}
 
@@ -63,6 +67,10 @@ class EgressAddon:
 
     async def request(self, flow: http.HTTPFlow) -> None:
         await self._gate(flow)
+
+    def server_connect(self, data: server_hooks.ServerConnectionHookData) -> None:
+        """Every dial goes to the address the gate checked, or nowhere."""
+        self._resolver.redirect(data.server)
 
     def responseheaders(self, flow: http.HTTPFlow) -> None:
         """Stream admitted responses instead of buffering them whole; a refusal has no body to stream."""
@@ -96,6 +104,7 @@ class EgressAddon:
             headers={name.lower(): request.headers.get_all(name) for name in set(request.headers.keys())},
         )
         sandbox_name: str | None = None
+        pin: Pin | None = None
         decision: Decision
         try:
             token = self._take_token(flow)
@@ -109,8 +118,13 @@ class EgressAddon:
                 )
             sandbox_name = sandbox.metadata.name
             decision = evaluate(self._index, sandbox, egress, self._clock())
+            if isinstance(decision, Allowed):
+                pin = await self._resolver.pin(egress.host, egress.port)
         except IdentityRejectedError as error:
             logger.info("identity rejected for %s %s:%d: %s", egress.method, egress.host, egress.port, error)
+            decision = Denied(error.reason)
+        except UpstreamRefusedError as error:
+            logger.info("upstream refused for %s %s:%d: %s", egress.method, egress.host, egress.port, error)
             decision = Denied(error.reason)
         except Exception as error:
             # Type only: a message could carry a header value.
@@ -142,6 +156,7 @@ class EgressAddon:
                         policy=decision.policy,
                         rule=decision.rule,
                         substituted=decision.substitution is not None,
+                        address=str(pin.address) if pin is not None else None,
                     )
                 )
                 if decision.substitution is not None:

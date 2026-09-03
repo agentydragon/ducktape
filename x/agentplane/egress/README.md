@@ -16,6 +16,8 @@ bbr test //x/agentplane/egress/...
 - `policy.py`: the pure decision over an in-memory `Index` — subject bindings, first matching
   rule, substitution, binding status. No I/O.
 - `identity.py`: TokenReview, live Pod lookup, Sandbox owner, and the bounded verdict cache.
+- `upstream.py`: the admitted host resolved by the proxy, refused when it points anywhere not
+  globally reachable, and pinned so the dial goes to the address checked.
 - `informer.py`: list-and-watch of the four kinds into the `Index`, and the binding status
   writes.
 - `addon.py`: the mitmproxy addon gating CONNECTs and requests; `decisions.py` the ring and the

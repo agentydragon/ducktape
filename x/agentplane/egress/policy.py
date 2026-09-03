@@ -48,6 +48,8 @@ class DenyReason(StrEnum):
     NO_RULE = "no-rule"
     PLACEHOLDER_UNRESOLVED = "placeholder-unresolved"
     CREDENTIAL_UNAVAILABLE = "credential-unavailable"
+    ADDRESS_FORBIDDEN = "address-forbidden"
+    HOST_UNRESOLVED = "host-unresolved"
     UNAVAILABLE = "unavailable"
 
 

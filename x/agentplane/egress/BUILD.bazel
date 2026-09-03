@@ -19,6 +19,7 @@ py_library(
         ":identity",
         ":policy",
         ":resources",
+        ":upstream",
         "@pypi//mitmproxy",
     ],
 )
@@ -76,6 +77,7 @@ py_library(
         ":informer",
         ":policy",
         ":proxy",
+        ":upstream",
         "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
@@ -173,6 +175,7 @@ py_test(
         ":identity",
         ":policy",
         ":proxy",
+        ":upstream",
         "//:conftest",
         "//x/agentplane/egress/testing:fake_apiserver",
         "//x/agentplane/egress/testing:tls",
@@ -266,6 +269,30 @@ py_test(
         "//:conftest",
         "@pypi//aiohttp",
         "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "upstream",
+    srcs = ["upstream.py"],
+    deps = [
+        ":policy",
+        "@pypi//mitmproxy",
+        "@pypi//more_itertools",
+    ],
+)
+
+py_test(
+    name = "test_upstream",
+    srcs = ["test_upstream.py"],
+    deps = [
+        ":conftest",
+        ":policy",
+        ":upstream",
+        "//:conftest",
+        "@pypi//mitmproxy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

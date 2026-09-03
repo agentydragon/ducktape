@@ -35,7 +35,21 @@ substitutes. The design it implements is [the ADR](../plans/adr_sandbox_proxy_ga
   (`502` when the proxy itself could not decide) with an empty body and
   `x-agentplane-egress: denied; reason=<reason>`, where reason is one of `token-missing`,
   `token-rejected`, `pod-mismatch`, `sandbox-unknown`, `no-binding`, `no-rule`,
-  `placeholder-unresolved`, `credential-unavailable`, `unavailable`.
+  `placeholder-unresolved`, `credential-unavailable`, `address-forbidden`, `host-unresolved`,
+  `unavailable`.
+
+## Upstream address
+
+- The admitted host is resolved by the proxy, never by the sandbox. A host with any address that
+  is not globally reachable unicast — loopback, private, link-local, carrier-grade NAT, multicast,
+  reserved, and the IPv4-mapped IPv6 forms of those — is refused whole with `address-forbidden`;
+  a literal address in place of a host is held to the same rule. A host that does not resolve is
+  refused with `host-unresolved` (`502`).
+- The connection is made to the address that was checked: a name is resolved once per admission
+  window (30 seconds) and every dial in it goes to that address, so a name cannot be re-pointed
+  between the check and the connect. A dial for a target the gate did not admit is not made.
+- The operator may exempt networks from the reachability rule (`--exempt-networks`); production
+  exempts none.
 
 ## Resources and status
 

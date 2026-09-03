@@ -37,6 +37,7 @@ class DecisionRecord(BaseModel):
     policy: str | None = None
     rule: int | None = None
     substituted: bool = Field(default=False, description="Whether a credential replaced a placeholder.")
+    address: str | None = Field(default=None, description="The address the host was pinned to, when admitted.")
 
 
 class DecisionRing:

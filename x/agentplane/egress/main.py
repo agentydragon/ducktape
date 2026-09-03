@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal
+from ipaddress import IPv4Network, IPv6Network
 from pathlib import Path
 from typing import Any, cast
 
@@ -21,6 +22,7 @@ from x.agentplane.egress.identity import PodIdentityVerifier
 from x.agentplane.egress.informer import Informer
 from x.agentplane.egress.policy import Index
 from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
+from x.agentplane.egress.upstream import UpstreamResolver
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +48,10 @@ class Settings(BaseSettings):
     resync_seconds: float = Field(default=300, description="Watch lifetime; every kind is relisted this often.")
     identity_cache_seconds: float = Field(default=60, description="Upper bound on how long a token verdict is kept.")
     decision_ring_size: int = Field(default=200, description="Decisions kept per sandbox for /decisions.")
+    exempt_networks: list[IPv4Network | IPv6Network] = Field(
+        default_factory=list,
+        description="Networks an admitted host may resolve into although they are not globally reachable.",
+    )
 
     def __init__(self, **values: Any) -> None:
         # BaseSettings fills required fields from its sources; spell that out because the mypy plugin
@@ -89,7 +95,8 @@ async def async_main(settings: Settings) -> None:
             audience=settings.token_audience,
             cache_seconds=settings.identity_cache_seconds,
         )
-        addon = EgressAddon(index=index, verifier=verifier, ring=ring)
+        resolver = UpstreamResolver(exempt=frozenset(settings.exempt_networks))
+        addon = EgressAddon(index=index, verifier=verifier, ring=ring, resolver=resolver)
         informer_task = asyncio.create_task(informer.run(), name="egress-informer")
         try:
             async with (

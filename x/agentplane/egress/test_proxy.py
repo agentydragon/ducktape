@@ -11,6 +11,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from ipaddress import ip_network
 from pathlib import Path
 
 import aiohttp
@@ -58,6 +59,7 @@ from x.agentplane.egress.testing.tls import (
     server_tls_context,
     write_ca,
 )
+from x.agentplane.egress.upstream import Network, UpstreamResolver
 
 
 @dataclass
@@ -113,7 +115,15 @@ class ProxyUnderTest:
 
 
 @pytest.fixture
-async def proxy(fake: FakeApiServer, api_client: ApiClient, tmp_path: Path) -> AsyncIterator[ProxyUnderTest]:
+def exempt_networks() -> frozenset[Network]:
+    """The scripted upstream listens on loopback, which the proxy refuses unless told otherwise."""
+    return frozenset({ip_network("127.0.0.0/8"), ip_network("::1/128")})
+
+
+@pytest.fixture
+async def proxy(
+    fake: FakeApiServer, api_client: ApiClient, tmp_path: Path, exempt_networks: frozenset[Network]
+) -> AsyncIterator[ProxyUnderTest]:
     interception_ca = make_ca("agentplane-egress-test-interception")
     write_interception_ca(tmp_path / "confdir", *write_ca(interception_ca, tmp_path, "interception"))
     upstream_ca = make_ca("agentplane-egress-test-upstream")
@@ -133,7 +143,9 @@ async def proxy(fake: FakeApiServer, api_client: ApiClient, tmp_path: Path) -> A
         async with (
             recording_upstream(*issue_leaf(upstream_ca, UPSTREAM_HOST, tmp_path)) as upstream,
             EgressProxyServer(
-                EgressAddon(index=index, verifier=verifier, ring=ring),
+                EgressAddon(
+                    index=index, verifier=verifier, ring=ring, resolver=UpstreamResolver(exempt=exempt_networks)
+                ),
                 confdir=tmp_path / "confdir",
                 extra_options={"ssl_verify_upstream_trusted_ca": str(upstream_ca_cert)},
             ) as server,
@@ -229,6 +241,21 @@ async def test_unbound_sandbox_refused(fake: FakeApiServer, proxy: ProxyUnderTes
     assert refused.value.headers[DENIED_HEADER] == f"denied; reason={DenyReason.NO_BINDING}"
 
 
+class TestUpstreamAddress:
+    @pytest.fixture
+    def exempt_networks(self) -> frozenset[Network]:
+        return frozenset()
+
+    async def test_host_resolving_into_a_private_range_is_refused_at_connect(self, proxy: ProxyUnderTest) -> None:
+        """The policy admits the host by name; the name points at loopback, so the tunnel is refused."""
+        with pytest.raises(aiohttp.ClientHttpProxyError) as refused:
+            await proxy.get("/repos/o/r")
+        assert refused.value.status == 403
+        assert refused.value.headers is not None
+        assert refused.value.headers[DENIED_HEADER] == f"denied; reason={DenyReason.ADDRESS_FORBIDDEN}"
+        assert proxy.upstream.requests == []
+
+
 async def test_rotated_secret_is_substituted_without_restart(fake: FakeApiServer, proxy: ProxyUnderTest) -> None:
     fake.put(SECRETS_PLURAL, secret(SECRET_NAME, {"token": "real-secret-v2"}))
     await proxy.index.wait_for(lambda: proxy.index.secrets[SECRET_NAME].data["token"] == "real-secret-v2")
@@ -255,6 +282,7 @@ async def test_admin_serves_decisions_and_health(proxy: ProxyUnderTest) -> None:
         ("CONNECT", None, "allow", None, False),
         ("GET", "/private/x", "deny", "no-rule", False),
     ]
+    assert [d["address"] for d in decisions] == ["127.0.0.1", "127.0.0.1", "127.0.0.1", None]
     substituted = one(d for d in decisions if d["substituted"])
     assert (substituted["binding"], substituted["granted_by"], substituted["policy"]) == (
         BINDING,
