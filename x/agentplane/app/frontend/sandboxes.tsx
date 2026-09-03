@@ -105,7 +105,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
             <Table.Th>Name</Table.Th>
             <Table.Th visibleFrom="sm">Provider</Table.Th>
             <Table.Th visibleFrom="sm">Model</Table.Th>
-            <Table.Th>State</Table.Th>
+            <Table.Th visibleFrom="sm">State</Table.Th>
             <Table.Th visibleFrom="sm">Node</Table.Th>
             <Table.Th />
           </Table.Tr>
@@ -113,24 +113,26 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         <Table.Tbody>
           {rows.map((row) => {
             const node = `${row.node_name ?? "—"} ${row.pod?.ip ? `(${row.pod.ip})` : ""}`;
+            const state = <Badge color={STATE_COLORS[row.state] ?? "blue"}>{row.state}</Badge>;
             return (
               <Table.Tr key={row.name}>
                 <Table.Td>
                   <Button variant="subtle" px="xs" onClick={() => onOpen(row.name)}>
                     {row.name}
                   </Button>
-                  {/* On a phone the secondary columns fold under the name. */}
-                  <Text size="xs" c="dimmed" hiddenFrom="sm">
-                    {row.provider} · {row.model} · {node}
-                  </Text>
+                  {/* On a phone the other columns fold under the name, leaving room for the actions. */}
+                  <Stack gap="xs" hiddenFrom="sm">
+                    {state}
+                    <Text size="xs" c="dimmed">
+                      {row.provider} · {row.model} · {node}
+                    </Text>
+                  </Stack>
                 </Table.Td>
                 <Table.Td visibleFrom="sm">{row.provider}</Table.Td>
                 <Table.Td visibleFrom="sm">{row.model}</Table.Td>
-                <Table.Td>
-                  <Badge color={STATE_COLORS[row.state] ?? "blue"}>{row.state}</Badge>
-                </Table.Td>
+                <Table.Td visibleFrom="sm">{state}</Table.Td>
                 <Table.Td visibleFrom="sm">{node}</Table.Td>
-                <Table.Td>
+                <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
                   <Group gap="xs" wrap="nowrap" justify="flex-end">
                     {row.state === "suspended" || row.state === "archived" ? (
                       <Button size="xs" onClick={() => void act(row.name, "resume")}>
