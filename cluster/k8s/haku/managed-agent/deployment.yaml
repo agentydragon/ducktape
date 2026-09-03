@@ -67,12 +67,11 @@ spec:
                   name: haku-environment-key
                   key: environment_key
             # haku-state clone (read+write) + the single git credential the
-            # entrypoint threads into ~/.netrc. Reuses the haku-console secret.
+            # entrypoint threads into ~/.netrc. Reuses the haku-console secret's
+            # username/password; the URL is spelled here rather than taken from its
+            # repo_url key because it must carry the FQDN host explained at HAKU_GIT_HOST.
             - name: HAKU_STATE_REPO_URL
-              valueFrom:
-                secretKeyRef:
-                  name: haku-forgejo-git
-                  key: repo_url
+              value: http://forgejo-http.forgejo.svc.cluster.local:3000/haku/haku-state.git
             - name: HAKU_GIT_USERNAME
               valueFrom:
                 secretKeyRef:
@@ -83,14 +82,16 @@ spec:
                 secretKeyRef:
                   name: haku-forgejo-git
                   key: password
-            # .netrc machine line for git auth. Must match the host in the clone
-            # URLs below — both repos are reached via the in-cluster Forgejo
-            # Service (forgejo-http.forgejo), NOT the public git.allegedly.works
-            # ingress: the haku egress proxy doesn't tunnel git, and the internal
-            # Service bypasses it. (.netrc matches on host, ignoring the :3000
-            # port.) The haku-state repo_url secret already uses this host.
+            # .netrc machine line for git auth. Must match the host in both clone
+            # URLs (.netrc matches on host, ignoring the :3000 port). Both repos are
+            # reached via the in-cluster Forgejo Service in its FQDN form: the
+            # haku-sandbox Kyverno policy (inject-haku-egress-proxy) no longer keeps
+            # the short forgejo-http.forgejo out of the egress fence, and this worker
+            # holds a real Forgejo token but no proxy credential, so it would get a
+            # 407 there. The `.svc.cluster.local` suffix stays on NO_PROXY, so the
+            # FQDN reaches Forgejo directly as before.
             - name: HAKU_GIT_HOST
-              value: forgejo-http.forgejo
+              value: forgejo-http.forgejo.svc.cluster.local
             # ducktape clone (read-only: haku/base + run.md, the live manual).
             # The Forgejo mirror agentydragon/ducktape (the `haku` user has read
             # via collaborator grant). GitHub is unreachable from the worker
@@ -98,7 +99,7 @@ spec:
             # by the .netrc above. NOTE: the mirror is bumped manually for now —
             # see the README TODO; it is not yet turnkey-synced from GitHub.
             - name: HAKU_DUCKTAPE_REPO_URL
-              value: http://forgejo-http.forgejo:3000/agentydragon/ducktape.git
+              value: http://forgejo-http.forgejo.svc.cluster.local:3000/agentydragon/ducktape.git
           resources:
             requests:
               cpu: 200m
