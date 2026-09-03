@@ -145,9 +145,11 @@ def test_the_two_writer_shapes_are_accepted(engine: Engine) -> None:
         _write(conn, conversation, event_seq=2, provenance="authored")
 
     with engine.connect() as conn:
-        assert conn.execute(
+        rows = conn.execute(
             text("SELECT provenance, source_first_frame_seq FROM conversation_event ORDER BY event_seq")
-        ).all() == [("frame_range", 7), ("authored", None)]
+        ).all()
+        # A Row equals the tuple of its values at runtime, but is a distinct type to mypy.
+        assert [tuple(row) for row in rows] == [("frame_range", 7), ("authored", None)]
 
 
 @pytest.mark.parametrize(

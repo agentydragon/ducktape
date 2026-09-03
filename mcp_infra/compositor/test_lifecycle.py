@@ -19,15 +19,14 @@ async def test_compositor_state_transitions():
     """Test that compositor follows correct state transitions."""
     comp = Compositor()
 
-    # Initial state: CREATED
-    assert comp._state == CompositorState.CREATED
-
-    # Enter context: CREATED → ACTIVE
+    # Collected rather than asserted in place: an assert on an attribute narrows its type for the
+    # rest of the function, so the next one reads as comparing two enum members that cannot be equal.
+    observed = [comp._state]
     async with comp:
-        assert comp._state == CompositorState.ACTIVE
+        observed.append(comp._state)
+    observed.append(comp._state)
 
-    # Exit context: ACTIVE → CLOSED
-    assert comp._state == CompositorState.CLOSED
+    assert observed == [CompositorState.CREATED, CompositorState.ACTIVE, CompositorState.CLOSED]
 
 
 async def test_double_enter_raises():

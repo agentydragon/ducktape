@@ -100,7 +100,11 @@ async def async_main(settings: Settings) -> None:
         informer_task = asyncio.create_task(informer.run(), name="egress-informer")
         try:
             async with (
-                serve_admin(create_admin_app(ring, index), settings.admin_host, settings.admin_port) as admin_port,
+                serve_admin(
+                    create_admin_app(ring, index, resync_seconds=settings.resync_seconds),
+                    settings.admin_host,
+                    settings.admin_port,
+                ) as admin_port,
                 EgressProxyServer(
                     addon, confdir=settings.confdir, listen_host=settings.listen_host, listen_port=settings.listen_port
                 ),

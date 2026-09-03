@@ -184,7 +184,9 @@ async def test_concurrent_calls_keep_request_clients_isolated(
 
     results = await asyncio.gather(call("alpha", "operator-alpha"), call("beta", "operator-beta"))
 
-    assert results == [{"value": "alpha"}, {"value": "beta"}]
+    # typeshed models a two-argument gather as returning a tuple so it can type the elements; the
+    # runtime value is a list, and comparing the two shapes is what strict_equality objects to.
+    assert list(results) == [{"value": "alpha"}, {"value": "beta"}]
     assert sorted(observed) == [("alpha", "Bearer operator-alpha"), ("beta", "Bearer operator-beta")]
     assert sorted(entered) == ["operator-alpha", "operator-beta"]
     assert sorted(exited) == ["operator-alpha", "operator-beta"]

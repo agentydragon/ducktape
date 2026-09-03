@@ -297,3 +297,18 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_admin",
+    srcs = ["test_admin.py"],
+    deps = [
+        ":admin",
+        ":conftest",
+        ":decisions",
+        ":policy",
+        "//:conftest",
+        "@pypi//aiohttp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

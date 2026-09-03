@@ -167,6 +167,11 @@ class Informer:
 
     async def run(self) -> None:
         """Watch until cancelled."""
+        # Seed every kind so a pod that never completes its first cycle goes stale like any other,
+        # rather than reading as fresh because it has nothing to be late against.
+        started = self._clock()
+        for kind in self._kinds:
+            self._index.refreshed.setdefault(kind.plural, started)
         async with asyncio.TaskGroup() as group:
             for kind in self._kinds:
                 group.create_task(self._watch_forever(kind), name=f"egress-informer-{kind.plural}")
@@ -216,6 +221,10 @@ class Informer:
                 await self._changed(kind)
         finally:
             watcher.stop()
+        # Only here, past the watch the server ended on schedule: a cycle that raised out of the
+        # loop above is exactly the case this timestamp is meant to stop advancing for.
+        self._index.refreshed[kind.plural] = self._clock()
+        await self._index.notify()
 
     async def _changed(self, kind: _Kind) -> None:
         if kind.affects_status:

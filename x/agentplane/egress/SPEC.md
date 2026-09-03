@@ -69,4 +69,7 @@ substitutes. The design it implements is [the ADR](../plans/adr_sandbox_proxy_ga
   placeholders never appear in logs, decisions, or responses.
 - The last decisions per subject (a configured ring, 200 by default) are served on the admin port
   at `GET /decisions?sandbox=<name>`; decisions with no proven subject at `GET /decisions`.
-  `GET /healthz` is `200` once the watches have synced.
+  `GET /healthz` is `200` while the index is both complete and moving: every kind listed at least
+  once, and none more than three resync periods since it last completed a list-and-watch cycle. It
+  reports how long ago each kind last completed one, so a wedged watch reads as an age rather than
+  as a proxy quietly enforcing rules it stopped receiving updates to.

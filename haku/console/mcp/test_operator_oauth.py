@@ -374,7 +374,9 @@ async def test_operator_oauth_concurrent_callers_share_one_refresh(
     await asyncio.sleep(0.1)
     allow_refresh.set()
 
-    assert await asyncio.gather(first, second) == ["fresh", "fresh"]
+    # typeshed models a two-argument gather as returning a tuple so it can type the elements; the
+    # runtime value is a list, and comparing the two shapes is what strict_equality objects to.
+    assert list(await asyncio.gather(first, second)) == ["fresh", "fresh"]
     assert refresh_count == 1
 
 

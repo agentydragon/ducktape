@@ -149,7 +149,7 @@ async def proxy(
                 confdir=tmp_path / "confdir",
                 extra_options={"ssl_verify_upstream_trusted_ca": str(upstream_ca_cert)},
             ) as server,
-            serve_admin(create_admin_app(ring, index), "127.0.0.1", 0) as admin_port,
+            serve_admin(create_admin_app(ring, index, resync_seconds=300), "127.0.0.1", 0) as admin_port,
         ):
             yield ProxyUnderTest(
                 proxy_port=server.listen_port,
@@ -271,7 +271,7 @@ async def test_admin_serves_decisions_and_health(proxy: ProxyUnderTest) -> None:
         await proxy.get("/repos/o/r", token="not-a-token")
     async with aiohttp.ClientSession(f"http://127.0.0.1:{proxy.admin_port}") as admin:
         async with admin.get("/healthz") as health:
-            assert (health.status, await health.json()) == (200, {"synced": True})
+            assert (health.status, (await health.json())["synced"]) == (200, True)
         async with admin.get("/decisions", params={"sandbox": SANDBOX_A}) as listing:
             decisions = await listing.json()
         async with admin.get("/decisions") as listing:

@@ -63,6 +63,12 @@ class Index:
     sandboxes: dict[str, Sandbox] = field(default_factory=dict)
     secrets: dict[str, Secret] = field(default_factory=dict, repr=False)
     synced: bool = field(default=False)
+    # When each watched kind last completed a full list-and-watch cycle, keyed by plural. A cycle
+    # ends when the API server closes the watch at `resync_seconds`, so under health every entry
+    # advances that often. One that stops is the failure this exists to expose: a wedged list, a
+    # watch that never returns, or one the server keeps refusing leaves the index frozen while
+    # every answer it gives stays plausible and `synced` stays true.
+    refreshed: dict[str, datetime] = field(default_factory=dict)
     changed: asyncio.Condition = field(default_factory=asyncio.Condition, repr=False)
 
     async def notify(self) -> None:

@@ -15,6 +15,7 @@ from x.agentplane.egress.resources import ActiveReason, ConditionStatus
 from x.agentplane.egress.testing.fake_apiserver import (
     BINDINGS_PLURAL,
     POLICIES_PLURAL,
+    SANDBOXES_PLURAL,
     SECRETS_PLURAL,
     FakeApiServer,
     binding,
@@ -105,6 +106,20 @@ async def test_watch_end_relists(fake: FakeApiServer, index: Index) -> None:
     fake.close_watches()
     fake.put(POLICIES_PLURAL, policy("late", [{"hosts": ["example.com"]}]))
     await index.wait_for(lambda: "late" in index.policies)
+
+
+async def test_a_completed_cycle_is_what_advances_freshness(fake: FakeApiServer, index: Index) -> None:
+    """Every kind is timestamped from the start, and a cycle the server ends moves it on.
+
+    /healthz reads these to tell a wedged informer from a quiet one; a timestamp set anywhere but
+    the end of a cycle would keep advancing through exactly the failure it has to catch.
+    """
+    assert set(index.refreshed) == {POLICIES_PLURAL, BINDINGS_PLURAL, SANDBOXES_PLURAL, SECRETS_PLURAL}
+    seeded = index.refreshed[POLICIES_PLURAL]
+
+    fake.close_watches()
+
+    await index.wait_for(lambda: index.refreshed[POLICIES_PLURAL] > seeded)
 
 
 if __name__ == "__main__":
