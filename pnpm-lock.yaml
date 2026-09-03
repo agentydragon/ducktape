@@ -83,6 +83,12 @@ importers:
       dompurify:
         specifier: ^3.4.14
         version: 3.4.14
+      google-protobuf:
+        specifier: 4.0.0
+        version: 4.0.0
+      grpc-web:
+        specifier: 2.0.2
+        version: 2.0.2
       highlight.js:
         specifier: ^11.12.0
         version: 11.12.0
@@ -98,6 +104,9 @@ importers:
       marked-highlight:
         specifier: ^2.1.1
         version: 2.2.4(marked@12.0.2)
+      oidc-client-ts:
+        specifier: 3.5.0
+        version: 3.5.0
       openapi-fetch:
         specifier: ^0.17.0
         version: 0.17.0
@@ -3048,12 +3057,18 @@ packages:
     resolution: {integrity: sha512-DpLKbNU4WylpxJykQujfCcwYWiV/Jhm50Goo0wrVILAv5jOr9d+H+UR3PhSCD2rCCEIg0uc+G+muBTwD54JhDQ==}
     engines: {node: '>= 0.4'}
 
+  google-protobuf@4.0.0:
+    resolution: {integrity: sha512-b8wmenhUMf2WNL+xIJ/slvD/hEE6V3nRnG86O2bzkBrMweM9gnqZE1dfXlDjibY3aXJXDNbAHepevYyQ7qWKsQ==}
+
   gopd@1.2.0:
     resolution: {integrity: sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==}
     engines: {node: '>= 0.4'}
 
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
+
+  grpc-web@2.0.2:
+    resolution: {integrity: sha512-bvBP0/d5jyVM3eGxxffJhRLAPpH6eXhJeUzBT+bSIEgUKkG4a/BotEimVeW3phP0WLnsJnkRl8uQdRf2yDLaVA==}
 
   happy-dom@20.11.6:
     resolution: {integrity: sha512-Hldbg8AdAa5a5oDcZpjqnGitp7JB0hqWmfv/8qr+kft4vzSD8BHsbdRfzYvL/0QcbKcURC/yyoygbeDQarPvYg==}
@@ -7854,9 +7869,13 @@ snapshots:
       define-properties: 1.2.1
       gopd: 1.2.0
 
+  google-protobuf@4.0.0: {}
+
   gopd@1.2.0: {}
 
   graceful-fs@4.2.11: {}
+
+  grpc-web@2.0.2: {}
 
   happy-dom@20.11.6:
     dependencies:
