@@ -176,9 +176,9 @@ py_library(
     name = "recall_index_reader",
     srcs = ["recall_index_reader.py"],
     deps = [
-        ":chat_models",
         ":conversation_read_access",
         ":database_schema",
+        "//haku/console/channels:surface",
         "//haku/console/tools:recall_index",
         "//haku/recall_index:chat_corpus",
         "//haku/recall_index:chat_source",
@@ -253,8 +253,8 @@ py_library(
     name = "database_schema",
     srcs = ["database_schema.py"],
     deps = [
-        ":chat_models",
         ":pydantic_column",
+        "//haku/console/channels:surface",
         "//haku/console/conversation:conversation_event",
         "//haku/console/conversation:item_vocabulary",
         "//haku/console/conversation:prompt_origin",
@@ -273,11 +273,6 @@ py_library(
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//sqlalchemy",
     ],
-)
-
-py_library(
-    name = "chat_models",
-    srcs = ["chat_models.py"],
 )
 
 py_library(

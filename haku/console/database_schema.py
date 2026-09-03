@@ -31,7 +31,7 @@ from sqlalchemy.dialects.postgresql import JSON, JSONB, UUID as PGUUID
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from haku.console.chat_models import ChannelSurface
+from haku.console.channels.surface import ChannelSurface
 from haku.console.conversation.conversation_event import (
     AuthoredEventKind,
     ConversationEventKind,
