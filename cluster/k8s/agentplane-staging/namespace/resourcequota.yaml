@@ -1,7 +1,16 @@
-# Sized for a handful of concurrent runner sandboxes (each requests 500m/1Gi,
-# limits 2/4Gi, plus a 10Gi state PVC per the agentplane-runner SandboxTemplate)
-# with room for the integration app, its database (three CNPG Services), and the
-# egress proxy (its listener and admin Services) alongside them.
+# Bounds what runner sandboxes take from the node: the app stamps a Sandbox per
+# user request, each costing 2500m of limits.cpu (2 for the runner, 500m the
+# LimitRange defaults for the egress sidecar) and a 10Gi state PVC. limits.cpu is
+# what binds first, at roughly four concurrent sandboxes — raise that, not a
+# count, for more headroom.
+#
+# Aggregate resources only. A cap per object kind bounds an untrusted creator,
+# and only Flux and the integration app create objects here.
+#
+# Load-bearing pair: the LimitRange beside this file supplies the requests and
+# limits that several containers omit (the CNPG postgres container declares
+# none), and LimitRanger mutates before quota validates. Narrowing that
+# LimitRange while these compute dimensions stand rejects those pods outright.
 apiVersion: v1
 kind: ResourceQuota
 metadata:
@@ -13,8 +22,4 @@ spec:
     requests.memory: 8Gi
     limits.cpu: "12"
     limits.memory: 24Gi
-    pods: "8"
-    services: "8"
-    configmaps: "10"
-    persistentvolumeclaims: "8"
     requests.storage: 80Gi
