@@ -61,9 +61,15 @@ spec:
               protocol: TCP
     # The API server's service proxy, which is how the agent reaches the API (see
     # ../agent-rbac/role-agentplane-operator.yaml). The API server authorizes the caller before
-    # proxying, so this admits only identities holding services/proxy on this Service.
+    # proxying, so this admits only identities holding services/proxy on this Service. The API
+    # server is host-networked on the Talos control-plane nodes, and its ingress traffic carries
+    # the remote-node identity there: Cilium's own note is that the kube-apiserver entity "may
+    # not work for ingress traffic in some Kubernetes distributions", and with it alone the
+    # proxy's dial to the Pod timed out. remote-node admits host-network processes on every other
+    # node to this port; the API server's authorization stays the gate for the proxy path.
     - fromEntities:
         - kube-apiserver
+        - remote-node
       toPorts:
         - ports:
             - port: "8080"
