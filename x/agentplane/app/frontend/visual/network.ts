@@ -6,6 +6,7 @@
  * visual-test-lib's `assertNetworkSettled` reads.
  */
 
+/** An answer is a JSON body, `undefined` for 404, or a ready `Response` for any other status. */
 export type Route = [
   method: string,
   pattern: RegExp,
@@ -35,6 +36,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
       const match = url.pathname.match(pattern);
       if (routeMethod !== method || !match) continue;
       const body = answer(match, url.searchParams);
+      if (body instanceof Response) return body;
       if (body === undefined) return Response.json({ detail: `no such sandbox ${match[1]}` }, { status: 404 });
       return Response.json(body);
     }

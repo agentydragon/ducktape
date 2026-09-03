@@ -1,7 +1,7 @@
 import { Badge, Button, Group, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
 import { useCallback, useEffect, useState } from "react";
 
-import { api, displayableError, type BindingView, type Decision, type EgressView, type PolicyView } from "./client";
+import { api, displayableError, type BindingView, type Decision, type PolicyView } from "./client";
 
 const REFRESH_MS = 5000;
 
@@ -306,15 +306,28 @@ function DecisionsTable({ decisions }: { decisions: Decision[] }): JSX.Element {
 
 /** What may leave the sandbox and what recently did: its bindings and the proxy's decisions. */
 export function EgressSection({ name }: { name: string }): JSX.Element {
-  const [view, setView] = useState<EgressView | null>(null);
+  const [bindings, setBindings] = useState<BindingView[] | null>(null);
+  const [decisions, setDecisions] = useState<Decision[] | null>(null);
+  const [decisionsError, setDecisionsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    const { data, error: failure } = await api.GET("/sandboxes/{name}/egress", { params: { path: { name } } });
-    if (failure) setError(displayableError(failure));
+    const params = { params: { path: { name } } };
+    const [rules, recent] = await Promise.all([
+      api.GET("/sandboxes/{name}/egress", params),
+      api.GET("/sandboxes/{name}/egress/decisions", params),
+    ]);
+    if (rules.error) setError(displayableError(rules.error));
     else {
-      setView(data);
+      setBindings(rules.data);
       setError(null);
+    }
+    if (recent.error) {
+      setDecisions(null);
+      setDecisionsError(displayableError(recent.error));
+    } else {
+      setDecisions(recent.data);
+      setDecisionsError(null);
     }
   }, [name]);
 
@@ -338,17 +351,14 @@ export function EgressSection({ name }: { name: string }): JSX.Element {
     <Stack gap="xs">
       <Title order={4}>Egress</Title>
       {error && <Text c="red">{error}</Text>}
-      {view && <BindingsTable bindings={view.bindings} onAct={(binding, action) => void act(binding, action)} />}
+      {bindings && <BindingsTable bindings={bindings} onAct={(binding, action) => void act(binding, action)} />}
       <Title order={5}>Recent decisions</Title>
-      {view &&
-        (view.decisions ? (
-          <DecisionsTable decisions={view.decisions} />
-        ) : (
-          <Text size="sm" c="dimmed">
-            The egress proxy could not be asked; the rules above still apply.
-            {view.decisions_error ? ` (${view.decisions_error})` : ""}
-          </Text>
-        ))}
+      {decisions && <DecisionsTable decisions={decisions} />}
+      {decisionsError && (
+        <Text size="sm" c="dimmed">
+          The egress proxy could not be asked; the rules above still apply. ({decisionsError})
+        </Text>
+      )}
     </Stack>
   );
 }

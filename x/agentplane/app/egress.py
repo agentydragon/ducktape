@@ -180,7 +180,9 @@ class BindingView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
-    granted_by: str | None = Field(description="The provenance label: flux, or the approver the app acted for.")
+    granted_by: str | None = Field(
+        description="The provenance label: flux, or the operator who granted it through the app."
+    )
     from_git: bool = Field(description="Flux applied it; approval is editable, deletion is git's.")
     subjects: list[SubjectView]
     approval: ApprovalState
@@ -197,12 +199,9 @@ class BindingView(BaseModel):
 class EgressInventory:
     """The namespace's policies and bindings, read and written through the API server."""
 
-    def __init__(self, *, namespace: str, custom_objects: CustomObjectsClient, approver: str):
+    def __init__(self, *, namespace: str, custom_objects: CustomObjectsClient):
         self._namespace = namespace
         self._custom_objects = custom_objects
-        # Who approvals and runtime grants are attributed to: the app has no identity of its browser
-        # user behind Authentik yet, so every decision it records is the app's own.
-        self._approver = approver
 
     async def list_policies(self) -> list[PolicyView]:
         return [_policy_view(policy) for policy in await self._policies()]
@@ -221,11 +220,11 @@ class EgressInventory:
             key=lambda view: view.name,
         )
 
-    async def approve(self, name: str) -> None:
-        await self._decide(name, ApprovalState.APPROVED)
+    async def approve(self, name: str, *, by: str) -> None:
+        await self._decide(name, ApprovalState.APPROVED, by)
 
-    async def deny(self, name: str) -> None:
-        await self._decide(name, ApprovalState.DENIED)
+    async def deny(self, name: str, *, by: str) -> None:
+        await self._decide(name, ApprovalState.DENIED, by)
 
     async def revoke(self, name: str) -> None:
         """Delete a runtime binding; a Flux-applied one is refused, git being its owner."""
@@ -236,15 +235,15 @@ class EgressInventory:
             *_EGRESS_API, self._namespace, _BINDINGS_PLURAL, name, body=k8s_client.V1DeleteOptions()
         )
 
-    async def grant(self, *, sandbox: str, sandbox_uid: UUID, policies: list[str]) -> None:
-        """The launch-time pick: one approved binding of the sandbox to the policies, owned by the
-        Sandbox so its deletion garbage-collects the grant."""
+    async def grant(self, *, sandbox: str, sandbox_uid: UUID, policies: list[str], by: str) -> None:
+        """The launch-time pick: one approved binding of the sandbox to the policies, approved by
+        and labelled as granted by `by`, owned by the Sandbox so its deletion garbage-collects it."""
         body = {
             "apiVersion": "/".join(_EGRESS_API),
             "kind": "EgressBinding",
             "metadata": {
                 "name": f"{sandbox}-picked",
-                "labels": {GRANTED_BY_LABEL: self._approver},
+                "labels": {GRANTED_BY_LABEL: by},
                 # Not the controller: the Sandbox controller owns the Pod and PVC, and this reference is
                 # for cascading deletion only.
                 "ownerReferences": [
@@ -261,21 +260,21 @@ class EgressInventory:
             "spec": {
                 "subjects": [{"sandbox": {"name": sandbox}}],
                 "policies": policies,
-                "approval": {"state": ApprovalState.APPROVED, "by": self._approver, "at": _now()},
+                "approval": {"state": ApprovalState.APPROVED, "by": by, "at": _now()},
             },
         }
         await self._custom_objects.create_namespaced_custom_object(
             *_EGRESS_API, self._namespace, _BINDINGS_PLURAL, body
         )
 
-    async def _decide(self, name: str, state: ApprovalState) -> None:
+    async def _decide(self, name: str, state: ApprovalState, by: str) -> None:
         await self._binding(name)
         await self._custom_objects.patch_namespaced_custom_object(
             *_EGRESS_API,
             self._namespace,
             _BINDINGS_PLURAL,
             name,
-            {"spec": {"approval": {"state": state, "by": self._approver, "at": _now()}}},
+            {"spec": {"approval": {"state": state, "by": by, "at": _now()}}},
             _content_type=_MERGE_PATCH,
         )
 

@@ -10,7 +10,7 @@ import pytest
 import pytest_bazel
 from fastapi.testclient import TestClient
 
-from x.agentplane.app.api import Provider, create_app
+from x.agentplane.app.api import OPERATOR_HEADER, Provider, create_app
 from x.agentplane.app.bridge import RunnerBridge
 from x.agentplane.app.conftest import APPROVER
 from x.agentplane.app.decisions import DecisionsClient
@@ -36,6 +36,8 @@ from x.agentplane.runner import protocol_pb2 as pb
 
 TEST_MODELS = {Provider.CLAUDE: ["test-claude-model"], Provider.CODEX: ["test-codex-model"]}
 APPROVED = {"state": "approved", "by": "test-operator", "at": "2026-09-01T12:00:00Z"}
+
+OPERATOR = {OPERATOR_HEADER: APPROVER}
 
 
 @pytest.fixture
@@ -110,7 +112,13 @@ def test_create_returns_the_new_row(client: TestClient, custom_objects: FakeCust
 def test_create_with_a_profile_and_picked_policies_stamps_the_label_and_grants_one_owned_binding(
     client: TestClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
-    response = client.post("/sandboxes", json={"slug": "demo", "profile": "coder", "policies": ["pypi"]})
+    unattributed = client.post("/sandboxes", json={"slug": "demo", "profile": "coder", "policies": ["pypi"]})
+    assert unattributed.status_code == 401
+    assert not any(kind == "sandboxes" and name.startswith("demo-") for kind, name in custom_objects.objects)
+
+    response = client.post(
+        "/sandboxes", json={"slug": "demo", "profile": "coder", "policies": ["pypi"]}, headers=OPERATOR
+    )
 
     assert response.status_code == 201, response.text
     row = response.json()
@@ -122,7 +130,7 @@ def test_create_with_a_profile_and_picked_policies_stamps_the_label_and_grants_o
     assert picked["metadata"]["ownerReferences"][0]["uid"] == created["metadata"]["uid"]
     assert picked["spec"]["policies"] == ["pypi"]
     # The new sandbox sees the seed's selector binding and its own pick.
-    names = [binding["name"] for binding in client.get(f"/sandboxes/{row['name']}/egress").json()["bindings"]]
+    names = [binding["name"] for binding in client.get(f"/sandboxes/{row['name']}/egress").json()]
     assert names == ["all-managed", f"{row['name']}-picked"]
 
 
@@ -203,58 +211,78 @@ def test_a_runner_that_does_not_answer_is_a_503(
     assert "not answering" in response.json()["detail"]
 
 
-def test_egress_lists_the_bindings_naming_the_sandbox_and_the_proxys_decisions(
-    client: TestClient, egress_admin: FakeEgressAdmin
-) -> None:
+def test_egress_lists_the_bindings_naming_the_sandbox(client: TestClient) -> None:
+    response = client.get("/sandboxes/live/egress")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert [(b["name"], b["from_git"], b["approval"], b["active"]) for b in body] == [
+        ("all-managed", True, "approved", True),
+        ("live-asks", False, "pending", None),
+    ]
+    assert body[0]["policies"][0]["rules"][0]["hosts"] == ["api.github.com"]
+    assert [b["name"] for b in client.get("/sandboxes/fresh/egress").json()] == ["all-managed"]
+    assert client.get("/sandboxes/nope/egress").status_code == 404
+
+
+def test_egress_decisions_come_from_the_proxy(client: TestClient, egress_admin: FakeEgressAdmin) -> None:
     egress_admin.decisions["live"] = [
         decision("2026-09-02T10:00:00Z", "CONNECT", "api.github.com", None, "allow"),
         decision("2026-09-02T10:00:01Z", "GET", "api.github.com", "/repos/x/y", "allow"),
         decision("2026-09-02T10:00:02Z", "POST", "pypi.org", "/simple/", "deny", reason="no-rule"),
     ]
 
-    response = client.get("/sandboxes/live/egress")
+    response = client.get("/sandboxes/live/egress/decisions")
 
     assert response.status_code == 200, response.text
-    body = response.json()
-    assert [(b["name"], b["from_git"], b["approval"], b["active"]) for b in body["bindings"]] == [
-        ("all-managed", True, "approved", True),
-        ("live-asks", False, "pending", None),
-    ]
-    assert body["bindings"][0]["policies"][0]["rules"][0]["hosts"] == ["api.github.com"]
-    assert [(d["method"], d["host"], d["path"], d["outcome"], d["reason"]) for d in body["decisions"]] == [
+    assert [(d["method"], d["host"], d["path"], d["outcome"], d["reason"]) for d in response.json()] == [
         ("CONNECT", "api.github.com", None, "allow", None),
         ("GET", "api.github.com", "/repos/x/y", "allow", None),
         ("POST", "pypi.org", "/simple/", "deny", "no-rule"),
     ]
-    assert body["decisions_error"] is None
     assert egress_admin.queries == ["live"]
-    assert [b["name"] for b in client.get("/sandboxes/fresh/egress").json()["bindings"]] == ["all-managed"]
-    assert client.get("/sandboxes/nope/egress").status_code == 404
+    assert client.get("/sandboxes/nope/egress/decisions").status_code == 404
+    assert egress_admin.queries == ["live"]
 
 
-def test_egress_stays_readable_when_the_proxy_is_unreachable(client: TestClient, egress_admin: FakeEgressAdmin) -> None:
+def test_egress_decisions_are_502_when_the_proxy_is_unreachable(
+    client: TestClient, egress_admin: FakeEgressAdmin
+) -> None:
     egress_admin.reachable = False
 
-    body = client.get("/sandboxes/live/egress").json()
+    response = client.get("/sandboxes/live/egress/decisions")
 
-    assert [b["name"] for b in body["bindings"]] == ["all-managed", "live-asks"]
-    assert body["decisions"] is None
-    assert "did not answer" in body["decisions_error"]
+    assert response.status_code == 502
+    assert "did not answer" in response.json()["detail"]
+    assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["all-managed", "live-asks"]
 
 
-def test_binding_approval_and_revocation(client: TestClient, custom_objects: FakeCustomObjectsApi) -> None:
-    assert client.post("/egress/bindings/live-asks/approve").status_code == 204
-    assert client.get("/sandboxes/live/egress").json()["bindings"][1]["approval"] == "approved"
-    assert client.post("/egress/bindings/live-asks/deny").status_code == 204
+def test_binding_approval_is_recorded_as_the_authentik_user(
+    client: TestClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    unattributed = client.post("/egress/bindings/live-asks/approve")
+    assert unattributed.status_code == 401
+    assert OPERATOR_HEADER in unattributed.json()["detail"]
+    assert (
+        client.post("/egress/bindings/live-asks/approve", headers={OPERATOR_HEADER: "not a label"}).status_code == 400
+    )
+    assert custom_objects.objects[("egressbindings", "live-asks")]["spec"]["approval"]["state"] == "pending"
+
+    assert client.post("/egress/bindings/live-asks/approve", headers=OPERATOR).status_code == 204
+    assert client.get("/sandboxes/live/egress").json()[1]["approval"] == "approved"
+    assert client.post("/egress/bindings/live-asks/deny", headers=OPERATOR).status_code == 204
     assert custom_objects.objects[("egressbindings", "live-asks")]["spec"]["approval"]["by"] == APPROVER
-    assert client.post("/egress/bindings/nope/approve").status_code == 404
+    assert client.post("/egress/bindings/nope/approve", headers=OPERATOR).status_code == 404
+
+
+def test_binding_revocation(client: TestClient) -> None:
 
     refused = client.delete("/egress/bindings/all-managed")
     assert refused.status_code == 409
     assert "git" in refused.json()["detail"]
     assert client.delete("/egress/bindings/live-asks").status_code == 204
     assert client.delete("/egress/bindings/live-asks").status_code == 404
-    assert [b["name"] for b in client.get("/sandboxes/live/egress").json()["bindings"]] == ["all-managed"]
+    assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["all-managed"]
 
 
 def test_policies_lists_the_namespace_for_the_create_form(client: TestClient) -> None:
@@ -313,6 +341,7 @@ def test_openapi_schema_names_every_operation(client: TestClient) -> None:
         "/sandboxes/{name}/archive",
         "/sandboxes/{name}/unarchive",
         "/sandboxes/{name}/egress",
+        "/sandboxes/{name}/egress/decisions",
         "/egress/policies",
         "/egress/bindings/{name}",
         "/egress/bindings/{name}/approve",

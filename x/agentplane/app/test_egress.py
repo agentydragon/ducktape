@@ -124,14 +124,14 @@ async def test_a_binding_view_carries_provenance_approval_expiry_policies_and_th
     assert ask.subjects[0].sandbox == "live"
 
 
-async def test_approve_and_deny_write_the_approval_as_the_configured_approver(
+async def test_approve_and_deny_write_the_approval_as_the_deciding_operator(
     egress: EgressInventory, custom_objects: FakeCustomObjectsApi
 ) -> None:
     _seed(custom_objects)
 
-    await egress.approve("live-asks")
+    await egress.approve("live-asks", by=APPROVER)
     approved = dict(custom_objects.objects[("egressbindings", "live-asks")]["spec"]["approval"])
-    await egress.deny("live-asks")
+    await egress.deny("live-asks", by=APPROVER)
     denied = dict(custom_objects.objects[("egressbindings", "live-asks")]["spec"]["approval"])
 
     assert (approved["state"], approved["by"]) == ("approved", APPROVER)
@@ -139,7 +139,7 @@ async def test_approve_and_deny_write_the_approval_as_the_configured_approver(
     assert approved["at"].endswith("Z")
     assert denied["at"] >= approved["at"]
     with pytest.raises(BindingNotFoundError):
-        await egress.approve("nope")
+        await egress.approve("nope", by=APPROVER)
 
 
 async def test_revoke_deletes_a_runtime_binding_and_refuses_one_from_git(
@@ -163,7 +163,7 @@ async def test_grant_creates_an_approved_binding_the_sandbox_owns(
     _seed(custom_objects)
     uid = uuid4()
 
-    await egress.grant(sandbox="live", sandbox_uid=uid, policies=["pypi", "github"])
+    await egress.grant(sandbox="live", sandbox_uid=uid, policies=["pypi", "github"], by=APPROVER)
 
     created = custom_objects.objects[("egressbindings", "live-picked")]
     assert created["metadata"]["labels"] == {GRANTED_BY_LABEL: APPROVER}

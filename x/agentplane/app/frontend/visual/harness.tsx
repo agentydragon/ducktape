@@ -12,7 +12,7 @@ import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";
 
 import App from "../app";
-import type { EgressView, PolicyView, SandboxView, ThreadView } from "../client";
+import type { BindingView, Decision, PolicyView, SandboxView, ThreadView } from "../client";
 import {
   AttachedSchema,
   Direction,
@@ -126,7 +126,7 @@ const POLICIES: PolicyView[] = [
 ];
 
 /** One seed binding from git, active; one runtime ask still pending, which the proxy has refused so far. */
-const BINDINGS: EgressView["bindings"] = [
+const BINDINGS: BindingView[] = [
   {
     name: "demo-a1b2-asks",
     granted_by: "agent",
@@ -159,7 +159,7 @@ const BINDINGS: EgressView["bindings"] = [
   },
 ];
 
-const DECISIONS: NonNullable<EgressView["decisions"]> = [
+const DECISIONS: Decision[] = [
   {
     at: ago(9 * 60_000),
     method: "CONNECT",
@@ -215,15 +215,11 @@ const DECISIONS: NonNullable<EgressView["decisions"]> = [
 ];
 
 /** The phone scenario shows the proxy unreachable, the desktop one its decisions; both fit on a page. */
-function egressView(): EgressView {
+function egressDecisions(): Decision[] | Response {
   if (window.matchMedia("(max-width: 600px)").matches) {
-    return {
-      bindings: BINDINGS,
-      decisions: null,
-      decisions_error: "the egress proxy did not answer: connection refused",
-    };
+    return Response.json({ detail: "the egress proxy did not answer: connection refused" }, { status: 502 });
   }
-  return { bindings: BINDINGS, decisions: DECISIONS, decisions_error: null };
+  return DECISIONS;
 }
 
 const SPEC: SessionSpec = create(SessionSpecSchema, {
@@ -316,7 +312,8 @@ routes.push(
   ["GET", /^\/egress\/policies$/, () => POLICIES],
   ["GET", /^\/sandboxes$/, () => SANDBOXES],
   ["GET", /^\/sandboxes\/([^/]+)$/, (match) => SANDBOXES.find((row) => row.name === match[1])],
-  ["GET", /^\/sandboxes\/([^/]+)\/egress$/, () => egressView()],
+  ["GET", /^\/sandboxes\/([^/]+)\/egress$/, () => BINDINGS],
+  ["GET", /^\/sandboxes\/([^/]+)\/egress\/decisions$/, () => egressDecisions()],
   ["GET", /^\/sandboxes\/([^/]+)\/sessions$/, () => SESSIONS.map((session) => toJson(SessionSummarySchema, session))],
   [
     "GET",

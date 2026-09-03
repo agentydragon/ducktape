@@ -78,12 +78,12 @@ def inventory(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api) -> S
     )
 
 
-APPROVER = "test-app"
+APPROVER = "test-operator"
 
 
 @pytest.fixture
 def egress(custom_objects: FakeCustomObjectsApi) -> EgressInventory:
-    return EgressInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom_objects), approver=APPROVER)
+    return EgressInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom_objects))
 
 
 @pytest.fixture

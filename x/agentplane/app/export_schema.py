@@ -36,7 +36,7 @@ def openapi_document() -> dict[str, Any]:
         RunnerBridge(address_of=_unreachable, store=store),
         store,
         {provider: ["schema-model"] for provider in Provider},
-        EgressInventory(namespace="schema", custom_objects=cast(Any, None), approver="schema"),
+        EgressInventory(namespace="schema", custom_objects=cast(Any, None)),
         DecisionsClient(httpx.AsyncClient(base_url="http://schema.invalid")),
     ).openapi()
     return document

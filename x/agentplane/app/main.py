@@ -25,7 +25,7 @@ from x.agentplane.app.api import ModelCatalog, create_app
 from x.agentplane.app.bridge import RunnerBridge, runner_address
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
-from x.agentplane.app.inventory import LabelValue, ProvisioningState, SandboxInventory
+from x.agentplane.app.inventory import ProvisioningState, SandboxInventory
 from x.agentplane.app.trajectory import TrajectoryStore
 
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
@@ -84,9 +84,6 @@ class Settings(BaseSettings):
     egress_admin_timeout: float = Field(
         default=5, description="Seconds to wait for the proxy before showing rules only."
     )
-    approver: LabelValue = Field(
-        description="Who approvals and launch-time grants are recorded as, in spec.approval.by and the granted-by label."
-    )
 
     def __init__(self, **values: Any) -> None:
         # BaseSettings fills required fields from its sources; spell that out because the mypy plugin
@@ -132,9 +129,7 @@ async def async_main(settings: Settings) -> None:
             custom_objects=custom_objects,
             core_v1=CoreV1Api(api),
         )
-        egress = EgressInventory(
-            namespace=settings.namespace, custom_objects=custom_objects, approver=settings.approver
-        )
+        egress = EgressInventory(namespace=settings.namespace, custom_objects=custom_objects)
         store = TrajectoryStore.connect(settings.database_url)
         await store.ensure_schema()
         bridge = RunnerBridge(address_of=runner_address(inventory, settings.runner_port), store=store)
