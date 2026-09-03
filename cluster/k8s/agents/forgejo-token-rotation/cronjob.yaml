@@ -43,9 +43,6 @@ spec:
             - name: agent-box-codex-forgejo
               secret:
                 secretName: forgejo-token-mint-agent-box-codex
-            - name: codex-pod-forgejo
-              secret:
-                secretName: forgejo-token-mint-codex-pod
           securityContext:
             runAsNonRoot: true
             runAsUser: 65534
@@ -77,9 +74,6 @@ spec:
                   readOnly: true
                 - name: agent-box-codex-forgejo
                   mountPath: /var/run/secrets/forgejo/agent-box-codex
-                  readOnly: true
-                - name: codex-pod-forgejo
-                  mountPath: /var/run/secrets/forgejo/codex-pod
                   readOnly: true
               resources:
                 requests:

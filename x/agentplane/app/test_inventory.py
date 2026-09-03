@@ -15,6 +15,7 @@ from x.agentplane.app.inventory import (
     ProvisioningState,
     SandboxInventory,
     SandboxNotFoundError,
+    SandboxRunningError,
 )
 from x.agentplane.app.testing.kubernetes import (
     POD_TEMPLATE,
@@ -181,17 +182,33 @@ async def test_unarchive_clears_the_label_and_leaves_the_sandbox_suspended(
     assert (await inventory.get("shelved")).state == ProvisioningState.SUSPENDED
 
 
-async def test_delete_removes_the_sandbox(
+async def test_delete_takes_a_suspended_sandbox_and_refuses_a_running_one(
     inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
 ) -> None:
     """The controller, not the app, takes the Pod and PVC down behind the Sandbox."""
     _populate_one_of_each_state(custom_objects, core_v1)
 
+    with pytest.raises(SandboxRunningError):
+        await inventory.delete("live")
+    assert custom_objects.deleted == []
+
+    await inventory.suspend("live")
     await inventory.delete("live")
 
     assert custom_objects.deleted == [("sandboxes", "live")]
     with pytest.raises(SandboxNotFoundError):
         await inventory.delete("live")
+
+
+async def test_delete_removes_an_archived_sandbox(
+    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
+) -> None:
+    """An archived sandbox is a suspended one, so the shelf does not block deletion."""
+    _populate_one_of_each_state(custom_objects, core_v1)
+
+    await inventory.delete("shelved")
+
+    assert custom_objects.deleted == [("sandboxes", "shelved")]
 
 
 if __name__ == "__main__":

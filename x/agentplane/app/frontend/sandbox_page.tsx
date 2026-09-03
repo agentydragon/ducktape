@@ -6,6 +6,7 @@ import { create } from "@bufbuild/protobuf";
 
 import { api, displayableError, listSessions, openSession, type Condition, type SandboxView } from "./client";
 import { EgressSection } from "./egress";
+import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
 import { liveSandboxUrl, LiveStatus, useLive, type SandboxSnapshot } from "./live";
 import { HarnessState, Provider, SessionSpecSchema, type SessionSummary } from "./protocol_pb";
 
@@ -124,6 +125,7 @@ export function SandboxPage({
   const [harness, setHarness] = useState<Harness>("claude");
   const [models, setModels] = useState<string[]>([]);
   const [model, setModel] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const live = useLive<SandboxSnapshot>(liveSandboxUrl(name));
   const sandbox: SandboxView | null = live.snapshot?.sandbox ?? null;
@@ -160,6 +162,23 @@ export function SandboxPage({
     })();
   }, [harness]);
 
+  // No re-read after an action: the change reaches the API server, and the watch behind the
+  // stream brings the sandbox's new state back on its own.
+  async function act(action: "suspend" | "resume"): Promise<void> {
+    const { error: failure } = await api.POST(`/sandboxes/{name}/${action}`, { params: { path: { name } } });
+    setError(failure ? displayableError(failure) : null);
+  }
+
+  /** Deleting leaves nothing to look at, so a deleted sandbox takes the view back to the list. */
+  async function remove(): Promise<void> {
+    const { error: failure } = await api.DELETE("/sandboxes/{name}", { params: { path: { name } } });
+    if (!failure) {
+      onBack();
+      return;
+    }
+    setError(displayableError(failure));
+  }
+
   async function createSession(): Promise<void> {
     if (!sandbox || !model) return;
     try {
@@ -188,8 +207,24 @@ export function SandboxPage({
         <Title order={2}>{name}</Title>
         {sandbox && <Badge>{sandbox.state}</Badge>}
         {sandbox?.profile && <Badge variant="light">profile: {sandbox.profile}</Badge>}
+        {sandbox && (
+          <Group gap="xs" ml="auto" wrap="nowrap">
+            <SuspendResume sandbox={sandbox} onAct={(action) => void act(action)} />
+            <DeleteButton sandbox={sandbox} onDelete={() => setConfirmingDelete(true)} />
+          </Group>
+        )}
       </Group>
       <LiveStatus live={live} />
+      {confirmingDelete && (
+        <ConfirmDelete
+          name={name}
+          onCancel={() => setConfirmingDelete(false)}
+          onConfirm={() => {
+            setConfirmingDelete(false);
+            void remove();
+          }}
+        />
+      )}
       {error && <Text c="red">{error}</Text>}
       {live.snapshot !== null && sandbox === null && <Text c="red">There is no sandbox {name} any more.</Text>}
       {sandbox && sandbox.state !== "running" && (

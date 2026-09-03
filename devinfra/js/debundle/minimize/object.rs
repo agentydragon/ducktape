@@ -1,5 +1,5 @@
 //! Object-valued `var` selector minimization: chunk-wide read-off then a
-//! slot-aware key-set cover (`OBJECT_PROPS` around the discriminating keys).
+//! slot-aware key-set cover (`ANYTHING` run holes around the discriminating keys).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -106,7 +106,7 @@ fn cover_object_slot(
 /// Handles the single-target object whether it stands alone or sits inside a
 /// multi-declarator group (one target slot, `DECLARATORS_*` holes for the rest).
 /// Two passes, both rendering through one slot-aware `render_with` that holes the
-/// object with [`hole_object_padded`] (interleaved `OBJECT_PROPS`) so the kept key
+/// object with [`hole_object_padded`] (interleaved `ANYTHING`) so the kept key
 /// subset survives key reorder:
 ///
 ///   1. **Read-off.** The chunk-wide shape index ranks the statement's own
@@ -116,8 +116,8 @@ fn cover_object_slot(
 ///      this selector holes away), and the matcher proves the restricted pin.
 ///   2. **Cover fallback.** A matcher-driven minimal cover over the target
 ///      object's own keys (and direct literal values) — the key-set analogue of
-///      greedy set-cover: anchor the rarest discriminating keys, `OBJECT_PROPS`
-///      the common ones. This is what singles out a target object inside a
+///      greedy set-cover: anchor the rarest discriminating keys, hole the
+///      common ones. This is what singles out a target object inside a
 ///      multi-declarator group, where the chunk-wide read-off cannot see the
 ///      per-slot key sets.
 ///
@@ -169,7 +169,7 @@ pub(crate) fn try_object_read_off_candidates(
     // Slot-aware render via the shared var-slot renderer: `DECLARATORS_*` holes
     // for the non-target declarators (none when the target stands alone), the
     // target's object holed to its kept keys padded + interleaved with
-    // `OBJECT_PROPS` (`hole_var_init_padded`'s object arm). The object path never
+    // `ANYTHING` (`hole_var_init_padded`'s object arm). The object path never
     // upgrades to a regex anchor, so the regex map is always empty.
     let only_target = BTreeSet::from([target_slot]);
     let no_regex: BTreeMap<AnchorSpan, String> = BTreeMap::new();

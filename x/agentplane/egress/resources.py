@@ -95,24 +95,10 @@ class SelectedSubjects(_Wire):
 type Subject = NamedSubject | SelectedSubjects
 
 
-class ApprovalState(StrEnum):
-    PENDING = "pending"
-    APPROVED = "approved"
-    DENIED = "denied"
-
-
-class Approval(_Wire):
-    state: ApprovalState
-    by: str | None = None
-    at: AwareDatetime | None = None
-
-
 class BindingSpec(_Wire):
     subjects: list[Subject]
     policies: list[str] = Field(description="EgressPolicy names in the same namespace, in precedence order.")
     expires_at: AwareDatetime | None = Field(default=None, alias="expiresAt")
-    # An absent approval is a pending one: the resource grants nothing until someone approves it.
-    approval: Approval = Field(default_factory=lambda: Approval(state=ApprovalState.PENDING))
 
 
 class ConditionStatus(StrEnum):
@@ -125,7 +111,6 @@ class ActiveReason(StrEnum):
 
     RESOLVED = "Resolved"
     EXPIRED = "Expired"
-    NOT_APPROVED = "NotApproved"
     MISSING_POLICY = "MissingPolicy"
 
 

@@ -34,7 +34,6 @@ from x.agentplane.app.trajectory import TrajectoryStore
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
 MODELS = {Provider.CLAUDE: ["test-claude-model"], Provider.CODEX: ["test-codex-model"]}
-APPROVED = {"state": "approved", "by": "test-operator", "at": "2026-09-01T12:00:00Z"}
 
 
 @pytest.fixture
@@ -49,13 +48,10 @@ def seeded(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, live_in
         "github", [{"hosts": ["api.github.com"], "methods": ["GET"]}]
     )
     custom_objects.objects[("egressbindings", "coders")] = egress_binding(
-        "coders",
-        subjects=[{"sandboxSelector": {"matchLabels": {PROFILE_LABEL: "coder"}}}],
-        policies=["github"],
-        approval=APPROVED,
+        "coders", subjects=[{"sandboxSelector": {"matchLabels": {PROFILE_LABEL: "coder"}}}], policies=["github"]
     )
     custom_objects.objects[("egressbindings", "elsewhere")] = egress_binding(
-        "elsewhere", subjects=[{"sandbox": {"name": "shelved"}}], policies=["github"], approval=APPROVED
+        "elsewhere", subjects=[{"sandbox": {"name": "shelved"}}], policies=["github"]
     )
     for (kind, name), obj in custom_objects.objects.items():
         match kind:

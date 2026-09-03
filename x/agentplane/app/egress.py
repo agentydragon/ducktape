@@ -1,17 +1,18 @@
 """The namespace's egress policy as the app shows and edits it: EgressPolicies and EgressBindings.
 
 The proxy (x/agentplane/egress) enforces these resources; the app reads the same objects through the
-API server, presents the bindings that name a sandbox with their provenance, approval, expiry, and
-resolved policies, and changes approval or deletes a binding under its own RBAC. Nothing here is in
-the enforcement path: the proxy's `Active` condition is shown as written, never recomputed.
+API server, presents the bindings that name a sandbox with their provenance, expiry and resolved
+policies, and creates or deletes a runtime binding under its own RBAC. A binding is desired state,
+so creating one is the whole act of granting and deleting one is the whole act of taking it back;
+there is no decision to record on it afterwards. Nothing here is in the enforcement path: the
+proxy's `Active` condition is shown as written, never recomputed.
 """
 
 from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterable
-from datetime import UTC, datetime
-from enum import StrEnum
+from datetime import datetime
 from uuid import UUID
 
 from kubernetes_asyncio import client as k8s_client
@@ -23,7 +24,7 @@ from x.agentplane.app.inventory import Condition, InventoryError
 
 GRANTED_BY_LABEL = "agentplane.allegedly.works/granted-by"
 # The provenance a Flux-applied binding carries (cluster/k8s/agentplane-staging/egress); nothing at
-# runtime touches such a binding, since Flux prunes only what it applied.
+# runtime deletes such a binding, since the next reconcile would apply it again.
 FLUX_PROVENANCE = "flux"
 ACTIVE_CONDITION = "Active"
 
@@ -31,7 +32,6 @@ EGRESS_API = ("agentplane.allegedly.works", "v1alpha1")
 POLICIES_PLURAL = "egresspolicies"
 BINDINGS_PLURAL = "egressbindings"
 _SANDBOX_API_VERSION = "agents.x-k8s.io/v1beta1"
-_MERGE_PATCH = "application/merge-patch+json"
 
 
 class BindingNotFoundError(InventoryError):
@@ -46,12 +46,6 @@ class FluxOwnedBindingError(InventoryError):
     def __init__(self, name: str) -> None:
         super().__init__(f"EgressBinding {name=} comes from git; remove it there")
         self.name = name
-
-
-class ApprovalState(StrEnum):
-    PENDING = "pending"
-    APPROVED = "approved"
-    DENIED = "denied"
 
 
 # Kubernetes-boundary models: the subset of each resource the app reads, parsed once off the wire.
@@ -114,17 +108,10 @@ class _Subject(_Wire):
         return False
 
 
-class _Approval(_Wire):
-    state: ApprovalState
-    by: str | None = None
-    at: AwareDatetime | None = None
-
-
 class _BindingSpec(_Wire):
     subjects: list[_Subject]
     policies: list[str]
     expires_at: AwareDatetime | None = Field(alias="expiresAt", default=None)
-    approval: _Approval
 
 
 class _BindingStatus(_Wire):
@@ -184,13 +171,10 @@ class BindingView(BaseModel):
 
     name: str
     granted_by: str | None = Field(
-        description="The provenance label: flux, or the operator who granted it through the app."
+        description="The provenance label, which is who allowed this: flux, or the caller who granted it."
     )
-    from_git: bool = Field(description="Flux applied it; approval is editable, deletion is git's.")
+    from_git: bool = Field(description="Flux applied it; removing it is git's.")
     subjects: list[SubjectView]
-    approval: ApprovalState
-    approved_by: str | None = None
-    approved_at: datetime | None = None
     expires_at: datetime | None = None
     policies: list[PolicyView] = Field(description="The named policies that exist, in the binding's order.")
     missing_policies: list[str] = Field(description="Names in the binding that no EgressPolicy answers to.")
@@ -207,40 +191,30 @@ class EgressInventory:
         self._custom_objects = custom_objects
 
     async def list_policies(self) -> list[PolicyView]:
-        page = await self._custom_objects.list_namespaced_custom_object(*EGRESS_API, self._namespace, POLICIES_PLURAL)
-        return policy_views(_ResourceList.model_validate(page).items)
+        return policy_views(_ResourceList.model_validate(await self._list(POLICIES_PLURAL)).items)
 
     async def bindings_for(self, sandbox: str, labels: dict[str, str]) -> list[BindingView]:
         """Every binding with a subject naming the sandbox or selecting its labels, in name order."""
-        policies_page, bindings_page = await asyncio.gather(
-            self._custom_objects.list_namespaced_custom_object(*EGRESS_API, self._namespace, POLICIES_PLURAL),
-            self._custom_objects.list_namespaced_custom_object(*EGRESS_API, self._namespace, BINDINGS_PLURAL),
-        )
+        policies, bindings = await asyncio.gather(self._list(POLICIES_PLURAL), self._list(BINDINGS_PLURAL))
         return matching_bindings(
-            _ResourceList.model_validate(bindings_page).items,
-            _ResourceList.model_validate(policies_page).items,
+            _ResourceList.model_validate(bindings).items,
+            _ResourceList.model_validate(policies).items,
             sandbox=sandbox,
             labels=labels,
         )
 
-    async def approve(self, name: str, *, by: Caller) -> None:
-        await self._decide(name, ApprovalState.APPROVED, by)
-
-    async def deny(self, name: str, *, by: Caller) -> None:
-        await self._decide(name, ApprovalState.DENIED, by)
-
     async def revoke(self, name: str) -> None:
-        """Delete a runtime binding; a Flux-applied one is refused, git being its owner."""
-        binding = await self._binding(name)
-        if binding.metadata.labels.get(GRANTED_BY_LABEL) == FLUX_PROVENANCE:
+        """Delete a runtime binding, which is how a grant is taken back; a Flux-applied one is
+        refused, git being its owner."""
+        if (await self._binding(name)).metadata.labels.get(GRANTED_BY_LABEL) == FLUX_PROVENANCE:
             raise FluxOwnedBindingError(name)
         await self._custom_objects.delete_namespaced_custom_object(
             *EGRESS_API, self._namespace, BINDINGS_PLURAL, name, body=k8s_client.V1DeleteOptions()
         )
 
     async def grant(self, *, sandbox: str, sandbox_uid: UUID, policies: list[str], by: Caller) -> None:
-        """The launch-time pick: one approved binding of the sandbox to the policies, approved by
-        and labelled as granted by `by`, owned by the Sandbox so its deletion garbage-collects it."""
+        """The launch-time pick: one binding of the sandbox to the policies, labelled as granted by
+        `by`, owned by the Sandbox so its deletion garbage-collects it. Creating it is the grant."""
         body = {
             "apiVersion": "/".join(EGRESS_API),
             "kind": "EgressBinding",
@@ -260,24 +234,12 @@ class EgressInventory:
                     }
                 ],
             },
-            "spec": {
-                "subjects": [{"sandbox": {"name": sandbox}}],
-                "policies": policies,
-                "approval": {"state": ApprovalState.APPROVED, "by": by.name, "at": _now()},
-            },
+            "spec": {"subjects": [{"sandbox": {"name": sandbox}}], "policies": policies},
         }
         await self._custom_objects.create_namespaced_custom_object(*EGRESS_API, self._namespace, BINDINGS_PLURAL, body)
 
-    async def _decide(self, name: str, state: ApprovalState, by: Caller) -> None:
-        await self._binding(name)
-        await self._custom_objects.patch_namespaced_custom_object(
-            *EGRESS_API,
-            self._namespace,
-            BINDINGS_PLURAL,
-            name,
-            {"spec": {"approval": {"state": state, "by": by.name, "at": _now()}}},
-            _content_type=_MERGE_PATCH,
-        )
+    async def _list(self, plural: str) -> dict[str, object]:
+        return await self._custom_objects.list_namespaced_custom_object(*EGRESS_API, self._namespace, plural)
 
     async def _binding(self, name: str) -> _EgressBinding:
         try:
@@ -315,10 +277,6 @@ def policy_views(policies: Iterable[object]) -> list[PolicyView]:
     return [_policy_view(_EgressPolicy.model_validate(policy)) for policy in policies]
 
 
-def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
-
-
 def _policy_view(policy: _EgressPolicy) -> PolicyView:
     return PolicyView(
         name=policy.metadata.name,
@@ -354,9 +312,6 @@ def _binding_view(binding: _EgressBinding, policies: dict[str, PolicyView]) -> B
             )
             for subject in binding.spec.subjects
         ],
-        approval=binding.spec.approval.state,
-        approved_by=binding.spec.approval.by,
-        approved_at=binding.spec.approval.at,
         expires_at=binding.spec.expires_at,
         policies=[policies[name] for name in binding.spec.policies if name in policies],
         missing_policies=[name for name in binding.spec.policies if name not in policies],

@@ -2,8 +2,8 @@
 
 Authentik's application policy binding still decides who may log in, so there is no allowlist here:
 a token this issuer signed is an operator. The session is a signed cookie and nothing more -- no
-store, no refresh -- because the only thing the app does with an identity is name it in an egress
-approval, and a cookie's own deadline is the revocation the app can honour.
+store, no refresh -- because the only thing the app does with an identity is label an egress grant
+with it, and a cookie's own deadline is the revocation the app can honour.
 
 A login exists iff `AGENTPLANE_OIDC_ISSUER` is set. Unset, a browser has no way in and the only
 credential the app accepts is a Kubernetes token (`identity.py`); the API is guarded either way.

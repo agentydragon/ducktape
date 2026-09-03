@@ -72,10 +72,10 @@ The orchestrator or project adapter provides:
    throwaway expression, statement, pattern, object-property-list,
    declarator-list, and class-rest positions. In object literal or
    destructuring-heavy selectors, pin only enough stable anchors to identify the
-   target uniquely, and no more; put `ANYTHING` or `OBJECT_PROPS_*` between them
+   target uniquely, and no more; put `ANYTHING` between them
    instead of spelling unrelated generated structure. Use typed holes or readability labels
-   (`EXPR`, `STMT`, `ARGS`, `STMT_LIST`, `OBJECT_PROPS`, `CLASS_REST`, or
-   `DECLARATORS`) when the role, list behavior, or label makes
+   (`EXPR`, `STMT`, `ARGS`, `STMT_LIST`, `CASE_REST`, or `DECLARATORS`) when
+   the role, list behavior, or label makes
    diagnostics/readability better. For one selected declarator inside a wider
    comma-list declaration, write a single-declarator `source_matches[]` entry
    with an explicit `bindings[]` claim and optional adjacent top-level context
@@ -95,7 +95,7 @@ The orchestrator or project adapter provides:
    the concrete blocker and desired feature, and route that blocker back to
    Ducktape tooling. Do not leave blocker notes for one-declarator-in-comma-list
    selectors or object literal property gaps; use the supported `bindings[]`,
-   `ANYTHING`, and `OBJECT_PROPS` patterns above.
+   and `ANYTHING` patterns above.
 
 6. Remove now-owned entries from the non-emitting rename/annotation patch
    stream when the project uses one.

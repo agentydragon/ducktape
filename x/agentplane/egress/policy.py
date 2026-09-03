@@ -20,7 +20,6 @@ from typing import assert_never
 from x.agentplane.egress.resources import (
     ACTIVE_CONDITION,
     ActiveReason,
-    ApprovalState,
     BindingStatus,
     Condition,
     ConditionStatus,
@@ -139,8 +138,6 @@ def resolve_binding(index: Index, binding: EgressBinding, now: datetime) -> Bind
     spec = binding.spec
     if spec.expires_at is not None and spec.expires_at <= now:
         reason = ActiveReason.EXPIRED
-    elif spec.approval.state is not ApprovalState.APPROVED:
-        reason = ActiveReason.NOT_APPROVED
     elif not policies:
         reason = ActiveReason.MISSING_POLICY
     else:

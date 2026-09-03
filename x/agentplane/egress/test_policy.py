@@ -24,8 +24,6 @@ from x.agentplane.egress.policy import (
 )
 from x.agentplane.egress.resources import (
     ActiveReason,
-    Approval,
-    ApprovalState,
     BindingSpec,
     ConditionStatus,
     Credential,
@@ -60,19 +58,13 @@ def policy(name: str, *rules: Rule) -> EgressPolicy:
 
 
 def binding(
-    name: str,
-    *,
-    policies: list[str],
-    subjects: list[Subject] | None = None,
-    approval: ApprovalState = ApprovalState.APPROVED,
-    expires_at: datetime | None = None,
+    name: str, *, policies: list[str], subjects: list[Subject] | None = None, expires_at: datetime | None = None
 ) -> EgressBinding:
     return EgressBinding(
         metadata=ObjectMeta(name=name, generation=3),
         spec=BindingSpec(
             subjects=subjects if subjects is not None else [NamedSubject(sandbox=SandboxRef(name="sb"))],
             policies=policies,
-            approval=Approval(state=approval),
             expires_at=expires_at,
         ),
     )
@@ -217,24 +209,6 @@ CASES = [
         Allowed("b", "github", 0),
     ),
     Case(
-        "pending binding",
-        index(
-            policies=[policy("github", GITHUB_RULE)],
-            bindings=[binding("b", policies=["github"], approval=ApprovalState.PENDING)],
-        ),
-        request(),
-        Denied(DenyReason.NO_BINDING),
-    ),
-    Case(
-        "denied binding",
-        index(
-            policies=[policy("github", GITHUB_RULE)],
-            bindings=[binding("b", policies=["github"], approval=ApprovalState.DENIED)],
-        ),
-        request(),
-        Denied(DenyReason.NO_BINDING),
-    ),
-    Case(
         "missing policy",
         index(policies=[], bindings=[binding("b", policies=["github"])]),
         request(),
@@ -343,22 +317,7 @@ def test_path_matches(pattern: str, path: str, expected: bool) -> None:
         ),
         (binding("b", policies=["absent"]), [], ConditionStatus.FALSE, ActiveReason.MISSING_POLICY, 0),
         (
-            binding("b", policies=["github"], approval=ApprovalState.PENDING),
-            [policy("github", GITHUB_RULE)],
-            ConditionStatus.FALSE,
-            ActiveReason.NOT_APPROVED,
-            1,
-        ),
-        (
             binding("b", policies=["github"], expires_at=NOW),
-            [policy("github", GITHUB_RULE)],
-            ConditionStatus.FALSE,
-            ActiveReason.EXPIRED,
-            1,
-        ),
-        # Expiry outranks approval: approving an expired binding changes nothing.
-        (
-            binding("b", policies=["github"], approval=ApprovalState.PENDING, expires_at=NOW),
             [policy("github", GITHUB_RULE)],
             ConditionStatus.FALSE,
             ActiveReason.EXPIRED,
@@ -386,9 +345,7 @@ def test_binding_status_keeps_transition_time_while_status_holds() -> None:
     settled = BASE_INDEX.bindings["b"].model_copy(update={"status": first})
     later = NOW + timedelta(minutes=5)
     assert binding_status(BASE_INDEX, settled, later) == first
-    flipped = settled.model_copy(
-        update={"spec": settled.spec.model_copy(update={"approval": Approval(state=ApprovalState.DENIED)})}
-    )
+    flipped = settled.model_copy(update={"spec": settled.spec.model_copy(update={"expires_at": NOW})})
     assert binding_status(BASE_INDEX, flipped, later).conditions[0].last_transition_time == later
 
 

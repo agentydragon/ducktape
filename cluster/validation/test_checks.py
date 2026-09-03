@@ -199,7 +199,7 @@ def _egress_binding(namespace: str, policies: list[str], granted_by: str | None 
         "apiVersion": "agentplane.allegedly.works/v1alpha1",
         "kind": "EgressBinding",
         "metadata": {"name": "binding", "namespace": namespace, "labels": labels},
-        "spec": {"subjects": [{"sandbox": {"name": "box"}}], "policies": policies, "approval": {"state": "approved"}},
+        "spec": {"subjects": [{"sandbox": {"name": "box"}}], "policies": policies},
     }
 
 

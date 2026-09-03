@@ -15,11 +15,10 @@ import {
 } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
-import IconPlayerPause from "@tabler/icons-react/dist/esm/icons/IconPlayerPause.mjs";
-import IconPlayerPlay from "@tabler/icons-react/dist/esm/icons/IconPlayerPlay.mjs";
 import { useEffect, useState } from "react";
 
 import { api, displayableError, type Condition, type NewSandbox, type SandboxView } from "./client";
+import { ConfirmDelete, deletable, SuspendResume } from "./lifecycle";
 import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "./live";
 
 const EMPTY_FORM: NewSandbox = { slug: "", profile: null, policies: [] };
@@ -74,6 +73,8 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const [form, setForm] = useState<NewSandbox>(EMPTY_FORM);
   // The namespace's individual policies; ticking some grants them on top of the profile's binding.
   const [policies, setPolicies] = useState<string[]>([]);
+  // The sandbox whose deletion is being confirmed, by name; deleting takes its volume with it.
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const live = useLive<SandboxesSnapshot>(liveSandboxesUrl(includeArchived));
   const rows: SandboxView[] = live.snapshot?.sandboxes ?? [];
 
@@ -111,6 +112,16 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     <Stack>
       <Title order={2}>Sandboxes</Title>
       <LiveStatus live={live} />
+      {confirmingDelete !== null && (
+        <ConfirmDelete
+          name={confirmingDelete}
+          onCancel={() => setConfirmingDelete(null)}
+          onConfirm={() => {
+            void act(confirmingDelete, "delete");
+            setConfirmingDelete(null);
+          }}
+        />
+      )}
       {error && <Text c="red">{error}</Text>}
       <Group align="flex-end">
         <TextInput
@@ -177,19 +188,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                 <Table.Td visibleFrom="sm">{node}</Table.Td>
                 <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
                   <Group gap="xs" wrap="nowrap" justify="flex-end">
-                    {row.state === "suspended" || row.state === "archived" ? (
-                      <Tooltip label="Resume" withArrow>
-                        <ActionIcon variant="light" aria-label="Resume" onClick={() => void act(row.name, "resume")}>
-                          <IconPlayerPlay size={16} />
-                        </ActionIcon>
-                      </Tooltip>
-                    ) : (
-                      <Tooltip label="Suspend" withArrow>
-                        <ActionIcon variant="light" aria-label="Suspend" onClick={() => void act(row.name, "suspend")}>
-                          <IconPlayerPause size={16} />
-                        </ActionIcon>
-                      </Tooltip>
-                    )}
+                    <SuspendResume sandbox={row} onAct={(action) => void act(row.name, action)} />
                     <Menu position="bottom-end">
                       <Menu.Target>
                         <ActionIcon variant="subtle" aria-label={`More actions for ${row.name}`}>
@@ -202,7 +201,8 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                         ) : (
                           <Menu.Item onClick={() => void act(row.name, "archive")}>Archive</Menu.Item>
                         )}
-                        <Menu.Item color="red" onClick={() => void act(row.name, "delete")}>
+                        {/* The API refuses a running sandbox (inventory.py); suspend is one click left. */}
+                        <Menu.Item color="red" disabled={!deletable(row)} onClick={() => setConfirmingDelete(row.name)}>
                           Delete
                         </Menu.Item>
                       </Menu.Dropdown>

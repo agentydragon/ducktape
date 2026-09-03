@@ -317,7 +317,7 @@ minimizer_expectation_case!(
 // target declarator slot's minimal anchor off the shape index + a slot-aware
 // greedy, restricts the kept spans to that slot, UNIONs them, and proves the
 // tuple through the binding-group matcher — so each slot pins only its
-// discriminating key with `OBJECT_PROPS` for the gaps and a `DECLARATORS` gap for
+// discriminating key with `ANYTHING` for the gaps and a `DECLARATORS` gap for
 // the non-target third declarator, instead of the keep-shallow path's over-pin
 // (which, with every value already a non-literal member access, would escalate to
 // keeping *every* key of both target objects). The per-slot declarator-tuple
@@ -366,8 +366,8 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
-// A target class among many same-shape sibling classes minimizes to CLASS_REST
-// holes plus the one member run carrying the discriminating value anchor (the
+// A target class among many same-shape sibling classes minimizes to `ANYTHING;`
+// class-member holes plus the one member run carrying the discriminating value anchor (the
 // unique `accept:` string), holing the receiver and the non-discriminating
 // properties — never emitting the full class body (cf. the real
 // `infra/http/PlatformApiService.yaml` conversion, ~330 lines). Routed through
@@ -382,9 +382,9 @@ minimizer_expectation_case!(
 );
 
 // A large object literal that shares most keys with sibling objects minimizes
-// to OBJECT_PROPS holes on both sides of the single discriminating key, so the
+// to `ANYTHING` holes on both sides of the single discriminating key, so the
 // selector survives key reordering. W3 routed the single-target object form
-// through the read-off shape index + padded-OBJECT_PROPS renderer, replacing the
+// through the read-off shape index + padded-run-hole renderer, replacing the
 // old retention path that kept all ~50 keys (each held to ANYTHING).
 minimizer_expectation_case!(
     minimizes_object_keys_over_pinned,
@@ -397,7 +397,7 @@ minimizer_expectation_case!(
 
 // A subclass among many sibling subclasses of a shared base minimizes to the
 // `extends` clause (superclass holed with ANYTHING) plus the single
-// discriminating class field, with CLASS_REST holes absorbing every other
+// discriminating class field, with `ANYTHING;` holes absorbing every other
 // member. The read-off prefers the field's semantic value literal
 // (`kind = "uniqueDiscriminatorShape"`) over the equally-selective `area` method
 // name, anchoring on the value that survives a rebuild rather than the member
@@ -447,7 +447,7 @@ minimizer_expectation_case!(
 );
 
 // A target object inside a multi-declarator group of sibling enum/lookup objects
-// minimizes to DECLARATORS holes around the target declarator plus OBJECT_PROPS
+// minimizes to DECLARATORS holes around the target declarator plus `ANYTHING`
 // holes on both sides of the single discriminating entry. The slot-aware
 // `cover_object_slot` greedy pins the entry whose value is globally unique
 // (`accent: "uniqueDiscriminatorAccent"`), resolving the binding to the right
@@ -466,7 +466,7 @@ minimizer_expectation_case!(
 // discriminated by its *key set* — every value already holed to ANYTHING (here
 // `theme.base` member accesses shared across all siblings) — the minimizer keeps
 // only the minimal discriminating key (`logViewer`, unique to the target slot)
-// with OBJECT_PROPS holes for the rest, and DECLARATORS holes for the sibling
+// with `ANYTHING` holes for the rest, and DECLARATORS holes for the sibling
 // declarators, instead of keeping every key of the target object. Mirrors the
 // real gaffer CSS-styles dicts (`{ diagnosticsSection: …, detailsToggle: …, … }`)
 // kept whole inside `DECLARATORS`-bracketed groups.
@@ -482,7 +482,7 @@ minimizer_expectation_case!(
 // Key-set minimization needing a *subset* of keys (#2290): no single key is
 // unique (each is shared with one sibling) but the pair `{ alpha, delta }`
 // discriminates the target. With every value holed to ANYTHING, the minimizer
-// keeps exactly those two non-adjacent keys, each surrounded by OBJECT_PROPS so
+// keeps exactly those two non-adjacent keys, each surrounded by `ANYTHING` so
 // the key set matches as independent interior elements (surviving key reorder),
 // rather than keeping all four keys.
 minimizer_expectation_case!(
@@ -495,9 +495,9 @@ minimizer_expectation_case!(
 );
 
 // A large lookup dictionary whose VALUES are nested objects (e.g. an id -> config
-// map) minimizes to OBJECT_PROPS holes on both sides of the one entry whose nested
+// map) minimizes to `ANYTHING` holes on both sides of the one entry whose nested
 // value carries the discriminating literal, and that entry's own nested object
-// itself collapses to the discriminating property plus OBJECT_PROPS. Generalizes
+// itself collapses to the discriminating property plus `ANYTHING`. Generalizes
 // `object_keys_over_pinned` (scalar entry values) to the nested-object-value case;
 // handled by the read-off drilling through the nested object/array holing
 // (`hole_object` / `hole_array` recursion). Mirrors the real spec's id->config
@@ -515,7 +515,7 @@ minimizer_expectation_case!(
 // verbatim across siblings, so non-discriminating) alongside shorter unique
 // features must never anchor on the long value. The cost tiebreak ranks equally
 // selective+stable anchors by retained-source length, so the minimizer picks
-// the *shortest* discriminator and holes everything else with OBJECT_PROPS. Here
+// the *shortest* discriminator and holes everything else with `ANYTHING`. Here
 // the shortest unique feature is `rank: 3` (siblings are rank 1/2), which beats
 // the longer-but-also-unique `id: "uniqueDiscriminatorId"`. Without this, the
 // long shared `prose` value (the largest node) would dominate the kept shape and
@@ -534,7 +534,7 @@ minimizer_expectation_case!(
 
 // Aspirational: a function (commonly a UI component) whose body opens with a
 // wide object-destructuring binding (`const { a, b, c, ... } = props;`) should
-// minimize to OBJECT_PROPS holes around the single destructured property that
+// minimize to `ANYTHING` holes around the single destructured property that
 // discriminates this target from its siblings, plus STMT_LIST holes for the
 // rest of the body. Today the minimizer keeps the entire wide destructuring
 // pattern whole — every destructured name — even when one anchored property
@@ -553,8 +553,8 @@ minimizer_expectation_case!(
 );
 
 // A SINGLE-target class with no same-shape sibling holes its body down to one
-// stable value anchor, absorbing the other members with CLASS_REST. The empty
-// scaffold `class SelectedRunner { CLASS_REST; }` resolves uniquely (it is the only
+// stable value anchor, absorbing the other members with `ANYTHING;`. The empty
+// scaffold `class SelectedRunner { ANYTHING; }` resolves uniquely (it is the only
 // class) but pins nothing rebuild-stable (criterion 5); the robustness-anchor
 // policy instead drills to a value anchor. The *minimal* anchor is
 // `NumberLiteral("0")` — but `0` occurs three times in the body (the two `= 0`
@@ -606,7 +606,7 @@ minimizer_expectation_case!(
 );
 
 // Interior holing: a nested object literal inside a kept call argument should
-// hole its non-anchor properties to `OBJECT_PROPS`, the same way the single-target
+// hole its non-anchor properties to `ANYTHING`, the same way the single-target
 // object form already does at top level. The discriminator is one property
 // (`mode: "uniqueDiscriminatorMode"`); the rest are shared across siblings. Today
 // the minimizer holes the off-anchor receiver (`ctx.engine` -> `ANYTHING`) but
@@ -618,7 +618,7 @@ minimizer_expectation_case!(
 minimizer_expectation_case!(
     minimizes_interior_object_arg_holing,
     fixture = "interior_object_arg_holing",
-    name = "nested object in a kept call arg keeps only the discriminating property, OBJECT_PROPS for the rest",
+    name = "nested object in a kept call arg keeps only the discriminating property, run holes for the rest",
     module = "app/nodes",
     bindings = [("SelectedMover", "selectedMover")],
     expected = "expected_match.js",
@@ -638,7 +638,7 @@ minimizer_expectation_case!(
 // `kind: "panel"` alone discriminates it from `sameRouteDifferentKind`, so the
 // shared non-discriminating leading call arg `"settings"` drops into an `ARGS`
 // run-hole (the minified `registerRoute` callee holes to `ANYTHING`) and the
-// redundant `title: "Settings"` collapses into `OBJECT_PROPS`.
+// redundant `title: "Settings"` collapses into an `ANYTHING` run hole.
 #[test]
 fn minimizes_binding_group_partition() {
     run_case(&MinimizedSelectorCase {
@@ -731,7 +731,7 @@ fn minimizes_adjacent_accessor_group() {
 
 // General co-occurrence grouping for non-function runs: four adjacent sibling
 // *class* declarations, each individually
-// minimized to `class …Card { kind = "<unique>"; CLASS_REST }`, share the same
+// minimized to `class …Card { kind = "<unique>"; ANYTHING; }`, share the same
 // canonical selector shape and collapse into ONE binding_group whose
 // source_match is the consecutive run, instead of four standalone source_match
 // selectors. Exercises that the anti-unification grouping pass is no longer
@@ -851,7 +851,7 @@ minimizer_expectation_case!(
 // IGNORED (dogfood over-pin, 2026-06-17): a class-EXPRESSION-valued `const`
 // (`const X = class { … }`) is pinned whole because the var read-off
 // (`try_var_read_off` → `hole_expr`) has no `Expr::Class` arm, so the class
-// initializer never routes through the class read-off (CLASS_REST member holing).
+// initializer never routes through the class read-off (`ANYTHING;` member holing).
 // The equivalent class DECLARATION minimizes correctly today — control:
 // `class selectedStore { status = "idle"; run(){…} describe(){…} }` emits
 // `class SelectedStore { status = "idle"; ANYTHING; }` — so the gap is purely the

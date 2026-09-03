@@ -37,7 +37,6 @@ from x.agentplane.runner import protocol_pb2 as pb
 
 
 TEST_MODELS = {Provider.CLAUDE: ["test-claude-model"], Provider.CODEX: ["test-codex-model"]}
-APPROVED = {"state": "approved", "by": "test-operator", "at": "2026-09-01T12:00:00Z"}
 
 
 @pytest.fixture
@@ -66,15 +65,10 @@ def client(
         "all-managed",
         subjects=[{"sandboxSelector": {"matchLabels": {MANAGED_LABEL: "true"}}}],
         policies=["github"],
-        approval=APPROVED,
         active=("True", "Resolved", ""),
     )
-    custom_objects.objects[("egressbindings", "live-asks")] = egress_binding(
-        "live-asks",
-        subjects=[{"sandbox": {"name": "live"}}],
-        policies=["pypi"],
-        approval={"state": "pending"},
-        granted_by="agent",
+    custom_objects.objects[("egressbindings", "live-granted")] = egress_binding(
+        "live-granted", subjects=[{"sandbox": {"name": "live"}}], policies=["pypi"], granted_by="agent"
     )
     app = create_app(inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, reviewer=reviewer)
     with TestClient(app, headers=AGENT_AUTH) as test_client:
@@ -172,7 +166,16 @@ def test_suspend_resume_archive_unarchive_apply_in_order(
     assert client.post("/sandboxes/nope/suspend").status_code == 404
 
 
-def test_delete_removes_the_sandbox(client: TestClient, custom_objects: FakeCustomObjectsApi) -> None:
+def test_delete_removes_the_sandbox_once_it_is_suspended(
+    client: TestClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    refused = client.delete("/sandboxes/live")
+
+    assert refused.status_code == 409
+    assert "suspend it" in refused.json()["detail"]
+    assert ("sandboxes", "live") in custom_objects.objects
+
+    assert client.post("/sandboxes/live/suspend").status_code == 204
     assert client.delete("/sandboxes/live").status_code == 204
     assert ("sandboxes", "live") not in custom_objects.objects
     assert client.delete("/sandboxes/live").status_code == 404
@@ -221,9 +224,9 @@ def test_egress_lists_the_bindings_naming_the_sandbox(client: TestClient) -> Non
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert [(b["name"], b["from_git"], b["approval"], b["active"]) for b in body] == [
-        ("all-managed", True, "approved", True),
-        ("live-asks", False, "pending", None),
+    assert [(b["name"], b["granted_by"], b["from_git"], b["active"]) for b in body] == [
+        ("all-managed", "flux", True, True),
+        ("live-granted", "agent", False, None),
     ]
     assert body[0]["policies"][0]["rules"][0]["hosts"] == ["api.github.com"]
     assert [b["name"] for b in client.get("/sandboxes/fresh/egress").json()] == ["all-managed"]
@@ -261,37 +264,26 @@ def test_egress_decisions_are_502_when_the_proxy_is_unreachable(
 
     assert response.status_code == 502
     assert "did not answer" in response.json()["detail"]
-    assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["all-managed", "live-asks"]
-
-
-def test_binding_approval_is_recorded_as_the_reviewed_caller(
-    client: TestClient, custom_objects: FakeCustomObjectsApi
-) -> None:
-    assert client.post("/egress/bindings/live-asks/approve").status_code == 204
-    assert client.get("/sandboxes/live/egress").json()[1]["approval"] == "approved"
-    assert client.post("/egress/bindings/live-asks/deny").status_code == 204
-    # The username TokenReview returned, verbatim; the label is the same identity, colons stripped.
-    assert custom_objects.objects[("egressbindings", "live-asks")]["spec"]["approval"]["by"] == AGENT.name
-    assert client.post("/egress/bindings/nope/approve").status_code == 404
+    assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["all-managed", "live-granted"]
 
 
 def test_every_route_needs_one_of_the_two_credentials(client: TestClient) -> None:
     """Guarded from the app, not from a proxy in front of it: no header a caller sets is trusted."""
     assert client.get("/sandboxes", headers={"Authorization": ""}).status_code == 401
     assert client.get("/sandboxes", headers={"Authorization": "Bearer wrong"}).status_code == 401
-    assert client.post("/egress/bindings/live-asks/approve", headers={"Authorization": ""}).status_code == 401
+    assert client.post("/sandboxes", json={"slug": "x"}, headers={"Authorization": ""}).status_code == 401
     # The forgeable header the API server's service proxy used to forward buys nothing now.
     assert client.get("/sandboxes", headers={"Authorization": "", "x-authentik-username": "root"}).status_code == 401
     assert client.get("/healthz", headers={"Authorization": ""}).status_code == 204
 
 
 def test_binding_revocation(client: TestClient) -> None:
-
+    """A runtime binding is revoked by deleting it; one the manifest declares would be re-applied."""
     refused = client.delete("/egress/bindings/all-managed")
     assert refused.status_code == 409
     assert "git" in refused.json()["detail"]
-    assert client.delete("/egress/bindings/live-asks").status_code == 204
-    assert client.delete("/egress/bindings/live-asks").status_code == 404
+    assert client.delete("/egress/bindings/live-granted").status_code == 204
+    assert client.delete("/egress/bindings/live-granted").status_code == 404
     assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["all-managed"]
 
 
@@ -358,8 +350,6 @@ def test_openapi_schema_names_every_operation(client: TestClient) -> None:
         "/sandboxes/{name}/egress/decisions",
         "/egress/policies",
         "/egress/bindings/{name}",
-        "/egress/bindings/{name}/approve",
-        "/egress/bindings/{name}/deny",
         "/sandboxes/{name}/sessions",
         "/sandboxes/{name}/sessions/{session_id}/events",
         "/sandboxes/{name}/sessions/{session_id}/inputs",

@@ -34,15 +34,15 @@ Default to this ladder when writing or repairing selectors:
    semantically stable.
 2. Add anonymous `ANYTHING` holes where the hole name would not carry useful
    signal. Use typed holes (`EXPR`, `STMT`, `ARGS`, `STMT_LIST`,
-   `OBJECT_PROPS`, `CLASS_REST`, `CASE_REST`, or `DECLARATORS`) when the
+   `ARRAY_ELEMENTS`, `CASE_REST`, or `DECLARATORS`) when the
    syntactic role, typed list behavior, or a readability label makes the
    selector easier to read or diagnose. Hole suffixes are cosmetic labels, not
    equality constraints.
 3. Keep exact literals, property names, object keys, operators, and ordering
    when they carry the stable signal.
 4. Avoid exact long bodies/subexpressions unless they are the stable signal
-   needed to disambiguate. If `ANYTHING`, `EXPR`, `OBJECT_PROPS`, `ARGS`,
-   `CLASS_REST`, `CASE_REST`, `STMT_LIST`, or declarator gaps keep the selector
+   needed to disambiguate. If `ANYTHING`, `EXPR`, `ARGS`,
+   `CASE_REST`, `STMT_LIST`, or declarator gaps keep the selector
    unique, use the hole form.
 5. Use `selector.binding.name` only for already-stable semantic names or as
    temporary debt that will be visible in `debundle spec selector-debt`.
@@ -161,7 +161,7 @@ review. Passing the production matcher only proves today's code is addressed;
 it does not prove that exact parameter destructuring, helper call arguments,
 object property values, or nested statement bodies are durable. When dry-run or
 apply output is visibly overpinned, prefer `ANYTHING`, `EXPR`, `ARGS`,
-`STMT_LIST`, `OBJECT_PROPS`, `CLASS_REST`, `CASE_REST`, or `DECLARATORS`
+`STMT_LIST`, `CASE_REST`, or `DECLARATORS`
 minimization where the matcher supports it. If the concise selector cannot be expressed yet, leave
 the binding as selector debt and record a generic minimization gap rather than
 committing a hand-maintained exact long selector.
@@ -433,7 +433,7 @@ position:
   behaves like anonymous `DECLARATORS` and absorbs a run of sibling
   declarators. The initializer is ignored, as with `DECLARATORS`.
 - As a class field with no initializer (`class K { ANYTHING; method() {} }`),
-  it behaves like `CLASS_REST`.
+  it absorbs a run of class members.
 
 Prefer `ANYTHING` for throwaway holes whose name would only be noise. For
 object literals and destructuring-heavy selectors, match only enough stable
@@ -450,7 +450,7 @@ const config = {
 
 Keep the typed spelling when the role is not obvious from nearby syntax, or
 when you need typed list-hole forms such as `ARGS`, `STMT_LIST`, or
-`OBJECT_PROPS_GENERATED`. Use labels only to make a selector easier to read;
+`ARRAY_ELEMENTS`. Use labels only to make a selector easier to read;
 they do not impose equality.
 `{ key: ANYTHING }` wildcards the value expression; `{ ANYTHING: value }` is
 rejected because object property keys are exact anchors, not wildcard
@@ -490,21 +490,20 @@ absorbed sequence for cross-occurrence equality.
   statements, including none. Top-level `STMT_LIST` support for anonymous
   statements is legacy compatibility surface pending native run-hole lowering;
   avoid new selectors that require source-order indexing.
-- `OBJECT_PROPS` (or `OBJECT_PROPS_name`) in an object literal matches any run
-  of key/value properties or spreads. Anonymous `ANYTHING` in the same
-  shorthand-property position is equivalent. Use either form to pin only the
+- `ANYTHING` (or `ANYTHING_name`) as an object-literal shorthand property
+  matches any run of key/value properties or spreads. Use it to pin only the
   stable keys needed to make the selector unique, without overpinning generated
   sibling properties:
 
   ```js
   {
     requiredKey: EXPR,
-    OBJECT_PROPS_GENERATED,
+    ANYTHING_GENERATED,
     anotherKey: EXPR,
   }
   ```
 
-- `CLASS_REST;` as a class field (no initializer) matches a run of class
+- `ANYTHING;` as a class field (no initializer) matches a run of class
   members — "this class by these members, ignore the rest".
 - `case CASE_REST:` as an empty switch case (no body) matches a run of
   `case`/`default` clauses — "this switch by these discriminating cases,
@@ -531,7 +530,7 @@ source_matches:
         increment() {
           STMT_LIST_BODY;
         }
-        CLASS_REST;
+        ANYTHING;
       }
     bindings:
       - local: K
@@ -544,9 +543,9 @@ in source order, each pinned run contiguous, with every hole absorbing an
 arbitrary run (including none) of the candidate's elements. With no leading
 hole the first pinned run is anchored to the candidate's start; with no
 trailing hole the last pinned run is anchored to its end. So
-`class K { a() { … } b() { … } CLASS_REST; }` matches a class whose **first
+`class K { a() { … } b() { … } ANYTHING; }` matches a class whose **first
 two** members are `a` then `b`, followed by anything, while
-`class K { CLASS_REST; open() { … } CLASS_REST; close() { … } CLASS_REST; }`
+`class K { ANYTHING; open() { … } ANYTHING; close() { … } ANYTHING; }`
 matches any class with an `open` method somewhere before a `close` method.
 Either way the match is ordered — it is _not_ an unordered "contains these
 somewhere" match, and pinning `close` before `open` would not match a class
@@ -557,7 +556,7 @@ still a hard error.
 
 For class fingerprints, keep method bodies as loose as the selector permits.
 If a stable method name and order are the real anchors, put `STMT_LIST;` in the
-method body and let `CLASS_REST;` absorb unrelated members. Spell concrete
+method body and let `ANYTHING;` absorb unrelated members. Spell concrete
 statements inside an anchored method only when those statements are part of the
 intended fingerprint; otherwise small upstream body drift will make the class
 miss even though the method anchors are still present.

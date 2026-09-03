@@ -6,7 +6,7 @@
 //! Faithful subset: exact- and alpha-identifier structure with
 //! **expression-position single-node holes** (`ANYTHING` / `EXPR` / `STMT`
 //! matching any one subtree) and **variable-length run holes** (`STMT_LIST` /
-//! `ARGS` / `OBJECT_PROPS` / `CLASS_REST` / `CASE_REST` / `DECLARATORS`) matched
+//! `ARGS` / `ARRAY_ELEMENTS` / `CASE_REST` / `DECLARATORS`) matched
 //! as an ordered subsequence with gaps. Run-hole placement partitions the needle
 //! list into maximal fixed segments at the carriers, placed greedy-leftmost with
 //! `Bindings` snapshot/restore. The
@@ -34,8 +34,7 @@ use chunk_facts::{ChunkFacts, NodeId, NodeKind};
 use regex::Regex;
 use source_match_holes::{
     ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, ARRAY_ELEMENTS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD,
-    CLASS_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD,
-    OBJECT_PROPS_HOLE_KEYWORD, STMT_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
+    DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD, STMT_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
     STRING_LITERAL_REGEX_PREDICATE, hole_name_for, labeled_hole_name_for,
 };
 
@@ -435,8 +434,8 @@ pub fn nodes_match(
     homo(needle, nid, subject, sid, mode, &mut bindings)
 }
 
-/// True iff `node` is a `CLASS_REST;` / `ANYTHING;` class-rest member hole under a
-/// `Class` parent (a class field whose key is the exact keyword and which has no
+/// True iff `node` is an `ANYTHING;` class-rest member hole under a `Class`
+/// parent (a class field whose key is the exact keyword and which has no
 /// initializer). The class-member near-miss scan skips these.
 pub fn is_class_rest_member(index: &Index, node: NodeId) -> bool {
     is_run_hole_carrier(index, NodeKind::Class, node)
@@ -524,12 +523,10 @@ fn is_single_node_hole(index: &Index, node: NodeId) -> bool {
     }
 }
 
-const RUN_HOLE_KEYWORDS: [&str; 7] = [
+const RUN_HOLE_KEYWORDS: [&str; 5] = [
     STMT_LIST_HOLE_KEYWORD,
     ARGS_HOLE_KEYWORD,
-    OBJECT_PROPS_HOLE_KEYWORD,
     ARRAY_ELEMENTS_HOLE_KEYWORD,
-    CLASS_REST_HOLE_KEYWORD,
     CASE_REST_HOLE_KEYWORD,
     DECLARATORS_HOLE_KEYWORD,
 ];
@@ -545,9 +542,9 @@ fn is_run_hole_keyword(name: &str) -> bool {
 }
 
 /// Whether `name` is any hole/placeholder keyword (single-node or run). Used to
-/// keep hole markers out of the invariant-token index: a `CLASS_REST` class-field
+/// keep hole markers out of the invariant-token index: an `ANYTHING;` class-field
 /// hole, for instance, projects to a `prop_name` fact, but it matches *absence*
-/// of members, not a real `CLASS_REST`-named property — indexing it would require
+/// of members, not a real `ANYTHING`-named property — indexing it would require
 /// a token no real subject carries.
 fn is_hole_keyword(name: &str) -> bool {
     [
@@ -556,10 +553,8 @@ fn is_hole_keyword(name: &str) -> bool {
         STMT_HOLE_KEYWORD,
         STMT_LIST_HOLE_KEYWORD,
         ARGS_HOLE_KEYWORD,
-        OBJECT_PROPS_HOLE_KEYWORD,
         ARRAY_ELEMENTS_HOLE_KEYWORD,
         DECLARATORS_HOLE_KEYWORD,
-        CLASS_REST_HOLE_KEYWORD,
         CASE_REST_HOLE_KEYWORD,
     ]
     .iter()
@@ -593,19 +588,16 @@ fn is_run_hole_carrier(index: &Index, parent_kind: NodeKind, child: NodeId) -> b
         NodeKind::Call | NodeKind::New | NodeKind::OptCall => {
             ck == NodeKind::Ident && node_ident_hole(index, child, ARGS_HOLE_KEYWORD)
         }
-        // `OBJECT_PROPS` / `ANYTHING` — a shorthand object-literal property.
+        // `ANYTHING` — a shorthand object-literal property.
         NodeKind::Object => {
-            ck == NodeKind::Shorthand
-                && (node_ident_hole(index, child, OBJECT_PROPS_HOLE_KEYWORD)
-                    || node_ident_hole(index, child, ANYTHING_HOLE_KEYWORD))
+            ck == NodeKind::Shorthand && node_ident_hole(index, child, ANYTHING_HOLE_KEYWORD)
         }
-        // `OBJECT_PROPS` / `ANYTHING` in a destructuring pattern — a shorthand
-        // (no default) destructure property.
+        // `ANYTHING` in a destructuring pattern — a shorthand (no default)
+        // destructure property.
         NodeKind::ObjectPat => {
             ck == NodeKind::PatAssign
                 && index.children_of(child).is_empty()
-                && (node_ident_hole(index, child, OBJECT_PROPS_HOLE_KEYWORD)
-                    || node_ident_hole(index, child, ANYTHING_HOLE_KEYWORD))
+                && node_ident_hole(index, child, ANYTHING_HOLE_KEYWORD)
         }
         // `ARRAY_ELEMENTS` — a bare identifier array element (the keyword in
         // element position). Spread / elision elements project to other node kinds
@@ -615,16 +607,14 @@ fn is_run_hole_carrier(index: &Index, parent_kind: NodeKind, child: NodeId) -> b
         NodeKind::Array => {
             ck == NodeKind::Ident && node_ident_hole(index, child, ARRAY_ELEMENTS_HOLE_KEYWORD)
         }
-        // `CLASS_REST;` / `ANYTHING;` — a class field, no initializer, whose key
-        // is the (exact) keyword.
+        // `ANYTHING;` — a class field, no initializer, whose key is the keyword.
         NodeKind::Class => {
             ck == NodeKind::ClassProp && {
                 let kids = index.children_of(child);
                 kids.len() == 1
-                    && index.prop_name_of(kids[0]).is_some_and(|name| {
-                        labeled_hole_name_for(name, CLASS_REST_HOLE_KEYWORD).is_some()
-                            || hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
-                    })
+                    && index
+                        .prop_name_of(kids[0])
+                        .is_some_and(|name| hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some())
             }
         }
         // `case CASE_REST[_label]:` — a switch clause, no body, whose sole child
@@ -777,9 +767,9 @@ struct ShorthandProperty<'a> {
 ///
 /// A `KeyValue`/`PatKeyValue` whose value is not a bare identifier (e.g.
 /// `{ k: f() }`, `{ k: renamed }`) is *not* a same-name property and returns
-/// `None`, falling through to structural matching. Hole carriers (`ANYTHING` /
-/// `OBJECT_PROPS` shorthands) are excluded — they are consumed by list placement
-/// and must keep their run-hole identity.
+/// `None`, falling through to structural matching. Hole carriers (`ANYTHING`
+/// shorthands) are excluded — they are consumed by list placement and must keep
+/// their run-hole identity.
 fn shorthand_property_view(index: &Index, node: NodeId) -> Option<ShorthandProperty<'_>> {
     let same_name_key_value = |is_binding: bool| {
         let [key, value] = index.children_of(node) else {

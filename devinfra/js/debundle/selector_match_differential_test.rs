@@ -173,16 +173,16 @@ fn fact_matcher_agrees_with_production_on_faithful_subset() {
                 alpha: false,
                 expected: false,
             },
-            // OBJECT_PROPS absorbs the surrounding properties; a two-hole list
+            // ANYTHING absorbs the surrounding properties; a two-hole list
             // with an interior fixed segment (the corpus `{…, k, …}` shape).
             Case {
-                selector: "const o = { a: 1, OBJECT_PROPS };",
+                selector: "const o = { a: 1, ANYTHING };",
                 subject: "const o = { a: 1, b: 2 };",
                 alpha: false,
                 expected: true,
             },
             Case {
-                selector: "const o = { OBJECT_PROPS, k: 1, OBJECT_PROPS };",
+                selector: "const o = { ANYTHING, k: 1, ANYTHING };",
                 subject: "const o = { x: 0, k: 1, y: 2 };",
                 alpha: false,
                 expected: true,
@@ -269,21 +269,21 @@ fn fact_matcher_agrees_with_production_on_faithful_subset() {
             // both (alpha-matched), or absent in both. A no-`extends` needle must
             // NOT match an `extends`-bearing class, and vice versa (mirrors
             // production's `match_class` `super_class` arm) — the gap that made the
-            // `extends X { CLASS_REST; }` class lists over-match.
+            // `extends X { ANYTHING; }` class lists over-match.
             Case {
-                selector: "class A extends B { CLASS_REST; }",
+                selector: "class A extends B { ANYTHING; }",
                 subject: "class C extends D { m() {} }",
                 alpha: true,
                 expected: true,
             },
             Case {
-                selector: "class A extends B { CLASS_REST; }",
+                selector: "class A extends B { ANYTHING; }",
                 subject: "class C { m() {} }",
                 alpha: true,
                 expected: false,
             },
             Case {
-                selector: "class A { CLASS_REST; }",
+                selector: "class A { ANYTHING; }",
                 subject: "class C extends D { m() {} }",
                 alpha: true,
                 expected: false,
@@ -591,10 +591,10 @@ fn arrow_returning_object_literal_matches_on_its_object_anchors() {
                 alpha: true,
                 expected: false,
             },
-            // OBJECT_PROPS inside the returned object absorbs the noisy generated
+            // The object run hole inside the returned object absorbs the noisy generated
             // members, leaving the one stable key pinned.
             Case {
-                selector: "const X = (props) => ({ kind: \"widget\", OBJECT_PROPS });",
+                selector: "const X = (props) => ({ kind: \"widget\", ANYTHING });",
                 subject: "const Y = (a) => ({ kind: \"widget\", render: () => a.label, dispose() {} });",
                 alpha: true,
                 expected: true,
@@ -696,7 +696,7 @@ fn parenthesized_sequence_body_matches_on_its_inner_assignment() {
     });
 }
 
-// `ARRAY_ELEMENTS` is the array-literal run hole (the `OBJECT_PROPS` analog for
+// `ARRAY_ELEMENTS` is the array-literal run hole (the object-property analog for
 // arrays): a bare identifier element absorbing a run of array elements, so a long
 // array initializer can be anchored on its few stable elements without spelling
 // the rest. It is matched as an ordered subsequence with gaps, exactly like the

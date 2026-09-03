@@ -13,9 +13,9 @@ use anyhow::{Context, Result};
 use roaring::RoaringBitmap;
 use rustc_hash::FxHashMap;
 use source_match_holes::{
-    ANYTHING_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, CLASS_REST_HOLE_KEYWORD,
-    DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD, OBJECT_PROPS_HOLE_KEYWORD, STMT_HOLE_KEYWORD,
-    STMT_LIST_HOLE_KEYWORD, STRING_LITERAL_REGEX_PREDICATE, hole_name_for, labeled_hole_name_for,
+    ANYTHING_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD,
+    STMT_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD, STRING_LITERAL_REGEX_PREDICATE, hole_name_for,
+    labeled_hole_name_for,
 };
 use spec::{AnonymousStatementSelector, BindingSourceKind, SourceMatchIdentifierMode};
 use swc_ecma_ast::*;
@@ -802,11 +802,7 @@ fn object_property_list_hole_name(prop: &PropOrSpread) -> Option<&str> {
         return None;
     };
     match prop.as_ref() {
-        Prop::Shorthand(ident) => {
-            let name = ident.sym.as_ref();
-            labeled_hole_name_for(name, OBJECT_PROPS_HOLE_KEYWORD)
-                .or_else(|| hole_name_for(name, ANYTHING_HOLE_KEYWORD))
-        }
+        Prop::Shorthand(ident) => hole_name_for(ident.sym.as_ref(), ANYTHING_HOLE_KEYWORD),
         _ => None,
     }
 }
@@ -821,9 +817,7 @@ fn class_rest_hole_name(member: &ClassMember) -> Option<&str> {
     let PropName::Ident(ident) = &prop.key else {
         return None;
     };
-    let name = ident.sym.as_ref();
-    labeled_hole_name_for(name, CLASS_REST_HOLE_KEYWORD)
-        .or_else(|| hole_name_for(name, ANYTHING_HOLE_KEYWORD))
+    hole_name_for(ident.sym.as_ref(), ANYTHING_HOLE_KEYWORD)
 }
 
 fn case_rest_hole_name(case: &SwitchCase) -> Option<&str> {
@@ -902,15 +896,13 @@ fn object_key_label(prop: &PropOrSpread) -> Option<String> {
 }
 
 /// The stable property-name label of a destructure-pattern property, or `None`
-/// for the `OBJECT_PROPS`/`ANYTHING` list hole, a rest element, or a computed
-/// key. Mirrors [`object_key_label`] for the object-pattern case.
+/// for the `ANYTHING` list hole, a rest element, or a computed key. Mirrors
+/// [`object_key_label`] for the object-pattern case.
 fn object_pat_key_label(prop: &ObjectPatProp) -> Option<String> {
     match prop {
         ObjectPatProp::KeyValue(kv) => prop_name_label(&kv.key),
         ObjectPatProp::Assign(assign)
-            if labeled_hole_name_for(assign.key.id.sym.as_ref(), OBJECT_PROPS_HOLE_KEYWORD)
-                .is_none()
-                && hole_name_for(assign.key.id.sym.as_ref(), ANYTHING_HOLE_KEYWORD).is_none() =>
+            if hole_name_for(assign.key.id.sym.as_ref(), ANYTHING_HOLE_KEYWORD).is_none() =>
         {
             Some(assign.key.id.sym.to_string())
         }
@@ -1028,7 +1020,7 @@ class Worker { mount() {} }
 function render(value) { return value; }"#,
         );
         let index = SelectorCandidateIndex::new(&runtime);
-        let selector = selector("class ReadableName {\n  render() {}\n  CLASS_REST;\n}");
+        let selector = selector("class ReadableName {\n  render() {}\n  ANYTHING;\n}");
 
         let exact = exact_matches(&runtime, &selector);
         let candidate_set = index.candidate_set_for_source_match(&selector).unwrap();

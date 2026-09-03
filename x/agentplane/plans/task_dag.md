@@ -75,10 +75,10 @@ flowchart TB
         C4["C4 App deployment into staging<br/>RBAC, Authentik route, agent-reachable API"]:::completed
         C5["C5 Archive<br/>out of the active view, history kept"]:::completed
         C6["C6 Session view legibility<br/>markdown, the input's own text, folded reasoning,<br/>Enter sends with no button"]:::ready
-        C7["C7 Lifecycle controls on the sandbox page<br/>suspend there, delete once suspended"]:::ready
+        C7["C7 Lifecycle controls on the sandbox page<br/>suspend there, delete once suspended"]:::completed
         C8["C8 Live push for every view<br/>the server says what changed, no page polls"]:::completed
         C9["C9 The profile a sandbox runs under<br/>visible and pickable, not one badge"]:::ready
-        C10["C10 Egress actions that say what they do<br/>approve / deny / revoke, and Flux ownership"]:::ready
+        C10["C10 Egress actions that say what they do<br/>a binding is the permission; revoke deletes it"]:::completed
     end
 
     F0["First functioning Agentplane<br/>both providers in sandboxes, driven and replayed from the app"]:::completed
@@ -180,7 +180,7 @@ milestone;
 orange diamonds are unresolved decisions requiring Rai's product or design input; gray is
 conditional or stretch work.
 
-Ready now: **J** and **C6**-**C10**, which share nothing and can run in parallel. **T2** and **T3** are
+Ready now: **J**, **C6**, **C8**, and **C9**, which share nothing and can run in parallel. **T2** and **T3** are
 blocked on nothing in code; they start when the persisted history has a first reader who needs a
 name or a search.
 
@@ -222,12 +222,6 @@ ones still open.
     Decided (Rai): the protocol changes, so the text arrives with the event and a client that
     joined later or replayed from the log sees it too — which is the case an app-side echo of what
     this tab sent cannot cover.
-- **C7 lifecycle controls on the sandbox page:** the page you are already looking at can suspend
-  the sandbox, and delete it once it is suspended. Today every lifecycle action lives on the list
-  page only (`sandboxes.tsx`), so acting on the sandbox in front of you means navigating away from
-  it. Deleting only a suspended sandbox is a new rule either way: `Inventory.delete` currently
-  takes any state, so the package decides whether the precondition belongs in the API — where it
-  also binds the agent driving staging — or is a UI affordance over an API that stays permissive.
 - **C9 the profile a sandbox runs under:** a profile decides what the sandbox may reach — a
   Flux-managed `EgressBinding` selects on the label it stamps — and it is nearly invisible. It
   appears as one badge on the sandbox page, and at creation as a free-text box whose help text
@@ -236,14 +230,6 @@ ones still open.
   filtered by it, and a typo silently yields a sandbox that matches no binding. Make it a pick
   from the profiles that actually exist, show it wherever a sandbox is shown, and say what the one
   you picked grants.
-- **C10 egress actions that say what they do:** the binding row offers Approve, Deny, and Revoke,
-  and nothing on screen distinguishes the last two — both read as "stop this access". They are not
-  the same: Deny sets `approval.state` and keeps the binding, so it is reversible and leaves the
-  record of who decided; Revoke deletes the object. Worse, Deny does not know what Revoke knows.
-  Revoke is disabled for a Flux-applied binding with a tooltip saying to remove it in git, but Deny
-  stays live — and `egressbinding-sandboxes-github-public.yaml` carries `approval.state: approved`
-  in git, so denying it patches the cluster and the next reconcile puts it back. A button that
-  silently un-does itself is the bug; the wording is the rest of the package.
 - **T2 named threads:** a small model proposes a name from the first turn, the user can edit it,
   and the name lives on the thread record; naming never touches the runner or the harness.
 - **T3 search and lookup:** find past interactions by text and by what an agent did; answer "what
