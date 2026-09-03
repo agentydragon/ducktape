@@ -1,0 +1,252 @@
+# One-off stopped-writer maintenance for the OpenClaw 2026.8.1 bump (#5369).
+#
+# Not referenced by any kustomization: this is applied by hand with the
+# Deployment scaled to 0, and must not be reconciled or re-run.
+#
+# Why it is needed: autoMigrateLegacyState runs migrateLegacyMediaPersistence
+# (gated on doctorOnlyStateMigrations, i.e. `doctor --fix`, and holding the
+# agent-database maintenance lease) and then migrateHistoricalTranscriptDirectives,
+# which is NOT gated and takes no lease. The second step needs the schema the
+# first one advances. On gateway startup only the second runs, hits
+# `if (readSqliteUserVersion(db) === 17) assertAgentDatabaseMaintenanceAuthority()`
+# with no AsyncLocalStorage authority, throws, and completeStartupMigrationPreflight
+# turns the resulting warning into a hard exit 1. Under `doctor --fix` the first
+# step advances 17 -> 19, so the second finds !== 17 and passes.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: public-coder-agent-db-migration
+  namespace: public-coder-agent
+spec:
+  # One attempt. A partially-applied migration must be inspected, never silently retried.
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        # Deliberately the Deployment's label: the namespace has no default-deny,
+        # so any other label would give this pod unrestricted egress instead of
+        # the app/networkpolicy-egress.yaml fence.
+        app.kubernetes.io/name: public-coder-agent
+    spec:
+      restartPolicy: Never
+      securityContext:
+        fsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - ovh-ns102453
+      containers:
+        - name: doctor
+          image: ghcr.io/agentydragon/openclaw:devel-20260903200156-312bb2d
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              STATE=/home/openclaw/.openclaw
+              BK="$STATE/.maintenance-backup-pre-2026.8.1"
+              export STATE
+
+              # SQLite keeps user_version as a big-endian u32 at header offset 60.
+              # Read it from the header rather than depending on a sqlite3 binary.
+              user_version() { od -An -tx1 -j60 -N4 "$1" | tr -d ' \n'; }
+
+              report() {
+                for db in "$STATE"/agents/*/agent/openclaw-agent.sqlite; do
+                  if [ -e "$db" ]; then
+                    echo "  $db user_version=0x$(user_version "$db")"
+                  fi
+                done
+              }
+
+              OC=$(command -v openclaw) || { echo "openclaw not on PATH"; exit 1; }
+              NODE=$(grep -o '/nix/store/[^"]*/bin/node' "$OC" | head -1)
+              LIB=$(grep -o '/nix/store/[^"]*/lib/openclaw' "$OC" | head -1)
+              export LIB
+              [ -x "$NODE" ] || { echo "node not resolvable from wrapper $OC"; exit 1; }
+              [ -d "$LIB/dist" ] || { echo "dist not resolvable from wrapper $OC"; exit 1; }
+              echo "node=$NODE"
+              echo "lib=$LIB"
+
+              echo "== agent databases before =="
+              report
+
+              # Preserve the pre-migration copy taken by the first attempt; never
+              # overwrite it with post-migration bytes.
+              if [ -d "$BK" ] && [ -n "$(ls -A "$BK" 2>/dev/null)" ]; then
+                echo "== existing pre-migration backup kept =="
+                ls -la "$BK"
+              else
+                echo "== copying agent databases =="
+                mkdir -p "$BK"
+                for db in "$STATE"/agents/*/agent/openclaw-agent.sqlite; do
+                  if [ -e "$db" ]; then
+                    agent=$(basename "$(dirname "$(dirname "$db")")")
+                    for f in "$db" "$db-wal" "$db-shm"; do
+                      if [ -e "$f" ]; then
+                        cp -p "$f" "$BK/$agent--$(basename "$f")"
+                      fi
+                    done
+                  fi
+                done
+                ls -la "$BK"
+              fi
+
+              cat > /tmp/migrate.mjs <<'MJS'
+              import fs from "node:fs";
+              import path from "node:path";
+
+              const distDir = path.join(process.env.LIB, "dist");
+              // The chunk filename is content-hashed, so locate the module by the
+              // named exports it actually provides. The internal chunk re-exports
+              // these under single-letter aliases, so the runtime typeof check is
+              // what distinguishes the public surface from it.
+              const wanted = ["withAgentDatabaseMaintenanceLease", "migrateOpenClawAgentDatabaseForMaintenance"];
+              let api = null;
+              for (const file of fs.readdirSync(distDir).filter((f) => f.endsWith(".js"))) {
+                const src = fs.readFileSync(path.join(distDir, file), "utf8");
+                if (!wanted.every((name) => new RegExp(`export \\{[^}]*\\b${name}\\b`).test(src))) continue;
+                const mod = await import(path.join(distDir, file));
+                if (wanted.every((name) => typeof mod[name] === "function")) {
+                  console.log(`using ${file}`);
+                  api = mod;
+                  break;
+                }
+              }
+              if (!api) throw new Error("could not locate the agent-database maintenance module");
+
+              const agentsDir = path.join(process.env.STATE, "agents");
+              const targets = fs
+                .readdirSync(agentsDir, { withFileTypes: true })
+                .filter((entry) => entry.isDirectory())
+                .map((entry) => ({
+                  agentId: entry.name,
+                  pathname: path.join(agentsDir, entry.name, "agent", "openclaw-agent.sqlite"),
+                }))
+                .filter((target) => fs.existsSync(target.pathname));
+              if (targets.length === 0) throw new Error("no agent databases found");
+
+              // The lease is the authority ensureAgentSchema's identityMigration
+              // branch asserts on; this is the same wrapper doctor --fix uses.
+              //
+              // One lease per database, not one around the loop. The migration is
+              // fully synchronous, so it starves the lease heartbeat's timer; a
+              // database large enough to block past the 60s TTL leaves the lease
+              // lost for every database after it.
+              for (const target of targets) {
+                console.log(`migrating ${target.agentId}: ${target.pathname}`);
+                await api.withAgentDatabaseMaintenanceLease({ env: process.env }, async () => {
+                  api.migrateOpenClawAgentDatabaseForMaintenance({
+                    agentId: target.agentId,
+                    pathname: target.pathname,
+                    env: process.env,
+                  });
+                });
+                console.log(`  done ${target.agentId}`);
+              }
+              console.log("migration complete");
+              MJS
+              sed -i 's/^              //' /tmp/migrate.mjs
+
+              echo "== running lease-wrapped identity migration =="
+              "$NODE" /tmp/migrate.mjs
+
+              echo "== agent databases after =="
+              report
+          env:
+            - name: HOME
+              value: /home/openclaw
+            - name: OPENCLAW_CONFIG_PATH
+              value: /home/openclaw/.openclaw/openclaw.json5
+            - name: NPM_CONFIG_PREFIX
+              value: /home/openclaw/.local
+            - name: NPM_CONFIG_CACHE
+              value: /home/openclaw/.cache/npm
+            - name: OPENCLAW_LOG_LEVEL
+              value: debug
+            # The config interpolates several of these; doctor validates the same
+            # config the gateway does, so it gets the same environment.
+            - name: GH_PAT
+              value: "proxy-github-placeholder"
+            - name: HAKU_CONSOLE_TOKEN
+              value: "proxy-haku-console-placeholder"
+            - name: CLICKHOUSE_PUBLIC_CODER_USER
+              value: "public_coder_analytics"
+            - name: CLICKHOUSE_PUBLIC_CODER_PASSWORD
+              value: "proxy-clickhouse-public-coder-password"
+            - name: AIQUOTA_API_BEARER_TOKEN
+              value: "proxy-aiquota-api-bearer-placeholder"
+            - name: BRAVE_API_KEY
+              value: "proxy-brave-search-api-key-placeholder"
+            - name: MATRIX_PASSWORD
+              value: "proxy-matrix-password-placeholder"
+            - name: BUILDBUDDY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: buildbuddy-api-key
+                  key: api-key
+            - name: OPENCLAW_LITELLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-key-public-coder-agent
+                  key: api-key
+            - name: OPENCLAW_GATEWAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: public-coder-agent-gateway-password
+                  key: password
+            - name: NODE_USE_ENV_PROXY
+              value: "1"
+            - name: HTTP_PROXY
+              value: "http://public-coder-agent-proxy.public-coder-agent.svc.cluster.local:8080"
+            - name: HTTPS_PROXY
+              value: "http://public-coder-agent-proxy.public-coder-agent.svc.cluster.local:8080"
+            - name: NO_PROXY
+              value: "127.0.0.1,localhost,litellm.litellm.svc,litellm.litellm.svc.cluster.local"
+            - name: NODE_EXTRA_CA_CERTS
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: SSL_CERT_FILE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: REQUESTS_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: PIP_CERT
+              value: /etc/ssl/certs/ca-certificates.crt
+          volumeMounts:
+            - name: data
+              mountPath: /home/openclaw/.openclaw
+            - name: trust
+              mountPath: /etc/ssl/certs/ca-certificates.crt
+              subPath: ca-certificates.crt
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: public-coder-agent-state-v2
+        - name: trust
+          configMap:
+            name: public-coder-agent-proxy-ca-cert
+        - name: tmp
+          emptyDir: {}

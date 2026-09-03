@@ -51,7 +51,55 @@ let
     pkgs = ocPkgs;
     sourceInfo = stableSourceInfo;
   };
-  gateway = openclawPackages.openclaw-gateway;
+  # nix-openclaw's stage_dist_runtime copies dist/extensions into dist-runtime/
+  # and nothing else, but the extension modules import shared chunks as
+  # ../../<chunk>.js -- resolving to dist/ in the upstream layout and to
+  # dist-runtime/ here, where only extensions/ exists. 496 of 526 extension files
+  # import such a chunk. OpenClaw prefers dist-runtime/extensions over
+  # dist/extensions when present, so the partial tree is worse than none:
+  # workboard's doctor contract is loaded by a legacy state migration, and its
+  # ERR_MODULE_NOT_FOUND becomes a blocking startup-migration warning that
+  # refuses to report the gateway ready.
+  #
+  # Repaired on the built output rather than by rewriting their install script,
+  # so this does not depend on the exact shell line surviving upstream edits.
+  # Links are relative because both trees are copied into $out together.
+  gateway = openclawPackages.openclaw-gateway.overrideAttrs (previous: {
+    postInstall = (previous.postInstall or "") + ''
+      for runtime in "$out"/lib/*/dist-runtime; do
+        dist="$(dirname "$runtime")/dist"
+        if [ ! -d "$runtime" ] || [ ! -d "$dist" ]; then
+          continue
+        fi
+
+        for entry in "$dist"/*; do
+          name="$(basename "$entry")"
+          if [ "$name" = extensions ] || [ -e "$runtime/$name" ]; then
+            continue
+          fi
+          ln -s "../dist/$name" "$runtime/$name"
+        done
+
+        # Fail closed. Resolve each specifier against its own importer, because a
+        # nested extension file's ../../ means extensions/, not the tree root; scan
+        # .js only, since .d.ts references are type-level; and match bare specifier
+        # strings rather than `from "..."`, because workboard's is a dynamic
+        # import() -- the exact one that took the gateway down.
+        missing="$(grep -rHoE --include='*.js' '"(\.\./)+[A-Za-z0-9_.-]+\.js"' "$runtime/extensions" \
+          | sed -E 's/:"/\t/; s/"$//' | sort -u \
+          | while IFS="$(printf '\t')" read -r file spec; do
+              if [ ! -e "$(dirname "$file")/$spec" ]; then
+                printf '%s -> %s\n' "$file" "$spec"
+              fi
+            done)"
+        if [ -n "$missing" ]; then
+          echo "dist-runtime is missing chunks its extensions import:" >&2
+          echo "$missing" >&2
+          exit 1
+        fi
+      done
+    '';
+  });
   matrixPlugin = openclawPackages.openclawRuntimePlugins.matrix;
   # Brave is an official external runtime plugin. Bundle its pinned Nix artifact
   # with the gateway rather than installing it mutably in the state PVC.
