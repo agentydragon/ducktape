@@ -22,6 +22,8 @@ bbr test //x/agentplane/egress/...
   JSON log line; `admin.py` the `/decisions` and `/healthz` listener.
 - `proxy.py`: mitmproxy hosted in-process with the fail-closed options pinned; `main.py` the
   entry point and its `Settings` (`--flags` and `AGENTPLANE_EGRESS_*`).
+- `sidecar.py`: the per-sandbox relay, image `agentplane-egress-sidecar`: reads the Pod's
+  projected token per request, adds it as `Proxy-Authorization`, and forwards to the proxy.
 - `testing/`: the fake API server and the throwaway CAs the tests run against.
 
 ## Running
