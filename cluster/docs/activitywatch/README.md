@@ -106,6 +106,13 @@ curl -H "Authorization: Bearer $AW_READ_TOKEN" \
   https://activitywatch-read.allegedly.works/api/0/buckets/
 ```
 
+**Deviation for runtimes outside the fence** (the Claude Code web home, any `kubectl` that
+reads `haku-sandbox`): the same read token is ESO-mirrored into `haku-sandbox` as
+`activitywatch-read-token` (`cluster/k8s/haku/workspaces/app/activitywatch-read-token-eso.yaml`,
+store `kubernetes-activitywatch-secret-store`), and Haku reads it and calls the read route
+directly. Same route, same read-only bound, no approval step — the placeholder path above
+only works for pods whose traffic actually traverses the fence.
+
 ## Storage Debt
 
 The durable store is one SQLite file on Proxmox-pinned node-local storage — an accepted

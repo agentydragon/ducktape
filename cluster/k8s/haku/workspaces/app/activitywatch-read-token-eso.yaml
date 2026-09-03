@@ -1,0 +1,24 @@
+# Mirror the read-only ActivityWatch bearer into haku-sandbox so Haku can query
+# the read route (activitywatch-read.allegedly.works: GET plus POST /api/0/query/,
+# read-only by route construction — cluster/docs/activitywatch/README.md) from any
+# runtime whose kubeconfig can read this namespace, with no per-call approval.
+# The egress-fence placeholder substitution on the sandbox templates stays the
+# path for pods behind the fence; this copy serves the runtimes outside it (the
+# Claude Code web home, hostexec-free reads) and haku-state's `haku aw` CLI.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: activitywatch-read-token
+  namespace: haku-sandbox
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: kubernetes-activitywatch-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: activitywatch-read-token
+  data:
+    - secretKey: token
+      remoteRef:
+        key: activitywatch-read-token
+        property: token
