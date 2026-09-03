@@ -229,3 +229,16 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_main",
+    srcs = ["test_main.py"],
+    deps = [
+        ":conftest",
+        ":main",
+        "//:conftest",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+    ],
+)
