@@ -152,3 +152,121 @@ Nothing in the repo sets `OMP_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, `MKL_NUM_THR
 `XLA_FLAGS`, so a BLAS/threading difference between the two images is the obvious first
 place to look — but that is a hypothesis, not a finding. Worth measuring before any
 attempt to close the gap, rather than sizing tests around it forever.
+
+## 2026-09-03: it now recurs outside augur, and the mechanism is visible
+
+The condition this note set for the repo-wide fix — "if this keeps recurring outside augur" —
+is met. Two packages that share nothing with augur, and nothing with each other, flake the
+same way. All figures are `bbr test --nocache_test_results --runs_per_test=10`.
+
+| target                                | TIMEOUTs | note                    |
+| ------------------------------------- | -------: | ----------------------- |
+| `//x/agentplane/egress:test_proxy`    |     4/10 | 5/10 when run alone     |
+| `//x/agentplane/egress:test_sidecar`  |     4/10 |                         |
+| `//x/agentplane/egress:test_policy`   |     3/10 | no I/O at all           |
+| `//x/agentplane/egress:test_admin`    |     3/10 |                         |
+| `//x/agentplane/egress:test_identity` |     3/10 |                         |
+| `//x/agentplane/egress:test_upstream` |     2/10 |                         |
+| `//util:test_sqlalchemy_types`        |     2/10 | control, unrelated tree |
+| `//util:test_image_tag`               |     1/10 | control, unrelated tree |
+| `//util/bazel:test_workspace`         |     1/10 | control, unrelated tree |
+
+The controls are what make this general: they were run precisely to falsify "the egress
+package is special", and they flake too. `//x/agentplane/egress:test_policy` rules out the
+other tempting story — it is pure synchronous logic, no `async def`, no aiohttp, no fake API
+server, nothing that can block — and it still dies at 64.3s.
+
+**It is not confined to the CI image either.** This note established that `bbr` gets
+BuildBuddy's default executor while CI pins `ghcr.io/agentydragon/rbe-worker`, and that the
+pin was 1.8x slower. Every row above is on the _default_ image, while the failure that
+started this round (`test_policy` TIMEOUT 65.6s on #5469) was on the pinned one. Both images.
+
+**Where the time goes, measured rather than inferred.** An earlier draft of this section blamed
+interpreter and import cost, carrying over the augur story. That is wrong here, and the measurement
+says so. With `PYTHONPROFILEIMPORTTIME=1`, the whole import tree costs **1.5s** (`pytest_bazel`
+cumulative 1.540s, the root, so it bounds everything under it); the heaviest entries are pytest's own
+machinery, and `kubernetes_asyncio` does not reach the top eighteen. A green `test_proxy` is 1.55s of
+pytest for 11 tests, a green `test_informer` 0.35s. Call it three seconds of Python.
+
+The cost is the execution platform. BuildBuddy's own per-execution timings, same invocation:
+
+| phase                                | `//util:test_image_tag` | `//x/agentplane/egress:test_policy` |
+| ------------------------------------ | ----------------------: | ----------------------------------: |
+| queued -> worker                     |                   0.06s |                               0.09s |
+| worker -> input fetch (VM/container) |               **4.43s** |                         **252.83s** |
+| input fetch                          |                   0.85s |                               9.62s |
+| execution                            |              **40.69s** |           60.96s, killed at the cap |
+
+`test_image_tag` is a trivial test: ~3s of Python inside a 40s execution, behind 4s of VM preparation.
+`test_policy` waited over four minutes for an executor to prepare a filesystem. So `size = "small"`
+is not measuring test work at all; it is measuring how long an executor takes to hand a process a
+filesystem, and 60s sits inside that variance. A timed-out log ending at `pytest_bazel`'s
+`Running pytest.main with:` line without reaching `test session starts` is consistent with this: it is
+where a starved process happens to be when the cap fires, not work that costs a minute.
+
+**The cause, from the executors' own I/O counters.** `executedActionMetadata.ioStats` settles it.
+Five sequential runs of `//util:test_image_tag`, alone on an idle fleet, all landing on the same warm
+worker:
+
+| run                        |      1 |      2 |      3 |      4 |      5 |
+| -------------------------- | -----: | -----: | -----: | -----: | -----: |
+| VM prep                    |  0.01s |  0.06s |  0.00s |      - |      - |
+| Bazel `inputFetch`         |  0.21s |  0.43s |  0.36s |      - |      - |
+| `fileDownloadDurationUsec` | 22.50s | 18.12s | 24.40s | 13.69s | 15.10s |
+| `cpuNanos`                 |  3.67s |  4.18s |  3.94s |  3.58s |  4.32s |
+
+`fileDownloadCount` and `fileDownloadSizeBytes` are **zero** in every one. Zero files, zero bytes, and
+fourteen to twenty-four seconds charged to the input-filesystem layer, against under four and a half
+seconds of CPU. The execution phase is almost exactly that I/O figure: the action is not computing,
+it is waiting on its own filesystem. Note it does not warm up across runs on one worker.
+
+The executors serve action inputs lazily. Bazel's `inputFetch` phase is a fifth of a second because
+nothing is prefetched, so the transfer cost reappears inside execution as latency. That is why
+`PYTHONPROFILEIMPORTTIME` sees only 1.5s: it measures CPU spent in the import, not the stalls around
+the file opens.
+
+**It is not Python.** A `rust_test` (`//loom/wayback/cache:wayback_cache_test`), same fleet, two
+executions of the identical action: `EXEC 2.66s / ioWait 3.06s / cpu 1.27s`, and
+`EXEC 32.33s / ioWait 32.35s / cpu 0.99s`. `EXEC` tracks `ioWait` and CPU is noise, in a language with
+no venv and no site-packages. Python tests are the usual victims only because their runfiles tree is
+the largest, so they touch the layer most; nothing about `rules_python` or `bootstrap_impl=script` is
+at fault, and neither is any test in this repo.
+
+**Caveat on the earlier phase numbers in this entry** (the 252.83s VM prep)**Verified fix.** With the `py_test` default raised to `medium`, the same ten targets over ten runs
+each: **100 of 100 passed, no timeouts**, against 2-4 in 10 failing per target before. Several passing
+runs took 90-101s — above `small`'s cap outright, so those could not have passed under it.
+
+**Sized where it hits, and the default stays `small` (Rai).** The seven
+`//x/agentplane/egress` targets carry `size = "medium"` because they are the ones observed failing:
+one on CI, the rest at 2-4 in 10 locally. The `devinfra/python/defs.bzl` default is unchanged, so a
+test that has not hit this keeps the 60s budget and keeps meaning something by it. Raising the
+default was drafted and rejected: it would have re-sized every Python test in the repo for a
+platform property, and the August entry's objection -- that it weakens the "small tests should be
+small" signal -- is not answered by any evidence here.
+
+The three `//util` controls in the table above are deliberately **not** sized. They are the
+falsification test, not a symptom: they failed only under 30-70 concurrent actions this
+investigation induced itself. Size them if they ever fail a real run.
+
+**Verified.** Ten targets over ten runs each, with these sizes: **100 of 100 passed, no timeouts**,
+against 2-4 in 10 failing per target before. Several passing runs took 90-101s -- above `small`'s cap
+outright, so they could not have passed under it.
+
+**This is a stopgap over a platform property no BUILD file can reach.** Nothing here makes a test
+faster; it widens a budget so 14-32s of executor I/O latency stops failing unrelated PRs. The real
+fix is executor-side -- lazy input fetching on the BuildBuddy pool -- and is worth raising with them
+with the counters above, since 0 files and 0 bytes taking 24 seconds is theirs to explain. This also
+answers the August open question: the pinned image was never the mechanism.
+
+### Not the cause, so nobody re-walks these
+
+- **An aiohttp session leak.** `test_proxy` did have one (a `ClientResponse` returned from
+  inside its `async with ClientSession()`), fixed in #5471. It made no difference: 5/10 still
+  timed out. Worth having as a correctness fix, worthless as an explanation.
+- **The egress package's import closure.** Its `conftest.py` pulls `kubernetes_asyncio` into
+  every target including pure-logic ones, which looked like a fine culprit until the `util`
+  controls — which import none of it — flaked as well.
+- **A genuine wedge, in one case only.** `//x/agentplane/egress:test_informer` really did hang
+  on a 60s watch race (#5469), unrelated to any of the above; its file now runs in 0.35s. It is
+  named here because it sat inside this same symptom and will otherwise look like more evidence
+  for a story it does not belong to.

@@ -1,0 +1,16 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: github-graphql-rate-exporter
+  namespace: monitoring
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: github-graphql-rate-exporter
+      app.kubernetes.io/component: quota
+  endpoints:
+    - port: http
+      path: /metrics
+      scheme: http
+      interval: 1m
+      scrapeTimeout: 15s
