@@ -272,8 +272,12 @@ const ATTACHED: Attached = create(AttachedSchema, {
   harness: HarnessState.RUNNING,
 });
 
-function event(sequence: number, observation: MessageInitShape<typeof EventSchema>["observation"]): Event {
-  return create(EventSchema, { sequence: BigInt(sequence), observation });
+function event(
+  sequence: number,
+  observation: MessageInitShape<typeof EventSchema>["observation"],
+  sources: number[] = []
+): Event {
+  return create(EventSchema, { sequence: BigInt(sequence), observation, sourceSequences: sources.map(BigInt) });
 }
 
 const EVENTS: Event[] = [
@@ -293,10 +297,14 @@ const EVENTS: Event[] = [
     case: "native",
     value: { direction: Direction.FROM_HARNESS, line: '{"type":"tool_use","name":"Bash"}' },
   }),
-  event(11, {
-    case: "itemCompleted",
-    value: { itemId: "toolu_1", outcome: { case: "tool", value: { output: "README.md\nsrc\n", succeeded: true } } },
-  }),
+  event(
+    11,
+    {
+      case: "itemCompleted",
+      value: { itemId: "toolu_1", outcome: { case: "tool", value: { output: "README.md\nsrc\n", succeeded: true } } },
+    },
+    [10]
+  ),
   event(12, { case: "itemStarted", value: { itemId: "m#0", kind: ItemKind.ASSISTANT_TEXT } }),
   event(13, { case: "textDelta", value: { itemId: "m#0", text: "Two entries: README.md and src." } }),
   event(14, {

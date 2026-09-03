@@ -26,7 +26,7 @@ import {
   shutdownSession,
   type ThreadView,
 } from "./client";
-import { EMPTY, reduce, type InputState, type Item, type SessionState } from "./events";
+import { EMPTY, reduce, type Frames, type InputState, type Item, type SessionState } from "./events";
 import { Direction, EventSchema, ItemKind, TurnStatus, type Event } from "./protocol_pb";
 
 const KIND_LABELS: Partial<Record<ItemKind, string>> = {
@@ -35,7 +35,27 @@ const KIND_LABELS: Partial<Record<ItemKind, string>> = {
   [ItemKind.TOOL_CALL]: "tool",
 };
 
-function InputView({ input }: { input: InputState }): JSX.Element {
+function frameText(event: Event): string {
+  return event.observation.case === "native"
+    ? `${event.sequence} ${Direction[event.observation.value.direction]} ${event.observation.value.line}`
+    : `${event.sequence} ${toJsonString(EventSchema, event)}`;
+}
+
+/** The events behind one row of the transcript, shown in place while the Raw frames switch is on. */
+function FrameView({ frames }: { frames: Frames }): JSX.Element | null {
+  if (frames.length === 0) return null;
+  return (
+    <Stack gap={4}>
+      {frames.map((event) => (
+        <Code key={String(event.sequence)} block>
+          {frameText(event)}
+        </Code>
+      ))}
+    </Stack>
+  );
+}
+
+function InputView({ input, showRaw }: { input: InputState; showRaw: boolean }): JSX.Element {
   return (
     <Paper withBorder p="sm" bg="var(--mantine-color-default-hover)">
       <Group gap="xs">
@@ -46,11 +66,12 @@ function InputView({ input }: { input: InputState }): JSX.Element {
       </Group>
       {/* An input logged before the runner carried its text shows as its id. */}
       <Text style={{ whiteSpace: "pre-wrap" }}>{input.text || `input ${input.id}`}</Text>
+      {showRaw && <FrameView frames={input.frames} />}
     </Paper>
   );
 }
 
-function ItemView({ item }: { item: Item }): JSX.Element {
+function ItemView({ item, showRaw }: { item: Item; showRaw: boolean }): JSX.Element {
   const label = KIND_LABELS[item.kind] ?? ItemKind[item.kind];
   return (
     <Paper withBorder p="sm">
@@ -63,6 +84,7 @@ function ItemView({ item }: { item: Item }): JSX.Element {
       {item.text && <Text style={{ whiteSpace: "pre-wrap" }}>{item.text}</Text>}
       {item.argumentsJson && <Code block>{item.argumentsJson}</Code>}
       {item.output && <Code block>{item.output}</Code>}
+      {showRaw && <FrameView frames={item.frames} />}
     </Paper>
   );
 }
@@ -146,7 +168,6 @@ export function SessionView({
   onBack: () => void;
 }): JSX.Element {
   const [state, setState] = useState<SessionState>(EMPTY);
-  const [raw, setRaw] = useState<Event[]>([]);
   const [showRaw, setShowRaw] = useState(false);
   const [status, setStatus] = useState("connecting");
   const [error, setError] = useState<string | null>(null);
@@ -165,7 +186,6 @@ export function SessionView({
     });
     source.addEventListener("event", (message: MessageEvent<string>) => {
       const event = fromJson(EventSchema, JSON.parse(message.data) as JsonValue);
-      setRaw((events) => [...events, event]);
       setState((current) => reduce(current, event));
     });
     // The runner ending the stream is final: a reconnect would Open the session again, which
@@ -225,47 +245,55 @@ export function SessionView({
       {error && <Text c="red">{error}</Text>}
       <ScrollArea h="60vh">
         <Stack>
-          {showRaw
-            ? raw.map((event) => (
-                <Code key={String(event.sequence)} block>
-                  {event.observation.case === "native"
-                    ? `${event.sequence} ${Direction[event.observation.value.direction]} ${event.observation.value.line}`
-                    : `${event.sequence} ${toJsonString(EventSchema, event)}`}
-                </Code>
-              ))
-            : state.turns.map((turn) => (
-                <Stack key={turn.id} gap="xs">
-                  <Group gap="xs">
-                    <Text size="sm" c="dimmed">
-                      turn {turn.id}
-                    </Text>
-                    {turn.status !== null && (
-                      <Badge color={turn.status === TurnStatus.COMPLETED ? "green" : "orange"}>
-                        {TurnStatus[turn.status]}
-                      </Badge>
-                    )}
-                    {turn.error && <Text c="red">{turn.error}</Text>}
-                  </Group>
-                  {state.inputs
-                    .filter((input) => input.turnId === turn.id)
-                    .map((input) => (
-                      <InputView key={input.id} input={input} />
-                    ))}
-                  {turn.itemIds.map((id) => state.items[id] && <ItemView key={id} item={state.items[id]} />)}
-                </Stack>
-              ))}
+          {state.turns.map((turn) => (
+            <Stack key={turn.id} gap="xs">
+              <Group gap="xs">
+                <Text size="sm" c="dimmed">
+                  turn {turn.id}
+                </Text>
+                {turn.status !== null && (
+                  <Badge color={turn.status === TurnStatus.COMPLETED ? "green" : "orange"}>
+                    {TurnStatus[turn.status]}
+                  </Badge>
+                )}
+                {turn.error && <Text c="red">{turn.error}</Text>}
+              </Group>
+              {showRaw && <FrameView frames={turn.frames} />}
+              {state.inputs
+                .filter((input) => input.turnId === turn.id)
+                .map((input) => (
+                  <InputView key={input.id} input={input} showRaw={showRaw} />
+                ))}
+              {turn.itemIds.map(
+                (id) => state.items[id] && <ItemView key={id} item={state.items[id]} showRaw={showRaw} />
+              )}
+            </Stack>
+          ))}
           {state.inputs
             .filter((input) => input.state === "submitted")
             .map((input) => (
-              <InputView key={input.id} input={input} />
+              <InputView key={input.id} input={input} showRaw={showRaw} />
             ))}
           {state.inputs
             .filter((input) => input.state === "rejected" || input.state === "uncertain")
             .map((input) => (
-              <Text key={input.id} c="orange">
-                input {input.id} {input.state} {input.detail}
-              </Text>
+              <Stack key={input.id} gap="xs">
+                <Text c="orange">
+                  input {input.id} {input.state} {input.detail}
+                </Text>
+                {showRaw && <FrameView frames={input.frames} />}
+              </Stack>
             ))}
+          {/* Frames no item, input or turn produced: harness lifecycle, stderr, and what the
+              runner translated into nothing. */}
+          {showRaw && state.looseFrames.length > 0 && (
+            <Stack gap="xs">
+              <Text size="sm" c="dimmed">
+                outside the transcript
+              </Text>
+              <FrameView frames={state.looseFrames} />
+            </Stack>
+          )}
           <div ref={bottom} />
         </Stack>
       </ScrollArea>

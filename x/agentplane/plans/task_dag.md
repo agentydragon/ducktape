@@ -74,7 +74,7 @@ flowchart TB
         C3["C3 UI<br/>sandboxes, session stream, raw view, input, interrupt"]:::completed
         C4["C4 App deployment into staging<br/>RBAC, Authentik route, agent-reachable API"]:::completed
         C5["C5 Archive<br/>out of the active view, history kept"]:::completed
-        C6["C6 Session view legibility<br/>markdown, the input's own text, folded reasoning,<br/>Enter sends with no button, raw frames in place"]:::ready
+        C6["C6 Session view legibility<br/>markdown, the input's own text, folded reasoning,<br/>Enter sends with no button"]:::ready
         C7["C7 Lifecycle controls on the sandbox page<br/>suspend there, delete once suspended"]:::ready
         C8["C8 Live push for every view<br/>the server says what changed, no page polls"]:::ready
         C9["C9 The profile a sandbox runs under<br/>visible and pickable, not one badge"]:::ready
@@ -207,8 +207,8 @@ personal context.
 Landed packages are described where they live (§ Current status); what follows is the bar for the
 ones still open.
 
-- **C6 session view legibility:** five things that make a real transcript hard to read today, and
-  they are not all UI work.
+- **C6 session view legibility:** what still makes a real transcript hard to read, and not all of
+  it is UI work.
   - **Markdown for assistant text**, which currently renders as literal `**` and backticks.
   - **Reasoning folded** into a disclosure widget, closed by default, so the answer is not buried
     under the thinking.
@@ -222,11 +222,6 @@ ones still open.
     Decided (Rai): the protocol changes, so the text arrives with the event and a client that
     joined later or replayed from the log sees it too — which is the case an app-side echo of what
     this tab sent cannot cover.
-  - **Raw frames interleave rather than replace.** The switch currently swaps the whole transcript
-    for a flat list of frames, which loses the place you were reading. Instead each frame appears
-    beside the neutral item it produced and disappears again when the switch goes off. That needs
-    the projection to keep the link it discards today — which event sequences fed which item — so
-    it is a change in `events.ts`, not only in the markup.
 - **C7 lifecycle controls on the sandbox page:** the page you are already looking at can suspend
   the sandbox, and delete it once it is suspended. Today every lifecycle action lives on the list
   page only (`sandboxes.tsx`), so acting on the sandbox in front of you means navigating away from
