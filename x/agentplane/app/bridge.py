@@ -396,15 +396,7 @@ async def session_events(
     return StreamingResponse(
         bridge.events(name, session_id, after_sequence=after_sequence),
         media_type="text/event-stream",
-        # Content-Encoding declares the body already encoded, so a compressor in front of us leaves
-        # it alone. The Authentik outpost otherwise gzips this stream (observed: `content-encoding:
-        # gzip` on `content-type: text/event-stream` in a browser), and a compressor holds small
-        # frames until it has enough input to emit a deflate block -- on a quiet session nothing
-        # reaches the browser until a keepalive pushes it over, which showed up as a 15s wait for
-        # the first byte, exactly one KEEPALIVE_S. The outpost is the compressor and not the
-        # gateway: the gateway's Envoy config carries no compressor filter, and the same gateway
-        # answers haku.allegedly.works, which bypasses the outpost, with no content-encoding.
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Content-Encoding": "identity"},
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
