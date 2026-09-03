@@ -105,6 +105,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//:node_modules/react-router",
     ],
 )
 
@@ -250,9 +251,11 @@ VISUAL_DATA = [
     for scenario in [
         "sandboxes",
         "sandbox",
+        "sandbox_egress",
         "session",
         "sandboxes_phone",
         "sandbox_phone",
+        "sandbox_egress_phone",
         "session_phone",
     ]
 ]

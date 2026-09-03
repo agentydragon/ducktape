@@ -356,6 +356,7 @@ window.EventSource = ReplayingEventSource as unknown as typeof EventSource;
 const PAGES: Record<string, string> = {
   sandboxes: "/",
   sandbox: "/sandboxes/demo-a1b2",
+  sandbox_egress: "/sandboxes/demo-a1b2?tab=egress",
   session: "/sandboxes/demo-a1b2/sessions/s-1",
 };
 

@@ -349,7 +349,6 @@ export function EgressSection({ name }: { name: string }): JSX.Element {
 
   return (
     <Stack gap="xs">
-      <Title order={4}>Egress</Title>
       {error && <Text c="red">{error}</Text>}
       {bindings && <BindingsTable bindings={bindings} onAct={(binding, action) => void act(binding, action)} />}
       <Title order={5}>Recent decisions</Title>
