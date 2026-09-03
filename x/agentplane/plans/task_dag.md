@@ -76,6 +76,7 @@ flowchart TB
         C5["C5 Archive<br/>out of the active view, history kept"]:::completed
         C6["C6 Session view legibility<br/>markdown, the input's own text, folded reasoning,<br/>Enter sends, raw frames in place"]:::ready
         C7["C7 Lifecycle controls on the sandbox page<br/>suspend there, delete once suspended"]:::ready
+        C8["C8 One refresh primitive<br/>every view live, not three copies of a timer"]:::ready
     end
 
     F0["First functioning Agentplane<br/>both providers in sandboxes, driven and replayed from the app"]:::completed
@@ -130,6 +131,7 @@ flowchart TB
     C1 --> C5
     C3 --> C6
     C1 --> C7
+    C3 --> C8
     C5 --> E
     I4 --> F0
     C3 --> F0
@@ -174,7 +176,7 @@ milestone;
 orange diamonds are unresolved decisions requiring Rai's product or design input; gray is
 conditional or stretch work.
 
-Ready now: **J**, **C6**, and **C7**, which share nothing and can run in parallel. **T2** and **T3** are
+Ready now: **J**, **C6**, **C7**, and **C8**, which share nothing and can run in parallel. **T2** and **T3** are
 blocked on nothing in code; they start when the persisted history has a first reader who needs a
 name or a search.
 
@@ -209,9 +211,10 @@ ones still open.
   - **Enter sends, Ctrl+Enter takes a newline** in the composer, the binding every chat surface
     already has.
   - **A user input shows what was typed.** Today it shows only its opaque `input_id`, because
-    `InputSubmitted` carries the id alone ([`../runner/protocol.proto`](../runner/protocol.proto)):
-    so this reaches the wire and the runner before it reaches the SPA, and the choice is whether
-    the runner echoes the text back or the app renders what it sent.
+    `InputSubmitted` carries the id alone ([`../runner/protocol.proto`](../runner/protocol.proto)).
+    Decided (Rai): the protocol changes, so the text arrives with the event and a client that
+    joined later or replayed from the log sees it too — which is the case an app-side echo of what
+    this tab sent cannot cover.
   - **Raw frames interleave rather than replace.** The switch currently swaps the whole transcript
     for a flat list of frames, which loses the place you were reading. Instead each frame appears
     beside the neutral item it produced and disappears again when the switch goes off. That needs
@@ -223,6 +226,16 @@ ones still open.
   it. Deleting only a suspended sandbox is a new rule either way: `Inventory.delete` currently
   takes any state, so the package decides whether the precondition belongs in the API — where it
   also binds the agent driving staging — or is a UI affordance over an API that stays permissive.
+- **C8 one refresh primitive:** every view stays live without a reload, through one mechanism
+  rather than per-page timers. Three surfaces already poll at five seconds — the sandbox list, the
+  sandbox page, and the egress tab — but each hand-rolls the same `useEffect`/`setInterval` pair
+  with its own copy of the interval, which is why a fourth surface is written without one and
+  nobody notices. Thread names on the sandbox page are that fourth surface: `listThreads` runs once
+  per sandbox on mount, so a session named or renamed after you arrived stays under its old name
+  until a reload. The package is a shared hook that owns the polling, applied everywhere including
+  the surfaces that have their own today. If a page still reads as stale once it is on that hook,
+  the staleness is behind the API rather than in front of it, and that is worth locating before
+  more UI is written for it.
 - **T2 named threads:** a small model proposes a name from the first turn, the user can edit it,
   and the name lives on the thread record; naming never touches the runner or the harness.
 - **T3 search and lookup:** find past interactions by text and by what an agent did; answer "what
