@@ -93,7 +93,9 @@ Missing:
 - **The orchestrator's identity on the API.** Haku creates, suspends, and archives sandboxes under
   its own Kubernetes identity, through the same service proxy path the Ducktape agent uses on
   staging today. What it may create is a permission on that identity, held wherever the app
-  keeps policy; a SandboxTemplate is a Pod shape and carries no permission (Rai).
+  keeps policy; a SandboxTemplate is a Pod shape and carries no permission, because a template
+  is copied into each Sandbox at creation and cannot change under a running Pod, while a
+  permission on the identity can (Rai).
 - **Messaging in any topology.** Agents message each other back and forth through the same
   inputs and events, and the graph is a mesh, not a tree: a specialist may talk to a sibling,
   or back to the orchestrator, under the same tier rules and the same judge on any edge that
