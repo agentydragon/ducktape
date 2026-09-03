@@ -13,7 +13,7 @@ from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api
 from x.agentplane.egress.conftest import AUDIENCE, POD_A_IP, POD_A_UID, POD_B_IP, SANDBOX_A, SANDBOX_B, TOKEN_A, TOKEN_B
 from x.agentplane.egress.identity import IdentityRejectedError, PodIdentity, PodIdentityVerifier, token_expiry
 from x.agentplane.egress.policy import DenyReason
-from x.agentplane.egress.testing.fake_apiserver import NAMESPACE, FakeApiServer, TokenVerdict, pod_for
+from x.agentplane.egress.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer, TokenVerdict, pod_for
 
 
 @pytest.fixture
@@ -21,7 +21,7 @@ def verifier(api_client: ApiClient) -> PodIdentityVerifier:
     return PodIdentityVerifier(
         authentication=AuthenticationV1Api(api_client),
         core_v1=CoreV1Api(api_client),
-        namespace=NAMESPACE,
+        namespace=SANDBOX_NAMESPACE,
         audience=AUDIENCE,
         cache_seconds=60,
     )
@@ -80,7 +80,7 @@ async def test_unknown_token(verifier: PodIdentityVerifier) -> None:
 
 async def test_wrong_audience(fake: FakeApiServer, verifier: PodIdentityVerifier) -> None:
     fake.tokens["other-aud"] = TokenVerdict(
-        username=f"system:serviceaccount:{NAMESPACE}:sandbox",
+        username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:sandbox",
         pod_name=SANDBOX_A,
         pod_uid=POD_A_UID,
         audiences=("someone-else",),

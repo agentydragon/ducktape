@@ -32,8 +32,18 @@ from x.agentplane.egress.resources import (
 )
 
 NAMESPACE = "agentplane-egress-test"
+SANDBOX_NAMESPACE = "agentplane-egress-test-sandboxes"
 CREDENTIALS_NAMESPACE = "agentplane-egress-test-credentials"
 SECRETS_PLURAL = "secrets"
+
+# Which namespace each kind is legitimately read from. All three differ, so a proxy that asked the
+# wrong one is a failed assertion rather than a test that passes because they happen to be equal.
+_NAMESPACE_OF = {
+    SECRETS_PLURAL: CREDENTIALS_NAMESPACE,
+    SANDBOXES_PLURAL: SANDBOX_NAMESPACE,
+    POLICIES_PLURAL: NAMESPACE,
+    BINDINGS_PLURAL: NAMESPACE,
+}
 
 
 @dataclass(frozen=True)
@@ -124,7 +134,7 @@ class FakeApiServer:
 
     async def get_pod(self, request: web.Request) -> web.Response:
         self.pod_reads += 1
-        assert request.match_info["namespace"] == NAMESPACE
+        assert request.match_info["namespace"] == SANDBOX_NAMESPACE
         pod = self.pods.get(request.match_info["name"])
         if pod is None:
             return web.json_response({"kind": "Status", "code": 404, "reason": "NotFound"}, status=404)
@@ -132,8 +142,7 @@ class FakeApiServer:
 
     async def list_or_watch(self, request: web.Request) -> web.StreamResponse:
         plural = request.match_info["plural"]
-        # Secrets live in the credentials namespace and nowhere the proxy reads them from.
-        assert request.match_info["namespace"] == (CREDENTIALS_NAMESPACE if plural == SECRETS_PLURAL else NAMESPACE)
+        assert request.match_info["namespace"] == _NAMESPACE_OF[plural]
         # The client spells the flag `True`, which the real server parses like `true`.
         if request.query.get("watch", "").lower() == "true":
             return await self._watch(request, plural)
@@ -221,7 +230,7 @@ def pod_for(fake: FakeApiServer, sandbox_name: str, *, pod_uid: str, ip: str) ->
         "kind": "Pod",
         "metadata": {
             "name": sandbox_name,
-            "namespace": NAMESPACE,
+            "namespace": SANDBOX_NAMESPACE,
             "uid": pod_uid,
             "ownerReferences": [
                 {

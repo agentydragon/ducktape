@@ -42,7 +42,7 @@ from x.agentplane.egress.identity import PodIdentityVerifier
 from x.agentplane.egress.policy import DenyReason, Index
 from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
 from x.agentplane.egress.testing.fake_apiserver import (
-    NAMESPACE,
+    SANDBOX_NAMESPACE,
     SANDBOXES_PLURAL,
     SECRETS_PLURAL,
     FakeApiServer,
@@ -133,7 +133,7 @@ async def proxy(
     verifier = PodIdentityVerifier(
         authentication=AuthenticationV1Api(api_client),
         core_v1=CoreV1Api(api_client),
-        namespace=NAMESPACE,
+        namespace=SANDBOX_NAMESPACE,
         audience=AUDIENCE,
         cache_seconds=60,
     )
@@ -229,7 +229,7 @@ async def test_unbound_sandbox_refused(fake: FakeApiServer, proxy: ProxyUnderTes
     fake.put(SANDBOXES_PLURAL, sandbox("sb-c"))
     fake.pods["sb-c"] = pod_for(fake, "sb-c", pod_uid="pod-c-uid", ip=POD_A_IP)
     fake.tokens["token-c"] = TokenVerdict(
-        username=f"system:serviceaccount:{NAMESPACE}:sandbox",
+        username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:sandbox",
         pod_name="sb-c",
         pod_uid="pod-c-uid",
         audiences=(AUDIENCE,),

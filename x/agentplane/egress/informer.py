@@ -2,8 +2,9 @@
 
 Each kind runs its own loop: a list replaces that kind wholesale (the resync), a watch from the
 list's `resourceVersion` applies the changes until the server ends it after `resync_seconds`, and
-the loop lists again. A failed cycle backs off and relists. Policies, bindings, and Sandboxes are
-read from the sandbox namespace; Secrets from the credentials namespace only.
+the loop lists again. A failed cycle backs off and relists. Three namespaces, and the split is the
+point: policies and bindings are read from the operator's namespace, Sandboxes from the one their
+Pods run in, Secrets from the credentials namespace.
 
 Bindings' `status` is derived from the index whenever policies or bindings change and when the
 nearest expiry passes, and written through the status subresource only when it differs from what
@@ -115,6 +116,7 @@ class Informer:
         custom_objects: CustomObjectsClient,
         core_v1: CoreV1Api,
         namespace: str,
+        sandbox_namespace: str,
         credentials_namespace: str,
         resync_seconds: int,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
@@ -148,7 +150,7 @@ class Informer:
             _Kind(
                 plural=SANDBOXES_PLURAL,
                 list=custom_objects.list_namespaced_custom_object,
-                args=(SANDBOX_GROUP, SANDBOX_VERSION, namespace, SANDBOXES_PLURAL),
+                args=(SANDBOX_GROUP, SANDBOX_VERSION, sandbox_namespace, SANDBOXES_PLURAL),
                 parse=_parse_sandbox,
                 names=lambda index: set(index.sandboxes),
                 apply=_apply_sandbox,

@@ -1,4 +1,4 @@
-"""Run the Agentplane egress proxy over one namespace's policy."""
+"""Run the Agentplane egress proxy: policy from one namespace, over sandboxes in another."""
 
 from __future__ import annotations
 
@@ -32,7 +32,12 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="AGENTPLANE_EGRESS_", cli_parse_args=True, cli_kebab_case=True)
 
-    namespace: str = Field(description="Namespace holding the policies, bindings, and Sandboxes.")
+    namespace: str = Field(description="Namespace holding the policies and bindings the proxy enforces.")
+    sandbox_namespace: str = Field(
+        description="Namespace the sandbox Pods run in: the Sandboxes a decision names, and the Pods whose "
+        "sidecar tokens the proxy verifies. Separate from the policy namespace so a sandbox is never in "
+        "reach of the rules that govern it."
+    )
     credentials_namespace: str = Field(
         default="agentplane-egress-credentials", description="Namespace the rules' Secrets are read from."
     )
@@ -85,13 +90,14 @@ async def async_main(settings: Settings) -> None:
             custom_objects=custom_objects,
             core_v1=CoreV1Api(api),
             namespace=settings.namespace,
+            sandbox_namespace=settings.sandbox_namespace,
             credentials_namespace=settings.credentials_namespace,
             resync_seconds=settings.resync_seconds,
         )
         verifier = PodIdentityVerifier(
             authentication=AuthenticationV1Api(api),
             core_v1=CoreV1Api(api),
-            namespace=settings.namespace,
+            namespace=settings.sandbox_namespace,
             audience=settings.token_audience,
             cache_seconds=settings.identity_cache_seconds,
         )

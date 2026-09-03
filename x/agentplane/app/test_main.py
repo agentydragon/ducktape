@@ -16,6 +16,7 @@ from x.agentplane.app.oidc import load_settings
 
 APP_ENVIRONMENT = {
     "AGENTPLANE_NAMESPACE": "test-namespace",
+    "AGENTPLANE_SANDBOX_NAMESPACE": "test-sandbox-namespace",
     "AGENTPLANE_TEMPLATE": "test-template",
     "AGENTPLANE_RUNNER_PORT": "7000",
     "AGENTPLANE_DATABASE_URL": "postgresql+asyncpg://test@test.invalid/test",
@@ -65,7 +66,8 @@ def test_the_two_settings_models_read_one_environment_without_colliding(monkeypa
     settings = Settings(_cli_parse_args=[])
     oidc = load_settings()
 
-    assert (settings.namespace, settings.port, settings.token_audience) == ("test-namespace", 8080, "agentplane")
+    assert (settings.namespace, settings.sandbox_namespace) == ("test-namespace", "test-sandbox-namespace")
+    assert (settings.port, settings.token_audience) == (8080, "agentplane")
     assert oidc is not None
     assert oidc.redirect_uri == "https://app.test.invalid/auth/callback"
     assert (

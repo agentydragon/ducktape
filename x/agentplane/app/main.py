@@ -75,7 +75,11 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="AGENTPLANE_", cli_parse_args=True, cli_kebab_case=True)
 
-    namespace: str = Field(description="Namespace holding the Sandboxes.")
+    namespace: str = Field(description="The app's own namespace, holding the egress policies and bindings.")
+    sandbox_namespace: str = Field(
+        description="Namespace the app stamps Sandboxes into and dials runners in. Separate from the app's own "
+        "so a sandbox shares a namespace with neither the app, its database, nor the rules that govern it."
+    )
     template: str = Field(description="SandboxTemplate every new Sandbox copies its Pod from.")
     runner_port: int = Field(description="The port every runner Pod listens on.")
     host: str = Field(default="127.0.0.1", description="Bind address.")
@@ -133,7 +137,7 @@ async def async_main(settings: Settings) -> None:
         # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
         custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
         inventory = SandboxInventory(
-            namespace=settings.namespace,
+            namespace=settings.sandbox_namespace,
             template=settings.template,
             custom_objects=custom_objects,
             core_v1=CoreV1Api(api),

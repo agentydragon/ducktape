@@ -1,7 +1,7 @@
 # Agentplane integration app
 
 The browser and agent surface over Agentplane's sandboxes: a FastAPI service that stamps
-Sandboxes from the namespace's `SandboxTemplate`, dials each runner Pod over the runner protocol,
+Sandboxes from a `SandboxTemplate`, dials each runner Pod over the runner protocol,
 streams sessions to the browser over SSE, and copies every event into the trajectory store as it
 arrives. The staging instance lives in `cluster/k8s/agentplane-staging/`.
 
@@ -14,8 +14,10 @@ bbr test //x/agentplane/app/...
 - `main.py`: the entry point; `Settings` names every knob as a flag, an `AGENTPLANE_*`
   variable, and a key of the YAML file `AGENTPLANE_CONFIG_FILE` points at.
 - `inventory.py`: the sandbox inventory read from and written to Kubernetes (create, suspend,
-  resume, archive, delete), with the parsed subset of each CR it needs.
-- `egress.py`: the namespace's `EgressPolicy` and `EgressBinding` resources as the app shows and
+  resume, archive, delete), with the parsed subset of each CR it needs. It works in
+  `--sandbox-namespace`, which is not the app's own: a sandbox is the blast radius, and it shares a
+  namespace with neither the app, its database, nor the rules below.
+- `egress.py`: the app namespace's `EgressPolicy` and `EgressBinding` resources as the app shows and
   edits them (approve, deny, revoke, the launch-time grant); `decisions.py` reads the proxy's
   recent decisions off its admin port, and an unreachable proxy leaves the rules readable.
 - `bridge.py`: one runner attachment per streaming session, fanned out to every browser tab, and

@@ -53,9 +53,11 @@ substitutes. The design it implements is [the ADR](../plans/adr_sandbox_proxy_ga
 
 ## Resources and status
 
-- Policies, bindings, and Sandboxes of the sandbox namespace and Secrets of the credentials
-  namespace are watched; the proxy's picture is kept equal to the API server's, and a rotated
-  Secret is substituted from the next request on without a restart.
+- Three namespaces are watched, and the separation is the point: policies and bindings in the
+  proxy's own, Sandboxes in the one their Pods run in, Secrets in the credentials namespace. A
+  sandbox is therefore never in a namespace holding the rules that govern it or the credentials
+  they substitute. The proxy's picture is kept equal to the API server's, and a rotated Secret is
+  substituted from the next request on without a restart.
 - Each binding's `status` is written by the proxy: `observedGeneration`, `resolvedPolicies`, and
   the `Active` condition — `True` with reason `Resolved` when the binding is approved, unexpired,
   and at least one policy resolved, otherwise `False` with reason `Expired`, `NotApproved`, or

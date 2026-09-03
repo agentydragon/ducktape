@@ -18,6 +18,7 @@ from x.agentplane.egress.testing.fake_apiserver import (
     CREDENTIALS_NAMESPACE,
     NAMESPACE,
     POLICIES_PLURAL,
+    SANDBOX_NAMESPACE,
     SANDBOXES_PLURAL,
     SECRETS_PLURAL,
     FakeApiServer,
@@ -55,7 +56,10 @@ def seed(fake: FakeApiServer) -> None:
     fake.pods[SANDBOX_B] = pod_for(fake, SANDBOX_B, pod_uid=POD_B_UID, ip=POD_B_IP)
     for token, name, uid in ((TOKEN_A, SANDBOX_A, POD_A_UID), (TOKEN_B, SANDBOX_B, POD_B_UID)):
         fake.tokens[token] = TokenVerdict(
-            username=f"system:serviceaccount:{NAMESPACE}:sandbox", pod_name=name, pod_uid=uid, audiences=(AUDIENCE,)
+            username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:sandbox",
+            pod_name=name,
+            pod_uid=uid,
+            audiences=(AUDIENCE,),
         )
     fake.put(SECRETS_PLURAL, secret(SECRET_NAME, {"token": SECRET_VALUE}))
     fake.put(
@@ -102,6 +106,7 @@ def informer(index: Index, api_client: ApiClient, **overrides: Any) -> Informer:
             "custom_objects": cast(CustomObjectsClient, CustomObjectsApi(api_client)),
             "core_v1": CoreV1Api(api_client),
             "namespace": NAMESPACE,
+            "sandbox_namespace": SANDBOX_NAMESPACE,
             "credentials_namespace": CREDENTIALS_NAMESPACE,
             "resync_seconds": 60,
             **overrides,
