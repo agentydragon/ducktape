@@ -275,6 +275,8 @@ repos:
             cluster/k8s/x/claude-sandbox-firecracker/config\.yaml|
             # act_runner config mounted via configMapGenerator, not a K8s manifest
             cluster/k8s/haku-ci/config\.yaml|
+            # Agentplane app settings mounted via configMapGenerator, not a K8s manifest
+            cluster/k8s/agentplane-staging/app/config\.yaml|
             # OpenShell policy mounted via configMapGenerator, not a K8s manifest
             cluster/k8s/agents/openshell/openclaw/policy\.yaml|
             # iron-proxy config mounted via configMapGenerator, not a K8s manifest

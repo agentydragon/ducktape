@@ -1,0 +1,8 @@
+# The app's settings file (x/agentplane/app/main.py `Settings`), mounted by the Deployment.
+# What the session form offers per harness: routes the cheap-experiments key may call
+# (tf/gitops/litellm-keys), one native model per provider so far.
+models:
+  claude:
+    - anthropic-api/ant-messages/claude-haiku-4-5-20251001
+  codex:
+    - chatgpt/oai-responses/gpt-5.6-luna

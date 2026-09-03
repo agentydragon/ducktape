@@ -81,6 +81,8 @@ cluster/k8s/agents/authentik-jwt-rotation/rotations.yaml cluster-manifest-ignore
 cluster/k8s/agents/attic-jwt-rotation/rotators.yaml cluster-manifest-ignored=true
 # provision.py's user→permission policy, mounted via configMapGenerator — not a K8s manifest.
 cluster/k8s/grocy/user-perms-base/policy.yaml cluster-manifest-ignored=true
+# The Agentplane app's settings file, mounted via configMapGenerator — not a K8s manifest.
+cluster/k8s/agentplane-staging/app/config.yaml cluster-manifest-ignored=true
 # dispatcher Job template (${...} placeholders), mounted via configMapGenerator — not a live manifest.
 cluster/k8s/x/haku/dispatch/dispatcher/job-template.yaml cluster-manifest-ignored=true
 # dispatcher zone wiring, mounted via configMapGenerator — not a K8s manifest.

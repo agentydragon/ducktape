@@ -8,3 +8,10 @@ resources:
   - deployment-agentplane-app.yaml
   - service-agentplane-app.yaml
   - networkpolicy.yaml
+
+configMapGenerator:
+  - name: agentplane-app-config
+    options:
+      disableNameSuffixHash: true
+    files:
+      - config.yaml

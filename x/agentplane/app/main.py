@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 from typing import Any, cast
 
@@ -12,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
 from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
@@ -21,13 +22,21 @@ from x.agentplane.app.bridge import RunnerBridge, runner_address
 from x.agentplane.app.inventory import ProvisioningState, SandboxInventory
 from x.agentplane.app.trajectory import TrajectoryStore
 
+# YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
+# gazelle:include_dep @pypi//pyyaml
+
 # The built frontend, a runfiles data dependency of this module's library.
 # The bundle's entry; runfiles resolve files, not directories, so the mount is its parent.
 FRONTEND_INDEX = "_main/x/agentplane/app/frontend/dist/index.html"
 
 
 class Settings(BaseSettings):
-    """The app's configuration: each field is a `--flag` and an `AGENTPLANE_*` environment variable."""
+    """The app's configuration.
+
+    Each field is a `--flag`, an `AGENTPLANE_*` environment variable, and a key of the YAML file
+    `AGENTPLANE_CONFIG_FILE` names, in that order of precedence; the staging Deployment keeps the model
+    catalog in that file.
+    """
 
     model_config = SettingsConfigDict(env_prefix="AGENTPLANE_", cli_parse_args=True, cli_kebab_case=True)
 
@@ -43,9 +52,24 @@ class Settings(BaseSettings):
     )
 
     def __init__(self, **values: Any) -> None:
-        # BaseSettings fills required fields from the CLI and environment; spell that out because the
-        # mypy plugin derives a required-argument signature from the fields.
+        # BaseSettings fills required fields from its sources; spell that out because the mypy plugin
+        # derives a required-argument signature from the fields.
         super().__init__(**values)
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings, dotenv_settings]
+        if config_file := os.environ.get("AGENTPLANE_CONFIG_FILE"):
+            sources.append(YamlConfigSettingsSource(settings_cls, yaml_file=config_file))
+        sources.append(file_secret_settings)
+        return tuple(sources)
 
 
 def main() -> None:

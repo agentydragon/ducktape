@@ -46,10 +46,8 @@ spec:
             - --host=0.0.0.0
             - --port=8080
           env:
-            # What the session form offers per harness: routes the cheap-experiments key may call
-            # (tf/gitops/litellm-keys), one native model per provider so far.
-            - name: AGENTPLANE_MODELS
-              value: '{"claude": ["anthropic-api/ant-messages/claude-haiku-4-5-20251001"], "codex": ["chatgpt/oai-responses/gpt-5.6-luna"]}'
+            - name: AGENTPLANE_CONFIG_FILE
+              value: /etc/agentplane/config.yaml
             - name: AGENTPLANE_DB_USER
               valueFrom:
                 secretKeyRef:
@@ -103,3 +101,11 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/agentplane
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: agentplane-app-config
