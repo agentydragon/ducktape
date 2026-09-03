@@ -280,43 +280,86 @@ function event(
   return create(EventSchema, { sequence: BigInt(sequence), observation, sourceSequences: sources.map(BigInt) });
 }
 
+/**
+ * One finished turn and one mid-stream, cited the way the runner cites: a derived event names the
+ * frame it was translated from, an input written to the harness names nothing, and the harness's
+ * own noise (start, stderr) names nothing either. The `session_raw` scenario reads the citations —
+ * frames beside their item, their input and their turn, and what is left over under "outside the
+ * transcript".
+ */
 const EVENTS: Event[] = [
   event(1, { case: "harnessStarted", value: { resumed: false, pid: 7 } }),
   event(2, { case: "inputSubmitted", value: { inputId: "i1", text: "List the repository files." } }),
-  event(3, { case: "turnStarted", value: { turnId: "t1" } }),
-  event(4, { case: "inputAccepted", value: { inputId: "i1", turnId: "t1" } }),
-  event(5, { case: "itemStarted", value: { itemId: "r#0", kind: ItemKind.REASONING } }),
-  event(6, { case: "textDelta", value: { itemId: "r#0", text: "The user wants the files listed." } }),
-  event(7, {
-    case: "itemCompleted",
-    value: { itemId: "r#0", outcome: { case: "text", value: "The user wants the files listed." } },
-  }),
-  event(8, { case: "itemStarted", value: { itemId: "toolu_1", kind: ItemKind.TOOL_CALL, toolName: "Bash" } }),
-  event(9, { case: "toolArguments", value: { itemId: "toolu_1", argumentsJson: '{"command": "ls"}' } }),
-  event(10, {
+  event(3, {
     case: "native",
-    value: { direction: Direction.FROM_HARNESS, line: '{"type":"tool_use","name":"Bash"}' },
+    value: { direction: Direction.TO_HARNESS, line: '{"type":"user","text":"List the repository files."}' },
+  }),
+  event(4, { case: "native", value: { direction: Direction.FROM_HARNESS, line: '{"type":"turn.started"}' } }),
+  event(5, { case: "turnStarted", value: { turnId: "t1" } }, [4]),
+  event(6, { case: "inputAccepted", value: { inputId: "i1", turnId: "t1" } }, [4]),
+  event(7, {
+    case: "native",
+    value: { direction: Direction.FROM_HARNESS, line: '{"type":"thinking","text":"The user wants the files listed."}' },
+  }),
+  event(8, { case: "itemStarted", value: { itemId: "r#0", kind: ItemKind.REASONING } }, [7]),
+  event(9, { case: "textDelta", value: { itemId: "r#0", text: "The user wants the files listed." } }, [7]),
+  event(
+    10,
+    {
+      case: "itemCompleted",
+      value: { itemId: "r#0", outcome: { case: "text", value: "The user wants the files listed." } },
+    },
+    [7]
+  ),
+  event(11, {
+    case: "native",
+    value: { direction: Direction.FROM_HARNESS, line: '{"type":"tool_use","name":"Bash","input":{"command":"ls"}}' },
+  }),
+  event(12, { case: "itemStarted", value: { itemId: "toolu_1", kind: ItemKind.TOOL_CALL, toolName: "Bash" } }, [11]),
+  event(13, { case: "toolArguments", value: { itemId: "toolu_1", argumentsJson: '{"command": "ls"}' } }, [11]),
+  event(14, { case: "harnessStderr", value: { text: "warning: /state/work is not a git repository\n" } }),
+  event(15, {
+    case: "native",
+    value: { direction: Direction.FROM_HARNESS, line: '{"type":"tool_result","is_error":false}' },
   }),
   event(
-    11,
+    16,
     {
       case: "itemCompleted",
       value: { itemId: "toolu_1", outcome: { case: "tool", value: { output: "README.md\nsrc\n", succeeded: true } } },
     },
-    [10]
+    [15]
   ),
-  event(12, { case: "itemStarted", value: { itemId: "m#0", kind: ItemKind.ASSISTANT_TEXT } }),
-  event(13, { case: "textDelta", value: { itemId: "m#0", text: "Two entries: README.md and src." } }),
-  event(14, {
-    case: "itemCompleted",
-    value: { itemId: "m#0", outcome: { case: "text", value: "Two entries: README.md and src." } },
+  event(17, {
+    case: "native",
+    value: { direction: Direction.FROM_HARNESS, line: '{"type":"text","text":"Two entries: README.md and src."}' },
   }),
-  event(15, { case: "turnCompleted", value: { turnId: "t1", status: TurnStatus.COMPLETED } }),
-  event(16, { case: "inputSubmitted", value: { inputId: "i2", text: "Now read src." } }),
-  event(17, { case: "turnStarted", value: { turnId: "t2" } }),
-  event(18, { case: "inputAccepted", value: { inputId: "i2", turnId: "t2" } }),
-  event(19, { case: "itemStarted", value: { itemId: "m#1", kind: ItemKind.ASSISTANT_TEXT } }),
-  event(20, { case: "textDelta", value: { itemId: "m#1", text: "Reading src now" } }),
+  event(18, { case: "itemStarted", value: { itemId: "m#0", kind: ItemKind.ASSISTANT_TEXT } }, [17]),
+  event(19, { case: "textDelta", value: { itemId: "m#0", text: "Two entries: README.md and src." } }, [17]),
+  event(
+    20,
+    {
+      case: "itemCompleted",
+      value: { itemId: "m#0", outcome: { case: "text", value: "Two entries: README.md and src." } },
+    },
+    [17]
+  ),
+  event(21, { case: "native", value: { direction: Direction.FROM_HARNESS, line: '{"type":"turn.completed"}' } }),
+  event(22, { case: "turnCompleted", value: { turnId: "t1", status: TurnStatus.COMPLETED } }, [21]),
+  event(23, { case: "inputSubmitted", value: { inputId: "i2", text: "Now read src." } }),
+  event(24, {
+    case: "native",
+    value: { direction: Direction.TO_HARNESS, line: '{"type":"user","text":"Now read src."}' },
+  }),
+  event(25, { case: "native", value: { direction: Direction.FROM_HARNESS, line: '{"type":"turn.started"}' } }),
+  event(26, { case: "turnStarted", value: { turnId: "t2" } }, [25]),
+  event(27, { case: "inputAccepted", value: { inputId: "i2", turnId: "t2" } }, [25]),
+  event(28, {
+    case: "native",
+    value: { direction: Direction.FROM_HARNESS, line: '{"type":"text","text":"Reading src now"}' },
+  }),
+  event(29, { case: "itemStarted", value: { itemId: "m#1", kind: ItemKind.ASSISTANT_TEXT } }, [28]),
+  event(30, { case: "textDelta", value: { itemId: "m#1", text: "Reading src now" } }, [28]),
 ];
 
 routes.push(
@@ -370,6 +413,7 @@ const PAGES: Record<string, string> = {
   sandbox: "/sandboxes/demo-a1b2",
   sandbox_egress: "/sandboxes/demo-a1b2?tab=egress",
   session: "/sandboxes/demo-a1b2/sessions/s-1",
+  session_raw: "/sandboxes/demo-a1b2/sessions/s-1?raw=1",
 };
 
 const page = new URLSearchParams(window.location.search).get("page") ?? "sandboxes";

@@ -13,6 +13,7 @@ import {
   Title,
 } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 
 import { fromJson, toJsonString, type JsonValue } from "@bufbuild/protobuf";
 
@@ -168,7 +169,10 @@ export function SessionView({
   onBack: () => void;
 }): JSX.Element {
   const [state, setState] = useState<SessionState>(EMPTY);
-  const [showRaw, setShowRaw] = useState(false);
+  // The raw-frames switch is in the URL (`?raw=1`), like the sandbox page's `?tab=`: a reading of
+  // the frames can be linked to and survives a reload.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const showRaw = searchParams.get("raw") === "1";
   const [status, setStatus] = useState("connecting");
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -240,7 +244,11 @@ export function SessionView({
         <ThreadTitle sessionId={sessionId} thread={thread} onRenamed={setThread} onError={setError} />
         <Badge>{status}</Badge>
         {state.harness && <Badge color={state.harness === "running" ? "green" : "gray"}>harness {state.harness}</Badge>}
-        <Switch label="Raw frames" checked={showRaw} onChange={(e) => setShowRaw(e.currentTarget.checked)} />
+        <Switch
+          label="Raw frames"
+          checked={showRaw}
+          onChange={(e) => setSearchParams(e.currentTarget.checked ? { raw: "1" } : {}, { replace: true })}
+        />
       </Group>
       {error && <Text c="red">{error}</Text>}
       <ScrollArea h="60vh">
