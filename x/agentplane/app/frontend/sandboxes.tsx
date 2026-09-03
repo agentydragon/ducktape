@@ -11,10 +11,15 @@ import {
   Text,
   TextInput,
   Title,
+  Tooltip,
 } from "@mantine/core";
+// Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
+import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
+import IconPlayerPause from "@tabler/icons-react/dist/esm/icons/IconPlayerPause.mjs";
+import IconPlayerPlay from "@tabler/icons-react/dist/esm/icons/IconPlayerPlay.mjs";
 import { useCallback, useEffect, useState } from "react";
 
-import { api, displayableError, type NewSandbox, type SandboxView } from "./client";
+import { api, displayableError, type Condition, type NewSandbox, type SandboxView } from "./client";
 
 const REFRESH_MS = 5000;
 
@@ -25,6 +30,41 @@ const STATE_COLORS: Record<string, string> = {
   waiting_for_pod: "yellow",
   waiting_for_pod_ready: "yellow",
 };
+
+function conditionLine({ type, status, reason, message }: Condition): string {
+  return [`${type}=${status}`, reason, message].filter((part) => part).join(" · ");
+}
+
+/** The State badge's hover detail: the Sandbox's own conditions, then the Pod's phase and containers. */
+function stateDetail(row: SandboxView): string {
+  const lines = row.conditions.map(conditionLine);
+  if (row.pod) {
+    lines.push(
+      [`Pod ${row.pod.phase ?? "unknown"}`, row.pod.reason, row.pod.message].filter((part) => part).join(" · ")
+    );
+    for (const container of row.pod.containers) {
+      lines.push(
+        [
+          `${container.name}: ${container.state}`,
+          container.reason,
+          container.message,
+          container.restart_count > 0 ? `${container.restart_count} restarts` : null,
+        ]
+          .filter((part) => part)
+          .join(" · ")
+      );
+    }
+  }
+  return lines.length > 0 ? lines.join("\n") : "No conditions reported";
+}
+
+function StateBadge({ row }: { row: SandboxView }): JSX.Element {
+  return (
+    <Tooltip label={stateDetail(row)} multiline style={{ whiteSpace: "pre-line" }} withArrow>
+      <Badge color={STATE_COLORS[row.state] ?? "blue"}>{row.state}</Badge>
+    </Tooltip>
+  );
+}
 
 export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX.Element {
   const [rows, setRows] = useState<SandboxView[]>([]);
@@ -87,7 +127,10 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         <Button onClick={() => void create()} disabled={!form.slug}>
           New sandbox
         </Button>
+      </Group>
+      <Group justify="flex-end">
         <Switch
+          size="md"
           label="Show archived"
           checked={includeArchived}
           onChange={(e) => setIncludeArchived(e.currentTarget.checked)}
@@ -106,7 +149,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         <Table.Tbody>
           {rows.map((row) => {
             const node = `${row.node_name ?? "—"} ${row.pod?.ip ? `(${row.pod.ip})` : ""}`;
-            const state = <Badge color={STATE_COLORS[row.state] ?? "blue"}>{row.state}</Badge>;
+            const state = <StateBadge row={row} />;
             return (
               <Table.Tr key={row.name}>
                 <Table.Td>
@@ -127,18 +170,22 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                 <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
                   <Group gap="xs" wrap="nowrap" justify="flex-end">
                     {row.state === "suspended" || row.state === "archived" ? (
-                      <Button size="xs" onClick={() => void act(row.name, "resume")}>
-                        Resume
-                      </Button>
+                      <Tooltip label="Resume" withArrow>
+                        <ActionIcon variant="light" aria-label="Resume" onClick={() => void act(row.name, "resume")}>
+                          <IconPlayerPlay size={16} />
+                        </ActionIcon>
+                      </Tooltip>
                     ) : (
-                      <Button size="xs" onClick={() => void act(row.name, "suspend")}>
-                        Suspend
-                      </Button>
+                      <Tooltip label="Suspend" withArrow>
+                        <ActionIcon variant="light" aria-label="Suspend" onClick={() => void act(row.name, "suspend")}>
+                          <IconPlayerPause size={16} />
+                        </ActionIcon>
+                      </Tooltip>
                     )}
                     <Menu position="bottom-end">
                       <Menu.Target>
                         <ActionIcon variant="subtle" aria-label={`More actions for ${row.name}`}>
-                          ⋯
+                          <IconDotsVertical size={16} />
                         </ActionIcon>
                       </Menu.Target>
                       <Menu.Dropdown>

@@ -64,11 +64,18 @@ ts_library(
 
 ts_library(
     name = "sandboxes",
-    srcs = ["sandboxes.tsx"],
+    srcs = [
+        "sandboxes.tsx",
+        # Ambient module declarations for the @tabler/icons-react per-icon subpaths sandboxes.tsx
+        # imports. A declaration file is type-only, so it joins this target's program without
+        # being emitted.
+        "tabler_icons.d.ts",
+    ],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
