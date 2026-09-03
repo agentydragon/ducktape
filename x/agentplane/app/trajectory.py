@@ -15,9 +15,9 @@ from uuid import UUID, uuid4
 
 from google.protobuf.json_format import MessageToDict, ParseDict
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Text, UniqueConstraint, func, select
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Text, UniqueConstraint, func, select, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID, insert
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from x.agentplane.runner import protocol_pb2 as pb
@@ -43,6 +43,8 @@ class Thread(Base):
     model: Mapped[str] = mapped_column(Text)
     cwd: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    # NULL while unnamed; never the empty string.
+    name: Mapped[str | None] = mapped_column(Text)
 
 
 class Event(Base):
@@ -69,8 +71,14 @@ class ThreadView(BaseModel):
     model: str
     cwd: str
     created_at: datetime
+    name: str | None = Field(description="The user-given name; None while the thread is unnamed.")
     last_sequence: int = Field(description="The highest stored sequence; 0 while nothing is stored.")
     last_event_at: datetime | None = None
+
+
+class ThreadNotFoundError(Exception):
+    def __init__(self, thread_id: UUID) -> None:
+        super().__init__(f"no thread {thread_id}")
 
 
 class TrajectoryStore:
@@ -85,6 +93,9 @@ class TrajectoryStore:
     async def ensure_schema(self) -> None:
         async with self._engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
+            # create_all only creates tables it does not find; a column added since a table was
+            # created is added here, idempotently, until the store grows a migration mechanism.
+            await connection.execute(text("ALTER TABLE thread ADD COLUMN IF NOT EXISTS name text"))
 
     async def close(self) -> None:
         await self._engine.dispose()
@@ -135,7 +146,8 @@ class TrajectoryStore:
         async with self._sessions.begin() as session:
             await session.execute(insert(Event).values(rows).on_conflict_do_nothing())
 
-    async def list_threads(self) -> list[ThreadView]:
+    async def list_threads(self, *, sandbox: str | None = None, session_id: str | None = None) -> list[ThreadView]:
+        """Newest first; each filter given narrows the list to threads matching it."""
         last = (
             select(
                 Event.thread_id, func.max(Event.sequence).label("last_sequence"), func.max(Event.at).label("last_at")
@@ -148,6 +160,10 @@ class TrajectoryStore:
             .outerjoin(last, last.c.thread_id == Thread.id)
             .order_by(Thread.created_at.desc())
         )
+        if sandbox is not None:
+            query = query.where(Thread.sandbox == sandbox)
+        if session_id is not None:
+            query = query.where(Thread.session_id == session_id)
         async with self._sessions() as session:
             return [
                 _view(thread, last_sequence, last_at) for thread, last_sequence, last_at in await session.execute(query)
@@ -158,11 +174,17 @@ class TrajectoryStore:
             thread = await session.get(Thread, thread_id)
             if thread is None:
                 return None
-            last = await session.execute(
-                select(func.max(Event.sequence), func.max(Event.at)).where(Event.thread_id == thread_id)
-            )
-            last_sequence, last_at = last.one()
-            return _view(thread, last_sequence, last_at)
+            return _view(thread, *await _last(session, thread_id))
+
+    async def rename(self, thread_id: UUID, name: str | None) -> ThreadView:
+        """Set or, with None, clear the thread's name."""
+        async with self._sessions.begin() as session:
+            thread = await session.get(Thread, thread_id)
+            if thread is None:
+                raise ThreadNotFoundError(thread_id)
+            thread.name = name
+            await session.flush()
+            return _view(thread, *await _last(session, thread_id))
 
     async def events(self, thread_id: UUID, *, after_sequence: int = 0, limit: int) -> list[pb.Event]:
         """Up to `limit` events after the cursor, in sequence order; a reader pages until a short page."""
@@ -176,6 +198,14 @@ class TrajectoryStore:
             return [ParseDict(payload, pb.Event()) for payload in payloads]
 
 
+async def _last(session: AsyncSession, thread_id: UUID) -> tuple[int | None, datetime | None]:
+    last = await session.execute(
+        select(func.max(Event.sequence), func.max(Event.at)).where(Event.thread_id == thread_id)
+    )
+    last_sequence, last_at = last.one()
+    return last_sequence, last_at
+
+
 def _view(thread: Thread, last_sequence: int | None, last_at: datetime | None) -> ThreadView:
     return ThreadView(
         id=thread.id,
@@ -185,6 +215,7 @@ def _view(thread: Thread, last_sequence: int | None, last_at: datetime | None) -
         model=thread.model,
         cwd=thread.cwd,
         created_at=thread.created_at,
+        name=thread.name,
         last_sequence=last_sequence or 0,
         last_event_at=last_at,
     )

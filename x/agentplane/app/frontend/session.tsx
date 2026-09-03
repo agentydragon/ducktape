@@ -1,9 +1,31 @@
-import { Badge, Button, Code, Group, Paper, ScrollArea, Stack, Switch, Text, Textarea, Title } from "@mantine/core";
+import {
+  Badge,
+  Button,
+  Code,
+  Group,
+  Paper,
+  ScrollArea,
+  Stack,
+  Switch,
+  Text,
+  Textarea,
+  TextInput,
+  Title,
+} from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
 
 import { fromJson, toJsonString, type JsonValue } from "@bufbuild/protobuf";
 
-import { displayableError, eventsUrl, interruptSession, sendInput, shutdownSession } from "./client";
+import {
+  displayableError,
+  eventsUrl,
+  findThread,
+  interruptSession,
+  renameThread,
+  sendInput,
+  shutdownSession,
+  type ThreadView,
+} from "./client";
 import { EMPTY, reduce, type Item, type SessionState } from "./events";
 import { Direction, EventSchema, ItemKind, TurnStatus, type Event } from "./protocol_pb";
 
@@ -30,6 +52,75 @@ function ItemView({ item }: { item: Item }): JSX.Element {
   );
 }
 
+/**
+ * The session's title: the thread's name, or the session id while unnamed, with the name editable
+ * in place. Enter or Save submits, Escape cancels; a blank clears the name.
+ */
+function ThreadTitle({
+  sessionId,
+  thread,
+  onRenamed,
+  onError,
+}: {
+  sessionId: string;
+  thread: ThreadView | null;
+  onRenamed: (thread: ThreadView) => void;
+  onError: (message: string) => void;
+}): JSX.Element {
+  const [draft, setDraft] = useState<string | null>(null);
+
+  async function save(): Promise<void> {
+    if (draft === null || thread === null) return;
+    try {
+      onRenamed(await renameThread(thread.id, draft.trim() || null));
+      setDraft(null);
+    } catch (reason: unknown) {
+      onError(displayableError(reason));
+    }
+  }
+
+  if (draft !== null) {
+    return (
+      <Group gap="xs">
+        <TextInput
+          aria-label="Thread name"
+          value={draft}
+          placeholder={sessionId}
+          maxLength={200}
+          autoFocus
+          onChange={(e) => setDraft(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void save();
+            if (e.key === "Escape") setDraft(null);
+          }}
+        />
+        <Button size="compact-sm" onClick={() => void save()}>
+          Save
+        </Button>
+        <Button size="compact-sm" variant="subtle" onClick={() => setDraft(null)}>
+          Cancel
+        </Button>
+      </Group>
+    );
+  }
+  return (
+    <Group gap="xs">
+      <Title order={3}>{thread?.name ?? sessionId}</Title>
+      {thread?.name && (
+        <Text size="sm" c="dimmed">
+          {sessionId}
+        </Text>
+      )}
+      {/* The thread exists once the bridge has opened the session; nothing to name before that. */}
+      {thread && (
+        <Button size="compact-sm" variant="subtle" onClick={() => setDraft(thread.name ?? "")}>
+          Rename
+        </Button>
+      )}
+    </Group>
+  );
+}
+
 export function SessionView({
   sandbox,
   sessionId,
@@ -45,13 +136,18 @@ export function SessionView({
   const [status, setStatus] = useState("connecting");
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [thread, setThread] = useState<ThreadView | null>(null);
   const bottom = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     // EventSource reconnects on its own and resends the last id it saw, which the bridge turns
     // into the runner's cursor, so a dropped connection loses nothing.
     const source = new EventSource(eventsUrl(sandbox, sessionId));
-    source.addEventListener("attached", () => setStatus("attached"));
+    source.addEventListener("attached", () => {
+      setStatus("attached");
+      // The bridge stores the thread before it sends `attached`, so it is there to look up now.
+      findThread(sandbox, sessionId).then(setThread, (reason: unknown) => setError(displayableError(reason)));
+    });
     source.addEventListener("event", (message: MessageEvent<string>) => {
       const event = fromJson(EventSchema, JSON.parse(message.data) as JsonValue);
       setRaw((events) => [...events, event]);
@@ -106,7 +202,7 @@ export function SessionView({
         <Button variant="subtle" onClick={onBack}>
           ← {sandbox}
         </Button>
-        <Title order={3}>{sessionId}</Title>
+        <ThreadTitle sessionId={sessionId} thread={thread} onRenamed={setThread} onError={setError} />
         <Badge>{status}</Badge>
         {state.harness && <Badge color={state.harness === "running" ? "green" : "gray"}>harness {state.harness}</Badge>}
         <Switch label="Raw frames" checked={showRaw} onChange={(e) => setShowRaw(e.currentTarget.checked)} />

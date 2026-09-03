@@ -9,10 +9,11 @@ import grpc
 from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from google.protobuf.json_format import MessageToDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from x.agentplane.app import bridge as runner_bridge
 from x.agentplane.app.inventory import NewSandbox, Provider, SandboxInventory, SandboxNotFoundError, SandboxView
-from x.agentplane.app.trajectory import ThreadView, TrajectoryStore
+from x.agentplane.app.trajectory import ThreadNotFoundError, ThreadView, TrajectoryStore
 from x.agentplane.runner.client import RunnerError
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -110,15 +111,30 @@ def _store(request: Request) -> TrajectoryStore:
 Store = Annotated[TrajectoryStore, Depends(_store)]
 
 
-class ThreadNotFoundError(Exception):
-    def __init__(self, thread_id: UUID) -> None:
-        super().__init__(f"no thread {thread_id}")
+class ThreadRename(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(
+        max_length=200, description="The new name, whitespace-trimmed; blank or null leaves the thread unnamed."
+    )
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _blank_is_unnamed(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
 
 
 @threads.get("")
-async def list_threads(store: Store) -> list[ThreadView]:
-    """Every persisted thread, newest first; a thread outlives its sandbox."""
-    return await store.list_threads()
+async def list_threads(
+    store: Store,
+    sandbox: Annotated[str | None, Query(description="Only threads of this sandbox.")] = None,
+    session_id: Annotated[str | None, Query(description="Only threads of this session id.")] = None,
+) -> list[ThreadView]:
+    """Every persisted thread, newest first; a thread outlives its sandbox. Both filters together
+    name at most one thread: a session's."""
+    return await store.list_threads(sandbox=sandbox, session_id=session_id)
 
 
 @threads.get("/{thread_id}")
@@ -127,6 +143,11 @@ async def get_thread(store: Store, thread_id: UUID) -> ThreadView:
     if view is None:
         raise ThreadNotFoundError(thread_id)
     return view
+
+
+@threads.patch("/{thread_id}")
+async def rename_thread(store: Store, thread_id: UUID, body: ThreadRename) -> ThreadView:
+    return await store.rename(thread_id, body.name)
 
 
 @threads.get("/{thread_id}/events")

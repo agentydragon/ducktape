@@ -5,6 +5,7 @@ from __future__ import annotations
 import socket
 from collections.abc import Iterator
 
+import httpx
 import pytest
 import pytest_bazel
 from fastapi.testclient import TestClient
@@ -14,9 +15,12 @@ from x.agentplane.app.bridge import RunnerBridge
 from x.agentplane.app.inventory import ARCHIVED_LABEL, Provider, SandboxInventory
 from x.agentplane.app.testing.kubernetes import FakeCoreV1Api, FakeCustomObjectsApi, pod, sandbox
 from x.agentplane.app.trajectory import TrajectoryStore
+from x.agentplane.runner import protocol_pb2 as pb
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
+# The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
+# gazelle:include_dep @pypi//protobuf
 
 
 TEST_MODELS = {Provider.CLAUDE: ["test-claude-model"], Provider.CODEX: ["test-codex-model"]}
@@ -143,6 +147,32 @@ def test_models_lists_what_each_harness_may_run(client: TestClient) -> None:
     assert client.get("/models").json() == {"claude": ["test-claude-model"], "codex": ["test-codex-model"]}
 
 
+async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
+    inventory: SandboxInventory, bridge: RunnerBridge, store: TrajectoryStore
+) -> None:
+    """Over ASGI on this loop, not TestClient's thread: the store's pooled asyncpg connections
+    belong to the loop that opened them."""
+    spec = pb.SessionSpec(provider=pb.PROVIDER_CLAUDE, cwd="/w", model="test-model")
+    thread_id = str(await store.thread("live", "s-1", spec))
+    await store.thread("live", "s-2", spec)
+    app = create_app(inventory, bridge, store, TEST_MODELS)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
+        (found,) = (await http.get("/threads", params={"sandbox": "live", "session_id": "s-1"})).json()
+        assert (found["id"], found["name"]) == (thread_id, None)
+        assert (await http.get("/threads", params={"sandbox": "other"})).json() == []
+
+        renamed = await http.patch(f"/threads/{thread_id}", json={"name": "  list the files  "})
+        assert renamed.status_code == 200, renamed.text
+        assert renamed.json()["name"] == "list the files"
+        assert (await http.get(f"/threads/{thread_id}")).json()["name"] == "list the files"
+        assert (await http.patch(f"/threads/{thread_id}", json={"name": "   "})).json()["name"] is None
+        assert (await http.patch(f"/threads/{thread_id}", json={"name": None})).json()["name"] is None
+        assert (await http.patch(f"/threads/{thread_id}", json={"name": "x" * 201})).status_code == 422
+        assert (await http.patch(f"/threads/{thread_id}", json={})).status_code == 422
+        missing = await http.patch("/threads/00000000-0000-0000-0000-000000000000", json={"name": "nobody"})
+        assert missing.status_code == 404
+
+
 def test_healthz_answers_outside_the_schema(client: TestClient) -> None:
     assert client.get("/healthz").status_code == 204
     assert "/healthz" not in client.get("/openapi.json").json()["paths"]
@@ -170,6 +200,7 @@ def test_openapi_schema_names_every_operation(client: TestClient) -> None:
     }
     assert set(paths["/sandboxes"]) == {"get", "post"}
     assert set(paths["/sandboxes/{name}"]) == {"get", "delete"}
+    assert set(paths["/threads/{thread_id}"]) == {"get", "patch"}
 
 
 if __name__ == "__main__":

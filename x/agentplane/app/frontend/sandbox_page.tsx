@@ -3,7 +3,15 @@ import { useCallback, useEffect, useState } from "react";
 
 import { create } from "@bufbuild/protobuf";
 
-import { api, displayableError, listSessions, openSession, type Condition, type SandboxView } from "./client";
+import {
+  api,
+  displayableError,
+  listSessions,
+  listThreads,
+  openSession,
+  type Condition,
+  type SandboxView,
+} from "./client";
 import { HarnessState, Provider, SessionSpecSchema, type SessionSummary } from "./protocol_pb";
 
 const PROVIDER_ENUM: Record<string, Provider> = { claude: Provider.CLAUDE, codex: Provider.CODEX };
@@ -100,6 +108,8 @@ export function SandboxPage({
 }): JSX.Element {
   const [sandbox, setSandbox] = useState<SandboxView | null>(null);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  // Thread names by session id, read once: the store's copy, which outlives the runner's list.
+  const [names, setNames] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState(() => `s-${Date.now().toString(36)}`);
   const [effort, setEffort] = useState("low");
@@ -128,6 +138,13 @@ export function SandboxPage({
     const timer = setInterval(() => void refresh(), 5000);
     return () => clearInterval(timer);
   }, [refresh]);
+
+  useEffect(() => {
+    listThreads(name).then(
+      (threads) => setNames(Object.fromEntries(threads.flatMap((t) => (t.name ? [[t.session_id, t.name]] : [])))),
+      (reason: unknown) => setError(displayableError(reason))
+    );
+  }, [name]);
 
   const provider = sandbox?.provider;
   useEffect(() => {
@@ -206,9 +223,12 @@ export function SandboxPage({
           {sessions.map((session) => (
             <Table.Tr key={session.sessionId}>
               <Table.Td>
-                <Button variant="subtle" onClick={() => onOpenSession(session.sessionId)}>
-                  {session.sessionId}
-                </Button>
+                <Group gap="xs">
+                  <Button variant="subtle" onClick={() => onOpenSession(session.sessionId)}>
+                    {session.sessionId}
+                  </Button>
+                  {names[session.sessionId] && <Text size="sm">{names[session.sessionId]}</Text>}
+                </Group>
               </Table.Td>
               <Table.Td>{HarnessState[session.harness]}</Table.Td>
               <Table.Td>{session.activeTurnId || "—"}</Table.Td>

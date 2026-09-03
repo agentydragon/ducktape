@@ -12,7 +12,7 @@ import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";
 
 import App from "../app";
-import type { SandboxView } from "../client";
+import type { SandboxView, ThreadView } from "../client";
 import {
   AttachedSchema,
   Direction,
@@ -113,6 +113,34 @@ const SESSIONS: SessionSummary[] = [
   create(SessionSummarySchema, { sessionId: "s-0", spec: SPEC, lastSequence: 31n, harness: HarnessState.STOPPED }),
 ];
 
+/** The store's copy of the sessions: s-1 named, s-0 not, so both renderings are on the page. */
+const THREADS: ThreadView[] = [
+  {
+    id: "5f1c4a2e-0000-4000-8000-000000000001",
+    sandbox: "demo-a1b2",
+    session_id: "s-1",
+    provider: "PROVIDER_CLAUDE",
+    model: "harness-claude-model",
+    cwd: "/state/work",
+    created_at: ago(HOUR),
+    name: "List the repository files",
+    last_sequence: 14,
+    last_event_at: ago(60_000),
+  },
+  {
+    id: "5f1c4a2e-0000-4000-8000-000000000000",
+    sandbox: "demo-a1b2",
+    session_id: "s-0",
+    provider: "PROVIDER_CLAUDE",
+    model: "harness-claude-model",
+    cwd: "/state/work",
+    created_at: ago(2 * HOUR),
+    name: null,
+    last_sequence: 31,
+    last_event_at: ago(90 * 60_000),
+  },
+];
+
 const ATTACHED: Attached = create(AttachedSchema, {
   sessionId: "s-1",
   spec: SPEC,
@@ -163,7 +191,17 @@ routes.push(
   ["GET", /^\/models$/, () => ({ claude: ["harness-claude-model"], codex: ["harness-codex-model"] })],
   ["GET", /^\/sandboxes$/, () => SANDBOXES],
   ["GET", /^\/sandboxes\/([^/]+)$/, (match) => SANDBOXES.find((row) => row.name === match[1])],
-  ["GET", /^\/sandboxes\/([^/]+)\/sessions$/, () => SESSIONS.map((session) => toJson(SessionSummarySchema, session))]
+  ["GET", /^\/sandboxes\/([^/]+)\/sessions$/, () => SESSIONS.map((session) => toJson(SessionSummarySchema, session))],
+  [
+    "GET",
+    /^\/threads$/,
+    (_match, query) =>
+      THREADS.filter(
+        (thread) =>
+          (!query.has("sandbox") || thread.sandbox === query.get("sandbox")) &&
+          (!query.has("session_id") || thread.session_id === query.get("session_id"))
+      ),
+  ]
 );
 
 /** One attached stream: the canned events, then silence, the way a session mid-turn looks. */

@@ -6,7 +6,11 @@
  * visual-test-lib's `assertNetworkSettled` reads.
  */
 
-export type Route = [method: string, pattern: RegExp, answer: (match: RegExpMatchArray) => unknown];
+export type Route = [
+  method: string,
+  pattern: RegExp,
+  answer: (match: RegExpMatchArray, query: URLSearchParams) => unknown,
+];
 
 export const routes: Route[] = [];
 
@@ -30,7 +34,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
     for (const [routeMethod, pattern, answer] of routes) {
       const match = url.pathname.match(pattern);
       if (routeMethod !== method || !match) continue;
-      const body = answer(match);
+      const body = answer(match, url.searchParams);
       if (body === undefined) return Response.json({ detail: `no such sandbox ${match[1]}` }, { status: 404 });
       return Response.json(body);
     }

@@ -31,6 +31,7 @@ py_library(
         "@pypi//fastapi",
         "@pypi//grpcio",
         "@pypi//protobuf",
+        "@pypi//pydantic",
     ],
 )
 
@@ -94,8 +95,10 @@ py_test(
         ":trajectory",
         "//:conftest",
         "//x/agentplane/app/testing:kubernetes",
+        "//x/agentplane/runner:protocol_pb2",
         "@pypi//fastapi",
         "@pypi//httpx",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -226,7 +229,9 @@ py_test(
         "//:conftest",
         "//x/agentplane/runner:protocol_pb2",
         "@pypi//protobuf",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 
