@@ -159,9 +159,15 @@ Standing under it:
 
 Missing:
 
-- **The event pipe**: interactions on Haku's page post to Agentplane with the page's identity and
-  become inputs on Haku's thread, wake-up included; which interactions wake Haku is Haku's own
-  declaration in the page.
+- **The event pipe.** Rai clicks; the click reaches `haku-ui`, Haku's own code behind an
+  Authentik proxy defined in ducktape; that code decides whether Haku the agent should hear
+  about it and posts JSON to an ingress that is Agentplane's code, which batches and rate-limits
+  and delivers it to the Haku sandbox's session as an `Input` in an envelope. Haku is allowed to
+  write code that gets deployed where it can send messages to Haku; if it built the UI to lie,
+  it would be lying to itself. So the UI posts as Haku's Kubernetes identity, the envelope names
+  `haku-ui` as the source, and Rai's identity is Authentik's business at the UI's edge, not the
+  envelope's. The ingress is the batcher from [`async_approvals.md`](async_approvals.md) with a
+  workload identity on the caller side, feeding the existing inputs route: no new object.
 - **Rendering state Haku owns**: the cards and paragraphs are data Haku edits, so "dismiss and
   rewrite" is a write to that state followed by the page re-rendering, not a redeploy.
 
@@ -179,8 +185,8 @@ Missing:
 
 - Whether the judge is a classifier, a judge agent, or both in series, and what "sensitive"
   means as data classes the judge is told about rather than left to infer.
-- Whose input a UI interaction becomes: the page posts as Rai (the Authentik session) or as Haku
-  (its identity); the envelope has to say which, since Rai's words and Haku's own UI's words are
-  not the same thing to Haku.
+- How the ingress admits a workload: the sandbox identity's own token (TokenReview, as the
+  egress proxy does) or a per-workload secret the deploy pipeline mints; the former needs no
+  new secret.
 - Which notification channel carries the ask cards; the existing Haku console approvals are the
   fallback until one is chosen.
