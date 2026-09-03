@@ -23,6 +23,14 @@ logger = logging.getLogger(__name__)
 
 CA_BASENAME = "mitmproxy-ca.pem"
 
+# A master that neither signals startup nor exits, and one that will not stop after `shutdown`, are
+# both bugs rather than slow machines -- mitmproxy does each in milliseconds. Bounding them is what
+# makes such a master say which half of its lifecycle hung: unbounded, the process simply sits
+# there until something outside it loses patience, which reads as a slow test rather than a stuck
+# proxy and hides the cause behind whatever timeout finally fires.
+STARTUP_TIMEOUT_SECONDS = 20.0
+SHUTDOWN_TIMEOUT_SECONDS = 20.0
+
 
 class _RunningSignal:
     """Addon signalling that the master finished startup (listeners bound)."""
@@ -83,7 +91,14 @@ class EgressProxyServer:
         self._run_task = asyncio.create_task(master.run(), name="egress-proxy-master")
         try:
             running = asyncio.create_task(signal.running_event.wait())
-            done, _pending = await asyncio.wait({self._run_task, running}, return_when=asyncio.FIRST_COMPLETED)
+            done, _pending = await asyncio.wait(
+                {self._run_task, running}, timeout=STARTUP_TIMEOUT_SECONDS, return_when=asyncio.FIRST_COMPLETED
+            )
+            if not done:
+                running.cancel()
+                raise TimeoutError(
+                    f"mitmproxy master neither finished startup nor exited within {STARTUP_TIMEOUT_SECONDS}s"
+                )
             if running not in done:
                 running.cancel()
                 self._run_task.result()  # startup failed: surface the exception
@@ -115,6 +130,10 @@ class EgressProxyServer:
         assert self._run_task is not None
         self._master.shutdown()
         try:
-            await self._run_task
+            await asyncio.wait_for(self._run_task, SHUTDOWN_TIMEOUT_SECONDS)
+        except TimeoutError:
+            # `wait_for` has already cancelled the task and waited for it to unwind, so the port is
+            # not left bound; raising here names the proxy rather than whatever fails after it.
+            raise TimeoutError(f"mitmproxy master did not stop within {SHUTDOWN_TIMEOUT_SECONDS}s") from None
         finally:
             self._bound_port = None

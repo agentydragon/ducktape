@@ -8,7 +8,7 @@ informer over the same fake. Every assertion is on what the client and the upstr
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from ipaddress import ip_network
@@ -90,6 +90,21 @@ async def recording_upstream(cert_path: Path, key_path: Path) -> AsyncIterator[R
         await runner.cleanup()
 
 
+@dataclass(frozen=True)
+class Response:
+    """What the client saw, read while the session that fetched it is still open.
+
+    Reading here is the point, not a convenience. Handing back aiohttp's own response would outlive
+    its session, and closing a session whose body is still unread aborts the connection instead of
+    ending it -- which leaves mitmproxy holding a flow whose client vanished mid-stream, and its
+    shutdown then never completes.
+    """
+
+    status: int
+    headers: Mapping[str, str]
+    body: bytes
+
+
 @dataclass
 class ProxyUnderTest:
     proxy_port: int
@@ -101,17 +116,18 @@ class ProxyUnderTest:
     def url(self, path: str) -> str:
         return f"https://{UPSTREAM_HOST}:{self.upstream.port}{path}"
 
-    async def get(
-        self, path: str, *, token: str | None = TOKEN_A, headers: dict[str, str] | None = None
-    ) -> aiohttp.ClientResponse:
-        async with aiohttp.ClientSession() as session:
-            return await session.get(
+    async def get(self, path: str, *, token: str | None = TOKEN_A, headers: dict[str, str] | None = None) -> Response:
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get(
                 self.url(path),
                 proxy=f"http://127.0.0.1:{self.proxy_port}",
                 proxy_headers={"Proxy-Authorization": f"Bearer {token}"} if token is not None else None,
                 ssl=client_tls_context(self.interception_ca),
                 headers=headers,
-            )
+            ) as response,
+        ):
+            return Response(status=response.status, headers=dict(response.headers), body=await response.read())
 
 
 @pytest.fixture
@@ -166,13 +182,13 @@ async def proxy(
 BINDING = f"{SANDBOX_A}-{GITHUB_POLICY}"
 
 
-def denial(response: aiohttp.ClientResponse, reason: DenyReason) -> bool:
+def denial(response: Response, reason: DenyReason) -> bool:
     return response.status == 403 and response.headers[DENIED_HEADER] == f"denied; reason={reason}"
 
 
 async def test_allowed_request_has_its_placeholder_substituted(proxy: ProxyUnderTest) -> None:
     response = await proxy.get("/repos/o/r?ref=main", headers={"Authorization": f"Bearer {PLACEHOLDER}"})
-    assert (response.status, await response.text()) == (200, "upstream ok")
+    assert (response.status, response.body) == (200, b"upstream ok")
     method, path, headers = one(proxy.upstream.requests)
     assert (method, path) == ("GET", "/repos/o/r?ref=main")
     assert headers["authorization"] == f"Bearer {SECRET_VALUE}"
@@ -189,7 +205,7 @@ async def test_allowed_request_without_placeholder_is_forwarded_as_is(proxy: Pro
 async def test_inner_request_denied_by_rule_inside_an_admitted_tunnel(proxy: ProxyUnderTest) -> None:
     response = await proxy.get("/private/x")
     assert denial(response, DenyReason.NO_RULE)
-    assert await response.read() == b""
+    assert response.body == b""
     assert proxy.upstream.requests == []
 
 
