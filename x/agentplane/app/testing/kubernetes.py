@@ -12,7 +12,7 @@ from typing import Any
 
 from kubernetes_asyncio import client as k8s_client
 
-from x.agentplane.app.inventory import MANAGED_LABEL, MODEL_ANNOTATION, PROVIDER_LABEL, Provider
+from x.agentplane.app.inventory import MANAGED_LABEL, PROVIDER_LABEL, Provider
 
 NAMESPACE = "agentplane-test"
 TEMPLATE = "agentplane-test-runner"
@@ -131,7 +131,6 @@ def sandbox(
     name: str,
     *,
     provider: Provider = Provider.CLAUDE,
-    model: str = "test-model",
     labels: dict[str, str] | None = None,
     operating_mode: str = "Running",
     status: dict[str, Any] | None = None,
@@ -140,7 +139,6 @@ def sandbox(
         "metadata": {
             "name": name,
             "labels": {MANAGED_LABEL: "true", PROVIDER_LABEL: provider, **(labels or {})},
-            "annotations": {MODEL_ANNOTATION: model},
             "creationTimestamp": "2026-09-01T12:00:00Z",
         },
         "spec": {"podTemplate": POD_TEMPLATE, "operatingMode": operating_mode},

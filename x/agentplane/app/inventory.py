@@ -25,7 +25,6 @@ from util.kubernetes import CustomObjectsClient
 MANAGED_LABEL = "agentplane.allegedly.works/managed"
 PROVIDER_LABEL = "agentplane.allegedly.works/provider"
 ARCHIVED_LABEL = "agentplane.allegedly.works/archived"
-MODEL_ANNOTATION = "agentplane.allegedly.works/model"
 
 _TEMPLATE_API = ("extensions.agents.x-k8s.io", "v1beta1")
 _TEMPLATES_PLURAL = "sandboxtemplates"
@@ -78,9 +77,6 @@ class NewSandbox(BaseModel):
 
     slug: Slug = Field(description="Human-chosen name stem; a random suffix makes the Sandbox name unique.")
     provider: Provider
-    model: str = Field(
-        min_length=1, description="Model name the runner passes to the harness; recorded as an annotation."
-    )
 
 
 class Condition(BaseModel):
@@ -128,7 +124,6 @@ class SandboxView(BaseModel):
 
     name: str = Field(description="The Sandbox name, and its Pod's; the handle for every operation.")
     provider: Provider
-    model: str
     archived: bool
     state: ProvisioningState
     created_at: datetime
@@ -146,7 +141,6 @@ class _ObjectMeta(BaseModel):
 
     name: str
     labels: dict[str, str] = Field(default_factory=dict)
-    annotations: dict[str, str] = Field(default_factory=dict)
     creation_timestamp: datetime = Field(alias="creationTimestamp")
 
 
@@ -233,7 +227,6 @@ class SandboxInventory:
             "metadata": {
                 "name": f"{spec.slug}-{suffix}",
                 "labels": {MANAGED_LABEL: "true", PROVIDER_LABEL: spec.provider},
-                "annotations": {MODEL_ANNOTATION: spec.model},
             },
             # No shutdownTime and Retain: the app owns deletion, nothing expires a sandbox behind it.
             "spec": {
@@ -310,7 +303,6 @@ def _view(sandbox: _Sandbox, pod: k8s_client.V1Pod | None) -> SandboxView:
     return SandboxView(
         name=sandbox.metadata.name,
         provider=Provider(labels[PROVIDER_LABEL]),
-        model=sandbox.metadata.annotations[MODEL_ANNOTATION],
         archived=archived,
         state=_state(sandbox, pod, archived=archived),
         created_at=sandbox.metadata.creation_timestamp,

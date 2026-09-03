@@ -10,7 +10,6 @@ import pytest_bazel
 from x.agentplane.app.inventory import (
     ARCHIVED_LABEL,
     MANAGED_LABEL,
-    MODEL_ANNOTATION,
     PROVIDER_LABEL,
     NewSandbox,
     Provider,
@@ -34,9 +33,7 @@ def _populate_one_of_each_state(custom_objects: FakeCustomObjectsApi, core_v1: F
     custom_objects.objects[("sandboxes", "podless")] = sandbox("podless")
     custom_objects.objects[("sandboxes", "starting")] = sandbox("starting")
     core_v1.pods["starting"] = pod("starting", phase="Pending", ready=False, ip=None, waiting_reason="ImagePullBackOff")
-    custom_objects.objects[("sandboxes", "live")] = sandbox(
-        "live", provider=Provider.CODEX, model="cheap-codex", status=_READY
-    )
+    custom_objects.objects[("sandboxes", "live")] = sandbox("live", provider=Provider.CODEX, status=_READY)
     core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
     custom_objects.objects[("sandboxes", "paused")] = sandbox("paused", operating_mode="Suspended")
     custom_objects.objects[("sandboxes", "shelved")] = sandbox(
@@ -64,7 +61,7 @@ async def test_list_derives_each_provisioning_state_from_the_sandbox_and_its_pod
         "shelved": ProvisioningState.ARCHIVED,
     }
     live = views["live"]
-    assert (live.provider, live.model) == (Provider.CODEX, "cheap-codex")
+    assert live.provider == Provider.CODEX
     assert live.pod is not None
     assert (live.node_name, live.pod.phase, live.pod.ip, live.pod.node_name) == (
         "test-node",
@@ -118,14 +115,13 @@ async def test_get_reads_one_sandbox_and_refuses_foreign_or_missing_ones(
 async def test_create_stamps_a_labelled_sandbox_from_the_template(
     inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi
 ) -> None:
-    view = await inventory.create(NewSandbox(slug="my-task", provider=Provider.CLAUDE, model="claude-cheap"))
+    view = await inventory.create(NewSandbox(slug="my-task", provider=Provider.CLAUDE))
 
     assert re.fullmatch(r"my-task-[a-z0-9]{5}", view.name)
     assert view.state == ProvisioningState.WAITING_FOR_POD
     stored = custom_objects.objects[("sandboxes", view.name)]
     assert stored["kind"] == "Sandbox"
     assert stored["metadata"]["labels"] == {MANAGED_LABEL: "true", PROVIDER_LABEL: "claude"}
-    assert stored["metadata"]["annotations"] == {MODEL_ANNOTATION: "claude-cheap"}
     assert stored["spec"] == {
         "podTemplate": POD_TEMPLATE,
         "volumeClaimTemplates": VOLUME_CLAIM_TEMPLATES,
@@ -134,7 +130,7 @@ async def test_create_stamps_a_labelled_sandbox_from_the_template(
 
 
 async def test_create_names_each_sandbox_uniquely(inventory: SandboxInventory) -> None:
-    spec = NewSandbox(slug="twice", provider=Provider.CODEX, model="m")
+    spec = NewSandbox(slug="twice", provider=Provider.CODEX)
 
     first, second = await inventory.create(spec), await inventory.create(spec)
 

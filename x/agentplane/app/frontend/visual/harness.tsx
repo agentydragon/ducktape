@@ -42,7 +42,6 @@ const SANDBOXES: SandboxView[] = [
   {
     name: "demo-a1b2",
     provider: "claude",
-    model: "harness-model-cheap",
     archived: false,
     state: "running",
     created_at: ago(3 * HOUR),
@@ -65,7 +64,6 @@ const SANDBOXES: SandboxView[] = [
   {
     name: "codex-c3d4",
     provider: "codex",
-    model: "harness-model-cheap",
     archived: false,
     state: "waiting_for_pod_ready",
     created_at: ago(2 * 60_000),
@@ -94,7 +92,6 @@ const SANDBOXES: SandboxView[] = [
   {
     name: "old-e5f6",
     provider: "claude",
-    model: "harness-model-cheap",
     archived: false,
     state: "suspended",
     created_at: ago(48 * HOUR),
@@ -108,7 +105,6 @@ const SANDBOXES: SandboxView[] = [
 const SPEC: SessionSpec = create(SessionSpecSchema, {
   provider: Provider.CLAUDE,
   cwd: "/state/work",
-  model: "harness-model-cheap",
   reasoningEffort: "low",
 });
 
@@ -164,6 +160,7 @@ const EVENTS: Event[] = [
 ];
 
 routes.push(
+  ["GET", /^\/models$/, () => ({ claude: ["harness-claude-model"], codex: ["harness-codex-model"] })],
   ["GET", /^\/sandboxes$/, () => SANDBOXES],
   ["GET", /^\/sandboxes\/([^/]+)$/, (match) => SANDBOXES.find((row) => row.name === match[1])],
   ["GET", /^\/sandboxes\/([^/]+)\/sessions$/, () => SESSIONS.map((session) => toJson(SessionSummarySchema, session))]

@@ -11,12 +11,15 @@ from fastapi.testclient import TestClient
 
 from x.agentplane.app.api import create_app
 from x.agentplane.app.bridge import RunnerBridge
-from x.agentplane.app.inventory import ARCHIVED_LABEL, SandboxInventory
+from x.agentplane.app.inventory import ARCHIVED_LABEL, Provider, SandboxInventory
 from x.agentplane.app.testing.kubernetes import FakeCoreV1Api, FakeCustomObjectsApi, pod, sandbox
 from x.agentplane.app.trajectory import TrajectoryStore
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
+
+
+TEST_MODELS = {Provider.CLAUDE: ["test-claude-model"], Provider.CODEX: ["test-codex-model"]}
 
 
 @pytest.fixture
@@ -33,7 +36,7 @@ def client(
     custom_objects.objects[("sandboxes", "shelved")] = sandbox(
         "shelved", labels={ARCHIVED_LABEL: "true"}, operating_mode="Suspended"
     )
-    with TestClient(create_app(inventory, bridge, store)) as test_client:
+    with TestClient(create_app(inventory, bridge, store, TEST_MODELS)) as test_client:
         yield test_client
 
 
@@ -58,25 +61,31 @@ def test_get_returns_the_row_or_404(client: TestClient) -> None:
 
 
 def test_create_returns_the_new_row(client: TestClient, custom_objects: FakeCustomObjectsApi) -> None:
-    response = client.post("/sandboxes", json={"slug": "demo", "provider": "codex", "model": "cheap"})
+    response = client.post("/sandboxes", json={"slug": "demo", "provider": "codex"})
 
     assert response.status_code == 201
     row = response.json()
     assert row["name"].startswith("demo-")
-    assert (row["state"], row["provider"], row["model"]) == ("waiting_for_pod", "codex", "cheap")
+    assert (row["state"], row["provider"]) == ("waiting_for_pod", "codex")
     assert ("sandboxes", row["name"]) in custom_objects.objects
 
 
 @pytest.mark.parametrize(
     "body",
     [
-        {"slug": "demo", "provider": "gemini", "model": "cheap"},
-        {"slug": "Demo", "provider": "claude", "model": "cheap"},
-        {"slug": "-demo", "provider": "claude", "model": "cheap"},
-        {"slug": "a" * 58, "provider": "claude", "model": "cheap"},
-        {"slug": "demo", "provider": "claude", "model": ""},
+        {"slug": "demo", "provider": "gemini"},
+        {"slug": "Demo", "provider": "claude"},
+        {"slug": "-demo", "provider": "claude"},
+        {"slug": "a" * 58, "provider": "claude"},
+        {"slug": "demo", "provider": "claude", "model": "cheap"},
     ],
-    ids=["unknown-provider", "uppercase-slug", "leading-dash-slug", "slug-too-long-for-a-dns-label", "empty-model"],
+    ids=[
+        "unknown-provider",
+        "uppercase-slug",
+        "leading-dash-slug",
+        "slug-too-long-for-a-dns-label",
+        "model-on-sandbox",
+    ],
 )
 def test_create_rejects_invalid_requests(client: TestClient, custom_objects: FakeCustomObjectsApi, body: dict) -> None:
     response = client.post("/sandboxes", json=body)
@@ -121,10 +130,17 @@ def test_a_runner_that_does_not_answer_is_a_503(
         async def nobody_listens(name: str) -> str:
             return address
 
-        with TestClient(create_app(inventory, RunnerBridge(address_of=nobody_listens, store=store), store)) as client:
+        with TestClient(
+            create_app(inventory, RunnerBridge(address_of=nobody_listens, store=store), store, TEST_MODELS)
+        ) as client:
             response = client.get("/sandboxes/live/sessions")
     assert response.status_code == 503
     assert "not answering" in response.json()["detail"]
+
+
+def test_models_lists_what_each_harness_may_run(client: TestClient) -> None:
+    """The catalog the session form offers; a thread carries its model, a sandbox does not."""
+    assert client.get("/models").json() == {"claude": ["test-claude-model"], "codex": ["test-codex-model"]}
 
 
 def test_healthz_answers_outside_the_schema(client: TestClient) -> None:
@@ -136,6 +152,7 @@ def test_openapi_schema_names_every_operation(client: TestClient) -> None:
     paths = client.get("/openapi.json").json()["paths"]
 
     assert set(paths) == {
+        "/models",
         "/sandboxes",
         "/sandboxes/{name}",
         "/sandboxes/{name}/suspend",

@@ -103,6 +103,9 @@ export function SandboxPage({
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState(() => `s-${Date.now().toString(36)}`);
   const [effort, setEffort] = useState("low");
+  // The app's catalog of what this sandbox's harness may run; the thread carries the choice.
+  const [models, setModels] = useState<string[]>([]);
+  const [model, setModel] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const { data, error: failure } = await api.GET("/sandboxes/{name}", { params: { path: { name } } });
@@ -126,8 +129,23 @@ export function SandboxPage({
     return () => clearInterval(timer);
   }, [refresh]);
 
+  const provider = sandbox?.provider;
+  useEffect(() => {
+    if (!provider) return;
+    void (async () => {
+      const { data, error: failure } = await api.GET("/models");
+      if (failure) {
+        setError(displayableError(failure));
+        return;
+      }
+      const offered = data[provider];
+      setModels(offered);
+      setModel((current) => (current && offered.includes(current) ? current : (offered[0] ?? null)));
+    })();
+  }, [provider]);
+
   async function createSession(): Promise<void> {
-    if (!sandbox) return;
+    if (!sandbox || !model) return;
     try {
       await openSession(
         name,
@@ -135,7 +153,7 @@ export function SandboxPage({
         create(SessionSpecSchema, {
           provider: PROVIDER_ENUM[sandbox.provider],
           cwd: `/state/workspaces/${sessionId}`,
-          model: sandbox.model,
+          model,
           reasoningEffort: effort,
         })
       );
@@ -161,13 +179,17 @@ export function SandboxPage({
       {sandbox && <StatusView sandbox={sandbox} />}
       <Group align="flex-end">
         <TextInput label="Session id" value={sessionId} onChange={(e) => setSessionId(e.currentTarget.value)} />
+        <Select label="Model" data={models} value={model} onChange={setModel} />
         <Select
           label="Reasoning effort"
           data={["low", "medium", "high"]}
           value={effort}
           onChange={(v) => v && setEffort(v)}
         />
-        <Button onClick={() => void createSession()} disabled={!sandbox || sandbox.state !== "running" || !sessionId}>
+        <Button
+          onClick={() => void createSession()}
+          disabled={!sandbox || sandbox.state !== "running" || !sessionId || !model}
+        >
           New session
         </Button>
       </Group>

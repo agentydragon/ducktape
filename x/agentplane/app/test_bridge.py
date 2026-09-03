@@ -20,7 +20,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from x.agentplane.app.api import create_app
 from x.agentplane.app.bridge import RunnerBridge
-from x.agentplane.app.inventory import SandboxInventory
+from x.agentplane.app.inventory import Provider, SandboxInventory
 from x.agentplane.app.trajectory import TrajectoryStore
 from x.agentplane.runner import protocol_pb2 as pb
 from x.agentplane.runner.conftest import RunnerHandle
@@ -88,7 +88,12 @@ async def app_url(runner: RunnerHandle, inventory: SandboxInventory, store: Traj
         port = int(probe.getsockname()[1])
     bridge = RunnerBridge(address_of=address_of, store=store)
     server = uvicorn.Server(
-        uvicorn.Config(create_app(inventory, bridge, store), host="127.0.0.1", port=port, log_level="warning")
+        uvicorn.Config(
+            create_app(inventory, bridge, store, {provider: ["bridge-model"] for provider in Provider}),
+            host="127.0.0.1",
+            port=port,
+            log_level="warning",
+        )
     )
     serving = asyncio.create_task(server.serve())
     async for attempt in AsyncRetrying(

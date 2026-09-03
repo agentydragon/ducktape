@@ -12,10 +12,11 @@ import uvicorn
 from fastapi.staticfiles import StaticFiles
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
+from pydantic import TypeAdapter
 
 from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
-from x.agentplane.app.api import create_app
+from x.agentplane.app.api import ModelCatalog, create_app
 from x.agentplane.app.bridge import RunnerBridge, runner_address
 from x.agentplane.app.inventory import ProvisioningState, SandboxInventory
 from x.agentplane.app.trajectory import TrajectoryStore
@@ -38,10 +39,19 @@ def main(
     database_url: Annotated[
         str, typer.Option(envvar="AGENTPLANE_DATABASE_URL", help="SQLAlchemy asyncpg URL of the trajectory store.")
     ] = "",
+    models: Annotated[
+        str,
+        typer.Option(
+            envvar="AGENTPLANE_MODELS",
+            help='JSON object of the models each provider may run, e.g. {"claude": ["..."], "codex": ["..."]}.',
+        ),
+    ] = "",
 ) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     if not database_url:
         raise typer.BadParameter("--database-url (AGENTPLANE_DATABASE_URL) is required")
+    if not models:
+        raise typer.BadParameter("--models (AGENTPLANE_MODELS) is required")
     asyncio.run(
         async_main(
             namespace=namespace,
@@ -51,12 +61,21 @@ def main(
             port=port,
             kubeconfig=kubeconfig,
             database_url=database_url,
+            catalog=TypeAdapter(ModelCatalog).validate_json(models),
         )
     )
 
 
 async def async_main(
-    *, namespace: str, template: str, runner_port: int, host: str, port: int, kubeconfig: Path | None, database_url: str
+    *,
+    namespace: str,
+    template: str,
+    runner_port: int,
+    host: str,
+    port: int,
+    kubeconfig: Path | None,
+    database_url: str,
+    catalog: ModelCatalog,
 ) -> None:
     configuration = k8s_client.Configuration()
     if kubeconfig is None:
@@ -74,7 +93,7 @@ async def async_main(
         store = TrajectoryStore.connect(database_url)
         await store.ensure_schema()
         bridge = RunnerBridge(address_of=runner_address(inventory, runner_port), store=store)
-        app = create_app(inventory, bridge, store)
+        app = create_app(inventory, bridge, store, catalog)
         # The SPA, mounted last so the API routes above it win; index.html answers the rest.
         app.mount("/", StaticFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
         try:

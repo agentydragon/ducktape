@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from google.protobuf.json_format import MessageToDict
 
 from x.agentplane.app import bridge as runner_bridge
-from x.agentplane.app.inventory import NewSandbox, SandboxInventory, SandboxNotFoundError, SandboxView
+from x.agentplane.app.inventory import NewSandbox, Provider, SandboxInventory, SandboxNotFoundError, SandboxView
 from x.agentplane.app.trajectory import ThreadView, TrajectoryStore
 from x.agentplane.runner.client import RunnerError
 
@@ -19,6 +19,25 @@ from x.agentplane.runner.client import RunnerError
 # gazelle:include_dep @pypi//protobuf
 
 router = APIRouter(prefix="/sandboxes", tags=["sandboxes"])
+
+# The models each harness may be opened with, by provider: the app's configuration, offered to the
+# session form. A thread carries its model; a sandbox is a Pod and carries none.
+ModelCatalog = dict[Provider, list[str]]
+
+
+def _models(request: Request) -> ModelCatalog:
+    models = request.app.state.models
+    if not isinstance(models, dict):
+        raise TypeError(f"app.state.models is {type(models).__name__}, not a dict")
+    return models
+
+
+models = APIRouter(prefix="/models", tags=["models"])
+
+
+@models.get("")
+async def list_models(catalog: Annotated[ModelCatalog, Depends(_models)]) -> ModelCatalog:
+    return catalog
 
 
 def _inventory(request: Request) -> SandboxInventory:
@@ -123,12 +142,18 @@ async def thread_events(
     return [MessageToDict(event) for event in await store.events(thread_id, after_sequence=after, limit=limit)]
 
 
-def create_app(inventory: SandboxInventory, bridge: runner_bridge.RunnerBridge, store: TrajectoryStore) -> FastAPI:
+def create_app(
+    inventory: SandboxInventory, bridge: runner_bridge.RunnerBridge, store: TrajectoryStore, catalog: ModelCatalog
+) -> FastAPI:
+    if set(catalog) != set(Provider) or not all(catalog.values()):
+        raise ValueError(f"the model catalog needs a non-empty list for every provider: {catalog=}")
     app = FastAPI(title="Agentplane", version="0")
     app.state.inventory = inventory
     app.state.bridge = bridge
     app.state.store = store
+    app.state.models = catalog
     app.include_router(router)
+    app.include_router(models)
     app.include_router(runner_bridge.router)
     app.include_router(threads)
 
