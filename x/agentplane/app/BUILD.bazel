@@ -58,7 +58,7 @@ py_library(
         "@pypi//fastapi",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
-        "@pypi//typer",
+        "@pypi//pydantic_settings",
         "@pypi//uvicorn",
     ],
 )
