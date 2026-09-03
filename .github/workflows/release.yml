@@ -124,7 +124,6 @@ jobs:
         with:
           pkg: ${{ matrix.pkg }}
           bazel_targets: ${{ matrix.targets }}
-          outputs: ${{ matrix.outputs }}
           bazel_flags: ${{ matrix.bazel_flags }}
           release_metadata: ${{ matrix.release_metadata }}
           metadata_platform: ${{ matrix.metadata_platform }}

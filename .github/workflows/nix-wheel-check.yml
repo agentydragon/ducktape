@@ -9,7 +9,7 @@
 # nix-attic-push.yml still does the full-fleet build against pinned artifacts on
 # push to devel/main; this workflow is the fast per-PR gate.
 #
-# Source of truth for pin → Bazel target + output: devinfra/ci/artifact_targets.json.
+# Source of truth for pin → Bazel target + released filename: devinfra/ci/artifact_targets.json.
 # Keep it in sync with the artifact entries in release.yml's matrix (SYNC
 # comment there points here).
 name: Nix wheel check
@@ -144,13 +144,14 @@ jobs:
           echo "nix_pkgs=$nix_pkgs" >> "$GITHUB_OUTPUT"
 
       # Every one of these artifacts must come back, because "Assemble artifact
-      # overrides" below exits 1 on a missing file — this gate fails closed. It
-      # relies on `bb remote build`'s post-run download, which returns an
-      # arbitrary subset for a large enough request: measured on devel, 50 targets
-      # yielded 12 files while these 8 yielded 8. So it is sound at this size and
-      # degrades as more releases gain `nixPackage`. If it starts flaking on
-      # "missing artifact for pin", read the outputs from the build event stream
-      # instead (devinfra/ci/bes.py) rather than raising a retry count.
+      # overrides" below exits 1 on a missing file — this gate fails closed. The
+      # file *bytes* rely on `bb remote build`'s post-run download, which returns
+      # an arbitrary subset for a large enough request: measured on devel, 50
+      # targets yielded 12 files while these 8 yielded 8. So it is sound at this
+      # size and degrades as more releases gain `nixPackage`. If it starts
+      # flaking on "missing artifact for pin", fetch the bytes from CAS too
+      # (devinfra/ci/bes.py fetch_blob) rather than raising a retry count — the
+      # paths already come from the build event stream.
       #
       # run_from_commit: actions/checkout in PR mode doesn't fetch a local
       # `devel` ref, so bb remote's default base-branch patch sync fails with
@@ -159,6 +160,7 @@ jobs:
       # the same base+PR tree as the GitHub runner. Same rationale as
       # bazel-ci.yml.
       - name: Build artifacts from source
+        id: build
         uses: ./.github/actions/bb-remote
         with:
           args: build ${{ steps.inputs.outputs.bazel_targets }}
@@ -166,14 +168,19 @@ jobs:
 
       # Emit the JSON blob flake.nix's artifacts logic consumes. Every pin
       # in an in-gate release gets an override entry (including every asset in
-      # a multi-asset release). Verifying every
-      # expected output exists surfaces build/output-path drift with a
-      # clear error before nix reads a missing file.
+      # a multi-asset release), at the path the build's own event stream
+      # reports for its target. Verifying every expected output exists
+      # surfaces download drift with a clear error before nix reads a
+      # missing file.
       - name: Assemble artifact overrides
         id: overrides
         shell: bash
+        env:
+          INVOCATIONS: ${{ steps.build.outputs.bazel_invocation_ids }}
         run: |
           set -euo pipefail
+          rows=$(python3 -m devinfra.ci.release_assets nix-overrides \
+            --invocations "$INVOCATIONS")
           json='{}'
           while IFS=$'\t' read -r pin rel; do
             if [[ ! -f "$rel" ]]; then
@@ -182,12 +189,7 @@ jobs:
             fi
             abs=$(readlink -f "$rel")
             json=$(jq -c --arg k "$pin" --arg v "$abs" '. + {($k): $v}' <<<"$json")
-          done < <(jq -r '
-            . as $doc |
-            $doc.pins | to_entries[] |
-            select($doc.releases[.value.release].nixPackage) |
-            "\(.key)\t\(.value.output)"
-          ' devinfra/ci/artifact_targets.json)
+          done <<<"$rows"
           {
             echo 'overrides<<EOF'
             echo "$json"

@@ -35,7 +35,7 @@ class Sources(BaseModel):
 
 
 class ArtifactTarget(BaseModel):
-    output: str
+    filename: str
     release: str
 
 
@@ -90,7 +90,7 @@ def _skill_artifacts() -> list["Artifact"]:
 def _release_artifacts() -> list["Artifact"]:
     targets = ArtifactTargets.model_validate_json(artifact_targets_path().read_text())
     return [
-        Artifact(pkg=pkg, filename=Path(target.output).name, tag_pkg=target.release if target.release != pkg else None)
+        Artifact(pkg=pkg, filename=target.filename, tag_pkg=target.release if target.release != pkg else None)
         for pkg, target in targets.pins.items()
     ]
 
