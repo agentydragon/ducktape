@@ -152,3 +152,70 @@ Nothing in the repo sets `OMP_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, `MKL_NUM_THR
 `XLA_FLAGS`, so a BLAS/threading difference between the two images is the obvious first
 place to look — but that is a hypothesis, not a finding. Worth measuring before any
 attempt to close the gap, rather than sizing tests around it forever.
+
+## 2026-09-03: it now recurs outside augur, and the mechanism is visible
+
+The condition this note set for the repo-wide fix — "if this keeps recurring outside augur" —
+is met. Two packages that share nothing with augur, and nothing with each other, flake the
+same way. All figures are `bbr test --nocache_test_results --runs_per_test=10`.
+
+| target                                | TIMEOUTs | note                    |
+| ------------------------------------- | -------: | ----------------------- |
+| `//x/agentplane/egress:test_proxy`    |     4/10 | 5/10 when run alone     |
+| `//x/agentplane/egress:test_sidecar`  |     4/10 |                         |
+| `//x/agentplane/egress:test_policy`   |     3/10 | no I/O at all           |
+| `//x/agentplane/egress:test_admin`    |     3/10 |                         |
+| `//x/agentplane/egress:test_identity` |     3/10 |                         |
+| `//x/agentplane/egress:test_upstream` |     2/10 |                         |
+| `//util:test_sqlalchemy_types`        |     2/10 | control, unrelated tree |
+| `//util:test_image_tag`               |     1/10 | control, unrelated tree |
+| `//util/bazel:test_workspace`         |     1/10 | control, unrelated tree |
+
+The controls are what make this general: they were run precisely to falsify "the egress
+package is special", and they flake too. `//x/agentplane/egress:test_policy` rules out the
+other tempting story — it is pure synchronous logic, no `async def`, no aiohttp, no fake API
+server, nothing that can block — and it still dies at 64.3s.
+
+**It is not confined to the CI image either.** This note established that `bbr` gets
+BuildBuddy's default executor while CI pins `ghcr.io/agentydragon/rbe-worker`, and that the
+pin was 1.8x slower. Every row above is on the _default_ image, while the failure that
+started this round (`test_policy` TIMEOUT 65.6s on #5469) was on the pinned one. Both images.
+
+**Where the time goes is now observable.** A timed-out test's log ends at
+
+```text
+Executing tests from //x/agentplane/egress:test_policy
+Running pytest.main with: ['--ignore=external', ...]
+```
+
+`pytest_bazel` prints that line immediately before calling `pytest.main()`, and the log never
+reaches `test session starts`. So the whole 60s elapses inside pytest startup — plugin entry-point
+discovery and conftest import — before a single test body runs. That is the same shape this note
+already described for augur ("~15-25s of interpreter and import cost before executing a single
+assertion"), now confirmed from the other end: it is not numerical compute variance, and it is not
+specific to jax/numpyro.
+
+The passing runs say the same thing from the other side. `test_proxy` green is **1.55s of pytest
+for 11 tests** against ~16s of wall time; `test_informer` green is **0.35s of pytest** against
+15.9s. Roughly 15s of a 60s budget is gone before the suite starts, on a good run — so a test doing
+under two seconds of work has under 4x headroom, and the excursions above eat it.
+
+**Recommendation, for the decision this note deliberately left open**: raise the
+`devinfra/python/defs.bzl` `py_test` default from `small` to `medium`. The evidence for the
+"if it recurs" trigger is above; per-package sizing cannot reach this, because the cost is paid by
+every Python test in the repo before its own code runs. The counter-argument the August entry
+raised still stands and is unaffected by any of this — it weakens the "small tests should be small"
+signal — so it remains a call for Rai, not a unilateral change.
+
+### Not the cause, so nobody re-walks these
+
+- **An aiohttp session leak.** `test_proxy` did have one (a `ClientResponse` returned from
+  inside its `async with ClientSession()`), fixed in #5471. It made no difference: 5/10 still
+  timed out. Worth having as a correctness fix, worthless as an explanation.
+- **The egress package's import closure.** Its `conftest.py` pulls `kubernetes_asyncio` into
+  every target including pure-logic ones, which looked like a fine culprit until the `util`
+  controls — which import none of it — flaked as well.
+- **A genuine wedge, in one case only.** `//x/agentplane/egress:test_informer` really did hang
+  on a 60s watch race (#5469), unrelated to any of the above; its file now runs in 0.35s. It is
+  named here because it sat inside this same symptom and will otherwise look like more evidence
+  for a story it does not belong to.
