@@ -13,11 +13,17 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from x.agentplane.app.api import Provider, create_app
-from x.agentplane.app.bridge import RunnerBridge
+from x.agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.identity import TokenReviewer
-from x.agentplane.app.inventory import ARCHIVED_LABEL, PROFILE_LABEL, SANDBOXES_PLURAL, SandboxInventory
+from x.agentplane.app.inventory import (
+    ARCHIVED_LABEL,
+    PROFILE_LABEL,
+    SANDBOXES_PLURAL,
+    ProvisioningState,
+    SandboxInventory,
+)
 from x.agentplane.app.live import PODS_PLURAL, LiveIndex, SandboxesSnapshot, WatchHealth, frames
 from x.agentplane.app.testing.kubernetes import (
     FakeCoreV1Api,
@@ -122,13 +128,19 @@ async def test_a_frame_goes_out_per_change_with_health_through_the_quiet(seeded:
 @pytest.fixture
 def app(
     inventory: SandboxInventory,
-    bridge: RunnerBridge,
-    store: TrajectoryStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     reviewer: TokenReviewer,
 ) -> FastAPI:
+    """Neither test below reaches a database or a runner -- the guard answers before a route body
+    runs, and the document comes from the signatures -- so the engine here never connects."""
+
+    async def unreachable(name: str) -> str:
+        raise SandboxNotReachableError(name, ProvisioningState.WAITING_FOR_POD)
+
+    store = TrajectoryStore.connect("postgresql+asyncpg://live-test@127.0.0.1:1/live-test")
+    bridge = RunnerBridge(address_of=unreachable, store=store)
     return create_app(inventory, bridge, store, MODELS, egress, decisions, live_index, reviewer=reviewer)
 
 
