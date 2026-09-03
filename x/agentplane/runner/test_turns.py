@@ -40,6 +40,7 @@ async def test_one_turn_streams_reasoning_and_text(
     (submitted,) = events.of_kind(seen, "input_submitted")
     (accepted,) = events.of_kind(seen, "input_accepted")
     assert submitted.input_submitted.input_id == accepted.input_accepted.input_id == "input-1"
+    assert submitted.input_submitted.text == "Reply with exactly: BASELINE_OK"
     assert accepted.input_accepted.turn_id == turn.turn_started.turn_id
     assert turn.sequence < accepted.sequence < done.sequence
 

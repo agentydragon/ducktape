@@ -28,6 +28,10 @@ export interface InputState {
   id: string;
   state: "submitted" | "accepted" | "rejected" | "uncertain";
   detail: string;
+  /** What was asked; empty for events logged before the runner carried it. */
+  text: string;
+  /** The turn the harness took it into, once accepted. */
+  turnId: string | null;
 }
 
 export interface SessionState {
@@ -65,7 +69,7 @@ function withInput(state: SessionState, id: string, update: Partial<InputState>)
   const existing = state.inputs.find((input) => input.id === id);
   const inputs = existing
     ? state.inputs.map((input) => (input.id === id ? { ...input, ...update } : input))
-    : [...state.inputs, { id, state: "submitted" as const, detail: "", ...update }];
+    : [...state.inputs, { id, state: "submitted" as const, detail: "", text: "", turnId: null, ...update }];
   return { ...state, inputs };
 }
 
@@ -82,9 +86,9 @@ export function reduce(previous: SessionState, event: Event): SessionState {
     case "harnessStderr":
       return { ...state, stderr: [...state.stderr, observation.value.text] };
     case "inputSubmitted":
-      return withInput(state, observation.value.inputId, { state: "submitted" });
+      return withInput(state, observation.value.inputId, { state: "submitted", text: observation.value.text });
     case "inputAccepted":
-      return withInput(state, observation.value.inputId, { state: "accepted" });
+      return withInput(state, observation.value.inputId, { state: "accepted", turnId: observation.value.turnId });
     case "inputRejected":
       return withInput(state, observation.value.inputId, { state: "rejected", detail: observation.value.reason });
     case "inputUncertain":

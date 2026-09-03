@@ -26,7 +26,7 @@ import {
   shutdownSession,
   type ThreadView,
 } from "./client";
-import { EMPTY, reduce, type Item, type SessionState } from "./events";
+import { EMPTY, reduce, type InputState, type Item, type SessionState } from "./events";
 import { Direction, EventSchema, ItemKind, TurnStatus, type Event } from "./protocol_pb";
 
 const KIND_LABELS: Partial<Record<ItemKind, string>> = {
@@ -34,6 +34,21 @@ const KIND_LABELS: Partial<Record<ItemKind, string>> = {
   [ItemKind.REASONING]: "reasoning",
   [ItemKind.TOOL_CALL]: "tool",
 };
+
+function InputView({ input }: { input: InputState }): JSX.Element {
+  return (
+    <Paper withBorder p="sm" bg="var(--mantine-color-default-hover)">
+      <Group gap="xs">
+        <Badge variant="light" color="grape">
+          user
+        </Badge>
+        {input.state === "submitted" && <Badge color="yellow">sending</Badge>}
+      </Group>
+      {/* An input logged before the runner carried its text shows as its id. */}
+      <Text style={{ whiteSpace: "pre-wrap" }}>{input.text || `input ${input.id}`}</Text>
+    </Paper>
+  );
+}
 
 function ItemView({ item }: { item: Item }): JSX.Element {
   const label = KIND_LABELS[item.kind] ?? ItemKind[item.kind];
@@ -231,9 +246,19 @@ export function SessionView({
                     )}
                     {turn.error && <Text c="red">{turn.error}</Text>}
                   </Group>
+                  {state.inputs
+                    .filter((input) => input.turnId === turn.id)
+                    .map((input) => (
+                      <InputView key={input.id} input={input} />
+                    ))}
                   {turn.itemIds.map((id) => state.items[id] && <ItemView key={id} item={state.items[id]} />)}
                 </Stack>
               ))}
+          {state.inputs
+            .filter((input) => input.state === "submitted")
+            .map((input) => (
+              <InputView key={input.id} input={input} />
+            ))}
           {state.inputs
             .filter((input) => input.state === "rejected" || input.state === "uncertain")
             .map((input) => (

@@ -56,8 +56,8 @@ harness's outcome. Tool names and argument shapes are the harness's own.
 
 ## Inputs
 
-- `input_id` is client-chosen and idempotent. An input is reported as `InputSubmitted` when the
-  runner takes it, then `InputAccepted` once the harness has taken it into its transcript, or
+- `input_id` is client-chosen and idempotent. An input is reported as `InputSubmitted`, carrying
+  its text, when the runner takes it, then `InputAccepted` once the harness has taken it into its transcript, or
   `InputRejected`.
 - An input while no turn is active starts a turn: `TurnStarted` precedes its `InputAccepted`. An
   input while a turn is active joins that turn; the harness decides where in the model's context

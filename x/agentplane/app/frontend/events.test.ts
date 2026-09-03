@@ -11,7 +11,7 @@ function event(sequence: number, observation: MessageInitShape<typeof EventSchem
 const script: Event[] = [
   event(1, { case: "harnessStarted", value: { resumed: false, pid: 7 } }),
   event(2, { case: "turnStarted", value: { turnId: "t1" } }),
-  event(3, { case: "inputSubmitted", value: { inputId: "i1" } }),
+  event(3, { case: "inputSubmitted", value: { inputId: "i1", text: "hi" } }),
   event(4, { case: "inputAccepted", value: { inputId: "i1", turnId: "t1" } }),
   event(5, { case: "itemStarted", value: { itemId: "m#0", kind: ItemKind.ASSISTANT_TEXT } }),
   event(6, { case: "textDelta", value: { itemId: "m#0", text: "Hel" } }),
@@ -42,7 +42,7 @@ describe("reduce", () => {
       succeeded: true,
       completed: true,
     });
-    expect(state.inputs).toEqual([{ id: "i1", state: "accepted", detail: "" }]);
+    expect(state.inputs).toEqual([{ id: "i1", state: "accepted", detail: "", text: "hi", turnId: "t1" }]);
   });
 
   it("keeps an input's rejection reason and a lost harness", () => {
@@ -51,7 +51,7 @@ describe("reduce", () => {
       event(2, { case: "inputRejected", value: { inputId: "i1", reason: "nope" } }),
       event(3, { case: "harnessLost", value: {} }),
     ].reduce(reduce, EMPTY);
-    expect(state.inputs).toEqual([{ id: "i1", state: "rejected", detail: "nope" }]);
+    expect(state.inputs).toEqual([{ id: "i1", state: "rejected", detail: "nope", text: "", turnId: null }]);
     expect(state.harness).toBe("lost");
   });
 });

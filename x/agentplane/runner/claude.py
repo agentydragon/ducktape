@@ -82,7 +82,7 @@ class ClaudeAdapter(HarnessAdapter):
             self.session.emit(pb.TurnStarted(turn_id=f"turn-{uuid4().hex}"), sources=[])
         frame = driver.user_frame(text)
         self._pending[frame.uuid] = input_id
-        self.session.emit(pb.InputSubmitted(input_id=input_id), sources=[])
+        self.session.emit(pb.InputSubmitted(input_id=input_id, text=text), sources=[])
         await self.session.write_native(frame)
 
     async def interrupt(self) -> None:

@@ -84,7 +84,7 @@ class CodexAdapter(HarnessAdapter):
         return self._thread_id
 
     async def submit(self, input_id: str, text: str) -> None:
-        self.session.emit(pb.InputSubmitted(input_id=input_id), sources=[])
+        self.session.emit(pb.InputSubmitted(input_id=input_id, text=text), sources=[])
         response, sequence = await self._request(
             driver.turn_start(next(self._request_ids), thread_id=self._thread_id, text=text)
         )

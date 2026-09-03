@@ -164,9 +164,11 @@ message HarnessStderr {
   string text = 1;
 }
 
-// The runner took the input and is writing it to the harness; admission is pending.
+// The runner took the input and is writing it to the harness; admission is pending. The text
+// travels with it so the log alone shows what was asked, without the harness's transcript.
 message InputSubmitted {
   string input_id = 1;
+  string text = 2;
 }
 
 // The harness took the input into its transcript, as part of turn_id.

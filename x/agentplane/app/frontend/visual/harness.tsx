@@ -151,7 +151,7 @@ function event(sequence: number, observation: MessageInitShape<typeof EventSchem
 
 const EVENTS: Event[] = [
   event(1, { case: "harnessStarted", value: { resumed: false, pid: 7 } }),
-  event(2, { case: "inputSubmitted", value: { inputId: "i1" } }),
+  event(2, { case: "inputSubmitted", value: { inputId: "i1", text: "List the repository files." } }),
   event(3, { case: "turnStarted", value: { turnId: "t1" } }),
   event(4, { case: "inputAccepted", value: { inputId: "i1", turnId: "t1" } }),
   event(5, { case: "itemStarted", value: { itemId: "r#0", kind: ItemKind.REASONING } }),
@@ -177,7 +177,7 @@ const EVENTS: Event[] = [
     value: { itemId: "m#0", outcome: { case: "text", value: "Two entries: README.md and src." } },
   }),
   event(15, { case: "turnCompleted", value: { turnId: "t1", status: TurnStatus.COMPLETED } }),
-  event(16, { case: "inputSubmitted", value: { inputId: "i2" } }),
+  event(16, { case: "inputSubmitted", value: { inputId: "i2", text: "Now read src." } }),
   event(17, { case: "turnStarted", value: { turnId: "t2" } }),
   event(18, { case: "inputAccepted", value: { inputId: "i2", turnId: "t2" } }),
   event(19, { case: "itemStarted", value: { itemId: "m#1", kind: ItemKind.ASSISTANT_TEXT } }),
