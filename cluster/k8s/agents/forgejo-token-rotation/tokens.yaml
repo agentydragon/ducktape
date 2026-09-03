@@ -29,11 +29,3 @@ rotations:
     credentials_dir: /var/run/secrets/forgejo/agent-box-codex
     sops_file: secrets/agent-box-codex-forgejo-tea-token.yaml
     token_prefix: forgejo-tea-agent-box-codex
-  - name: codex-pod
-    credentials_dir: /var/run/secrets/forgejo/codex-pod
-    sops_file: secrets/codex-pod-forgejo-tea-token.yaml
-    token_prefix: forgejo-tea-codex-pod
-    tea_secret:
-      path: cluster/k8s/agents/codex-pod/forgejo-tea.sops.yaml
-      name: forgejo-tea
-      namespace: codex-pod
