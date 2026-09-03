@@ -53,8 +53,8 @@ spec:
               protocol: TCP
 ---
 # The app takes browser traffic only through the Authentik proxy outpost, and
-# reaches DNS, the API server for the inventory, the runner Pods on 7000, and
-# its trajectory store.
+# reaches DNS, the API server for the inventory, the runner Pods on 7000, the
+# egress proxy's admin port for /decisions, and its trajectory store.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -108,6 +108,14 @@ spec:
       toPorts:
         - ports:
             - port: "7000"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+            app.kubernetes.io/name: agentplane-egress
+      toPorts:
+        - ports:
+            - port: "8081"
               protocol: TCP
     - toEndpoints:
         - matchLabels:
