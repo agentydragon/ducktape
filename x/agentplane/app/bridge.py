@@ -48,6 +48,11 @@ REPLAY_PAGE = 1000
 
 # Seconds of silence after which the stream carries a comment, so proxies keep it open.
 KEEPALIVE_S = 15
+# Sent first on every stream: a proxy that buffers or compresses in fixed-size chunks (the Authentik
+# outpost's reverse proxy is one) holds a quiet stream's `attached` frame back until enough bytes
+# accumulate, and the browser sits on "connecting" for as long as the session is idle. A comment
+# larger than any such chunk pushes the headers and the first frame through at once.
+STREAM_PADDING = b":" + b" " * 4096 + b"\n\n"
 
 # Sandbox name to the `host:port` of its runner.
 AddressOf = Callable[[str], Awaitable[str]]
@@ -309,6 +314,7 @@ class RunnerBridge:
         assert feed.thread_id is not None
         inbox = feed.subscribe()
         try:
+            yield STREAM_PADDING
             yield _frame("attached", MessageToDict(feed.attached))
             cursor = after_sequence
             while page := await self._store.events(feed.thread_id, after_sequence=cursor, limit=REPLAY_PAGE):
@@ -396,7 +402,8 @@ async def session_events(
     return StreamingResponse(
         bridge.events(name, session_id, after_sequence=after_sequence),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        # `identity` keeps a compressing proxy from wrapping the stream in a gzip buffer of its own.
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Content-Encoding": "identity"},
     )
 
 

@@ -136,6 +136,29 @@ function ThreadTitle({
   );
 }
 
+/** What the event stream's URL answers when EventSource cannot say: the status, or silence. */
+async function diagnoseStream(url: string): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(url, { headers: { Accept: "text/event-stream" }, signal: controller.signal });
+    if (response.redirected || !response.ok) {
+      return `stream request answered ${response.status}${response.redirected ? ` after a redirect to ${new URL(response.url).pathname}` : ""}`;
+    }
+    const reader = response.body?.getReader();
+    if (!reader) return "stream request answered without a body";
+    const { done } = await reader.read();
+    await reader.cancel();
+    return done ? "stream closed before sending anything" : "stream delivers bytes; reconnecting";
+  } catch (reason: unknown) {
+    return reason instanceof DOMException && reason.name === "AbortError"
+      ? "stream headers arrived but no bytes followed within 5 s: a proxy on the path is buffering it"
+      : `stream request failed: ${displayableError(reason)}`;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function SessionView({
   sandbox,
   sessionId,
@@ -158,6 +181,12 @@ export function SessionView({
     // EventSource reconnects on its own and resends the last id it saw, which the bridge turns
     // into the runner's cursor, so a dropped connection loses nothing.
     const source = new EventSource(eventsUrl(sandbox, sessionId));
+    // EventSource reports no HTTP status, so a stream that never opens says nothing about why. On
+    // the first failure, fetch the same URL once and report what came back: a redirect to a login
+    // page, an error status, or headers with no bytes for a while, which is a proxy buffering the
+    // stream.
+    let diagnosed = false;
+    source.addEventListener("open", () => setStatus("open, waiting for the runner"));
     source.addEventListener("attached", () => {
       setStatus("attached");
       // The bridge stores the thread before it sends `attached`, so it is there to look up now.
@@ -178,8 +207,10 @@ export function SessionView({
       if ("data" in message) {
         source.close();
         setStatus(`runner: ${String((message as MessageEvent<string>).data)}`);
-      } else {
+      } else if (!diagnosed) {
+        diagnosed = true;
         setStatus("reconnecting");
+        void diagnoseStream(eventsUrl(sandbox, sessionId)).then(setStatus);
       }
     });
     return () => source.close();
