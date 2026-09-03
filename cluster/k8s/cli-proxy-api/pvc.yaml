@@ -8,7 +8,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: seaweedfs-ovh
+  storageClassName: seaweedfs-ovh-hdd
   resources:
     requests:
       storage: 1Gi

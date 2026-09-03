@@ -76,7 +76,7 @@ editing a route.
       only `grocy-{sf,vallejo}` and `tana-mcp` have volsync backups; the
       Forgejo loss above was survivable only because nothing had been
       pushed yet, not because we had a backup. Destination choice is
-      non-trivial: `seaweedfs-ovh`→`seaweedfs-ovh` doesn't protect against
+      non-trivial: `seaweedfs-ovh-hdd`→`seaweedfs-ovh-hdd` doesn't protect against
       the failure mode we just hit (defeats the grocy/tana pattern when
       the primary is already on SeaweedFS), and `local-path-proxmox` is
       currently unavailable because Proxmox is down. Likely needs real

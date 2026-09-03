@@ -9,7 +9,7 @@ The init container mounts an `emptyDir` at `/nix-pvc`, seeds it from the image's
 `/nix`, and changes ownership to UID/GID `1000`. The main container then mounts
 the same `emptyDir` at `/nix` and runs as UID/GID `1000`.
 
-`codex-home` uses `seaweedfs-ovh`; `/nix` uses disk-backed `emptyDir`. During the
+`codex-home` uses `seaweedfs-ovh-hdd`; `/nix` uses disk-backed `emptyDir`. During the
 live spike, seeding `/nix` onto SeaweedFS copied only a few MiB after several
 minutes. A node-local path seeded the same store in under a minute. `emptyDir`
 keeps the fast node-local behavior without creating a PVC that pins future pods
@@ -56,7 +56,7 @@ Verified on 2026-06-29:
 
 - main container runs as `uid=1000(codex) gid=1000(codex)`;
 - `/nix` was mounted from `local-path-ovh`;
-- `/home/codex` and `/workspace` are mounted from `seaweedfs-ovh`;
+- `/home/codex` and `/workspace` are mounted from `seaweedfs-ovh-hdd`;
 - `direnv` + `nix-direnv` + `use flake` realized and ran GNU Hello;
 - after deleting/recreating the pod, `nix shell nixpkgs#hello -c hello --version`
   reused the persistent `/nix` store and ran without refetching.

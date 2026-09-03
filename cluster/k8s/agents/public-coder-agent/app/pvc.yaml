@@ -12,7 +12,7 @@ metadata:
     # kustomization and loses nothing -- the old PVC never held data, because the
     # pod it was for never got past Init.
     #
-    # local-path, not the seaweedfs-ovh default: this is one small state
+    # local-path, not the seaweedfs-ovh-hdd default: this is one small state
     # directory for a single-replica agent, and the pod is pinned to `hil`
     # anyway. Node-pinned is the accepted trade -- if that node is lost the
     # volume is stranded, and the agent is rebuilt rather than migrated.

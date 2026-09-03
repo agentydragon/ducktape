@@ -1,7 +1,7 @@
 # Periodic backup of grocy-sf's grocy-config-ovh PVC into a SeaweedFS-backed
 # PVC. Same pattern as cluster/k8s/agents/tana-mcp/volsync-backup.yaml.
 #
-# Direction: OVH local-path (primary, hot) → seaweedfs-ovh (cold, SeaweedFS
+# Direction: OVH local-path (primary, hot) → seaweedfs-ovh-hdd (cold, SeaweedFS
 # replicates across kimsufi nodes). Backup PVC is a restore point before any
 # node-rename operation that touches grocy-config-ovh's pinned hostname.
 #
@@ -17,7 +17,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: seaweedfs-ovh
+  storageClassName: seaweedfs-ovh-hdd
   resources:
     requests:
       storage: 2Gi

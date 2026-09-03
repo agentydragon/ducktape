@@ -62,7 +62,7 @@ spec:
     - metadata:
         name: workspace
       spec:
-        storageClassName: seaweedfs-ovh
+        storageClassName: seaweedfs-ovh-hdd
         accessModes: ["ReadWriteOnce"]
         resources:
           requests:

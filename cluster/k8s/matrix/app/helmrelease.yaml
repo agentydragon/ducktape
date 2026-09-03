@@ -72,7 +72,7 @@ spec:
     # the CSI class gives Synapse the filesystem it insists on directly.
     persistence:
       enabled: true
-      storageClass: "seaweedfs-ovh"
+      storageClass: "seaweedfs-ovh-hdd"
       size: 20Gi
       accessMode: ReadWriteMany
 

@@ -16,7 +16,7 @@ spec:
       labels:
         app.kubernetes.io/name: archivebox
     spec:
-      # seaweedfs-ovh is mounted only on the OVH nodes. This also keeps the
+      # seaweedfs-ovh-hdd is mounted only on the OVH nodes. This also keeps the
       # local SQLite PVC and its single writer in the same storage locality.
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh

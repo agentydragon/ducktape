@@ -28,7 +28,7 @@ Registry-hosting rationale (why Forgejo over GHCR) + the general pattern:
   reflected into `flux-system` (scan) + `codex-pod` (`imagePullSecrets`).
 - **Runtime**: non-root UID 1000. `HOME=/home/codex` (the baked dotfiles, incl.
   the Codex config) is distinct from the work dir: the `codex-workspace` PVC
-  (`seaweedfs-ovh`) mounts at `/workspace` so it doesn't shadow the baked home, and
+  (`seaweedfs-ovh-hdd`) mounts at `/workspace` so it doesn't shadow the baked home, and
   holds the work tree plus `XDG_CACHE_HOME` (`/workspace/.cache`) for build caches.
   `CODEX_HOME` is left at its default (`~/.codex`, baked); Codex's own state
   (history/sessions) is ephemeral there — durable state is the git work tree on the
