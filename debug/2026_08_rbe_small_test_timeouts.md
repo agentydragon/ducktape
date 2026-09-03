@@ -204,12 +204,35 @@ filesystem, and 60s sits inside that variance. A timed-out log ending at `pytest
 `Running pytest.main with:` line without reaching `test session starts` is consistent with this: it is
 where a starved process happens to be when the cap fires, not work that costs a minute.
 
-**Caveat on these particular numbers**: they were taken while this investigation was itself running
-repeat suites against the fleet, so they overstate the steady state. The uncontaminated evidence is
-CI — `test_policy` TIMEOUT 65.6s on #5469 with no such load — and this note's own August measurement
-of exactly 60.001s of execution on a demonstrably idle fleet.
+**The cause, from the executors' own I/O counters.** `executedActionMetadata.ioStats` settles it.
+Five sequential runs of `//util:test_image_tag`, alone on an idle fleet, all landing on the same warm
+worker:
 
-**Verified fix.** With the `py_test` default raised to `medium`, the same ten targets over ten runs
+| run                        |      1 |      2 |      3 |      4 |      5 |
+| -------------------------- | -----: | -----: | -----: | -----: | -----: |
+| VM prep                    |  0.01s |  0.06s |  0.00s |      - |      - |
+| Bazel `inputFetch`         |  0.21s |  0.43s |  0.36s |      - |      - |
+| `fileDownloadDurationUsec` | 22.50s | 18.12s | 24.40s | 13.69s | 15.10s |
+| `cpuNanos`                 |  3.67s |  4.18s |  3.94s |  3.58s |  4.32s |
+
+`fileDownloadCount` and `fileDownloadSizeBytes` are **zero** in every one. Zero files, zero bytes, and
+fourteen to twenty-four seconds charged to the input-filesystem layer, against under four and a half
+seconds of CPU. The execution phase is almost exactly that I/O figure: the action is not computing,
+it is waiting on its own filesystem. Note it does not warm up across runs on one worker.
+
+The executors serve action inputs lazily. Bazel's `inputFetch` phase is a fifth of a second because
+nothing is prefetched, so the transfer cost reappears inside execution as latency. That is why
+`PYTHONPROFILEIMPORTTIME` sees only 1.5s: it measures CPU spent in the import, not the stalls around
+the file opens.
+
+**It is not Python.** A `rust_test` (`//loom/wayback/cache:wayback_cache_test`), same fleet, two
+executions of the identical action: `EXEC 2.66s / ioWait 3.06s / cpu 1.27s`, and
+`EXEC 32.33s / ioWait 32.35s / cpu 0.99s`. `EXEC` tracks `ioWait` and CPU is noise, in a language with
+no venv and no site-packages. Python tests are the usual victims only because their runfiles tree is
+the largest, so they touch the layer most; nothing about `rules_python` or `bootstrap_impl=script` is
+at fault, and neither is any test in this repo.
+
+**Caveat on the earlier phase numbers in this entry** (the 252.83s VM prep)**Verified fix.** With the `py_test` default raised to `medium`, the same ten targets over ten runs
 each: **100 of 100 passed, no timeouts**, against 2-4 in 10 failing per target before. Several passing
 runs took 90-101s — above `small`'s cap outright, so those could not have passed under it.
 
