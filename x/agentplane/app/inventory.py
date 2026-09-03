@@ -69,6 +69,13 @@ class SandboxNotFoundError(InventoryError):
         self.name = name
 
 
+class SandboxRunningError(InventoryError):
+    """Deletion is refused while the sandbox runs; the message is what the UI shows the operator."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"sandbox {name} is running; suspend it before deleting it")
+
+
 class NewSandbox(BaseModel):
     """What a caller decides about a sandbox; everything else is the namespace's template."""
 
@@ -270,8 +277,12 @@ class SandboxInventory:
         return (await self._sandbox(name)).metadata.labels
 
     async def delete(self, name: str) -> None:
-        """Delete the Sandbox; the controller removes its Pod and PVC, and with them the history."""
-        await self._sandbox(name)
+        """Delete a suspended Sandbox; the controller removes its Pod and PVC, and with them
+        everything on the volume. A running one is refused, so the irreversible step is a
+        deliberate second one for a browser and for an agent calling the API alike."""
+        sandbox = await self._sandbox(name)
+        if sandbox.spec.operating_mode != OperatingMode.SUSPENDED:
+            raise SandboxRunningError(name)
         await self._custom_objects.delete_namespaced_custom_object(
             *_SANDBOX_API, self._namespace, _SANDBOXES_PLURAL, name, body=k8s_client.V1DeleteOptions()
         )

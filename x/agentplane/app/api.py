@@ -23,7 +23,13 @@ from x.agentplane.app.egress import (
     PolicyView,
 )
 from x.agentplane.app.identity import Caller, TokenReviewer, require_caller
-from x.agentplane.app.inventory import NewSandbox, SandboxInventory, SandboxNotFoundError, SandboxView
+from x.agentplane.app.inventory import (
+    NewSandbox,
+    SandboxInventory,
+    SandboxNotFoundError,
+    SandboxRunningError,
+    SandboxView,
+)
 from x.agentplane.app.oidc import OIDCSettings, build_oauth
 from x.agentplane.app.trajectory import ThreadNotFoundError, ThreadView, TrajectoryStore
 from x.agentplane.runner.client import RunnerError
@@ -145,6 +151,7 @@ async def unarchive_sandbox(inventory: Inventory, name: str) -> Response:
 
 @router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_sandbox(inventory: Inventory, name: str) -> Response:
+    """Delete the sandbox and everything on its volume; 409 while it is still running."""
     await inventory.delete(name)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -295,6 +302,10 @@ def create_app(
     @app.exception_handler(SandboxNotFoundError)
     async def _not_found(_request: Request, error: SandboxNotFoundError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": str(error)})
+
+    @app.exception_handler(SandboxRunningError)
+    async def _still_running(_request: Request, error: SandboxRunningError) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
 
     @app.exception_handler(BindingNotFoundError)
     async def _binding_not_found(_request: Request, error: BindingNotFoundError) -> JSONResponse:

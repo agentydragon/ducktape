@@ -101,3 +101,7 @@ product state beyond that until a feature needs it.
   stream is what identifies the controlling attachment today.
 - **One replica:** the bridge holds live runner attachments in memory, and a second replica would
   supersede them.
+- **Deletion takes only a suspended sandbox:** it removes the Pod and the volume with everything on
+  it, and nothing brings that back. The rule lives in the API rather than in the browser, so it also
+  binds the agent driving staging with a token; the two clicks it costs an operator are suspend and
+  then delete. A running sandbox answers `DELETE` with 409 and a message saying to suspend it.

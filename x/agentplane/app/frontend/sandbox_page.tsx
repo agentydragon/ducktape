@@ -14,6 +14,7 @@ import {
   type SandboxView,
 } from "./client";
 import { EgressSection } from "./egress";
+import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
 import { HarnessState, Provider, SessionSpecSchema, type SessionSummary } from "./protocol_pb";
 
 // The harness a session runs, as the API's catalog names it and as the protocol's enum spells it.
@@ -134,6 +135,7 @@ export function SandboxPage({
   const [harness, setHarness] = useState<Harness>("claude");
   const [models, setModels] = useState<string[]>([]);
   const [model, setModel] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const refresh = useCallback(async () => {
     const { data, error: failure } = await api.GET("/sandboxes/{name}", { params: { path: { name } } });
@@ -142,7 +144,11 @@ export function SandboxPage({
       return;
     }
     setSandbox(data);
-    if (data.state !== "running") return;
+    // Sessions live in the runner, so suspending from this page leaves none to list.
+    if (data.state !== "running") {
+      setSessions([]);
+      return;
+    }
     try {
       setSessions(await listSessions(name));
       setError(null);
@@ -177,6 +183,23 @@ export function SandboxPage({
     })();
   }, [harness]);
 
+  async function act(action: "suspend" | "resume"): Promise<void> {
+    const { error: failure } = await api.POST(`/sandboxes/{name}/${action}`, { params: { path: { name } } });
+    if (failure) setError(displayableError(failure));
+    await refresh();
+  }
+
+  /** Deleting leaves nothing to look at, so a deleted sandbox takes the view back to the list. */
+  async function remove(): Promise<void> {
+    const { error: failure } = await api.DELETE("/sandboxes/{name}", { params: { path: { name } } });
+    if (!failure) {
+      onBack();
+      return;
+    }
+    setError(displayableError(failure));
+    await refresh();
+  }
+
   async function createSession(): Promise<void> {
     if (!sandbox || !model) return;
     try {
@@ -205,7 +228,23 @@ export function SandboxPage({
         <Title order={2}>{name}</Title>
         {sandbox && <Badge>{sandbox.state}</Badge>}
         {sandbox?.profile && <Badge variant="light">profile: {sandbox.profile}</Badge>}
+        {sandbox && (
+          <Group gap="xs" ml="auto" wrap="nowrap">
+            <SuspendResume sandbox={sandbox} onAct={(action) => void act(action)} />
+            <DeleteButton sandbox={sandbox} onDelete={() => setConfirmingDelete(true)} />
+          </Group>
+        )}
       </Group>
+      {confirmingDelete && (
+        <ConfirmDelete
+          name={name}
+          onCancel={() => setConfirmingDelete(false)}
+          onConfirm={() => {
+            setConfirmingDelete(false);
+            void remove();
+          }}
+        />
+      )}
       {error && <Text c="red">{error}</Text>}
       {sandbox && sandbox.state !== "running" && (
         <Text>The sandbox is {sandbox.state}; sessions need a running Pod.</Text>

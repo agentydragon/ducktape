@@ -69,6 +69,25 @@ ts_library(
     ],
 )
 
+# The lifecycle controls both sandbox views share: suspend/resume, and delete with its confirmation.
+ts_library(
+    name = "lifecycle",
+    srcs = [
+        "lifecycle.tsx",
+        # The ambient declaration for the @tabler/icons-react subpaths lifecycle.tsx imports; see
+        # the note in the file itself.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
 ts_library(
     name = "sandboxes",
     srcs = [
@@ -81,6 +100,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":lifecycle",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
@@ -107,6 +127,7 @@ ts_library(
     deps = [
         ":client",
         ":egress",
+        ":lifecycle",
         ":protocol_pb",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",

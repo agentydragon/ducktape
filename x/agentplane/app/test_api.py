@@ -164,7 +164,16 @@ def test_suspend_resume_archive_unarchive_apply_in_order(
     assert client.post("/sandboxes/nope/suspend").status_code == 404
 
 
-def test_delete_removes_the_sandbox(client: TestClient, custom_objects: FakeCustomObjectsApi) -> None:
+def test_delete_removes_the_sandbox_once_it_is_suspended(
+    client: TestClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    refused = client.delete("/sandboxes/live")
+
+    assert refused.status_code == 409
+    assert "suspend it" in refused.json()["detail"]
+    assert ("sandboxes", "live") in custom_objects.objects
+
+    assert client.post("/sandboxes/live/suspend").status_code == 204
     assert client.delete("/sandboxes/live").status_code == 204
     assert ("sandboxes", "live") not in custom_objects.objects
     assert client.delete("/sandboxes/live").status_code == 404

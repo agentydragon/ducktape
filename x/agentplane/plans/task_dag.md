@@ -75,7 +75,7 @@ flowchart TB
         C4["C4 App deployment into staging<br/>RBAC, Authentik route, agent-reachable API"]:::completed
         C5["C5 Archive<br/>out of the active view, history kept"]:::completed
         C6["C6 Session view legibility<br/>markdown, the input's own text, folded reasoning,<br/>Enter sends with no button"]:::ready
-        C7["C7 Lifecycle controls on the sandbox page<br/>suspend there, delete once suspended"]:::ready
+        C7["C7 Lifecycle controls on the sandbox page<br/>suspend there, delete once suspended"]:::completed
         C8["C8 Live push for every view<br/>the server says what changed, no page polls"]:::ready
         C9["C9 The profile a sandbox runs under<br/>visible and pickable, not one badge"]:::ready
         C10["C10 Egress actions that say what they do<br/>a binding is the permission; revoke deletes it"]:::completed
@@ -180,7 +180,7 @@ milestone;
 orange diamonds are unresolved decisions requiring Rai's product or design input; gray is
 conditional or stretch work.
 
-Ready now: **J** and **C6**-**C9**, which share nothing and can run in parallel. **T2** and **T3** are
+Ready now: **J**, **C6**, **C8**, and **C9**, which share nothing and can run in parallel. **T2** and **T3** are
 blocked on nothing in code; they start when the persisted history has a first reader who needs a
 name or a search.
 
@@ -222,12 +222,6 @@ ones still open.
     Decided (Rai): the protocol changes, so the text arrives with the event and a client that
     joined later or replayed from the log sees it too — which is the case an app-side echo of what
     this tab sent cannot cover.
-- **C7 lifecycle controls on the sandbox page:** the page you are already looking at can suspend
-  the sandbox, and delete it once it is suspended. Today every lifecycle action lives on the list
-  page only (`sandboxes.tsx`), so acting on the sandbox in front of you means navigating away from
-  it. Deleting only a suspended sandbox is a new rule either way: `Inventory.delete` currently
-  takes any state, so the package decides whether the precondition belongs in the API — where it
-  also binds the agent driving staging — or is a UI affordance over an API that stays permissive.
 - **C8 live push for every view:** the server tells the browser what changed; no page polls.
   Decided (Rai): a push channel, not a shorter interval. Three surfaces poll at five seconds today
   — the sandbox list, the sandbox page, and the egress tab — each hand-rolling the same
