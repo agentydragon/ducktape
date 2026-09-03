@@ -120,6 +120,11 @@ Missing:
 - **Wake-ups.** A specialist's `TurnCompleted` reaching an idle orchestrator as an input, when it
   asked to be woken, is the same delivery path as an approval decision; the batcher makes a burst
   of results one input.
+- **A notification queue with a read primitive.** Everything addressed to an agent (a sandbox
+  died, a turn completed, a decision landed, a message from another agent) accumulates in a queue
+  the agent drains with one call, oldest first, marking what it read; the wake-up input tells an
+  idle agent the queue is non-empty, a busy agent reads when it chooses. This is the primitive
+  Claude Code gives its own sessions as `ReadNotifications` (Rai).
 - **Cross-transcript reads for the orchestrator**, tier-scoped, so Haku can read what a specialist
   did without the specialist being able to read Haku.
 
