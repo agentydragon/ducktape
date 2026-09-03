@@ -42,6 +42,32 @@ proxy relates to the integration app, and the work packages.
   needs it.
 - **Subject identity is the Sandbox** in this slice, because that is what the Pod-bound token
   proves. Threads and agents attach later as columns, not as a redesign.
+- **Runtime grants die with their subject and say where they came from.** A binding the app
+  creates for one sandbox carries an `ownerReference` to that Sandbox, so deleting the sandbox
+  garbage-collects the grant; a binding from git carries Flux's inventory labels and nothing at
+  runtime touches it, since Flux prunes only what it applied. Every binding also carries a
+  provenance label (`agentplane.allegedly.works/granted-by`: `flux`, or the app on whose approval
+  it was made) so the view can say "from git" or "granted by Rai at ...". Owner references
+  cascade on deletion, not on liveness: nothing is owned by the app's Pod or Deployment, and the
+  app going down revokes nothing, because expiry is what fails closed.
+- **Time-limited and one-shot grants need no app in the loop.** `expiresAt` is enforced from the
+  proxy's own cache. A binding may also carry `maxUses`; the proxy counts allowed requests in
+  `status.uses` and stops honouring the binding when the count is reached, which expresses "this
+  once" better than a deadline does. A lease-style renewal by the app is deliberately not the
+  default: it would put the app back into the enforcement path.
+- **Profiles are selector bindings; per-launch picks are per-sandbox bindings.** A preset such
+  as "public coder" or "Haku" is a binding in git whose subject is a label selector
+  (`agentplane.allegedly.works/profile: public-coder`); launching an agent with that profile
+  means stamping the label on the Sandbox, and the Flux-managed binding applies with nothing
+  created at runtime. The create form also offers the namespace's individual policies; ticking
+  some creates one sandbox-owned binding on top, since bindings are additive. The staging seed is
+  the broadest selector binding, every managed sandbox, to be narrowed to a profile once there
+  are two kinds of agent.
+- **Credentials live in their own namespace.** The proxy reads Secrets only from
+  `agentplane-egress-credentials`, where the ExternalSecrets for substituted credentials are
+  delivered; a rule's `secretRef` resolves there. RBAC cannot filter Secrets by label, and a
+  namespace-wide read in the sandbox namespace would also expose the LiteLLM key and the
+  database credential to the proxy.
 - **Transport**: the sandbox's tools use an ordinary HTTPS proxy at the sidecar; the sidecar
   relays to the central proxy and adds the Pod token on every hop; the central proxy terminates
   TLS with a CA the runner container trusts (the trust-manager bundle pattern
@@ -81,11 +107,13 @@ Acceptance: from inside a staging sandbox, a `git ls-remote` of a public reposit
 through the proxy with no credential visible in the sandbox, and the same call without the
 sidecar's token is refused.
 
-### E4. The app's view
+### E4. The app's view and the launch-time pick
 
-Per sandbox: the bindings and resolved rules, their approval and expiry, the credentials by name,
-and the proxy's recent decisions; approve, deny, and revoke through the API server under the app's
-RBAC. Read-only where the proxy is unreachable.
+Per sandbox: the bindings and resolved rules with their provenance, approval, expiry and uses,
+the credentials by name, and the proxy's recent decisions; approve, deny, and revoke through the
+API server under the app's RBAC; read-only where the proxy is unreachable. On sandbox creation:
+a profile (a label on the Sandbox) and the namespace's individual policies to pick from, the
+latter becoming one sandbox-owned binding.
 
 ## Left out on purpose
 
