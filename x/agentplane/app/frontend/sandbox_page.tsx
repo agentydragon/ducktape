@@ -217,7 +217,7 @@ export function SandboxPage({
         <Table.Thead>
           <Table.Tr>
             <Table.Th>Session</Table.Th>
-            <Table.Th>Harness</Table.Th>
+            <Table.Th>Harness state</Table.Th>
             <Table.Th>Active turn</Table.Th>
             <Table.Th>Events</Table.Th>
           </Table.Tr>
