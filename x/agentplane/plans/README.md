@@ -24,6 +24,7 @@ the runner that serves both harnesses behind one gRPC contract ([`../runner/`](.
 - [Product-surface inventory](product_surface.md)
 - [Sandbox egress identity option survey](sandbox_egress_identity_research.md)
 - [ADR: credentialless Sandbox egress](adr_sandbox_proxy_gateway.md)
+- [Secure egress integration: resources and packages](egress_proxy.md)
 - [Sandbox proxy and identity spike](../sandbox-spike/README.md)
 - [Native driver README](../native/README.md)
 - [Live capture probe README](../capture/README.md)

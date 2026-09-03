@@ -241,6 +241,7 @@ ones still open.
 ## Detailed plans
 
 - The integration app's shape and decisions: [app README](../app/README.md).
+- The secure egress integration, its resources and packages: [`egress_proxy.md`](egress_proxy.md).
 - Native provider scenarios and the scripted-test workflow: [`experiments.md`](experiments.md), the
   [native driver README](../native/README.md), the [harness tests README](../harness_tests/README.md),
   and the [live capture probe README](../capture/README.md).
