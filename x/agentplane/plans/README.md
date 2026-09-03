@@ -18,7 +18,7 @@ the runner that serves both harnesses behind one gRPC contract ([`../runner/`](.
 - [Focused experiments](experiments.md)
 - [Agentplane task DAG](task_dag.md)
 - [User stories: the shape Agentplane is growing toward](user_stories.md)
-- [Runner in a Sandbox, and the first integration app](runner_sandbox_and_app.md)
+- [Integration app README](../app/README.md)
 - [Asynchronous approvals and notification delivery](async_approvals.md)
 - [Agent access to external systems](external_access.md)
 - [Product-surface inventory](product_surface.md)

@@ -168,9 +168,9 @@ native resume.
 
 The runner adds reconnect from a cursor, runner replacement with the loss reported, and
 `InputUncertain` for an input whose admission it cannot settle
-([`../runner/SPEC.md`](../runner/SPEC.md)). Active-turn side-effect reconciliation, queue
-survival, Pod replacement, and Sandbox suspension are the next experiments
-([`runner_sandbox_and_app.md`](runner_sandbox_and_app.md)). Do not blindly resend an input whose
+([`../runner/SPEC.md`](../runner/SPEC.md)). Sandbox suspension and the Pod replacement it
+causes were exercised on staging with the conversation intact; active-turn side-effect
+reconciliation and queue survival across them remain open. Do not blindly resend an input whose
 native admission is uncertain.
 
 ## Future central service

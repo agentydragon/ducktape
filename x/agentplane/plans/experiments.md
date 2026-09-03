@@ -88,16 +88,13 @@ acknowledgement, or successful completion semantics that the native process did 
 ## Next experiments
 
 The runner answered the adapter-seam questions; its contract is [`../runner/SPEC.md`](../runner/SPEC.md)
-and its tests are the interaction scripts under [`../runner/`](../runner/). The next experiments
-are the ones a runner inside an Agent Sandbox raises, listed in
-[`runner_sandbox_and_app.md`](runner_sandbox_and_app.md):
+and its tests are the interaction scripts under [`../runner/`](../runner/). The Sandbox questions
+were answered on staging: the SIGTERM ladder stops both harnesses through stdin close (a runner
+test pins it), and after `operatingMode: Suspended` and resume, `Open` on the replacement Pod
+resumed the native conversation with the earlier turn in the model's context for both providers.
+Still open:
 
-1. Does a Pod's SIGTERM give the runner enough grace to stop both harnesses through stdin close, so
-   Claude Code's transcript is written before the Pod goes?
-2. After `operatingMode: Suspended` and resume, does `Open` on the replacement Pod resume the native
-   conversation with the earlier turn in the model's context, and does the client's cursor carry
-   across the Pod change without gap or duplicate?
-3. What does a real model endpoint (LiteLLM) change compared with the scripted upstream: retry
+1. What does a real model endpoint (LiteLLM) change compared with the scripted upstream: retry
    timing, stream shapes, and any frame the wire models decode as `Unknown*`?
 
 The live probe is the authority on provider behavior; the scripted tests are the pinned contract.

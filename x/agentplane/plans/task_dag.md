@@ -33,10 +33,14 @@ authors and is driven through.
   and the `py_grpc_library` macro that generates the protocol stubs; the runner image with both
   harnesses, the runner's Pod contract (`ListSessions`, the SIGTERM ladder), the
   `agentplane-staging` namespace with its `SandboxTemplate` on the cheap-experiments key and the
-  agent's standing access, and the app's sandbox inventory with archive.
-- **Next:** the rest of the first integration app,
-  [`runner_sandbox_and_app.md`](runner_sandbox_and_app.md): the bridge and UI are in review, the
-  deployment and the first real turn on staging follow.
+  agent's standing access; and the first integration app ([`../app/`](../app/)): the sandbox
+  inventory with archive, the runner bridge with SSE fanned out to every tab, the UI with its
+  phone layout, the staging deployment behind Authentik, and the PostgreSQL trajectory store.
+  The first functioning Agentplane (`F0`) is reached: both providers ran real turns on staging
+  from the app, and a sandbox came back from suspension with its conversation.
+- **Next:** the secure egress integration (`J`), the gate for every credentialed external system
+  and for stories 1 and 2. Named threads (`T2`) and search (`T3`) wait only on a first user of
+  the persisted history.
 - **Access-control scope is intentionally deferred:** the current Ducktape work can use its existing
   broad internet boundary and scoped GitHub credential for `agentydragon-agent`; that convenience is
   not a policy model for the private, high-context Haku agent.
@@ -61,23 +65,23 @@ flowchart TB
         I1["I1 Runner image<br/>both harnesses, Docker smoke test"]:::completed
         I2["I2 Runner pod contract<br/>Pod listen, env config, ListSessions, SIGTERM ladder"]:::completed
         I3["I3 Staging namespace<br/>sandbox template, PVC, cheap-experiments key,<br/>standing agent access"]:::completed
-        I4["I4 First real turn + suspend/resume continuity<br/>manual milestone"]:::ready
+        I4["I4 First real turn + suspend/resume continuity<br/>manual milestone"]:::completed
     end
 
     subgraph app["Integration app v0"]
         C1["C1 Sandbox inventory<br/>list, create, suspend, resume, delete"]:::completed
-        C2["C2 Runner bridge<br/>REST + SSE over Attach, fan-out to every tab"]:::inflight
-        C3["C3 UI<br/>sandboxes, session stream, raw view, input, interrupt"]:::inflight
-        C4["C4 App deployment into staging<br/>RBAC, Authentik route, agent-reachable API"]:::inflight
+        C2["C2 Runner bridge<br/>REST + SSE over Attach, fan-out to every tab"]:::completed
+        C3["C3 UI<br/>sandboxes, session stream, raw view, input, interrupt"]:::completed
+        C4["C4 App deployment into staging<br/>RBAC, Authentik route, agent-reachable API"]:::completed
         C5["C5 Archive<br/>out of the active view, history kept"]:::completed
     end
 
-    F0["First functioning Agentplane<br/>both providers in sandboxes, driven and replayed from the app"]:::milestone
+    F0["First functioning Agentplane<br/>both providers in sandboxes, driven and replayed from the app"]:::completed
 
     subgraph traj["Trajectories outlive sandboxes"]
-        T1["T1 Trajectory persistence<br/>session log + native frames copied out of the sandbox<br/>keyed by thread, sandbox, agent"]:::inflight
-        T2["T2 Named threads<br/>a small model proposes, the user edits"]:::future
-        T3["T3 Search and lookup over past interactions<br/>what happened, why, which agent"]:::future
+        T1["T1 Trajectory persistence<br/>session log + native frames copied out of the sandbox<br/>keyed by thread, sandbox, agent"]:::completed
+        T2["T2 Named threads<br/>a small model proposes, the user edits"]:::next
+        T3["T3 Search and lookup over past interactions<br/>what happened, why, which agent"]:::next
     end
     D["Decided<br/>conversation app: a separate deployment"]:::completed
     E["Conversation app<br/>timeline and live control over persisted threads"]:::future
@@ -86,7 +90,7 @@ flowchart TB
     G["Rai decision<br/>second viewer on one session needed?"]:::decision
     R1["Read-only follower attachments"]:::future
 
-    J["Secure egress integration<br/>per-Pod sidecar wraps traffic with the Pod's SA token;<br/>central proxy holds credentials and egress policy;<br/>first credential: the agentydragon-agent GitHub PAT"]:::next
+    J["Secure egress integration<br/>per-Pod sidecar wraps traffic with the Pod's SA token;<br/>central proxy holds credentials and egress policy;<br/>first credential: the agentydragon-agent GitHub PAT"]:::ready
     P["Rai decision<br/>dynamic per-Thread policy or explicit approval needed?"]:::decision
     K["Conditional access controller<br/>allow / deny / user approval required"]:::future
     R["Rai decision<br/>does the threat model require stronger isolation?"]:::decision
@@ -166,9 +170,8 @@ milestone;
 orange diamonds are unresolved decisions requiring Rai's product or design input; gray is
 conditional or stretch work.
 
-In flight as stacked PRs: **C2**, **C3**, and **C4**. Ready now: **I4**, since the runner image
-is published to staging. T1 needs only C2, since the bridge already reads the full session log; it is not required
-for F0, but nothing stops it starting alongside C4.
+Ready now: **J**. **T2** and **T3** are blocked on nothing in code; they start when the
+persisted history has a first reader who needs a name or a search.
 
 The orange nodes are deliberately limited to choices that change downstream implementation
 ordering. `D` is decided: the conversation app stays a separate deployment, at least for now.
@@ -190,72 +193,18 @@ personal context.
 
 ## Work-package acceptance
 
-- **Sandbox evidence:** the committed spike and evidence memo distinguish proven credential exclusion,
-  Pod/Sandbox authentication, replay/lifecycle behavior, and unsupported same-Pod route confinement.
-- **Native drivers + scripted harness tests:** real Claude and Codex binaries driven over stdio by
-  [`../native/`](../native/); the scripted tests in [`../harness_tests/`](../harness_tests/) cover
-  turns, idle resume, tool round trips, steering/interrupt and mid-turn input, and upstream
-  connection loss for both providers, asserting each step's upstream request markers and native
-  frames. The scenario matrix is in [`experiments.md`](experiments.md); what each harness exposes
-  beyond the tests is in [`../native/docs/protocol_roster.md`](../native/docs/protocol_roster.md).
-- **Live capture probe:** [`../capture/`](../capture/) records raw native and upstream logs outside
-  Git as reference material for authoring or repairing a script, never as test inputs. A harness
-  bump or newly tested protocol area requires a probe run, human inspection of the differences
-  against the scripted expectations, and a script update.
-- **Runner protocol + adapters:** one gRPC contract justified by observed native frames, with both
-  Claude and Codex adapters exercised through the same interaction scripts. Landed as
-  [`../runner/`](../runner/); its contract is [`../runner/SPEC.md`](../runner/SPEC.md).
-- **I1 runner image:** an `oci_image` with the runner and both pinned harnesses, registered for the
-  Forgejo registry, whose Docker smoke test attaches over the protocol and runs one scripted turn
-  per harness on RBE.
-- **I2 runner pod contract:** the runner listens on the Pod address with its state on a volume,
-  takes provider configuration from the environment, answers `ListSessions`, and on SIGTERM stops
-  every harness through the stdin-close ladder before exiting; a runner test covers the RPC and the
-  signal path.
-- **I3 staging namespace:** `cluster/k8s/agentplane-staging/` carries the namespace, the
-  `SandboxTemplate` with its PVC on wyrm2 (`local-path-proxmox`, `Delete` reclaim), a standing
-  copy of the `cheap-experiments` LiteLLM key for the runner Pods, Cilium policy, and the agent's
-  standing access: the namespace is labeled
-  agent-readable for metadata and logs, and a per-service `agent-rbac/` binding lets the
-  existing agent identities create, suspend, resume, and delete sandboxes, exec into
-  runner Pods, and port-forward. The cluster validator passes and a Sandbox reaches Ready once
-  the image is published.
-- **I4 first real turn:** run by the agent on staging without Rai: one turn per provider against
-  LiteLLM from inside a sandbox, then detach, suspend, resume, reattach from the cursor, and the
-  earlier turn visible in the resumed conversation; observations that change a guarantee go
-  into the runner SPEC.
-- **C1 sandbox inventory:** REST with an OpenAPI schema over Agentplane's standalone Sandboxes:
-  list with provisioning state, create, suspend, resume, delete; tested without a live cluster.
-- **C2 runner bridge:** sessions per sandbox, attach with a cursor, inputs, interrupt, shutdown,
-  and SSE with the event sequence as the SSE id; `Native` events pass through; tested against a
-  local runner with the scripted model.
-- **C3 UI:** a small SPA over C1 and C2 with the sandbox list and controls, the session stream, a
-  raw-frames view, an input box, and interrupt; provisioning, running, suspended, lost, and
-  uncertain states shown honestly.
-- **C4 app deployment into staging:** Deployment, Service, Authentik-fronted route, and
-  namespace-scoped RBAC in `agentplane-staging`, with the image registered like the runner's.
-  The API is reachable to the agent from inside the cluster, so the app's own flows (create,
-  drive, archive, delete) can be exercised autonomously; a production instance is a second
-  copy of the same manifests with its own keys, and does not exist until something needs it.
-- **C5 archive:** a sandbox can be marked archived from the app: it leaves the active list, its
-  Pod is torn down by suspension, and its PVC and session log stay, so unarchiving resumes it.
-  Archive is never deletion. Once T1 holds the trajectory, the flag moves to the thread record
-  and an archived sandbox may be deleted without losing anything.
-- **First functioning Agentplane (F0):** from the app, both providers run in sandboxes, a session is
-  driven, left, and replayed, a sandbox survives suspend and resume with its conversation, and the
-  raw frames behind any event are one click away.
-- **T1 trajectory persistence:** a thread's session log and native frames are copied out of the
-  sandbox into durable storage as they arrive, keyed by thread, sandbox, and agent, so deleting
-  the sandbox loses nothing and a thread can be read without a runner; the store is the app's
-  first database, chosen when this lands (PostgreSQL is the default expectation). Haku's session
-  store and recall index are prior art for the shape, not a dependency.
+Landed packages are described where they live (§ Current status); what follows is the bar for the
+ones still open.
+
 - **T2 named threads:** a small model proposes a name from the first turn, the user can edit it,
   and the name lives on the thread record; naming never touches the runner or the harness.
 - **T3 search and lookup:** find past interactions by text and by what an agent did; answer "what
   happened here", "why did the agent do that", and "which agent did this" from the persisted
   trajectory, with the raw frames one step away.
 - **Conversation app (E):** timeline and live control over persisted threads, as a client of the
-  same API; how archived threads are presented stays in this layer.
+  same API; how archived threads are presented stays in this layer. The archived flag still lives
+  on the Sandbox; it moves to the thread record here, after which an archived sandbox may be
+  deleted without losing anything.
 - **Secure egress and credentialed readiness:** one narrow synthetic operation proves the fixed sidecar
   to trusted gateway path before any real upstream credential is enabled. Real credentials remain only
   at the gateway; durable freshness/replay, per-Sandbox/Thread binding, rotation, runner-port
@@ -291,8 +240,7 @@ personal context.
 
 ## Detailed plans
 
-- The next slice, runner in a sandbox and the integration app:
-  [`runner_sandbox_and_app.md`](runner_sandbox_and_app.md).
+- The integration app's shape and decisions: [app README](../app/README.md).
 - Native provider scenarios and the scripted-test workflow: [`experiments.md`](experiments.md), the
   [native driver README](../native/README.md), the [harness tests README](../harness_tests/README.md),
   and the [live capture probe README](../capture/README.md).
