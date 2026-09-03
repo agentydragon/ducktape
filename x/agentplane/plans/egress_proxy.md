@@ -50,11 +50,11 @@ proxy relates to the integration app, and the work packages.
   it was made) so the view can say "from git" or "granted by Rai at ...". Owner references
   cascade on deletion, not on liveness: nothing is owned by the app's Pod or Deployment, and the
   app going down revokes nothing, because expiry is what fails closed.
-- **Time-limited and one-shot grants need no app in the loop.** `expiresAt` is enforced from the
-  proxy's own cache. A binding may also carry `maxUses`; the proxy counts allowed requests in
-  `status.uses` and stops honouring the binding when the count is reached, which expresses "this
-  once" better than a deadline does. A lease-style renewal by the app is deliberately not the
-  default: it would put the app back into the enforcement path.
+- **Time-limited grants need no app in the loop.** `expiresAt` is enforced from the proxy's own
+  cache. A lease-style renewal by the app is deliberately not the default: it would put the app
+  back into the enforcement path. A per-request use counter was considered and dropped: a count of
+  requests says nothing about what they did, so "this once" belongs to the webhook path when a
+  rule needs it.
 - **Profiles are selector bindings; per-launch picks are per-sandbox bindings.** A preset such
   as "public coder" or "Haku" is a binding in git whose subject is a label selector
   (`agentplane.allegedly.works/profile: public-coder`); launching an agent with that profile
@@ -109,7 +109,7 @@ sidecar's token is refused.
 
 ### E4. The app's view and the launch-time pick
 
-Per sandbox: the bindings and resolved rules with their provenance, approval, expiry and uses,
+Per sandbox: the bindings and resolved rules with their provenance, approval and expiry,
 the credentials by name, and the proxy's recent decisions; approve, deny, and revoke through the
 API server under the app's RBAC; read-only where the proxy is unreachable. On sandbox creation:
 a profile (a label on the Sandbox) and the namespace's individual policies to pick from, the
