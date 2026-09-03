@@ -17,6 +17,7 @@ from haku.console.auto_approval.github import (
     evaluate_public_repository,
 )
 from haku.console.auto_approval.gmail import LABEL_NAMESPACE_TOOLS, evaluate_label_namespace
+from haku.console.auto_approval.home_assistant import CALL_SERVICE_TOOL, evaluate_entity_control
 from haku.console.auto_approval.kubernetes import evaluate_passthrough_redundancy
 from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
 from haku.console.mcp_config import (
@@ -28,6 +29,7 @@ from haku.console.mcp_config import (
     GitHubRepositoryAutoApprovalPolicy,
     GmailLabelNamespaceAutoApprovalPolicy,
     GrantSelfListAutoApprovalPolicy,
+    HomeAssistantEntityControlAutoApprovalPolicy,
     KubernetesPassthroughAutoApprovalPolicy,
     NeverAutoApprovalPolicy,
 )
@@ -170,6 +172,12 @@ class AutoApprovalPolicyRegistry:
                     if server_id == server and tool_name == _LIST_GRANTS_TOOL
                     else ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
                 )
+            case HomeAssistantEntityControlAutoApprovalPolicy(server=server):
+                return (
+                    ToolAutoApprovalMode.CONDITIONALLY_AUTO_APPROVED
+                    if server_id == server and tool_name == CALL_SERVICE_TOOL
+                    else ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
+                )
             case KubernetesPassthroughAutoApprovalPolicy():
                 return ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
             case AnyOfAutoApprovalPolicy(policies=members):
@@ -276,6 +284,10 @@ class AutoApprovalPolicyRegistry:
                             "list_grants auto-approves only with principal=self; all-grants and named reads are manual"
                         ),
                     )
+            case HomeAssistantEntityControlAutoApprovalPolicy(server=server, entities=entities):
+                if server_id != server or tool_name != CALL_SERVICE_TOOL:
+                    return
+                evaluation.record(current_path, evaluate_entity_control(tool_name, arguments, entities))
             case KubernetesPassthroughAutoApprovalPolicy(server=server):
                 if server_id != server:
                     return

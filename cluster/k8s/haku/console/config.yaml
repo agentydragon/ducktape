@@ -440,6 +440,19 @@ auto_approval_policies:
         - ha_list_floors_areas
         - ha_list_services
         - ha_search
+  # Standing authority for exactly one write: the desk light on, off, or dimmed/recoloured. Every
+  # other Home Assistant service, every other entity, and any `data` key that could retarget the
+  # call stay operator-gated. This needs its own policy kind because every HA write goes through the
+  # single generic `ha_call_service` tool, so an exact_tools entry would hand over locks, the alarm
+  # panel and `homeassistant.restart` along with the lamp.
+  - id: home_assistant_desk_light_control
+    type: home_assistant_entity_control
+    server: home-assistant
+    entities:
+      light.h6006_pegboard:
+        - turn_on
+        - turn_off
+        - toggle
   - id: haku_sandbox_control
     type: exact_tools
     tools:
@@ -490,6 +503,7 @@ auto_approval_policies:
       - tana_safe_tools
       - postscanmail_reads
       - home_assistant_reads
+      - home_assistant_desk_light_control
       - haku_sandbox_control
       - managed_gmail_labels
       - kubernetes_reads

@@ -258,6 +258,35 @@ class GmailLabelNamespaceAutoApprovalPolicy(AutoApprovalPolicyBase):
     label_prefix: str = Field(min_length=1)
 
 
+class HomeAssistantEntityControlAutoApprovalPolicy(AutoApprovalPolicyBase):
+    """Conditionally auto-approve Home Assistant service calls against named entities.
+
+    Every Home Assistant write goes through the single generic ``ha_call_service`` tool, so an
+    ``exact_tools`` entry cannot express "this lamp and nothing else" — it would grant every service
+    on every entity. This kind constrains the arguments instead: ``entities`` maps an entity id to
+    the services it may be called with, and the evaluator
+    (``haku/console/auto_approval/home_assistant.py``) rejects anything that could retarget the call.
+    """
+
+    type: Literal["home_assistant_entity_control"] = "home_assistant_entity_control"
+    server: str = Field(min_length=1)
+    entities: dict[str, set[str]] = Field(min_length=1)
+
+    @field_validator("entities")
+    @classmethod
+    def _require_domain_qualified_entities(cls, value: dict[str, set[str]]) -> dict[str, set[str]]:
+        for entity_id, services in value.items():
+            # The evaluator derives the expected `domain` argument from this prefix, so an entity id
+            # without one would make every domain compare unequal and silently never auto-approve.
+            if entity_id.count(".") != 1 or not all(entity_id.split(".")):
+                raise ValueError(f"entity id {entity_id!r} must be domain-qualified, as in 'light.desk'")
+            if not services:
+                raise ValueError(f"entity {entity_id!r} must list at least one service")
+            if any(not service or "." in service for service in services):
+                raise ValueError(f"entity {entity_id!r} lists a blank or domain-qualified service name")
+        return value
+
+
 class GitHubRepositoryAutoApprovalPolicy(AutoApprovalPolicyBase):
     """Conditionally auto-approve reviewed GitHub reads for one repository."""
 
@@ -318,6 +347,7 @@ type AutoApprovalPolicy = Annotated[
     ExactToolsAutoApprovalPolicy
     | GmailLabelNamespaceAutoApprovalPolicy
     | GitHubRepositoryAutoApprovalPolicy
+    | HomeAssistantEntityControlAutoApprovalPolicy
     | GitHubPublicRepositoryAutoApprovalPolicy
     | GrantSelfListAutoApprovalPolicy
     | KubernetesPassthroughAutoApprovalPolicy

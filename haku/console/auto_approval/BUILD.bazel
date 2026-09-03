@@ -44,6 +44,25 @@ py_library(
 )
 
 py_library(
+    name = "home_assistant",
+    srcs = ["home_assistant.py"],
+    deps = [":decision"],
+)
+
+py_test(
+    name = "test_home_assistant",
+    srcs = ["test_home_assistant.py"],
+    deps = [
+        ":decision",
+        ":home_assistant",
+        "//:conftest",
+        "//haku/console:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "kubernetes",
     srcs = ["kubernetes.py"],
     deps = [
@@ -62,6 +81,7 @@ py_library(
         ":decision",
         ":github",
         ":gmail",
+        ":home_assistant",
         ":kubernetes",
         "//haku/console:mcp_config",
         "//haku/console:tool_call_actor",
