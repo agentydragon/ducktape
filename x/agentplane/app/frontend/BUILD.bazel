@@ -231,5 +231,8 @@ VISUAL_DATA = [
         "sandboxes",
         "sandbox",
         "session",
+        "sandboxes_phone",
+        "sandbox_phone",
+        "session_phone",
     ]
 ]

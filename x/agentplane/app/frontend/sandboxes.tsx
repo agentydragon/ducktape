@@ -1,4 +1,17 @@
-import { Badge, Button, Group, Select, Stack, Switch, Table, Text, TextInput, Title } from "@mantine/core";
+import {
+  ActionIcon,
+  Badge,
+  Button,
+  Group,
+  Menu,
+  Select,
+  Stack,
+  Switch,
+  Table,
+  Text,
+  TextInput,
+  Title,
+} from "@mantine/core";
 import { useCallback, useEffect, useState } from "react";
 
 import { api, displayableError, type NewSandbox, type SandboxView } from "./client";
@@ -58,17 +71,24 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       <Title order={2}>Sandboxes</Title>
       {error && <Text c="red">{error}</Text>}
       <Group align="flex-end">
-        <TextInput label="Name" value={form.slug} onChange={(e) => setForm({ ...form, slug: e.currentTarget.value })} />
+        <TextInput
+          label="Name"
+          value={form.slug}
+          onChange={(e) => setForm({ ...form, slug: e.currentTarget.value })}
+          style={{ flex: "1 1 10rem" }}
+        />
         <Select
           label="Provider"
           data={["claude", "codex"]}
           value={form.provider}
           onChange={(value) => value && setForm({ ...form, provider: value as NewSandbox["provider"] })}
+          style={{ flex: "1 1 8rem" }}
         />
         <TextInput
           label="Model"
           value={form.model}
           onChange={(e) => setForm({ ...form, model: e.currentTarget.value })}
+          style={{ flex: "1 1 10rem" }}
         />
         <Button onClick={() => void create()} disabled={!form.slug || !form.model}>
           New sandbox
@@ -83,56 +103,66 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         <Table.Thead>
           <Table.Tr>
             <Table.Th>Name</Table.Th>
-            <Table.Th>Provider</Table.Th>
-            <Table.Th>Model</Table.Th>
+            <Table.Th visibleFrom="sm">Provider</Table.Th>
+            <Table.Th visibleFrom="sm">Model</Table.Th>
             <Table.Th>State</Table.Th>
-            <Table.Th>Node</Table.Th>
+            <Table.Th visibleFrom="sm">Node</Table.Th>
             <Table.Th />
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          {rows.map((row) => (
-            <Table.Tr key={row.name}>
-              <Table.Td>
-                <Button variant="subtle" onClick={() => onOpen(row.name)}>
-                  {row.name}
-                </Button>
-              </Table.Td>
-              <Table.Td>{row.provider}</Table.Td>
-              <Table.Td>{row.model}</Table.Td>
-              <Table.Td>
-                <Badge color={STATE_COLORS[row.state] ?? "blue"}>{row.state}</Badge>
-              </Table.Td>
-              <Table.Td>
-                {row.node_name ?? "—"} {row.pod?.ip ? `(${row.pod.ip})` : ""}
-              </Table.Td>
-              <Table.Td>
-                <Group gap="xs">
-                  {row.state === "suspended" || row.state === "archived" ? (
-                    <Button size="xs" onClick={() => void act(row.name, "resume")}>
-                      Resume
-                    </Button>
-                  ) : (
-                    <Button size="xs" onClick={() => void act(row.name, "suspend")}>
-                      Suspend
-                    </Button>
-                  )}
-                  {row.archived ? (
-                    <Button size="xs" variant="light" onClick={() => void act(row.name, "unarchive")}>
-                      Unarchive
-                    </Button>
-                  ) : (
-                    <Button size="xs" variant="light" onClick={() => void act(row.name, "archive")}>
-                      Archive
-                    </Button>
-                  )}
-                  <Button size="xs" color="red" variant="light" onClick={() => void act(row.name, "delete")}>
-                    Delete
+          {rows.map((row) => {
+            const node = `${row.node_name ?? "—"} ${row.pod?.ip ? `(${row.pod.ip})` : ""}`;
+            return (
+              <Table.Tr key={row.name}>
+                <Table.Td>
+                  <Button variant="subtle" px="xs" onClick={() => onOpen(row.name)}>
+                    {row.name}
                   </Button>
-                </Group>
-              </Table.Td>
-            </Table.Tr>
-          ))}
+                  {/* On a phone the secondary columns fold under the name. */}
+                  <Text size="xs" c="dimmed" hiddenFrom="sm">
+                    {row.provider} · {row.model} · {node}
+                  </Text>
+                </Table.Td>
+                <Table.Td visibleFrom="sm">{row.provider}</Table.Td>
+                <Table.Td visibleFrom="sm">{row.model}</Table.Td>
+                <Table.Td>
+                  <Badge color={STATE_COLORS[row.state] ?? "blue"}>{row.state}</Badge>
+                </Table.Td>
+                <Table.Td visibleFrom="sm">{node}</Table.Td>
+                <Table.Td>
+                  <Group gap="xs" wrap="nowrap" justify="flex-end">
+                    {row.state === "suspended" || row.state === "archived" ? (
+                      <Button size="xs" onClick={() => void act(row.name, "resume")}>
+                        Resume
+                      </Button>
+                    ) : (
+                      <Button size="xs" onClick={() => void act(row.name, "suspend")}>
+                        Suspend
+                      </Button>
+                    )}
+                    <Menu position="bottom-end">
+                      <Menu.Target>
+                        <ActionIcon variant="subtle" aria-label={`More actions for ${row.name}`}>
+                          ⋯
+                        </ActionIcon>
+                      </Menu.Target>
+                      <Menu.Dropdown>
+                        {row.archived ? (
+                          <Menu.Item onClick={() => void act(row.name, "unarchive")}>Unarchive</Menu.Item>
+                        ) : (
+                          <Menu.Item onClick={() => void act(row.name, "archive")}>Archive</Menu.Item>
+                        )}
+                        <Menu.Item color="red" onClick={() => void act(row.name, "delete")}>
+                          Delete
+                        </Menu.Item>
+                      </Menu.Dropdown>
+                    </Menu>
+                  </Group>
+                </Table.Td>
+              </Table.Tr>
+            );
+          })}
         </Table.Tbody>
       </Table>
     </Stack>
