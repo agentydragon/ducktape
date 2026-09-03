@@ -12,6 +12,7 @@ import {
   type Condition,
   type SandboxView,
 } from "./client";
+import { EgressSection } from "./egress";
 import { HarnessState, Provider, SessionSpecSchema, type SessionSummary } from "./protocol_pb";
 
 // The harness a session runs, as the API's catalog names it and as the protocol's enum spells it.
@@ -190,12 +191,14 @@ export function SandboxPage({
         </Button>
         <Title order={2}>{name}</Title>
         {sandbox && <Badge>{sandbox.state}</Badge>}
+        {sandbox?.profile && <Badge variant="light">profile: {sandbox.profile}</Badge>}
       </Group>
       {error && <Text c="red">{error}</Text>}
       {sandbox && sandbox.state !== "running" && (
         <Text>The sandbox is {sandbox.state}; sessions need a running Pod.</Text>
       )}
       {sandbox && <StatusView sandbox={sandbox} />}
+      <EgressSection name={name} />
       <Group align="flex-end">
         <TextInput label="Session id" value={sessionId} onChange={(e) => setSessionId(e.currentTarget.value)} />
         <Select label="Harness" data={HARNESSES} value={harness} onChange={(v) => v && setHarness(v as Harness)} />

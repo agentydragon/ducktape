@@ -107,14 +107,6 @@ Acceptance: from inside a staging sandbox, a `git ls-remote` of a public reposit
 through the proxy with no credential visible in the sandbox, and the same call without the
 sidecar's token is refused.
 
-### E4. The app's view and the launch-time pick
-
-Per sandbox: the bindings and resolved rules with their provenance, approval and expiry,
-the credentials by name, and the proxy's recent decisions; approve, deny, and revoke through the
-API server under the app's RBAC; read-only where the proxy is unreachable. On sandbox creation:
-a profile (a label on the Sandbox) and the namespace's individual policies to pick from, the
-latter becoming one sandbox-owned binding.
-
 ## Left out on purpose
 
 Per-thread and per-agent subjects, the webhook decision path, durable decision history, warm-pool

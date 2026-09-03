@@ -82,11 +82,24 @@ ts_library(
 )
 
 ts_library(
+    name = "egress",
+    srcs = ["egress.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "sandbox_page",
     srcs = ["sandbox_page.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":egress",
         ":protocol_pb",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",

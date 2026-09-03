@@ -9,7 +9,14 @@ py_library(
     name = "kubernetes",
     srcs = ["kubernetes.py"],
     deps = [
+        "//x/agentplane/app:egress",
         "//x/agentplane/app:inventory",
         "@pypi//kubernetes_asyncio",
     ],
+)
+
+py_library(
+    name = "egress_proxy",
+    srcs = ["egress_proxy.py"],
+    deps = ["@pypi//httpx"],
 )

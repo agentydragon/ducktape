@@ -12,7 +12,7 @@ import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";
 
 import App from "../app";
-import type { SandboxView, ThreadView } from "../client";
+import type { EgressView, PolicyView, SandboxView, ThreadView } from "../client";
 import {
   AttachedSchema,
   Direction,
@@ -41,6 +41,8 @@ function ago(ms: number): string {
 const SANDBOXES: SandboxView[] = [
   {
     name: "demo-a1b2",
+    uid: "0f9c1d2e-0000-4000-8000-00000000a1b2",
+    profile: "coder",
     archived: false,
     state: "running",
     created_at: ago(3 * HOUR),
@@ -62,6 +64,8 @@ const SANDBOXES: SandboxView[] = [
   },
   {
     name: "codex-c3d4",
+    uid: "0f9c1d2e-0000-4000-8000-00000000c3d4",
+    profile: null,
     archived: false,
     state: "waiting_for_pod_ready",
     created_at: ago(2 * 60_000),
@@ -89,6 +93,8 @@ const SANDBOXES: SandboxView[] = [
   },
   {
     name: "old-e5f6",
+    uid: "0f9c1d2e-0000-4000-8000-00000000e5f6",
+    profile: null,
     archived: false,
     state: "suspended",
     created_at: ago(48 * HOUR),
@@ -98,6 +104,127 @@ const SANDBOXES: SandboxView[] = [
     pod: null,
   },
 ];
+
+const POLICIES: PolicyView[] = [
+  {
+    name: "github-public",
+    rules: [
+      {
+        hosts: ["api.github.com", "github.com", "*.githubusercontent.com"],
+        methods: ["GET", "POST"],
+        paths: null,
+        credential: { secret: "harness-github-pat", key: "token", header: "Authorization" },
+      },
+    ],
+  },
+  {
+    name: "pypi",
+    rules: [
+      { hosts: ["pypi.org", "files.pythonhosted.org"], methods: ["GET"], paths: ["/simple/**"], credential: null },
+    ],
+  },
+];
+
+/** One seed binding from git, active; one runtime ask still pending, which the proxy has refused so far. */
+const BINDINGS: EgressView["bindings"] = [
+  {
+    name: "demo-a1b2-asks",
+    granted_by: "agent",
+    from_git: false,
+    subjects: [{ sandbox: "demo-a1b2", match_labels: null }],
+    approval: "pending",
+    approved_by: null,
+    approved_at: null,
+    expires_at: new Date(NOW + 6 * HOUR).toISOString(),
+    policies: [POLICIES[1]],
+    missing_policies: [],
+    active: false,
+    active_reason: "NotApproved",
+    active_message: "approval is pending",
+  },
+  {
+    name: "sandboxes-github-public",
+    granted_by: "flux",
+    from_git: true,
+    subjects: [{ sandbox: null, match_labels: { "agentplane.allegedly.works/managed": "true" } }],
+    approval: "approved",
+    approved_by: "harness-operator",
+    approved_at: ago(24 * HOUR),
+    expires_at: null,
+    policies: [POLICIES[0]],
+    missing_policies: [],
+    active: true,
+    active_reason: "Resolved",
+    active_message: "1 of 1 policies resolved",
+  },
+];
+
+const DECISIONS: NonNullable<EgressView["decisions"]> = [
+  {
+    at: ago(9 * 60_000),
+    method: "CONNECT",
+    host: "api.github.com",
+    port: 443,
+    path: null,
+    outcome: "allow",
+    reason: null,
+    binding: "sandboxes-github-public",
+    policy: "github-public",
+    rule: 0,
+    substituted: false,
+  },
+  {
+    at: ago(9 * 60_000 - 200),
+    method: "GET",
+    host: "api.github.com",
+    port: 443,
+    path: "/repos/agentydragon/ducktape/pulls",
+    outcome: "allow",
+    reason: null,
+    binding: "sandboxes-github-public",
+    policy: "github-public",
+    rule: 0,
+    substituted: true,
+  },
+  {
+    at: ago(4 * 60_000),
+    method: "GET",
+    host: "pypi.org",
+    port: 443,
+    path: "/simple/requests/",
+    outcome: "deny",
+    reason: "no-rule",
+    binding: null,
+    policy: null,
+    rule: null,
+    substituted: false,
+  },
+  {
+    at: ago(60_000),
+    method: "CONNECT",
+    host: "example.invalid",
+    port: 443,
+    path: null,
+    outcome: "deny",
+    reason: "no-binding",
+    binding: null,
+    policy: null,
+    rule: null,
+    substituted: false,
+  },
+];
+
+/** The phone scenario shows the proxy unreachable, the desktop one its decisions; both fit on a page. */
+function egressView(): EgressView {
+  if (window.matchMedia("(max-width: 600px)").matches) {
+    return {
+      bindings: BINDINGS,
+      decisions: null,
+      decisions_error: "the egress proxy did not answer: connection refused",
+    };
+  }
+  return { bindings: BINDINGS, decisions: DECISIONS, decisions_error: null };
+}
 
 const SPEC: SessionSpec = create(SessionSpecSchema, {
   provider: Provider.CLAUDE,
@@ -186,8 +313,10 @@ const EVENTS: Event[] = [
 
 routes.push(
   ["GET", /^\/models$/, () => ({ claude: ["harness-claude-model"], codex: ["harness-codex-model"] })],
+  ["GET", /^\/egress\/policies$/, () => POLICIES],
   ["GET", /^\/sandboxes$/, () => SANDBOXES],
   ["GET", /^\/sandboxes\/([^/]+)$/, (match) => SANDBOXES.find((row) => row.name === match[1])],
+  ["GET", /^\/sandboxes\/([^/]+)\/egress$/, () => egressView()],
   ["GET", /^\/sandboxes\/([^/]+)\/sessions$/, () => SESSIONS.map((session) => toJson(SessionSummarySchema, session))],
   [
     "GET",

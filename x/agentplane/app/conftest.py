@@ -6,6 +6,7 @@ import re
 from collections.abc import AsyncIterator, Iterator
 from typing import Any, cast
 
+import httpx
 import pytest
 from sqlalchemy.engine import make_url
 from testcontainers.postgres import PostgresContainer
@@ -13,7 +14,10 @@ from testcontainers.postgres import PostgresContainer
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
 from x.agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
+from x.agentplane.app.decisions import DecisionsClient
+from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.inventory import ProvisioningState, SandboxInventory
+from x.agentplane.app.testing.egress_proxy import FakeEgressAdmin
 from x.agentplane.app.testing.kubernetes import NAMESPACE, TEMPLATE, FakeCoreV1Api, FakeCustomObjectsApi
 from x.agentplane.app.trajectory import TrajectoryStore
 
@@ -72,3 +76,21 @@ def inventory(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api) -> S
     return SandboxInventory(
         namespace=NAMESPACE, template=TEMPLATE, custom_objects=cast(Any, custom_objects), core_v1=cast(Any, core_v1)
     )
+
+
+APPROVER = "test-app"
+
+
+@pytest.fixture
+def egress(custom_objects: FakeCustomObjectsApi) -> EgressInventory:
+    return EgressInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom_objects), approver=APPROVER)
+
+
+@pytest.fixture
+def egress_admin() -> FakeEgressAdmin:
+    return FakeEgressAdmin()
+
+
+@pytest.fixture
+def decisions(egress_admin: FakeEgressAdmin) -> DecisionsClient:
+    return DecisionsClient(httpx.AsyncClient(base_url="http://egress-admin.test", transport=egress_admin.transport()))

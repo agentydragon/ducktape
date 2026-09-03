@@ -10,6 +10,7 @@ from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Any, cast
 
+import httpx
 import uvicorn
 from fastapi import Response
 from fastapi.staticfiles import StaticFiles
@@ -22,7 +23,9 @@ from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.app.api import ModelCatalog, create_app
 from x.agentplane.app.bridge import RunnerBridge, runner_address
-from x.agentplane.app.inventory import ProvisioningState, SandboxInventory
+from x.agentplane.app.decisions import DecisionsClient
+from x.agentplane.app.egress import EgressInventory
+from x.agentplane.app.inventory import LabelValue, ProvisioningState, SandboxInventory
 from x.agentplane.app.trajectory import TrajectoryStore
 
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
@@ -77,6 +80,13 @@ class Settings(BaseSettings):
     models: ModelCatalog = Field(
         description='The models each provider may run, as JSON: {"claude": ["..."], "codex": ["..."]}.'
     )
+    egress_admin_url: str = Field(description="The egress proxy's admin port, serving /decisions.")
+    egress_admin_timeout: float = Field(
+        default=5, description="Seconds to wait for the proxy before showing rules only."
+    )
+    approver: LabelValue = Field(
+        description="Who approvals and launch-time grants are recorded as, in spec.approval.by and the granted-by label."
+    )
 
     def __init__(self, **values: Any) -> None:
         # BaseSettings fills required fields from its sources; spell that out because the mypy plugin
@@ -110,18 +120,25 @@ async def async_main(settings: Settings) -> None:
         k8s_config.load_incluster_config(client_configuration=configuration)
     else:
         await k8s_config.load_kube_config(config_file=str(settings.kubeconfig), client_configuration=configuration)
-    async with ApiClient(configuration=configuration) as api:
+    async with (
+        ApiClient(configuration=configuration) as api,
+        httpx.AsyncClient(base_url=settings.egress_admin_url, timeout=settings.egress_admin_timeout) as admin_http,
+    ):
+        # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
+        custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
         inventory = SandboxInventory(
             namespace=settings.namespace,
             template=settings.template,
-            # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
-            custom_objects=cast(CustomObjectsClient, CustomObjectsApi(api)),
+            custom_objects=custom_objects,
             core_v1=CoreV1Api(api),
+        )
+        egress = EgressInventory(
+            namespace=settings.namespace, custom_objects=custom_objects, approver=settings.approver
         )
         store = TrajectoryStore.connect(settings.database_url)
         await store.ensure_schema()
         bridge = RunnerBridge(address_of=runner_address(inventory, settings.runner_port), store=store)
-        app = create_app(inventory, bridge, store, settings.models)
+        app = create_app(inventory, bridge, store, settings.models, egress, DecisionsClient(admin_http))
         # The SPA, mounted last so the API routes above it win; index.html answers the rest.
         app.mount("/", SpaFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
         try:

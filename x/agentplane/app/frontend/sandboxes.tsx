@@ -4,6 +4,7 @@ import {
   Button,
   Group,
   Menu,
+  MultiSelect,
   Stack,
   Switch,
   Table,
@@ -19,6 +20,8 @@ import IconPlayerPlay from "@tabler/icons-react/dist/esm/icons/IconPlayerPlay.mj
 import { useCallback, useEffect, useState } from "react";
 
 import { api, displayableError, type Condition, type NewSandbox, type SandboxView } from "./client";
+
+const EMPTY_FORM: NewSandbox = { slug: "", profile: null, policies: [] };
 
 const REFRESH_MS = 5000;
 
@@ -69,7 +72,9 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const [rows, setRows] = useState<SandboxView[]>([]);
   const [includeArchived, setIncludeArchived] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState<NewSandbox>({ slug: "" });
+  const [form, setForm] = useState<NewSandbox>(EMPTY_FORM);
+  // The namespace's individual policies; ticking some grants them on top of the profile's binding.
+  const [policies, setPolicies] = useState<string[]>([]);
 
   const refresh = useCallback(async () => {
     const { data, error: failure } = await api.GET("/sandboxes", {
@@ -88,6 +93,14 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     return () => clearInterval(timer);
   }, [refresh]);
 
+  useEffect(() => {
+    void (async () => {
+      const { data, error: failure } = await api.GET("/egress/policies");
+      if (failure) setError(displayableError(failure));
+      else setPolicies(data.map((policy) => policy.name));
+    })();
+  }, []);
+
   async function act(name: string, action: "suspend" | "resume" | "archive" | "unarchive" | "delete"): Promise<void> {
     const params = { params: { path: { name } } };
     const { error: failure } =
@@ -99,9 +112,11 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   }
 
   async function create(): Promise<void> {
-    const { error: failure } = await api.POST("/sandboxes", { body: form });
+    const { error: failure } = await api.POST("/sandboxes", {
+      body: { ...form, profile: form.profile || null },
+    });
     if (failure) setError(displayableError(failure));
-    else setForm({ ...form, slug: "" });
+    else setForm(EMPTY_FORM);
     await refresh();
   }
 
@@ -115,6 +130,21 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           value={form.slug}
           onChange={(e) => setForm({ ...form, slug: e.currentTarget.value })}
           style={{ flex: "1 1 10rem" }}
+        />
+        <TextInput
+          label="Profile"
+          description="A label the profile bindings select on"
+          value={form.profile ?? ""}
+          onChange={(e) => setForm({ ...form, profile: e.currentTarget.value })}
+          style={{ flex: "1 1 8rem" }}
+        />
+        <MultiSelect
+          label="Policies"
+          description="Granted to this sandbox alone"
+          data={policies}
+          value={form.policies ?? []}
+          onChange={(picked) => setForm({ ...form, policies: picked })}
+          style={{ flex: "1 1 12rem" }}
         />
         <Button onClick={() => void create()} disabled={!form.slug}>
           New sandbox

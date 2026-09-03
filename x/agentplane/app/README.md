@@ -15,6 +15,9 @@ bbr test //x/agentplane/app/...
   variable, and a key of the YAML file `AGENTPLANE_CONFIG_FILE` points at.
 - `inventory.py`: the sandbox inventory read from and written to Kubernetes (create, suspend,
   resume, archive, delete), with the parsed subset of each CR it needs.
+- `egress.py`: the namespace's `EgressPolicy` and `EgressBinding` resources as the app shows and
+  edits them (approve, deny, revoke, the launch-time grant); `decisions.py` reads the proxy's
+  recent decisions off its admin port, and an unreachable proxy leaves the rules readable.
 - `bridge.py`: one runner attachment per streaming session, fanned out to every browser tab, and
   the SSE framing; `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits
   for the frontend's generated client.

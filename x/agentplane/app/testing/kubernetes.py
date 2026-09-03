@@ -9,9 +9,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 from kubernetes_asyncio import client as k8s_client
 
+from x.agentplane.app.egress import GRANTED_BY_LABEL
 from x.agentplane.app.inventory import MANAGED_LABEL
 
 NAMESPACE = "agentplane-test"
@@ -74,7 +76,10 @@ class FakeCustomObjectsApi:
         key = (plural, body["metadata"]["name"])
         if key in self.objects:
             raise k8s_client.ApiException(status=409)
-        stored = {**body, "metadata": {**body["metadata"], "creationTimestamp": "2026-09-02T10:00:00Z"}}
+        stored = {
+            **body,
+            "metadata": {**body["metadata"], "uid": str(uuid4()), "creationTimestamp": "2026-09-02T10:00:00Z"},
+        }
         self.objects[key] = stored
         return stored
 
@@ -137,11 +142,63 @@ def sandbox(
     return {
         "metadata": {
             "name": name,
+            "uid": str(uuid4()),
             "labels": {MANAGED_LABEL: "true", **(labels or {})},
             "creationTimestamp": "2026-09-01T12:00:00Z",
         },
         "spec": {"podTemplate": POD_TEMPLATE, "operatingMode": operating_mode},
         **({"status": status} if status is not None else {}),
+    }
+
+
+def egress_policy(name: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "metadata": {"name": name, "uid": str(uuid4()), "creationTimestamp": "2026-09-01T11:30:00Z"},
+        "spec": {"rules": rules},
+    }
+
+
+def egress_binding(
+    name: str,
+    *,
+    subjects: list[dict[str, Any]],
+    policies: list[str],
+    approval: dict[str, Any],
+    granted_by: str | None = "flux",
+    expires_at: str | None = None,
+    active: tuple[str, str, str] | None = None,
+) -> dict[str, Any]:
+    """A binding as the API server holds it; `active` is (status, reason, message) of the proxy's condition."""
+    return {
+        "metadata": {
+            "name": name,
+            "uid": str(uuid4()),
+            "labels": {GRANTED_BY_LABEL: granted_by} if granted_by is not None else {},
+            "creationTimestamp": "2026-09-01T11:45:00Z",
+        },
+        "spec": {
+            "subjects": subjects,
+            "policies": policies,
+            "approval": approval,
+            **({"expiresAt": expires_at} if expires_at is not None else {}),
+        },
+        **(
+            {
+                "status": {
+                    "conditions": [
+                        {
+                            "type": "Active",
+                            "status": active[0],
+                            "reason": active[1],
+                            "message": active[2],
+                            "lastTransitionTime": "2026-09-01T11:46:00Z",
+                        }
+                    ]
+                }
+            }
+            if active is not None
+            else {}
+        ),
     }
 
 

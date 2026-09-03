@@ -25,6 +25,8 @@ py_library(
     srcs = ["api.py"],
     deps = [
         ":bridge",
+        ":decisions",
+        ":egress",
         ":inventory",
         ":trajectory",
         "//x/agentplane/runner:client",
@@ -52,11 +54,14 @@ py_library(
     deps = [
         ":api",
         ":bridge",
+        ":decisions",
+        ":egress",
         ":inventory",
         ":trajectory",
         "//util:kubernetes",
         "//util/bazel:runfiles",
         "@pypi//fastapi",
+        "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
@@ -71,12 +76,16 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         ":bridge",
+        ":decisions",
+        ":egress",
         ":inventory",
         ":trajectory",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
+        "//x/agentplane/app/testing:egress_proxy",
         "//x/agentplane/app/testing:kubernetes",
         "//x/agentplane/runner:conftest",
+        "@pypi//httpx",
         "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
@@ -91,9 +100,12 @@ py_test(
         ":api",
         ":bridge",
         ":conftest",
+        ":decisions",
+        ":egress",
         ":inventory",
         ":trajectory",
         "//:conftest",
+        "//x/agentplane/app/testing:egress_proxy",
         "//x/agentplane/app/testing:kubernetes",
         "//x/agentplane/runner:protocol_pb2",
         "@pypi//fastapi",
@@ -150,6 +162,8 @@ py_test(
         ":api",
         ":bridge",
         ":conftest",
+        ":decisions",
+        ":egress",
         ":inventory",
         ":trajectory",
         "//:conftest",
@@ -171,8 +185,11 @@ py_library(
     deps = [
         ":api",
         ":bridge",
+        ":decisions",
+        ":egress",
         ":inventory",
         ":trajectory",
+        "@pypi//httpx",
     ],
 )
 
@@ -244,6 +261,40 @@ py_test(
         "//:conftest",
         "@pypi//fastapi",
         "@pypi//httpx",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "decisions",
+    srcs = ["decisions.py"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "egress",
+    srcs = ["egress.py"],
+    deps = [
+        ":inventory",
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_egress",
+    srcs = ["test_egress.py"],
+    deps = [
+        ":conftest",
+        ":egress",
+        ":inventory",
+        "//:conftest",
+        "//x/agentplane/app/testing:kubernetes",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

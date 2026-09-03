@@ -18,6 +18,10 @@ export type SandboxView = components["schemas"]["SandboxView"];
 export type NewSandbox = components["schemas"]["NewSandbox"];
 export type Condition = components["schemas"]["Condition"];
 export type ThreadView = components["schemas"]["ThreadView"];
+export type EgressView = components["schemas"]["EgressView"];
+export type BindingView = components["schemas"]["BindingView"];
+export type PolicyView = components["schemas"]["PolicyView"];
+export type Decision = components["schemas"]["Decision"];
 
 export function displayableError(error: unknown): string {
   if (error instanceof Error) return error.message;

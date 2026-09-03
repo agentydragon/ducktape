@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from uuid import uuid4
 
 import pytest
 import pytest_bazel
@@ -39,7 +40,7 @@ def _populate_one_of_each_state(custom_objects: FakeCustomObjectsApi, core_v1: F
     )
     # Not Agentplane's: another tenant's Sandbox in the same namespace stays invisible.
     custom_objects.objects[("sandboxes", "foreign")] = {
-        "metadata": {"name": "foreign", "creationTimestamp": "2026-09-01T12:00:00Z"},
+        "metadata": {"name": "foreign", "uid": str(uuid4()), "creationTimestamp": "2026-09-01T12:00:00Z"},
         "spec": {"podTemplate": POD_TEMPLATE},
     }
 
