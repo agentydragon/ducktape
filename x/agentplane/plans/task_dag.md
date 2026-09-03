@@ -74,7 +74,7 @@ flowchart TB
         C3["C3 UI<br/>sandboxes, session stream, raw view, input, interrupt"]:::completed
         C4["C4 App deployment into staging<br/>RBAC, Authentik route, agent-reachable API"]:::completed
         C5["C5 Archive<br/>out of the active view, history kept"]:::completed
-        C6["C6 Session view legibility<br/>markdown, the input's own text, folded reasoning,<br/>Enter sends, raw frames in place"]:::ready
+        C6["C6 Session view legibility<br/>markdown, the input's own text, folded reasoning,<br/>Enter sends, icon controls, raw frames in place"]:::ready
         C7["C7 Lifecycle controls on the sandbox page<br/>suspend there, delete once suspended"]:::ready
         C8["C8 Live push for every view<br/>the server says what changed, no page polls"]:::ready
         C9["C9 The profile a sandbox runs under<br/>visible and pickable, not one badge"]:::ready
@@ -213,7 +213,9 @@ ones still open.
   - **Reasoning folded** into a disclosure widget, closed by default, so the answer is not buried
     under the thinking.
   - **Enter sends, Ctrl+Enter takes a newline** in the composer, the binding every chat surface
-    already has.
+    already has, with Send and Interrupt as icons rather than text buttons — the same move the
+    sandbox list already made for Suspend and Resume, so `@tabler/icons-react` via per-icon
+    subpath imports (the barrel OOMs esbuild on RBE).
   - **A user input shows what was typed.** Today it shows only its opaque `input_id`, because
     `InputSubmitted` carries the id alone ([`../runner/protocol.proto`](../runner/protocol.proto)).
     Decided (Rai): the protocol changes, so the text arrives with the event and a client that
