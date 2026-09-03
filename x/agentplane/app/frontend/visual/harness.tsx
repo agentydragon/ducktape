@@ -272,6 +272,37 @@ const ATTACHED: Attached = create(AttachedSchema, {
   harness: HarnessState.RUNNING,
 });
 
+/** Real reasoning is several sentences, so the folded block is worth opening. */
+const THINKING = [
+  "The user asked what is in the repository, not for a recursive listing.",
+  "A plain ls of the top level answers it; anything deeper buries the answer.",
+].join("\n");
+
+/**
+ * The second turn's thinking. The view scrolls to the newest event, so the reasoning that the
+ * expanded scenario has to show is the one in the last turn.
+ */
+const THINKING_AGAIN = [
+  "src is a directory, so reading it starts with listing what is inside.",
+  "Only then is there a file to open, and the user did not name one.",
+].join("\n");
+
+/** The markdown an answer actually arrives as: headings, a list, inline code, a fence, emphasis. */
+const ANSWER = [
+  "## Repository root",
+  "",
+  "Two entries, both tracked:",
+  "",
+  "- `README.md` — the project overview",
+  "- `src/` — **all** the source, including the _experimental_ parts",
+  "",
+  "Run the tests with:",
+  "",
+  "```bash",
+  "bazel test //...",
+  "```",
+].join("\n");
+
 function event(sequence: number, observation: MessageInitShape<typeof EventSchema>["observation"]): Event {
   return create(EventSchema, { sequence: BigInt(sequence), observation });
 }
@@ -282,11 +313,8 @@ const EVENTS: Event[] = [
   event(3, { case: "turnStarted", value: { turnId: "t1" } }),
   event(4, { case: "inputAccepted", value: { inputId: "i1", turnId: "t1" } }),
   event(5, { case: "itemStarted", value: { itemId: "r#0", kind: ItemKind.REASONING } }),
-  event(6, { case: "textDelta", value: { itemId: "r#0", text: "The user wants the files listed." } }),
-  event(7, {
-    case: "itemCompleted",
-    value: { itemId: "r#0", outcome: { case: "text", value: "The user wants the files listed." } },
-  }),
+  event(6, { case: "textDelta", value: { itemId: "r#0", text: THINKING } }),
+  event(7, { case: "itemCompleted", value: { itemId: "r#0", outcome: { case: "text", value: THINKING } } }),
   event(8, { case: "itemStarted", value: { itemId: "toolu_1", kind: ItemKind.TOOL_CALL, toolName: "Bash" } }),
   event(9, { case: "toolArguments", value: { itemId: "toolu_1", argumentsJson: '{"command": "ls"}' } }),
   event(10, {
@@ -298,17 +326,17 @@ const EVENTS: Event[] = [
     value: { itemId: "toolu_1", outcome: { case: "tool", value: { output: "README.md\nsrc\n", succeeded: true } } },
   }),
   event(12, { case: "itemStarted", value: { itemId: "m#0", kind: ItemKind.ASSISTANT_TEXT } }),
-  event(13, { case: "textDelta", value: { itemId: "m#0", text: "Two entries: README.md and src." } }),
-  event(14, {
-    case: "itemCompleted",
-    value: { itemId: "m#0", outcome: { case: "text", value: "Two entries: README.md and src." } },
-  }),
+  event(13, { case: "textDelta", value: { itemId: "m#0", text: ANSWER } }),
+  event(14, { case: "itemCompleted", value: { itemId: "m#0", outcome: { case: "text", value: ANSWER } } }),
   event(15, { case: "turnCompleted", value: { turnId: "t1", status: TurnStatus.COMPLETED } }),
   event(16, { case: "inputSubmitted", value: { inputId: "i2", text: "Now read src." } }),
   event(17, { case: "turnStarted", value: { turnId: "t2" } }),
   event(18, { case: "inputAccepted", value: { inputId: "i2", turnId: "t2" } }),
-  event(19, { case: "itemStarted", value: { itemId: "m#1", kind: ItemKind.ASSISTANT_TEXT } }),
-  event(20, { case: "textDelta", value: { itemId: "m#1", text: "Reading src now" } }),
+  event(19, { case: "itemStarted", value: { itemId: "r#1", kind: ItemKind.REASONING } }),
+  event(20, { case: "textDelta", value: { itemId: "r#1", text: THINKING_AGAIN } }),
+  event(21, { case: "itemCompleted", value: { itemId: "r#1", outcome: { case: "text", value: THINKING_AGAIN } } }),
+  event(22, { case: "itemStarted", value: { itemId: "m#1", kind: ItemKind.ASSISTANT_TEXT } }),
+  event(23, { case: "textDelta", value: { itemId: "m#1", text: "Reading `src` now" } }),
 ];
 
 routes.push(
@@ -362,6 +390,7 @@ const PAGES: Record<string, string> = {
   sandbox: "/sandboxes/demo-a1b2",
   sandbox_egress: "/sandboxes/demo-a1b2?tab=egress",
   session: "/sandboxes/demo-a1b2/sessions/s-1",
+  session_reasoning: "/sandboxes/demo-a1b2/sessions/s-1?reasoning=open",
 };
 
 const page = new URLSearchParams(window.location.search).get("page") ?? "sandboxes";

@@ -149,6 +149,7 @@ ts_library(
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//:node_modules/react-router",
     ],
 )
 
@@ -282,9 +283,11 @@ VISUAL_DATA = [
         "sandbox",
         "sandbox_egress",
         "session",
+        "session_reasoning",
         "sandboxes_phone",
         "sandbox_phone",
         "sandbox_egress_phone",
         "session_phone",
+        "session_reasoning_phone",
     ]
 ]

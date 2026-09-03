@@ -17,6 +17,7 @@ import {
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
 import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useSearchParams } from "react-router";
 
 import { fromJson, toJsonString, type JsonValue } from "@bufbuild/protobuf";
 
@@ -54,11 +55,16 @@ function InputView({ input }: { input: InputState }): JSX.Element {
   );
 }
 
-/** Reasoning stays folded, so an answer is not buried under the thinking that led to it. */
-function ReasoningView({ item }: { item: Item }): JSX.Element {
+/**
+ * Reasoning stays folded, so an answer is not buried under the thinking that led to it. The header
+ * switch sets every block at once; a block can still be opened or closed on its own afterwards.
+ */
+function ReasoningView({ item, expanded }: { item: Item; expanded: boolean }): JSX.Element {
+  const [value, setValue] = useState<string | null>(expanded ? item.id : null);
+  useEffect(() => setValue(expanded ? item.id : null), [expanded, item.id]);
   return (
-    <Accordion variant="contained" chevronPosition="left">
-      <Accordion.Item value="reasoning">
+    <Accordion variant="contained" chevronPosition="left" value={value} onChange={setValue}>
+      <Accordion.Item value={item.id}>
         <Accordion.Control>
           <Group gap="xs">
             <Badge variant="light">reasoning</Badge>
@@ -73,8 +79,8 @@ function ReasoningView({ item }: { item: Item }): JSX.Element {
   );
 }
 
-function ItemView({ item }: { item: Item }): JSX.Element {
-  if (item.kind === ItemKind.REASONING) return <ReasoningView item={item} />;
+function ItemView({ item, expandReasoning }: { item: Item; expandReasoning: boolean }): JSX.Element {
+  if (item.kind === ItemKind.REASONING) return <ReasoningView item={item} expanded={expandReasoning} />;
   const label = KIND_LABELS[item.kind] ?? ItemKind[item.kind];
   return (
     <Paper withBorder p="sm">
@@ -182,6 +188,10 @@ export function SessionView({
   const [draft, setDraft] = useState("");
   const [thread, setThread] = useState<ThreadView | null>(null);
   const bottom = useRef<HTMLDivElement | null>(null);
+  // In the URL, like the sandbox page's tab, so a transcript read with the thinking shown can be
+  // linked to and survives a reload.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const expandReasoning = searchParams.get("reasoning") === "open";
 
   useEffect(() => {
     // EventSource reconnects on its own and resends the last id it saw, which the bridge turns
@@ -273,6 +283,11 @@ export function SessionView({
         >
           <IconPower size={16} />
         </ActionIcon>
+        <Switch
+          label="Reasoning"
+          checked={expandReasoning}
+          onChange={(e) => setSearchParams(e.currentTarget.checked ? { reasoning: "open" } : {}, { replace: true })}
+        />
         <Switch label="Raw frames" checked={showRaw} onChange={(e) => setShowRaw(e.currentTarget.checked)} />
       </Group>
       {error && <Text c="red">{error}</Text>}
@@ -304,7 +319,10 @@ export function SessionView({
                     .map((input) => (
                       <InputView key={input.id} input={input} />
                     ))}
-                  {turn.itemIds.map((id) => state.items[id] && <ItemView key={id} item={state.items[id]} />)}
+                  {turn.itemIds.map(
+                    (id) =>
+                      state.items[id] && <ItemView key={id} item={state.items[id]} expandReasoning={expandReasoning} />
+                  )}
                 </Stack>
               ))}
           {state.inputs
