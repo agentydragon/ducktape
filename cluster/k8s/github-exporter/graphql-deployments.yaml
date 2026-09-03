@@ -56,7 +56,10 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
+            # No readOnlyRootFilesystem, unlike the exporter beside this one: the
+            # aspect_rules_py launcher materialises its venv at startup inside the
+            # image's own runfiles directory, so the root filesystem has to be
+            # writable or the container exits before serving anything.
             capabilities:
               drop:
                 - ALL
@@ -147,7 +150,6 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
             capabilities:
               drop:
                 - ALL
