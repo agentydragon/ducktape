@@ -97,6 +97,28 @@ harness's outcome. Tool names and argument shapes are the harness's own.
 - Native approval prompts, user dialogs, and hook callbacks are refused with an error answer, so a
   turn never blocks on them. Both harnesses run with approvals off inside the sandbox.
 
+## Harness-originated messages
+
+A harness says things of its own: a hook's feedback, a compaction boundary, a status or warning
+notice, the `<system-reminder>` context Claude Code adds to a turn. Every one of them reaches the
+log as a `Native` event, verbatim — that is what "delivered in both directions" above means. None
+of them is derived into an item, so a client reading only the item events does not see them, and
+what a client that reads `Native` has to work with differs by harness:
+
+- **Claude Code.** `system` frames (`compact_boundary`, `notification`, `informational`) and any
+  frame outside the wire union parse and then fall through the adapter's dispatch. `<system-reminder>`
+  blocks have only ever been observed in the request the harness sends upstream, which the
+  recording proxy sees and the runner does not; whether the harness also emits them on stdout is
+  unknown. Hook events need `--include-hook-events`, which the runner does not pass, and a
+  `hook_callback` control request is refused so the turn cannot block on it.
+- **Codex.** Notifications (`thread/compacted`, `hook/started`, `hook/completed`, `warning`,
+  `deprecationNotice`) fall through dispatch the same way. Item-shaped ones do not: `contextCompaction`
+  and `hookPrompt` reach `UnknownItem` and are emitted as **tool calls** named after the item type,
+  so they already appear in a conversation view, mislabelled.
+
+Neither harness has been run with hooks registered, so none of the hook wire surface above is
+observed rather than read off the harnesses' own schemas.
+
 ## Not covered yet
 
 - Read-only follower attachments; only one attachment per session.
