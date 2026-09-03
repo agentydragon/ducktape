@@ -17,7 +17,9 @@ model key, and the agent working on Agentplane can drive it end to end without R
 sandbox, run a turn, read what happened, tear it down. The first functioning product is
 credentialless toward external systems; real upstream credentials are a later gate. Sandboxes are disposable, trajectories are
 not: what an agent did, and why, outlives the sandbox it ran in, under a name, and is searchable
-later.
+later. Beyond this slice, the experiences the stretch nodes exist for are the three stories in
+[`user_stories.md`](user_stories.md): asks Rai decides, a trusted orchestrator delegating
+public-only work to an untrusted fleet under a judge, and an orchestrator running specialists.
 
 ## Current status
 
@@ -93,10 +95,10 @@ flowchart TB
     Q["Rai decision<br/>which observed reliability failure is next highest-cost?"]:::decision
     M["Reliability hardening only from observed failures<br/>mid-tool crash recovery, log compaction, harness pin refresh"]:::future
 
-    H["Rai decision<br/>is multi-Agent collaboration or Room semantics needed?"]:::decision
-    N["Stretch<br/>multi-Agent collaboration / Room projection"]:::future
+    N["Story 2: trusted orchestrator, untrusted fleet<br/>tiers, delegation object, channel judge<br/>user_stories.md"]:::future
+    O["Story 3: an orchestrator with specialists<br/>fleet view, wake-ups, tier-scoped reads"]:::future
     X["Decided<br/>approval decisions and notifications arrive as thread inputs"]:::completed
-    Y["Async approvals + notification batcher<br/>async_approvals.md"]:::future
+    Y["Story 1: ask me, I decide<br/>asks, delivery, decisions as inputs<br/>async_approvals.md, user_stories.md"]:::future
     Z["Rai decision<br/>what explicit Haku Console integration is needed?"]:::decision
     U["Stretch<br/>Haku Console link, adapter, or enveloped message path"]:::future
     AA["Rai decision<br/>what permission and policy model is acceptable for private Haku?"]:::decision
@@ -137,8 +139,13 @@ flowchart TB
     R -->|yes| V --> L
     R -->|no| L
     F0 --> Q --> M
-    F0 --> H --> N
+    J --> N
+    T1 --> N
+    Y --> N
+    N --> O
+    T3 --> O
     F0 --> X --> Y
+    J --> Y
     E --> Z --> U
     F --> AA --> AB --> AC
     L --> W
