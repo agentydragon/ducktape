@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import socket
 from collections.abc import Iterator
 
 import pytest
@@ -112,11 +113,16 @@ def test_a_runner_that_does_not_answer_is_a_503(
     custom_objects.objects[("sandboxes", "live")] = sandbox("live")
     core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
 
-    async def nobody_listens(name: str) -> str:
-        return "127.0.0.1:1"
+    # A bound but never listening port refuses every connection for as long as the socket is open.
+    with socket.socket() as closed_port:
+        closed_port.bind(("127.0.0.1", 0))
+        address = f"127.0.0.1:{closed_port.getsockname()[1]}"
 
-    with TestClient(create_app(inventory, RunnerBridge(address_of=nobody_listens, store=store), store)) as client:
-        response = client.get("/sandboxes/live/sessions")
+        async def nobody_listens(name: str) -> str:
+            return address
+
+        with TestClient(create_app(inventory, RunnerBridge(address_of=nobody_listens, store=store), store)) as client:
+            response = client.get("/sandboxes/live/sessions")
     assert response.status_code == 503
     assert "not answering" in response.json()["detail"]
 

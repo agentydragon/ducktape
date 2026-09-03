@@ -153,7 +153,7 @@ def create_app(inventory: SandboxInventory, bridge: runner_bridge.RunnerBridge, 
     async def _runner_unavailable(_request: Request, error: grpc.aio.AioRpcError) -> JSONResponse:
         # The Pod has an address but nothing answers on it yet: a runner still starting after a
         # resume, or one that just died. Any other gRPC failure is a bug and stays a 500.
-        if error.code() is not grpc.StatusCode.UNAVAILABLE:
+        if error.code() != grpc.StatusCode.UNAVAILABLE:
             raise error
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
