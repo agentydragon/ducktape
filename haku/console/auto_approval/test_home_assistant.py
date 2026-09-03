@@ -22,11 +22,22 @@ def test_the_configured_entity_and_service_auto_approve():
     assert LAMP in decision.explanation
 
 
-def test_service_data_shaping_the_light_is_still_the_same_call():
-    """Brightness and colour are the point of controlling a lamp, and cannot retarget it."""
-    assert isinstance(
-        approve(domain="light", service="turn_on", entity_id=LAMP, data={"brightness": 120}), AutoApproved
-    )
+@pytest.mark.parametrize(
+    "data",
+    [
+        pytest.param({"brightness": 120}, id="brightness"),
+        # The lamp is a Govee H6006: supported_color_modes ["color_temp", "rgb"], plus an effect list.
+        pytest.param({"rgb_color": [255, 0, 0]}, id="rgb"),
+        pytest.param({"color_temp_kelvin": 2700}, id="colour-temperature"),
+        # Effects are the only form that interrupts rather than informs, so they must not be
+        # incidentally excluded — see haku-state memory/procedures/transitions.md.
+        pytest.param({"effect": "breathe"}, id="effect"),
+        pytest.param({"rgb_color": [0, 0, 255], "brightness": 40, "transition": 2}, id="several-at-once"),
+    ],
+)
+def test_service_data_shaping_the_light_is_still_the_same_call(data):
+    """Colour, brightness and effects are the point of controlling a lamp; none can retarget it."""
+    assert isinstance(approve(domain="light", service="turn_on", entity_id=LAMP, data=data), AutoApproved)
 
 
 @pytest.mark.parametrize(

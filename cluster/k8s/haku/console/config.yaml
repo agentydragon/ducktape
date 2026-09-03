@@ -440,7 +440,10 @@ auto_approval_policies:
         - ha_list_floors_areas
         - ha_list_services
         - ha_search
-  # Standing authority for exactly one write: the desk light on, off, or dimmed/recoloured. Every
+  # Standing authority for exactly one write: the desk light (a Govee H6006 — color modes
+  # color_temp + rgb, with an effect list) on, off, or recoloured/dimmed. Service data such as
+  # rgb_color, brightness and effect rides the same call and cannot redirect it, so it needs no
+  # separate listing; only keys that would retarget the call are rejected. Every
   # other Home Assistant service, every other entity, and any `data` key that could retarget the
   # call stay operator-gated. This needs its own policy kind because every HA write goes through the
   # single generic `ha_call_service` tool, so an exact_tools entry would hand over locks, the alarm
