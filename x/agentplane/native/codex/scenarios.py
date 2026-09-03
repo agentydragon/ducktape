@@ -8,18 +8,40 @@ from typing import Any
 from x.agentplane.native.codex import driver
 from x.agentplane.native.process import NativeProcess
 
+# The events a hooks capture registers: the ones that can block a turn, plus the session brackets.
+HOOK_EVENTS = ("SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "SessionEnd")
+
 
 def launch_handshake(
-    process: NativeProcess, *, cwd: str, model: str, effort: str, persist: bool = False
+    process: NativeProcess,
+    *,
+    cwd: str,
+    model: str,
+    effort: str,
+    persist: bool = False,
+    config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     initialize = driver.initialize("capture-1")
     process.write(initialize)
     init_response = process.await_frame(lambda item: item.get("id") == initialize.id, timeout=30)
     process.write(driver.initialized())
-    start = driver.thread_start("capture-2", cwd=cwd, model=model, effort=effort, persist=persist)
+    start = driver.thread_start("capture-2", cwd=cwd, model=model, effort=effort, persist=persist, config=config)
     process.write(start)
     started = process.await_frame(lambda item: item.get("id") == "capture-2", timeout=30)
     return {"initialize_response": init_response, "thread_start_response": started, "thread_id": _thread_id(started)}
+
+
+def hooks_config(command: str) -> dict[str, Any]:
+    """Per-thread config running `command` as a shell hook on every event in `HOOK_EVENTS`. Codex
+    spawns it with the hook input on stdin and reads its stdout as the hook's output; the driver
+    only sees `hook/started` and `hook/completed`. The config is the driver's own, so the trust
+    check on unmanaged hooks is bypassed."""
+    return {
+        "hooks": {
+            event: [{"hooks": [{"type": "command", "command": command, "timeout": 30}]}] for event in HOOK_EVENTS
+        },
+        "bypass_hook_trust": True,
+    }
 
 
 def resume_handshake(process: NativeProcess, *, thread_id: str) -> dict[str, Any]:

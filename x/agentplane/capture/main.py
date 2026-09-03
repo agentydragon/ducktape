@@ -9,9 +9,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
+import sys
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from x.agentplane.capture import codex_hook
 from x.agentplane.capture.llm_recording_proxy import recording_proxy
 from x.agentplane.capture.records import (
     CaptureMetadata,
@@ -37,7 +40,12 @@ SCENARIOS = (
     "connection_exhaustion",
     "post_failure_follow_up",
     "post_exhaustion_follow_up",
+    "hooks",
+    "hooks_deny",
 )
+# Hooks registered on every event in the scenarios' HOOK_EVENTS; the shell prompt makes PreToolUse
+# fire, answered allow or, in `hooks_deny`, deny with a reason.
+_HOOK_SCENARIOS = {"hooks": "allow", "hooks_deny": "deny"}
 
 # The first loss is mid-stream; subsequent response-header losses also catch Claude's
 # non-streaming fallback. Both harnesses run with a bounded retry budget (MAX_RETRIES in
@@ -97,6 +105,11 @@ def _prompt(scenario: str) -> str:
         "connection_exhaustion": "Reply with exactly: CONNECTION_EXHAUSTION_OK",
         "post_failure_follow_up": "Reply with exactly: POST_FAILURE_FIRST_OK",
         "post_exhaustion_follow_up": "Reply with exactly: POST_EXHAUSTION_FIRST_OK",
+        "hooks": "Use shell to run `printf 'HOOKS_PROBE_STDOUT\\n'`; report its output.",
+        "hooks_deny": (
+            "Use shell to run `printf 'HOOKS_PROBE_STDOUT\\n'`. If the tool call is refused, do not retry; "
+            "reply with the refusal's reason verbatim."
+        ),
     }[scenario]
 
 
@@ -107,6 +120,9 @@ def run(args: argparse.Namespace) -> None:
     args.output.mkdir(mode=0o700)
     for name in ("stdin.jsonl", "stdout.jsonl", "stderr.jsonl", "llm-requests.jsonl", "llm-responses.jsonl"):
         (args.output / name).touch(mode=0o600)
+    hook_decision = _HOOK_SCENARIOS.get(args.scenario)
+    if hook_decision is not None:
+        (args.output / "hooks.jsonl").touch(mode=0o600)
     key = _key(args.credential_file)
 
     def record(event: RequestRecord | ResponseChunkRecord | ConnectionDroppedRecord | ProxyErrorRecord) -> None:
@@ -133,16 +149,19 @@ def run(args: argparse.Namespace) -> None:
 
     def start_process(*, resume_id: str | None = None) -> NativeProcess:
         command = (
-            claude.command(args.binary, model=args.model, resume_id=resume_id)
+            claude.command(args.binary, model=args.model, resume_id=resume_id, hooks=hook_decision is not None)
             if args.provider == "claude"
             else codex.command(args.binary, endpoint=proxy_endpoint)
         )
-        return NativeProcess(args.output, command, cwd=args.workspace, environment=environment)
+        process = NativeProcess(args.output, command, cwd=args.workspace, environment=environment)
+        if hook_decision is not None and args.provider == "claude":
+            process.frame_handler = claude.hook_answers(deny_tools=hook_decision == "deny")
+        return process
 
     with serve(proxy):
         with start_process() as process:
             if args.provider == "claude":
-                claude.launch_handshake(process)
+                claude.launch_handshake(process, hooks=hook_decision is not None)
                 thread_id = None
             else:
                 thread_id = codex.launch_handshake(
@@ -151,6 +170,13 @@ def run(args: argparse.Namespace) -> None:
                     model=args.model,
                     effort="low",
                     persist=args.scenario == "idle_resume",
+                    config=None
+                    if hook_decision is None
+                    else codex.hooks_config(
+                        shlex.join(
+                            [sys.executable, codex_hook.__file__, str(args.output / "hooks.jsonl"), hook_decision]
+                        )
+                    ),
                 )["thread_id"]
             resume_id = _drive(args, process, thread_id)
         if args.scenario == "idle_resume":

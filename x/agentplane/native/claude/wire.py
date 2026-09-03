@@ -38,6 +38,15 @@ class CanUseTool(BaseModel):
     tool_use_id: str | None = None
 
 
+class HookCallback(BaseModel):
+    """A registered hook firing; the CLI waits for the control response as the hook's output."""
+
+    subtype: Literal["hook_callback"]
+    callback_id: str
+    input: dict[str, Any]
+    tool_use_id: str | None = None
+
+
 class UnknownControlRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -45,8 +54,10 @@ class UnknownControlRequest(BaseModel):
 
 
 ControlRequestBody = Annotated[
-    Annotated[CanUseTool, Tag("can_use_tool")] | Annotated[UnknownControlRequest, Tag(UNKNOWN)],
-    Discriminator(tag_or_unknown("subtype", frozenset({"can_use_tool"}))),
+    Annotated[CanUseTool, Tag("can_use_tool")]
+    | Annotated[HookCallback, Tag("hook_callback")]
+    | Annotated[UnknownControlRequest, Tag(UNKNOWN)],
+    Discriminator(tag_or_unknown("subtype", frozenset({"can_use_tool", "hook_callback"}))),
 ]
 
 
@@ -281,10 +292,26 @@ class InitializeBody(BaseModel):
     subtype: Literal["initialize"] = "initialize"
 
 
+class HookMatcher(BaseModel):
+    """One registration entry for a hook event, matching every tool. A firing arrives as a
+    `hook_callback` carrying one of these ids; without a matcher the CLI's schema wants none sent."""
+
+    model_config = ConfigDict(validate_by_name=True, serialize_by_alias=True)
+
+    hook_callback_ids: list[str] = Field(alias="hookCallbackIds")
+
+
+class HookedInitializeBody(BaseModel):
+    """`initialize` with hooks: registration happens only here, once per session."""
+
+    subtype: Literal["initialize"] = "initialize"
+    hooks: dict[str, list[HookMatcher]]
+
+
 class InitializeRequest(BaseModel):
     type: Literal["control_request"] = "control_request"
     request_id: str = Field(default_factory=lambda: f"capture-{uuid4().hex}")
-    request: InitializeBody = Field(default_factory=InitializeBody)
+    request: InitializeBody | HookedInitializeBody = Field(default_factory=InitializeBody)
 
 
 class InterruptBody(BaseModel):

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from x.agentplane.native.codex import wire
 
 # This replaces Codex's broad default coding-agent policy while preserving the
@@ -21,8 +23,9 @@ def initialized() -> wire.InitializedNotification:
 
 
 def thread_start(
-    request_id: str, *, cwd: str, model: str, effort: str, persist: bool = False
+    request_id: str, *, cwd: str, model: str, effort: str, persist: bool = False, config: dict[str, Any] | None = None
 ) -> wire.ThreadStartRequest:
+    """`config` adds per-thread `config.toml` keys; app-server layers them over its own configuration."""
     return wire.ThreadStartRequest(
         id=request_id,
         params=wire.ThreadStartParams(
@@ -34,7 +37,7 @@ def thread_start(
             model=model,
             # Replaces the broad default coding-agent policy in recorded model requests.
             base_instructions=BASE_INSTRUCTIONS,
-            config={"model_reasoning_effort": effort},
+            config={"model_reasoning_effort": effort, **(config or {})},
         ),
     )
 

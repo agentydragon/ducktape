@@ -2,19 +2,25 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
-from x.agentplane.native.claude import driver
+from x.agentplane.native.claude import driver, wire
 from x.agentplane.native.process import NativeProcess
 
 SYSTEM_PROMPT = "You are a concise test assistant. Follow user requests using the available tools."
 # A preset session title stops Claude's separate title-generating model call.
 SESSION_NAME = "agentplane-capture"
 TOOLS = ("Bash", "Edit", "Read")
+# The events a hooks capture registers: the ones that can block a turn, plus the session brackets.
+HOOK_EVENTS = ("SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "SessionEnd")
+HOOK_DENIAL = "agentplane capture: this tool call is denied by a PreToolUse hook"
 
 
-def launch_handshake(process: NativeProcess) -> dict[str, Any]:
-    frame = driver.initialize()
+def launch_handshake(process: NativeProcess, *, hooks: bool = False) -> dict[str, Any]:
+    """`hooks` registers one callback per event in `HOOK_EVENTS`; `command` must then be launched
+    with `hooks=True` too, since `--safe-mode` disables them."""
+    frame = driver.initialize(hooks={event: [f"capture-{event}"] for event in HOOK_EVENTS} if hooks else None)
     process.write(frame)
     request_id = frame.request_id
     reply = process.await_frame(
@@ -57,6 +63,31 @@ def submit(process: NativeProcess, prompt: str, *, timeout_s: float = 120) -> di
     """Send one user frame and wait for the turn's terminal frame."""
     prompt_uuid = send(process, prompt)
     return {"prompt_uuid": prompt_uuid, "terminal": await_result(process, timeout_s=timeout_s)}
+
+
+def hook_answers(*, deny_tools: bool) -> Callable[[dict[str, Any]], wire.ControlResponse | None]:
+    """A frame handler answering every hook callback as soon as it arrives and allowing tool
+    permission prompts. A PreToolUse answer carries the decision the model sees: allow, or deny
+    with `HOOK_DENIAL` as its reason; every other event gets `{}`, no opinion."""
+
+    def answer(frame: dict[str, Any]) -> wire.ControlResponse | None:
+        match wire.parse_frame(frame):
+            case wire.ControlRequestFrame(request_id=request_id, request=wire.HookCallback(input=hook_input)):
+                output: dict[str, Any] = {}
+                if hook_input.get("hook_event_name") == "PreToolUse":
+                    output = {
+                        "hookSpecificOutput": {
+                            "hookEventName": "PreToolUse",
+                            "permissionDecision": "deny" if deny_tools else "allow",
+                            "permissionDecisionReason": HOOK_DENIAL if deny_tools else "agentplane capture allows",
+                        }
+                    }
+                return driver.hook_output(request_id, output)
+            case wire.ControlRequestFrame(request_id=request_id, request=wire.CanUseTool(input=tool_input)):
+                return driver.allow_tool(request_id, tool_input)
+        return None
+
+    return answer
 
 
 def session_id(result: dict[str, Any]) -> str:
@@ -120,18 +151,23 @@ def command(
     session_id: str | None = None,
     replay_user_messages: bool = False,
     effort: str | None = None,
+    hooks: bool = False,
 ) -> list[str]:
     """`session_id` fixes a fresh session's id; with `resume_id` the resumed session keeps its own.
 
     `replay_user_messages` makes the harness echo each user frame back with `isReplay`, and it also
     emits a `command_lifecycle` frame (queued, started, completed) per user frame uuid.
+
+    `hooks` keeps hooks enabled, so the ones `launch_handshake` registers fire, and has the harness
+    report each firing as `hook_started`/`hook_response` system frames.
     """
     if resume_id and session_id:
         raise ValueError("a resumed session keeps its id; pass resume_id or session_id, not both")
     result = [
         binary,
-        # --safe-mode blocks plugins and hooks from adding their prompt/tool bulk.
-        "--safe-mode",
+        # --safe-mode blocks plugins and hooks from adding their prompt/tool bulk; it also disables the
+        # hooks a client registers at initialize. --setting-sources= below still keeps plugins out.
+        *(["--include-hook-events"] if hooks else ["--safe-mode"]),
         # This disables skills and slash commands, removing their catalog from the prompt.
         "--disable-slash-commands",
         # This suppresses the optional prompt_suggestion frame after each turn.

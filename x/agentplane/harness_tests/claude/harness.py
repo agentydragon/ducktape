@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from x.agentplane.harness_tests.scripted_upstream import ScriptedUpstream
-from x.agentplane.native.claude import scenarios, wire
+from x.agentplane.native.claude import driver, scenarios, wire
 from x.agentplane.native.process import NativeProcess
 
 # A routed name in the shape a LiteLLM deployment gives Claude Code; the family suffix lets it
@@ -38,9 +38,5 @@ class ClaudeHarness:
 def _allow_permission(frame: dict[str, Any]) -> wire.ControlResponse | None:
     match wire.parse_frame(frame):
         case wire.ControlRequestFrame(request_id=request_id, request=wire.CanUseTool(input=tool_input)):
-            return wire.ControlResponse(
-                response=wire.ControlResponseBody(
-                    subtype="success", request_id=request_id, response={"behavior": "allow", "updatedInput": tool_input}
-                )
-            )
+            return driver.allow_tool(request_id, tool_input)
     return None

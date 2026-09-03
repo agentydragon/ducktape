@@ -37,6 +37,7 @@ py_library(
     deps = [
         "//x/agentplane/harness_tests:scripted_upstream",
         "//x/agentplane/native:process",
+        "//x/agentplane/native/claude:driver",
         "//x/agentplane/native/claude:scenarios",
         "//x/agentplane/native/claude:wire",
     ],

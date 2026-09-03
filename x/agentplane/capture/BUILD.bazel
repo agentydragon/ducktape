@@ -23,6 +23,7 @@ py_library(
     name = "main",
     srcs = ["main.py"],
     deps = [
+        ":codex_hook",
         ":llm_recording_proxy",
         ":records",
         "//x/agentplane/native:process",
@@ -55,4 +56,9 @@ py_test(
         "//:conftest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "codex_hook",
+    srcs = ["codex_hook.py"],
 )

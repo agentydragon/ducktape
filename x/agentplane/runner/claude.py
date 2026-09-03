@@ -107,19 +107,17 @@ class ClaudeAdapter(HarnessAdapter):
     async def _answer_control_request(self, frame: wire.ControlRequestFrame) -> None:
         match frame.request:
             case wire.CanUseTool(input=tool_input):
-                body = wire.ControlResponseBody(
-                    subtype="success",
-                    request_id=frame.request_id,
-                    response={"behavior": "allow", "updatedInput": tool_input},
-                )
-            case wire.UnknownControlRequest(subtype=subtype):
+                response = driver.allow_tool(frame.request_id, tool_input)
+            case wire.HookCallback(subtype=subtype) | wire.UnknownControlRequest(subtype=subtype):
                 # Dialogs, hooks, and MCP callbacks have no answer path here; a refusal keeps the turn moving.
-                body = wire.ControlResponseBody(
-                    subtype="error",
-                    request_id=frame.request_id,
-                    error=f"the agentplane runner does not answer {subtype!r} requests",
+                response = wire.ControlResponse(
+                    response=wire.ControlResponseBody(
+                        subtype="error",
+                        request_id=frame.request_id,
+                        error=f"the agentplane runner does not answer {subtype!r} requests",
+                    )
                 )
-        await self.session.write_native(wire.ControlResponse(response=body))
+        await self.session.write_native(response)
 
     def _turn_id(self) -> str:
         """The active turn, or a new one for output the harness produces on its own, such as a
