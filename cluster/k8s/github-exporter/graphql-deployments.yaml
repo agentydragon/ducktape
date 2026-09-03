@@ -1,0 +1,187 @@
+# REST /rate_limit misreports the GraphQL bucket: it served
+# `graphql: {remaining: 5000, used: 0}` in the same second that GraphQL itself
+# reported `remaining: 0, used: 10783` and every GraphQL call returned 403. So
+# `github_rate_*{resource="graphql"}` from the upstream exporter next to this one
+# cannot be used, and this exporter reads the `x-ratelimit-*` headers off a real
+# GraphQL response instead.
+#
+# Its probe is `query { rateLimit { cost } }`. A rateLimit-only query costs 0
+# points and GitHub keeps serving it while the account is exhausted, so scraping
+# every minute neither consumes the quota it measures nor goes blind at the
+# moment the quota runs out.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: github-graphql-rate-exporter-agentydragon
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: github-graphql-rate-exporter
+    app.kubernetes.io/component: quota
+    github_account: agentydragon
+  annotations:
+    description: GitHub GraphQL rate-limit exporter for the agentydragon account.
+    secret.reloader.stakater.com/reload: github-exporter-agentydragon-token
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: github-graphql-rate-exporter
+      app.kubernetes.io/component: quota
+      github_account: agentydragon
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: github-graphql-rate-exporter
+        app.kubernetes.io/component: quota
+        github_account: agentydragon
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: exporter
+          image: git.allegedly.works/ducktape-ci/github-graphql-rate-exporter:devel-20260831051930-02f66a7 # {"$imagepolicy": "flux-system:github-graphql-rate-exporter"}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: GITHUB_ACCOUNT
+              value: agentydragon
+            - name: GITHUB_TOKEN_FILE
+              value: /var/run/secrets/github/token
+          ports:
+            - name: http
+              containerPort: 9172
+              protocol: TCP
+          volumeMounts:
+            - name: github-token
+              mountPath: /var/run/secrets/github
+              readOnly: true
+          # /healthz answers locally; probing /metrics would call GitHub on every probe.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+      volumes:
+        - name: github-token
+          secret:
+            secretName: github-exporter-agentydragon-token
+            defaultMode: 0440
+            items:
+              - key: token
+                path: token
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: github-graphql-rate-exporter-agentydragon-agent
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: github-graphql-rate-exporter
+    app.kubernetes.io/component: quota
+    github_account: agentydragon-agent
+  annotations:
+    description: GitHub GraphQL rate-limit exporter for the agentydragon-agent account.
+    secret.reloader.stakater.com/reload: github-exporter-agentydragon-agent-token
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: github-graphql-rate-exporter
+      app.kubernetes.io/component: quota
+      github_account: agentydragon-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: github-graphql-rate-exporter
+        app.kubernetes.io/component: quota
+        github_account: agentydragon-agent
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: exporter
+          image: git.allegedly.works/ducktape-ci/github-graphql-rate-exporter:devel-20260831051930-02f66a7 # {"$imagepolicy": "flux-system:github-graphql-rate-exporter"}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: GITHUB_ACCOUNT
+              value: agentydragon-agent
+            - name: GITHUB_TOKEN_FILE
+              value: /var/run/secrets/github/token
+          ports:
+            - name: http
+              containerPort: 9172
+              protocol: TCP
+          volumeMounts:
+            - name: github-token
+              mountPath: /var/run/secrets/github
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+      volumes:
+        - name: github-token
+          secret:
+            secretName: github-exporter-agentydragon-agent-token
+            defaultMode: 0440
+            items:
+              - key: token
+                path: token

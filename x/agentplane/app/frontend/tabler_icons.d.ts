@@ -1,4 +1,4 @@
-// Ambient types for the @tabler/icons-react per-icon subpath imports sandboxes.tsx uses. The `.mjs`
+// Ambient types for the @tabler/icons-react per-icon subpath imports this package uses. The `.mjs`
 // subpaths resolve to real but untyped files, so they need a module declaration; the wildcard covers
 // every icon under the subpath directory, so adding an icon needs no edit here. The subpath form is
 // mandatory — the `@tabler/icons-react` barrel OOMs esbuild on RBE (~8.7 GB) — and the pattern

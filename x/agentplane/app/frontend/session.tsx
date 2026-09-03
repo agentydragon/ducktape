@@ -1,4 +1,6 @@
 import {
+  Accordion,
+  ActionIcon,
   Badge,
   Button,
   Code,
@@ -12,7 +14,9 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
-import { Fragment, useEffect, useRef, useState } from "react";
+import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
+import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useSearchParams } from "react-router";
 
 import { fromJson, toJsonString, type JsonValue } from "@bufbuild/protobuf";
@@ -28,11 +32,11 @@ import {
   type ThreadView,
 } from "./client";
 import { EMPTY, reduce, timeline, type InputState, type Item, type Row, type SessionState, type Turn } from "./events";
+import { Markdown } from "./markdown";
 import { Direction, EventSchema, ItemKind, TurnStatus, type Event } from "./protocol_pb";
 
 const KIND_LABELS: Partial<Record<ItemKind, string>> = {
   [ItemKind.ASSISTANT_TEXT]: "assistant",
-  [ItemKind.REASONING]: "reasoning",
   [ItemKind.TOOL_CALL]: "tool",
 };
 
@@ -57,7 +61,32 @@ function InputView({ input }: { input: InputState }): JSX.Element {
   );
 }
 
-function ItemView({ item }: { item: Item }): JSX.Element {
+/**
+ * Reasoning stays folded, so an answer is not buried under the thinking that led to it. The header
+ * switch sets every block at once; a block can still be opened or closed on its own afterwards.
+ */
+function ReasoningView({ item, expanded }: { item: Item; expanded: boolean }): JSX.Element {
+  const [value, setValue] = useState<string | null>(expanded ? item.id : null);
+  useEffect(() => setValue(expanded ? item.id : null), [expanded, item.id]);
+  return (
+    <Accordion variant="contained" chevronPosition="left" value={value} onChange={setValue}>
+      <Accordion.Item value={item.id}>
+        <Accordion.Control>
+          <Group gap="xs">
+            <Badge variant="light">reasoning</Badge>
+            {!item.completed && <Badge color="yellow">streaming</Badge>}
+          </Group>
+        </Accordion.Control>
+        <Accordion.Panel>
+          <Text style={{ whiteSpace: "pre-wrap" }}>{item.text}</Text>
+        </Accordion.Panel>
+      </Accordion.Item>
+    </Accordion>
+  );
+}
+
+function ItemView({ item, expandReasoning }: { item: Item; expandReasoning: boolean }): JSX.Element {
+  if (item.kind === ItemKind.REASONING) return <ReasoningView item={item} expanded={expandReasoning} />;
   const label = KIND_LABELS[item.kind] ?? ItemKind[item.kind];
   return (
     <Paper withBorder p="sm">
@@ -67,7 +96,12 @@ function ItemView({ item }: { item: Item }): JSX.Element {
         {!item.completed && <Badge color="yellow">streaming</Badge>}
         {item.succeeded === false && <Badge color="red">failed</Badge>}
       </Group>
-      {item.text && <Text style={{ whiteSpace: "pre-wrap" }}>{item.text}</Text>}
+      {item.text &&
+        (item.kind === ItemKind.ASSISTANT_TEXT ? (
+          <Markdown source={item.text} />
+        ) : (
+          <Text style={{ whiteSpace: "pre-wrap" }}>{item.text}</Text>
+        ))}
       {item.argumentsJson && <Code block>{item.argumentsJson}</Code>}
       {item.output && <Code block>{item.output}</Code>}
     </Paper>
@@ -88,14 +122,14 @@ function TurnHeader({ turn }: { turn: Turn }): JSX.Element {
   );
 }
 
-function RowView({ row }: { row: Row }): JSX.Element {
+function RowView({ row, expandReasoning }: { row: Row; expandReasoning: boolean }): JSX.Element {
   switch (row.kind) {
     case "turn":
       return <TurnHeader turn={row.turn} />;
     case "input":
       return <InputView input={row.input} />;
     case "item":
-      return <ItemView item={row.item} />;
+      return <ItemView item={row.item} expandReasoning={expandReasoning} />;
   }
 }
 
@@ -178,15 +212,24 @@ export function SessionView({
   onBack: () => void;
 }): JSX.Element {
   const [state, setState] = useState<SessionState>(EMPTY);
-  // The raw-frames switch is in the URL (`?raw=1`), like the sandbox page's `?tab=`: a reading of
-  // the frames can be linked to and survives a reload.
-  const [searchParams, setSearchParams] = useSearchParams();
-  const showRaw = searchParams.get("raw") === "1";
   const [status, setStatus] = useState("connecting");
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [thread, setThread] = useState<ThreadView | null>(null);
   const bottom = useRef<HTMLDivElement | null>(null);
+  // Both switches are in the URL, like the sandbox page's tab, so a reading — the thinking shown,
+  // the frames shown, either or both — can be linked to and survives a reload.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const expandReasoning = searchParams.get("reasoning") === "open";
+  const showRaw = searchParams.get("raw") === "1";
+
+  /** Sets one switch's parameter, leaving the other's where it is. */
+  function setFlag(name: string, value: string, on: boolean): void {
+    const next = new URLSearchParams(searchParams);
+    if (on) next.set(name, value);
+    else next.delete(name);
+    setSearchParams(next, { replace: true });
+  }
 
   useEffect(() => {
     // EventSource reconnects on its own and resends the last id it saw, which the bridge turns
@@ -234,6 +277,21 @@ export function SessionView({
     }
   }
 
+  function composerKey(event: KeyboardEvent<HTMLTextAreaElement>): void {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    if (!(event.ctrlKey || event.metaKey)) {
+      void submit();
+      return;
+    }
+    // Insert the newline by hand: a textarea ignores Ctrl+Enter, and setting a controlled value
+    // leaves the caret at the end, so put it back where the newline went.
+    const field = event.currentTarget;
+    const at = field.selectionStart;
+    setDraft(`${draft.slice(0, at)}\n${draft.slice(field.selectionEnd)}`);
+    requestAnimationFrame(() => field.setSelectionRange(at + 1, at + 1));
+  }
+
   async function run(action: () => Promise<void>): Promise<void> {
     try {
       await action();
@@ -253,11 +311,21 @@ export function SessionView({
         <ThreadTitle sessionId={sessionId} thread={thread} onRenamed={setThread} onError={setError} />
         <Badge>{status}</Badge>
         {state.harness && <Badge color={state.harness === "running" ? "green" : "gray"}>harness {state.harness}</Badge>}
+        <ActionIcon
+          variant="light"
+          color="red"
+          aria-label="Shut down harness"
+          onClick={() => void run(() => shutdownSession(sandbox, sessionId))}
+          disabled={state.harness !== "running"}
+        >
+          <IconPower size={16} />
+        </ActionIcon>
         <Switch
-          label="Raw frames"
-          checked={showRaw}
-          onChange={(e) => setSearchParams(e.currentTarget.checked ? { raw: "1" } : {}, { replace: true })}
+          label="Reasoning"
+          checked={expandReasoning}
+          onChange={(e) => setFlag("reasoning", "open", e.currentTarget.checked)}
         />
+        <Switch label="Raw frames" checked={showRaw} onChange={(e) => setFlag("raw", "1", e.currentTarget.checked)} />
       </Group>
       {error && <Text c="red">{error}</Text>}
       <ScrollArea h="60vh">
@@ -268,7 +336,7 @@ export function SessionView({
           {showRaw ? (
             timeline(state).map(({ event, row }) => (
               <Fragment key={String(event.sequence)}>
-                {row && <RowView row={row} />}
+                {row && <RowView row={row} expandReasoning={expandReasoning} />}
                 <Code block>{frameText(event)}</Code>
               </Fragment>
             ))
@@ -282,7 +350,10 @@ export function SessionView({
                     .map((input) => (
                       <InputView key={input.id} input={input} />
                     ))}
-                  {turn.itemIds.map((id) => state.items[id] && <ItemView key={id} item={state.items[id]} />)}
+                  {turn.itemIds.map(
+                    (id) =>
+                      state.items[id] && <ItemView key={id} item={state.items[id]} expandReasoning={expandReasoning} />
+                  )}
                 </Stack>
               ))}
               {state.inputs
@@ -302,35 +373,27 @@ export function SessionView({
           <div ref={bottom} />
         </Stack>
       </ScrollArea>
-      <Textarea
-        placeholder="Send to the agent"
-        value={draft}
-        autosize
-        minRows={2}
-        onChange={(e) => setDraft(e.currentTarget.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void submit();
-        }}
-      />
-      <Group>
-        <Button onClick={() => void submit()} disabled={!draft.trim() || state.harness !== "running"}>
-          Send
-        </Button>
-        <Button
+      <Group align="flex-end" gap="xs" wrap="nowrap">
+        <Textarea
+          style={{ flex: 1 }}
+          placeholder="Enter sends, Ctrl+Enter for a new line"
+          value={draft}
+          autosize
+          minRows={2}
+          maxRows={12}
+          disabled={state.harness !== "running"}
+          onChange={(e) => setDraft(e.currentTarget.value)}
+          onKeyDown={composerKey}
+        />
+        <ActionIcon
+          size="lg"
           variant="light"
+          aria-label="Interrupt"
           onClick={() => void run(() => interruptSession(sandbox, sessionId))}
           disabled={!activeTurn}
         >
-          Interrupt
-        </Button>
-        <Button
-          variant="light"
-          color="red"
-          onClick={() => void run(() => shutdownSession(sandbox, sessionId))}
-          disabled={state.harness !== "running"}
-        >
-          Shut down harness
-        </Button>
+          <IconPlayerStop size={16} />
+        </ActionIcon>
       </Group>
     </Stack>
   );

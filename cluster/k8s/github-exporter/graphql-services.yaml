@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: github-graphql-rate-exporter-agentydragon
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: github-graphql-rate-exporter
+    app.kubernetes.io/component: quota
+    github_account: agentydragon
+spec:
+  selector:
+    app.kubernetes.io/name: github-graphql-rate-exporter
+    app.kubernetes.io/component: quota
+    github_account: agentydragon
+  ports:
+    - name: http
+      port: 9172
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: github-graphql-rate-exporter-agentydragon-agent
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: github-graphql-rate-exporter
+    app.kubernetes.io/component: quota
+    github_account: agentydragon-agent
+spec:
+  selector:
+    app.kubernetes.io/name: github-graphql-rate-exporter
+    app.kubernetes.io/component: quota
+    github_account: agentydragon-agent
+  ports:
+    - name: http
+      port: 9172
+      targetPort: http
+      protocol: TCP
