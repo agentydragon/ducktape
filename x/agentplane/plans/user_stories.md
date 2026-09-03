@@ -167,7 +167,7 @@ Missing:
   and adds the delegation object, tiers, and the judge.
 - Story 3 is story 2 with the orchestrator in the driver's seat and the fleet view on top.
 - Story 4 is the long-lived thread and memory-in-git on top of `I4` and `T1`; story 5 is the
-  event pipe and the deploy surface on top of story 4 and the approvals delivery path.
+  event pipe on top of story 4, Haku's existing UI pipeline, and the approvals delivery path.
 
 ## Open questions
 
