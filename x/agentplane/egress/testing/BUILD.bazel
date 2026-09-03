@@ -1,0 +1,23 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//x/agentplane/egress:__pkg__"],
+)
+
+py_library(
+    name = "fake_apiserver",
+    srcs = ["fake_apiserver.py"],
+    deps = [
+        "//x/agentplane/egress:identity",
+        "//x/agentplane/egress:resources",
+        "@pypi//aiohttp",
+        "@pypi//more_itertools",
+    ],
+)
+
+py_library(
+    name = "tls",
+    srcs = ["tls.py"],
+    deps = ["@pypi//cryptography"],
+)

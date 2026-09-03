@@ -1,0 +1,217 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+package(default_visibility = ["//x/agentplane:__subpackages__"])
+
+py_binary(
+    name = "main_bin",
+    main_module = "x.agentplane.egress.main",
+    deps = [":main"],
+)
+
+py_library(
+    name = "addon",
+    srcs = ["addon.py"],
+    deps = [
+        ":decisions",
+        ":identity",
+        ":policy",
+        ":resources",
+        "@pypi//mitmproxy",
+    ],
+)
+
+py_library(
+    name = "admin",
+    srcs = ["admin.py"],
+    deps = [
+        ":decisions",
+        ":policy",
+        "@pypi//aiohttp",
+        "@pypi//more_itertools",
+    ],
+)
+
+py_library(
+    name = "decisions",
+    srcs = ["decisions.py"],
+    deps = [
+        ":policy",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "identity",
+    srcs = ["identity.py"],
+    deps = [
+        ":policy",
+        ":resources",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
+    name = "informer",
+    srcs = ["informer.py"],
+    deps = [
+        ":policy",
+        ":resources",
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    deps = [
+        ":addon",
+        ":admin",
+        ":decisions",
+        ":identity",
+        ":informer",
+        ":policy",
+        ":proxy",
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+py_library(
+    name = "policy",
+    srcs = ["policy.py"],
+    deps = [":resources"],
+)
+
+py_library(
+    name = "proxy",
+    srcs = ["proxy.py"],
+    deps = ["@pypi//mitmproxy"],
+)
+
+py_library(
+    name = "resources",
+    srcs = ["resources.py"],
+    deps = [
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":informer",
+        ":policy",
+        ":resources",
+        "//util:kubernetes",
+        "//x/agentplane/egress/testing:fake_apiserver",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_identity",
+    srcs = ["test_identity.py"],
+    deps = [
+        ":conftest",
+        ":identity",
+        ":policy",
+        "//:conftest",
+        "//x/agentplane/egress/testing:fake_apiserver",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_informer",
+    srcs = ["test_informer.py"],
+    deps = [
+        ":conftest",
+        ":policy",
+        ":resources",
+        "//:conftest",
+        "//x/agentplane/egress/testing:fake_apiserver",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_policy",
+    srcs = ["test_policy.py"],
+    deps = [
+        ":conftest",
+        ":policy",
+        ":resources",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_proxy",
+    srcs = ["test_proxy.py"],
+    deps = [
+        ":addon",
+        ":admin",
+        ":conftest",
+        ":decisions",
+        ":identity",
+        ":policy",
+        ":proxy",
+        "//:conftest",
+        "//x/agentplane/egress/testing:fake_apiserver",
+        "//x/agentplane/egress/testing:tls",
+        "@pypi//aiohttp",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# The proxy image on debian slim as user 1000, with the system CA bundle the upstream leg verifies
+# against. Published as agentplane-egress (devinfra/ci/image_targets.json); the Deployment lives
+# in cluster/k8s/agentplane-staging.
+aspect_py_binary(
+    name = "egress_image_bin",
+    main = "main.py",
+    deps = [":main"],
+)
+
+py_image_layer(
+    name = "egress_layers",
+    binary = ":egress_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("egress_image_bin"),
+    env = py_image_env(
+        binary_name = "egress_image_bin",
+        extra_env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
+    ),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [
+        ":egress_layers",
+        "//third_party/debian_slim:cacerts",
+    ],
+    user = "1000:1000",
+)

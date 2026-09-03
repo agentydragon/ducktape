@@ -219,6 +219,11 @@
       "target": "//x/agentplane/app:image",
       "test": "//x/agentplane/app/...",
       "registry": "forgejo"
+    },
+    "agentplane-egress": {
+      "target": "//x/agentplane/egress:image",
+      "test": "//x/agentplane/egress/...",
+      "registry": "forgejo"
     }
   }
 }

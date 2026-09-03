@@ -42,6 +42,10 @@ class CustomObjectsClient(Protocol):
         self, group: str, version: str, namespace: str, plural: str, name: str, body: object, *, _content_type: str
     ) -> object: ...
 
+    async def patch_namespaced_custom_object_status(
+        self, group: str, version: str, namespace: str, plural: str, name: str, body: object, *, _content_type: str
+    ) -> object: ...
+
     async def delete_namespaced_custom_object(
         self, group: str, version: str, namespace: str, plural: str, name: str, *, body: k8s_client.V1DeleteOptions
     ) -> object: ...
