@@ -78,7 +78,7 @@ flowchart TB
         C7["C7 Lifecycle controls on the sandbox page<br/>suspend there, delete once suspended"]:::ready
         C8["C8 Live push for every view<br/>the server says what changed, no page polls"]:::ready
         C9["C9 The profile a sandbox runs under<br/>visible and pickable, not one badge"]:::ready
-        C10["C10 Egress actions that say what they do<br/>approve / deny / revoke, and Flux ownership"]:::ready
+        C10["C10 Egress actions that say what they do<br/>approve / deny / revoke, and Flux ownership"]:::completed
     end
 
     F0["First functioning Agentplane<br/>both providers in sandboxes, driven and replayed from the app"]:::completed
@@ -180,7 +180,7 @@ milestone;
 orange diamonds are unresolved decisions requiring Rai's product or design input; gray is
 conditional or stretch work.
 
-Ready now: **J** and **C6**-**C10**, which share nothing and can run in parallel. **T2** and **T3** are
+Ready now: **J** and **C6**-**C9**, which share nothing and can run in parallel. **T2** and **T3** are
 blocked on nothing in code; they start when the persisted history has a first reader who needs a
 name or a search.
 
@@ -256,14 +256,6 @@ ones still open.
   filtered by it, and a typo silently yields a sandbox that matches no binding. Make it a pick
   from the profiles that actually exist, show it wherever a sandbox is shown, and say what the one
   you picked grants.
-- **C10 egress actions that say what they do:** the binding row offers Approve, Deny, and Revoke,
-  and nothing on screen distinguishes the last two — both read as "stop this access". They are not
-  the same: Deny sets `approval.state` and keeps the binding, so it is reversible and leaves the
-  record of who decided; Revoke deletes the object. Worse, Deny does not know what Revoke knows.
-  Revoke is disabled for a Flux-applied binding with a tooltip saying to remove it in git, but Deny
-  stays live — and `egressbinding-sandboxes-github-public.yaml` carries `approval.state: approved`
-  in git, so denying it patches the cluster and the next reconcile puts it back. A button that
-  silently un-does itself is the bug; the wording is the rest of the package.
 - **T2 named threads:** a small model proposes a name from the first turn, the user can edit it,
   and the name lives on the thread record; naming never touches the runner or the harness.
 - **T3 search and lookup:** find past interactions by text and by what an agent did; answer "what

@@ -2,8 +2,9 @@
 
 The proxy (x/agentplane/egress) enforces these resources; the app reads the same objects through the
 API server, presents the bindings that name a sandbox with their provenance, approval, expiry, and
-resolved policies, and changes approval or deletes a binding under its own RBAC. Nothing here is in
-the enforcement path: the proxy's `Active` condition is shown as written, never recomputed.
+resolved policies, and approves, denies or deletes a runtime binding under its own RBAC. Nothing
+here is in the enforcement path: the proxy's `Active` condition is shown as written, never
+recomputed.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from x.agentplane.app.inventory import Condition, InventoryError
 
 GRANTED_BY_LABEL = "agentplane.allegedly.works/granted-by"
 # The provenance a Flux-applied binding carries (cluster/k8s/agentplane-staging/egress); nothing at
-# runtime touches such a binding, since Flux prunes only what it applied.
+# runtime touches such a binding, since git declares its whole spec and reconcile puts that back.
 FLUX_PROVENANCE = "flux"
 ACTIVE_CONDITION = "Active"
 
@@ -39,10 +40,12 @@ class BindingNotFoundError(InventoryError):
 
 
 class FluxOwnedBindingError(InventoryError):
-    """A Flux-applied binding is git's to remove; deleting it at runtime would only be re-applied."""
+    """A Flux-applied binding is git's to change. The CRD requires `spec.approval`, so git declares
+    the approval of every seed as surely as its existence, and reconcile undoes an approval written
+    at runtime the way it re-applies a deleted one."""
 
     def __init__(self, name: str) -> None:
-        super().__init__(f"EgressBinding {name=} comes from git; remove it there")
+        super().__init__(f"EgressBinding {name=} comes from git; change it there")
         self.name = name
 
 
@@ -184,7 +187,7 @@ class BindingView(BaseModel):
     granted_by: str | None = Field(
         description="The provenance label: flux, or the operator who granted it through the app."
     )
-    from_git: bool = Field(description="Flux applied it; approval is editable, deletion is git's.")
+    from_git: bool = Field(description="Flux applied it; approval and deletion alike are git's.")
     subjects: list[SubjectView]
     approval: ApprovalState
     approved_by: str | None = None
@@ -229,9 +232,7 @@ class EgressInventory:
 
     async def revoke(self, name: str) -> None:
         """Delete a runtime binding; a Flux-applied one is refused, git being its owner."""
-        binding = await self._binding(name)
-        if binding.metadata.labels.get(GRANTED_BY_LABEL) == FLUX_PROVENANCE:
-            raise FluxOwnedBindingError(name)
+        await self._runtime_binding(name)
         await self._custom_objects.delete_namespaced_custom_object(
             *_EGRESS_API, self._namespace, _BINDINGS_PLURAL, name, body=k8s_client.V1DeleteOptions()
         )
@@ -269,7 +270,7 @@ class EgressInventory:
         )
 
     async def _decide(self, name: str, state: ApprovalState, by: Caller) -> None:
-        await self._binding(name)
+        await self._runtime_binding(name)
         await self._custom_objects.patch_namespaced_custom_object(
             *_EGRESS_API,
             self._namespace,
@@ -278,6 +279,11 @@ class EgressInventory:
             {"spec": {"approval": {"state": state, "by": by.name, "at": _now()}}},
             _content_type=_MERGE_PATCH,
         )
+
+    async def _runtime_binding(self, name: str) -> None:
+        """Raise unless the binding exists and this process is what decides it."""
+        if (await self._binding(name)).metadata.labels.get(GRANTED_BY_LABEL) == FLUX_PROVENANCE:
+            raise FluxOwnedBindingError(name)
 
     async def _policies(self) -> list[_EgressPolicy]:
         page = await self._custom_objects.list_namespaced_custom_object(*_EGRESS_API, self._namespace, _POLICIES_PLURAL)

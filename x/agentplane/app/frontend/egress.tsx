@@ -1,6 +1,7 @@
 import { Badge, Button, Group, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
 import { useCallback, useEffect, useState } from "react";
 
+import { bindingActions, type BindingAction } from "./binding_actions";
 import { api, displayableError, type BindingView, type Decision, type PolicyView } from "./client";
 
 const REFRESH_MS = 5000;
@@ -89,6 +90,12 @@ function PolicySummary({ policies, missing }: { policies: PolicyView[]; missing:
   );
 }
 
+const ACTION_STYLE: Record<BindingAction, { label: string; color: string }> = {
+  approve: { label: "Approve", color: "green" },
+  deny: { label: "Deny", color: "orange" },
+  revoke: { label: "Revoke", color: "red" },
+};
+
 function BindingActions({
   binding,
   onAct,
@@ -98,32 +105,29 @@ function BindingActions({
 }): JSX.Element {
   return (
     <Group gap="xs" wrap="nowrap" justify="flex-end">
-      {binding.approval !== "approved" && (
-        <Button size="compact-xs" variant="light" color="green" onClick={() => onAct("approve")}>
-          Approve
-        </Button>
-      )}
-      {binding.approval !== "denied" && (
-        <Button size="compact-xs" variant="light" color="orange" onClick={() => onAct("deny")}>
-          Deny
-        </Button>
-      )}
-      {binding.from_git ? (
-        <Tooltip label="Applied by Flux; remove it in git" withArrow>
-          <Button size="compact-xs" variant="light" color="gray" disabled>
-            Revoke
-          </Button>
+      {bindingActions(binding).map(({ action, explains, blocked }) => (
+        <Tooltip key={action} label={blocked ?? explains} withArrow multiline w={280}>
+          {blocked ? (
+            // `disabled` fires no pointer events, so the button would carry a tooltip nobody sees.
+            <Button
+              size="compact-xs"
+              variant="light"
+              color="gray"
+              data-disabled
+              onClick={(event) => event.preventDefault()}
+            >
+              {ACTION_STYLE[action].label}
+            </Button>
+          ) : (
+            <Button size="compact-xs" variant="light" color={ACTION_STYLE[action].color} onClick={() => onAct(action)}>
+              {ACTION_STYLE[action].label}
+            </Button>
+          )}
         </Tooltip>
-      ) : (
-        <Button size="compact-xs" variant="light" color="red" onClick={() => onAct("revoke")}>
-          Revoke
-        </Button>
-      )}
+      ))}
     </Group>
   );
 }
-
-type BindingAction = "approve" | "deny" | "revoke";
 
 function BindingsTable({
   bindings,
@@ -230,6 +234,11 @@ function BindingsTable({
           return rows;
         })}
       </Table.Tbody>
+      {/* The two off buttons look alike and are not: the row says which one keeps the binding. */}
+      <Table.Caption>
+        Deny keeps the binding and who decided, and can be approved again; Revoke deletes it for good. A binding from
+        git changes only in git.
+      </Table.Caption>
     </Table>
   );
 }

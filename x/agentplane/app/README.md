@@ -18,8 +18,11 @@ bbr test //x/agentplane/app/...
   `--sandbox-namespace`, which is not the app's own: a sandbox is the blast radius, and it shares a
   namespace with neither the app, its database, nor the rules below.
 - `egress.py`: the app namespace's `EgressPolicy` and `EgressBinding` resources as the app shows and
-  edits them (approve, deny, revoke, the launch-time grant); `decisions.py` reads the proxy's
-  recent decisions off its admin port, and an unreachable proxy leaves the rules readable.
+  edits them (approve, deny, revoke, the launch-time grant). A binding Flux applied is git's whole —
+  the CRD requires `spec.approval`, so its approval is declared there as much as its existence — and
+  a decision or deletion written here would last only until the next reconcile, so the app refuses
+  one with 409. `decisions.py` reads the proxy's recent decisions off its admin port, and an
+  unreachable proxy leaves the rules readable.
 - `bridge.py`: one runner attachment per streaming session, fanned out to every browser tab, and
   the SSE framing; `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits
   for the frontend's generated client.

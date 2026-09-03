@@ -142,6 +142,20 @@ async def test_approve_and_deny_write_the_approval_as_the_deciding_operator(
         await egress.approve("nope", by=APPROVER)
 
 
+async def test_a_binding_from_git_takes_no_runtime_decision(
+    egress: EgressInventory, custom_objects: FakeCustomObjectsApi
+) -> None:
+    """`spec.approval` is a required field, so git declares the seed's approval too: a decision
+    written here would stand only until the next reconcile put the manifest back."""
+    _seed(custom_objects)
+
+    for decide in (egress.approve, egress.deny):
+        with pytest.raises(FluxOwnedBindingError):
+            await decide("all-managed", by=APPROVER)
+
+    assert custom_objects.objects[("egressbindings", "all-managed")]["spec"]["approval"] == APPROVED
+
+
 async def test_revoke_deletes_a_runtime_binding_and_refuses_one_from_git(
     egress: EgressInventory, custom_objects: FakeCustomObjectsApi
 ) -> None:

@@ -173,19 +173,21 @@ async def list_policies(egress: Egress) -> list[PolicyView]:
 
 @egress_router.post("/bindings/{name}/approve", status_code=status.HTTP_204_NO_CONTENT)
 async def approve_binding(egress: Egress, operator: Operator, name: str) -> Response:
+    """Approve a runtime binding; one from git is refused with 409, its approval being git's."""
     await egress.approve(name, by=operator)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @egress_router.post("/bindings/{name}/deny", status_code=status.HTTP_204_NO_CONTENT)
 async def deny_binding(egress: Egress, operator: Operator, name: str) -> Response:
+    """Deny a runtime binding, keeping it and who decided; one from git is refused with 409."""
     await egress.deny(name, by=operator)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @egress_router.delete("/bindings/{name}", status_code=status.HTTP_204_NO_CONTENT)
 async def revoke_binding(egress: Egress, name: str) -> Response:
-    """Revoke a runtime binding by deleting it; a binding from git is refused with 409."""
+    """Revoke a runtime binding by deleting it, decision record and all; one from git is 409."""
     await egress.revoke(name)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

@@ -281,11 +281,18 @@ def test_every_route_needs_one_of_the_two_credentials(client: TestClient) -> Non
     assert client.get("/healthz", headers={"Authorization": ""}).status_code == 204
 
 
-def test_binding_revocation(client: TestClient) -> None:
+def test_a_binding_from_git_refuses_every_runtime_change(client: TestClient) -> None:
+    """Approval and existence are both declared in the manifest, so both come back on reconcile."""
+    for refused in (
+        client.post("/egress/bindings/all-managed/approve"),
+        client.post("/egress/bindings/all-managed/deny"),
+        client.delete("/egress/bindings/all-managed"),
+    ):
+        assert refused.status_code == 409, refused.text
+        assert "git" in refused.json()["detail"]
 
-    refused = client.delete("/egress/bindings/all-managed")
-    assert refused.status_code == 409
-    assert "git" in refused.json()["detail"]
+
+def test_binding_revocation(client: TestClient) -> None:
     assert client.delete("/egress/bindings/live-asks").status_code == 204
     assert client.delete("/egress/bindings/live-asks").status_code == 404
     assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["all-managed"]
