@@ -1,4 +1,6 @@
 import {
+  Accordion,
+  ActionIcon,
   Badge,
   Button,
   Code,
@@ -12,7 +14,9 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
-import { useEffect, useRef, useState } from "react";
+import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
+import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { fromJson, toJsonString, type JsonValue } from "@bufbuild/protobuf";
 
@@ -27,11 +31,11 @@ import {
   type ThreadView,
 } from "./client";
 import { EMPTY, reduce, type InputState, type Item, type SessionState } from "./events";
+import { Markdown } from "./markdown";
 import { Direction, EventSchema, ItemKind, TurnStatus, type Event } from "./protocol_pb";
 
 const KIND_LABELS: Partial<Record<ItemKind, string>> = {
   [ItemKind.ASSISTANT_TEXT]: "assistant",
-  [ItemKind.REASONING]: "reasoning",
   [ItemKind.TOOL_CALL]: "tool",
 };
 
@@ -50,7 +54,27 @@ function InputView({ input }: { input: InputState }): JSX.Element {
   );
 }
 
+/** Reasoning stays folded, so an answer is not buried under the thinking that led to it. */
+function ReasoningView({ item }: { item: Item }): JSX.Element {
+  return (
+    <Accordion variant="contained" chevronPosition="left">
+      <Accordion.Item value="reasoning">
+        <Accordion.Control>
+          <Group gap="xs">
+            <Badge variant="light">reasoning</Badge>
+            {!item.completed && <Badge color="yellow">streaming</Badge>}
+          </Group>
+        </Accordion.Control>
+        <Accordion.Panel>
+          <Text style={{ whiteSpace: "pre-wrap" }}>{item.text}</Text>
+        </Accordion.Panel>
+      </Accordion.Item>
+    </Accordion>
+  );
+}
+
 function ItemView({ item }: { item: Item }): JSX.Element {
+  if (item.kind === ItemKind.REASONING) return <ReasoningView item={item} />;
   const label = KIND_LABELS[item.kind] ?? ItemKind[item.kind];
   return (
     <Paper withBorder p="sm">
@@ -60,7 +84,12 @@ function ItemView({ item }: { item: Item }): JSX.Element {
         {!item.completed && <Badge color="yellow">streaming</Badge>}
         {item.succeeded === false && <Badge color="red">failed</Badge>}
       </Group>
-      {item.text && <Text style={{ whiteSpace: "pre-wrap" }}>{item.text}</Text>}
+      {item.text &&
+        (item.kind === ItemKind.ASSISTANT_TEXT ? (
+          <Markdown source={item.text} />
+        ) : (
+          <Text style={{ whiteSpace: "pre-wrap" }}>{item.text}</Text>
+        ))}
       {item.argumentsJson && <Code block>{item.argumentsJson}</Code>}
       {item.output && <Code block>{item.output}</Code>}
     </Paper>
@@ -201,6 +230,21 @@ export function SessionView({
     }
   }
 
+  function composerKey(event: KeyboardEvent<HTMLTextAreaElement>): void {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    if (!(event.ctrlKey || event.metaKey)) {
+      void submit();
+      return;
+    }
+    // Insert the newline by hand: a textarea ignores Ctrl+Enter, and setting a controlled value
+    // leaves the caret at the end, so put it back where the newline went.
+    const field = event.currentTarget;
+    const at = field.selectionStart;
+    setDraft(`${draft.slice(0, at)}\n${draft.slice(field.selectionEnd)}`);
+    requestAnimationFrame(() => field.setSelectionRange(at + 1, at + 1));
+  }
+
   async function run(action: () => Promise<void>): Promise<void> {
     try {
       await action();
@@ -220,6 +264,15 @@ export function SessionView({
         <ThreadTitle sessionId={sessionId} thread={thread} onRenamed={setThread} onError={setError} />
         <Badge>{status}</Badge>
         {state.harness && <Badge color={state.harness === "running" ? "green" : "gray"}>harness {state.harness}</Badge>}
+        <ActionIcon
+          variant="light"
+          color="red"
+          aria-label="Shut down harness"
+          onClick={() => void run(() => shutdownSession(sandbox, sessionId))}
+          disabled={state.harness !== "running"}
+        >
+          <IconPower size={16} />
+        </ActionIcon>
         <Switch label="Raw frames" checked={showRaw} onChange={(e) => setShowRaw(e.currentTarget.checked)} />
       </Group>
       {error && <Text c="red">{error}</Text>}
@@ -269,35 +322,27 @@ export function SessionView({
           <div ref={bottom} />
         </Stack>
       </ScrollArea>
-      <Textarea
-        placeholder="Send to the agent"
-        value={draft}
-        autosize
-        minRows={2}
-        onChange={(e) => setDraft(e.currentTarget.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void submit();
-        }}
-      />
-      <Group>
-        <Button onClick={() => void submit()} disabled={!draft.trim() || state.harness !== "running"}>
-          Send
-        </Button>
-        <Button
+      <Group align="flex-end" gap="xs" wrap="nowrap">
+        <Textarea
+          style={{ flex: 1 }}
+          placeholder="Enter sends, Ctrl+Enter for a new line"
+          value={draft}
+          autosize
+          minRows={2}
+          maxRows={12}
+          disabled={state.harness !== "running"}
+          onChange={(e) => setDraft(e.currentTarget.value)}
+          onKeyDown={composerKey}
+        />
+        <ActionIcon
+          size="lg"
           variant="light"
+          aria-label="Interrupt"
           onClick={() => void run(() => interruptSession(sandbox, sessionId))}
           disabled={!activeTurn}
         >
-          Interrupt
-        </Button>
-        <Button
-          variant="light"
-          color="red"
-          onClick={() => void run(() => shutdownSession(sandbox, sessionId))}
-          disabled={state.harness !== "running"}
-        >
-          Shut down harness
-        </Button>
+          <IconPlayerStop size={16} />
+        </ActionIcon>
       </Group>
     </Stack>
   );
