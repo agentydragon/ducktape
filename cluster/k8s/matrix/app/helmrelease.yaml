@@ -70,6 +70,10 @@ spec:
     # SeaweedFS S3: that module never replaces the local media path (it is a
     # backup/retrieval layer needing a custom image and an eviction cron), while
     # the CSI class gives Synapse the filesystem it insists on directly.
+    # TODO: matrix-synapse's media PVC is currently Bound on the pre-split
+    # storageClassName: seaweedfs-ovh. That field is immutable, so this chart value
+    # is a no-op on the live PVC until migrated via
+    # <cluster/docs/runbooks/seaweedfs_pvc_storageclass_migration.md>.
     persistence:
       enabled: true
       storageClass: "seaweedfs-ovh-hdd"
