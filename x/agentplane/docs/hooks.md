@@ -3,10 +3,11 @@
 What each harness offers a driver of its JSON protocol when a hook fires, how fast the driver
 has to answer, and what that fixes about a hook capability on the runner protocol. The findings
 come from reading the pinned Claude Code (2.1.252) and Codex `main` at `312709252d`
-(`rust-v0.152.1`); no capture has exercised them yet. The scripted tests and the live probe run
-with hooks off ([roster § Deliberately unsupported](../native/docs/protocol_roster.md)), and the
-runner refuses the one callback it receives ([SPEC](../runner/SPEC.md) § What the harnesses do
-not promise).
+(`rust-v0.152.1`), and from the capture probe's `hooks` scenarios
+([capture README](../capture/README.md)) run against a dead model endpoint, which exercises the
+registration and the session-level events but no tool call. The scripted tests run with hooks off
+([roster § Deliberately unsupported](../native/docs/protocol_roster.md)), and the runner refuses
+the one callback it receives ([SPEC](../runner/SPEC.md) § What the harnesses do not promise).
 
 ## Claude Code: the driver is the hook
 
@@ -29,6 +30,13 @@ not promise).
   system frames to the stream.
 - **Gotcha**: `--safe-mode`, which the scenarios use to keep plugins out of the prompt, also
   disables hooks. A hooks scenario has to drop it and rely on `--setting-sources=` alone.
+- **Observed** (dead endpoint): the `UserPromptSubmit` callback arrived before the `system/init`
+  frame and carried the prompt, the transcript path, and a `tool_use_id`; the probe's answer
+  went back in the same millisecond. No `SessionStart` callback fired for a registration made
+  at `initialize`, and no `hook_started`/`hook_response` frames appeared for these callbacks
+  under `--include-hook-events`. Whether `--include-hook-events` reports SDK callbacks at all,
+  and whether `SessionStart` fires before the registration is read, are open until a capture
+  with a live model runs the tool events.
 
 ## Codex: the hook is a shell command
 
@@ -44,6 +52,12 @@ not promise).
 - **Fail-open**: a hook that exits non-zero or times out is logged and the tool runs.
 - **Trust**: an unmanaged hook is untrusted until the hash recorded in the hooks state matches
   its command; `thread/start` takes `bypass_hook_trust` for a driver that owns the config.
+- **Observed** (dead endpoint): hooks passed through `thread/start`'s config map run from a
+  `<session-flags>/config.toml` layer; `SessionStart`, `UserPromptSubmit`, and `SessionEnd` each
+  ran the command with Claude-shaped input (`hook_event_name`, `session_id`, `cwd`,
+  `permission_mode`, the prompt), and the driver saw a `hook/started`/`hook/completed` pair per
+  run with its duration. The thread's first frames warn that the trust bypass is on and that
+  the `SessionEnd` timeout is clamped to 3 s.
 
 ## Reaction budget, side by side
 
