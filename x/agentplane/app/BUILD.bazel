@@ -26,8 +26,10 @@ py_library(
     deps = [
         ":bridge",
         ":inventory",
+        ":trajectory",
         "//x/agentplane/runner:client",
         "@pypi//fastapi",
+        "@pypi//protobuf",
     ],
 )
 
@@ -49,6 +51,7 @@ py_library(
         ":api",
         ":bridge",
         ":inventory",
+        ":trajectory",
         "//util:kubernetes",
         "//util/bazel:runfiles",
         "@pypi//fastapi",
@@ -65,10 +68,15 @@ py_library(
     deps = [
         ":bridge",
         ":inventory",
+        ":trajectory",
+        "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
         "//x/agentplane/app/testing:kubernetes",
         "//x/agentplane/runner:conftest",
         "@pypi//psycopg",
         "@pypi//pytest",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
     ],
 )
 
@@ -80,6 +88,7 @@ py_test(
         ":bridge",
         ":conftest",
         ":inventory",
+        ":trajectory",
         "//:conftest",
         "//x/agentplane/app/testing:kubernetes",
         "@pypi//fastapi",
@@ -107,11 +116,14 @@ py_library(
     srcs = ["bridge.py"],
     deps = [
         ":inventory",
+        ":trajectory",
         "//x/agentplane/runner:client",
         "//x/agentplane/runner:protocol_pb2",
         "@pypi//fastapi",
+        "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pydantic",
+        "@pypi//tenacity",
     ],
 )
 
@@ -133,6 +145,7 @@ py_test(
         ":bridge",
         ":conftest",
         ":inventory",
+        ":trajectory",
         "//:conftest",
         "//x/agentplane/runner:conftest",
         "//x/agentplane/runner:protocol_pb2",
@@ -187,4 +200,29 @@ oci_image(
         "//third_party/debian_slim:cacerts",
     ],
     user = "1000:1000",
+)
+
+py_library(
+    name = "trajectory",
+    srcs = ["trajectory.py"],
+    deps = [
+        "//x/agentplane/runner:protocol_pb2",
+        "@pypi//asyncpg",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_trajectory",
+    srcs = ["test_trajectory.py"],
+    deps = [
+        ":conftest",
+        ":trajectory",
+        "//:conftest",
+        "//x/agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
 )
