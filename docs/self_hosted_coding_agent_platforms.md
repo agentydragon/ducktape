@@ -98,7 +98,8 @@ Has the GitHub-PR side nailed (issue → branch → PR with review), but it's no
 
 ### OpenClaw + GitHub workflow (cluster-current option)
 
-The pragmatic "use what's already running" path: keep OpenClaw, give it a dedicated GitHub identity, and lean on **GitHub itself as the review UI** (PR diffs, review comments, suggested-change blocks). The old execution-model objection (sandbox running on the gateway) no longer applies — execution is delegated to OpenShell sandbox pods (<../cluster/docs/openclaw*command_execution.md>) — and the missing pieces of the desiderata that \_we built this list to solve* — diff review, PR linkage, multi-session UI — are filled by github.com itself. No new platform to operate.
+The pragmatic "use what's already running" path: keep OpenClaw, give it a dedicated GitHub identity, and lean on **GitHub itself as the review UI** (PR diffs, review comments, suggested-change blocks). The old execution-model objection (sandbox running on the gateway) no longer applies — execution is delegated to OpenShell sandbox pods (that doc is gone with the namespace — see
+[the OpenClaw retirement note](../cluster/archive/2026_08_openclaw_namespace_retirement.md)) — and the missing pieces of the desiderata that _we built this list to solve_ — diff review, PR linkage, multi-session UI — are filled by github.com itself. No new platform to operate.
 
 ### kagent (retired from this cluster)
 

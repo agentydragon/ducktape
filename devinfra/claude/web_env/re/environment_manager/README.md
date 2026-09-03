@@ -69,7 +69,7 @@ The original Go module lives at
 The file layout below came from DWARF debug info in a much older build that
 shipped with symbols; current binaries have none, and garble randomizes
 filenames per function so the real layout is no longer recoverable (see
-<degarble*map.md>). Treat the \_file names* as historical and the _package
+[the degarble map](degarble_map.md)). Treat the _file names_ as historical and the _package
 structure_ as current — package boundaries and their contents are re-verified
 against each binary via the recovered symbol table. Entries marked `REMOVED`
 are confirmed absent from the current binary.
