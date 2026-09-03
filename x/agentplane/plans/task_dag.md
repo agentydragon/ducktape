@@ -78,7 +78,7 @@ flowchart TB
         C7["C7 Lifecycle controls on the sandbox page<br/>suspend there, delete once suspended"]:::ready
         C8["C8 Live push for every view<br/>the server says what changed, no page polls"]:::ready
         C9["C9 The profile a sandbox runs under<br/>visible and pickable, not one badge"]:::ready
-        C10["C10 Egress actions that say what they do<br/>approve / deny / revoke, and Flux ownership"]:::completed
+        C10["C10 Egress actions that say what they do<br/>a binding is the permission; revoke deletes it"]:::completed
     end
 
     F0["First functioning Agentplane<br/>both providers in sandboxes, driven and replayed from the app"]:::completed

@@ -4,7 +4,7 @@
   "properties": {
     "spec": {
       "type": "object",
-      "required": ["subjects", "policies", "approval"],
+      "required": ["subjects", "policies"],
       "properties": {
         "subjects": {
           "type": "array",
@@ -62,24 +62,6 @@
           "description": "After this instant the binding contributes nothing.",
           "type": "string",
           "format": "date-time"
-        },
-        "approval": {
-          "type": "object",
-          "required": ["state"],
-          "properties": {
-            "state": {
-              "type": "string",
-              "enum": ["pending", "approved", "denied"]
-            },
-            "by": {
-              "description": "Who decided.",
-              "type": "string"
-            },
-            "at": {
-              "type": "string",
-              "format": "date-time"
-            }
-          }
         }
       }
     },

@@ -89,29 +89,10 @@ ts_library(
 )
 
 ts_library(
-    name = "binding_actions",
-    srcs = ["binding_actions.ts"],
-    tsconfig = TSCONFIG,
-    deps = [":client"],
-)
-
-ts_library(
-    name = "binding_actions_test",
-    srcs = ["binding_actions.test.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":binding_actions",
-        ":client",
-        "//:node_modules/vitest",
-    ],
-)
-
-ts_library(
     name = "egress",
     srcs = ["egress.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":binding_actions",
         ":client",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -194,7 +175,6 @@ vitest_bin.vitest_test(
     chdir = package_name(),
     data = [
         "vitest.config.ts",
-        ":binding_actions_test",
         ":events_test",
         "//:node_modules/vitest",
     ],

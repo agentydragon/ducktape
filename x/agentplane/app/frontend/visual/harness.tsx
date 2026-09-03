@@ -125,31 +125,25 @@ const POLICIES: PolicyView[] = [
   },
 ];
 
-/** One seed binding from git, active; one runtime ask still pending, which the proxy has refused so far. */
+/** One seed binding from git, which only git removes; one the app granted at launch, now expired. */
 const BINDINGS: BindingView[] = [
   {
-    name: "demo-a1b2-asks",
+    name: "demo-a1b2-picked",
     granted_by: "agent",
     from_git: false,
     subjects: [{ sandbox: "demo-a1b2", match_labels: null }],
-    approval: "pending",
-    approved_by: null,
-    approved_at: null,
-    expires_at: new Date(NOW + 6 * HOUR).toISOString(),
+    expires_at: ago(2 * HOUR),
     policies: [POLICIES[1]],
     missing_policies: [],
     active: false,
-    active_reason: "NotApproved",
-    active_message: "approval is pending",
+    active_reason: "Expired",
+    active_message: "1 of 1 policies resolved",
   },
   {
     name: "sandboxes-github-public",
     granted_by: "flux",
     from_git: true,
     subjects: [{ sandbox: null, match_labels: { "agentplane.allegedly.works/managed": "true" } }],
-    approval: "approved",
-    approved_by: "harness-operator",
-    approved_at: ago(24 * HOUR),
     expires_at: null,
     policies: [POLICIES[0]],
     missing_policies: [],

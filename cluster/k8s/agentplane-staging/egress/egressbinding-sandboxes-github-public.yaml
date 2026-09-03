@@ -16,7 +16,3 @@ spec:
           agentplane.allegedly.works/managed: "true"
   policies:
     - github-public
-  approval:
-    state: approved
-    by: rai
-    at: "2026-09-03T00:00:00Z"

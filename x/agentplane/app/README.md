@@ -18,11 +18,11 @@ bbr test //x/agentplane/app/...
   `--sandbox-namespace`, which is not the app's own: a sandbox is the blast radius, and it shares a
   namespace with neither the app, its database, nor the rules below.
 - `egress.py`: the app namespace's `EgressPolicy` and `EgressBinding` resources as the app shows and
-  edits them (approve, deny, revoke, the launch-time grant). A binding Flux applied is git's whole —
-  the CRD requires `spec.approval`, so its approval is declared there as much as its existence — and
-  a decision or deletion written here would last only until the next reconcile, so the app refuses
-  one with 409. `decisions.py` reads the proxy's recent decisions off its admin port, and an
-  unreachable proxy leaves the rules readable.
+  edits them. A binding is desired state, so creating one at launch is the whole grant and deleting
+  it the whole revocation; there is no decision recorded on the rule afterwards. A binding Flux
+  applied is the repository's to remove, so revoking one is refused with 409 rather than deleting an
+  object the next reconcile re-creates. `decisions.py` reads the proxy's recent decisions off its
+  admin port, and an unreachable proxy leaves the rules readable.
 - `bridge.py`: one runner attachment per streaming session, fanned out to every browser tab, and
   the SSE framing; `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits
   for the frontend's generated client.
@@ -52,13 +52,13 @@ are two credentials, and both are cryptographic:
   curl -H "Authorization: Bearer $TOKEN" https://agentplane-staging.allegedly.works/sandboxes
   ```
 
-Whichever credential a request carried is what an egress approval or launch-time grant records.
+Whichever credential a request carried is what a launch-time egress grant is labelled with.
 
 Nothing is inferred from a request header, and nothing in front of the app authenticates for it:
 the gateway routes straight to the Service. The app used to sit behind an Authentik forward-auth
 outpost and trust the `x-authentik-username` it set, on the grounds that the outpost was the only
 way in. The API server's service proxy was the other way in and it forwards caller-supplied
-headers, so anyone with `services/proxy` on the Service could approve their own egress bindings.
+headers, so anyone with `services/proxy` on the Service could grant themselves egress.
 Owning the login also drops the outpost's 15-second stall on every SSE stream, whose response
 writer implements no `Flush()`.
 

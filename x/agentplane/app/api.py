@@ -93,8 +93,8 @@ def _decisions(request: Request) -> DecisionsClient:
 
 Decisions = Annotated[DecisionsClient, Depends(_decisions)]
 
-# The identity an approval or grant is recorded as. Two credentials, both cryptographic: the
-# operator's OIDC session, or a Kubernetes token TokenReview vouches for.
+# The identity a grant is labelled with. Two credentials, both cryptographic: the operator's OIDC
+# session, or a Kubernetes token TokenReview vouches for.
 Operator = Annotated[Caller, Depends(require_caller)]
 
 
@@ -171,23 +171,9 @@ async def list_policies(egress: Egress) -> list[PolicyView]:
     return await egress.list_policies()
 
 
-@egress_router.post("/bindings/{name}/approve", status_code=status.HTTP_204_NO_CONTENT)
-async def approve_binding(egress: Egress, operator: Operator, name: str) -> Response:
-    """Approve a runtime binding; one from git is refused with 409, its approval being git's."""
-    await egress.approve(name, by=operator)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@egress_router.post("/bindings/{name}/deny", status_code=status.HTTP_204_NO_CONTENT)
-async def deny_binding(egress: Egress, operator: Operator, name: str) -> Response:
-    """Deny a runtime binding, keeping it and who decided; one from git is refused with 409."""
-    await egress.deny(name, by=operator)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
 @egress_router.delete("/bindings/{name}", status_code=status.HTTP_204_NO_CONTENT)
 async def revoke_binding(egress: Egress, name: str) -> Response:
-    """Revoke a runtime binding by deleting it, decision record and all; one from git is 409."""
+    """Revoke a runtime binding by deleting the rule; one from git is refused with 409."""
     await egress.revoke(name)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

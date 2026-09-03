@@ -64,17 +64,22 @@ async def test_binding_status_written_once(fake: FakeApiServer, index: Index) ->
     fake.close_watches()
     fake.put(
         BINDINGS_PLURAL,
-        binding(BINDING, subjects=[{"sandbox": {"name": SANDBOX_A}}], policies=[GITHUB_POLICY], approval="denied"),
+        binding(
+            BINDING,
+            subjects=[{"sandbox": {"name": SANDBOX_A}}],
+            policies=[GITHUB_POLICY],
+            expires_at="2020-01-01T00:00:00Z",
+        ),
     )
     await index.wait_for(
         lambda: (
             (status := index.bindings[BINDING].status) is not None
-            and status.conditions[0].reason == ActiveReason.NOT_APPROVED
+            and status.conditions[0].reason == ActiveReason.EXPIRED
         )
     )
     assert [reason for _, patch in fake.status_patches for reason in [patch["conditions"][0]["reason"]]] == [
         ActiveReason.RESOLVED,
-        ActiveReason.NOT_APPROVED,
+        ActiveReason.EXPIRED,
     ]
 
 

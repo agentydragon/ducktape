@@ -14,21 +14,20 @@ proxy relates to the integration app, and the work packages.
   Kubernetes, verifies tokens against Kubernetes, and keeps its own decision log. The app reads the
   same custom resources and asks the proxy for recent decisions; with the app down the proxy is
   unaffected, and with the proxy down the app still shows the rules.
-- **Policy is custom resources**, editable at runtime through the API server by `kubectl`, the
-  app under its RBAC, or an agent's request that Rai approves by flipping a field, and seedable
-  from git the way the `SandboxTemplate` is. Two kinds keep the rules DRY when agents' policies
+- **Policy is custom resources**, editable at runtime through the API server by `kubectl` or the
+  app under its RBAC, and seedable from git the way the `SandboxTemplate` is. Two kinds keep the rules DRY when agents' policies
   overlap partially:
   - `EgressPolicy`: a reusable, subject-free rule set. Each rule names hosts (exact, or a `*.`
     suffix), methods, path patterns, and optionally the credential to substitute: the Secret and
     key holding it, the header it goes into, and the placeholder value the sandbox sends.
   - `EgressBinding`: subjects to policies. A subject is a Sandbox by name or by label selector in
-    this slice; a thread or an agent identity is a later subject kind on the same resource. A
-    binding carries an optional expiry and an approval state (`pending`, `approved`, `denied`,
-    with who and when), so an agent's ask is a pending binding and Rai's answer is a field
-    change. The proxy writes status: whether the binding is active and which referenced policies
-    resolved.
-- **Fail closed.** No binding for a subject means no egress; a binding whose policy is missing,
-  expired, or not approved contributes nothing and gets a status condition saying so. A denied
+    this slice; a thread or an agent identity is a later subject kind on the same resource. The
+    binding's existence is the permission and its optional expiry is the only thing that ends one
+    without deleting it: creating the object is the whole act of allowing, so there is no decision
+    field to answer it with. The proxy writes status: whether the binding is active and which
+    referenced policies resolved.
+- **Fail closed.** No binding for a subject means no egress; a binding that is expired or whose
+  policy is missing contributes nothing and gets a status condition saying so. A denied
   request is answered with `403` and a short machine-readable reason header, never with upstream
   detail.
 - **Credentials stay Secrets**, managed as today (ESO or SOPS through GitOps) and mounted only
@@ -46,8 +45,8 @@ proxy relates to the integration app, and the work packages.
   creates for one sandbox carries an `ownerReference` to that Sandbox, so deleting the sandbox
   garbage-collects the grant; a binding from git carries Flux's inventory labels and nothing at
   runtime touches it, since Flux prunes only what it applied. Every binding also carries a
-  provenance label (`agentplane.allegedly.works/granted-by`: `flux`, or the app on whose approval
-  it was made) so the view can say "from git" or "granted by Rai at ...". Owner references
+  provenance label (`agentplane.allegedly.works/granted-by`: `flux`, or the caller who made it) so
+  the view can say "from git" or "granted by Rai", which is also the record of who allowed it. Owner references
   cascade on deletion, not on liveness: nothing is owned by the app's Pod or Deployment, and the
   app going down revokes nothing, because expiry is what fails closed.
 - **Time-limited grants need no app in the loop.** `expiresAt` is enforced from the proxy's own
@@ -88,15 +87,14 @@ TokenReview of the sidecar's token; the live Pod UID and IP to Sandbox owner loo
 API server's) over `EgressPolicy`, `EgressBinding`, and the referenced Secrets; rule evaluation;
 credential substitution; the decision ring and its read endpoint; status written back to
 bindings. Tested against a fake API server and a scripted upstream: accepted, denied by rule,
-denied for want of a binding, expired binding, unapproved binding, missing policy, copied token,
-Secret rotation.
+denied for want of a binding, expired binding, missing policy, copied token, Secret rotation.
 
 ### E2. Resources, RBAC, and the staging seed
 
 The two CRDs with schema validation and printer columns; the proxy's ServiceAccount with read on
 the resources and Secrets it needs, status write on bindings, and TokenReview; the app's
 ServiceAccount with read on both kinds and write on bindings; the cluster validator covering both;
-staging's seed: one approved binding of every managed Sandbox to a policy that lets it reach
+staging's seed: one binding of every managed Sandbox to a policy that lets it reach
 GitHub's API and HTTPS git for public repositories with the `agentydragon-agent` PAT substituted.
 
 ### E3. Sandbox wiring

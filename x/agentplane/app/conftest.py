@@ -86,8 +86,8 @@ def inventory(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api) -> S
 
 
 # The operator a session names, and the agent a reviewed token names: the two credentials the app
-# accepts, and the two shapes of identity an approval can be recorded as.
-APPROVER = Caller.operator("test-operator")
+# accepts, and the two shapes of identity a grant can be labelled with.
+GRANTER = Caller.operator("test-operator")
 AGENT = Caller.kubernetes(f"system:serviceaccount:{NAMESPACE}:test-agent")
 AUDIENCE = "agentplane-test"
 AGENT_TOKEN = "test-agent-token"  # a test literal, not a real credential

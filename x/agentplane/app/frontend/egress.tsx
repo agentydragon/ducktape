@@ -1,27 +1,9 @@
 import { Badge, Button, Group, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
 import { useCallback, useEffect, useState } from "react";
 
-import { bindingActions, type BindingAction } from "./binding_actions";
 import { api, displayableError, type BindingView, type Decision, type PolicyView } from "./client";
 
 const REFRESH_MS = 5000;
-
-const APPROVAL_COLORS: Record<BindingView["approval"], string> = {
-  approved: "green",
-  pending: "yellow",
-  denied: "red",
-};
-
-function ApprovalBadge({ binding }: { binding: BindingView }): JSX.Element {
-  const detail = binding.approved_by
-    ? `${binding.approval} by ${binding.approved_by}${binding.approved_at ? ` at ${new Date(binding.approved_at).toLocaleString()}` : ""}`
-    : `${binding.approval}, nobody has decided yet`;
-  return (
-    <Tooltip label={detail} withArrow>
-      <Badge color={APPROVAL_COLORS[binding.approval]}>{binding.approval}</Badge>
-    </Tooltip>
-  );
-}
 
 /** The proxy's Active condition as written; grey until the proxy has looked at the binding. */
 function ActiveBadge({ binding }: { binding: BindingView }): JSX.Element {
@@ -90,51 +72,41 @@ function PolicySummary({ policies, missing }: { policies: PolicyView[]; missing:
   );
 }
 
-const ACTION_STYLE: Record<BindingAction, { label: string; color: string }> = {
-  approve: { label: "Approve", color: "green" },
-  deny: { label: "Deny", color: "orange" },
-  revoke: { label: "Revoke", color: "red" },
-};
+const REVOKE_EXPLAINS =
+  "Deletes the rule, which is what takes the access away. There is no undo; a new binding has to be made.";
+const REVOKE_FROM_GIT = "Applied by Flux: remove it in the repository, or the next reconcile applies it again.";
 
-function BindingActions({
-  binding,
-  onAct,
-}: {
-  binding: BindingView;
-  onAct: (action: BindingAction) => void;
-}): JSX.Element {
+function BindingActions({ binding, onRevoke }: { binding: BindingView; onRevoke: () => void }): JSX.Element {
   return (
     <Group gap="xs" wrap="nowrap" justify="flex-end">
-      {bindingActions(binding).map(({ action, explains, blocked }) => (
-        <Tooltip key={action} label={blocked ?? explains} withArrow multiline w={280}>
-          {blocked ? (
-            // `disabled` fires no pointer events, so the button would carry a tooltip nobody sees.
-            <Button
-              size="compact-xs"
-              variant="light"
-              color="gray"
-              data-disabled
-              onClick={(event) => event.preventDefault()}
-            >
-              {ACTION_STYLE[action].label}
-            </Button>
-          ) : (
-            <Button size="compact-xs" variant="light" color={ACTION_STYLE[action].color} onClick={() => onAct(action)}>
-              {ACTION_STYLE[action].label}
-            </Button>
-          )}
-        </Tooltip>
-      ))}
+      <Tooltip label={binding.from_git ? REVOKE_FROM_GIT : REVOKE_EXPLAINS} withArrow multiline w={280}>
+        {binding.from_git ? (
+          // `disabled` fires no pointer events, so the button would carry a tooltip nobody sees.
+          <Button
+            size="compact-xs"
+            variant="light"
+            color="gray"
+            data-disabled
+            onClick={(event) => event.preventDefault()}
+          >
+            Revoke
+          </Button>
+        ) : (
+          <Button size="compact-xs" variant="light" color="red" onClick={onRevoke}>
+            Revoke
+          </Button>
+        )}
+      </Tooltip>
     </Group>
   );
 }
 
 function BindingsTable({
   bindings,
-  onAct,
+  onRevoke,
 }: {
   bindings: BindingView[];
-  onAct: (name: string, action: BindingAction) => void;
+  onRevoke: (name: string) => void;
 }): JSX.Element {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   function toggle(name: string): void {
@@ -150,7 +122,6 @@ function BindingsTable({
         <Table.Tr>
           <Table.Th>Binding</Table.Th>
           <Table.Th visibleFrom="sm">Provenance</Table.Th>
-          <Table.Th visibleFrom="sm">Approval</Table.Th>
           <Table.Th visibleFrom="sm">Expires</Table.Th>
           <Table.Th visibleFrom="sm">Policies</Table.Th>
           <Table.Th visibleFrom="sm">Active</Table.Th>
@@ -160,7 +131,7 @@ function BindingsTable({
       <Table.Tbody>
         {bindings.length === 0 && (
           <Table.Tr>
-            <Table.Td colSpan={7}>
+            <Table.Td colSpan={6}>
               <Text size="sm" c="dimmed">
                 No binding names this sandbox: nothing may leave it.
               </Text>
@@ -195,10 +166,7 @@ function BindingsTable({
                 </Tooltip>
                 {/* On a phone the other columns fold under the name. */}
                 <Stack gap="xs" hiddenFrom="sm" mt="xs">
-                  <Group gap="xs">
-                    <ApprovalBadge binding={binding} />
-                    <ActiveBadge binding={binding} />
-                  </Group>
+                  <ActiveBadge binding={binding} />
                   <Text size="xs" c="dimmed">
                     {provenance(binding)} · expires{" "}
                     {binding.expires_at ? new Date(binding.expires_at).toLocaleString() : "never"}
@@ -209,23 +177,20 @@ function BindingsTable({
               <Table.Td visibleFrom="sm">
                 <Text size="sm">{provenance(binding)}</Text>
               </Table.Td>
-              <Table.Td visibleFrom="sm">
-                <ApprovalBadge binding={binding} />
-              </Table.Td>
               <Table.Td visibleFrom="sm">{expiry(binding)}</Table.Td>
               <Table.Td visibleFrom="sm">{policyNames}</Table.Td>
               <Table.Td visibleFrom="sm">
                 <ActiveBadge binding={binding} />
               </Table.Td>
               <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
-                <BindingActions binding={binding} onAct={(action) => onAct(binding.name, action)} />
+                <BindingActions binding={binding} onRevoke={() => onRevoke(binding.name)} />
               </Table.Td>
             </Table.Tr>,
           ];
           if (expanded.has(binding.name)) {
             rows.push(
               <Table.Tr key={`${binding.name}-rules`}>
-                <Table.Td colSpan={7}>
+                <Table.Td colSpan={6}>
                   <PolicySummary policies={binding.policies} missing={binding.missing_policies} />
                 </Table.Td>
               </Table.Tr>
@@ -234,10 +199,9 @@ function BindingsTable({
           return rows;
         })}
       </Table.Tbody>
-      {/* The two off buttons look alike and are not: the row says which one keeps the binding. */}
       <Table.Caption>
-        Deny keeps the binding and who decided, and can be approved again; Revoke deletes it for good. A binding from
-        git changes only in git.
+        A binding is the permission: it allows while it exists, and revoking deletes it. One from the repository is
+        removed there.
       </Table.Caption>
     </Table>
   );
@@ -351,12 +315,10 @@ export function EgressSection({ name }: { name: string }): JSX.Element {
     return () => clearInterval(timer);
   }, [refresh]);
 
-  async function act(binding: string, action: BindingAction): Promise<void> {
-    const params = { params: { path: { name: binding } } };
-    const { error: failure } =
-      action === "revoke"
-        ? await api.DELETE("/egress/bindings/{name}", params)
-        : await api.POST(`/egress/bindings/{name}/${action}`, params);
+  async function revoke(binding: string): Promise<void> {
+    const { error: failure } = await api.DELETE("/egress/bindings/{name}", {
+      params: { path: { name: binding } },
+    });
     if (failure) setError(displayableError(failure));
     await refresh();
   }
@@ -364,7 +326,7 @@ export function EgressSection({ name }: { name: string }): JSX.Element {
   return (
     <Stack gap="xs">
       {error && <Text c="red">{error}</Text>}
-      {bindings && <BindingsTable bindings={bindings} onAct={(binding, action) => void act(binding, action)} />}
+      {bindings && <BindingsTable bindings={bindings} onRevoke={(binding) => void revoke(binding)} />}
       <Title order={5}>Recent decisions</Title>
       {decisions && <DecisionsTable decisions={decisions} />}
       {decisionsError && (

@@ -32,8 +32,8 @@ class Caller:
     """An authenticated caller: the name to record, and a form of it a label can hold.
 
     Kubernetes usernames carry colons (`system:serviceaccount:ns:sa`) and a label value cannot, so
-    the two differ for a token caller. `name` is what an approval records, because it is the
-    identity as Kubernetes states it; `label` only has to be stable and readable.
+    the two differ for a token caller. `name` is the identity as Kubernetes states it; `label` is
+    the form stamped on what the caller grants, and only has to be stable and readable.
     """
 
     name: str

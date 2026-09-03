@@ -1,9 +1,9 @@
-# Attaches EgressPolicies to subjects: Sandboxes by name or label selector in this slice. A
-# binding contributes nothing until approved, and nothing after it expires; the proxy writes
-# back whether it is active and how many referenced policies resolved. An agent's egress ask is
-# a pending binding; the operator's answer is a change to spec.approval. Every binding carries
-# the label agentplane.allegedly.works/granted-by naming who made it (flux for a seed, the
-# requester for a runtime one; cluster/validation checks the rendered ones). Shared contract with
+# Attaches EgressPolicies to subjects: Sandboxes by name or label selector in this slice. The
+# binding's existence is the grant: creating one allows, deleting one takes that back, and it
+# contributes nothing after it expires; the proxy writes back whether it is active and how many
+# referenced policies resolved. Every binding carries the label
+# agentplane.allegedly.works/granted-by naming who allowed it (flux for a seed, the requester for
+# a runtime one; cluster/validation checks the rendered ones). Shared contract with
 # the proxy (x/agentplane/plans/egress_proxy.md); the kubeconform schema under cluster/schemas/
 # is this file's openAPIV3Schema, pinned by cluster/validation/test_agentplane_crd_schemas.py.
 apiVersion: apiextensions.k8s.io/v1
@@ -25,9 +25,6 @@ spec:
       subresources:
         status: {}
       additionalPrinterColumns:
-        - name: Approval
-          type: string
-          jsonPath: .spec.approval.state
         - name: Expires
           type: string
           jsonPath: .spec.expiresAt
@@ -44,7 +41,7 @@ spec:
           properties:
             spec:
               type: object
-              required: [subjects, policies, approval]
+              required: [subjects, policies]
               properties:
                 subjects:
                   type: array
@@ -85,19 +82,6 @@ spec:
                   description: After this instant the binding contributes nothing.
                   type: string
                   format: date-time
-                approval:
-                  type: object
-                  required: [state]
-                  properties:
-                    state:
-                      type: string
-                      enum: [pending, approved, denied]
-                    by:
-                      description: Who decided.
-                      type: string
-                    at:
-                      type: string
-                      format: date-time
             status:
               type: object
               properties:

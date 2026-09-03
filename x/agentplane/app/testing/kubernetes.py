@@ -163,7 +163,6 @@ def egress_binding(
     *,
     subjects: list[dict[str, Any]],
     policies: list[str],
-    approval: dict[str, Any],
     granted_by: str | None = "flux",
     expires_at: str | None = None,
     active: tuple[str, str, str] | None = None,
@@ -179,7 +178,6 @@ def egress_binding(
         "spec": {
             "subjects": subjects,
             "policies": policies,
-            "approval": approval,
             **({"expiresAt": expires_at} if expires_at is not None else {}),
         },
         **(

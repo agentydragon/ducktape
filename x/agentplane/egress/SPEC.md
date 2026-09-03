@@ -18,8 +18,9 @@ substitutes. The design it implements is [the ADR](../plans/adr_sandbox_proxy_ga
 
 ## Decision
 
-- Only `EgressBinding`s that are approved and unexpired grant anything; a binding names its
-  subjects by Sandbox name or by label selector and lists `EgressPolicy` names.
+- An `EgressBinding` grants by existing and unexpired: creating one is the whole act of allowing,
+  and deleting it the whole act of taking that back. A binding names its subjects by Sandbox name
+  or by label selector and lists `EgressPolicy` names.
 - The subject's bindings are walked in name order, their policies in the listed order, and their
   rules in order; the first rule whose hosts, methods, and paths match decides. A CONNECT is
   matched on host alone; each request inside the tunnel is decided on its own.
@@ -59,9 +60,8 @@ substitutes. The design it implements is [the ADR](../plans/adr_sandbox_proxy_ga
   they substitute. The proxy's picture is kept equal to the API server's, and a rotated Secret is
   substituted from the next request on without a restart.
 - Each binding's `status` is written by the proxy: `observedGeneration`, `resolvedPolicies`, and
-  the `Active` condition — `True` with reason `Resolved` when the binding is approved, unexpired,
-  and at least one policy resolved, otherwise `False` with reason `Expired`, `NotApproved`, or
-  `MissingPolicy`. A status is written only when it differs from what the API server holds.
+  the `Active` condition — `True` with reason `Resolved` when the binding is unexpired and at
+  least one policy resolved, otherwise `False` with reason `Expired` or `MissingPolicy`. A status is written only when it differs from what the API server holds.
 
 ## Decisions
 
