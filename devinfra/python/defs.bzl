@@ -31,7 +31,10 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
 
     Args:
         name: Target name.
-        size: Test size. Defaults to 'small' (60s timeout).
+        size: Test size. Defaults to 'small' (60s timeout). A target that times out on RBE
+            without doing 60s of work is hitting executor I/O latency rather than its own
+            cost -- size that target 'medium' where it happens, and see
+            debug/2026_08_rbe_small_test_timeouts.md before assuming the test is at fault.
         requires_docker: Whether this test needs Docker. If True, adds the
             "requires_docker" tag and env_inherit for Docker TLS vars.
         uses_syrupy: Whether this test uses syrupy snapshots. If True, wires
