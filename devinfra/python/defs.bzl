@@ -26,19 +26,15 @@ def py_binary(imports = None, **kwargs):
         imports = repo_imports()
     _py_binary(imports = imports, **kwargs)
 
-def py_test(name, size = "medium", requires_docker = False, uses_syrupy = False, tags = None, imports = None, args = None, deps = None, env_inherit = None, **kwargs):
+def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, tags = None, imports = None, args = None, deps = None, env_inherit = None, **kwargs):
     """py_test with auto repo-root imports and sensible defaults.
 
     Args:
         name: Target name.
-        size: Test size. Defaults to 'medium' (300s timeout) -- a budget for the execution
-            platform, not for the test. A trivial py_test here measures ~3s of Python inside a
-            40s remote execution, behind VM preparation that has been observed anywhere from
-            4s to over 250s, so a 60s cap fails on platform variance rather than on test work:
-            measured at 10-40% of runs across unrelated trees, and cleared to 100/100 by this
-            default. See debug/2026_08_rbe_small_test_timeouts.md. Pass size = "small"
-            explicitly where a test is genuinely quick and you want the tighter budget to mean
-            something.
+        size: Test size. Defaults to 'small' (60s timeout). A target that times out on RBE
+            without doing 60s of work is hitting executor I/O latency rather than its own
+            cost -- size that target 'medium' where it happens, and see
+            debug/2026_08_rbe_small_test_timeouts.md before assuming the test is at fault.
         requires_docker: Whether this test needs Docker. If True, adds the
             "requires_docker" tag and env_inherit for Docker TLS vars.
         uses_syrupy: Whether this test uses syrupy snapshots. If True, wires

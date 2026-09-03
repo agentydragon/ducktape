@@ -236,17 +236,27 @@ at fault, and neither is any test in this repo.
 each: **100 of 100 passed, no timeouts**, against 2-4 in 10 failing per target before. Several passing
 runs took 90-101s — above `small`'s cap outright, so those could not have passed under it.
 
-**Done, for the decision this note deliberately left open**: the `devinfra/python/defs.bzl`
-`py_test` default is now `medium`. Per-package sizing cannot reach this, because the overhead is paid
-by every Python test in the repo regardless of what it does. August's counter-argument still stands
-and is untouched by the evidence — it does weaken the "small tests should be small" signal — so pass
-`size = "small"` explicitly where a test is genuinely quick and you want the tighter budget to mean
-something.
+**Sized where it hits, and the default stays `small` (Rai).** The seven
+`//x/agentplane/egress` targets carry `size = "medium"` because they are the ones observed failing:
+one on CI, the rest at 2-4 in 10 locally. The `devinfra/python/defs.bzl` default is unchanged, so a
+test that has not hit this keeps the 60s budget and keeps meaning something by it. Raising the
+default was drafted and rejected: it would have re-sized every Python test in the repo for a
+platform property, and the August entry's objection -- that it weakens the "small tests should be
+small" signal -- is not answered by any evidence here.
 
-**This is a stopgap, and the real question is upstream of it.** Nothing here makes a test faster; it
-widens a budget so platform variance stops failing unrelated PRs. Why an executor takes 4s — or 253s —
-to prepare a VM is the live question, and it is a sharper form of this note's August open question
-about the pinned worker image.
+The three `//util` controls in the table above are deliberately **not** sized. They are the
+falsification test, not a symptom: they failed only under 30-70 concurrent actions this
+investigation induced itself. Size them if they ever fail a real run.
+
+**Verified.** Ten targets over ten runs each, with these sizes: **100 of 100 passed, no timeouts**,
+against 2-4 in 10 failing per target before. Several passing runs took 90-101s -- above `small`'s cap
+outright, so they could not have passed under it.
+
+**This is a stopgap over a platform property no BUILD file can reach.** Nothing here makes a test
+faster; it widens a budget so 14-32s of executor I/O latency stops failing unrelated PRs. The real
+fix is executor-side -- lazy input fetching on the BuildBuddy pool -- and is worth raising with them
+with the counters above, since 0 files and 0 bytes taking 24 seconds is theirs to explain. This also
+answers the August open question: the pinned image was never the mechanism.
 
 ### Not the cause, so nobody re-walks these
 
