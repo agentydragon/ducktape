@@ -41,7 +41,6 @@ function ago(ms: number): string {
 const SANDBOXES: SandboxView[] = [
   {
     name: "demo-a1b2",
-    provider: "claude",
     archived: false,
     state: "running",
     created_at: ago(3 * HOUR),
@@ -63,7 +62,6 @@ const SANDBOXES: SandboxView[] = [
   },
   {
     name: "codex-c3d4",
-    provider: "codex",
     archived: false,
     state: "waiting_for_pod_ready",
     created_at: ago(2 * 60_000),
@@ -91,7 +89,6 @@ const SANDBOXES: SandboxView[] = [
   },
   {
     name: "old-e5f6",
-    provider: "claude",
     archived: false,
     state: "suspended",
     created_at: ago(48 * HOUR),

@@ -18,9 +18,9 @@ import uvicorn
 from google.protobuf.json_format import MessageToDict
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from x.agentplane.app.api import create_app
+from x.agentplane.app.api import Provider, create_app
 from x.agentplane.app.bridge import RunnerBridge
-from x.agentplane.app.inventory import Provider, SandboxInventory
+from x.agentplane.app.inventory import SandboxInventory
 from x.agentplane.app.trajectory import TrajectoryStore
 from x.agentplane.runner import protocol_pb2 as pb
 from x.agentplane.runner.conftest import RunnerHandle

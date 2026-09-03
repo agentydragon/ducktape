@@ -23,7 +23,6 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from util.kubernetes import CustomObjectsClient
 
 MANAGED_LABEL = "agentplane.allegedly.works/managed"
-PROVIDER_LABEL = "agentplane.allegedly.works/provider"
 ARCHIVED_LABEL = "agentplane.allegedly.works/archived"
 
 _TEMPLATE_API = ("extensions.agents.x-k8s.io", "v1beta1")
@@ -40,11 +39,6 @@ _SLUG_MAX_LENGTH = 63 - 1 - _SUFFIX_LENGTH
 Slug = Annotated[
     str, StringConstraints(pattern=r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", min_length=1, max_length=_SLUG_MAX_LENGTH)
 ]
-
-
-class Provider(StrEnum):
-    CLAUDE = "claude"
-    CODEX = "codex"
 
 
 class OperatingMode(StrEnum):
@@ -76,7 +70,6 @@ class NewSandbox(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     slug: Slug = Field(description="Human-chosen name stem; a random suffix makes the Sandbox name unique.")
-    provider: Provider
 
 
 class Condition(BaseModel):
@@ -123,7 +116,6 @@ class SandboxView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(description="The Sandbox name, and its Pod's; the handle for every operation.")
-    provider: Provider
     archived: bool
     state: ProvisioningState
     created_at: datetime
@@ -224,10 +216,7 @@ class SandboxInventory:
         body = {
             "apiVersion": f"{_SANDBOX_API[0]}/{_SANDBOX_API[1]}",
             "kind": "Sandbox",
-            "metadata": {
-                "name": f"{spec.slug}-{suffix}",
-                "labels": {MANAGED_LABEL: "true", PROVIDER_LABEL: spec.provider},
-            },
+            "metadata": {"name": f"{spec.slug}-{suffix}", "labels": {MANAGED_LABEL: "true"}},
             # No shutdownTime and Retain: the app owns deletion, nothing expires a sandbox behind it.
             "spec": {
                 "podTemplate": template.spec.pod_template,
@@ -302,7 +291,6 @@ def _view(sandbox: _Sandbox, pod: k8s_client.V1Pod | None) -> SandboxView:
     archived = labels.get(ARCHIVED_LABEL) == "true"
     return SandboxView(
         name=sandbox.metadata.name,
-        provider=Provider(labels[PROVIDER_LABEL]),
         archived=archived,
         state=_state(sandbox, pod, archived=archived),
         created_at=sandbox.metadata.creation_timestamp,

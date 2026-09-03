@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Annotated
 from uuid import UUID
 
@@ -12,7 +13,7 @@ from google.protobuf.json_format import MessageToDict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from x.agentplane.app import bridge as runner_bridge
-from x.agentplane.app.inventory import NewSandbox, Provider, SandboxInventory, SandboxNotFoundError, SandboxView
+from x.agentplane.app.inventory import NewSandbox, SandboxInventory, SandboxNotFoundError, SandboxView
 from x.agentplane.app.trajectory import ThreadNotFoundError, ThreadView, TrajectoryStore
 from x.agentplane.runner.client import RunnerError
 
@@ -21,8 +22,16 @@ from x.agentplane.runner.client import RunnerError
 
 router = APIRouter(prefix="/sandboxes", tags=["sandboxes"])
 
-# The models each harness may be opened with, by provider: the app's configuration, offered to the
-# session form. A thread carries its model; a sandbox is a Pod and carries none.
+
+class Provider(StrEnum):
+    """The harness a session runs; the runner image carries both, so a sandbox is not tied to one."""
+
+    CLAUDE = "claude"
+    CODEX = "codex"
+
+
+# The models each harness may be opened with: the app's configuration, offered to the session form.
+# A thread carries its harness and model; a sandbox is a Pod and carries neither.
 ModelCatalog = dict[Provider, list[str]]
 
 

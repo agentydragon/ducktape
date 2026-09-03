@@ -12,7 +12,7 @@ from typing import Any
 
 from kubernetes_asyncio import client as k8s_client
 
-from x.agentplane.app.inventory import MANAGED_LABEL, PROVIDER_LABEL, Provider
+from x.agentplane.app.inventory import MANAGED_LABEL
 
 NAMESPACE = "agentplane-test"
 TEMPLATE = "agentplane-test-runner"
@@ -130,7 +130,6 @@ class FakeCoreV1Api:
 def sandbox(
     name: str,
     *,
-    provider: Provider = Provider.CLAUDE,
     labels: dict[str, str] | None = None,
     operating_mode: str = "Running",
     status: dict[str, Any] | None = None,
@@ -138,7 +137,7 @@ def sandbox(
     return {
         "metadata": {
             "name": name,
-            "labels": {MANAGED_LABEL: "true", PROVIDER_LABEL: provider, **(labels or {})},
+            "labels": {MANAGED_LABEL: "true", **(labels or {})},
             "creationTimestamp": "2026-09-01T12:00:00Z",
         },
         "spec": {"podTemplate": POD_TEMPLATE, "operatingMode": operating_mode},

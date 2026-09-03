@@ -10,9 +10,9 @@ import pytest
 import pytest_bazel
 from fastapi.testclient import TestClient
 
-from x.agentplane.app.api import create_app
+from x.agentplane.app.api import Provider, create_app
 from x.agentplane.app.bridge import RunnerBridge
-from x.agentplane.app.inventory import ARCHIVED_LABEL, Provider, SandboxInventory
+from x.agentplane.app.inventory import ARCHIVED_LABEL, SandboxInventory
 from x.agentplane.app.testing.kubernetes import FakeCoreV1Api, FakeCustomObjectsApi, pod, sandbox
 from x.agentplane.app.trajectory import TrajectoryStore
 from x.agentplane.runner import protocol_pb2 as pb
@@ -59,35 +59,35 @@ def test_list_reports_state_and_hides_archived_by_default(client: TestClient) ->
 def test_get_returns_the_row_or_404(client: TestClient) -> None:
     row = client.get("/sandboxes/live").json()
 
-    assert (row["state"], row["pod"]["ip"], row["provider"]) == ("running", "10.0.0.7", "claude")
+    assert (row["state"], row["pod"]["ip"]) == ("running", "10.0.0.7")
     assert row["pod"]["containers"][0]["state"] == "running"
     assert client.get("/sandboxes/nope").status_code == 404
 
 
 def test_create_returns_the_new_row(client: TestClient, custom_objects: FakeCustomObjectsApi) -> None:
-    response = client.post("/sandboxes", json={"slug": "demo", "provider": "codex"})
+    response = client.post("/sandboxes", json={"slug": "demo"})
 
     assert response.status_code == 201
     row = response.json()
     assert row["name"].startswith("demo-")
-    assert (row["state"], row["provider"]) == ("waiting_for_pod", "codex")
+    assert row["state"] == "waiting_for_pod"
     assert ("sandboxes", row["name"]) in custom_objects.objects
 
 
 @pytest.mark.parametrize(
     "body",
     [
-        {"slug": "demo", "provider": "gemini"},
-        {"slug": "Demo", "provider": "claude"},
-        {"slug": "-demo", "provider": "claude"},
-        {"slug": "a" * 58, "provider": "claude"},
-        {"slug": "demo", "provider": "claude", "model": "cheap"},
+        {"slug": "Demo"},
+        {"slug": "-demo"},
+        {"slug": "a" * 58},
+        {"slug": "demo", "provider": "claude"},
+        {"slug": "demo", "model": "cheap"},
     ],
     ids=[
-        "unknown-provider",
         "uppercase-slug",
         "leading-dash-slug",
         "slug-too-long-for-a-dns-label",
+        "provider-on-sandbox",
         "model-on-sandbox",
     ],
 )

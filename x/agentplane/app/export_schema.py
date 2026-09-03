@@ -10,9 +10,9 @@ from __future__ import annotations
 import json
 from typing import Any, cast
 
-from x.agentplane.app.api import create_app
+from x.agentplane.app.api import Provider, create_app
 from x.agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
-from x.agentplane.app.inventory import Provider, ProvisioningState, SandboxInventory
+from x.agentplane.app.inventory import ProvisioningState, SandboxInventory
 from x.agentplane.app.trajectory import TrajectoryStore
 
 

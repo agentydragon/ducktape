@@ -4,7 +4,6 @@ import {
   Button,
   Group,
   Menu,
-  Select,
   Stack,
   Switch,
   Table,
@@ -70,7 +69,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const [rows, setRows] = useState<SandboxView[]>([]);
   const [includeArchived, setIncludeArchived] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState<NewSandbox>({ slug: "", provider: "claude" });
+  const [form, setForm] = useState<NewSandbox>({ slug: "" });
 
   const refresh = useCallback(async () => {
     const { data, error: failure } = await api.GET("/sandboxes", {
@@ -117,13 +116,6 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           onChange={(e) => setForm({ ...form, slug: e.currentTarget.value })}
           style={{ flex: "1 1 10rem" }}
         />
-        <Select
-          label="Provider"
-          data={["claude", "codex"]}
-          value={form.provider}
-          onChange={(value) => value && setForm({ ...form, provider: value as NewSandbox["provider"] })}
-          style={{ flex: "1 1 8rem" }}
-        />
         <Button onClick={() => void create()} disabled={!form.slug}>
           New sandbox
         </Button>
@@ -140,7 +132,6 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         <Table.Thead>
           <Table.Tr>
             <Table.Th>Name</Table.Th>
-            <Table.Th visibleFrom="sm">Provider</Table.Th>
             <Table.Th visibleFrom="sm">State</Table.Th>
             <Table.Th visibleFrom="sm">Node</Table.Th>
             <Table.Th />
@@ -160,11 +151,10 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                   <Stack gap="xs" hiddenFrom="sm">
                     {state}
                     <Text size="xs" c="dimmed">
-                      {row.provider} · {node}
+                      {node}
                     </Text>
                   </Stack>
                 </Table.Td>
-                <Table.Td visibleFrom="sm">{row.provider}</Table.Td>
                 <Table.Td visibleFrom="sm">{state}</Table.Td>
                 <Table.Td visibleFrom="sm">{node}</Table.Td>
                 <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>

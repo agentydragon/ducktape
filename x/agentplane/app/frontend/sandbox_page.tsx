@@ -14,7 +14,10 @@ import {
 } from "./client";
 import { HarnessState, Provider, SessionSpecSchema, type SessionSummary } from "./protocol_pb";
 
-const PROVIDER_ENUM: Record<string, Provider> = { claude: Provider.CLAUDE, codex: Provider.CODEX };
+// The harness a session runs, as the API's catalog names it and as the protocol's enum spells it.
+type Harness = "claude" | "codex";
+const HARNESSES: Harness[] = ["claude", "codex"];
+const PROVIDER_ENUM: Record<Harness, Provider> = { claude: Provider.CLAUDE, codex: Provider.CODEX };
 
 function ConditionsTable({ conditions }: { conditions: Condition[] }): JSX.Element {
   return (
@@ -114,6 +117,7 @@ export function SandboxPage({
   const [sessionId, setSessionId] = useState(() => `s-${Date.now().toString(36)}`);
   const [effort, setEffort] = useState("low");
   // The app's catalog of what this sandbox's harness may run; the thread carries the choice.
+  const [harness, setHarness] = useState<Harness>("claude");
   const [models, setModels] = useState<string[]>([]);
   const [model, setModel] = useState<string | null>(null);
 
@@ -146,20 +150,18 @@ export function SandboxPage({
     );
   }, [name]);
 
-  const provider = sandbox?.provider;
   useEffect(() => {
-    if (!provider) return;
     void (async () => {
       const { data, error: failure } = await api.GET("/models");
       if (failure) {
         setError(displayableError(failure));
         return;
       }
-      const offered = data[provider];
+      const offered = data[harness];
       setModels(offered);
       setModel((current) => (current && offered.includes(current) ? current : (offered[0] ?? null)));
     })();
-  }, [provider]);
+  }, [harness]);
 
   async function createSession(): Promise<void> {
     if (!sandbox || !model) return;
@@ -168,7 +170,7 @@ export function SandboxPage({
         name,
         sessionId,
         create(SessionSpecSchema, {
-          provider: PROVIDER_ENUM[sandbox.provider],
+          provider: PROVIDER_ENUM[harness],
           cwd: `/state/workspaces/${sessionId}`,
           model,
           reasoningEffort: effort,
@@ -196,6 +198,7 @@ export function SandboxPage({
       {sandbox && <StatusView sandbox={sandbox} />}
       <Group align="flex-end">
         <TextInput label="Session id" value={sessionId} onChange={(e) => setSessionId(e.currentTarget.value)} />
+        <Select label="Harness" data={HARNESSES} value={harness} onChange={(v) => v && setHarness(v as Harness)} />
         <Select label="Model" data={models} value={model} onChange={setModel} />
         <Select
           label="Reasoning effort"
