@@ -1,18 +1,11 @@
 /**
  * Folds the runner's events into what the session view renders. The events are the runner
  * protocol's own (`Event` from protocol.proto); this is a projection for one screen, not a second
- * vocabulary. Every event stays attached to the row it fed — an item, an input, a turn, or the
- * loose pool — so the raw frames can be shown beside what they produced instead of as a separate
- * list.
+ * vocabulary. It keeps every event and the sequence each item, input and turn began at, so the raw
+ * view can lay the whole session out as one stream in sequence order with the items in their
+ * places.
  */
 import { ItemKind, TurnStatus, type Event } from "./protocol_pb";
-
-/**
- * The events one row was built from: the derived events themselves, and the native frames they
- * name in `source_sequences`. Every event the session has seen sits in exactly one row's list, so
- * showing them all hides nothing.
- */
-export type Frames = Event[];
 
 export interface Item {
   id: string;
@@ -24,7 +17,7 @@ export interface Item {
   output: string;
   completed: boolean;
   succeeded: boolean | null;
-  frames: Frames;
+  firstSequence: bigint;
 }
 
 export interface Turn {
@@ -32,7 +25,7 @@ export interface Turn {
   status: TurnStatus | null;
   error: string;
   itemIds: string[];
-  frames: Frames;
+  firstSequence: bigint;
 }
 
 export interface InputState {
@@ -43,7 +36,7 @@ export interface InputState {
   text: string;
   /** The turn the harness took it into, once accepted. */
   turnId: string | null;
-  frames: Frames;
+  firstSequence: bigint;
 }
 
 export interface SessionState {
@@ -52,11 +45,8 @@ export interface SessionState {
   items: Record<string, Item>;
   inputs: InputState[];
   stderr: string[];
-  /**
-   * Events no row owns: harness lifecycle, stderr, and native frames no derived event has named.
-   * A native frame lands here when it arrives and leaves for a row once one cites it.
-   */
-  looseFrames: Frames;
+  /** Every event the session has produced: what the raw view renders, in `timeline` order. */
+  events: Event[];
   /** The wire's decimal string: a uint64 is not safely a JS number. */
   lastSequence: string;
 }
@@ -67,11 +57,36 @@ export const EMPTY: SessionState = {
   items: {},
   inputs: [],
   stderr: [],
-  looseFrames: [],
+  events: [],
   lastSequence: "0",
 };
 
-function item(state: SessionState, id: string): Item {
+/** What a sequence brought into being, if it brought anything: rendered above that event's frame. */
+export type Row = { kind: "turn"; turn: Turn } | { kind: "input"; input: InputState } | { kind: "item"; item: Item };
+
+export interface TimelineStep {
+  event: Event;
+  row: Row | null;
+}
+
+/**
+ * The session as one stream in sequence order: every event once, at its own position, carrying the
+ * row it started. A row's card therefore sits where the log first mentions it, with the frames that
+ * went on filling it following at their own positions — an item's card shows the text it has
+ * accumulated by now, which is ahead of the frames below it.
+ */
+export function timeline(state: SessionState): TimelineStep[] {
+  // One event starts at most one row, so a sequence names at most one.
+  const rows = new Map<bigint, Row>();
+  for (const turn of state.turns) rows.set(turn.firstSequence, { kind: "turn", turn });
+  for (const input of state.inputs) rows.set(input.firstSequence, { kind: "input", input });
+  for (const item of Object.values(state.items)) rows.set(item.firstSequence, { kind: "item", item });
+  return [...state.events]
+    .sort((left, right) => (left.sequence === right.sequence ? 0 : left.sequence < right.sequence ? -1 : 1))
+    .map((event) => ({ event, row: rows.get(event.sequence) ?? null }));
+}
+
+function item(state: SessionState, id: string, firstSequence: bigint): Item {
   return (
     state.items[id] ?? {
       id,
@@ -82,111 +97,99 @@ function item(state: SessionState, id: string): Item {
       output: "",
       completed: false,
       succeeded: null,
-      frames: [],
+      firstSequence,
     }
   );
 }
 
-function withItem(state: SessionState, frames: Frames, next: Item): SessionState {
-  return { ...state, items: { ...state.items, [next.id]: { ...next, frames: [...next.frames, ...frames] } } };
+function withItem(state: SessionState, next: Item): SessionState {
+  return { ...state, items: { ...state.items, [next.id]: next } };
 }
 
-function withInput(state: SessionState, frames: Frames, id: string, update: Partial<InputState>): SessionState {
+function withInput(state: SessionState, id: string, firstSequence: bigint, update: Partial<InputState>): SessionState {
   const existing = state.inputs.find((input) => input.id === id);
   const inputs = existing
-    ? state.inputs.map((input) =>
-        input.id === id ? { ...input, ...update, frames: [...input.frames, ...frames] } : input
-      )
-    : [...state.inputs, { id, state: "submitted" as const, detail: "", text: "", turnId: null, ...update, frames }];
+    ? state.inputs.map((input) => (input.id === id ? { ...input, ...update } : input))
+    : [
+        ...state.inputs,
+        { id, state: "submitted" as const, detail: "", text: "", turnId: null, firstSequence, ...update },
+      ];
   return { ...state, inputs };
 }
 
-function loose(state: SessionState, frames: Frames): SessionState {
-  return { ...state, looseFrames: [...state.looseFrames, ...frames] };
-}
-
 export function reduce(previous: SessionState, event: Event): SessionState {
-  const cited = (frame: Event): boolean => event.sourceSequences.includes(frame.sequence);
-  // What the row this event feeds shows: the native frames it came from, which leave the loose
-  // pool, then the event itself. The runner cites only the frame it is translating, so a row's
-  // frames stay in sequence order.
-  const frames = [...previous.looseFrames.filter(cited), event];
   const state: SessionState = {
     ...previous,
     lastSequence: String(event.sequence),
-    looseFrames: previous.looseFrames.filter((frame) => !cited(frame)),
+    events: [...previous.events, event],
   };
   const observation = event.observation;
   switch (observation.case) {
     case "harnessStarted":
-      return { ...loose(state, frames), harness: "running" };
+      return { ...state, harness: "running" };
     case "harnessExited":
-      return { ...loose(state, frames), harness: "stopped" };
+      return { ...state, harness: "stopped" };
     case "harnessLost":
-      return { ...loose(state, frames), harness: "lost" };
+      return { ...state, harness: "lost" };
     case "harnessStderr":
-      return { ...loose(state, frames), stderr: [...state.stderr, observation.value.text] };
+      return { ...state, stderr: [...state.stderr, observation.value.text] };
     case "inputSubmitted":
-      return withInput(state, frames, observation.value.inputId, { state: "submitted", text: observation.value.text });
+      return withInput(state, observation.value.inputId, event.sequence, {
+        state: "submitted",
+        text: observation.value.text,
+      });
     case "inputAccepted":
-      return withInput(state, frames, observation.value.inputId, {
+      return withInput(state, observation.value.inputId, event.sequence, {
         state: "accepted",
         turnId: observation.value.turnId,
       });
     case "inputRejected":
-      return withInput(state, frames, observation.value.inputId, {
+      return withInput(state, observation.value.inputId, event.sequence, {
         state: "rejected",
         detail: observation.value.reason,
       });
     case "inputUncertain":
-      return withInput(state, frames, observation.value.inputId, { state: "uncertain" });
+      return withInput(state, observation.value.inputId, event.sequence, { state: "uncertain" });
     case "turnStarted":
       return {
         ...state,
-        turns: [...state.turns, { id: observation.value.turnId, status: null, error: "", itemIds: [], frames }],
+        turns: [
+          ...state.turns,
+          { id: observation.value.turnId, status: null, error: "", itemIds: [], firstSequence: event.sequence },
+        ],
       };
     case "turnCompleted": {
       const { turnId, status, error } = observation.value;
-      // A turn the projection never saw start would drop its frames; the pool keeps them instead.
-      if (!state.turns.some((turn) => turn.id === turnId)) return loose(state, frames);
-      return {
-        ...state,
-        turns: state.turns.map((turn) =>
-          turn.id === turnId ? { ...turn, status, error, frames: [...turn.frames, ...frames] } : turn
-        ),
-      };
+      return { ...state, turns: state.turns.map((turn) => (turn.id === turnId ? { ...turn, status, error } : turn)) };
     }
     case "itemStarted": {
       const { itemId, kind, toolName } = observation.value;
-      const started = { ...item(state, itemId), kind, toolName };
+      const started = { ...item(state, itemId, event.sequence), kind, toolName };
       const turns = state.turns.map((turn, index) =>
         index === state.turns.length - 1 ? { ...turn, itemIds: [...turn.itemIds, started.id] } : turn
       );
-      return withItem({ ...state, turns }, frames, started);
+      return { ...withItem(state, started), turns };
     }
     case "textDelta": {
-      const current = item(state, observation.value.itemId);
-      return withItem(state, frames, { ...current, text: current.text + observation.value.text });
+      const current = item(state, observation.value.itemId, event.sequence);
+      return withItem(state, { ...current, text: current.text + observation.value.text });
     }
     case "toolArgumentsDelta": {
-      const current = item(state, observation.value.itemId);
-      return withItem(state, frames, {
-        ...current,
-        argumentsJson: current.argumentsJson + observation.value.partialJson,
-      });
+      const current = item(state, observation.value.itemId, event.sequence);
+      return withItem(state, { ...current, argumentsJson: current.argumentsJson + observation.value.partialJson });
     }
     case "toolArguments": {
-      const current = item(state, observation.value.itemId);
-      return withItem(state, frames, { ...current, argumentsJson: observation.value.argumentsJson });
+      const current = item(state, observation.value.itemId, event.sequence);
+      return withItem(state, { ...current, argumentsJson: observation.value.argumentsJson });
     }
     case "toolOutputDelta": {
-      const current = item(state, observation.value.itemId);
-      return withItem(state, frames, { ...current, output: current.output + observation.value.text });
+      const current = item(state, observation.value.itemId, event.sequence);
+      return withItem(state, { ...current, output: current.output + observation.value.text });
     }
     case "itemCompleted": {
       const { itemId, outcome } = observation.value;
-      const current = item(state, itemId);
-      return withItem(state, frames, {
+      const current = item(state, itemId, event.sequence);
+      return withItem(state, {
         ...current,
         completed: true,
         text: outcome.case === "text" ? outcome.value : current.text,
@@ -194,9 +197,9 @@ export function reduce(previous: SessionState, event: Event): SessionState {
         succeeded: outcome.case === "tool" ? outcome.value.succeeded : current.succeeded,
       });
     }
-    // A native frame no derived event has named yet, and any observation this projection does not
-    // model: the pool holds them, so the raw view still shows them.
+    // A Native frame, and any observation this projection does not model: it renders in the raw
+    // stream at its own position like every other event, and changes nothing else.
     default:
-      return loose(state, frames);
+      return state;
   }
 }
