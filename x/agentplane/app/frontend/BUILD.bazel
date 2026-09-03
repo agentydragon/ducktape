@@ -1,5 +1,5 @@
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
-load("@aspect_rules_js//js:defs.bzl", "js_test")
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 load("//devinfra/js:openapi.bzl", "js_openapi_schema")
@@ -151,6 +151,34 @@ ts_library(
     ],
 )
 
+# frame.tsx imports this for the bundler; esbuild resolves it beside the emitted frame.js and folds
+# it into the SPA's stylesheet, so it travels as a dep of the library that imports it.
+js_library(
+    name = "frame_css",
+    srcs = ["frame.css"],
+)
+
+ts_library(
+    name = "frame",
+    srcs = [
+        "frame.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":frame_css",
+        ":protocol_pb",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/dompurify",
+        "//:node_modules/@types/react",
+        "//:node_modules/dompurify",
+        "//:node_modules/highlight.js",
+        "//:node_modules/react",
+    ],
+)
+
 ts_library(
     name = "session",
     srcs = [
@@ -163,6 +191,7 @@ ts_library(
     deps = [
         ":client",
         ":events",
+        ":frame",
         ":markdown",
         ":protocol_pb",
         "//:node_modules/@bufbuild/protobuf",

@@ -1,0 +1,45 @@
+/* The raw stream's own styling, bundled by esbuild through frame.tsx's import of this file: token
+   colours for the highlighted JSON, and the wrapping that keeps a frame readable without scrolling
+   it sideways. Mantine's palette variables, so the hues match the rest of the app; the dark set
+   follows the scheme attribute Mantine puts on the document. */
+
+.agentplane-frame {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agentplane-frame-sequence {
+  color: var(--mantine-color-dimmed);
+}
+
+.agentplane-frame .hljs-attr {
+  color: var(--mantine-color-blue-8);
+}
+
+.agentplane-frame .hljs-string {
+  color: var(--mantine-color-green-9);
+}
+
+.agentplane-frame .hljs-number {
+  color: var(--mantine-color-orange-9);
+}
+
+.agentplane-frame .hljs-literal {
+  color: var(--mantine-color-grape-8);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-frame .hljs-attr {
+  color: var(--mantine-color-blue-3);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-frame .hljs-string {
+  color: var(--mantine-color-green-3);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-frame .hljs-number {
+  color: var(--mantine-color-orange-3);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-frame .hljs-literal {
+  color: var(--mantine-color-grape-3);
+}
