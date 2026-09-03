@@ -3,7 +3,7 @@
 Status: **north star, written down from Rai's description (2026-09-03).** These are the
 experiences the stretch nodes in [`task_dag.md`](task_dag.md) exist for. Each story names what
 already stands under it and what is still missing; a story leaves this file when the app delivers
-it. The unifying concept across all three is the **trust tier** of an agent identity: which
+it. The unifying concept across all of them is the **trust tier** of an agent identity: which
 credentials it may hold, which data it may receive, which transcripts it may read, and who judges
 its channel.
 
@@ -105,6 +105,55 @@ Missing:
 - **Cross-transcript reads for the orchestrator**, tier-scoped, so Haku can read what a specialist
   did without the specialist being able to read Haku.
 
+## 4. Haku itself lives here
+
+Haku is not a client of Agentplane: it is an agent running in an Agentplane harness, long-lived,
+managing Rai's life and doing whatever is useful. Its definition and its memories live in a git
+repository, as the current `haku-state` does (the root cards `AGENTS.md`, `SOUL.md`, `MEMORY.md`
+and the hubs; [`haku/README.md`](../../../haku/README.md)), so the sandbox is disposable and
+Haku is not: a new sandbox clones the repository and resumes.
+
+Standing under it:
+
+- A sandbox whose harness resumes across process restarts and suspend/resume (`I4`), and whose
+  trajectory outlives it (`T1`).
+- `haku-state` on Forgejo with tokens minted by the GitOps controller
+  ([`tf/gitops/haku-state`](../../../tf/gitops/haku-state)), which is exactly the credential the
+  egress proxy substitutes for Haku's identity.
+- The tier model of story 2: Haku is the private, trusted tier; everything it authors inherits
+  that.
+
+Missing:
+
+- **A long-lived session as a first-class thing**: a thread that is never archived, survives
+  harness compaction and pin refreshes, and is woken by events rather than only by Rai.
+- **Memory writes as git commits** from inside the sandbox, through the proxy, with the same
+  audit as any other egress.
+
+## 5. Agentic UI: Haku authors its own affordances
+
+Haku manages a dashboard app Rai interacts with. Some or all interactions wake Haku and let it
+act: Rai presses "No, I don't care about this", and Haku dismisses the card and rewrites the
+paragraph that led to it. One agent writes the interaction surface it is then driven through.
+
+Standing under it:
+
+- The decision that external events arrive as thread inputs (`X`) and the batcher and envelope
+  from [`async_approvals.md`](async_approvals.md): a UI event is one more source, delivered as a
+  `<agentplane-event>` in a user-message envelope, batched with whatever else arrived.
+- The integration app already hosts pages and streams a session; a Haku-authored page is
+  content it serves, not a second app.
+
+Missing:
+
+- **A deploy surface for Haku-authored UI**: Haku commits a page (or a bundle) and Agentplane
+  serves it under Rai's login, versioned with the commit that produced it.
+- **The event pipe**: interactions on that page post to Agentplane with the page's identity and
+  become inputs on Haku's thread, wake-up included; which interactions wake Haku is Haku's own
+  declaration in the page.
+- **Rendering state Haku owns**: the cards and paragraphs are data Haku edits, so "dismiss and
+  rewrite" is a write to that state followed by the page re-rendering, not a redeploy.
+
 ## What this fixes about the order of work
 
 - Story 1 is next after the egress proxy lands: the proxy is where a denied call turns into an
@@ -112,12 +161,14 @@ Missing:
 - Story 2 needs the proxy's per-identity credential sets and the trajectory store, both in flight,
   and adds the delegation object, tiers, and the judge.
 - Story 3 is story 2 with the orchestrator in the driver's seat and the fleet view on top.
+- Story 4 is the long-lived thread and memory-in-git on top of `I4` and `T1`; story 5 is the
+  event pipe and the deploy surface on top of story 4 and the approvals delivery path.
 
 ## Open questions
 
 - Whether the judge is a classifier, a judge agent, or both in series, and what "sensitive"
   means as data classes the judge is told about rather than left to infer.
-- Whether Haku reaches the fleet as a client of the Agentplane API or whether Haku itself runs in
-  an Agentplane sandbox; the stories work either way, the identity model does not need to know.
+- What a Haku-authored page may do: static content with declared events, or code Agentplane
+  runs; the former keeps the tier boundary trivial.
 - Which notification channel carries the ask cards; the existing Haku console approvals are the
   fallback until one is chosen.

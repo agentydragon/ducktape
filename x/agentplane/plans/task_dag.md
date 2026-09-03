@@ -19,7 +19,8 @@ credentialless toward external systems; real upstream credentials are a later ga
 not: what an agent did, and why, outlives the sandbox it ran in, under a name, and is searchable
 later. Beyond this slice, the experiences the stretch nodes exist for are the three stories in
 [`user_stories.md`](user_stories.md): asks Rai decides, a trusted orchestrator delegating
-public-only work to an untrusted fleet under a judge, and an orchestrator running specialists.
+public-only work to an untrusted fleet under a judge, an orchestrator running specialists, Haku itself as a long-lived agent here, and a UI Haku
+authors and is driven through.
 
 ## Current status
 
@@ -97,6 +98,8 @@ flowchart TB
 
     N["Story 2: trusted orchestrator, untrusted fleet<br/>tiers, delegation object, channel judge<br/>user_stories.md"]:::future
     O["Story 3: an orchestrator with specialists<br/>fleet view, wake-ups, tier-scoped reads"]:::future
+    HK["Story 4: Haku lives here<br/>long-lived thread, memory in git"]:::future
+    UI["Story 5: agentic UI<br/>Haku-authored pages, events as inputs"]:::future
     X["Decided<br/>approval decisions and notifications arrive as thread inputs"]:::completed
     Y["Story 1: ask me, I decide<br/>asks, delivery, decisions as inputs<br/>async_approvals.md, user_stories.md"]:::future
     Z["Rai decision<br/>what explicit Haku Console integration is needed?"]:::decision
@@ -143,6 +146,10 @@ flowchart TB
     T1 --> N
     Y --> N
     N --> O
+    I4 --> HK
+    T1 --> HK
+    HK --> UI
+    Y --> UI
     T3 --> O
     F0 --> X --> Y
     J --> Y
