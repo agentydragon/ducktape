@@ -14,6 +14,7 @@ import {
   type SandboxView,
 } from "./client";
 import { EgressSection } from "./egress";
+import { ProfileBadge, useProfiles } from "./profiles";
 import { HarnessState, Provider, SessionSpecSchema, type SessionSummary } from "./protocol_pb";
 
 // The harness a session runs, as the API's catalog names it and as the protocol's enum spells it.
@@ -128,6 +129,7 @@ export function SandboxPage({
   // Thread names by session id, read once: the store's copy, which outlives the runner's list.
   const [names, setNames] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  const profiles = useProfiles(setError);
   const [sessionId, setSessionId] = useState(() => `s-${Date.now().toString(36)}`);
   const [effort, setEffort] = useState("low");
   // The app's catalog of what this sandbox's harness may run; the thread carries the choice.
@@ -204,7 +206,7 @@ export function SandboxPage({
         </Button>
         <Title order={2}>{name}</Title>
         {sandbox && <Badge>{sandbox.state}</Badge>}
-        {sandbox?.profile && <Badge variant="light">profile: {sandbox.profile}</Badge>}
+        {sandbox && <ProfileBadge profile={sandbox.profile ?? null} profiles={profiles} />}
       </Group>
       {error && <Text c="red">{error}</Text>}
       {sandbox && sandbox.state !== "running" && (

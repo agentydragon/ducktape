@@ -77,7 +77,7 @@ flowchart TB
         C6["C6 Session view legibility<br/>markdown, the input's own text, folded reasoning,<br/>Enter sends with no button, raw frames in place"]:::ready
         C7["C7 Lifecycle controls on the sandbox page<br/>suspend there, delete once suspended"]:::ready
         C8["C8 Live push for every view<br/>the server says what changed, no page polls"]:::ready
-        C9["C9 The profile a sandbox runs under<br/>visible and pickable, not one badge"]:::ready
+        C9["C9 The profile a sandbox runs under<br/>visible and pickable, not one badge"]:::completed
         C10["C10 Egress actions that say what they do<br/>approve / deny / revoke, and Flux ownership"]:::ready
     end
 
@@ -180,7 +180,7 @@ milestone;
 orange diamonds are unresolved decisions requiring Rai's product or design input; gray is
 conditional or stretch work.
 
-Ready now: **J** and **C6**-**C10**, which share nothing and can run in parallel. **T2** and **T3** are
+Ready now: **J**, **C6**-**C8** and **C10**, which share nothing and can run in parallel. **T2** and **T3** are
 blocked on nothing in code; they start when the persisted history has a first reader who needs a
 name or a search.
 
@@ -248,14 +248,11 @@ ones still open.
   ([`../egress/informer.py`](../egress/informer.py)) is the shape to reuse rather than reinvent —
   same list-and-watch, same freshness question, and its `/healthz` already answers "has this
   stopped moving", which a UI feeding off a watch will need too.
-- **C9 the profile a sandbox runs under:** a profile decides what the sandbox may reach — a
-  Flux-managed `EgressBinding` selects on the label it stamps — and it is nearly invisible. It
-  appears as one badge on the sandbox page, and at creation as a free-text box whose help text
-  ("a label the profile bindings select on") assumes you already know which profiles exist. The
-  list page does not show it although the API already returns it on every row, nothing can be
-  filtered by it, and a typo silently yields a sandbox that matches no binding. Make it a pick
-  from the profiles that actually exist, show it wherever a sandbox is shown, and say what the one
-  you picked grants.
+- **C9 the profile a sandbox runs under:** the profiles that exist are the label values the
+  namespace's `EgressBinding` selectors name, which `/egress/profiles` reports with the bindings
+  behind each; the create form picks from those and says what the pick grants, a profile no binding
+  selects is refused instead of stamped, and every place a sandbox is shown carries its profile —
+  flagged where no binding selects it any more.
 - **C10 egress actions that say what they do:** the binding row offers Approve, Deny, and Revoke,
   and nothing on screen distinguishes the last two — both read as "stop this access". They are not
   the same: Deny sets `approval.state` and keeps the binding, so it is reversible and leaves the

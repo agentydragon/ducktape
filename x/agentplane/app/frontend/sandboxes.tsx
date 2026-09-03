@@ -20,6 +20,7 @@ import IconPlayerPlay from "@tabler/icons-react/dist/esm/icons/IconPlayerPlay.mj
 import { useCallback, useEffect, useState } from "react";
 
 import { api, displayableError, type Condition, type NewSandbox, type SandboxView } from "./client";
+import { ProfileBadge, ProfileSelect, useProfiles } from "./profiles";
 
 const EMPTY_FORM: NewSandbox = { slug: "", profile: null, policies: [] };
 
@@ -75,6 +76,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const [form, setForm] = useState<NewSandbox>(EMPTY_FORM);
   // The namespace's individual policies; ticking some grants them on top of the profile's binding.
   const [policies, setPolicies] = useState<string[]>([]);
+  const profiles = useProfiles(setError);
 
   const refresh = useCallback(async () => {
     const { data, error: failure } = await api.GET("/sandboxes", {
@@ -112,9 +114,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   }
 
   async function create(): Promise<void> {
-    const { error: failure } = await api.POST("/sandboxes", {
-      body: { ...form, profile: form.profile || null },
-    });
+    const { error: failure } = await api.POST("/sandboxes", { body: form });
     if (failure) setError(displayableError(failure));
     else setForm(EMPTY_FORM);
     await refresh();
@@ -131,12 +131,10 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           onChange={(e) => setForm({ ...form, slug: e.currentTarget.value })}
           style={{ flex: "1 1 10rem" }}
         />
-        <TextInput
-          label="Profile"
-          description="A label the profile bindings select on"
-          value={form.profile ?? ""}
-          onChange={(e) => setForm({ ...form, profile: e.currentTarget.value })}
-          style={{ flex: "1 1 8rem" }}
+        <ProfileSelect
+          profiles={profiles}
+          value={form.profile ?? null}
+          onChange={(profile) => setForm({ ...form, profile })}
         />
         <MultiSelect
           label="Policies"
@@ -163,6 +161,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           <Table.Tr>
             <Table.Th>Name</Table.Th>
             <Table.Th visibleFrom="sm">State</Table.Th>
+            <Table.Th visibleFrom="sm">Profile</Table.Th>
             <Table.Th visibleFrom="sm">Node</Table.Th>
             <Table.Th />
           </Table.Tr>
@@ -171,6 +170,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           {rows.map((row) => {
             const node = `${row.node_name ?? "—"} ${row.pod?.ip ? `(${row.pod.ip})` : ""}`;
             const state = <StateBadge row={row} />;
+            const profile = <ProfileBadge profile={row.profile ?? null} profiles={profiles} />;
             return (
               <Table.Tr key={row.name}>
                 <Table.Td>
@@ -179,13 +179,17 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                   </Button>
                   {/* On a phone the other columns fold under the name, leaving room for the actions. */}
                   <Stack gap="xs" hiddenFrom="sm">
-                    {state}
+                    <Group gap="xs">
+                      {state}
+                      {profile}
+                    </Group>
                     <Text size="xs" c="dimmed">
                       {node}
                     </Text>
                   </Stack>
                 </Table.Td>
                 <Table.Td visibleFrom="sm">{state}</Table.Td>
+                <Table.Td visibleFrom="sm">{profile}</Table.Td>
                 <Table.Td visibleFrom="sm">{node}</Table.Td>
                 <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
                   <Group gap="xs" wrap="nowrap" justify="flex-end">

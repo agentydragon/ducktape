@@ -67,6 +67,12 @@ def client(
         approval=APPROVED,
         active=("True", "Resolved", ""),
     )
+    custom_objects.objects[("egressbindings", "coders")] = egress_binding(
+        "coders",
+        subjects=[{"sandboxSelector": {"matchLabels": {PROFILE_LABEL: "coder"}}}],
+        policies=["pypi"],
+        approval=APPROVED,
+    )
     custom_objects.objects[("egressbindings", "live-asks")] = egress_binding(
         "live-asks",
         subjects=[{"sandbox": {"name": "live"}}],
@@ -124,9 +130,26 @@ def test_create_with_a_profile_and_picked_policies_stamps_the_label_and_grants_o
     assert picked["metadata"]["labels"] == {GRANTED_BY_LABEL: AGENT.label}
     assert picked["metadata"]["ownerReferences"][0]["uid"] == created["metadata"]["uid"]
     assert picked["spec"]["policies"] == ["pypi"]
-    # The new sandbox sees the seed's selector binding and its own pick.
+    # The new sandbox sees the seed's selector binding, the one its profile selects, and its own pick.
     names = [binding["name"] for binding in client.get(f"/sandboxes/{row['name']}/egress").json()]
-    assert names == ["all-managed", f"{row['name']}-picked"]
+    assert names == ["all-managed", "coders", f"{row['name']}-picked"]
+
+
+def test_create_refuses_a_profile_no_binding_selects(client: TestClient, custom_objects: FakeCustomObjectsApi) -> None:
+    """The typo case: stamping it would leave the sandbox matching nothing, and saying so nowhere."""
+    response = client.post("/sandboxes", json={"slug": "demo", "profile": "codr"})
+
+    assert response.status_code == 422
+    assert "coder" in response.json()["detail"]
+    assert all(kind != "sandboxes" or name in {"live", "fresh", "shelved"} for kind, name in custom_objects.objects)
+
+
+def test_profiles_lists_what_a_sandbox_can_be_launched_with(client: TestClient) -> None:
+    """One entry per profile some binding selects on, carrying the bindings that give it meaning."""
+    profiles = client.get("/egress/profiles").json()
+
+    assert [(p["name"], [b["name"] for b in p["bindings"]]) for p in profiles] == [("coder", ["coders"])]
+    assert [policy["name"] for policy in profiles[0]["bindings"][0]["policies"]] == ["pypi"]
 
 
 @pytest.mark.parametrize(
@@ -352,6 +375,7 @@ def test_openapi_schema_names_every_operation(client: TestClient) -> None:
         "/sandboxes/{name}/egress",
         "/sandboxes/{name}/egress/decisions",
         "/egress/policies",
+        "/egress/profiles",
         "/egress/bindings/{name}",
         "/egress/bindings/{name}/approve",
         "/egress/bindings/{name}/deny",

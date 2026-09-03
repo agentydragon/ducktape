@@ -12,7 +12,7 @@ import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";
 
 import App from "../app";
-import type { BindingView, Decision, PolicyView, SandboxView, ThreadView } from "../client";
+import type { BindingView, Decision, PolicyView, ProfileView, SandboxView, ThreadView } from "../client";
 import {
   AttachedSchema,
   Direction,
@@ -94,7 +94,8 @@ const SANDBOXES: SandboxView[] = [
   {
     name: "old-e5f6",
     uid: "0f9c1d2e-0000-4000-8000-00000000e5f6",
-    profile: null,
+    // A profile no binding selects on: launched with a typo, or its binding has since left git.
+    profile: "codr",
     archived: false,
     state: "suspended",
     created_at: ago(48 * HOUR),
@@ -125,8 +126,26 @@ const POLICIES: PolicyView[] = [
   },
 ];
 
-/** One seed binding from git, active; one runtime ask still pending, which the proxy has refused so far. */
+/**
+ * One binding per profile, one seed from git, active, and one runtime ask still pending, which the
+ * proxy has refused so far.
+ */
 const BINDINGS: BindingView[] = [
+  {
+    name: "coders-pypi",
+    granted_by: "flux",
+    from_git: true,
+    subjects: [{ sandbox: null, match_labels: { "agentplane.allegedly.works/profile": "coder" } }],
+    approval: "approved",
+    approved_by: "harness-operator",
+    approved_at: ago(24 * HOUR),
+    expires_at: null,
+    policies: [POLICIES[1]],
+    missing_policies: [],
+    active: true,
+    active_reason: "Resolved",
+    active_message: "1 of 1 policies resolved",
+  },
   {
     name: "demo-a1b2-asks",
     granted_by: "agent",
@@ -158,6 +177,9 @@ const BINDINGS: BindingView[] = [
     active_message: "1 of 1 policies resolved",
   },
 ];
+
+/** The one profile a binding selects on; `old-e5f6` carries another, so the page shows both readings. */
+const PROFILES: ProfileView[] = [{ name: "coder", bindings: [BINDINGS[0]] }];
 
 const DECISIONS: Decision[] = [
   {
@@ -314,6 +336,7 @@ const EVENTS: Event[] = [
 routes.push(
   ["GET", /^\/models$/, () => ({ claude: ["harness-claude-model"], codex: ["harness-codex-model"] })],
   ["GET", /^\/egress\/policies$/, () => POLICIES],
+  ["GET", /^\/egress\/profiles$/, () => PROFILES],
   ["GET", /^\/sandboxes$/, () => SANDBOXES],
   ["GET", /^\/sandboxes\/([^/]+)$/, (match) => SANDBOXES.find((row) => row.name === match[1])],
   ["GET", /^\/sandboxes\/([^/]+)\/egress$/, () => BINDINGS],

@@ -77,7 +77,8 @@ class NewSandbox(BaseModel):
     slug: Slug = Field(description="Human-chosen name stem; a random suffix makes the Sandbox name unique.")
     profile: LabelValue | None = Field(
         default=None,
-        description="Stamped as the profile label; a Flux-managed EgressBinding selecting on it then applies.",
+        description="One of the profiles /egress/profiles lists, stamped as the profile label so the "
+        "EgressBindings selecting on it apply; a profile no binding selects is refused.",
     )
     policies: list[str] = Field(
         default_factory=list,

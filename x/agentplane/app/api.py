@@ -21,6 +21,8 @@ from x.agentplane.app.egress import (
     EgressInventory,
     FluxOwnedBindingError,
     PolicyView,
+    ProfileView,
+    UnknownProfileError,
 )
 from x.agentplane.app.identity import Caller, TokenReviewer, require_caller
 from x.agentplane.app.inventory import NewSandbox, SandboxInventory, SandboxNotFoundError, SandboxView
@@ -107,7 +109,12 @@ async def list_sandboxes(
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_sandbox(inventory: Inventory, egress: Egress, spec: NewSandbox, operator: Operator) -> SandboxView:
-    """Create the Sandbox; picked policies become one binding it owns, granted by the caller."""
+    """Create the Sandbox; picked policies become one binding it owns, granted by the caller.
+
+    A profile no binding selects is refused rather than stamped: the sandbox would come up matching
+    nothing it was meant to, which fails closed and says nothing."""
+    if spec.profile is not None:
+        await egress.require_profile(spec.profile)
     view = await inventory.create(spec)
     if spec.policies:
         await egress.grant(sandbox=view.name, sandbox_uid=view.uid, policies=spec.policies, by=operator)
@@ -169,6 +176,13 @@ egress_router = APIRouter(prefix="/egress", tags=["egress"])
 async def list_policies(egress: Egress) -> list[PolicyView]:
     """The namespace's policies: what the create form offers to pick from."""
     return await egress.list_policies()
+
+
+@egress_router.get("/profiles")
+async def list_profiles(egress: Egress) -> list[ProfileView]:
+    """The profiles that exist, with the bindings behind each: what the create form offers, and what
+    a sandbox's profile badge is checked against."""
+    return await egress.list_profiles()
 
 
 @egress_router.post("/bindings/{name}/approve", status_code=status.HTTP_204_NO_CONTENT)
@@ -315,6 +329,10 @@ def create_app(
     @app.exception_handler(DecisionsUnavailableError)
     async def _decisions_unavailable(_request: Request, error: DecisionsUnavailableError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_502_BAD_GATEWAY, content={"detail": str(error)})
+
+    @app.exception_handler(UnknownProfileError)
+    async def _unknown_profile(_request: Request, error: UnknownProfileError) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
 
     @app.exception_handler(FluxOwnedBindingError)
     async def _flux_owned(_request: Request, error: FluxOwnedBindingError) -> JSONResponse:

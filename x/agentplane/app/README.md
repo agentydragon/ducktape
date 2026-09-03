@@ -19,7 +19,9 @@ bbr test //x/agentplane/app/...
   namespace with neither the app, its database, nor the rules below.
 - `egress.py`: the app namespace's `EgressPolicy` and `EgressBinding` resources as the app shows and
   edits them (approve, deny, revoke, the launch-time grant); `decisions.py` reads the proxy's
-  recent decisions off its admin port, and an unreachable proxy leaves the rules readable.
+  recent decisions off its admin port, and an unreachable proxy leaves the rules readable. The
+  profiles a sandbox may be launched with are read off the same bindings — a profile is a label
+  value some selector names — so a sandbox is never stamped with one that matches nothing.
 - `bridge.py`: one runner attachment per streaming session, fanned out to every browser tab, and
   the SSE framing; `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits
   for the frontend's generated client.

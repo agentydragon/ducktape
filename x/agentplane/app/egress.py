@@ -8,6 +8,7 @@ the enforcement path: the proxy's `Active` condition is shown as written, never 
 
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import UUID
@@ -17,7 +18,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.app.identity import Caller
-from x.agentplane.app.inventory import Condition, InventoryError
+from x.agentplane.app.inventory import PROFILE_LABEL, Condition, InventoryError
 
 GRANTED_BY_LABEL = "agentplane.allegedly.works/granted-by"
 # The provenance a Flux-applied binding carries (cluster/k8s/agentplane-staging/egress); nothing at
@@ -36,6 +37,17 @@ class BindingNotFoundError(InventoryError):
     def __init__(self, name: str) -> None:
         super().__init__(f"no EgressBinding {name=}")
         self.name = name
+
+
+class UnknownProfileError(InventoryError):
+    """A profile no binding selects on: the sandbox would match nothing and nothing would say so."""
+
+    def __init__(self, profile: str, known: list[str]) -> None:
+        super().__init__(
+            f"no EgressBinding selects {profile=}; the profiles that exist are {', '.join(known) or 'none'}"
+        )
+        self.profile = profile
+        self.known = known
 
 
 class FluxOwnedBindingError(InventoryError):
@@ -110,6 +122,12 @@ class _Subject(_Wire):
         if self.sandbox_selector is not None:
             return all(labels.get(key) == value for key, value in self.sandbox_selector.match_labels.items())
         return False
+
+    def profile(self) -> str | None:
+        """The profile this subject selects on, when its selector names the profile label."""
+        if self.sandbox_selector is None:
+            return None
+        return self.sandbox_selector.match_labels.get(PROFILE_LABEL)
 
 
 class _Approval(_Wire):
@@ -197,6 +215,19 @@ class BindingView(BaseModel):
     active_message: str | None = None
 
 
+class ProfileView(BaseModel):
+    """A profile a sandbox can be launched with, and the bindings that make it mean something.
+
+    A profile exists because some EgressBinding's selector names the profile label, so this is the
+    same source the proxy matches a sandbox against rather than a second list to keep in step.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(description="The profile label's value; a sandbox stamped with it matches these bindings.")
+    bindings: list[BindingView] = Field(description="The bindings selecting this profile, in name order.")
+
+
 class EgressInventory:
     """The namespace's policies and bindings, read and written through the API server."""
 
@@ -207,15 +238,31 @@ class EgressInventory:
     async def list_policies(self) -> list[PolicyView]:
         return [_policy_view(policy) for policy in await self._policies()]
 
+    async def list_profiles(self) -> list[ProfileView]:
+        """Every profile some binding selects on, in name order: the set worth launching a sandbox with."""
+        policies = await self._policy_views()
+        profiles: dict[str, list[BindingView]] = defaultdict(list)
+        for binding in sorted(await self._bindings(), key=lambda binding: binding.metadata.name):
+            view = _binding_view(binding, policies)
+            for name in sorted(
+                {profile for subject in binding.spec.subjects if (profile := subject.profile()) is not None}
+            ):
+                profiles[name].append(view)
+        return [ProfileView(name=name, bindings=bindings) for name, bindings in sorted(profiles.items())]
+
+    async def require_profile(self, profile: str) -> None:
+        """Refuse a profile no binding selects: such a sandbox reaches less than asked for, silently."""
+        known = [view.name for view in await self.list_profiles()]
+        if profile not in known:
+            raise UnknownProfileError(profile, known)
+
     async def bindings_for(self, sandbox: str, labels: dict[str, str]) -> list[BindingView]:
         """Every binding with a subject naming the sandbox or selecting its labels, in name order."""
-        policies = {policy.metadata.name: _policy_view(policy) for policy in await self._policies()}
-        page = await self._custom_objects.list_namespaced_custom_object(*_EGRESS_API, self._namespace, _BINDINGS_PLURAL)
-        bindings = [_EgressBinding.model_validate(item) for item in _ResourceList.model_validate(page).items]
+        policies = await self._policy_views()
         return sorted(
             (
                 _binding_view(binding, policies)
-                for binding in bindings
+                for binding in await self._bindings()
                 if any(subject.matches(sandbox, labels) for subject in binding.spec.subjects)
             ),
             key=lambda view: view.name,
@@ -282,6 +329,13 @@ class EgressInventory:
     async def _policies(self) -> list[_EgressPolicy]:
         page = await self._custom_objects.list_namespaced_custom_object(*_EGRESS_API, self._namespace, _POLICIES_PLURAL)
         return [_EgressPolicy.model_validate(item) for item in _ResourceList.model_validate(page).items]
+
+    async def _policy_views(self) -> dict[str, PolicyView]:
+        return {policy.metadata.name: _policy_view(policy) for policy in await self._policies()}
+
+    async def _bindings(self) -> list[_EgressBinding]:
+        page = await self._custom_objects.list_namespaced_custom_object(*_EGRESS_API, self._namespace, _BINDINGS_PLURAL)
+        return [_EgressBinding.model_validate(item) for item in _ResourceList.model_validate(page).items]
 
     async def _binding(self, name: str) -> _EgressBinding:
         try:

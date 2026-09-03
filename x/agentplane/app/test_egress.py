@@ -15,6 +15,7 @@ from x.agentplane.app.egress import (
     BindingNotFoundError,
     EgressInventory,
     FluxOwnedBindingError,
+    UnknownProfileError,
 )
 from x.agentplane.app.inventory import MANAGED_LABEL, PROFILE_LABEL
 from x.agentplane.app.testing.kubernetes import FakeCustomObjectsApi, egress_binding, egress_policy
@@ -48,6 +49,18 @@ def _seed(custom_objects: FakeCustomObjectsApi) -> None:
         approval=APPROVED,
         expires_at="2026-12-01T00:00:00Z",
     )
+    custom_objects.objects[("egressbindings", "coders-pypi")] = egress_binding(
+        "coders-pypi",
+        subjects=[{"sandboxSelector": {"matchLabels": {MANAGED_LABEL: "true", PROFILE_LABEL: "coder"}}}],
+        policies=["pypi"],
+        approval={"state": "pending"},
+    )
+    custom_objects.objects[("egressbindings", "browsers")] = egress_binding(
+        "browsers",
+        subjects=[{"sandboxSelector": {"matchLabels": {PROFILE_LABEL: "browser"}}}],
+        policies=["github"],
+        approval=APPROVED,
+    )
     custom_objects.objects[("egressbindings", "live-asks")] = egress_binding(
         "live-asks",
         subjects=[{"sandbox": {"name": "live"}}],
@@ -71,7 +84,7 @@ async def test_bindings_for_matches_by_name_and_by_every_selector_label(
     unmanaged = await egress.bindings_for("other", {})
 
     assert [view.name for view in plain] == ["all-managed", "live-asks"]
-    assert [view.name for view in coder] == ["all-managed", "coders", "live-asks"]
+    assert [view.name for view in coder] == ["all-managed", "coders", "coders-pypi", "live-asks"]
     assert [view.name for view in unmanaged] == ["other-only"]
 
 
@@ -182,6 +195,36 @@ async def test_grant_creates_an_approved_binding_the_sandbox_owns(
     # And the app reads its own grant back like any other binding, not from git.
     (picked,) = [view for view in await egress.bindings_for("live", {}) if view.name == "live-picked"]
     assert (picked.from_git, [policy.name for policy in picked.policies]) == (False, ["pypi", "github"])
+
+
+async def test_list_profiles_groups_the_bindings_selecting_each_profile(
+    egress: EgressInventory, custom_objects: FakeCustomObjectsApi
+) -> None:
+    _seed(custom_objects)
+
+    profiles = await egress.list_profiles()
+
+    # A selector naming only the managed label is every sandbox's, not a profile's.
+    assert [(profile.name, [view.name for view in profile.bindings]) for profile in profiles] == [
+        ("browser", ["browsers"]),
+        ("coder", ["coders", "coders-pypi"]),
+    ]
+    coder = profiles[1].bindings
+    # What the profile grants is read off those bindings, unresolved names and approval included.
+    assert ([view.name for view in coder[0].policies], coder[0].missing_policies) == (["pypi"], ["vanished"])
+    assert (coder[0].approval, coder[1].approval) == (ApprovalState.APPROVED, ApprovalState.PENDING)
+
+
+async def test_require_profile_refuses_one_no_binding_selects(
+    egress: EgressInventory, custom_objects: FakeCustomObjectsApi
+) -> None:
+    _seed(custom_objects)
+
+    await egress.require_profile("coder")
+
+    with pytest.raises(UnknownProfileError) as raised:
+        await egress.require_profile("codr")
+    assert raised.value.known == ["browser", "coder"]
 
 
 async def test_list_policies_summarises_every_rule(
