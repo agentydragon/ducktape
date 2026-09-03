@@ -16,7 +16,7 @@ from x.agentplane.app.conftest import AGENT, AGENT_AUTH
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import GRANTED_BY_LABEL, EgressInventory
 from x.agentplane.app.identity import TokenReviewer
-from x.agentplane.app.inventory import ARCHIVED_LABEL, MANAGED_LABEL, PROFILE_LABEL, SandboxInventory
+from x.agentplane.app.inventory import ARCHIVED_LABEL, SandboxInventory
 from x.agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from x.agentplane.app.testing.kubernetes import (
     FakeCoreV1Api,
@@ -59,11 +59,8 @@ def client(
         "github", [{"hosts": ["api.github.com"], "methods": ["GET"]}]
     )
     custom_objects.objects[("egresspolicies", "pypi")] = egress_policy("pypi", [{"hosts": ["pypi.org"]}])
-    custom_objects.objects[("egressbindings", "all-managed")] = egress_binding(
-        "all-managed",
-        subjects=[{"sandboxSelector": {"matchLabels": {MANAGED_LABEL: "true"}}}],
-        policies=["github"],
-        active=("True", "Resolved", ""),
+    custom_objects.objects[("egressbindings", "live-seeded")] = egress_binding(
+        "live-seeded", subjects=[{"sandbox": {"name": "live"}}], policies=["github"], active=("True", "Resolved", "")
     )
     custom_objects.objects[("egressbindings", "live-granted")] = egress_binding(
         "live-granted", subjects=[{"sandbox": {"name": "live"}}], policies=["pypi"], granted_by="agent"
@@ -99,28 +96,26 @@ def test_create_returns_the_new_row(client: TestClient, custom_objects: FakeCust
     assert response.status_code == 201
     row = response.json()
     assert row["name"].startswith("demo-")
-    assert (row["state"], row["profile"]) == ("waiting_for_pod", None)
+    assert row["state"] == "waiting_for_pod"
     assert ("sandboxes", row["name"]) in custom_objects.objects
     assert not any(kind == "egressbindings" and name.endswith("-picked") for kind, name in custom_objects.objects)
 
 
-def test_create_with_a_profile_and_picked_policies_stamps_the_label_and_grants_one_owned_binding(
+def test_create_with_picked_policies_grants_one_binding_the_sandbox_owns(
     client: TestClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
-    response = client.post("/sandboxes", json={"slug": "demo", "profile": "coder", "policies": ["pypi"]})
+    response = client.post("/sandboxes", json={"slug": "demo", "policies": ["pypi"]})
 
     assert response.status_code == 201, response.text
     row = response.json()
-    assert row["profile"] == "coder"
     created = custom_objects.objects[("sandboxes", row["name"])]
-    assert created["metadata"]["labels"][PROFILE_LABEL] == "coder"
     picked = custom_objects.objects[("egressbindings", f"{row['name']}-picked")]
     assert picked["metadata"]["labels"] == {GRANTED_BY_LABEL: AGENT.label}
     assert picked["metadata"]["ownerReferences"][0]["uid"] == created["metadata"]["uid"]
     assert picked["spec"]["policies"] == ["pypi"]
-    # The new sandbox sees the seed's selector binding and its own pick.
+    # The new sandbox's egress is its own pick and nothing else: no binding names it in advance.
     names = [binding["name"] for binding in client.get(f"/sandboxes/{row['name']}/egress").json()]
-    assert names == ["all-managed", f"{row['name']}-picked"]
+    assert names == [f"{row['name']}-picked"]
 
 
 @pytest.mark.parametrize(
@@ -131,7 +126,6 @@ def test_create_with_a_profile_and_picked_policies_stamps_the_label_and_grants_o
         {"slug": "a" * 58},
         {"slug": "demo", "provider": "claude"},
         {"slug": "demo", "model": "cheap"},
-        {"slug": "demo", "profile": "not a label"},
     ],
     ids=[
         "uppercase-slug",
@@ -139,7 +133,6 @@ def test_create_with_a_profile_and_picked_policies_stamps_the_label_and_grants_o
         "slug-too-long-for-a-dns-label",
         "provider-on-sandbox",
         "model-on-sandbox",
-        "profile-not-a-label-value",
     ],
 )
 def test_create_rejects_invalid_requests(client: TestClient, custom_objects: FakeCustomObjectsApi, body: dict) -> None:
@@ -221,11 +214,12 @@ def test_egress_lists_the_bindings_naming_the_sandbox(client: TestClient) -> Non
     assert response.status_code == 200, response.text
     body = response.json()
     assert [(b["name"], b["granted_by"], b["from_git"], b["active"]) for b in body] == [
-        ("all-managed", "flux", True, True),
         ("live-granted", "agent", False, None),
+        ("live-seeded", "flux", True, True),
     ]
-    assert body[0]["policies"][0]["rules"][0]["hosts"] == ["api.github.com"]
-    assert [b["name"] for b in client.get("/sandboxes/fresh/egress").json()] == ["all-managed"]
+    assert body[1]["policies"][0]["rules"][0]["hosts"] == ["api.github.com"]
+    # Nothing names `fresh`, so nothing may leave it.
+    assert client.get("/sandboxes/fresh/egress").json() == []
     assert client.get("/sandboxes/nope/egress").status_code == 404
 
 
@@ -260,7 +254,7 @@ def test_egress_decisions_are_502_when_the_proxy_is_unreachable(
 
     assert response.status_code == 502
     assert "did not answer" in response.json()["detail"]
-    assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["all-managed", "live-granted"]
+    assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["live-granted", "live-seeded"]
 
 
 def test_every_route_needs_one_of_the_two_credentials(client: TestClient) -> None:
@@ -275,12 +269,12 @@ def test_every_route_needs_one_of_the_two_credentials(client: TestClient) -> Non
 
 def test_binding_revocation(client: TestClient) -> None:
     """A runtime binding is revoked by deleting it; one the manifest declares would be re-applied."""
-    refused = client.delete("/egress/bindings/all-managed")
+    refused = client.delete("/egress/bindings/live-seeded")
     assert refused.status_code == 409
     assert "git" in refused.json()["detail"]
     assert client.delete("/egress/bindings/live-granted").status_code == 204
     assert client.delete("/egress/bindings/live-granted").status_code == 404
-    assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["all-managed"]
+    assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["live-seeded"]
 
 
 def test_policies_lists_the_namespace_for_the_create_form(client: TestClient) -> None:

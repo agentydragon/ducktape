@@ -19,8 +19,8 @@ substitutes. The design it implements is [the ADR](../plans/adr_sandbox_proxy_ga
 ## Decision
 
 - An `EgressBinding` grants by existing and unexpired: creating one is the whole act of allowing,
-  and deleting it the whole act of taking that back. A binding names its subjects by Sandbox name
-  or by label selector and lists `EgressPolicy` names.
+  and deleting it the whole act of taking that back. A binding names its subjects as Sandboxes by
+  name and lists `EgressPolicy` names.
 - The subject's bindings are walked in name order, their policies in the listed order, and their
   rules in order; the first rule whose hosts, methods, and paths match decides. A CONNECT is
   matched on host alone; each request inside the tunnel is decided on its own.

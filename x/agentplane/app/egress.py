@@ -88,22 +88,8 @@ class _SandboxRef(_Wire):
     name: str
 
 
-class _LabelSelector(_Wire):
-    match_labels: dict[str, str] = Field(alias="matchLabels")
-
-
 class _Subject(_Wire):
-    """The CRD admits exactly one of the two; a subject is matched by whichever it carries."""
-
-    sandbox: _SandboxRef | None = None
-    sandbox_selector: _LabelSelector | None = Field(alias="sandboxSelector", default=None)
-
-    def matches(self, name: str, labels: dict[str, str]) -> bool:
-        if self.sandbox is not None:
-            return self.sandbox.name == name
-        if self.sandbox_selector is not None:
-            return all(labels.get(key) == value for key, value in self.sandbox_selector.match_labels.items())
-        return False
+    sandbox: _SandboxRef
 
 
 class _BindingSpec(_Wire):
@@ -155,15 +141,6 @@ class PolicyView(BaseModel):
     rules: list[RuleView]
 
 
-class SubjectView(BaseModel):
-    """How a binding names its subjects: one sandbox, or every sandbox carrying these labels."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    sandbox: str | None = None
-    match_labels: dict[str, str] | None = None
-
-
 class BindingView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -172,7 +149,7 @@ class BindingView(BaseModel):
         description="The provenance label, which is who allowed this: flux, or the caller who granted it."
     )
     from_git: bool = Field(description="Flux applied it; removing it is git's.")
-    subjects: list[SubjectView]
+    subjects: list[str] = Field(description="The Sandboxes this binding names.")
     expires_at: datetime | None = None
     policies: list[PolicyView] = Field(description="The named policies that exist, in the binding's order.")
     missing_policies: list[str] = Field(description="Names in the binding that no EgressPolicy answers to.")
@@ -191,8 +168,8 @@ class EgressInventory:
     async def list_policies(self) -> list[PolicyView]:
         return [_policy_view(policy) for policy in await self._policies()]
 
-    async def bindings_for(self, sandbox: str, labels: dict[str, str]) -> list[BindingView]:
-        """Every binding with a subject naming the sandbox or selecting its labels, in name order."""
+    async def bindings_for(self, sandbox: str) -> list[BindingView]:
+        """Every binding with a subject naming the sandbox, in name order."""
         policies = {policy.metadata.name: _policy_view(policy) for policy in await self._policies()}
         page = await self._custom_objects.list_namespaced_custom_object(*_EGRESS_API, self._namespace, _BINDINGS_PLURAL)
         bindings = [_EgressBinding.model_validate(item) for item in _ResourceList.model_validate(page).items]
@@ -200,7 +177,7 @@ class EgressInventory:
             (
                 _binding_view(binding, policies)
                 for binding in bindings
-                if any(subject.matches(sandbox, labels) for subject in binding.spec.subjects)
+                if any(subject.sandbox.name == sandbox for subject in binding.spec.subjects)
             ),
             key=lambda view: view.name,
         )
@@ -286,13 +263,7 @@ def _binding_view(binding: _EgressBinding, policies: dict[str, PolicyView]) -> B
         name=binding.metadata.name,
         granted_by=granted_by,
         from_git=granted_by == FLUX_PROVENANCE,
-        subjects=[
-            SubjectView(
-                sandbox=subject.sandbox.name if subject.sandbox is not None else None,
-                match_labels=subject.sandbox_selector.match_labels if subject.sandbox_selector is not None else None,
-            )
-            for subject in binding.spec.subjects
-        ],
+        subjects=[subject.sandbox.name for subject in binding.spec.subjects],
         expires_at=binding.spec.expires_at,
         policies=[policies[name] for name in binding.spec.policies if name in policies],
         missing_policies=[name for name in binding.spec.policies if name not in policies],

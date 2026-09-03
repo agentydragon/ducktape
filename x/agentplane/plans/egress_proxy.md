@@ -20,8 +20,8 @@ proxy relates to the integration app, and the work packages.
   - `EgressPolicy`: a reusable, subject-free rule set. Each rule names hosts (exact, or a `*.`
     suffix), methods, path patterns, and optionally the credential to substitute: the Secret and
     key holding it, the header it goes into, and the placeholder value the sandbox sends.
-  - `EgressBinding`: subjects to policies. A subject is a Sandbox by name or by label selector in
-    this slice; a thread or an agent identity is a later subject kind on the same resource. The
+  - `EgressBinding`: subjects to policies. A subject is one Sandbox, by name; a thread or an agent
+    identity is a later subject kind on the same resource. The
     binding's existence is the permission and its optional expiry is the only thing that ends one
     without deleting it: creating the object is the whole act of allowing, so there is no decision
     field to answer it with. The proxy writes status: whether the binding is active and which
@@ -54,14 +54,11 @@ proxy relates to the integration app, and the work packages.
   back into the enforcement path. A per-request use counter was considered and dropped: a count of
   requests says nothing about what they did, so "this once" belongs to the webhook path when a
   rule needs it.
-- **Profiles are selector bindings; per-launch picks are per-sandbox bindings.** A preset such
-  as "public coder" or "Haku" is a binding in git whose subject is a label selector
-  (`agentplane.allegedly.works/profile: public-coder`); launching an agent with that profile
-  means stamping the label on the Sandbox, and the Flux-managed binding applies with nothing
-  created at runtime. The create form also offers the namespace's individual policies; ticking
-  some creates one sandbox-owned binding on top, since bindings are additive. The staging seed is
-  the broadest selector binding, every managed sandbox, to be narrowed to a profile once there
-  are two kinds of agent.
+- **Every grant is a per-sandbox binding.** The create form offers the namespace's policies;
+  ticking some creates one sandbox-owned binding, and a sandbox nothing names reaches nothing.
+  There is no standing rule over a class of sandboxes: presets such as "public coder" or "Haku"
+  are the deferred profile concept ([`profiles.md`](profiles.md)), which must not re-enter as a
+  selector on this CRD.
 - **Credentials live in their own namespace.** The proxy reads Secrets only from
   `agentplane-egress-credentials`, where the ExternalSecrets for substituted credentials are
   delivered; a rule's `secretRef` resolves there. RBAC cannot filter Secrets by label, and a
@@ -94,8 +91,8 @@ denied for want of a binding, expired binding, missing policy, copied token, Sec
 The two CRDs with schema validation and printer columns; the proxy's ServiceAccount with read on
 the resources and Secrets it needs, status write on bindings, and TokenReview; the app's
 ServiceAccount with read on both kinds and write on bindings; the cluster validator covering both;
-staging's seed: one binding of every managed Sandbox to a policy that lets it reach
-GitHub's API and HTTPS git for public repositories with the `agentydragon-agent` PAT substituted.
+staging's `github-public` policy, which lets a sandbox bound to it reach GitHub's API and HTTPS
+git for public repositories with the `agentydragon-agent` PAT substituted.
 
 ### E3. Sandbox wiring
 

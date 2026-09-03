@@ -15,7 +15,6 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import assert_never
 
 from x.agentplane.egress.resources import (
     ACTIVE_CONDITION,
@@ -26,11 +25,9 @@ from x.agentplane.egress.resources import (
     Credential,
     EgressBinding,
     EgressPolicy,
-    NamedSubject,
     Rule,
     Sandbox,
     Secret,
-    SelectedSubjects,
 )
 
 CONNECT = "CONNECT"
@@ -182,24 +179,13 @@ def _is_active(condition: Condition) -> bool:
 
 
 def subject_bindings(index: Index, sandbox: Sandbox, now: datetime) -> list[BindingResolution]:
-    """The active bindings naming this Sandbox, by name or by label selector, in name order."""
+    """The active bindings naming this Sandbox, in name order."""
     return [
         resolution
         for name in sorted(index.bindings)
         if (resolution := resolve_binding(index, index.bindings[name], now)).active
-        and any(_subject_matches(subject, sandbox) for subject in resolution.binding.spec.subjects)
+        and any(subject.sandbox.name == sandbox.metadata.name for subject in resolution.binding.spec.subjects)
     ]
-
-
-def _subject_matches(subject: NamedSubject | SelectedSubjects, sandbox: Sandbox) -> bool:
-    match subject:
-        case NamedSubject():
-            return subject.sandbox.name == sandbox.metadata.name
-        case SelectedSubjects():
-            labels = sandbox.metadata.labels
-            return all(labels.get(key) == value for key, value in subject.sandbox_selector.match_labels.items())
-        case _:
-            assert_never(subject)
 
 
 def host_matches(pattern: str, host: str) -> bool:

@@ -306,7 +306,6 @@ py_test(
     deps = [
         ":conftest",
         ":egress",
-        ":inventory",
         "//:conftest",
         "//x/agentplane/app/testing:kubernetes",
         "@pypi//pytest",

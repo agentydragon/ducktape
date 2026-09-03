@@ -10,7 +10,6 @@ import pytest_bazel
 
 from x.agentplane.app.conftest import GRANTER
 from x.agentplane.app.egress import GRANTED_BY_LABEL, BindingNotFoundError, EgressInventory, FluxOwnedBindingError
-from x.agentplane.app.inventory import MANAGED_LABEL, PROFILE_LABEL
 from x.agentplane.app.testing.kubernetes import FakeCustomObjectsApi, egress_binding, egress_policy
 
 GITHUB_RULE = {
@@ -27,16 +26,17 @@ GITHUB_RULE = {
 def _seed(custom_objects: FakeCustomObjectsApi) -> None:
     custom_objects.objects[("egresspolicies", "github")] = egress_policy("github", [GITHUB_RULE])
     custom_objects.objects[("egresspolicies", "pypi")] = egress_policy("pypi", [{"hosts": ["pypi.org"]}])
-    custom_objects.objects[("egressbindings", "all-managed")] = egress_binding(
-        "all-managed",
-        subjects=[{"sandboxSelector": {"matchLabels": {MANAGED_LABEL: "true"}}}],
+    custom_objects.objects[("egressbindings", "live-seeded")] = egress_binding(
+        "live-seeded",
+        subjects=[{"sandbox": {"name": "live"}}],
         policies=["github"],
         active=("True", "Resolved", "1 of 1 policies resolved"),
     )
-    custom_objects.objects[("egressbindings", "coders")] = egress_binding(
-        "coders",
-        subjects=[{"sandboxSelector": {"matchLabels": {PROFILE_LABEL: "coder"}}}],
+    custom_objects.objects[("egressbindings", "live-expiring")] = egress_binding(
+        "live-expiring",
+        subjects=[{"sandbox": {"name": "live"}}],
         policies=["pypi", "vanished"],
+        granted_by="agent",
         expires_at="2026-12-01T00:00:00Z",
     )
     custom_objects.objects[("egressbindings", "live-granted")] = egress_binding(
@@ -51,18 +51,13 @@ def _seed(custom_objects: FakeCustomObjectsApi) -> None:
     )
 
 
-async def test_bindings_for_matches_by_name_and_by_every_selector_label(
+async def test_bindings_for_lists_the_bindings_naming_the_sandbox(
     egress: EgressInventory, custom_objects: FakeCustomObjectsApi
 ) -> None:
     _seed(custom_objects)
 
-    plain = await egress.bindings_for("live", {MANAGED_LABEL: "true"})
-    coder = await egress.bindings_for("live", {MANAGED_LABEL: "true", PROFILE_LABEL: "coder"})
-    unmanaged = await egress.bindings_for("other", {})
-
-    assert [view.name for view in plain] == ["all-managed", "live-granted"]
-    assert [view.name for view in coder] == ["all-managed", "coders", "live-granted"]
-    assert [view.name for view in unmanaged] == ["other-only"]
+    assert [view.name for view in await egress.bindings_for("live")] == ["live-expiring", "live-granted", "live-seeded"]
+    assert [view.name for view in await egress.bindings_for("other")] == ["other-only"]
 
 
 async def test_a_binding_view_carries_provenance_expiry_policies_and_the_proxy_condition(
@@ -70,14 +65,12 @@ async def test_a_binding_view_carries_provenance_expiry_policies_and_the_proxy_c
 ) -> None:
     _seed(custom_objects)
 
-    by_name = {
-        view.name: view for view in await egress.bindings_for("live", {MANAGED_LABEL: "true", PROFILE_LABEL: "coder"})
-    }
+    by_name = {view.name: view for view in await egress.bindings_for("live")}
 
-    seed = by_name["all-managed"]
+    seed = by_name["live-seeded"]
     assert (seed.granted_by, seed.from_git) == ("flux", True)
     assert (seed.active, seed.active_reason, seed.active_message) == (True, "Resolved", "1 of 1 policies resolved")
-    assert seed.subjects[0].match_labels == {MANAGED_LABEL: "true"}
+    assert seed.subjects == ["live"]
     (policy,) = seed.policies
     (rule,) = policy.rules
     assert (policy.name, rule.hosts, rule.methods, rule.paths) == (
@@ -93,10 +86,10 @@ async def test_a_binding_view_carries_provenance_expiry_policies_and_the_proxy_c
         "Authorization",
     )
 
-    coders = by_name["coders"]
-    assert coders.expires_at == datetime(2026, 12, 1, tzinfo=UTC)
-    assert ([policy.name for policy in coders.policies], coders.missing_policies) == (["pypi"], ["vanished"])
-    assert coders.active is None
+    expiring = by_name["live-expiring"]
+    assert expiring.expires_at == datetime(2026, 12, 1, tzinfo=UTC)
+    assert ([policy.name for policy in expiring.policies], expiring.missing_policies) == (["pypi"], ["vanished"])
+    assert expiring.active is None
 
     granted = by_name["live-granted"]
     assert (granted.granted_by, granted.from_git, granted.active, granted.active_reason) == (
@@ -105,7 +98,7 @@ async def test_a_binding_view_carries_provenance_expiry_policies_and_the_proxy_c
         False,
         "Expired",
     )
-    assert granted.subjects[0].sandbox == "live"
+    assert granted.subjects == ["live"]
 
 
 async def test_revoke_deletes_a_runtime_binding_and_refuses_one_from_git(
@@ -119,8 +112,8 @@ async def test_revoke_deletes_a_runtime_binding_and_refuses_one_from_git(
 
     assert ("egressbindings", "live-granted") not in custom_objects.objects
     with pytest.raises(FluxOwnedBindingError):
-        await egress.revoke("all-managed")
-    assert ("egressbindings", "all-managed") in custom_objects.objects
+        await egress.revoke("live-seeded")
+    assert ("egressbindings", "live-seeded") in custom_objects.objects
     with pytest.raises(BindingNotFoundError):
         await egress.revoke("live-granted")
 
@@ -147,7 +140,7 @@ async def test_grant_creates_a_binding_the_sandbox_owns(
     }
     assert created["spec"] == {"subjects": [{"sandbox": {"name": "live"}}], "policies": ["pypi", "github"]}
     # And the app reads its own grant back like any other binding, not from git.
-    (picked,) = [view for view in await egress.bindings_for("live", {}) if view.name == "live-picked"]
+    (picked,) = [view for view in await egress.bindings_for("live") if view.name == "live-picked"]
     assert (picked.from_git, [policy.name for policy in picked.policies]) == (False, ["pypi", "github"])
 
 

@@ -21,18 +21,6 @@ function provenance(binding: BindingView): string {
   return binding.granted_by ? `granted by ${binding.granted_by}` : "unlabelled";
 }
 
-function subjects(binding: BindingView): string {
-  return binding.subjects
-    .map((subject) =>
-      subject.sandbox
-        ? `sandbox ${subject.sandbox}`
-        : Object.entries(subject.match_labels ?? {})
-            .map(([key, value]) => `${key}=${value}`)
-            .join(", ")
-    )
-    .join("; ");
-}
-
 function expiry(binding: BindingView): JSX.Element {
   if (!binding.expires_at) return <Text size="sm">never</Text>;
   const at = new Date(binding.expires_at);
@@ -159,7 +147,7 @@ function BindingsTable({
           const rows = [
             <Table.Tr key={binding.name}>
               <Table.Td>
-                <Tooltip label={subjects(binding)} withArrow>
+                <Tooltip label={binding.subjects.join(", ")} withArrow>
                   <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
                     {binding.name}
                   </Text>

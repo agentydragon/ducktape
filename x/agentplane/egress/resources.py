@@ -75,24 +75,8 @@ class SandboxRef(_Wire):
     name: str
 
 
-class LabelSelector(_Wire):
-    match_labels: dict[str, str] = Field(alias="matchLabels")
-
-
-class NamedSubject(_Wire):
-    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
-
+class Subject(_Wire):
     sandbox: SandboxRef
-
-
-class SelectedSubjects(_Wire):
-    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
-
-    sandbox_selector: LabelSelector = Field(alias="sandboxSelector")
-
-
-# `extra="forbid"` on both variants makes the union unambiguous: a subject is one or the other.
-type Subject = NamedSubject | SelectedSubjects
 
 
 class BindingSpec(_Wire):

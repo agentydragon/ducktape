@@ -159,13 +159,14 @@ async def delete_sandbox(inventory: Inventory, name: str) -> Response:
 @router.get("/{name}/egress")
 async def sandbox_egress(inventory: Inventory, egress: Egress, name: str) -> list[BindingView]:
     """What may leave the sandbox: the bindings naming it, with their policies as they resolve."""
-    return await egress.bindings_for(name, await inventory.labels(name))
+    await inventory.require_known(name)
+    return await egress.bindings_for(name)
 
 
 @router.get("/{name}/egress/decisions")
 async def sandbox_egress_decisions(inventory: Inventory, decisions: Decisions, name: str) -> list[Decision]:
     """What recently left or was refused, from the proxy; 502 when the proxy cannot be asked."""
-    await inventory.labels(name)  # 404 for a sandbox that does not exist
+    await inventory.require_known(name)
     return await decisions.recent(name)
 
 

@@ -218,11 +218,11 @@ class FakeApiServer:
         return web.json_response(self.objects[plural][name])
 
 
-def sandbox(name: str, *, labels: dict[str, str] | None = None) -> dict[str, Any]:
+def sandbox(name: str) -> dict[str, Any]:
     return {
         "apiVersion": f"{SANDBOX_GROUP}/{SANDBOX_VERSION}",
         "kind": SANDBOX_KIND,
-        "metadata": {"name": name, "labels": labels or {}},
+        "metadata": {"name": name},
         "spec": {},
     }
 

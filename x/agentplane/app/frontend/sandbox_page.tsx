@@ -227,7 +227,6 @@ export function SandboxPage({
         </Button>
         <Title order={2}>{name}</Title>
         {sandbox && <Badge>{sandbox.state}</Badge>}
-        {sandbox?.profile && <Badge variant="light">profile: {sandbox.profile}</Badge>}
         {sandbox && (
           <Group gap="xs" ml="auto" wrap="nowrap">
             <SuspendResume sandbox={sandbox} onAct={(action) => void act(action)} />
