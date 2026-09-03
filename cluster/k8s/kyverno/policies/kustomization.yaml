@@ -7,7 +7,6 @@ resources:
   - default-vpa-requests-only.yaml
   - inject-mitmproxy.yaml
   - inject-haku-egress-proxy.yaml
-  - pin-seaweedfs-ovh-consumers.yaml
   - restrict-agent-kustomization-patch.yaml
   - restrict-agent-gateway-routes.yaml
   - require-secret-store-conditions.yaml

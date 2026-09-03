@@ -22,8 +22,6 @@ spec:
       # namespace from cluster/k8s/forgejo-images/.
       imagePullSecrets:
         - name: forgejo-images-creds
-      nodeSelector:
-        topology.kubernetes.io/region: hil
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000

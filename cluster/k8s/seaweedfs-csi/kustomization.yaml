@@ -3,4 +3,5 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - helmrelease.yaml
+  - sc-seaweedfs-ovh.yaml
   - sc-seaweedfs-ovh-ssd.yaml

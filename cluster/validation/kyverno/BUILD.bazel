@@ -94,22 +94,6 @@ py_test(
 )
 
 py_test(
-    name = "test_pin_seaweedfs_ovh_consumers",
-    srcs = ["test_pin_seaweedfs_ovh_consumers.py"],
-    data = [
-        "//cluster/k8s:kyverno_policy_files",
-        "@multitool//tools/kyverno",
-    ] + glob(["testdata/seaweedfs_pod_*.yaml"]),
-    deps = [
-        ":apply",
-        ":paths",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
     name = "test_restrict_agent_gateway_routes",
     srcs = ["test_restrict_agent_gateway_routes.py"],
     data = [

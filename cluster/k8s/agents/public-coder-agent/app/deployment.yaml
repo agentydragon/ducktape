@@ -258,13 +258,6 @@ spec:
             limits:
               cpu: "2"
               memory: 4Gi
-      # seaweedfs-ovh is served only by the OVH nodes: the CSI node plugin is
-      # not installed on Proxmox/NixOS workers, so an unpinned pod that lands on
-      # wyrm2 hangs forever in Init with
-      # "CSINode wyrm2 does not contain driver seaweedfs-csi-driver",
-      # the Service gets no endpoints, and the route 502s.
-      nodeSelector:
-        topology.kubernetes.io/region: hil
       volumes:
         - name: data
           persistentVolumeClaim:

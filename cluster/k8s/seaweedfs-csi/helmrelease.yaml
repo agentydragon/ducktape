@@ -7,7 +7,7 @@ spec:
   interval: 24h
   url: https://github.com/seaweedfs/seaweedfs-csi-driver
   ref:
-    tag: v1.4.29
+    tag: v1.4.30
   ignore: |
     /*
     !/deploy/helm/seaweedfs-csi-driver
@@ -48,8 +48,29 @@ spec:
         namespace: flux-system
   values:
     seaweedfsFiler: "seaweedfs-filer.seaweedfs.svc.cluster.local:8888"
-    storageClassName: seaweedfs-ovh
-    storageClassVolumeBindingMode: WaitForFirstConsumer
+    # Chart-created StorageClass disabled (storageClassName left empty): the
+    # chart's storageclass.yaml template has no allowedTopologies support (only
+    # name/provisioner/volumeBindingMode/parameters), so the default
+    # `seaweedfs-ovh` class is hand-authored instead, alongside
+    # `seaweedfs-ovh-ssd`, in sc-seaweedfs-ovh.yaml -- same name, same
+    # provisioner/volumeBindingMode as the chart would have produced, plus
+    # allowedTopologies. See that file for the topology rationale.
+    storageClassName: ""
+
+    # Node label keys the driver reports as each node's CSI accessible_topology
+    # (NodeGetInfo) and that csi-provisioner requires to honour StorageClass
+    # allowedTopologies (--feature-gates=Topology=true, gated on this being
+    # non-empty). Picks up seaweedfs/seaweedfs-csi-driver#301 (merged to master
+    # 2026-08-26, released v1.4.30): before this, NodeGetInfo reported no
+    # topology at all and CSINode showed topologyKeys=null for every node, so
+    # nothing stopped the scheduler from placing a seaweedfs-ovh*-PVC pod on a
+    # non-OVH node (cluster/k8s/kyverno/policies/ formerly carried a
+    # pin-seaweedfs-ovh-consumers ClusterPolicy working around exactly this,
+    # now removed in favor of the StorageClasses' own allowedTopologies).
+    # `topology.kubernetes.io/zone` matches the node label OVH nodes actually
+    # carry (cluster/terraform/main/ovh-nodes.tf nodeLabels, value "hil-ovh")
+    # and what sc-seaweedfs-ovh*.yaml's allowedTopologies matches on.
+    topologyKeys: ["topology.kubernetes.io/zone"]
 
     # Bound the per-mount in-memory write buffer. `weed mount` accumulates dirty
     # pages as chunks of -chunkSizeLimitMB (2MB) and allocates a new in-memory one
@@ -67,7 +88,7 @@ spec:
     #
     # The knob that would bound this properly is `weed mount -writeBufferSizeMB`
     # (a real accountant with a disk evictor, weed/mount/weedfs.go). The CSI driver
-    # does not pass it -- it is absent from buildMountArgs' argsMap on v1.4.29,
+    # does not pass it -- it is absent from buildMountArgs' argsMap on v1.4.30,
     # so it is unreachable without an upstream change.
     #
     # NOTE: GOMEMLIMIT is not an alternative here. The env var is inherited by every
@@ -88,7 +109,7 @@ spec:
     # deployed plugin and mount-service versions are auditable.
     seaweedfsCsiPlugin:
       image: chrislusf/seaweedfs-csi-driver
-      tag: v1.4.29
+      tag: v1.4.30
 
     # Restrict the FUSE mount service + CSI node daemons to OVH kimsufi
     # nodes. Pods consuming seaweedfs-ovh PVCs must schedule on OVH; we
@@ -97,7 +118,7 @@ spec:
     mountService:
       enabled: true
       image: chrislusf/seaweedfs-mount
-      tag: v1.4.29
+      tag: v1.4.30
       # QoS / eviction protection. Without requests this pod is BestEffort: the
       # kubelet's first eviction target and the kernel OOM-killer's first victim
       # (max oom_score_adj) under node memory pressure. It holds the weed-mount

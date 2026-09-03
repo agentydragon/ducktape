@@ -1,9 +1,0 @@
-apiVersion: v1
-kind: Pod
-metadata:
-  name: no-pvc-consumer
-  namespace: agent-workspaces
-spec:
-  containers:
-    - name: app
-      image: busybox

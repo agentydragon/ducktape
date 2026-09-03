@@ -12,11 +12,21 @@ metadata:
 provisioner: seaweedfs-csi-driver
 reclaimPolicy: Delete
 volumeBindingMode: WaitForFirstConsumer
+# The CSI driver's node/mount/controller plugins run only on hil-ovh nodes
+# (nodeAffinity in helmrelease.yaml) and, since v1.4.30, report that zone as
+# their CSI accessible_topology (helmrelease.yaml's topologyKeys). This makes
+# the scheduler's dynamic-provisioning volume binding actually enforce
+# placement onto a node with the driver present, matching the value OVH nodes
+# carry on this label (cluster/terraform/main/ovh-nodes.tf nodeLabels).
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: topology.kubernetes.io/zone
+        values: ["hil-ovh"]
 # SeaweedFS CSI expansion is a collection-quota bump — enable it (parity with the
 # seaweedfs-ovh class) so a growing PVC (e.g. Forgejo git) can be resized in place.
 allowVolumeExpansion: true
 parameters:
-  # CSI v1.4.29 maps `diskType`→`weed mount -disk` and passes `replication`
+  # CSI v1.4.30 maps `diskType`→`weed mount -disk` and passes `replication`
   # through (verified against pkg/driver/mounter.go).
   diskType: ssd
   replication: "001"
