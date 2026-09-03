@@ -96,7 +96,7 @@ flowchart TB
     Q["Rai decision<br/>which observed reliability failure is next highest-cost?"]:::decision
     M["Reliability hardening only from observed failures<br/>mid-tool crash recovery, log compaction, harness pin refresh"]:::future
 
-    N["Story 2: trusted orchestrator, untrusted fleet<br/>tiers, delegation object, channel judge<br/>user_stories.md"]:::future
+    N["Story 2: trusted orchestrator, untrusted fleet<br/>tiers, events kind filter, channel judge<br/>user_stories.md"]:::future
     O["Story 3: an orchestrator with specialists<br/>fleet view, wake-ups, tier-scoped reads"]:::future
     HK["Story 4: Haku lives here<br/>long-lived thread, memory in git"]:::future
     UI["Story 5: agentic UI<br/>Haku-authored pages, events as inputs"]:::future

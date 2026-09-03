@@ -76,19 +76,23 @@ Missing:
 - **Tiers on identities.** A sandbox carries the tier of the model provider it talks to, and the
   tier decides the credential set the proxy will substitute (the OpenAI-safe set), the transcripts
   the agent may read, and whether a judge sits on its channel.
-- **Delegation as a thread-to-thread object.** Haku hands over a task; Agentplane opens a thread
-  in a fleet sandbox, carries the task description as its first input, and returns results and
-  questions to Haku's thread as inputs. Both directions are ordinary inputs on the trajectories, so
-  nothing new is needed to store or replay them. The A2A evaluation ([`a2a.md`](a2a.md)) stays
-  decided: the object is ours, not an A2A task.
+- **No delegation primitive.** The orchestrator uses the objects Rai uses: it creates a sandbox
+  from a template its identity may use, opens a session, sends an `Input`, and reads the
+  session's events. Its prompt tells it which templates and RBAC configurations it may create
+  without asking, that doing so is allowed, and how to start and monitor an agent. Nothing
+  called a task or a delegation exists; the A2A evaluation ([`a2a.md`](a2a.md)) stays decided.
+- **Reading an agent without drowning.** The events stream carries every native frame and text
+  delta; an orchestrator wants a turn's outcome and the assistant's final text. The thin
+  addition is a kind filter on the events endpoint and on stored events, so the orchestrator
+  subscribes to `TurnCompleted` and completed items only.
 - **The judge.** A classifier or a judge agent on a trusted model, reading every message that
   crosses from a higher tier to a lower one, answering allow, redact, or block with a reason that
   goes back to the sender as an input. The inbound direction (fleet to Haku) is the prompt-injection
   direction and gets its own, different check. The judge's decisions are trajectory events, so a
   leak that got through is findable.
-- **Fleet lifecycle by an agent.** Haku creates, suspends, and archives fleet sandboxes through the
-  Agentplane API under its own identity; the agent RBAC that lets the Ducktape agent drive staging
-  is the same shape, minus the operator's own credential.
+- **The orchestrator's identity on the API.** Haku creates, suspends, and archives sandboxes under
+  its own Kubernetes identity, through the same service proxy path the Ducktape agent uses on
+  staging today; which templates that identity may stamp is the whole permission.
 
 ## 3. An orchestrator with specialists
 
@@ -103,8 +107,9 @@ Missing:
 
 - **A fleet view.** Threads grouped by the orchestrator that owns them, with the delegation edges
   visible, in the same app that shows a single session today.
-- **Wake-ups.** A specialist's result reaching the orchestrator while it is idle is the same
-  delivery path as an approval decision; the batcher makes a burst of results one input.
+- **Wake-ups.** A specialist's `TurnCompleted` reaching an idle orchestrator as an input, when it
+  asked to be woken, is the same delivery path as an approval decision; the batcher makes a burst
+  of results one input.
 - **Cross-transcript reads for the orchestrator**, tier-scoped, so Haku can read what a specialist
   did without the specialist being able to read Haku.
 
@@ -148,8 +153,9 @@ Standing under it:
   published from it, and Flux applies the workload under the constrained `haku-state` reconciler
   ([`cluster/k8s/haku/ui-image-webhook`](../../../cluster/k8s/haku/ui-image-webhook/README.md)).
   The page Haku writes is a solved problem; the pipe from the page back to Haku is not.
-- The integration app already hosts pages and streams a session; a Haku-authored page can be
-  content it serves, or Haku's own service beside it, without a second event path.
+- Haku-authored workloads keep running under Haku's Kubernetes identity, deployed by Flux from
+  `haku-state`, and Haku the agent manipulates them by committing; Agentplane hosts none of it
+  and only takes the events the UI posts.
 
 Missing:
 
@@ -164,7 +170,7 @@ Missing:
 - Story 1 is next after the egress proxy lands: the proxy is where a denied call turns into an
   ask, and the approvals machinery is already designed.
 - Story 2 needs the proxy's per-identity credential sets and the trajectory store, both in flight,
-  and adds the delegation object, tiers, and the judge.
+  and adds tiers, the events kind filter, and the judge.
 - Story 3 is story 2 with the orchestrator in the driver's seat and the fleet view on top.
 - Story 4 is the long-lived thread and memory-in-git on top of `I4` and `T1`; story 5 is the
   event pipe on top of story 4, Haku's existing UI pipeline, and the approvals delivery path.
@@ -173,7 +179,8 @@ Missing:
 
 - Whether the judge is a classifier, a judge agent, or both in series, and what "sensitive"
   means as data classes the judge is told about rather than left to infer.
-- What a Haku-authored page may do: static content with declared events, or code Agentplane
-  runs; the former keeps the tier boundary trivial.
+- Whose input a UI interaction becomes: the page posts as Rai (the Authentik session) or as Haku
+  (its identity); the envelope has to say which, since Rai's words and Haku's own UI's words are
+  not the same thing to Haku.
 - Which notification channel carries the ask cards; the existing Haku console approvals are the
   fallback until one is chosen.
