@@ -1,6 +1,7 @@
 # Sized for a handful of concurrent runner sandboxes (each requests 500m/1Gi,
 # limits 2/4Gi, plus a 10Gi state PVC per the agentplane-runner SandboxTemplate)
-# with room for the integration app alongside them.
+# with room for the integration app, its database (three CNPG Services), and the
+# egress proxy (its listener and admin Services) alongside them.
 apiVersion: v1
 kind: ResourceQuota
 metadata:
@@ -13,7 +14,7 @@ spec:
     limits.cpu: "12"
     limits.memory: 24Gi
     pods: "8"
-    services: "4"
+    services: "8"
     configmaps: "10"
     persistentvolumeclaims: "8"
     requests.storage: 80Gi
