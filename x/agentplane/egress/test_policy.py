@@ -66,7 +66,6 @@ def binding(
     subjects: list[Subject] | None = None,
     approval: ApprovalState = ApprovalState.APPROVED,
     expires_at: datetime | None = None,
-    max_uses: int | None = None,
 ) -> EgressBinding:
     return EgressBinding(
         metadata=ObjectMeta(name=name, generation=3),
@@ -75,22 +74,16 @@ def binding(
             policies=policies,
             approval=Approval(state=approval),
             expires_at=expires_at,
-            max_uses=max_uses,
         ),
     )
 
 
 def index(
-    *,
-    policies: list[EgressPolicy],
-    bindings: list[EgressBinding],
-    secret_value: str | None = SECRET_VALUE,
-    uses: int = 0,
+    *, policies: list[EgressPolicy], bindings: list[EgressBinding], secret_value: str | None = SECRET_VALUE
 ) -> Index:
     return Index(
         policies={p.metadata.name: p for p in policies},
         bindings={b.metadata.name: b for b in bindings},
-        uses={b.metadata.name: uses for b in bindings},
         sandboxes={SANDBOX.metadata.name: SANDBOX},
         secrets={"pat": Secret(name="pat", data={"token": secret_value})} if secret_value is not None else {},
     )
@@ -242,30 +235,6 @@ CASES = [
         Denied(DenyReason.NO_BINDING),
     ),
     Case(
-        "binding with uses left",
-        index(
-            policies=[policy("github", GITHUB_RULE)], bindings=[binding("b", policies=["github"], max_uses=3)], uses=2
-        ),
-        request(),
-        Allowed("b", "github", 0),
-    ),
-    Case(
-        "exhausted binding",
-        index(
-            policies=[policy("github", GITHUB_RULE)], bindings=[binding("b", policies=["github"], max_uses=3)], uses=3
-        ),
-        request(),
-        Denied(DenyReason.NO_BINDING),
-    ),
-    Case(
-        "exhausted binding refuses the tunnel too",
-        index(
-            policies=[policy("github", GITHUB_RULE)], bindings=[binding("b", policies=["github"], max_uses=1)], uses=1
-        ),
-        EgressRequest(method="CONNECT", host="api.github.com", port=443),
-        Denied(DenyReason.NO_BINDING),
-    ),
-    Case(
         "missing policy",
         index(policies=[], bindings=[binding("b", policies=["github"])]),
         request(),
@@ -387,13 +356,6 @@ def test_path_matches(pattern: str, path: str, expected: bool) -> None:
             ActiveReason.EXPIRED,
             1,
         ),
-        (
-            binding("b", policies=["github"], max_uses=1),
-            [policy("github", GITHUB_RULE)],
-            ConditionStatus.FALSE,
-            ActiveReason.EXHAUSTED,
-            1,
-        ),
         # Expiry outranks approval: approving an expired binding changes nothing.
         (
             binding("b", policies=["github"], approval=ApprovalState.PENDING, expires_at=NOW),
@@ -407,8 +369,8 @@ def test_path_matches(pattern: str, path: str, expected: bool) -> None:
 def test_binding_status(
     binding_: EgressBinding, policies: list[EgressPolicy], status: ConditionStatus, reason: ActiveReason, resolved: int
 ) -> None:
-    result = binding_status(index(policies=policies, bindings=[binding_], uses=1), binding_, NOW)
-    assert (result.observed_generation, result.resolved_policies, result.uses) == (3, resolved, 1)
+    result = binding_status(index(policies=policies, bindings=[binding_]), binding_, NOW)
+    assert (result.observed_generation, result.resolved_policies) == (3, resolved)
     (condition,) = result.conditions
     assert (condition.type, condition.status, condition.reason, condition.last_transition_time) == (
         "Active",

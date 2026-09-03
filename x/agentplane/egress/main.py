@@ -44,7 +44,6 @@ class Settings(BaseSettings):
     token_audience: str = Field(default="agentplane-egress", description="Audience of the sidecars' projected tokens.")
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
     resync_seconds: float = Field(default=300, description="Watch lifetime; every kind is relisted this often.")
-    uses_flush_seconds: float = Field(default=1, description="Granted-request counts are written at most this often.")
     identity_cache_seconds: float = Field(default=60, description="Upper bound on how long a token verdict is kept.")
     decision_ring_size: int = Field(default=200, description="Decisions kept per sandbox for /decisions.")
 
@@ -82,7 +81,6 @@ async def async_main(settings: Settings) -> None:
             namespace=settings.namespace,
             credentials_namespace=settings.credentials_namespace,
             resync_seconds=settings.resync_seconds,
-            flush_seconds=settings.uses_flush_seconds,
         )
         verifier = PodIdentityVerifier(
             authentication=AuthenticationV1Api(api),
@@ -105,8 +103,6 @@ async def async_main(settings: Settings) -> None:
         finally:
             informer_task.cancel()
             await asyncio.gather(informer_task, return_exceptions=True)
-            # The use counts granted since the last flush would otherwise die with the process.
-            await informer.flush()
 
 
 if __name__ == "__main__":

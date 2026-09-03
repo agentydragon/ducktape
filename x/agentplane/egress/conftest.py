@@ -104,7 +104,6 @@ def informer(index: Index, api_client: ApiClient, **overrides: Any) -> Informer:
             "namespace": NAMESPACE,
             "credentials_namespace": CREDENTIALS_NAMESPACE,
             "resync_seconds": 60,
-            "flush_seconds": 0,
             **overrides,
         }
     )

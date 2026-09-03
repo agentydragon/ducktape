@@ -5,10 +5,9 @@ list's `resourceVersion` applies the changes until the server ends it after `res
 the loop lists again. A failed cycle backs off and relists. Policies, bindings, and Sandboxes are
 read from the sandbox namespace; Secrets from the credentials namespace only.
 
-Bindings' `status` is derived from the index whenever policies or bindings change, when the nearest
-expiry passes, and — coalesced to at most one flush per `flush_seconds` — when requests were
-granted, and written through the status subresource only when it differs from what the API server
-holds.
+Bindings' `status` is derived from the index whenever policies or bindings change and when the
+nearest expiry passes, and written through the status subresource only when it differs from what
+the API server holds.
 """
 
 from __future__ import annotations
@@ -89,9 +88,9 @@ def _apply_policy(index: Index, name: str, policy: EgressPolicy | None) -> None:
 
 def _apply_binding(index: Index, name: str, binding: EgressBinding | None) -> None:
     if binding is None:
-        index.drop_binding(name)
+        index.bindings.pop(name, None)
     else:
-        index.put_binding(binding)
+        index.bindings[name] = binding
 
 
 def _apply_sandbox(index: Index, name: str, sandbox: Sandbox | None) -> None:
@@ -118,14 +117,12 @@ class Informer:
         namespace: str,
         credentials_namespace: str,
         resync_seconds: float,
-        flush_seconds: float = 1.0,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._index = index
         self._custom_objects = custom_objects
         self._namespace = namespace
         self._resync_seconds = resync_seconds
-        self._flush_seconds = flush_seconds
         self._clock = clock
         self._status_dirty = False
         self._synced: set[str] = set()
@@ -227,16 +224,10 @@ class Informer:
         await self._index.wait_for(lambda: self._index.synced)
         while True:
             self._status_dirty = False
-            self._index.uses_dirty = False
-            await self.flush()
+            await self._reconcile_statuses()
             timeout = self._seconds_to_next_expiry()
             with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(
-                    self._index.wait_for(lambda: self._status_dirty or self._index.uses_dirty), timeout
-                )
-            if self._index.uses_dirty and not self._status_dirty:
-                # Coalesce a burst of granted requests into one status write.
-                await asyncio.sleep(self._flush_seconds)
+                await asyncio.wait_for(self._index.wait_for(lambda: self._status_dirty), timeout)
 
     def _seconds_to_next_expiry(self) -> float | None:
         now = self._clock()
@@ -247,8 +238,7 @@ class Informer:
         ]
         return min(upcoming) if upcoming else None
 
-    async def flush(self) -> None:
-        """Write every binding status that differs from the API server's; also called on shutdown."""
+    async def _reconcile_statuses(self) -> None:
         now = self._clock().replace(microsecond=0)
         for name, binding in list(self._index.bindings.items()):
             desired = binding_status(self._index, binding, now)
@@ -267,4 +257,4 @@ class Informer:
             # compares equal instead of writing the same status again.
             if self._index.bindings.get(name) is binding:
                 self._index.bindings[name] = binding.model_copy(update={"status": desired})
-            logger.info("binding %s status: %s, uses=%d", name, desired.conditions[0].reason, desired.uses)
+            logger.info("binding %s status: %s", name, desired.conditions[0].reason)

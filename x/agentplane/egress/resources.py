@@ -111,9 +111,6 @@ class BindingSpec(_Wire):
     subjects: list[Subject]
     policies: list[str] = Field(description="EgressPolicy names in the same namespace, in precedence order.")
     expires_at: AwareDatetime | None = Field(default=None, alias="expiresAt")
-    max_uses: int | None = Field(
-        default=None, alias="maxUses", ge=1, description="Allowed requests this binding may grant in its life."
-    )
     # An absent approval is a pending one: the resource grants nothing until someone approves it.
     approval: Approval = Field(default_factory=lambda: Approval(state=ApprovalState.PENDING))
 
@@ -129,7 +126,6 @@ class ActiveReason(StrEnum):
     RESOLVED = "Resolved"
     EXPIRED = "Expired"
     NOT_APPROVED = "NotApproved"
-    EXHAUSTED = "Exhausted"
     MISSING_POLICY = "MissingPolicy"
 
 
@@ -151,7 +147,6 @@ class BindingStatus(_Wire):
     observed_generation: int | None = Field(default=None, alias="observedGeneration")
     conditions: list[Condition] = Field(default_factory=list)
     resolved_policies: int = Field(default=0, alias="resolvedPolicies")
-    uses: int = Field(default=0, description="Requests this binding has granted, as last flushed by the proxy.")
 
 
 class EgressBinding(_Wire):

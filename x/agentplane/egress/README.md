@@ -17,7 +17,7 @@ bbr test //x/agentplane/egress/...
   rule, substitution, binding status. No I/O.
 - `identity.py`: TokenReview, live Pod lookup, Sandbox owner, and the bounded verdict cache.
 - `informer.py`: list-and-watch of the four kinds into the `Index`, and the binding status
-  writes, the granted-request counts among them.
+  writes.
 - `addon.py`: the mitmproxy addon gating CONNECTs and requests; `decisions.py` the ring and the
   JSON log line; `admin.py` the `/decisions` and `/healthz` listener.
 - `proxy.py`: mitmproxy hosted in-process with the fail-closed options pinned; `main.py` the

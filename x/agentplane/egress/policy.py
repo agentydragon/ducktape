@@ -60,32 +60,12 @@ class Index:
     bindings: dict[str, EgressBinding] = field(default_factory=dict)
     sandboxes: dict[str, Sandbox] = field(default_factory=dict)
     secrets: dict[str, Secret] = field(default_factory=dict, repr=False)
-    # Requests granted per binding: what the API server last held, plus what this process granted
-    # since. The informer folds the two together and flushes the sum back.
-    uses: dict[str, int] = field(default_factory=dict)
-    uses_dirty: bool = field(default=False)
     synced: bool = field(default=False)
     changed: asyncio.Condition = field(default_factory=asyncio.Condition, repr=False)
 
     async def notify(self) -> None:
         async with self.changed:
             self.changed.notify_all()
-
-    def put_binding(self, binding: EgressBinding) -> None:
-        """Store a binding as the API server holds it; a use count already ahead of it stays ahead."""
-        name = binding.metadata.name
-        persisted = binding.status.uses if binding.status is not None else 0
-        self.uses[name] = max(self.uses.get(name, 0), persisted)
-        self.bindings[name] = binding
-
-    def drop_binding(self, name: str) -> None:
-        self.bindings.pop(name, None)
-        self.uses.pop(name, None)
-
-    async def count_use(self, binding: str) -> None:
-        self.uses[binding] = self.uses.get(binding, 0) + 1
-        self.uses_dirty = True
-        await self.notify()
 
     async def wait_for(self, predicate: Callable[[], bool]) -> None:
         async with self.changed:
@@ -153,8 +133,6 @@ def resolve_binding(index: Index, binding: EgressBinding, now: datetime) -> Bind
         reason = ActiveReason.EXPIRED
     elif spec.approval.state is not ApprovalState.APPROVED:
         reason = ActiveReason.NOT_APPROVED
-    elif spec.max_uses is not None and index.uses.get(binding.metadata.name, 0) >= spec.max_uses:
-        reason = ActiveReason.EXHAUSTED
     elif not policies:
         reason = ActiveReason.MISSING_POLICY
     else:
@@ -163,7 +141,7 @@ def resolve_binding(index: Index, binding: EgressBinding, now: datetime) -> Bind
 
 
 def binding_status(index: Index, binding: EgressBinding, now: datetime) -> BindingStatus:
-    """The status the proxy writes: `observedGeneration`, the `Active` condition, `resolvedPolicies`, `uses`.
+    """The status the proxy writes: `observedGeneration`, the `Active` condition, `resolvedPolicies`.
 
     The transition time carries over from the current condition when the status bit is unchanged,
     so a status computed twice compares equal and nothing is written twice.
@@ -175,10 +153,7 @@ def binding_status(index: Index, binding: EgressBinding, now: datetime) -> Bindi
         None,
     )
     transition = previous.last_transition_time if previous is not None and previous.status is status else now
-    uses = index.uses.get(binding.metadata.name, 0)
     message = f"{len(resolution.policies)} of {len(binding.spec.policies)} policies resolved"
-    if binding.spec.max_uses is not None:
-        message += f"; {uses} of {binding.spec.max_uses} uses"
     if resolution.missing:
         message += f"; missing: {', '.join(resolution.missing)}"
     return BindingStatus(
@@ -194,7 +169,6 @@ def binding_status(index: Index, binding: EgressBinding, now: datetime) -> Bindi
             )
         ],
         resolved_policies=len(resolution.policies),
-        uses=uses,
     )
 
 

@@ -146,9 +146,6 @@ class EgressAddon:
                 )
                 if decision.substitution is not None:
                     request.headers.set_all(decision.substitution.header, list(decision.substitution.values))
-                if not egress.is_connect:
-                    # A tunnel is not a use; the requests inside it are.
-                    await self._index.count_use(decision.binding)
                 flow.response = None  # cleared last: everything that can fail has already run
             case Denied():
                 self._ring.record(DecisionRecord(**common, outcome=Outcome.DENY, reason=decision.reason))

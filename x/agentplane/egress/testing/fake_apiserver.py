@@ -245,14 +245,11 @@ def binding(
     policies: list[str],
     approval: str = "approved",
     expires_at: str | None = None,
-    max_uses: int | None = None,
     labels: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     spec: dict[str, Any] = {"subjects": subjects, "policies": policies, "approval": {"state": approval}}
     if expires_at is not None:
         spec["expiresAt"] = expires_at
-    if max_uses is not None:
-        spec["maxUses"] = max_uses
     return {
         "apiVersion": f"{GROUP}/{VERSION}",
         "kind": "EgressBinding",

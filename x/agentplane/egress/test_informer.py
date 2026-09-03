@@ -100,29 +100,6 @@ async def test_secret_rotation_reaches_the_index(fake: FakeApiServer, index: Ind
     await index.wait_for(lambda: index.secrets[SECRET_NAME].data == {"token": "real-secret-v2"})
 
 
-async def test_uses_are_flushed_and_survive_a_relist(fake: FakeApiServer, index: Index) -> None:
-    """Granted requests reach `status.uses`; the persisted count is the floor after a relist."""
-    await index.wait_for(lambda: index.bindings[BINDING].status is not None)
-    fake.put(
-        BINDINGS_PLURAL,
-        binding(BINDING, subjects=[{"sandbox": {"name": SANDBOX_A}}], policies=[GITHUB_POLICY], max_uses=3),
-    )
-    await index.wait_for(lambda: index.bindings[BINDING].spec.max_uses == 3)
-    await index.count_use(BINDING)
-    await index.count_use(BINDING)
-    await index.wait_for(lambda: fake.objects[BINDINGS_PLURAL][BINDING].get("status", {}).get("uses") == 2)
-    fake.close_watches()
-    await index.count_use(BINDING)
-    await index.wait_for(
-        lambda: (
-            (status := index.bindings[BINDING].status) is not None
-            and status.conditions[0].reason == ActiveReason.EXHAUSTED
-        )
-    )
-    assert fake.objects[BINDINGS_PLURAL][BINDING]["status"]["uses"] == 3
-    assert index.uses[BINDING] == 3
-
-
 async def test_watch_end_relists(fake: FakeApiServer, index: Index) -> None:
     """Changes made while no watch is open are picked up by the relist that follows."""
     fake.close_watches()

@@ -41,13 +41,11 @@ from x.agentplane.egress.identity import PodIdentityVerifier
 from x.agentplane.egress.policy import DenyReason, Index
 from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
 from x.agentplane.egress.testing.fake_apiserver import (
-    BINDINGS_PLURAL,
     NAMESPACE,
     SANDBOXES_PLURAL,
     SECRETS_PLURAL,
     FakeApiServer,
     TokenVerdict,
-    binding,
     pod_for,
     sandbox,
     secret,
@@ -237,23 +235,6 @@ async def test_rotated_secret_is_substituted_without_restart(fake: FakeApiServer
     response = await proxy.get("/repos/o/r", headers={"Authorization": f"Bearer {PLACEHOLDER}"})
     assert response.status == 200
     assert one(proxy.upstream.requests)[2]["authorization"] == "Bearer real-secret-v2"
-
-
-async def test_max_uses_exhausts_the_binding(fake: FakeApiServer, proxy: ProxyUnderTest) -> None:
-    """Two granted requests, then nothing: the third is refused and the count is persisted."""
-    fake.put(
-        BINDINGS_PLURAL,
-        binding(BINDING, subjects=[{"sandbox": {"name": SANDBOX_A}}], policies=[GITHUB_POLICY], max_uses=2),
-    )
-    await proxy.index.wait_for(lambda: proxy.index.bindings[BINDING].spec.max_uses == 2)
-    assert (await proxy.get("/public/a")).status == 200
-    assert (await proxy.get("/public/b")).status == 200
-    with pytest.raises(aiohttp.ClientHttpProxyError) as refused:
-        await proxy.get("/public/c")
-    assert refused.value.headers is not None
-    assert refused.value.headers[DENIED_HEADER] == f"denied; reason={DenyReason.NO_BINDING}"
-    assert [path for _, path, _ in proxy.upstream.requests] == ["/public/a", "/public/b"]
-    await proxy.index.wait_for(lambda: fake.objects[BINDINGS_PLURAL][BINDING].get("status", {}).get("uses") == 2)
 
 
 async def test_admin_serves_decisions_and_health(proxy: ProxyUnderTest) -> None:
