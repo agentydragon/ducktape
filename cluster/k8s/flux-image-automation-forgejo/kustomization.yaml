@@ -43,3 +43,4 @@ resources:
   - agentplane-app-image.yaml
   - agentplane-egress-image.yaml
   - agentplane-egress-sidecar-image.yaml
+  - forgejo-git-health-exporter-image.yaml
