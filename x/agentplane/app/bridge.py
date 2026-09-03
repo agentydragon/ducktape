@@ -43,6 +43,8 @@ from x.agentplane.runner.client import Attachment, RunnerClient, RunnerError, St
 # gazelle:include_dep @pypi//grpcio
 
 logger = logging.getLogger(__name__)
+# Stored history streams to a tab in pages of this many events, so a long thread replays whole.
+REPLAY_PAGE = 1000
 
 # Seconds of silence after which the stream carries a comment, so proxies keep it open.
 KEEPALIVE_S = 15
@@ -125,11 +127,26 @@ class Feed:
             else:
                 # Everything is stored: reattach after it, so the runner sends live events only.
                 attachment.cancel()
-                self.attachment = await (await self._client_for()).attach(session_id, after_sequence=stored)
+                self.attachment = await self._reattach(session_id, stored)
         else:
-            stored = await self._store.last_sequence(self.thread_id)
-            self.attachment = await (await self._client_for()).attach(session_id, after_sequence=stored)
+            self.attachment = await self._reattach(session_id, await self._store.last_sequence(self.thread_id))
         self.attached = self.attachment.attached
+
+    async def _reattach(self, session_id: str, stored: int) -> Attachment:
+        """Attach after the stored cursor, or after the runner's whole log where that is shorter: a
+        runner whose log restarted (a recreated sandbox reusing the session id) replays from its
+        start, and the store keeps what it already holds under those sequences."""
+        probe = await (await self._client_for()).attach(session_id)
+        if stored <= probe.attached.last_sequence:
+            probe.cancel()
+            return await (await self._client_for()).attach(session_id, after_sequence=stored)
+        logger.warning(
+            "feed %s: the store holds sequences up to %d but the runner's log ends at %d; replaying its log",
+            self.key,
+            stored,
+            probe.attached.last_sequence,
+        )
+        return probe
 
     async def run(self) -> None:
         assert self.attachment is not None
@@ -294,9 +311,10 @@ class RunnerBridge:
         try:
             yield _frame("attached", MessageToDict(feed.attached))
             cursor = after_sequence
-            for event in await self._store.events(feed.thread_id, after_sequence=cursor):
-                yield _frame("event", MessageToDict(event), event_id=event.sequence)
-                cursor = event.sequence
+            while page := await self._store.events(feed.thread_id, after_sequence=cursor, limit=REPLAY_PAGE):
+                for event in page:
+                    yield _frame("event", MessageToDict(event), event_id=event.sequence)
+                    cursor = event.sequence
             while True:
                 try:
                     item = await asyncio.wait_for(inbox.get(), timeout=KEEPALIVE_S)

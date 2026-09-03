@@ -65,7 +65,7 @@ class ThreadView(BaseModel):
     id: UUID
     sandbox: str
     session_id: str
-    provider: pb.Provider.ValueType = Field(description="The protocol's Provider enum, as its name.")
+    provider: str = Field(description="The protocol's Provider enum member, by name: PROVIDER_CLAUDE, PROVIDER_CODEX.")
     model: str
     cwd: str
     created_at: datetime
@@ -164,7 +164,8 @@ class TrajectoryStore:
             last_sequence, last_at = last.one()
             return _view(thread, last_sequence, last_at)
 
-    async def events(self, thread_id: UUID, *, after_sequence: int = 0, limit: int = 10_000) -> list[pb.Event]:
+    async def events(self, thread_id: UUID, *, after_sequence: int = 0, limit: int) -> list[pb.Event]:
+        """Up to `limit` events after the cursor, in sequence order; a reader pages until a short page."""
         async with self._sessions() as session:
             payloads = await session.scalars(
                 select(Event.payload)
@@ -180,7 +181,7 @@ def _view(thread: Thread, last_sequence: int | None, last_at: datetime | None) -
         id=thread.id,
         sandbox=thread.sandbox,
         session_id=thread.session_id,
-        provider=pb.Provider.Value(thread.provider),
+        provider=thread.provider,
         model=thread.model,
         cwd=thread.cwd,
         created_at=thread.created_at,

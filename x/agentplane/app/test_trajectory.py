@@ -42,11 +42,12 @@ async def test_a_session_is_one_thread_and_its_events_read_back_in_order(store: 
         thread, [_event(3, turn_started=pb.TurnStarted(turn_id="t1")), _event(4, harness_lost=pb.HarnessLost())]
     )
 
-    events = await store.events(thread)
+    events = await store.events(thread, limit=100)
     assert [event.sequence for event in events] == [1, 2, 3, 4]
     assert events[1].native.line == '{"type":"x"}'
     assert events[1].at.ToDatetime(tzinfo=UTC) == datetime(2026, 9, 2, 12, 0, 2, tzinfo=UTC)
-    assert [event.sequence for event in await store.events(thread, after_sequence=2)] == [3, 4]
+    assert [event.sequence for event in await store.events(thread, after_sequence=2, limit=100)] == [3, 4]
+    assert [event.sequence for event in await store.events(thread, after_sequence=1, limit=2)] == [2, 3]
     assert await store.last_sequence(thread) == 4
     assert await store.last_sequence(other) == 0
 
@@ -63,14 +64,14 @@ async def test_threads_list_with_their_progress(store: TrajectoryStore) -> None:
     assert views[thread].model_dump(include={"sandbox", "session_id", "provider", "model", "cwd", "last_sequence"}) == {
         "sandbox": "sb-1",
         "session_id": "s-1",
-        "provider": pb.PROVIDER_CLAUDE,
+        "provider": "PROVIDER_CLAUDE",
         "model": "test-model",
         "cwd": "/state/work",
         "last_sequence": 2,
     }
     assert views[thread].last_event_at == datetime(2026, 9, 2, 12, 0, 2, tzinfo=UTC)
     assert (views[empty].provider, views[empty].last_sequence, views[empty].last_event_at) == (
-        pb.PROVIDER_CODEX,
+        "PROVIDER_CODEX",
         0,
         None,
     )
