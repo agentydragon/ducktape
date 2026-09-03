@@ -79,7 +79,36 @@ All from the bundle's strings; the identifiers are the minified names as they ap
 - `thread/tokenUsage/updated` reports `modelContextWindow: 258400` = 272 000 × 0.95 (fallback), while the LiteLLM route advertises 372 000 (`proxy-config.yaml:246-248`).
 - Upstream request: `model: chatgpt/oai-responses/gpt-5.6-luna`, `reasoning: {effort: low, summary: auto}` (effort from the driver, summary from the fallback default — the real entry defaults to `none`), `include: [reasoning.encrypted_content]`, `store: false`, `prompt_cache_key: <thread id>`, tools `exec_command`/`write_stdin`/`request_user_input` as plain `function` tools (classic shape, no code mode), no `text.verbosity`. No `Unknown model` line reached stderr (tracing goes to `CODEX_HOME` sqlite logs; the app-server warning above is the visible signal).
 
-## 4. Options, ranked
+## 4. Live check: Codex recognising the model, through LiteLLM
+
+Rai's expectation was that LiteLLM copes with the recognised model's feature set. Checked on
+2026-09-03 with the `shell` capture scenario: Codex launched with `model = gpt-5.6-luna` against a
+local shim that rewrites the request's `model` to `chatgpt/oai-responses/gpt-5.6-luna` and forwards
+everything else untouched to LiteLLM under the cheap-experiments key.
+
+- **The turn completed correctly.** Three upstream requests, all `200`; the model ran both probe
+  commands and reported `exit 0` / `exit 23` with the right stdout and stderr; no `warning`
+  notification at all.
+- **Code mode was on and survived the proxy.** The request carries no `tools` or `instructions`
+  keys: the tool set travels as a developer `additional_tools` input item (namespace `functions`
+  with the custom `exec` JavaScript tool, `wait`, and `request_user_input`), and the base
+  instructions as a developer message. The model answered with `function_call: wait` items and a
+  `custom_tool_call: exec` streamed as `response.custom_tool_call_input.delta`; Codex executed
+  the script, which called `exec_command` from inside the isolate. So the Agentplane adapter would
+  see `custom_tool_call` items instead of `exec_command` function calls once the model is
+  recognised.
+- **Verbosity and reasoning context went through:** `text: {verbosity: low}` and
+  `reasoning: {effort: low, context: all_turns}` were accepted. No reasoning `summary` was
+  requested (the real entry defaults to `none`), so no summary deltas came back; the earlier
+  fallback-metadata capture had `summary: auto` and streamed them.
+- **No websocket attempt** reached the shim: with an API-key provider and an `http://` base URL,
+  Codex used plain SSE despite `prefer_websockets`.
+- **The context window did not change:** `thread/tokenUsage/updated` still reports 258 400, because
+  the real entry's `context_window` is the same 272 000 as the fallback's; only its
+  `max_context_window` (872 000) differs, which is what a `model_context_window` override may now
+  reach. The route's measured 372 000 needs that override either way.
+
+## 5. Options, ranked
 
 Ranking assumes the goal is "harness applies its real per-model behaviour" with the least blast radius. Verified = observed in binary/source/capture; inferred = follows from that but not executed.
 
