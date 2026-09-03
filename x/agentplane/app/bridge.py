@@ -396,7 +396,13 @@ async def session_events(
     return StreamingResponse(
         bridge.events(name, session_id, after_sequence=after_sequence),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        # Content-Encoding declares the body already encoded, so a compressor in front of us leaves
+        # it alone. The cluster gateway's Envoy otherwise gzips this stream (observed:
+        # `content-encoding: gzip` on `content-type: text/event-stream` in a browser), and a
+        # compressor holds small frames until it has enough input to emit a deflate block -- on a
+        # quiet session nothing reaches the browser until a keepalive pushes it over, which showed
+        # up as a 15s wait for the first byte, exactly one KEEPALIVE_S.
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Content-Encoding": "identity"},
     )
 
 

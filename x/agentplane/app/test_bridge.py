@@ -131,6 +131,11 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
         assert [row["sessionId"] for row in (await http.get(SESSIONS)).json()] == [SESSION]
 
         async with http.stream("GET", EVENTS) as first_tab:
+            # An intermediary that compresses this stream holds small frames until it has enough
+            # input to emit a block, so the browser waits a keepalive for its first byte. Declaring
+            # the body already encoded is what keeps a compressor off it.
+            assert first_tab.headers["content-encoding"] == "identity"
+            assert first_tab.headers["cache-control"] == "no-cache"
             first = first_tab.aiter_lines()
             assert (await next_message(first)).event == "attached"
             # A fresh Open would supersede this stream, so opening again while streaming is refused.
