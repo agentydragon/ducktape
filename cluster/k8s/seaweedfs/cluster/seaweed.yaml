@@ -48,6 +48,13 @@ spec:
     # replicated collections could not grow. 16GB keeps object chunks well below
     # the per-volume cap while leaving enough free slots for new collections.
     volumeSizeLimitMB: 16000
+    # Accepted posture (operator decision 2026-09-02): single-NODE failure tolerance.
+    # 001 = one extra copy on another volume server in the same rack; all three
+    # HDD servers carry one rack label, so a rack-level failure at OVH (they are
+    # physically in two racks) can take both copies. Rack-fault tolerance would
+    # need the HDD group split per physical rack plus repl 010, which strands the
+    # singleton H109A09 box with no bulk; whether OVH can supply a node in the
+    # other rack is unknown. Not planned; revisit only if a fourth HDD node lands.
     defaultReplication: "001"
     metricsPort: 9321
     # QoS / eviction protection (see cluster/docs/lessons_learned/
@@ -94,18 +101,16 @@ spec:
       # -disk=hdd matches the flat servers' default disk type ("" == hdd,
       # verified in seaweedfs 4.29 ToDiskType).
       #
-      # TODO(rack label is logical, not physical — current state is weird): OVH
-      # actually racks these boxes across THREE racks (verified via the
-      # ovh_dedicated_server data source): 102453=H109A09, 103656+103711=H109B04,
-      # and the ssd nodes 104952+104963=H108B01. This hdd group carries ONE rack
-      # label (matching the flat servers, so volume.move doesn't create transient
-      # same-rack placement mismatches during Phase 2). So `hil-ovh-h109b04` is
-      # accurate for 103656/103711 but WRONG for 102453 (really H109A09). Kept as
-      # a single label deliberately: repl 001 (same-rack, 2 nodes) needs ≥2 nodes
-      # per rack, so a faithful per-rack split would strand the singleton H109A09
-      # (102453, the 3.6 TB disk) with no bulk. Real rack-fault tolerance = split
-      # HDD + repl 010 for bulk ("Path B"), deferred. See
-      # cluster/docs/plans/ovh_storage_tiering.md.
+      # The rack label is logical, not physical: OVH racks these boxes across
+      # THREE racks (ovh_dedicated_server data source): 102453=H109A09,
+      # 103656+103711=H109B04, and the ssd nodes 104952+104963=H108B01. This hdd
+      # group carries ONE rack label (matching the flat servers, so volume.move
+      # doesn't create transient same-rack placement mismatches). Deliberate:
+      # repl 001 (same-rack, 2 nodes) needs >=2 nodes per rack, and a faithful
+      # per-rack split would strand the singleton H109A09 (102453, the 3.6 TB
+      # disk) with no bulk. Single-node tolerance is the accepted posture — see
+      # defaultReplication above; the split + repl 010 sketch stays in
+      # cluster/docs/plans/ovh_storage_tiering.md as an option, not a plan.
       replicas: 3
       dataCenter: "hil"
       rack: "hil-ovh-h109b04"

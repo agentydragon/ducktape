@@ -71,14 +71,6 @@ editing a route.
       `bootstrap/<sha>.qcow2.sha256` sidecars with no surviving qcow2 still
       linger in the `vm-images` bucket and could be swept too. See
       <lessons_learned/2026_06_02_seaweedfs_volume_loss_ovh_rename.md>.
-- [ ] **Fix SeaweedFS rack labels.** All three OVH volume servers currently
-      advertise `rack=hil-ovh-h109b04`, so the `defaultReplication: "001"`
-      policy effectively means "any other DataNode" rather than "another
-      rack". Either give each volume server a distinct rack id (or just
-      `rack=$nodeName`) or document that we have single-node tolerance only.
-      Rolling-PVC runbook is now at
-      <runbooks/rolling_seaweedfs_volume_pvc.md>; the rack-labels caveat is
-      called out there too.
 - [ ] **Add ReplicationSource for gitea-shared-storage** (and any other
       SeaweedFS-backed PVC holding non-regeneratable state). Currently
       only `grocy-{sf,vallejo}` and `tana-mcp` have volsync backups; the
