@@ -181,31 +181,49 @@ BuildBuddy's default executor while CI pins `ghcr.io/agentydragon/rbe-worker`, a
 pin was 1.8x slower. Every row above is on the _default_ image, while the failure that
 started this round (`test_policy` TIMEOUT 65.6s on #5469) was on the pinned one. Both images.
 
-**Where the time goes is now observable.** A timed-out test's log ends at
+**Where the time goes, measured rather than inferred.** An earlier draft of this section blamed
+interpreter and import cost, carrying over the augur story. That is wrong here, and the measurement
+says so. With `PYTHONPROFILEIMPORTTIME=1`, the whole import tree costs **1.5s** (`pytest_bazel`
+cumulative 1.540s, the root, so it bounds everything under it); the heaviest entries are pytest's own
+machinery, and `kubernetes_asyncio` does not reach the top eighteen. A green `test_proxy` is 1.55s of
+pytest for 11 tests, a green `test_informer` 0.35s. Call it three seconds of Python.
 
-```text
-Executing tests from //x/agentplane/egress:test_policy
-Running pytest.main with: ['--ignore=external', ...]
-```
+The cost is the execution platform. BuildBuddy's own per-execution timings, same invocation:
 
-`pytest_bazel` prints that line immediately before calling `pytest.main()`, and the log never
-reaches `test session starts`. So the whole 60s elapses inside pytest startup — plugin entry-point
-discovery and conftest import — before a single test body runs. That is the same shape this note
-already described for augur ("~15-25s of interpreter and import cost before executing a single
-assertion"), now confirmed from the other end: it is not numerical compute variance, and it is not
-specific to jax/numpyro.
+| phase                                | `//util:test_image_tag` | `//x/agentplane/egress:test_policy` |
+| ------------------------------------ | ----------------------: | ----------------------------------: |
+| queued -> worker                     |                   0.06s |                               0.09s |
+| worker -> input fetch (VM/container) |               **4.43s** |                         **252.83s** |
+| input fetch                          |                   0.85s |                               9.62s |
+| execution                            |              **40.69s** |           60.96s, killed at the cap |
 
-The passing runs say the same thing from the other side. `test_proxy` green is **1.55s of pytest
-for 11 tests** against ~16s of wall time; `test_informer` green is **0.35s of pytest** against
-15.9s. Roughly 15s of a 60s budget is gone before the suite starts, on a good run — so a test doing
-under two seconds of work has under 4x headroom, and the excursions above eat it.
+`test_image_tag` is a trivial test: ~3s of Python inside a 40s execution, behind 4s of VM preparation.
+`test_policy` waited over four minutes for an executor to prepare a filesystem. So `size = "small"`
+is not measuring test work at all; it is measuring how long an executor takes to hand a process a
+filesystem, and 60s sits inside that variance. A timed-out log ending at `pytest_bazel`'s
+`Running pytest.main with:` line without reaching `test session starts` is consistent with this: it is
+where a starved process happens to be when the cap fires, not work that costs a minute.
 
-**Recommendation, for the decision this note deliberately left open**: raise the
-`devinfra/python/defs.bzl` `py_test` default from `small` to `medium`. The evidence for the
-"if it recurs" trigger is above; per-package sizing cannot reach this, because the cost is paid by
-every Python test in the repo before its own code runs. The counter-argument the August entry
-raised still stands and is unaffected by any of this — it weakens the "small tests should be small"
-signal — so it remains a call for Rai, not a unilateral change.
+**Caveat on these particular numbers**: they were taken while this investigation was itself running
+repeat suites against the fleet, so they overstate the steady state. The uncontaminated evidence is
+CI — `test_policy` TIMEOUT 65.6s on #5469 with no such load — and this note's own August measurement
+of exactly 60.001s of execution on a demonstrably idle fleet.
+
+**Verified fix.** With the `py_test` default raised to `medium`, the same ten targets over ten runs
+each: **100 of 100 passed, no timeouts**, against 2-4 in 10 failing per target before. Several passing
+runs took 90-101s — above `small`'s cap outright, so those could not have passed under it.
+
+**Done, for the decision this note deliberately left open**: the `devinfra/python/defs.bzl`
+`py_test` default is now `medium`. Per-package sizing cannot reach this, because the overhead is paid
+by every Python test in the repo regardless of what it does. August's counter-argument still stands
+and is untouched by the evidence — it does weaken the "small tests should be small" signal — so pass
+`size = "small"` explicitly where a test is genuinely quick and you want the tighter budget to mean
+something.
+
+**This is a stopgap, and the real question is upstream of it.** Nothing here makes a test faster; it
+widens a budget so platform variance stops failing unrelated PRs. Why an executor takes 4s — or 253s —
+to prepare a VM is the live question, and it is a sharper form of this note's August open question
+about the pinned worker image.
 
 ### Not the cause, so nobody re-walks these
 
