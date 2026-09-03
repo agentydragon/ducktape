@@ -91,8 +91,8 @@ Missing:
   direction and gets its own, different check. The judge's decisions are trajectory events, so a
   leak that got through is findable.
 - **The orchestrator's identity on the API.** Haku creates, suspends, and archives sandboxes under
-  its own Kubernetes identity, through the same service proxy path the Ducktape agent uses on
-  staging today. What it may create is a permission on that identity, held wherever the app
+  its own Kubernetes identity, presenting an audience-scoped token the way the Ducktape agent does
+  on staging today. What it may create is a permission on that identity, held wherever the app
   keeps policy; a SandboxTemplate is a Pod shape and carries no permission, because a template
   is copied into each Sandbox at creation and cannot change under a running Pod, while a
   permission on the identity can (Rai).

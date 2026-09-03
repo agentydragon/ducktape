@@ -36,12 +36,3 @@ rules:
     resources: ["serviceaccounts/token"]
     resourceNames: ["agentplane-agent"]
     verbs: ["create"]
-  # The older path to the same API, through the API server's service proxy. It is inert for
-  # anything the app guards: the API server strips Authorization when it proxies, so a request
-  # arriving this way carries neither credential and is answered 401. It stays only until an agent
-  # has actually reached the app over the route above from its own egress fence; then this rule and
-  # the matching kube-apiserver ingress in ../app/networkpolicy.yaml go together.
-  - apiGroups: [""]
-    resources: ["services/proxy"]
-    resourceNames: ["agentplane-app", "agentplane-app:8080", "agentplane-app:http"]
-    verbs: ["get", "create", "delete"]
