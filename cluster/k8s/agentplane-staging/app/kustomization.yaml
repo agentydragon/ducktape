@@ -6,11 +6,13 @@ resources:
   - serviceaccount-agentplane-runner.yaml
   - sandboxtemplate-agentplane-runner.yaml
   - serviceaccount-agentplane-app.yaml
+  - serviceaccount-agentplane-agent.yaml
   - role-agentplane-app.yaml
   - rolebinding-agentplane-app.yaml
   - clusterrole-agentplane-staging-app-token-reviewer.yaml
   - deployment-agentplane-app.yaml
   - service-agentplane-app.yaml
+  - httproute.yaml
   - networkpolicy.yaml
 
 configMapGenerator:

@@ -29,3 +29,11 @@ spec:
       namespace: ducktape-flux
     - name: agentplane-staging-egress # the proxy the sidecar relays to and the CA bundle the runner mounts
       namespace: ducktape-flux
+    - name: gateway # the HTTPRoute's parent
+      namespace: ducktape-flux
+    # TF mints the OAuth2 provider and the agentplane-oidc Secret; reflector mirrors it into this
+    # namespace. The Deployment reads three keys out of it, so without both the pod does not start.
+    - name: sso-providers-tf
+      namespace: ducktape-flux
+    - name: reflector
+      namespace: ducktape-flux

@@ -268,9 +268,11 @@ py_test(
     deps = [
         ":conftest",
         ":main",
+        ":oidc",
         "//:conftest",
         "@pypi//fastapi",
         "@pypi//httpx",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

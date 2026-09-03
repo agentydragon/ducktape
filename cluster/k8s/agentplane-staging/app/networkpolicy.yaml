@@ -52,9 +52,10 @@ spec:
             - port: "8888"
               protocol: TCP
 ---
-# The app takes browser traffic only through the Authentik proxy outpost, and
-# reaches DNS, the API server for the inventory, the runner Pods on 7000, the
-# egress proxy's admin port for /decisions, and its trajectory store.
+# The app takes browser traffic straight from the gateway and reaches DNS, the
+# API server for the inventory, Authentik over its public origin for the OIDC
+# handshake, the runner Pods on 7000, the egress proxy's admin port for
+# /decisions, and its trajectory store.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -65,10 +66,11 @@ spec:
     matchLabels:
       app.kubernetes.io/name: agentplane-app
   ingress:
-    - fromEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: authentik
-            app.kubernetes.io/name: authentik
+    # cilium-envoy is hostNetwork and its egress to a backend Pod carries the reserved:ingress
+    # identity -- not the gateway's namespace, not host, not remote-node
+    # (cluster/docs/cilium_network_policy.md § Gateway API backends).
+    - fromEntities:
+        - ingress
       toPorts:
         - ports:
             - port: "8080"
@@ -101,6 +103,19 @@ spec:
               protocol: TCP
     - toEntities:
         - kube-apiserver
+    # Discovery, the token exchange and userinfo, against the issuer's public origin
+    # (https://auth.allegedly.works) -- the same URL the browser is redirected to, which is what
+    # the discovery document names and the app pins. That resolves to the gateway's address, so
+    # the hop lands on a node's hostNetwork Envoy rather than on the authentik Pod: hence host and
+    # remote-node beside world, as the egress proxy next door already found (../egress/networkpolicy.yaml).
+    - toEntities:
+        - world
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: agentplane-staging

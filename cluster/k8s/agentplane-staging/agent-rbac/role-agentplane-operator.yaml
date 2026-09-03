@@ -24,12 +24,23 @@ rules:
   - apiGroups: [""]
     resources: ["pods/log"]
     verbs: ["get"]
-  # The app's API, through the API server's service proxy: the agent's kubeconfig goes through a
-  # proxy that cannot upgrade connections, so port-forward and exec are not a path to it. The
-  # proxy subresource is addressed by the bare Service name or with a port number or port name
-  # appended, so all three spellings are named. The verbs are the HTTP methods the app's API takes:
-  # GET for reads and event streams, POST to create sandboxes and sessions, send inputs, and
-  # suspend or resume, DELETE for the sandboxes the agent made.
+  # The credential the agent presents to the app's API, at
+  # https://agentplane-staging.allegedly.works: a token scoped to the app's audience, which
+  # TokenReview resolves to system:serviceaccount:agentplane-staging:agentplane-agent. Minting it
+  # is not assuming that account -- it holds no RoleBinding, so the token is an identity for the
+  # app and nothing in the cluster (../app/serviceaccount-agentplane-agent.yaml).
+  #
+  #   TOKEN=$(kubectl -n agentplane-staging create token agentplane-agent --audience=agentplane)
+  #   curl -H "Authorization: Bearer $TOKEN" https://agentplane-staging.allegedly.works/sandboxes
+  - apiGroups: [""]
+    resources: ["serviceaccounts/token"]
+    resourceNames: ["agentplane-agent"]
+    verbs: ["create"]
+  # The older path to the same API, through the API server's service proxy. It is inert for
+  # anything the app guards: the API server strips Authorization when it proxies, so a request
+  # arriving this way carries neither credential and is answered 401. It stays only until an agent
+  # has actually reached the app over the route above from its own egress fence; then this rule and
+  # the matching kube-apiserver ingress in ../app/networkpolicy.yaml go together.
   - apiGroups: [""]
     resources: ["services/proxy"]
     resourceNames: ["agentplane-app", "agentplane-app:8080", "agentplane-app:http"]

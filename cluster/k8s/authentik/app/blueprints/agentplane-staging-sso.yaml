@@ -1,40 +1,19 @@
 version: 1
 metadata:
-  name: SSO - Agentplane staging
+  name: Retire Agentplane staging SSO
   labels:
-    blueprints.goauthentik.io/description: "Agentplane staging integration app proxy provider, application, and single-user access binding"
+    blueprints.goauthentik.io/description: "Delete the retired Agentplane staging application and proxy provider; the app owns its own OIDC login"
 
 entries:
-  - model: authentik_providers_proxy.proxyprovider
-    id: agentplane-staging-provider
-    state: present
-    identifiers:
-      name: agentplane-staging
-    attrs:
-      external_host: "https://agentplane-staging.allegedly.works"
-      internal_host: "http://agentplane-app.agentplane-staging.svc.cluster.local:8080"
-      mode: proxy
-      authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
-      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
-      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
-      access_token_validity: "hours=24"
-
+  # The app authenticates its own surface now (tf/gitops/sso-providers/provider_agentplane_staging.tf),
+  # so the forward-auth provider and the application in front of it go. This entry keeps deleting
+  # the slug on every reconcile, which is why the Terraform application is slugged `agentplane`.
   - model: authentik_core.application
-    id: agentplane-staging-app
-    state: present
+    state: absent
     identifiers:
       slug: agentplane-staging
-    attrs:
-      name: Agentplane staging
-      provider: !KeyOf agentplane-staging-provider
-      meta_description: "Agentplane integration app on staging - sandboxes running Claude Code and Codex on the cheap-experiments key"
-      meta_launch_url: "https://agentplane-staging.allegedly.works"
-      open_in_new_tab: true
 
-  # Restrict access to the single user agentydragon.
-  - model: authentik_policies.policybinding
-    state: present
+  - model: authentik_providers_proxy.proxyprovider
+    state: absent
     identifiers:
-      target: !KeyOf agentplane-staging-app
-      user: !Find [authentik_core.user, [username, agentydragon]]
-      order: 0
+      name: agentplane-staging

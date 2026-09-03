@@ -1,10 +1,10 @@
 # The Agentplane integration app: the sandbox inventory over this namespace's
 # Sandboxes and the runner bridge that dials each runner Pod on port 7000.
 # Kubernetes is the inventory; every session's events are copied into the
-# trajectory store (../db) as they arrive. Reached through the Authentik proxy outpost (the HTTPRoute lives in
-# cluster/k8s/authentik/proxy-routes); an agent reaches it by port-forward
-# through the agent-rbac binding. One replica: the bridge holds live runner
-# attachments in memory, and a second replica would supersede them.
+# trajectory store (../db) as they arrive. Reached straight from the gateway
+# (httproute.yaml): the app authenticates its own callers, by an operator's OIDC
+# session or a reviewed Kubernetes token. One replica: the bridge holds live
+# runner attachments in memory, and a second replica would supersede them.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -12,6 +12,9 @@ metadata:
   namespace: agentplane-staging
   labels:
     app.kubernetes.io/name: agentplane-app
+  annotations:
+    # A re-minted client secret otherwise leaves the pod on the old one, and every login 401s.
+    secret.reloader.stakater.com/reload: agentplane-oidc
 spec:
   replicas: 1
   strategy:
@@ -75,6 +78,31 @@ spec:
                   key: dbname
             - name: AGENTPLANE_DATABASE_URL
               value: "postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)"
+            # The operator's way in. Setting the issuer is what enables the login at all; the path
+            # is the Authentik application's slug, and the app pins the id token's `iss` to it.
+            # Client, secret and session key come from the Terraform-minted Secret
+            # (tf/gitops/sso-providers/provider_agentplane_staging.tf), reflected into this
+            # namespace. The other way in, a Kubernetes token, needs no configuration beyond the
+            # audience `--token-audience` defaults to.
+            - name: AGENTPLANE_OIDC_ISSUER
+              value: https://auth.allegedly.works/application/o/agentplane/
+            - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
+              value: https://agentplane-staging.allegedly.works
+            - name: AGENTPLANE_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: agentplane-oidc
+                  key: client-id
+            - name: AGENTPLANE_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: agentplane-oidc
+                  key: client-secret
+            - name: AGENTPLANE_OIDC_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: agentplane-oidc
+                  key: session-secret
           ports:
             - name: http
               containerPort: 8080

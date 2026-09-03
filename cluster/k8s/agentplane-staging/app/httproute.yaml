@@ -1,0 +1,33 @@
+# The public route for the Agentplane app: Gateway -> agentplane-app, with no Authentik outpost in
+# between. The app owns its auth (x/agentplane/app/README.md § Authentication) -- an operator's
+# OIDC session or a Kubernetes token -- so the forward-auth hop had nothing left to add and two
+# things to cost: its response writer implements no Flush(), which stalls every SSE stream until a
+# buffer fills, and it was the reason a forgeable identity header was ever trusted.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: agentplane-staging
+  namespace: agentplane-staging
+spec:
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+      # Not the plaintext listener: the gateway's HTTP-only route owns port 80 and redirects it.
+      sectionName: https-wildcard
+  hostnames:
+    - "agentplane-staging.allegedly.works"
+  rules:
+    - filters:
+        # Set at the TLS-aware edge; the app's own hop cannot tell that HTTPS was terminated.
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+              - name: Strict-Transport-Security
+                value: "max-age=31536000"
+      backendRefs:
+        - name: agentplane-app
+          port: 8080
+      # A session stream stays attached for as long as the tab is open.
+      timeouts:
+        request: "3600s"
+        backendRequest: "3600s"

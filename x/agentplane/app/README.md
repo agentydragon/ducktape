@@ -39,21 +39,29 @@ are two credentials, and both are cryptographic:
   no login at all, which is how the tests and a local run work.
 - **A Kubernetes token.** `Authorization: Bearer <token>` goes to TokenReview, which returns the
   username the API server vouches for. The token has to carry the app's audience
-  (`--token-audience`, `agentplane`), so a token minted for anything else cannot be replayed here:
-  `kubectl create token <serviceaccount> --audience=agentplane`.
+  (`--token-audience`, `agentplane`), so a token minted for anything else cannot be replayed here.
+  On staging an agent mints one for a ServiceAccount that exists only to be an identity:
+
+  ```sh
+  TOKEN=$(kubectl -n agentplane-staging create token agentplane-agent --audience=agentplane)
+  curl -H "Authorization: Bearer $TOKEN" https://agentplane-staging.allegedly.works/sandboxes
+  ```
 
 Whichever credential a request carried is what an egress approval or launch-time grant records.
 
-Nothing is inferred from a request header. The app used to trust `x-authentik-username` on the
-grounds that the Authentik outpost was the only way in; the API server's service proxy forwards
-caller-supplied headers, so it was not, and anyone with `services/proxy` on the app's Service
-could approve their own egress bindings.
+Nothing is inferred from a request header, and nothing in front of the app authenticates for it:
+the gateway routes straight to the Service. The app used to sit behind an Authentik forward-auth
+outpost and trust the `x-authentik-username` it set, on the grounds that the outpost was the only
+way in. The API server's service proxy was the other way in and it forwards caller-supplied
+headers, so anyone with `services/proxy` on the Service could approve their own egress bindings.
+Owning the login also drops the outpost's 15-second stall on every SSE stream, whose response
+writer implements no `Flush()`.
 
 ## Shape
 
 ```text
 browser (OIDC session)  /  agent (Kubernetes token)
-   |  REST + SSE
+   |  REST + SSE, straight from the cluster gateway
 integration app (Deployment, namespace agentplane-staging)
    |  Kubernetes API              |  runner protocol (gRPC, in-cluster)
 Sandbox -> Pod, PVC               |
