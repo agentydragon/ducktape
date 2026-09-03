@@ -13,8 +13,8 @@ pub(crate) fn validate_anything_holes(items: &[ModuleItem]) -> Result<()> {
     bail!(
         "source_match `ANYTHING` is unsupported in {}. `ANYTHING` is anonymous \
          sugar only for expression (`EXPR`), statement (`STMT`), pattern, \
-         variable-declarator-list (`DECLARATORS`), object-property-list \
-         (`ANYTHING` shorthand or `OBJECT_PROPS`), and class-rest (`CLASS_REST`) holes. \
+         variable-declarator-list (`DECLARATORS`), object-property-list, and \
+         class-member-list holes. \
          Use typed holes when the position needs stronger diagnostics. \
          Object property keys still need exact keys; use `key: ANYTHING` to wildcard a \
          property value or `{{ ANYTHING }}` to skip arbitrary properties.",
@@ -64,11 +64,11 @@ impl Visit for UnsupportedAnythingCollector {
     }
 
     fn visit_object_pat_prop(&mut self, prop: &ObjectPatProp) {
-        // `{ ANYTHING }` / `{ OBJECT_PROPS }` is the destructure-pattern
-        // property-list hole (the pattern analog of the object-literal
-        // `OBJECT_PROPS` hole), so the shorthand `ANYTHING` here is supported
-        // sugar, not a stray `ANYTHING` binding identifier.
-        if object_pat_prop_list_hole_name(prop).is_some() {
+        // `{ ANYTHING }` is the destructure-pattern property-list hole (the
+        // pattern analog of the object-literal shorthand `ANYTHING`), so the
+        // shorthand here is a supported run hole, not a stray `ANYTHING`
+        // binding identifier.
+        if is_anything_object_pat_prop_hole(prop) {
             return;
         }
         prop.visit_children_with(self);

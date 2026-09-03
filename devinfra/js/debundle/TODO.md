@@ -528,8 +528,7 @@ name-binding-to-source-match` showed that even one explicit
   argument list, or class body can match uniquely while still being fragile
   spec debt. Dry-run/apply output should surface when a
   candidate is long/exact and should either minimize it automatically with
-  `ANYTHING`, typed holes, `OBJECT_PROPS`, `CLASS_REST`, `STMT_LIST`, or
-  `DECLARATORS`, or emit a stable tooling-gap diagnostic that agents can route
+  `ANYTHING`, typed holes, `STMT_LIST`, or `DECLARATORS`, or emit a stable tooling-gap diagnostic that agents can route
   instead of hand-maintaining the exact body.
 - **Diagnostics toggle for `modules propose`.** `--limit` now bounds
   proposals and diagnostics and the `limits` summary reports totals

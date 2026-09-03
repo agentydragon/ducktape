@@ -10,7 +10,7 @@
 //!   as a non-declarator binding pattern like an anonymous pattern hole,
 //!   as a variable declarator like `DECLARATORS`, as an object-literal
 //!   shorthand property like an anonymous property-list hole, and as a
-//!   no-init class field like `CLASS_REST`.
+//!   no-init class field like an anonymous class-member-list hole.
 //!
 //! Hole labels are readability-only: every occurrence matches independently,
 //! even when two occurrences use the same suffix.
@@ -22,7 +22,7 @@
 //! - `STMT_LIST` / `STMT_LIST_name;` in a block body absorbs a run of
 //!   statements (including an empty run) — e.g. a method body you don't
 //!   want to pin.
-//! - `CLASS_REST;` as a class field absorbs a run of class members —
+//! - `ANYTHING;` as a no-init class field absorbs a run of class members —
 //!   e.g. "match this class by these members, ignore the rest".
 //! - `case CASE_REST:` as an empty switch case absorbs a run of
 //!   `case`/`default` clauses — e.g. "match this switch by these
@@ -36,7 +36,7 @@
 //!
 //! Several list holes may appear in one block or class body: they split
 //! the pinned statements/members into an ordered subsequence with gaps,
-//! so a selector can bracket a few stable members with `CLASS_REST;`
+//! so a selector can bracket a few stable members with `ANYTHING;`
 //! holes and match any class that contains them in that order.
 
 use debundle_e2e_support::*;
@@ -265,56 +265,6 @@ export { actual };
 }
 
 #[test]
-fn member_source_match_object_property_hole_skips_arbitrary_key_values() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"function makeValue(label) {
-  return label.toUpperCase();
-}
-const actual = {
-  requiredKey: makeValue("required"),
-  generatedAlpha: makeValue("alpha"),
-  nested: { inner: makeValue("nested") },
-  ...{ spreadValue: makeValue("spread") },
-  anotherKey: makeValue("another"),
-};
-console.log(actual.requiredKey, actual.anotherKey, actual.spreadValue);
-export { actual };
-"#,
-        vec![logical_module(
-            "config",
-            &[Member::source_alpha_target(
-                "config_object",
-                "readable",
-                r#"const readable = {
-  requiredKey: EXPR,
-  OBJECT_PROPS_GENERATED,
-  anotherKey: EXPR,
-};"#,
-            )],
-        )],
-    ));
-
-    assert_entry_output(&fixture, "REQUIRED ANOTHER SPREAD\n");
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/config.js",
-        &["config_object"],
-        &["actual"],
-    );
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/config.js",
-        &[
-            "const config_object",
-            "generatedAlpha",
-            "spreadValue",
-            "anotherKey",
-        ],
-        &["OBJECT_PROPS_GENERATED", "readable"],
-    );
-}
-
-#[test]
 fn member_source_match_anything_object_property_hole_skips_arbitrary_key_values() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"function makeValue(label) {
@@ -367,7 +317,7 @@ export { actual };
 // A concise arrow whose body is a parenthesized object literal
 // (`(props) => ({ … })`) is the idiomatic component/factory shape; the returned
 // object is the stable, re-minify-proof anchor. The selector pins the factory by
-// its returned object's distinctive `kind` key (with `OBJECT_PROPS` absorbing the
+// its returned object's distinctive `kind` key (with `ANYTHING` absorbing the
 // noisy generated members), end to end through the lowering pipeline. Closes the
 // SELECTOR_BUGS.md "arrow whose body is a parenthesized object literal" gap.
 #[test]
@@ -388,7 +338,7 @@ export { makeWidget };
                 "readable",
                 r#"const readable = (props) => ({
   kind: "widget",
-  OBJECT_PROPS,
+  ANYTHING,
 });"#,
             )],
         )],
@@ -412,7 +362,7 @@ export { makeWidget };
             r#"kind: "widget""#,
             "render",
         ],
-        &["OBJECT_PROPS", "readable"],
+        &["ANYTHING", "readable"],
     );
 }
 
@@ -1983,8 +1933,8 @@ export { marker };
 }
 
 #[test]
-fn member_source_match_class_rest_hole_selects_class_ignoring_other_members() {
-    // Pin the class by its constructor (body hole) and let `CLASS_REST;`
+fn member_source_match_class_member_hole_selects_class_ignoring_other_members() {
+    // Pin the class by its constructor (body hole) and let `ANYTHING;`
     // absorb `increment` and `reset`. The whole class still moves — the
     // hole is only in the selector, not the output.
     let fixture = run_fixture(FixtureOpts::new(
@@ -2012,7 +1962,7 @@ export { Counter };
   constructor() {
     STMT_LIST_CTOR;
   }
-  CLASS_REST;
+  ANYTHING;
 }"#,
             )],
         )],
@@ -2030,7 +1980,7 @@ export { Counter };
         "static/app/modules/shapes.js",
         // The full class moved, members and all.
         &["class", "increment", "reset"],
-        &["CLASS_REST", "STMT_LIST_CTOR"],
+        &["ANYTHING", "STMT_LIST_CTOR"],
     );
 }
 
@@ -2149,7 +2099,7 @@ export { RuntimeCounter };
 
 #[test]
 fn member_source_match_class_skeleton_rejects_ambiguous_match() {
-    // The skeleton `class K { run() { STMT_LIST } CLASS_REST }` matches
+    // The skeleton `class K { run() { STMT_LIST } ANYTHING; }` matches
     // both `Alpha` and `Beta`; ambiguous matches stay hard errors.
     let opts = FixtureOpts::new(
         r#"class Alpha {
@@ -2173,7 +2123,7 @@ export { Alpha };
   run() {
     STMT_LIST_BODY;
   }
-  CLASS_REST;
+  ANYTHING;
 }"#,
             )],
         )],
@@ -2183,8 +2133,8 @@ export { Alpha };
 }
 
 #[test]
-fn member_source_match_class_rest_hole_pins_member_order() {
-    // CLASS_REST is positional: members pinned before the hole must be
+fn member_source_match_class_member_hole_pins_member_order() {
+    // The class-member hole is positional: members pinned before it must be
     // the candidate's leading members in the same order. Listing `b`
     // before `a` does not match a class whose first members are `a`
     // then `b`, so resolution finds no match.
@@ -2211,7 +2161,7 @@ export { Counter };
   a() {
     STMT_LIST_A;
   }
-  CLASS_REST;
+  ANYTHING;
 }"#,
             )],
         )],
@@ -2277,25 +2227,25 @@ export { CatalogCache };
             &[Member::source_alpha(
                 "CatalogCache",
                 r#"class K {
-  CLASS_REST;
+  ANYTHING;
   refreshEntriesNow(scope, filter) {
     if (filter.active) {
       this.loadBatch(scope, filter);
     }
   }
-  CLASS_REST;
+  ANYTHING;
   loadBatch(scope, filter) {
     STMT_LIST;
   }
-  CLASS_REST;
+  ANYTHING;
   lookupEntryByKey(key, record) {
     STMT_LIST;
   }
-  CLASS_REST;
+  ANYTHING;
   dropEntryByKey(key, record) {
     STMT_LIST;
   }
-  CLASS_REST;
+  ANYTHING;
 }"#,
             )],
         )],
@@ -2375,8 +2325,8 @@ export { marker };
 }
 
 #[test]
-fn anonymous_stmt_list_and_class_rest_holes_need_no_minted_names() {
-    // Bare `STMT_LIST` and bare `CLASS_REST` select the class with no
+fn anonymous_stmt_list_and_class_member_holes_need_no_minted_names() {
+    // A bare `STMT_LIST` and a bare `ANYTHING;` field select the class with no
     // suffixes to invent.
     let fixture = run_fixture(FixtureOpts::new(
         r#"class Counter {
@@ -2400,7 +2350,7 @@ export { Counter };
   constructor() {
     STMT_LIST;
   }
-  CLASS_REST;
+  ANYTHING;
 }"#,
             )],
         )],
@@ -2417,16 +2367,16 @@ export { Counter };
         &fixture.out_root,
         "static/app/modules/shapes.js",
         &["class", "increment"],
-        &["STMT_LIST", "CLASS_REST"],
+        &["STMT_LIST", "ANYTHING"],
     );
 }
 
 #[test]
-fn member_source_match_class_rest_holes_bracket_interior_member() {
-    // Two `CLASS_REST;` holes bracket a single pinned member, so the
+fn member_source_match_class_member_holes_bracket_interior_member() {
+    // Two `ANYTHING;` holes bracket a single pinned member, so the
     // selector matches a class by an interior member it contains: the
     // leading hole absorbs `a`, the trailing hole absorbs `c`, and `b`
-    // is pinned in between. (Previously a second `CLASS_REST` was a hard
+    // is pinned in between. (Previously a second class-member hole was a hard
     // "ambiguous, never matches"; it is now an ordered-subsequence gap.)
     let fixture = run_fixture(FixtureOpts::new(
         r#"class Counter {
@@ -2448,11 +2398,11 @@ export { Counter };
             &[Member::source_alpha(
                 "Counter",
                 r#"class K {
-  CLASS_REST;
+  ANYTHING;
   b() {
     STMT_LIST_B;
   }
-  CLASS_REST;
+  ANYTHING;
 }"#,
             )],
         )],
@@ -2470,13 +2420,13 @@ export { Counter };
         "static/app/modules/shapes.js",
         // The whole class moved; the bracketing holes are selector-only.
         &["class", "a()", "b()", "c()"],
-        &["CLASS_REST", "STMT_LIST_B"],
+        &["ANYTHING", "STMT_LIST_B"],
     );
 }
 
 #[test]
-fn member_source_match_interleaved_class_rest_holes_match_ordered_members() {
-    // Two pinned members separated by a `CLASS_REST;` hole match a class
+fn member_source_match_interleaved_class_member_holes_match_ordered_members() {
+    // Two pinned members separated by an `ANYTHING;` hole match a class
     // that contains them in that order with other members interspersed:
     // `open` (after `setup`) then `close` (after `tick`). This is the
     // ordered-subset fingerprint — pin a few stable members, ignore the
@@ -2504,15 +2454,15 @@ export { Widget };
             &[Member::source_alpha(
                 "Widget",
                 r#"class K {
-  CLASS_REST;
+  ANYTHING;
   open() {
     STMT_LIST_O;
   }
-  CLASS_REST;
+  ANYTHING;
   close() {
     STMT_LIST_C;
   }
-  CLASS_REST;
+  ANYTHING;
 }"#,
             )],
         )],
@@ -2529,12 +2479,12 @@ export { Widget };
         &fixture.out_root,
         "static/app/modules/shapes.js",
         &["setup()", "open()", "tick()", "close()"],
-        &["CLASS_REST"],
+        &["ANYTHING"],
     );
 }
 
 #[test]
-fn member_source_match_interleaved_class_rest_holes_enforce_order() {
+fn member_source_match_interleaved_class_member_holes_enforce_order() {
     // The same `Widget`, but the selector pins `close` before `open`.
     // Ordered-subsequence matching keeps source order, so pinning them
     // in the wrong order matches nothing — it is not an unordered
@@ -2562,15 +2512,15 @@ export { Widget };
             &[Member::source_alpha(
                 "Selected",
                 r#"class K {
-  CLASS_REST;
+  ANYTHING;
   close() {
     STMT_LIST_C;
   }
-  CLASS_REST;
+  ANYTHING;
   open() {
     STMT_LIST_O;
   }
-  CLASS_REST;
+  ANYTHING;
 }"#,
             )],
         )],
@@ -2623,9 +2573,9 @@ export { marker };
 }
 
 #[test]
-fn non_trailing_class_rest_hole_keeps_later_identifiers_aligned() {
+fn non_trailing_class_member_hole_keeps_later_identifiers_aligned() {
     // Regression guard for the alpha-identifier bijection: a leading
-    // `CLASS_REST` absorbs `helper`, whose param/body identifiers do not
+    // The class-member hole absorbs `helper`, whose param/body identifiers do not
     // desync the `run(value) { return value * 2 }` member that follows.
     // (Under the old global alpha-canonicalization the absorbed `helper`
     // identifiers shifted the numbering and this failed to match.)
@@ -2647,7 +2597,7 @@ export { Counter };
             &[Member::source_alpha(
                 "Counter",
                 r#"class K {
-  CLASS_REST;
+  ANYTHING;
   run(value) {
     return value * 2;
   }
@@ -2667,7 +2617,7 @@ export { Counter };
         &fixture.out_root,
         "static/app/modules/shapes.js",
         &["class", "helper", "run"],
-        &["CLASS_REST"],
+        &["ANYTHING"],
     );
 }
 
@@ -2795,15 +2745,14 @@ export { actual };
 // ---------------------------------------------------------------------------
 // `ANYTHING`-vs-keyword redundancy proofs (de-risk "language simplification")
 //
-// `ANYTHING` is a *run-absorbing* list hole ONLY in the positions where the
-// matcher's list-hole detector predicate carries an `ANYTHING` fallback:
-// `OBJECT_PROPS` (`object_property_list_hole_name`), `DECLARATORS`
-// (`declarator_list_hole_name`), and `CLASS_REST` (`is_class_rest_hole`). In a
+// `ANYTHING` is a *run-absorbing* list hole in object-property,
+// object-pattern-property, class-member, and declarator position. In a
 // call/`new` argument position (`argument_list_hole_name` has no `ANYTHING`
 // fallback) and a block-statement position (`statement_list_hole_name` has no
 // `ANYTHING` fallback), a bare `ANYTHING` is a *single-node* hole — `EXPR`
 // resp. `STMT` — so it is NOT interchangeable with `ARGS` / `STMT_LIST`. A
-// `case CASE_REST:` clause has no `ANYTHING` spelling at all.
+// `case CASE_REST:` clause has no `ANYTHING` spelling at all. `DECLARATORS` is
+// the one run hole that keeps a typed spelling alongside `ANYTHING`.
 //
 // The matched pairs below pin each claim against a representative subject.
 // ---------------------------------------------------------------------------
@@ -3011,47 +2960,6 @@ export { dispatch };
 }
 
 #[test]
-fn object_props_and_anything_are_interchangeable_run_absorbers() {
-    // Positive redundancy proof: `OBJECT_PROPS_*` and `ANYTHING` shorthand are
-    // both run-absorbing property-list holes
-    // (`object_property_list_hole_name` carries the `ANYTHING` fallback), so
-    // they match the same object against the same gap.
-    let subject = r#"const actual = {
-  stable: 1,
-  generatedA: 2,
-  generatedB: 3,
-  tail: 4,
-};
-console.log(actual.stable + actual.tail);
-export { actual };
-"#;
-
-    for selector in [
-        r#"const readable = { stable: EXPR, OBJECT_PROPS_MID, tail: EXPR };"#,
-        r#"const readable = { stable: ANYTHING, ANYTHING, tail: ANYTHING };"#,
-    ] {
-        let fixture = run_fixture(FixtureOpts::new(
-            subject,
-            vec![logical_module(
-                "config",
-                &[Member::source_alpha_target(
-                    "config_object",
-                    "readable",
-                    selector,
-                )],
-            )],
-        ));
-        assert_entry_output(&fixture, "5\n");
-        assert_module_exports(
-            &fixture.out_root,
-            "static/app/modules/config.js",
-            &["config_object"],
-            &["actual"],
-        );
-    }
-}
-
-#[test]
 fn declarators_and_anything_are_interchangeable_run_absorbers() {
     // Positive redundancy proof: `DECLARATORS_*` and `ANYTHING` declarator
     // names are both run-absorbing declarator-list holes
@@ -3092,59 +3000,6 @@ export { runtimePrefix, runtimeTarget, runtimeSuffix, makeTarget };
             "static/app/modules/target.js",
             &["SelectedTarget"],
             &["runtimeTarget"],
-        );
-    }
-}
-
-#[test]
-fn class_rest_and_anything_are_interchangeable_run_absorbers() {
-    // Positive redundancy proof: `CLASS_REST;` and a no-init `ANYTHING;` class
-    // field are both run-absorbing class-member-list holes (`is_class_rest_hole`
-    // matches either keyword), bracketing the same pinned method.
-    let subject = r#"class Widget {
-  setup() {
-    return 0;
-  }
-  open() {
-    return 7;
-  }
-  close() {
-    return 3;
-  }
-}
-console.log(new Widget().open());
-export { Widget };
-"#;
-
-    for selector in [
-        r#"class K {
-  CLASS_REST;
-  open() {
-    STMT_LIST_O;
-  }
-  CLASS_REST;
-}"#,
-        r#"class K {
-  ANYTHING;
-  open() {
-    ANYTHING;
-  }
-  ANYTHING;
-}"#,
-    ] {
-        let fixture = run_fixture(FixtureOpts::new(
-            subject,
-            vec![logical_module(
-                "shapes",
-                &[Member::source_alpha("Widget", selector)],
-            )],
-        ));
-        assert_entry_output(&fixture, "7\n");
-        assert_module_exports(
-            &fixture.out_root,
-            "static/app/modules/shapes.js",
-            &["Widget"],
-            &[],
         );
     }
 }

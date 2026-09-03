@@ -64,7 +64,7 @@ pub(crate) fn try_var_read_off_candidates(
     let Some(init) = declarator.init.as_deref() else {
         return Ok(Vec::new());
     };
-    // Objects are `try_object_read_off`'s domain (padded `OBJECT_PROPS` + the
+    // Objects are `try_object_read_off`'s domain (padded `ANYTHING` holes + the
     // slot-aware key-set cover); this owns every other initializer shape.
     if matches!(init, Expr::Object(_)) {
         return Ok(Vec::new());

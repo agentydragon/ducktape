@@ -34,9 +34,9 @@ use selector_ir_lowering::{MemberSelectorLoweringContext, lower_member_selector}
 use selector_runtime::solve_global_selector_program;
 use serde::Serialize;
 use source_match_holes::{
-    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, CLASS_REST_HOLE_KEYWORD,
-    DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD, OBJECT_PROPS_HOLE_KEYWORD, STMT_HOLE_KEYWORD,
-    STMT_LIST_HOLE_KEYWORD, hole_name_for, labeled_hole_name_for,
+    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD,
+    EXPR_HOLE_KEYWORD, STMT_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD, hole_name_for,
+    labeled_hole_name_for,
 };
 use spec::{AnonymousStatementSelector, MemberSelectorSpec, SourceMatchIdentifierMode};
 use swc_common::DUMMY_SP;
@@ -321,10 +321,10 @@ enum Relaxation {
     /// Drop an object-literal property (absorbed by an `ANYTHING` run-hole).
     DropObjectProp,
     /// Drop an object-**pattern** (destructure) property, absorbed by the
-    /// `ANYTHING`/`OBJECT_PROPS` pattern run-hole — the destructure analogue of
+    /// `ANYTHING` pattern run-hole — the destructure analogue of
     /// [`Relaxation::DropObjectProp`].
     DropPatternProp,
-    /// Drop a class member (absorbed by a `CLASS_REST` field).
+    /// Drop a class member (absorbed by an `ANYTHING;` class field).
     DropClassMember,
     /// Drop a statement inside a block body (absorbed by `STMT_LIST`).
     DropStatement,
@@ -613,8 +613,6 @@ fn is_hole_keyword(name: &str) -> bool {
         || [
             STMT_LIST_HOLE_KEYWORD,
             ARGS_HOLE_KEYWORD,
-            OBJECT_PROPS_HOLE_KEYWORD,
-            CLASS_REST_HOLE_KEYWORD,
             CASE_REST_HOLE_KEYWORD,
             DECLARATORS_HOLE_KEYWORD,
         ]
@@ -627,8 +625,7 @@ fn object_props_hole() -> PropOrSpread {
 }
 
 /// The destructure-pattern analogue of [`object_props_hole`]: a shorthand
-/// binding named `ANYTHING` (the sugar form `object_pat_prop_list_hole_name`
-/// also accepts for `OBJECT_PROPS`) absorbing a run of dropped pattern props.
+/// binding named `ANYTHING` absorbing a run of dropped pattern props.
 fn object_pat_props_hole() -> ObjectPatProp {
     ObjectPatProp::Assign(AssignPatProp {
         span: DUMMY_SP,

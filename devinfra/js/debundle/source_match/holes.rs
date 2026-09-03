@@ -82,21 +82,16 @@ pub(crate) fn is_anything_pat_hole(pat: &Pat) -> bool {
     matches!(pat, Pat::Ident(ident) if binding_ident_is_anything(ident))
 }
 
-/// The name of an object-**pattern** property-list hole (`OBJECT_PROPS` /
-/// `OBJECT_PROPS_*`) if `prop` is one. Mirrors [`object_property_list_hole_name`]
-/// for destructuring patterns: the hole is written as a shorthand binding
-/// (`const { OBJECT_PROPS, x } = …`), parsed as an `ObjectPatProp::Assign` with
-/// no default, and absorbs a run of destructured properties. Anonymous
-/// `ANYTHING` is the sugar form.
-pub(crate) fn object_pat_prop_list_hole_name(prop: &ObjectPatProp) -> Option<&str> {
+/// Whether `prop` is an object-**pattern** property-list hole: the
+/// destructuring analog of the object-literal `ANYTHING` shorthand property,
+/// written as a shorthand binding (`const { ANYTHING, x } = …`), parsed as an
+/// `ObjectPatProp::Assign` with no default, and absorbing a run of
+/// destructured properties.
+pub(crate) fn is_anything_object_pat_prop_hole(prop: &ObjectPatProp) -> bool {
     let ObjectPatProp::Assign(assign) = prop else {
-        return None;
+        return false;
     };
-    if assign.value.is_some() {
-        return None;
-    }
-    let name = assign.key.id.sym.as_ref();
-    labeled_hole_name_for(name, OBJECT_PROPS_HOLE_KEYWORD).or_else(|| anything_hole_name(name))
+    assign.value.is_none() && anything_hole_name(assign.key.id.sym.as_ref()).is_some()
 }
 
 pub(crate) fn anything_hole_name(name: &str) -> Option<&str> {

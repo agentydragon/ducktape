@@ -16,8 +16,7 @@ use selector_ir::{
 };
 use source_match_holes::{
     ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, ARRAY_ELEMENTS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD,
-    CLASS_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD,
-    OBJECT_PROPS_HOLE_KEYWORD, STMT_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
+    DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD, STMT_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
     STRING_LITERAL_REGEX_PREDICATE, hole_name_for, labeled_hole_name_for,
 };
 use spec::{
@@ -2556,11 +2555,9 @@ fn selector_hole_name(name: &str) -> bool {
         || hole_name_for(name, STMT_HOLE_KEYWORD).is_some()
         || [
             STMT_LIST_HOLE_KEYWORD,
-            CLASS_REST_HOLE_KEYWORD,
             CASE_REST_HOLE_KEYWORD,
             DECLARATORS_HOLE_KEYWORD,
             ARGS_HOLE_KEYWORD,
-            OBJECT_PROPS_HOLE_KEYWORD,
             ARRAY_ELEMENTS_HOLE_KEYWORD,
         ]
         .iter()
@@ -2733,9 +2730,7 @@ fn native_child_list_hole_name(name: &str) -> bool {
         STMT_LIST_HOLE_KEYWORD,
         ARGS_HOLE_KEYWORD,
         DECLARATORS_HOLE_KEYWORD,
-        CLASS_REST_HOLE_KEYWORD,
         CASE_REST_HOLE_KEYWORD,
-        OBJECT_PROPS_HOLE_KEYWORD,
         ARRAY_ELEMENTS_HOLE_KEYWORD,
     ]
     .iter()
@@ -2979,10 +2974,9 @@ fn object_props_carrier_ident(
     match parent_kind {
         NodeKind::Object => {
             if node_kind.get(&node) == Some(&NodeKind::Shorthand)
-                && ident_name.get(&node).is_some_and(|name| {
-                    labeled_hole_name_for(name, OBJECT_PROPS_HOLE_KEYWORD).is_some()
-                        || hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
-                })
+                && ident_name
+                    .get(&node)
+                    .is_some_and(|name| hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some())
             {
                 Some(node)
             } else {
@@ -2992,10 +2986,9 @@ fn object_props_carrier_ident(
         NodeKind::ObjectPat => {
             if node_kind.get(&node) == Some(&NodeKind::PatAssign)
                 && children_by_parent.get(&node).is_none_or(Vec::is_empty)
-                && ident_name.get(&node).is_some_and(|name| {
-                    labeled_hole_name_for(name, OBJECT_PROPS_HOLE_KEYWORD).is_some()
-                        || hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
-                })
+                && ident_name
+                    .get(&node)
+                    .is_some_and(|name| hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some())
             {
                 Some(node)
             } else {
@@ -3040,10 +3033,10 @@ fn class_rest_carrier_key(
     let [(_, key)] = children_by_parent.get(&node)?.as_slice() else {
         return None;
     };
-    if prop_name.get(key).is_some_and(|name| {
-        labeled_hole_name_for(name, CLASS_REST_HOLE_KEYWORD).is_some()
-            || hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some()
-    }) {
+    if prop_name
+        .get(key)
+        .is_some_and(|name| hole_name_for(name, ANYTHING_HOLE_KEYWORD).is_some())
+    {
         Some(*key)
     } else {
         None
@@ -4679,45 +4672,9 @@ function second() {
     }
 
     #[test]
-    fn source_match_with_object_props_lowers_to_native_child_list_pattern() {
-        let selector = AnonymousStatementSelector::exact(
-            "const actual = { head: 1, OBJECT_PROPS_MID, tail: 2 };",
-        );
-        let lowered = lower_member_selector(
-            &context(),
-            "Widget",
-            &MemberSelectorSpec::SourceMatch(selector),
-        )
-        .unwrap();
-        assert!(lowered.program.atoms.iter().any(|atom| matches!(
-            atom,
-            SelectorAtom::AstChildListPattern {
-                start_index: 0,
-                anchored_left: true,
-                anchored_right: true,
-                segments,
-                ..
-            } if segments.len() == 2
-                && segments[0].len() == 1
-                && segments[1].len() == 1
-        )));
-        assert!(
-            !lowered.program.atoms.iter().any(|atom| matches!(
-                atom,
-                SelectorAtom::AstIdentifierName {
-                    value: StringTerm::Const { value },
-                    ..
-                } if value == "OBJECT_PROPS_MID"
-            )),
-            "OBJECT_PROPS labels are hole syntax, not identifier constraints"
-        );
-    }
-
-    #[test]
-    fn source_match_with_object_props_before_after_lowers_to_open_pattern() {
-        let selector = AnonymousStatementSelector::exact(
-            "const actual = { OBJECT_PROPS_BEFORE, stable: 1, OBJECT_PROPS_AFTER };",
-        );
+    fn source_match_with_leading_trailing_object_prop_holes_lowers_to_open_pattern() {
+        let selector =
+            AnonymousStatementSelector::exact("const actual = { ANYTHING, stable: 1, ANYTHING };");
         let lowered = lower_member_selector(
             &context(),
             "Widget",
@@ -4737,10 +4694,9 @@ function second() {
     }
 
     #[test]
-    fn source_match_with_object_pattern_props_lowers_to_native_child_list_pattern() {
-        let selector = AnonymousStatementSelector::exact(
-            "const { OBJECT_PROPS_BEFORE, stable, OBJECT_PROPS_AFTER } = input;",
-        );
+    fn source_match_with_open_object_pattern_props_lowers_to_native_child_list_pattern() {
+        let selector =
+            AnonymousStatementSelector::exact("const { ANYTHING, stable, ANYTHING } = input;");
         let lowered = lower_member_selector(
             &context(),
             "Widget",
@@ -4763,15 +4719,15 @@ function second() {
                 SelectorAtom::AstIdentifierName {
                     value: StringTerm::Const { value },
                     ..
-                } if value == "OBJECT_PROPS_BEFORE" || value == "OBJECT_PROPS_AFTER"
+                } if value == "ANYTHING"
             )),
-            "OBJECT_PROPS pattern labels are hole syntax, not identifier constraints"
+            "ANYTHING object-pattern shorthands are run-hole syntax, not identifier constraints"
         );
     }
 
     #[test]
-    fn source_match_with_bare_object_props_hole_does_not_pin_object_arity() {
-        let selector = AnonymousStatementSelector::exact("const actual = { OBJECT_PROPS };");
+    fn source_match_with_all_hole_object_does_not_pin_object_arity() {
+        let selector = AnonymousStatementSelector::exact("const actual = { ANYTHING };");
         let lowered = lower_member_selector(
             &context(),
             "Widget",
@@ -4779,22 +4735,14 @@ function second() {
         )
         .unwrap();
         assert!(
-            !lowered
-                .program
-                .atoms
-                .iter()
-                .any(|atom| matches!(atom, SelectorAtom::AstChildListPattern { .. })),
-            "all-hole object lists are represented by omitting arity and child atoms"
-        );
-        assert!(
             !lowered.program.atoms.iter().any(|atom| matches!(
                 atom,
                 SelectorAtom::AstIdentifierName {
                     value: StringTerm::Const { value },
                     ..
-                } if value == "OBJECT_PROPS"
+                } if value == "ANYTHING"
             )),
-            "bare OBJECT_PROPS is hole syntax, not an identifier constraint"
+            "a lone ANYTHING shorthand is hole syntax, not an identifier constraint"
         );
         let object_nodes = lowered
             .program
@@ -4818,7 +4766,17 @@ function second() {
                         ..
                     } if *id == object_node
                 )),
-                "bare OBJECT_PROPS object selector must not constrain object child count"
+                "an all-hole object selector must not constrain object child count"
+            );
+            assert!(
+                !lowered.program.atoms.iter().any(|atom| matches!(
+                    atom,
+                    SelectorAtom::AstChildListPattern {
+                        parent: NodeTerm::Var { id },
+                        ..
+                    } if *id == object_node
+                )),
+                "an all-hole object list is represented by omitting its child atoms"
             );
         }
     }
@@ -4958,41 +4916,8 @@ function second() {
     }
 
     #[test]
-    fn source_match_with_class_rest_lowers_to_native_child_list_pattern() {
-        let selector = AnonymousStatementSelector::exact(
-            "class Widget { CLASS_REST_BEFORE; render() { return 1; } CLASS_REST_AFTER; }",
-        );
-        let lowered = lower_member_selector(
-            &context(),
-            "Widget",
-            &MemberSelectorSpec::SourceMatch(selector),
-        )
-        .unwrap();
-        assert!(lowered.program.atoms.iter().any(|atom| matches!(
-            atom,
-            SelectorAtom::AstChildListPattern {
-                start_index: 0,
-                anchored_left: false,
-                anchored_right: false,
-                segments,
-                ..
-            } if segments.len() == 1 && segments[0].len() == 1
-        )));
-        assert!(
-            !lowered.program.atoms.iter().any(|atom| matches!(
-                atom,
-                SelectorAtom::AstPropertyName {
-                    value: StringTerm::Const { value },
-                    ..
-                } if value.starts_with(CLASS_REST_HOLE_KEYWORD)
-            )),
-            "CLASS_REST labels are hole syntax, not property-name constraints"
-        );
-    }
-
-    #[test]
-    fn source_match_with_all_class_rest_lowers_natively_without_class_arity() {
-        let selector = AnonymousStatementSelector::exact("class Widget { CLASS_REST; }");
+    fn source_match_with_all_hole_class_body_lowers_natively_without_class_arity() {
+        let selector = AnonymousStatementSelector::exact("class Widget { ANYTHING; }");
         let lowered = lower_member_selector(
             &context(),
             "Widget",
@@ -5005,9 +4930,9 @@ function second() {
                 SelectorAtom::AstPropertyName {
                     value: StringTerm::Const { value },
                     ..
-                } if value == "CLASS_REST"
+                } if value == "ANYTHING"
             )),
-            "CLASS_REST is hole syntax, not a property-name constraint"
+            "a lone ANYTHING class field is hole syntax, not a property-name constraint"
         );
         let class_nodes = lowered
             .program
@@ -5031,7 +4956,7 @@ function second() {
                         ..
                     } if *id == class_node
                 )),
-                "bare CLASS_REST class selector must not constrain class child count"
+                "an all-hole class selector must not constrain class child count"
             );
         }
     }

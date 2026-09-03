@@ -37,7 +37,7 @@ because those are cheap and unique _today_. Your job is to override those with a
 anchor tied to what the code **does** — something a behavior-preserving refactor
 would keep and a human wouldn't rename.
 
-The selector **mechanics** — hole forms (`ANYTHING`, `STMT_LIST`, `CLASS_REST`, …), `source_matches[]`, regex anchors, context windows — live in `selectors.md`, transcluded below. This skill does not restate them; it adds the judgment they can't encode: _which_ anchor to choose.
+The selector **mechanics** — hole forms (`ANYTHING`, `STMT_LIST`, `CASE_REST`, …), `source_matches[]`, regex anchors, context windows — live in `selectors.md`, transcluded below. This skill does not restate them; it adds the judgment they can't encode: _which_ anchor to choose.
 
 ## The toolkit
 
@@ -53,7 +53,7 @@ resort:
   worklist).
 - **`spec synthesize-selectors` — the selector minimizer.** Your workhorse for
   _compact_: it holes volatile subtrees (bodies, args, declarator runs,
-  `CLASS_REST`/`CASE_REST`), collapses multi-declarator runs into grouped
+  `ANYTHING;`/`CASE_REST`), collapses multi-declarator runs into grouped
   `source_matches[]` entries,
   and proves uniqueness — so much of the backlog converts to short, unique-today
   selectors with no hand-authoring. Run it dry to read its pick, `--candidates N` for
@@ -265,12 +265,12 @@ changes.
 ```yaml
 match: |
   class DocumentAccessorFactory extends ANYTHING {
-    CLASS_REST;
+    ANYTHING;
     getName() {
       STMT_LIST;
       return "DocumentAccessorFactory";
     }
-    CLASS_REST;
+    ANYTHING;
   }
 ```
 
@@ -284,11 +284,11 @@ identifying `return` are holed, so any identity-preserving refactor still matche
 ```yaml
 match: |
   class DocumentAccessorFactory extends ANYTHING {
-    CLASS_REST;
+    ANYTHING;
     getOwner(ANYTHING) {
       STMT_LIST;
     }
-    CLASS_REST;
+    ANYTHING;
   }
 ```
 
@@ -302,12 +302,12 @@ exists; strictly weaker than Good.
 ```yaml
 match: |
   class DocumentAccessorFactory extends ANYTHING {
-    CLASS_REST;
+    ANYTHING;
     getOwner(node) {
       for (const c of node.children) if (c.isOwner) return c;
       return null;
     }
-    CLASS_REST;
+    ANYTHING;
   }
 ```
 

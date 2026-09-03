@@ -108,8 +108,8 @@ Candidate generation should produce multiple selector forms for the same target
 and let a ranker choose:
 
 - exact structural `source_match`;
-- minimized structural `source_match` with `ANYTHING`, `OBJECT_PROPS`,
-  `DECLARATORS`, `CLASS_REST`, `ARGS`, and `STMT_LIST` holes;
+- minimized structural `source_match` with `ANYTHING`, `DECLARATORS`, `ARGS`,
+  and `STMT_LIST` holes;
 - grouped `source_matches[]` entries when one source context exports multiple
   bindings;
 - literal-initializer selectors when a top-level binding is uniquely
@@ -142,7 +142,7 @@ stable anchors that cut the candidate set sharply, assign high cost to long exac
 function/object/class bodies, statement runs, and nested expressions, and
 **report over-narrow selectors as debt even when they currently match** (long
 function bodies where a signature + stable literal would suffice; object literals
-where a few stable keys suffice; class bodies where `CLASS_REST` keeps the useful
+where a few stable keys suffice; class bodies where `ANYTHING;` keeps the useful
 member; anonymous blocks where `STMT_LIST` ignores setup/cleanup). Grouped
 `source_matches[]` entries use the same cost model, comparing one shared selector
 against repeated selectors and splitting when one huge selector would need long
