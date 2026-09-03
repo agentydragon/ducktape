@@ -5,6 +5,9 @@ resources:
   - deployments.yaml
   - services.yaml
   - servicemonitor.yaml
+  - graphql-deployments.yaml
+  - graphql-services.yaml
+  - graphql-servicemonitor.yaml
   - dashboard.yaml
 
 configMapGenerator:
