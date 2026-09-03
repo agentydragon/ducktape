@@ -40,13 +40,14 @@
 # access. Include both wildcard and suffix forms because NO_PROXY matching
 # differs across curl, Go, Python, node, and git.
 #
-# Keep *.forgejo out of the proxy path too, for a different reason: the sandbox
-# clones haku-state and bazel's ducktape_haku git_override fetches from
-# forgejo-http.forgejo. Git smart-HTTP streams the pack chunked (no
-# Content-Length), so the proxy's stream_large_bodies can't tell it is large and
-# buffers the whole response. forgejo is an internal service reachable directly
-# under Cilium's cluster-only egress rule, so bypass the proxy for it; the .netrc
-# host stays forgejo-http.forgejo, so auth is unchanged.
+# In-cluster Forgejo (forgejo-http.forgejo) is deliberately NOT on the list: the
+# sandbox holds only the inert haku-forgejo-token-placeholder, and the fence is
+# what swaps it for the real credential at the Forgejo origins
+# (haku/console config.yaml, haku_forgejo_token). A bypass here sends git
+# straight to Forgejo with the placeholder and every clone fails
+# "Credentials are incorrect or have expired". Gotcha: the `.svc` entries below
+# still bypass forgejo-http.forgejo.svc.cluster.local, so anything that needs
+# the credential must use the short service name, as haku-sandbox-setup.sh does.
 #
 # `.svc` and `kubernetes.default.svc` are listed alongside `.svc.cluster.local`
 # because suffix matching is literal: the short in-cluster forms do NOT match the
@@ -66,12 +67,6 @@
 #                           trusted more than the internet. Two forms because
 #                           NO_PROXY matching differs across curl, Go, Python,
 #                           node and git.
-#   *.forgejo               In-cluster Forgejo. Bypassed because git smart-HTTP
-#   .forgejo                streams packs chunked, which defeats the proxy's
-#                           stream_large_bodies sizing (above). Proxy-specific:
-#                           iron-proxy handles this host fine today in the
-#                           openclaw spike, so this entry is a mitmproxy
-#                           workaround rather than a standing decision.
 #   .svc                    In-cluster Service names, in all three forms clients
 #   .svc.cluster.local      actually construct. See the 2026-07-24 note above for
 #   kubernetes.default.svc  why the short forms are listed separately.
@@ -155,7 +150,7 @@ spec:
                 path: "/spec/containers/{{elementIndex}}/env/-"
                 value:
                   name: NO_PROXY
-                  value: "127.0.0.1,localhost,*.allegedly.works,.allegedly.works,*.forgejo,.forgejo,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8"
+                  value: "127.0.0.1,localhost,*.allegedly.works,.allegedly.works,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8"
               - op: add
                 path: "/spec/containers/{{elementIndex}}/env/-"
                 value:
@@ -218,7 +213,7 @@ spec:
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
                 value:
                   name: NO_PROXY
-                  value: "127.0.0.1,localhost,*.allegedly.works,.allegedly.works,*.forgejo,.forgejo,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8"
+                  value: "127.0.0.1,localhost,*.allegedly.works,.allegedly.works,.svc,.svc.cluster.local,kubernetes.default.svc,10.0.0.0/8"
               - op: add
                 path: "/spec/initContainers/{{elementIndex}}/env/-"
                 value:

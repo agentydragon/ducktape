@@ -60,18 +60,13 @@
 # services authenticate their own callers.
 #
 # This is the same cluster-addressing set as the other two injection policies,
-# asserted by //cluster/validation:test_proxy_injection. Two groups that
-# inject-haku-egress-proxy carries are deliberately absent here:
+# asserted by //cluster/validation:test_proxy_injection. One group that
+# inject-haku-egress-proxy carries is deliberately absent here:
 #
 #   *.allegedly.works  Must NOT be unified: the loom/gym eval driver is supposed
 #                      to reach docker-ci.allegedly.works *through* this proxy,
 #                      which raw-tunnels it so docker mTLS survives end to end.
 #                      Bypassing our own public names here would break that path.
-#   *.forgejo          Nothing in claude-sandbox fetches from the in-cluster
-#                      Forgejo — it clones from github.com, which the fence
-#                      allowlists. Absent for lack of a dependency, not because
-#                      proxying it would be fine: if one appears, the git-pack
-#                      buffering that forced haku's bypass applies here too.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:

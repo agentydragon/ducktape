@@ -87,7 +87,7 @@ operator-facing version is in `haku/docs/security.md`.
   Cilium FQDN policy can express the same set.
 - TODO: route cluster-internal traffic through the proxies too. The Kyverno
   injection (`kyverno/policies/inject-haku-egress-proxy.yaml`) sets `NO_PROXY`
-  to `*.allegedly.works`, `*.forgejo`, `.svc`, `.svc.cluster.local` and
+  to `*.allegedly.works`, `.svc`, `.svc.cluster.local` and
   `10.0.0.0/8`, so anything under the operator's own domains or the cluster
   network is reached with no proxy in the path and no allowlist applied. It is
   also why the same service is referenced by its public name in one manifest and

@@ -68,12 +68,11 @@ LOOPBACK = frozenset({"127.0.0.1", "localhost"})
 # libraries do by default, reaches the proxy and hangs until timeout.
 CLUSTER_ADDRESSING = frozenset({".svc", ".svc.cluster.local", "kubernetes.default.svc", "10.0.0.0/8"})
 
-# The two groups that are NOT shared, and must not be. `*.allegedly.works` would
+# The one group that is NOT shared, and must not be: `*.allegedly.works` would
 # break `claude-sandbox`'s docker-ci path, which is supposed to go *through* the
-# proxy to be raw-tunnelled; `*.forgejo` exists because haku clones haku-state,
-# which zone workers never do.
+# proxy to be raw-tunnelled. In-cluster Forgejo is bypassed by neither: haku's
+# sandbox carries a credential placeholder that only the fence can redeem.
 OWN_DOMAINS = frozenset({"*.allegedly.works", ".allegedly.works"})
-FORGEJO = frozenset({"*.forgejo", ".forgejo"})
 
 
 @dataclass(frozen=True)
@@ -92,7 +91,7 @@ POLICIES: dict[str, Injection] = {
         namespace="haku-sandbox",
         proxy="http://haku-egress-proxy.haku-egress-proxy.svc.cluster.local:8080",
         ca_bundle="/egress-proxy-ca/ca-certificates.crt",
-        bypasses=LOOPBACK | CLUSTER_ADDRESSING | OWN_DOMAINS | FORGEJO,
+        bypasses=LOOPBACK | CLUSTER_ADDRESSING | OWN_DOMAINS,
     ),
     "cluster/k8s/kyverno/policies/inject-mitmproxy.yaml": Injection(
         namespace="claude-sandbox",
