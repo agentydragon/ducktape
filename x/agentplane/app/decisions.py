@@ -39,6 +39,9 @@ class Decision(BaseModel):
     policy: str | None = None
     rule: int | None = None
     substituted: bool = Field(default=False, description="Whether a credential replaced a placeholder.")
+    address: str | None = Field(
+        default=None, description="The address the proxy resolved the host to and dialled, when admitted."
+    )
 
 
 class DecisionsUnavailableError(Exception):

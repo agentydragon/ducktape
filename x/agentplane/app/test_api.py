@@ -228,7 +228,7 @@ def test_egress_lists_the_bindings_naming_the_sandbox(client: TestClient) -> Non
 def test_egress_decisions_come_from_the_proxy(client: TestClient, egress_admin: FakeEgressAdmin) -> None:
     egress_admin.decisions["live"] = [
         decision("2026-09-02T10:00:00Z", "CONNECT", "api.github.com", None, "allow"),
-        decision("2026-09-02T10:00:01Z", "GET", "api.github.com", "/repos/x/y", "allow"),
+        decision("2026-09-02T10:00:01Z", "GET", "api.github.com", "/repos/x/y", "allow", address="140.82.116.5"),
         decision("2026-09-02T10:00:02Z", "POST", "pypi.org", "/simple/", "deny", reason="no-rule"),
     ]
 
@@ -240,6 +240,8 @@ def test_egress_decisions_come_from_the_proxy(client: TestClient, egress_admin: 
         ("GET", "api.github.com", "/repos/x/y", "allow", None),
         ("POST", "pypi.org", "/simple/", "deny", "no-rule"),
     ]
+    # The proxy resolves and pins the host itself; the address it dialled reaches the page.
+    assert [d["address"] for d in response.json()] == [None, "140.82.116.5", None]
     assert egress_admin.queries == ["live"]
     assert client.get("/sandboxes/nope/egress/decisions").status_code == 404
     assert egress_admin.queries == ["live"]

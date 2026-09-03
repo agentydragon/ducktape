@@ -26,7 +26,14 @@ class FakeEgressAdmin:
 
 
 def decision(
-    at: str, method: str, host: str, path: str | None, outcome: str, *, reason: str | None = None
+    at: str,
+    method: str,
+    host: str,
+    path: str | None,
+    outcome: str,
+    *,
+    reason: str | None = None,
+    address: str | None = None,
 ) -> dict[str, Any]:
     """One decision as the proxy's `/decisions` serialises it."""
     return {
@@ -43,4 +50,5 @@ def decision(
         "policy": "github-public" if outcome == "allow" else None,
         "rule": 0 if outcome == "allow" else None,
         "substituted": outcome == "allow" and method != "CONNECT",
+        "address": address if outcome == "allow" else None,
     }

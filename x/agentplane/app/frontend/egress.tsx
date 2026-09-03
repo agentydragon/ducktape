@@ -281,6 +281,11 @@ function DecisionsTable({ decisions }: { decisions: Decision[] }): JSX.Element {
                   {decision.host}
                   {decision.port !== 443 ? `:${decision.port}` : ""}
                 </Text>
+                {decision.address && (
+                  <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                    {decision.address}
+                  </Text>
+                )}
                 <Text size="xs" c="dimmed" hiddenFrom="sm" style={{ overflowWrap: "anywhere" }}>
                   {[decision.path, reason].filter((part) => part).join(" · ")}
                 </Text>
