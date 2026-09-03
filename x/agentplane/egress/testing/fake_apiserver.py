@@ -107,7 +107,12 @@ class FakeApiServer:
             queue.put_nowait(event)
 
     def close_watches(self) -> None:
-        """End every open watch stream, as the server does at `timeoutSeconds`."""
+        """End every watch stream open right now, as the server does at `timeoutSeconds`.
+
+        Only the ones open right now: an informer between a kind's list and its next watch
+        registration keeps the watch it is about to open, for that watch's full lifetime. A test
+        that needs a particular kind's cycle to end has to re-arm this until it does.
+        """
         for queue in self._watchers:
             queue.put_nowait(None)
 

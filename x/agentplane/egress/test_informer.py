@@ -117,9 +117,17 @@ async def test_a_completed_cycle_is_what_advances_freshness(fake: FakeApiServer,
     assert set(index.refreshed) == {POLICIES_PLURAL, BINDINGS_PLURAL, SANDBOXES_PLURAL, SECRETS_PLURAL}
     seeded = index.refreshed[POLICIES_PLURAL]
 
-    fake.close_watches()
+    async def end_watches_until_the_policies_cycle_completes() -> None:
+        # `close_watches` ends only the watches open at that instant, and the informer is synced as
+        # soon as every kind has listed — before their watches register. A policies watch that
+        # registers just after the close then runs its full `resync_seconds`, which is the whole
+        # budget of this test. So re-arm rather than close once; the sleep only paces the retries.
+        while index.refreshed[POLICIES_PLURAL] <= seeded:
+            fake.close_watches()
+            await asyncio.sleep(0.01)
 
-    await index.wait_for(lambda: index.refreshed[POLICIES_PLURAL] > seeded)
+    # A bound so a regression fails here rather than hanging out the test target's own timeout.
+    await asyncio.wait_for(end_watches_until_the_policies_cycle_completes(), timeout=10)
 
 
 if __name__ == "__main__":
