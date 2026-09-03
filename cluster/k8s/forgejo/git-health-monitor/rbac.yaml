@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: forgejo-git-health-exporter
+  # Not `forgejo`: that namespace isn't in registry-creds.sops.yaml's reflector
+  # allow/auto-namespaces list (validated by test_forgejo_image_namespaces_are_reflected),
+  # and widening that list means editing a SOPS-encrypted Secret this identity cannot
+  # decrypt-and-re-MAC. `monitoring` already carries the reflected pull secret and is
+  # where every other exporter/PrometheusRule in this repo lives; the Role below still
+  # grants this ServiceAccount pod/exec access scoped to the `forgejo` namespace, so
+  # nothing about which pods it can reach changes.
+  namespace: monitoring
+imagePullSecrets:
+  - name: forgejo-images-creds
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: forgejo-git-health-exporter
+  namespace: forgejo
+rules:
+  # Discover Forgejo pods directly rather than through the Service's Ready endpoints -- a
+  # pod sitting on a dead mount stays Ready (readiness is DB-backed, ducktape#4616), so an
+  # endpoints-based view would silently skip exactly the pod this exporter exists to catch.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  # Exec `git for-each-ref` in each pod (main.py exec_git_check) to force the pack-file
+  # mmap read that a shallow probe (stat/ls/rev-parse) never touches.
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: forgejo-git-health-exporter
+  namespace: forgejo
+subjects:
+  - kind: ServiceAccount
+    name: forgejo-git-health-exporter
+    namespace: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: forgejo-git-health-exporter

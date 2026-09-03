@@ -1,0 +1,77 @@
+# Execs `git for-each-ref` inside each Forgejo pod to detect a dead/stale SeaweedFS mount
+# that readiness (DB-backed /api/healthz) cannot see -- ducktape#4616. Alerting, not a
+# readiness probe: the fault is usually a shared-storage backend property correlated
+# across replicas, so wiring this into readiness would empty every endpoint at once
+# instead of just the broken one (see the issue's rejected-readiness-probe discussion).
+#
+# Settings default to this Deployment's own namespace/labels and the haku/haku-state
+# check repo (main.py Settings.from_env) -- no env overrides needed here.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forgejo-git-health-exporter
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: forgejo-git-health-exporter
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: forgejo-git-health-exporter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: forgejo-git-health-exporter
+    spec:
+      serviceAccountName: forgejo-git-health-exporter
+      # Needed: the exporter calls the Kubernetes API itself (list pods, exec) rather
+      # than only serving pre-computed state, unlike the sibling github-graphql exporter.
+      automountServiceAccountToken: true
+      terminationGracePeriodSeconds: 10
+      # Private Forgejo package -- ducktape-ci credential reflected into this namespace
+      # from cluster/k8s/forgejo-images/.
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: exporter
+          # Flux image-automation setter: the marker MUST be a trailing comment on the
+          # image line (kyaml Setters ignores an own-line comment above it). Placeholder
+          # tag until CI's first push of this new image; the all-images
+          # ImageUpdateAutomation overwrites it with the real pushed tag.
+          image: git.allegedly.works/ducktape-ci/forgejo-git-health-exporter:devel-20260903000000-0000000 # {"$imagepolicy": "flux-system:forgejo-git-health-exporter"}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 9173
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

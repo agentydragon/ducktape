@@ -169,6 +169,11 @@
       "test": "//cluster/rotators/forgejo_token_rotation/...",
       "registry": "forgejo"
     },
+    "forgejo-git-health-exporter": {
+      "target": "//cluster/exporters/forgejo_git_health:image",
+      "test": "//cluster/exporters/forgejo_git_health/...",
+      "registry": "forgejo"
+    },
     "attic-jwt-rotation": {
       "target": "//cluster/rotators/attic_jwt_rotation:image",
       "registry": "forgejo"

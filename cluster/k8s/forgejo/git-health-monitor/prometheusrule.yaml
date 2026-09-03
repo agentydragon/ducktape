@@ -1,0 +1,37 @@
+# Detection half of ducktape#4616's "D + alerting" plan (option D, a watcher that rolls
+# affected consumers, is out of scope here). `forgejo_git_health` (git-health-monitor
+# Deployment, ../../../exporters/forgejo_git_health) execs `git for-each-ref` in each
+# Forgejo pod so this fires on the same SIGBUS-on-pack-mmap fault that the incident's
+# `/api/healthz` readiness probe never saw, without wiring the check into readiness itself
+# -- the operator explicitly rejected that, because the fault is usually a shared-storage
+# backend property correlated across replicas: a readiness probe exercising it would empty
+# every endpoint at once and turn "half of git is broken" into "all of Forgejo, including
+# the web UI, is down".
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: forgejo-git-health
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: forgejo-git-health
+      rules:
+        - alert: ForgejoGitHealthDegraded
+          expr: forgejo_git_health == 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Forgejo pod {{ $labels.pod }} is failing real git reads"
+            description: >-
+              {{ $labels.pod }} has failed a `git for-each-ref` pack-read check for over 5m
+              while (per Kubernetes) Ready -- readiness never sees this fault (ducktape#4616).
+              Traffic hitting this replica gets empty-repo or 5xx responses for real git
+              operations. Fix: `kubectl delete pod -n forgejo {{ $labels.pod }}` to force a
+              reschedule and a fresh mount. If the replacement lands on the same node and
+              still fails, the node's SeaweedFS CSI staging mount is stuck dead
+              (`transport endpoint is not connected` in the csi node-plugin log) and needs
+              `umount -l` on the stale `globalmount` path from a privileged shell on that
+              node before the pod can come up clean (ducktape#4616 comment history).
