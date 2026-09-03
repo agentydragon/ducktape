@@ -3,11 +3,13 @@
 What each harness offers a driver of its JSON protocol when a hook fires, how fast the driver
 has to answer, and what that fixes about a hook capability on the runner protocol. The findings
 come from reading the pinned Claude Code (2.1.252) and Codex `main` at `312709252d`
-(`rust-v0.152.1`), and from the capture probe's `hooks` scenarios
-([capture README](../capture/README.md)) run against a dead model endpoint, which exercises the
-registration and the session-level events but no tool call. The scripted tests run with hooks off
-([roster § Deliberately unsupported](../native/docs/protocol_roster.md)), and the runner refuses
-the one callback it receives ([SPEC](../runner/SPEC.md) § What the harnesses do not promise).
+(`rust-v0.152.1`), and from the capture probe's `hooks` and `hooks_deny` scenarios
+([capture README](../capture/README.md)) run against LiteLLM on the cheap-experiments key
+(Haiku 4.5 through the Anthropic messages route, `gpt-5.6-luna` through the responses route):
+one shell tool call per turn, every registered hook answered by the probe as it arrived. The
+scripted tests run with hooks off ([roster § Deliberately unsupported](../native/docs/protocol_roster.md)),
+and the runner refuses the one callback it receives ([SPEC](../runner/SPEC.md) § What the
+harnesses do not promise).
 
 ## Claude Code: the driver is the hook
 
@@ -30,13 +32,19 @@ the one callback it receives ([SPEC](../runner/SPEC.md) § What the harnesses do
   system frames to the stream.
 - **Gotcha**: `--safe-mode`, which the scenarios use to keep plugins out of the prompt, also
   disables hooks. A hooks scenario has to drop it and rely on `--setting-sources=` alone.
-- **Observed** (dead endpoint): the `UserPromptSubmit` callback arrived before the `system/init`
-  frame and carried the prompt, the transcript path, and a `tool_use_id`; the probe's answer
-  went back in the same millisecond. No `SessionStart` callback fired for a registration made
-  at `initialize`, and no `hook_started`/`hook_response` frames appeared for these callbacks
-  under `--include-hook-events`. Whether `--include-hook-events` reports SDK callbacks at all,
-  and whether `SessionStart` fires before the registration is read, are open until a capture
-  with a live model runs the tool events.
+- **Observed live.** In a turn with one Bash call the callbacks came in this order, each
+  answered by the probe within the same millisecond: `UserPromptSubmit` 27 ms after the prompt
+  and before `system/init`; `PreToolUse` 4 ms after the assistant frame carrying the
+  `tool_use`; `PostToolUse` after the command ran and before the `tool_result` user frame;
+  `Stop` after the final assistant text and 2 ms before `result`. No `SessionStart` or
+  `SessionEnd` callback fired for a registration made at `initialize`, and no
+  `hook_started`/`hook_progress`/`hook_response` frames appeared under `--include-hook-events`:
+  those report command hooks, not SDK callbacks. Every callback carries a top-level
+  `tool_use_id`, an id per firing even for events without a tool.
+- **Deny, observed.** `permissionDecision: deny` with a reason: no `can_use_tool` followed, the
+  model received a `tool_result` with `is_error: true` whose content is the reason verbatim,
+  the turn continued, and the assistant reported the reason. Allow: no `can_use_tool` either,
+  the tool ran. The whole turn took 4 s in both cases.
 
 ## Codex: the hook is a shell command
 
@@ -52,19 +60,33 @@ the one callback it receives ([SPEC](../runner/SPEC.md) § What the harnesses do
 - **Fail-open**: a hook that exits non-zero or times out is logged and the tool runs.
 - **Trust**: an unmanaged hook is untrusted until the hash recorded in the hooks state matches
   its command; `thread/start` takes `bypass_hook_trust` for a driver that owns the config.
-- **Observed** (dead endpoint): hooks passed through `thread/start`'s config map run from a
-  `<session-flags>/config.toml` layer; `SessionStart`, `UserPromptSubmit`, and `SessionEnd` each
-  ran the command with Claude-shaped input (`hook_event_name`, `session_id`, `cwd`,
-  `permission_mode`, the prompt), and the driver saw a `hook/started`/`hook/completed` pair per
-  run with its duration. The thread's first frames warn that the trust bypass is on and that
-  the `SessionEnd` timeout is clamped to 3 s.
+- **Observed live.** Hooks passed through `thread/start`'s config map run from a
+  `<session-flags>/config.toml` layer, and all six registered events ran: `SessionStart` 41 ms
+  after `thread/start`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, and
+  `SessionEnd` on close. A Python hook command took 37 to 56 ms per run; the driver saw a
+  `hook/started`/`hook/completed` pair per run with the duration and an `entries` list for
+  errors and feedback. The thread's first frames warn that the trust bypass is on and that the
+  `SessionEnd` timeout is clamped to 3 s.
+- **Allow is not a decision.** A `PreToolUse` answer with `permissionDecision: allow` is
+  rejected ("returned unsupported permissionDecision:allow"), the run is marked `failed`, and the
+  tool runs anyway, which is the fail-open rule at work. A hook that has no objection answers
+  `{}`.
+- **Deny, observed.** `permissionDecision: deny` with a reason: the run is `blocked` with a
+  `feedback` entry carrying the reason, the command never ran, and the model's tool outcome
+  read "Command blocked by PreToolUse hook: <reason>. Command: <command>"; the assistant
+  reported it and the turn completed.
+- **Input keys** beyond `session_id`, `cwd`, `transcript_path` (null on an ephemeral thread),
+  `model`, `permission_mode`, `hook_event_name`: `SessionStart` has `source`;
+  `UserPromptSubmit` `prompt`, `turn_id`; `PreToolUse` `tool_name`, `tool_input`,
+  `tool_use_id`, `turn_id`; `PostToolUse` adds `tool_response`; `Stop` `last_assistant_message`,
+  `stop_hook_active`, `turn_id`; `SessionEnd` `reason`.
 
 ## Reaction budget, side by side
 
-| Harness     | Who runs the hook      | Driver sees            | Can veto a tool         | Default budget | On timeout                           |
-| ----------- | ---------------------- | ---------------------- | ----------------------- | -------------- | ------------------------------------ |
-| Claude Code | The driver, over stdio | `hook_callback`        | Yes, with reason        | 600 s          | Tool skipped, model told (≥ 2.1.210) |
-| Codex       | A child process        | `hook/*` notifications | Only via the shell hook | 600 s          | Tool runs                            |
+| Harness     | Who runs the hook      | Driver sees            | Can veto a tool               | Default budget | On timeout                           |
+| ----------- | ---------------------- | ---------------------- | ----------------------------- | -------------- | ------------------------------------ |
+| Claude Code | The driver, over stdio | `hook_callback`        | Yes, with reason              | 600 s          | Tool skipped, model told (≥ 2.1.210) |
+| Codex       | A child process        | `hook/*` notifications | Deny only, via the shell hook | 600 s          | Tool runs                            |
 
 ## What a hook capability on the runner protocol must satisfy
 
