@@ -40,6 +40,7 @@ in
     ./local_llm_npu.nix
     ./gpu-debug.nix
     ./iio-debug.nix
+    ./battery_suspend_logging.nix
     ../../modules/attic-substituter.nix
   ];
 

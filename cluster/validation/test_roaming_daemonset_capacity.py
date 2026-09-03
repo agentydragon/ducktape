@@ -17,6 +17,7 @@ relation.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -31,12 +32,26 @@ from util.bazel.runfiles import get_required_path
 # carries role `worker`. `non-k8s` hosts (atlas, pixel6) are not cluster nodes.
 _ROAMING_ROLE = "laptop"
 
+
+@dataclass(frozen=True)
+class _RoamingDaemonSet:
+    release_path: str
+    # Dotted key path from the HelmRelease's `spec.values` down to the dict
+    # holding `updateStrategy` (e.g. a subchart values key for an umbrella
+    # chart's dependency, or empty for a single-chart release where
+    # `updateStrategy` sits directly under `values`).
+    values_path: tuple[str, ...] = ()
+
+
 # HelmReleases rendering a DaemonSet that schedules onto roaming nodes. Add new
 # ones here — a roaming DaemonSet missing from this list is unprotected, which is
 # the one gap this test cannot close on its own.
-_ROAMING_DAEMONSET_RELEASES = (
-    "cluster/k8s/monitoring/loki/promtail-helmrelease.yaml",
-    "cluster/k8s/monitoring/loki/promtail-journal-helmrelease.yaml",
+_ROAMING_DAEMONSETS = (
+    _RoamingDaemonSet("cluster/k8s/monitoring/loki/promtail-helmrelease.yaml"),
+    _RoamingDaemonSet("cluster/k8s/monitoring/loki/promtail-journal-helmrelease.yaml"),
+    # kube-prometheus-stack is an umbrella chart; node-exporter's values sit
+    # under its subchart key, not directly under `values`.
+    _RoamingDaemonSet("cluster/k8s/monitoring/stack/helmrelease.yaml", values_path=("prometheus-node-exporter",)),
 )
 
 
@@ -55,11 +70,21 @@ def test_roaming_nodes_exist(roaming_node_count: int) -> None:
     )
 
 
-@pytest.mark.parametrize("release_path", _ROAMING_DAEMONSET_RELEASES)
-def test_max_unavailable_exceeds_roaming_nodes(release_path: str, roaming_node_count: int) -> None:
-    doc = yaml.safe_load(Path(get_required_path(f"_main/{release_path}")).read_text())
-    strategy = doc["spec"]["values"]["updateStrategy"]["rollingUpdate"]
-    max_unavailable = strategy["maxUnavailable"]
+@pytest.mark.parametrize("daemonset", _ROAMING_DAEMONSETS, ids=lambda ds: ds.release_path)
+def test_max_unavailable_exceeds_roaming_nodes(daemonset: _RoamingDaemonSet, roaming_node_count: int) -> None:
+    release_path = daemonset.release_path
+    # A file may hold multiple YAML documents (e.g. a HelmRepository/GitRepository
+    # source followed by the HelmRelease); find the HelmRelease among them rather
+    # than assuming it is alone or first.
+    docs = list(yaml.safe_load_all(Path(get_required_path(f"_main/{release_path}")).read_text()))
+    helm_releases = [doc for doc in docs if doc.get("kind") == "HelmRelease"]
+    assert len(helm_releases) == 1, (
+        f"{release_path}: expected exactly one HelmRelease document, found {len(helm_releases)}"
+    )
+    values = helm_releases[0]["spec"]["values"]
+    for key in daemonset.values_path:
+        values = values[key]
+    max_unavailable = values["updateStrategy"]["rollingUpdate"]["maxUnavailable"]
 
     assert isinstance(max_unavailable, int), (
         f"{release_path}: maxUnavailable is {max_unavailable!r}; this test only "
