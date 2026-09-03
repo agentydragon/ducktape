@@ -63,6 +63,11 @@
           "type": "string",
           "format": "date-time"
         },
+        "maxUses": {
+          "description": "A one-shot or n-shot grant: once the proxy has allowed this many requests under the binding (status.uses), it contributes nothing. Omitted means unlimited.",
+          "type": "integer",
+          "minimum": 1
+        },
         "approval": {
           "type": "object",
           "required": ["state"],
@@ -132,6 +137,11 @@
         },
         "resolvedPolicies": {
           "description": "How many of spec.policies name an existing EgressPolicy.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "uses": {
+          "description": "Requests the proxy has allowed under this binding.",
           "type": "integer",
           "minimum": 0
         }

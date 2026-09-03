@@ -23,6 +23,7 @@ import yaml
 from cluster.validation.checks import (
     check_cilium_policy_rules_nonempty,
     check_duplicate_external_secrets,
+    check_egress_bindings_name_granter,
     check_egress_bindings_resolve_policies,
     check_external_credential_ownership,
     check_forgejo_image_namespace_reflection,
@@ -247,6 +248,12 @@ def test_goldilocks_explicit_decision(cluster: ParsedCluster) -> None:
 def test_egress_bindings_resolve_policies(cluster: ParsedCluster) -> None:
     """Every EgressBinding's policies are EgressPolicies rendered in its namespace."""
     errors = check_egress_bindings_resolve_policies(cluster)
+    assert not errors, "\n".join(errors)
+
+
+def test_egress_bindings_name_granter(cluster: ParsedCluster) -> None:
+    """Every EgressBinding carries the granted-by label."""
+    errors = check_egress_bindings_name_granter(cluster)
     assert not errors, "\n".join(errors)
 
 

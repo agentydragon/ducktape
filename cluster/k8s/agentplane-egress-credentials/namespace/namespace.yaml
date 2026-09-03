@@ -1,0 +1,13 @@
+# The credentials the Agentplane egress proxy substitutes, and nothing else: no workloads, no
+# agent RBAC. They live apart from agentplane-staging because the proxy's informer needs a
+# namespace-wide Secret read (an informer cannot be resourceNames-restricted without naming
+# each Secret in a field selector), and RBAC cannot filter by label; in agentplane-staging that
+# read would have covered the runners' LiteLLM key and the app's database credential.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agentplane-egress-credentials
+  labels:
+    name: agentplane-egress-credentials
+  annotations:
+    description: Credentials the Agentplane egress proxy substitutes into sandbox requests; readable by the proxy's ServiceAccount only.

@@ -5,7 +5,5 @@ resources:
   - role-agentplane-egress.yaml
   - rolebinding-agentplane-egress.yaml
   - clusterrole-agentplane-staging-egress-token-reviewer.yaml
-  - serviceaccount-external-creds-reader.yaml
-  - externalsecret-agentplane-github-pat.yaml
   - egresspolicy-github-public.yaml
   - egressbinding-sandboxes-github-public.yaml

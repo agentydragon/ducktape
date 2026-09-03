@@ -42,7 +42,7 @@
                 }
               },
               "credential": {
-                "description": "The credential the proxy substitutes on a matching request: it replaces the placeholder value in the named header with the Secret key's value. The Secret lives in the policy's namespace and is mounted only into the proxy.",
+                "description": "The credential the proxy substitutes on a matching request: it replaces the placeholder value in the named header with the Secret key's value. The Secret is resolved in the proxy's configured credentials namespace (agentplane-egress-credentials), never the policy's, and only the proxy reads it.",
                 "type": "object",
                 "required": ["secretRef", "header", "placeholder"],
                 "properties": {

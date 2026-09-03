@@ -1,10 +1,7 @@
-# What the proxy reads to decide a request: the policies and bindings, the Sandboxes they name,
-# the Pods whose tokens it verifies (a TokenReview proves the Pod; the Pod's owner is the
-# Sandbox), and the credentials the policies reference. The Secret read is namespace-wide for
-# v1: the proxy keeps an informer over the referenced Secrets, and an informer under a
-# resourceNames restriction has to name each Secret in a field selector, which the policies
-# decide at runtime. Every Secret in this namespace is therefore readable by the proxy,
-# including the runners' LiteLLM key and the app's database credential.
+# What the proxy reads here to decide a request: the policies and bindings, the Sandboxes they
+# name, and the Pods whose tokens it verifies (a TokenReview proves the Pod; the Pod's owner is
+# the Sandbox). No Secrets: the credentials it substitutes live in
+# agentplane-egress-credentials, where it holds a separate read grant.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -21,5 +18,5 @@ rules:
     resources: ["sandboxes"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
-    resources: ["pods", "secrets"]
+    resources: ["pods"]
     verbs: ["get", "list", "watch"]

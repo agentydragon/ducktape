@@ -24,6 +24,7 @@ from cluster.validation.k8s import (
 )
 from cluster.validation.kustomize import KustomizeBuildResult
 
+_GRANTED_BY_LABEL = "agentplane.allegedly.works/granted-by"
 _FORGEJO_REGISTRY = "git.allegedly.works"
 _FORGEJO_CREDENTIAL_SECRET = "forgejo-images-creds"
 _REFLECTION_ALLOWED_NAMESPACES = "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces"
@@ -360,4 +361,14 @@ def check_egress_bindings_resolve_policies(cluster: ParsedCluster) -> list[str]:
         if isinstance(binding, EgressBindingResource)
         for policy in binding.spec.policies
         if (binding.namespace, policy) not in policies
+    ]
+
+
+def check_egress_bindings_name_granter(cluster: ParsedCluster) -> list[str]:
+    """Every EgressBinding says who made it, so a grant is never anonymous in the API server."""
+    return [
+        f"EgressBinding '{binding.namespace}/{binding.name}' has no {_GRANTED_BY_LABEL} label"
+        for result in cluster.build_results
+        for binding in result.resources
+        if isinstance(binding, EgressBindingResource) and not binding.metadata.labels.get(_GRANTED_BY_LABEL)
     ]

@@ -114,6 +114,8 @@ resources:
 
   # --- agentplane (CRDs, then staging) ---
   - agentplane-crds/flux-kustomization.yaml
+  - agentplane-egress-credentials/namespace/flux-kustomization.yaml
+  - agentplane-egress-credentials/secrets/flux-kustomization.yaml
   - agentplane-staging/namespace/flux-kustomization.yaml
   - agentplane-staging/agent-rbac/flux-kustomization.yaml
   - agentplane-staging/db/flux-kustomization.yaml
