@@ -41,3 +41,5 @@ resources:
   - haku-managed-agent-image.yaml
   - agentplane-runner-image.yaml
   - agentplane-app-image.yaml
+  - agentplane-egress-image.yaml
+  - agentplane-egress-sidecar-image.yaml

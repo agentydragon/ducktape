@@ -224,6 +224,11 @@
       "target": "//x/agentplane/egress:image",
       "test": "//x/agentplane/egress/...",
       "registry": "forgejo"
+    },
+    "agentplane-egress-sidecar": {
+      "target": "//x/agentplane/egress:sidecar_image",
+      "test": "//x/agentplane/egress/...",
+      "registry": "forgejo"
     }
   }
 }

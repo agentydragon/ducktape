@@ -1,0 +1,13 @@
+# The listener the sandbox sidecars relay to (the SandboxTemplate names this Service).
+apiVersion: v1
+kind: Service
+metadata:
+  name: agentplane-egress
+  namespace: agentplane-staging
+spec:
+  selector:
+    app.kubernetes.io/name: agentplane-egress
+  ports:
+    - name: proxy
+      port: 8888
+      targetPort: proxy

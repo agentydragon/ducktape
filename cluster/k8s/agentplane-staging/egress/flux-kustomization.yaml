@@ -4,11 +4,11 @@ metadata:
   name: agentplane-staging-egress
   namespace: ducktape-flux
   annotations:
-    description: Agentplane secure egress in agentplane-staging - the proxy's identity and RBAC and the seed policy and binding for every managed Sandbox. The credentials it substitutes live in agentplane-egress-credentials; the proxy Deployment and the sandbox sidecar are not here yet.
+    description: Agentplane secure egress in agentplane-staging - the proxy Deployment with its identity, RBAC, interception CA and trust bundle, the GitHub PAT it substitutes, and the seed policy and binding for every managed Sandbox. The sandbox side (sidecar, proxy environment) is in the runner SandboxTemplate under ../app.
 spec:
   retryInterval: 1m
   interval: 10m
-  timeout: 2m
+  timeout: 5m
   path: ./cluster/k8s/agentplane-staging/egress
   prune: true
   wait: true
@@ -20,4 +20,16 @@ spec:
     - name: agentplane-staging-namespace
       namespace: ducktape-flux
     - name: agentplane-crds # the seed's EgressPolicy and EgressBinding
+      namespace: ducktape-flux
+    - name: external-creds # the source-side grant on the agentydragon-agent PAT
+      namespace: ducktape-flux
+    - name: external-secrets-config # the ClusterSecretStore the PAT is read through
+      namespace: ducktape-flux
+    - name: cert-manager-environment # the cluster-ca-bootstrap issuer the interception CA is signed by
+      namespace: ducktape-flux
+    - name: cert-manager-trust # trust-manager, for the Bundle
+      namespace: ducktape-flux
+    - name: reflector # mirrors the CA Secret into trust-manager's source namespace
+      namespace: ducktape-flux
+    - name: forgejo-images # reflects the proxy image's pull credential
       namespace: ducktape-flux

@@ -1,7 +1,12 @@
-# Runner Pods reach DNS and the cluster LiteLLM only; their port 7000 is open
-# only to Pods in this namespace (the integration app). Nothing else in either
-# direction. LiteLLM is admitted on its container port (4000, the Service's
-# targetPort) - cluster/docs/cilium_network_policy.md § Egress to a ClusterIP.
+# Runner Pods reach DNS, the cluster LiteLLM (the model endpoint stays direct:
+# x/agentplane/app/README.md), and the egress proxy's listener, which the sidecar
+# relays to; their port 7000 is open only to Pods in this namespace (the
+# integration app). Nothing else in either direction: everything outside the
+# cluster is reached through the proxy or not at all. The runner container can
+# open TCP to the proxy too - it shares the Pod's identity with the sidecar - but
+# without the sidecar's token the proxy refuses it (the ADR's accepted limit).
+# Services are admitted on their container port (LiteLLM 4000, proxy 8888) -
+# cluster/docs/cilium_network_policy.md § Egress to a ClusterIP.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -37,6 +42,14 @@ spec:
       toPorts:
         - ports:
             - port: "4000"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+            app.kubernetes.io/name: agentplane-egress
+      toPorts:
+        - ports:
+            - port: "8888"
               protocol: TCP
 ---
 # The app takes browser traffic only through the Authentik proxy outpost, and

@@ -1,0 +1,57 @@
+# The proxy Pod is the one path out of agentplane-staging: runner Pods (whose sidecar shares the
+# Pod's identity) reach its listener, the integration app its admin port, and it alone reaches
+# the internet, on 443 and 80. remote-node and host go with world because *.allegedly.works
+# resolves to node IPs (cluster/docs/cilium_network_policy.md § Egress to *.allegedly.works);
+# in-cluster Pods stay unreachable through it. DNS is unrestricted here on purpose: which hosts
+# may be reached is the EgressPolicy resources' decision, applied per request, not a second
+# list to keep in step. The API server is where identity and policy come from.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-egress
+  namespace: agentplane-staging
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-egress
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+            app.kubernetes.io/name: agentplane-runner
+      toPorts:
+        - ports:
+            - port: "8888"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+            app.kubernetes.io/name: agentplane-app
+      toPorts:
+        - ports:
+            - port: "8081"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEntities:
+        - kube-apiserver
+    - toEntities:
+        - world
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "80"
+              protocol: TCP

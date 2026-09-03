@@ -1,0 +1,95 @@
+# The central egress proxy (x/agentplane/egress): every sandbox sidecar relays here with the Pod's
+# projected token; the proxy proves it by TokenReview, decides the request from this namespace's
+# EgressPolicy and EgressBinding resources, and substitutes credentials it reads from
+# agentplane-egress-credentials. It intercepts TLS with the CA in certificate-agentplane-egress-ca.yaml,
+# assembled into a writable confdir at startup (reloader restarts it when that Secret rotates).
+# One replica: the identity cache and the decision ring are in memory.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentplane-egress
+  namespace: agentplane-staging
+  labels:
+    app.kubernetes.io/name: agentplane-egress
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-egress
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-egress
+    spec:
+      serviceAccountName: agentplane-egress
+      automountServiceAccountToken: true
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: proxy
+          image: git.allegedly.works/ducktape-ci/agentplane-egress:devel-placeholder # {"$imagepolicy": "flux-system:agentplane-egress"}
+          imagePullPolicy: IfNotPresent
+          args:
+            - --namespace=agentplane-staging
+            - --credentials-namespace=agentplane-egress-credentials
+            - --listen-port=8888
+            - --admin-port=8081
+            - --ca-cert=/etc/agentplane-egress/ca/tls.crt
+            - --ca-key=/etc/agentplane-egress/ca/tls.key
+            - --confdir=/var/lib/agentplane-egress
+            # Must equal the audience of the projected token in the runner SandboxTemplate
+            # (../app/sandboxtemplate-agentplane-runner.yaml); a token for any other audience is refused.
+            - --token-audience=agentplane-egress
+          ports:
+            - name: proxy
+              containerPort: 8888
+              protocol: TCP
+            - name: admin
+              containerPort: 8081
+              protocol: TCP
+          # /healthz is 200 once the watches have synced; before that the proxy refuses everything.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: admin
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: admin
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: ca
+              mountPath: /etc/agentplane-egress/ca
+              readOnly: true
+            - name: confdir
+              mountPath: /var/lib/agentplane-egress
+      volumes:
+        - name: ca
+          secret:
+            secretName: agentplane-egress-ca
+        - name: confdir
+          emptyDir: {}

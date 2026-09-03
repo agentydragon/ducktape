@@ -215,3 +215,58 @@ oci_image(
     ],
     user = "1000:1000",
 )
+
+py_binary(
+    name = "sidecar_bin",
+    main_module = "x.agentplane.egress.sidecar",
+    deps = [":sidecar"],
+)
+
+# The sidecar image on debian slim as user 1000: the relay alone, no CA bundle, since it terminates
+# no TLS. Published as agentplane-egress-sidecar (devinfra/ci/image_targets.json) and run next to
+# the runner by the agentplane-runner SandboxTemplate (cluster/k8s/agentplane-staging).
+aspect_py_binary(
+    name = "sidecar_image_bin",
+    main = "sidecar.py",
+    deps = [":sidecar"],
+)
+
+py_image_layer(
+    name = "sidecar_layers",
+    binary = ":sidecar_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "sidecar_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("sidecar_image_bin"),
+    env = py_image_env(binary_name = "sidecar_image_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":sidecar_layers"],
+    user = "1000:1000",
+)
+
+py_library(
+    name = "sidecar",
+    srcs = ["sidecar.py"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+py_test(
+    name = "test_sidecar",
+    srcs = ["test_sidecar.py"],
+    deps = [
+        ":conftest",
+        ":sidecar",
+        "//:conftest",
+        "@pypi//aiohttp",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

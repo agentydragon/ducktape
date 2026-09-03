@@ -1,0 +1,27 @@
+# The interception root the proxy issues leaves from, separate from the cluster's internal CA
+# (the haku-egress-proxy pattern). Reflected into cert-manager, trust-manager's source namespace,
+# so the Bundle in trust-bundle.yaml can publish it to the runner Pods. Rotation constraint:
+# publish both roots in the Bundle before switching signing keys (agents/mitmproxy/README.md).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: agentplane-egress-root-ca
+  namespace: agentplane-staging
+spec:
+  isCA: true
+  commonName: agentplane-egress-root-ca
+  secretName: agentplane-egress-ca
+  duration: 87600h # 10 years
+  renewBefore: 8760h # 1 year
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  secretTemplate:
+    annotations:
+      reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+      reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: cert-manager
+      reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+      reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: cert-manager
+  issuerRef:
+    name: cluster-ca-bootstrap
+    kind: ClusterIssuer

@@ -4,8 +4,14 @@
 # (region proxmox) so the local-path-proxmox state PVC binds where it runs; a
 # suspended Sandbox (operatingMode: Suspended) drops the Pod and keeps the PVC,
 # so it resumes only there. Both harnesses reach models through the cluster
-# LiteLLM with the cheap-experiments key. networkPolicyManagement is Unmanaged
-# because the CiliumNetworkPolicy next to this file is the runner's fence.
+# LiteLLM with the cheap-experiments key, directly: the credentialless egress
+# design governs external systems, not the model endpoint (x/agentplane/app/README.md).
+# Everything else outside the cluster goes through the egress sidecar: the runner
+# container's HTTP(S)_PROXY is the sidecar on loopback, which relays to the central
+# proxy (../egress) with the Pod's projected token, and the runner trusts the
+# proxy's interception CA through the trust-manager bundle mounted over its system
+# store. The token volume is mounted into the sidecar only. networkPolicyManagement
+# is Unmanaged because the CiliumNetworkPolicy next to this file is the runner's fence.
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
 metadata:
@@ -23,6 +29,7 @@ spec:
         - name: forgejo-images-creds
       nodeSelector:
         topology.kubernetes.io/region: proxmox
+      serviceAccountName: agentplane-runner
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 60
       securityContext:
@@ -76,6 +83,34 @@ spec:
                 secretKeyRef:
                   name: litellm-key-cheap-experiments
                   key: api-key
+            # Both spellings of each, since clients disagree on case. NO_PROXY: loopback (the
+            # sidecar itself and the runner's own listeners), the LiteLLM host, and in-cluster
+            # Service names in the forms clients build; the Cilium fence keeps the direct path to
+            # LiteLLM alone.
+            - name: HTTP_PROXY
+              value: http://127.0.0.1:3128
+            - name: HTTPS_PROXY
+              value: http://127.0.0.1:3128
+            - name: http_proxy
+              value: http://127.0.0.1:3128
+            - name: https_proxy
+              value: http://127.0.0.1:3128
+            - name: NO_PROXY
+              value: 127.0.0.1,localhost,litellm.litellm.svc.cluster.local,litellm.litellm.svc,.svc,.svc.cluster.local,.cluster.local
+            - name: no_proxy
+              value: 127.0.0.1,localhost,litellm.litellm.svc.cluster.local,litellm.litellm.svc,.svc,.svc.cluster.local,.cluster.local
+            # The trust bundle, mounted over the system store below and named explicitly for the
+            # clients that read an env pointer (Node, Python, curl, requests, git's libcurl).
+            - name: SSL_CERT_FILE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: NODE_EXTRA_CA_CERTS
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: CURL_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: GIT_SSL_CAINFO
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: REQUESTS_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
           resources:
             requests:
               cpu: 500m
@@ -86,6 +121,56 @@ spec:
           volumeMounts:
             - name: state
               mountPath: /state
+            - name: egress-ca
+              # Public roots + cluster root + the proxy's interception root (../egress/trust-bundle.yaml),
+              # over the image's own bundle at the path every client falls back to, whether or not it
+              # reads the env pointers above. A subPath mount does not follow ConfigMap updates: a CA
+              # rotation reaches a sandbox at its next Pod, which suspend/resume or re-creation gives.
+              mountPath: /etc/ssl/certs/ca-certificates.crt
+              subPath: ca-certificates.crt
+              readOnly: true
+        - name: egress-sidecar
+          image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:devel-placeholder # {"$imagepolicy": "flux-system:agentplane-egress-sidecar"}
+          # The image's entrypoint is the sidecar's Bazel launcher (see the runner above); only
+          # settings are given, as environment.
+          env:
+            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
+              value: agentplane-egress.agentplane-staging.svc.cluster.local
+            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT
+              value: "8888"
+            - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT
+              value: "3128"
+            - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
+              value: /var/run/agentplane-egress/token
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: egress-token
+              mountPath: /var/run/agentplane-egress
+              readOnly: true
+      volumes:
+        - name: egress-ca
+          configMap:
+            name: agentplane-egress-ca
+        # The Pod's identity to the central proxy: a ServiceAccount token bound to this Pod, with
+        # the proxy's audience, rotated by kubelet (the sidecar re-reads it per request). It proves
+        # the Pod, and the proxy follows the Pod to its Sandbox; it is mounted into the sidecar only.
+        - name: egress-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-egress
+                  expirationSeconds: 600
+                  path: token
   volumeClaimTemplatesPolicy: Overrides
   volumeClaimTemplates:
     - metadata:
