@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
+import grpc
 from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from google.protobuf.json_format import MessageToDict
@@ -147,6 +148,17 @@ def create_app(inventory: SandboxInventory, bridge: runner_bridge.RunnerBridge, 
     @app.exception_handler(runner_bridge.SandboxNotReachableError)
     async def _not_reachable(_request: Request, error: runner_bridge.SandboxNotReachableError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
+
+    @app.exception_handler(grpc.aio.AioRpcError)
+    async def _runner_unavailable(_request: Request, error: grpc.aio.AioRpcError) -> JSONResponse:
+        # The Pod has an address but nothing answers on it yet: a runner still starting after a
+        # resume, or one that just died. Any other gRPC failure is a bug and stays a 500.
+        if error.code() is not grpc.StatusCode.UNAVAILABLE:
+            raise error
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"detail": f"the sandbox's runner is not answering: {error.details()}"},
+        )
 
     @app.exception_handler(RunnerError)
     async def _runner_refused(_request: Request, error: RunnerError) -> JSONResponse:

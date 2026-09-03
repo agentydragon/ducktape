@@ -105,6 +105,22 @@ def test_delete_removes_the_sandbox(client: TestClient, custom_objects: FakeCust
     assert client.delete("/sandboxes/live").status_code == 404
 
 
+def test_a_runner_that_does_not_answer_is_a_503(
+    inventory: SandboxInventory, store: TrajectoryStore, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
+) -> None:
+    """A Pod with an address but no runner listening yet, as right after a resume."""
+    custom_objects.objects[("sandboxes", "live")] = sandbox("live")
+    core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
+
+    async def nobody_listens(name: str) -> str:
+        return "127.0.0.1:1"
+
+    with TestClient(create_app(inventory, RunnerBridge(address_of=nobody_listens, store=store), store)) as client:
+        response = client.get("/sandboxes/live/sessions")
+    assert response.status_code == 503
+    assert "not answering" in response.json()["detail"]
+
+
 def test_healthz_answers_outside_the_schema(client: TestClient) -> None:
     assert client.get("/healthz").status_code == 204
     assert "/healthz" not in client.get("/openapi.json").json()["paths"]

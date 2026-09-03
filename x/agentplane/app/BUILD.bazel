@@ -29,6 +29,7 @@ py_library(
         ":trajectory",
         "//x/agentplane/runner:client",
         "@pypi//fastapi",
+        "@pypi//grpcio",
         "@pypi//protobuf",
     ],
 )
