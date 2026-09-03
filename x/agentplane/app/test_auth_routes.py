@@ -24,6 +24,7 @@ from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import GRANTED_BY_LABEL, EgressInventory
 from x.agentplane.app.identity import TokenReviewer
 from x.agentplane.app.inventory import SandboxInventory
+from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.oidc import OIDCSettings
 from x.agentplane.app.testing.kubernetes import FakeCustomObjectsApi
 from x.agentplane.app.trajectory import TrajectoryStore
@@ -45,6 +46,7 @@ async def served(
     store: TrajectoryStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
+    live_index: LiveIndex,
     reviewer: TokenReviewer,
 ) -> AsyncIterator[str]:
     """The app as staging runs it -- a login and the token path on one port -- and its IdP."""
@@ -65,7 +67,7 @@ async def served(
         session_secret=SESSION_SECRET,
         public_base_url=app_url,
     )
-    app = create_app(inventory, bridge, store, MODELS, egress, decisions, oidc, reviewer)
+    app = create_app(inventory, bridge, store, MODELS, egress, decisions, live_index, oidc, reviewer)
     async with serve_app(idp, port=idp_port), serve_app(app, port=app_port):
         yield app_url
 

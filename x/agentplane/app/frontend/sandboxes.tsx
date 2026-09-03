@@ -17,13 +17,12 @@ import {
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 import IconPlayerPause from "@tabler/icons-react/dist/esm/icons/IconPlayerPause.mjs";
 import IconPlayerPlay from "@tabler/icons-react/dist/esm/icons/IconPlayerPlay.mjs";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { api, displayableError, type Condition, type NewSandbox, type SandboxView } from "./client";
+import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "./live";
 
 const EMPTY_FORM: NewSandbox = { slug: "", profile: null, policies: [] };
-
-const REFRESH_MS = 5000;
 
 const STATE_COLORS: Record<string, string> = {
   running: "green",
@@ -69,29 +68,14 @@ function StateBadge({ row }: { row: SandboxView }): JSX.Element {
 }
 
 export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX.Element {
-  const [rows, setRows] = useState<SandboxView[]>([]);
   const [includeArchived, setIncludeArchived] = useState(false);
+  // The list is pushed; an action's own failure is what this holds.
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<NewSandbox>(EMPTY_FORM);
   // The namespace's individual policies; ticking some grants them on top of the profile's binding.
   const [policies, setPolicies] = useState<string[]>([]);
-
-  const refresh = useCallback(async () => {
-    const { data, error: failure } = await api.GET("/sandboxes", {
-      params: { query: { include_archived: includeArchived } },
-    });
-    if (failure) setError(displayableError(failure));
-    else {
-      setRows(data);
-      setError(null);
-    }
-  }, [includeArchived]);
-
-  useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => void refresh(), REFRESH_MS);
-    return () => clearInterval(timer);
-  }, [refresh]);
+  const live = useLive<SandboxesSnapshot>(liveSandboxesUrl(includeArchived));
+  const rows: SandboxView[] = live.snapshot?.sandboxes ?? [];
 
   useEffect(() => {
     void (async () => {
@@ -101,14 +85,15 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     })();
   }, []);
 
+  // No refresh after an action: the change reaches the API server, and the watch behind the
+  // stream brings the new row back on its own.
   async function act(name: string, action: "suspend" | "resume" | "archive" | "unarchive" | "delete"): Promise<void> {
     const params = { params: { path: { name } } };
     const { error: failure } =
       action === "delete"
         ? await api.DELETE("/sandboxes/{name}", params)
         : await api.POST(`/sandboxes/{name}/${action}`, params);
-    if (failure) setError(displayableError(failure));
-    await refresh();
+    setError(failure ? displayableError(failure) : null);
   }
 
   async function create(): Promise<void> {
@@ -116,13 +101,16 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       body: { ...form, profile: form.profile || null },
     });
     if (failure) setError(displayableError(failure));
-    else setForm(EMPTY_FORM);
-    await refresh();
+    else {
+      setForm(EMPTY_FORM);
+      setError(null);
+    }
   }
 
   return (
     <Stack>
       <Title order={2}>Sandboxes</Title>
+      <LiveStatus live={live} />
       {error && <Text c="red">{error}</Text>}
       <Group align="flex-end">
         <TextInput
@@ -226,6 +214,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           })}
         </Table.Tbody>
       </Table>
+      {live.snapshot === null && <Text c="dimmed">Waiting for the first update…</Text>}
     </Stack>
   );
 }

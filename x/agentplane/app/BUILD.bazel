@@ -30,6 +30,7 @@ py_library(
         ":egress",
         ":identity",
         ":inventory",
+        ":live",
         ":oidc",
         ":trajectory",
         "//x/agentplane/runner:client",
@@ -63,6 +64,7 @@ py_library(
         ":egress",
         ":identity",
         ":inventory",
+        ":live",
         ":oidc",
         ":trajectory",
         "//util:kubernetes",
@@ -87,6 +89,7 @@ py_library(
         ":egress",
         ":identity",
         ":inventory",
+        ":live",
         ":trajectory",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
@@ -112,6 +115,7 @@ py_test(
         ":egress",
         ":identity",
         ":inventory",
+        ":live",
         ":trajectory",
         "//:conftest",
         "//x/agentplane/app/testing:egress_proxy",
@@ -175,6 +179,7 @@ py_test(
         ":egress",
         ":identity",
         ":inventory",
+        ":live",
         ":trajectory",
         "//:conftest",
         "//x/agentplane/runner:conftest",
@@ -198,6 +203,7 @@ py_library(
         ":decisions",
         ":egress",
         ":inventory",
+        ":live",
         ":trajectory",
         "@pypi//httpx",
     ],
@@ -239,6 +245,7 @@ py_library(
     name = "trajectory",
     srcs = ["trajectory.py"],
     deps = [
+        ":changes",
         "//x/agentplane/runner:protocol_pb2",
         "@pypi//asyncpg",
         "@pypi//protobuf",
@@ -345,6 +352,7 @@ py_test(
         ":egress",
         ":identity",
         ":inventory",
+        ":live",
         ":oidc",
         ":trajectory",
         "//:conftest",
@@ -366,5 +374,48 @@ py_library(
         ":oidc",
         "@pypi//fastapi",
         "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
+    name = "changes",
+    srcs = ["changes.py"],
+)
+
+py_library(
+    name = "live",
+    srcs = ["live.py"],
+    deps = [
+        ":changes",
+        ":egress",
+        ":inventory",
+        ":trajectory",
+        "//util:kubernetes",
+        "//util:kubernetes_watch",
+        "@pypi//fastapi",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_live",
+    srcs = ["test_live.py"],
+    deps = [
+        ":api",
+        ":bridge",
+        ":conftest",
+        ":decisions",
+        ":egress",
+        ":identity",
+        ":inventory",
+        ":live",
+        ":trajectory",
+        "//:conftest",
+        "//x/agentplane/app/testing:kubernetes",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

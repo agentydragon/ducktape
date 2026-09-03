@@ -24,6 +24,7 @@ from x.agentplane.app.egress import (
 )
 from x.agentplane.app.identity import Caller, TokenReviewer, require_caller
 from x.agentplane.app.inventory import NewSandbox, SandboxInventory, SandboxNotFoundError, SandboxView
+from x.agentplane.app.live import LiveIndex, router as live_router
 from x.agentplane.app.oidc import OIDCSettings, build_oauth
 from x.agentplane.app.trajectory import ThreadNotFoundError, ThreadView, TrajectoryStore
 from x.agentplane.runner.client import RunnerError
@@ -262,6 +263,7 @@ def create_app(
     catalog: ModelCatalog,
     egress: EgressInventory,
     decisions: DecisionsClient,
+    live: LiveIndex,
     oidc: OIDCSettings | None = None,
     reviewer: TokenReviewer | None = None,
 ) -> FastAPI:
@@ -276,11 +278,12 @@ def create_app(
     app.state.models = catalog
     app.state.egress = egress
     app.state.decisions = decisions
+    app.state.live = live
     app.state.oidc = oidc
     app.state.reviewer = reviewer
     # Every route needs a caller. There is no unauthenticated path into the API: /healthz is
     # declared below, outside these routers.
-    for api_router in (router, models, runner_bridge.router, threads, egress_router):
+    for api_router in (router, models, runner_bridge.router, threads, egress_router, live_router):
         app.include_router(api_router, dependencies=[Depends(require_caller)])
     if oidc is not None:
         app.add_middleware(

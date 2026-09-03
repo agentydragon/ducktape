@@ -76,7 +76,7 @@ flowchart TB
         C5["C5 Archive<br/>out of the active view, history kept"]:::completed
         C6["C6 Session view legibility<br/>markdown, the input's own text, folded reasoning,<br/>Enter sends with no button"]:::ready
         C7["C7 Lifecycle controls on the sandbox page<br/>suspend there, delete once suspended"]:::ready
-        C8["C8 Live push for every view<br/>the server says what changed, no page polls"]:::ready
+        C8["C8 Live push for every view<br/>the server says what changed, no page polls"]:::completed
         C9["C9 The profile a sandbox runs under<br/>visible and pickable, not one badge"]:::ready
         C10["C10 Egress actions that say what they do<br/>approve / deny / revoke, and Flux ownership"]:::ready
     end
@@ -228,21 +228,6 @@ ones still open.
   it. Deleting only a suspended sandbox is a new rule either way: `Inventory.delete` currently
   takes any state, so the package decides whether the precondition belongs in the API — where it
   also binds the agent driving staging — or is a UI affordance over an API that stays permissive.
-- **C8 live push for every view:** the server tells the browser what changed; no page polls.
-  Decided (Rai): a push channel, not a shorter interval. Three surfaces poll at five seconds today
-  — the sandbox list, the sandbox page, and the egress tab — each hand-rolling the same
-  `useEffect`/`setInterval` pair, and a fourth was written with no refresh at all (`listThreads`
-  runs once on mount, so a session named after you arrived keeps its old name until a reload).
-  Polling is also why a state change takes up to five seconds to appear and why every view costs a
-  request per client per interval whether or not anything happened.
-  The app already runs one push channel — the session's SSE stream — so the shape exists; what
-  does not exist is a source to push _from_. `inventory.py` and `egress.py` answer each request
-  with a fresh list against the API server and hold nothing between requests, so this package's
-  real content is server-side: a watch the app keeps over Sandboxes and EgressBindings, and a
-  stream that fans its changes out to the open tabs. The egress proxy's `Informer`
-  ([`../egress/informer.py`](../egress/informer.py)) is the shape to reuse rather than reinvent —
-  same list-and-watch, same freshness question, and its `/healthz` already answers "has this
-  stopped moving", which a UI feeding off a watch will need too.
 - **C9 the profile a sandbox runs under:** a profile decides what the sandbox may reach — a
   Flux-managed `EgressBinding` selects on the label it stamps — and it is nearly invisible. It
   appears as one badge on the sandbox page, and at creation as a free-text box whose help text

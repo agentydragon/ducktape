@@ -25,6 +25,7 @@ from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.identity import TokenReviewer
 from x.agentplane.app.inventory import SandboxInventory
+from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.trajectory import TrajectoryStore
 from x.agentplane.runner import protocol_pb2 as pb
 from x.agentplane.runner.conftest import RunnerHandle
@@ -84,6 +85,7 @@ async def app_url(
     store: TrajectoryStore,
     egress: EgressInventory,
     decisions: DecisionsClient,
+    live_index: LiveIndex,
     reviewer: TokenReviewer,
 ) -> AsyncIterator[str]:
     """The app served by uvicorn, with the one test sandbox resolving to the local runner. The
@@ -107,6 +109,7 @@ async def app_url(
                 {provider: ["bridge-model"] for provider in Provider},
                 egress,
                 decisions,
+                live_index,
                 reviewer=reviewer,
             ),
             host="127.0.0.1",

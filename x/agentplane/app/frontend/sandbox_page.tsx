@@ -1,19 +1,12 @@
 import { Badge, Button, Code, Group, Select, Stack, Switch, Table, Tabs, Text, TextInput, Title } from "@mantine/core";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { create } from "@bufbuild/protobuf";
 
-import {
-  api,
-  displayableError,
-  listSessions,
-  listThreads,
-  openSession,
-  type Condition,
-  type SandboxView,
-} from "./client";
+import { api, displayableError, listSessions, openSession, type Condition, type SandboxView } from "./client";
 import { EgressSection } from "./egress";
+import { liveSandboxUrl, LiveStatus, useLive, type SandboxSnapshot } from "./live";
 import { HarnessState, Provider, SessionSpecSchema, type SessionSummary } from "./protocol_pb";
 
 // The harness a session runs, as the API's catalog names it and as the protocol's enum spells it.
@@ -120,13 +113,10 @@ export function SandboxPage({
   onOpenSession: (sessionId: string) => void;
   onBack: () => void;
 }): JSX.Element {
-  const [sandbox, setSandbox] = useState<SandboxView | null>(null);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
   const tab: Tab = isTab(requestedTab) ? requestedTab : DEFAULT_TAB;
-  // Thread names by session id, read once: the store's copy, which outlives the runner's list.
-  const [names, setNames] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState(() => `s-${Date.now().toString(36)}`);
   const [effort, setEffort] = useState("low");
@@ -135,34 +125,27 @@ export function SandboxPage({
   const [models, setModels] = useState<string[]>([]);
   const [model, setModel] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    const { data, error: failure } = await api.GET("/sandboxes/{name}", { params: { path: { name } } });
-    if (failure) {
-      setError(displayableError(failure));
+  const live = useLive<SandboxSnapshot>(liveSandboxUrl(name));
+  const sandbox: SandboxView | null = live.snapshot?.sandbox ?? null;
+  const threads = live.snapshot?.threads ?? [];
+  // Thread names by session id: the store's copy, which outlives the runner's list.
+  const names = Object.fromEntries(
+    threads.flatMap((thread) => (thread.name ? [[thread.session_id, thread.name]] : []))
+  );
+
+  // The runner answers ListSessions per request and has no stream, so the table is re-read at the
+  // moments that can change it: the Pod coming or going, and a session opening, which the store
+  // records as a thread and the stream then pushes. A harness stopping is not among them; it shows
+  // when the page next reads.
+  const state = sandbox?.state;
+  const openedSessions = threads.length;
+  useEffect(() => {
+    if (state !== "running") {
+      setSessions([]);
       return;
     }
-    setSandbox(data);
-    if (data.state !== "running") return;
-    try {
-      setSessions(await listSessions(name));
-      setError(null);
-    } catch (reason: unknown) {
-      setError(displayableError(reason));
-    }
-  }, [name]);
-
-  useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => void refresh(), 5000);
-    return () => clearInterval(timer);
-  }, [refresh]);
-
-  useEffect(() => {
-    listThreads(name).then(
-      (threads) => setNames(Object.fromEntries(threads.flatMap((t) => (t.name ? [[t.session_id, t.name]] : [])))),
-      (reason: unknown) => setError(displayableError(reason))
-    );
-  }, [name]);
+    listSessions(name).then(setSessions, (reason: unknown) => setError(displayableError(reason)));
+  }, [name, state, openedSessions]);
 
   useEffect(() => {
     void (async () => {
@@ -206,7 +189,9 @@ export function SandboxPage({
         {sandbox && <Badge>{sandbox.state}</Badge>}
         {sandbox?.profile && <Badge variant="light">profile: {sandbox.profile}</Badge>}
       </Group>
+      <LiveStatus live={live} />
       {error && <Text c="red">{error}</Text>}
+      {live.snapshot !== null && sandbox === null && <Text c="red">There is no sandbox {name} any more.</Text>}
       {sandbox && sandbox.state !== "running" && (
         <Text>The sandbox is {sandbox.state}; sessions need a running Pod.</Text>
       )}
@@ -223,7 +208,7 @@ export function SandboxPage({
           <Tabs.Tab value="status">Status</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="egress" pt="sm">
-          <EgressSection name={name} />
+          <EgressSection name={name} bindings={live.snapshot?.bindings ?? null} />
         </Tabs.Panel>
         <Tabs.Panel value="status" pt="sm">
           {sandbox && <StatusView sandbox={sandbox} />}
