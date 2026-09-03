@@ -31,6 +31,9 @@ Standing under it:
   per-identity rules, placeholder tokens the agent cannot use elsewhere.
 - Host commands: Haku's node daemons (`hostexec`) already run an approved command on a named
   machine.
+- Delivery to Rai exists once already: Haku Console sends a Web Push with Approve and Deny for a
+  waiting tool call and retracts it when the call leaves the queue
+  ([`haku/SPEC.md`](../../../haku/SPEC.md)).
 - [`../docs/hooks.md`](../docs/hooks.md): a `PreToolUse` deny with a reason is the cheapest way to
   turn a refused call into an ask the model understands.
 
@@ -141,14 +144,16 @@ Standing under it:
 - The decision that external events arrive as thread inputs (`X`) and the batcher and envelope
   from [`async_approvals.md`](async_approvals.md): a UI event is one more source, delivered as a
   `<agentplane-event>` in a user-message envelope, batched with whatever else arrived.
-- The integration app already hosts pages and streams a session; a Haku-authored page is
-  content it serves, not a second app.
+- Haku already owns a deployed UI: it authors the `haku/ui` repository on Forgejo, the image is
+  published from it, and Flux applies the workload under the constrained `haku-state` reconciler
+  ([`cluster/k8s/haku/ui-image-webhook`](../../../cluster/k8s/haku/ui-image-webhook/README.md)).
+  The page Haku writes is a solved problem; the pipe from the page back to Haku is not.
+- The integration app already hosts pages and streams a session; a Haku-authored page can be
+  content it serves, or Haku's own service beside it, without a second event path.
 
 Missing:
 
-- **A deploy surface for Haku-authored UI**: Haku commits a page (or a bundle) and Agentplane
-  serves it under Rai's login, versioned with the commit that produced it.
-- **The event pipe**: interactions on that page post to Agentplane with the page's identity and
+- **The event pipe**: interactions on Haku's page post to Agentplane with the page's identity and
   become inputs on Haku's thread, wake-up included; which interactions wake Haku is Haku's own
   declaration in the page.
 - **Rendering state Haku owns**: the cards and paragraphs are data Haku edits, so "dismiss and
