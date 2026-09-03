@@ -21,6 +21,7 @@ from haku.console.session.sandbox_claims import (
     ProvisioningStep,
     SandboxClaimSpec,
 )
+from haku.sandbox.claims import SandboxClaimClient
 
 
 class RecordingCustomObjectsApi:
@@ -89,6 +90,7 @@ def sandbox_claims(custom_objects_api, core_v1_api) -> KubernetesSandboxClaims:
             api=cast(Any, RecordingApiClient()),
             custom_objects=cast(Any, custom_objects_api),
             core_v1=cast(Any, core_v1_api),
+            claims=SandboxClaimClient(cast(Any, custom_objects_api), cast(Any, core_v1_api), "haku-claude-sandbox"),
         ),
     )
 
