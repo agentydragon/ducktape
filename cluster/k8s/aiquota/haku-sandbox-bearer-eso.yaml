@@ -1,0 +1,33 @@
+# Copy the one AIQuota API bearer into a reflector-owned Secret mirrored into
+# haku-sandbox, so Haku's runtimes outside the egress fence (the Claude Code web
+# home, plain kubectl) can read /v1/quotas directly with no per-call approval.
+# The source is the SOPS-managed API Secret above; this does not mint a second
+# credential. Sibling of the haku-claude and public-coder mirrors, which serve
+# the placeholder-substituting proxies instead.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: aiquota-api-bearer-haku-sandbox
+  namespace: cli-proxy-api
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-cli-proxy-api-secret-store
+  target:
+    name: aiquota-api-bearer-haku-sandbox
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    template:
+      metadata:
+        annotations:
+          description: Shared AIQuota API bearer mirrored only to haku-sandbox for Haku's own quota reads.
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-sandbox
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-sandbox
+  data:
+    - secretKey: bearer-token
+      remoteRef:
+        key: aiquota-api-bearer
+        property: bearer-token

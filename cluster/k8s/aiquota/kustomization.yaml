@@ -5,6 +5,7 @@ resources:
   - public-coder-bearer-eso.yaml
   - haku-claude-bearer-eso.yaml
   - haku-console-bearer-eso.yaml
+  - haku-sandbox-bearer-eso.yaml
   - deployment.yaml
   - httproute.yaml
   - service.yaml
