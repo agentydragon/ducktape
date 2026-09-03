@@ -6,100 +6,10 @@
 }:
 
 let
-  system = pkgs.stdenv.hostPlatform.system;
-  # nix-openclaw's own source pin still tracks an older stable release. Keep
-  # its tested npm-package build path, but splice the current stable wrapper
-  # and source metadata over it so this image actually contains 2026.8.1.
-  ocPkgs = import nix-openclaw.inputs.nixpkgs {
-    inherit system;
-    overlays = [ nix-openclaw.overlays.default ];
-  };
-  stableSourceInfo = {
-    owner = "openclaw";
-    repo = "openclaw";
-    pnpmMajor = "12";
-    applyPublicSurfaceHardlinksPatch = false;
-    applySkipPluginAutoEnableNixModePatch = false;
-    # 2026.8.1 changed the hardlink-policy source shape, so the old
-    # nix-openclaw ownership patch no longer applies. Runtime plugins are
-    # copied into the gateway's bundled extension tree below instead.
-    applyNixStorePluginOwnershipPatch = false;
-    releaseTag = "v2026.8.1";
-    releaseVersion = "2026.8.1";
-    runtimePluginVersion = "2026.7.1";
-    # The npm path does not fetch the git source, but these mirror the stable
-    # sourceInfo shape for checks and future source builds.
-    rev = "ea806575e6450e4d1efdfc72c19f04be982a1b9b";
-    hash = "sha256-9mYcHVti8iV47jByNLIMTXevyamNP82ZHQldzwbt8pg=";
-    # Filled from the Nix build's fixed-output error after the wrapper lock is
-    # regenerated.
-    gatewayNpmDepsHash = "sha256-KnAPTULugA20oTb0Mkh82CajOBBC+LBg+Zx5nugwpAk=";
-  };
-  patchedNixOpenclaw = ocPkgs.runCommand "nix-openclaw-openclaw-stable-wrapper" { } ''
-    cp -r ${nix-openclaw} "$out"
-    chmod -R u+w "$out"
-    cp ${./npm_wrapper/package.json} "$out/nix/npm/openclaw/package.json"
-    cp ${./npm_wrapper/package-lock.json} "$out/nix/npm/openclaw/package-lock.json"
-    cp ${./patch-openclaw-npm-dist.mjs} "$out/nix/scripts/patch-openclaw-npm-dist.mjs"
-    # 2026.8.1 rejects an ACPX package root that is a symlink outside the
-    # bundled extension tree. Copy the generated plugin into the dist instead.
-    substituteInPlace "$out/nix/scripts/openclaw-gateway-npm-install.sh" \
-      --replace-fail 'ln -s "$OPENCLAW_BUNDLED_ACPX" "$acpx_root"' \
-      'cp -R "$OPENCLAW_BUNDLED_ACPX/." "$acpx_root"'
-  '';
-  openclawPackages = import "${patchedNixOpenclaw}/nix/packages" {
-    pkgs = ocPkgs;
-    sourceInfo = stableSourceInfo;
-  };
-  # nix-openclaw's stage_dist_runtime copies dist/extensions into dist-runtime/
-  # and nothing else, but the extension modules import shared chunks as
-  # ../../<chunk>.js -- resolving to dist/ in the upstream layout and to
-  # dist-runtime/ here, where only extensions/ exists. 496 of 526 extension files
-  # import such a chunk. OpenClaw prefers dist-runtime/extensions over
-  # dist/extensions when present, so the partial tree is worse than none:
-  # workboard's doctor contract is loaded by a legacy state migration, and its
-  # ERR_MODULE_NOT_FOUND becomes a blocking startup-migration warning that
-  # refuses to report the gateway ready.
-  #
-  # Repaired on the built output rather than by rewriting their install script,
-  # so this does not depend on the exact shell line surviving upstream edits.
-  # Links are relative because both trees are copied into $out together.
-  gateway = openclawPackages.openclaw-gateway.overrideAttrs (previous: {
-    postInstall = (previous.postInstall or "") + ''
-      for runtime in "$out"/lib/*/dist-runtime; do
-        dist="$(dirname "$runtime")/dist"
-        if [ ! -d "$runtime" ] || [ ! -d "$dist" ]; then
-          continue
-        fi
-
-        for entry in "$dist"/*; do
-          name="$(basename "$entry")"
-          if [ "$name" = extensions ] || [ -e "$runtime/$name" ]; then
-            continue
-          fi
-          ln -s "../dist/$name" "$runtime/$name"
-        done
-
-        # Fail closed. Resolve each specifier against its own importer, because a
-        # nested extension file's ../../ means extensions/, not the tree root; scan
-        # .js only, since .d.ts references are type-level; and match bare specifier
-        # strings rather than `from "..."`, because workboard's is a dynamic
-        # import() -- the exact one that took the gateway down.
-        missing="$(grep -rHoE --include='*.js' '"(\.\./)+[A-Za-z0-9_.-]+\.js"' "$runtime/extensions" \
-          | sed -E 's/:"/\t/; s/"$//' | sort -u \
-          | while IFS="$(printf '\t')" read -r file spec; do
-              if [ ! -e "$(dirname "$file")/$spec" ]; then
-                printf '%s -> %s\n' "$file" "$spec"
-              fi
-            done)"
-        if [ -n "$missing" ]; then
-          echo "dist-runtime is missing chunks its extensions import:" >&2
-          echo "$missing" >&2
-          exit 1
-        fi
-      done
-    '';
-  });
+  # The gateway package, its source pin, and the npm-wrapper splice are shared
+  # with haku/openclaw_spike; see ./gateway.nix.
+  openclawGateway = import ./gateway.nix { inherit pkgs nix-openclaw; };
+  inherit (openclawGateway) openclawPackages gateway;
   matrixPlugin = openclawPackages.openclawRuntimePlugins.matrix;
   # Brave is an official external runtime plugin. Bundle its pinned Nix artifact
   # with the gateway rather than installing it mutably in the state PVC.

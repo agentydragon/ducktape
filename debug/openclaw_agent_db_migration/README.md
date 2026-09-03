@@ -57,13 +57,21 @@ load), except `workboard`: its contract is loaded by a legacy state migration, s
 its `ERR_MODULE_NOT_FOUND` becomes a _blocking_ startup-migration warning. This was
 hidden until bug 1 was fixed, because startup aborted earlier.
 
-Fixed in `openclaw/default.nix` by a `postInstall` on the gateway derivation that
-symlinks the sibling entries and then proves every imported specifier resolves.
+Fixed in `openclaw/gateway.nix`, a shared derivation both images now consume: it
+symlinks the sibling `dist/` entries into `dist-runtime/` and then proves every
+specifier the staged extensions import resolves.
+
+**Gotcha:** append to `installPhase`, not `postInstall`. nix-openclaw supplies a
+complete custom `installPhase` and never calls `runHook postInstall`, so a
+`postInstall` is silently skipped -- the build succeeds having done nothing, and a
+fail-closed guard placed there passes vacuously.
 
 **Gotcha for the guard:** resolve each specifier against its own importer (a nested
 extension file's `../../` means `extensions/`, not the tree root), scan `.js` only
-(`.d.ts` references are type-level), and match bare specifier strings — workboard's
-is a dynamic `import()`, so a `from "..."` pattern misses the one that broke us.
+(`.d.ts` references are type-level), match bare specifier strings -- workboard's is a
+dynamic `import()`, so a `from "..."` pattern misses the one that broke us -- and skip
+vendored `node_modules`, since `stage_acpx` splices in a plugin whose own packages
+resolve through their own tree.
 
 ## Upstream
 
