@@ -6,9 +6,13 @@ metadata:
   annotations:
     description: "Persistent /workspace (work tree + codex state) for the codex pod. HOME is baked into the image, so this is only the work dir."
 spec:
+  # TODO: this PVC is currently Bound on the pre-split storageClassName: seaweedfs-ovh.
+  # That field is immutable, so Flux applying seaweedfs-ovh-hdd here is a no-op on the
+  # live object until migrated via
+  # <cluster/docs/runbooks/seaweedfs_pvc_storageclass_migration.md>.
   accessModes:
     - ReadWriteOnce
-  storageClassName: seaweedfs-ovh
+  storageClassName: seaweedfs-ovh-hdd
   resources:
     requests:
       storage: 80Gi

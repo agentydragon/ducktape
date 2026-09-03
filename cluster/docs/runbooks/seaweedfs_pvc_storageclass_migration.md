@@ -1,7 +1,7 @@
 # Runbook: migrate a SeaweedFS RWX PVC across StorageClasses (read-zero-downtime)
 
 A PVC's `storageClassName` is immutable, so moving data between SeaweedFS classes (e.g.
-`seaweedfs-ovh` HDD → `seaweedfs-ovh-ssd` NVMe) is a **copy-cutover**: new PVC, copy, repoint
+`seaweedfs-ovh-hdd` → `seaweedfs-ovh-ssd` NVMe) is a **copy-cutover**: new PVC, copy, repoint
 the consumer. Done first for Forgejo git → SSD (OVH storage tiering Phase 3, 2026-07-04).
 
 Use **VolSync rsync-TLS** (the cluster's PVC-migration tool, cf.

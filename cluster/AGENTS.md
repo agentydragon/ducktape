@@ -161,9 +161,9 @@ three-layer split, permission scopes, and the sandbox quota:
 
 ## Storage Selection
 
-**Prefer replicated storage (`seaweedfs-ovh`) over node-local (`local-path-*`) for app
+**Prefer replicated storage (`seaweedfs-ovh-hdd`) over node-local (`local-path-*`) for app
 PVCs** — SeaweedFS volumes are not node-pinned, so pods reschedule across drain, node
-loss, and rebalance. New OVH-hosted apps default to `seaweedfs-ovh` for
+loss, and rebalance. New OVH-hosted apps default to `seaweedfs-ovh-hdd` for
 document/media/state volumes. Use `local-path-*` only when:
 
 - The workload does its **own** replication and must own a raw local disk — **CNPG

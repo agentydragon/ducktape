@@ -7,7 +7,7 @@ metadata:
       SeaweedFS CSI (RWX, distributed) pinned to the SSD volume tier. diskType=ssd
       maps to `weed mount -disk=ssd`, so volumes land only on ssd-tagged volume
       servers (the KS-GAME NVMe topology group). Reserved for fsync/latency-critical
-      RWX data (Forgejo git). The default seaweedfs-ovh class is media-blind (HDD
+      RWX data (Forgejo git). The default seaweedfs-ovh-hdd class is media-blind (HDD
       bulk). See cluster/docs/plans/ovh_storage_tiering.md.
 provisioner: seaweedfs-csi-driver
 reclaimPolicy: Delete
@@ -23,7 +23,7 @@ allowedTopologies:
       - key: topology.kubernetes.io/zone
         values: ["hil-ovh"]
 # SeaweedFS CSI expansion is a collection-quota bump — enable it (parity with the
-# seaweedfs-ovh class) so a growing PVC (e.g. Forgejo git) can be resized in place.
+# seaweedfs-ovh-hdd class) so a growing PVC (e.g. Forgejo git) can be resized in place.
 allowVolumeExpansion: true
 parameters:
   # CSI v1.4.30 maps `diskType`→`weed mount -disk` and passes `replication`

@@ -51,8 +51,8 @@ spec:
     # Chart-created StorageClass disabled (storageClassName left empty): the
     # chart's storageclass.yaml template has no allowedTopologies support (only
     # name/provisioner/volumeBindingMode/parameters), so the default
-    # `seaweedfs-ovh` class is hand-authored instead, alongside
-    # `seaweedfs-ovh-ssd`, in sc-seaweedfs-ovh.yaml -- same name, same
+    # `seaweedfs-ovh-hdd` class is hand-authored instead, alongside
+    # `seaweedfs-ovh-ssd`, in sc-seaweedfs-ovh-hdd.yaml -- same name, same
     # provisioner/volumeBindingMode as the chart would have produced, plus
     # allowedTopologies. See that file for the topology rationale.
     storageClassName: ""
@@ -112,7 +112,7 @@ spec:
       tag: v1.4.30
 
     # Restrict the FUSE mount service + CSI node daemons to OVH kimsufi
-    # nodes. Pods consuming seaweedfs-ovh PVCs must schedule on OVH; we
+    # nodes. Pods consuming seaweedfs-ovh-{hdd,ssd} PVCs must schedule on OVH; we
     # don't want phantom daemonsets on non-OVH nodes until we know the backend
     # is suitable.
     mountService:

@@ -91,7 +91,7 @@ e.g. `k8s/{local-path-provisioner,openebs-lvm}/`, plus CSI Helm values):
 | `local-path-ovh-ssd`  | local-path-provisioner | `hil-ovh` | OVH KS-GAME NVMe tier: SeaweedFS hot (`ssd`) volume servers; SSD-pinned DBs                                           |
 | `local-path-home-ssd` | local-path-provisioner | `home`    | OptiPlex NVMe: hardware/LAN-pinned home state (Home Assistant, openclaw spike); VolSync copies it to SeaweedFS for DR |
 | `local-path-ovh`      | local-path-provisioner | `hil-ovh` | Deprecated alias, re-pinned to `local-path-ovh-hdd`                                                                   |
-| `seaweedfs-ovh`       | SeaweedFS CSI          | `hil-ovh` | **Default for app data volumes** — not node-pinned, pods reschedule freely; POSIX/S3-backed (HDD)                     |
+| `seaweedfs-ovh-hdd`   | SeaweedFS CSI          | `hil-ovh` | **Default for app data volumes** — not node-pinned, pods reschedule freely; POSIX/S3-backed (HDD)                     |
 | `seaweedfs-ovh-ssd`   | SeaweedFS CSI          | `hil-ovh` | NVMe-backed SeaweedFS (`diskType: ssd`) — Forgejo git hot tier                                                        |
 | `lvm-proxmox-ssd`     | OpenEBS LVM CSI        | `proxmox` | NVMe thin provisioning                                                                                                |
 | `lvm-proxmox-hdd`     | OpenEBS LVM CSI        | `proxmox` | HDD thin provisioning                                                                                                 |

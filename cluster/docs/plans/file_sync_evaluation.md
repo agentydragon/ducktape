@@ -246,7 +246,7 @@ enough storage for full replication. Simplest to deploy, most reliable offline.
 ## Next Steps
 
 > Storage target needs re-picking before step 1: since this was written, app PVCs
-> default to `seaweedfs-ovh`, and `lvm-proxmox-*` pins the workload to Proxmox
+> default to `seaweedfs-ovh-hdd`, and `lvm-proxmox-*` pins the workload to Proxmox
 > (<../../AGENTS.md> § Storage Selection).
 
 1. Deploy Seafile CE on the cluster (official Helm chart on `lvm-proxmox-hdd`)

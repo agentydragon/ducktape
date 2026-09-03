@@ -2,7 +2,7 @@
 # SeaweedFS-backed PVC. Same pattern as
 # cluster/k8s/agents/tana-mcp/volsync-backup.yaml.
 #
-# Direction: OVH local-path (primary, hot) → seaweedfs-ovh (cold, SeaweedFS
+# Direction: OVH local-path (primary, hot) → seaweedfs-ovh-hdd (cold, SeaweedFS
 # replicates across kimsufi nodes). Backup PVC is a restore point before any
 # node-rename operation that touches grocy-config-ovh's pinned hostname.
 #
@@ -16,9 +16,13 @@ metadata:
   name: grocy-config-ovh-backup
   namespace: grocy-vallejo
 spec:
+  # TODO: this PVC is currently Bound on the pre-split storageClassName: seaweedfs-ovh.
+  # That field is immutable, so Flux applying seaweedfs-ovh-hdd here is a no-op on the
+  # live object until migrated via
+  # <cluster/docs/runbooks/seaweedfs_pvc_storageclass_migration.md>.
   accessModes:
     - ReadWriteOnce
-  storageClassName: seaweedfs-ovh
+  storageClassName: seaweedfs-ovh-hdd
   resources:
     requests:
       storage: 2Gi

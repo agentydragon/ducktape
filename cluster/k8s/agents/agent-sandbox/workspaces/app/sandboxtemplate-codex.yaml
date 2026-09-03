@@ -62,7 +62,12 @@ spec:
     - metadata:
         name: workspace
       spec:
-        storageClassName: seaweedfs-ovh
+        # TODO: the current sandbox's workspace PVC is Bound on the pre-split
+        # storageClassName: seaweedfs-ovh. That field is immutable, so this template
+        # only affects newly-created sandbox instances; migrate the current one via
+        # <cluster/docs/runbooks/seaweedfs_pvc_storageclass_migration.md> if it must
+        # move before its next natural rotation.
+        storageClassName: seaweedfs-ovh-hdd
         accessModes: ["ReadWriteOnce"]
         resources:
           requests:

@@ -262,6 +262,6 @@ over Matrix, and any write surface for the agent beyond its own replies.
   password, reflected into `haku-console` and mounted only by the adapter Deployment.
 - All adapter-to-homeserver traffic is cluster-internal and outbound, so it needs neither an
   egress-proxy exception nor any inbound NetworkPolicy: nothing in `matrix` connects back.
-- Matrix lives in OVH (`zone: hil-ovh`), with the media store on `seaweedfs-ovh` and the database on
+- Matrix lives in OVH (`zone: hil-ovh`), with the media store on `seaweedfs-ovh-hdd` and the database on
   the OVH-HA CNPG profile. The SeaweedFS CSI node plugin runs only on the OVH nodes, so this is a
   placement constraint rather than a preference.
