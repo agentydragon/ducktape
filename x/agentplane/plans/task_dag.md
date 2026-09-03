@@ -76,7 +76,9 @@ flowchart TB
         C5["C5 Archive<br/>out of the active view, history kept"]:::completed
         C6["C6 Session view legibility<br/>markdown, the input's own text, folded reasoning,<br/>Enter sends, raw frames in place"]:::ready
         C7["C7 Lifecycle controls on the sandbox page<br/>suspend there, delete once suspended"]:::ready
-        C8["C8 One refresh primitive<br/>every view live, not three copies of a timer"]:::ready
+        C8["C8 Live push for every view<br/>the server says what changed, no page polls"]:::ready
+        C9["C9 The profile a sandbox runs under<br/>visible and pickable, not one badge"]:::ready
+        C10["C10 Egress actions that say what they do<br/>approve / deny / revoke, and Flux ownership"]:::ready
     end
 
     F0["First functioning Agentplane<br/>both providers in sandboxes, driven and replayed from the app"]:::completed
@@ -132,6 +134,8 @@ flowchart TB
     C3 --> C6
     C1 --> C7
     C3 --> C8
+    C1 --> C9
+    C4 --> C10
     C5 --> E
     I4 --> F0
     C3 --> F0
@@ -176,7 +180,7 @@ milestone;
 orange diamonds are unresolved decisions requiring Rai's product or design input; gray is
 conditional or stretch work.
 
-Ready now: **J**, **C6**, **C7**, and **C8**, which share nothing and can run in parallel. **T2** and **T3** are
+Ready now: **J** and **C6**-**C10**, which share nothing and can run in parallel. **T2** and **T3** are
 blocked on nothing in code; they start when the persisted history has a first reader who needs a
 name or a search.
 
@@ -226,16 +230,37 @@ ones still open.
   it. Deleting only a suspended sandbox is a new rule either way: `Inventory.delete` currently
   takes any state, so the package decides whether the precondition belongs in the API — where it
   also binds the agent driving staging — or is a UI affordance over an API that stays permissive.
-- **C8 one refresh primitive:** every view stays live without a reload, through one mechanism
-  rather than per-page timers. Three surfaces already poll at five seconds — the sandbox list, the
-  sandbox page, and the egress tab — but each hand-rolls the same `useEffect`/`setInterval` pair
-  with its own copy of the interval, which is why a fourth surface is written without one and
-  nobody notices. Thread names on the sandbox page are that fourth surface: `listThreads` runs once
-  per sandbox on mount, so a session named or renamed after you arrived stays under its old name
-  until a reload. The package is a shared hook that owns the polling, applied everywhere including
-  the surfaces that have their own today. If a page still reads as stale once it is on that hook,
-  the staleness is behind the API rather than in front of it, and that is worth locating before
-  more UI is written for it.
+- **C8 live push for every view:** the server tells the browser what changed; no page polls.
+  Decided (Rai): a push channel, not a shorter interval. Three surfaces poll at five seconds today
+  — the sandbox list, the sandbox page, and the egress tab — each hand-rolling the same
+  `useEffect`/`setInterval` pair, and a fourth was written with no refresh at all (`listThreads`
+  runs once on mount, so a session named after you arrived keeps its old name until a reload).
+  Polling is also why a state change takes up to five seconds to appear and why every view costs a
+  request per client per interval whether or not anything happened.
+  The app already runs one push channel — the session's SSE stream — so the shape exists; what
+  does not exist is a source to push _from_. `inventory.py` and `egress.py` answer each request
+  with a fresh list against the API server and hold nothing between requests, so this package's
+  real content is server-side: a watch the app keeps over Sandboxes and EgressBindings, and a
+  stream that fans its changes out to the open tabs. The egress proxy's `Informer`
+  ([`../egress/informer.py`](../egress/informer.py)) is the shape to reuse rather than reinvent —
+  same list-and-watch, same freshness question, and its `/healthz` already answers "has this
+  stopped moving", which a UI feeding off a watch will need too.
+- **C9 the profile a sandbox runs under:** a profile decides what the sandbox may reach — a
+  Flux-managed `EgressBinding` selects on the label it stamps — and it is nearly invisible. It
+  appears as one badge on the sandbox page, and at creation as a free-text box whose help text
+  ("a label the profile bindings select on") assumes you already know which profiles exist. The
+  list page does not show it although the API already returns it on every row, nothing can be
+  filtered by it, and a typo silently yields a sandbox that matches no binding. Make it a pick
+  from the profiles that actually exist, show it wherever a sandbox is shown, and say what the one
+  you picked grants.
+- **C10 egress actions that say what they do:** the binding row offers Approve, Deny, and Revoke,
+  and nothing on screen distinguishes the last two — both read as "stop this access". They are not
+  the same: Deny sets `approval.state` and keeps the binding, so it is reversible and leaves the
+  record of who decided; Revoke deletes the object. Worse, Deny does not know what Revoke knows.
+  Revoke is disabled for a Flux-applied binding with a tooltip saying to remove it in git, but Deny
+  stays live — and `egressbinding-sandboxes-github-public.yaml` carries `approval.state: approved`
+  in git, so denying it patches the cluster and the next reconcile puts it back. A button that
+  silently un-does itself is the bug; the wording is the rest of the package.
 - **T2 named threads:** a small model proposes a name from the first turn, the user can edit it,
   and the name lives on the thread record; naming never touches the runner or the harness.
 - **T3 search and lookup:** find past interactions by text and by what an agent did; answer "what
