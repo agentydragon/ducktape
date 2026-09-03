@@ -20,9 +20,7 @@ py_test(
         ":main",
         "//:conftest",
         "@pypi//fastapi",
-        # Transitively required by fastapi.testclient.TestClient (starlette.testclient),
-        # not imported directly here.
-        "@pypi//httpx",
+        "@pypi//httpx",  # keep: transitively required by fastapi.testclient.TestClient (starlette.testclient), not imported directly here
         "@pypi//kubernetes",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
