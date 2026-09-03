@@ -36,11 +36,18 @@ ts_library(
     srcs = ["client.ts"],
     tsconfig = TSCONFIG,
     deps = [
+        ":operator_login",
         ":protocol_pb",
         ":schema",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/openapi-fetch",
     ],
+)
+
+ts_library(
+    name = "operator_login",
+    srcs = ["operator_login.ts"],
+    tsconfig = TSCONFIG,
 )
 
 ts_library(
@@ -145,6 +152,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":app",
+        ":operator_login",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",

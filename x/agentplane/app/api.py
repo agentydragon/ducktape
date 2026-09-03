@@ -22,6 +22,7 @@ from x.agentplane.app.egress import (
     PolicyView,
 )
 from x.agentplane.app.inventory import LabelValue, NewSandbox, SandboxInventory, SandboxNotFoundError, SandboxView
+from x.agentplane.app.oidc import OIDCSettings, require_operator, session_operator
 from x.agentplane.app.trajectory import ThreadNotFoundError, ThreadView, TrajectoryStore
 from x.agentplane.runner.client import RunnerError
 
@@ -94,15 +95,22 @@ _LABEL_VALUE = TypeAdapter(LabelValue)
 
 
 def _operator(request: Request) -> str | None:
+    """Whoever the request proves itself to be.
+
+    Two sources, exactly one of them live. With the app owning its login the identity is the signed
+    session cookie, which nothing upstream can forge. Without it the app sits behind a forward-auth
+    proxy and the identity is the header that proxy sets -- trustworthy only because the network
+    policy admits nobody else, which is the weakness the login exists to remove.
+    """
+    if request.app.state.oidc is not None:
+        return session_operator(request)
     return request.headers.get(OPERATOR_HEADER)
 
 
 def _require_operator(operator: Annotated[str | None, Depends(_operator)]) -> str:
     """The operator an approval or grant is recorded as; a caller without one may not decide."""
     if operator is None:
-        raise HTTPException(
-            status.HTTP_401_UNAUTHORIZED, f"no operator identity: the {OPERATOR_HEADER} header is absent"
-        )
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "no operator identity")
     try:
         return _LABEL_VALUE.validate_python(operator)
     except ValidationError as error:
@@ -279,6 +287,7 @@ def create_app(
     catalog: ModelCatalog,
     egress: EgressInventory,
     decisions: DecisionsClient,
+    oidc: OIDCSettings | None = None,
 ) -> FastAPI:
     if set(catalog) != set(Provider) or not all(catalog.values()):
         raise ValueError(f"the model catalog needs a non-empty list for every provider: {catalog=}")
@@ -289,11 +298,12 @@ def create_app(
     app.state.models = catalog
     app.state.egress = egress
     app.state.decisions = decisions
-    app.include_router(router)
-    app.include_router(models)
-    app.include_router(runner_bridge.router)
-    app.include_router(threads)
-    app.include_router(egress_router)
+    app.state.oidc = oidc
+    # With a login of its own, every route below needs one. Without it the app is only reachable
+    # through a forward-auth proxy, which has already done the asking.
+    guard = [Depends(require_operator)] if oidc is not None else []
+    for api_router in (router, models, runner_bridge.router, threads, egress_router):
+        app.include_router(api_router, dependencies=guard)
 
     @app.exception_handler(ThreadNotFoundError)
     async def _thread_not_found(_request: Request, error: ThreadNotFoundError) -> JSONResponse:

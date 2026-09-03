@@ -28,6 +28,7 @@ py_library(
         ":decisions",
         ":egress",
         ":inventory",
+        ":oidc",
         ":trajectory",
         "//x/agentplane/runner:client",
         "@pypi//fastapi",
@@ -53,19 +54,23 @@ py_library(
     data = ["//x/agentplane/app/frontend:bundle"],  # keep: the SPA the server mounts
     deps = [
         ":api",
+        ":auth_routes",
         ":bridge",
         ":decisions",
         ":egress",
         ":inventory",
+        ":oidc",
         ":trajectory",
         "//util:kubernetes",
         "//util/bazel:runfiles",
         "@pypi//fastapi",
         "@pypi//httpx",
+        "@pypi//itsdangerous",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
         "@pypi//pyyaml",
+        "@pypi//starlette",
         "@pypi//uvicorn",
     ],
 )
@@ -296,5 +301,52 @@ py_test(
         "//x/agentplane/app/testing:kubernetes",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "auth_routes",
+    srcs = ["auth_routes.py"],
+    deps = [
+        ":oidc",
+        "@pypi//authlib",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "oidc",
+    srcs = ["oidc.py"],
+    deps = [
+        "@pypi//authlib",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+py_test(
+    name = "test_auth_routes",
+    srcs = ["test_auth_routes.py"],
+    deps = [
+        ":api",
+        ":auth_routes",
+        ":bridge",
+        ":conftest",
+        ":decisions",
+        ":egress",
+        ":inventory",
+        ":oidc",
+        ":trajectory",
+        "//:conftest",
+        "//util:net",
+        "//util/testing:asgi",
+        "//util/testing:mock_oidc",
+        "@pypi//httpx",
+        "@pypi//itsdangerous",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
     ],
 )

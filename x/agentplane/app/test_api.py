@@ -264,7 +264,6 @@ def test_binding_approval_is_recorded_as_the_authentik_user(
 ) -> None:
     unattributed = client.post("/egress/bindings/live-asks/approve")
     assert unattributed.status_code == 401
-    assert OPERATOR_HEADER in unattributed.json()["detail"]
     assert (
         client.post("/egress/bindings/live-asks/approve", headers={OPERATOR_HEADER: "not a label"}).status_code == 400
     )

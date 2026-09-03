@@ -2,6 +2,7 @@ import { create, fromJson, toJson, type JsonObject, type JsonValue } from "@bufb
 import createClient from "openapi-fetch";
 
 import type { components, paths } from "./api/schema";
+import { redirectToLogin } from "./operator_login";
 import {
   AttachedSchema,
   InputSchema,
@@ -13,6 +14,16 @@ import {
 } from "./protocol_pb";
 
 export const api: ReturnType<typeof createClient<paths>> = createClient<paths>({ baseUrl: "" });
+
+// A 401 means the session expired or never existed; the app owns its login, so the browser goes
+// there rather than the page rendering an error it cannot act on. Inert where something in front
+// of the app does the authenticating, since then no request of ours is ever answered 401.
+api.use({
+  onResponse({ response }) {
+    if (response.status === 401) redirectToLogin();
+    return response;
+  },
+});
 
 export type SandboxView = components["schemas"]["SandboxView"];
 export type NewSandbox = components["schemas"]["NewSandbox"];
