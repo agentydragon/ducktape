@@ -4,17 +4,28 @@
 # here. CNPG generates the app credential in the Secret agentplane-db-app, which the Deployment
 # composes into AGENTPLANE_DATABASE_URL.
 #
-# OVH-HA rather than Proxmox-single (cnpg_conventions R2). It was the latter, one instance on
-# wyrm2 beside the runner Pods, until stopping that node took the whole namespace down with it:
-# a single instance on a machine that is legitimately powered off is not a tier anything can be
-# served from. The SSD tier because a write lands here for every event of every turn (R3).
+# One instance on the OVH tier: a deliberate deviation from both profiles R2 permits, and the
+# record of it, as study-casino-db's manifest is for its own (cnpg_conventions R2 inventory).
+#
+# It was Proxmox-single, one instance on wyrm2 beside the runner Pods, until stopping that node
+# took the whole namespace with it. The move is to a tier that is always on; the second instance
+# is not, because staging is experimental and its trajectories are expendable (Rai).
+#
+# What that costs, stated rather than assumed: this has neither replication CNPG gives (one
+# instance) nor the storage-level replication Proxmox-single leans on (ZFS under
+# local-path-proxmox; local-path-ovh-ssd is plain node-local NVMe). It survives a node reboot,
+# because the volume is on that node's disk, and not a node loss. R2's own reasoning does not
+# bite here -- it forbids clusters that span regions, because a failover can promote the remote
+# replica and send every write across the mesh, and a single instance cannot fail over at all.
+#
+# The SSD tier because a write lands here for every event of every turn (R3).
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
   name: agentplane-db
   namespace: agentplane-staging
 spec:
-  instances: 2
+  instances: 1
   imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
 
   probes:
@@ -25,8 +36,6 @@ spec:
   affinity:
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
-    # One instance per node, so losing a node costs a replica rather than the cluster.
-    topologyKey: kubernetes.io/hostname
     tolerations:
       - key: node-role.kubernetes.io/control-plane
         operator: Exists
