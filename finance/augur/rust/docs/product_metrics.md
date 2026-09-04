@@ -59,19 +59,22 @@ look like it had blessed the pair as consistent.
 
 `rust/backend.py` takes an integer fixture. Driving the Rust engine from
 `product/service.py` additionally needs the inverse of `fixture_adapter.py`: a
-`Scenario` + sampled series → fixture encoder. That is not a transcription job, because the
-fixture's series are exact integers while the product's sampled series are float64:
+`Scenario` + sampled series → fixture encoder. The fixture's series are exact integers while
+the product's sampled series are float64, so what the encoder costs depends on where those
+floats are still read:
 
 - money series (security prices, distributions, home values, PE marks) are already integer
   quanta in `CompiledSimulation.external_money_values`, so they transfer exactly;
-- index series (inflation, rent) are float64. JAX quantizes them to parts-per-billion at
-  the money-arithmetic sites (`_scale_money_by_float_ratio`) but reads them raw elsewhere —
-  the TLH harvest curve and the property-sale path among them.
+- index series (inflation, rent) arrive as float64, and every site that turns one into money
+  quantizes it to parts per billion first (`_scale_money_by_float_ratio`, `_scale_money`).
+  A PPB-quantizing encoder is therefore exact for them.
 
-So an encoder that quantizes index levels to PPB is exact for the first group of sites and
-not for the second. Closing that means deciding that the integer fixture is the pipeline's
-source of truth and letting both engines consume it, which slightly changes what JAX
-computes at the raw-float sites today. That is a product decision, not an encoding detail.
+No engine arithmetic reads an index level raw any more: the TLH harvest curve was the last
+one, and it now evaluates in integers on both sides (`sim/tlh_harvest.py`,
+`rust/engine/tlh.rs`). What remains is a sampling question rather than an arithmetic one —
+whether a level the product sampled as float64 is the same number after PPB quantization,
+which `fixed_point.py` already owns for money and the Rust validator already checks for
+series it is handed.
 
 ## Test cost
 
