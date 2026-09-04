@@ -351,6 +351,7 @@ py_test(
         "//util:net",
         "//util/testing:asgi",
         "//util/testing:mock_oidc",
+        "//x/agentplane/app/testing:kubernetes",
         "@pypi//httpx",
         "@pypi//itsdangerous",
         "@pypi//pytest",
