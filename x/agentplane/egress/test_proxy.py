@@ -8,6 +8,7 @@ informer over the same fake. Every assertion is on what the client and the upstr
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -21,7 +22,7 @@ from aiohttp import web
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api
 from more_itertools import one
 
-from x.agentplane.egress.addon import DENIED_HEADER, EgressAddon
+from x.agentplane.egress.addon import DENIED_HEADER, RULES_PATH, SELF_HOST, EgressAddon
 from x.agentplane.egress.admin import create_admin_app, serve_admin
 from x.agentplane.egress.conftest import (
     AUDIENCE,
@@ -114,6 +115,19 @@ class ProxyUnderTest:
 
     def url(self, path: str) -> str:
         return f"https://{UPSTREAM_HOST}:{self.upstream.port}{path}"
+
+    async def get_self(self, path: str, *, token: str | None = TOKEN_A) -> Response:
+        """A request to the proxy's own name: tunnelled like any other, answered without an upstream."""
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get(
+                f"https://{SELF_HOST}{path}",
+                proxy=f"http://127.0.0.1:{self.proxy_port}",
+                proxy_headers={"Proxy-Authorization": f"Bearer {token}"} if token is not None else None,
+                ssl=client_tls_context(self.interception_ca),
+            ) as response,
+        ):
+            return Response(status=response.status, headers=dict(response.headers), body=await response.read())
 
     async def get(self, path: str, *, token: str | None = TOKEN_A, headers: dict[str, str] | None = None) -> Response:
         async with (
@@ -306,3 +320,34 @@ async def test_admin_serves_decisions_and_health(proxy: ProxyUnderTest) -> None:
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+
+async def test_a_sandbox_reads_the_rules_that_apply_to_it(proxy: ProxyUnderTest) -> None:
+    """C11: the placeholder a sandbox must present is knowable from inside the sandbox, over the one
+    listener it can reach, under the identity it already proves for every request."""
+    response = await proxy.get_self(RULES_PATH)
+
+    assert response.status == 200, response.body
+    view = json.loads(response.body)
+    assert view["sandbox"] == SANDBOX_A
+    credentials = [rule["credential"] for policy in view["policies"] for rule in policy["rules"]]
+    assert any(c is not None and c["placeholder"] == PLACEHOLDER for c in credentials), view
+    assert PLACEHOLDER in response.body.decode()
+    assert SECRET_VALUE not in response.body.decode(), "the proxy handed the sandbox the real credential"
+
+
+async def test_the_agent_view_needs_the_same_identity_every_request_does(proxy: ProxyUnderTest) -> None:
+    """Refused at the CONNECT, before a handshake it would learn nothing from."""
+    with pytest.raises(aiohttp.ClientHttpProxyError) as refused:
+        await proxy.get_self(RULES_PATH, token=None)
+
+    assert refused.value.status == 403
+    assert refused.value.headers is not None
+    assert refused.value.headers[DENIED_HEADER] == f"denied; reason={DenyReason.TOKEN_MISSING}"
+
+
+async def test_the_proxys_own_name_serves_nothing_else(proxy: ProxyUnderTest) -> None:
+    """One path, so the reserved name cannot become an accidental surface."""
+    response = await proxy.get_self("/")
+
+    assert response.status == 404, response.body

@@ -15,9 +15,11 @@ py_library(
     name = "addon",
     srcs = ["addon.py"],
     deps = [
+        ":agent_view",
         ":decisions",
         ":identity",
         ":policy",
+        ":resources",
         ":upstream",
         "@pypi//mitmproxy",
     ],
@@ -314,6 +316,29 @@ py_test(
         "//:conftest",
         "@pypi//aiohttp",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "agent_view",
+    srcs = ["agent_view.py"],
+    deps = [
+        ":policy",
+        ":resources",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_agent_view",
+    srcs = ["test_agent_view.py"],
+    deps = [
+        ":agent_view",
+        ":conftest",
+        ":policy",
+        ":resources",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )

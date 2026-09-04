@@ -54,6 +54,15 @@ substitutes. The design it implements is [the ADR](../plans/adr_sandbox_proxy_ga
 
 ## Upstream address
 
+- **A sandbox can read the rules that apply to it**, at
+  `https://egress.agentplane.internal/v1/rules` through the same proxy it sends everything else
+  through. The answer names the sandbox and the policies an active binding grants it: each rule's
+  hosts, methods, paths, and where a credential is substituted, the header it goes in and the
+  placeholder to put there. Never the Secret, its key, or its value — the projection is built from
+  its own field list, so a field added to a rule does not appear here until someone writes it in.
+  The name is reserved and resolves nowhere: nothing is dialled for it, no rule can admit it, and
+  identity is proved at the CONNECT exactly as it is for egress, because `Proxy-Authorization` is
+  hop-by-hop and a plain request would arrive with none.
 - The admitted host is resolved by the proxy, never by the sandbox. A host with any address that
   is not globally reachable unicast — loopback, private, link-local, carrier-grade NAT, multicast,
   reserved, and the IPv4-mapped IPv6 forms of those — is refused whole with `address-forbidden`;

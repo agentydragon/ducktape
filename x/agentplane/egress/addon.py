@@ -17,14 +17,29 @@ from ipaddress import ip_address
 from mitmproxy import connection, http
 from mitmproxy.proxy import server_hooks
 
+from x.agentplane.egress.agent_view import agent_view
 from x.agentplane.egress.decisions import DecisionRecord, DecisionRing, Outcome
 from x.agentplane.egress.identity import IdentityRejectedError, PodIdentityVerifier
 from x.agentplane.egress.policy import CONNECT, Allowed, Decision, Denied, DenyReason, EgressRequest, Index, evaluate
+from x.agentplane.egress.resources import Sandbox
 from x.agentplane.egress.upstream import Pin, UpstreamRefusedError, UpstreamResolver
 
 logger = logging.getLogger(__name__)
 
 DENIED_HEADER = "x-agentplane-egress"
+
+# The proxy answers for itself here instead of forwarding. A reserved name under `.internal`, which
+# is not delegated in the public DNS, so no rule can admit it and no sandbox can be steered to
+# something else by this name.
+#
+# Reached over HTTPS like everything else, and for the same reason: `Proxy-Authorization` is
+# hop-by-hop, so mitmproxy consumes it and a plain request arrives with no identity at all -- the
+# addon sees only Accept, Accept-Encoding, Host and User-Agent. The token that proves the sandbox
+# arrives on the CONNECT, which is exactly the path every other request already takes. Nothing is
+# dialled for this name: `connection_strategy=lazy` (proxy.py) means the tunnel is established
+# without an upstream, and the inner request is answered from the index.
+SELF_HOST = "egress.agentplane.internal"
+RULES_PATH = "/v1/rules"
 
 
 def _refusal(reason: DenyReason) -> http.Response:
@@ -60,6 +75,24 @@ class EgressAddon:
     def client_disconnected(self, client: connection.Client) -> None:
         self._tokens.pop(client.id, None)
 
+    def _self_request(self, flow: http.HTTPFlow) -> bool:
+        """Whether this is addressed to the proxy itself rather than through it."""
+        return flow.request.host.lower() == SELF_HOST
+
+    async def _serve_self(self, flow: http.HTTPFlow) -> None:
+        """Answer the sandbox's own question about itself, under the identity every request needs."""
+        if flow.request.path != RULES_PATH:
+            flow.response = http.Response.make(404, b"", {"content-type": "text/plain"})
+            return
+        try:
+            sandbox = await self._sandbox_of(flow)
+        except IdentityRejectedError as error:
+            logger.info("identity rejected for the agent view: %s", error)
+            flow.response = _refusal(error.reason)
+            return
+        view = agent_view(self._index, sandbox, self._clock())
+        flow.response = http.Response.make(200, view.model_dump_json().encode(), {"content-type": "application/json"})
+
     async def http_connect(self, flow: http.HTTPFlow) -> None:
         # A non-2xx response on the CONNECT flow makes mitmproxy refuse the tunnel.
         await self._gate(flow)
@@ -92,9 +125,44 @@ class EgressAddon:
         self._tokens[client_id] = token
         return token
 
+    async def _admit_self_tunnel(self, flow: http.HTTPFlow) -> None:
+        """Open the tunnel to the proxy's own name, having proved the sandbox at the CONNECT.
+
+        Identity is checked here rather than only on the inner request so a caller that cannot prove
+        one is refused before a TLS handshake it would learn nothing from.
+        """
+        try:
+            await self._sandbox_of(flow)
+        except IdentityRejectedError as error:
+            logger.info("identity rejected for the agent view's tunnel: %s", error)
+            flow.response = _refusal(error.reason)
+            return
+        # No response is what admits a CONNECT; the inner request is answered by `_serve_self`.
+        flow.response = None
+
+    async def _sandbox_of(self, flow: http.HTTPFlow) -> Sandbox:
+        """The live Sandbox this connection's token proves, or IdentityRejectedError saying why not."""
+        token = self._take_token(flow)
+        if token is None:
+            raise IdentityRejectedError(DenyReason.TOKEN_MISSING, "no bearer token in Proxy-Authorization")
+        identity = await self._verifier.identify(token, _peer_ip(flow))
+        sandbox = self._index.sandboxes.get(identity.sandbox_name)
+        if sandbox is None or sandbox.metadata.uid != identity.sandbox_uid:
+            raise IdentityRejectedError(
+                DenyReason.SANDBOX_UNKNOWN, f"Sandbox {identity.sandbox_name} is not in the index"
+            )
+        return sandbox
+
     async def _gate(self, flow: http.HTTPFlow) -> None:
         flow.response = _refusal(DenyReason.UNAVAILABLE)
         request = flow.request
+        if self._self_request(flow):
+            # Not egress: nothing leaves the Pod, so there is no decision to make and none to record.
+            if request.method == CONNECT:
+                await self._admit_self_tunnel(flow)
+            else:
+                await self._serve_self(flow)
+            return
         egress = EgressRequest(
             method=request.method,
             host=request.host,
@@ -106,15 +174,7 @@ class EgressAddon:
         pin: Pin | None = None
         decision: Decision
         try:
-            token = self._take_token(flow)
-            if token is None:
-                raise IdentityRejectedError(DenyReason.TOKEN_MISSING, "no bearer token in Proxy-Authorization")
-            identity = await self._verifier.identify(token, _peer_ip(flow))
-            sandbox = self._index.sandboxes.get(identity.sandbox_name)
-            if sandbox is None or sandbox.metadata.uid != identity.sandbox_uid:
-                raise IdentityRejectedError(
-                    DenyReason.SANDBOX_UNKNOWN, f"Sandbox {identity.sandbox_name} is not in the index"
-                )
+            sandbox = await self._sandbox_of(flow)
             sandbox_name = sandbox.metadata.name
             decision = evaluate(self._index, sandbox, egress, self._clock())
             if isinstance(decision, Allowed):
