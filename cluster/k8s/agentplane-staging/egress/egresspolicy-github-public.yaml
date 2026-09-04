@@ -1,0 +1,17 @@
+# GitHub's API and HTTPS git for public repositories, as agentydragon-agent: reads and the
+# POSTs that open pull requests and push over smart HTTP. Where the credential goes is the
+# EgressCredential's own business; this policy decides only where it may go.
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: github-public
+  namespace: agentplane-staging
+spec:
+  rules:
+    - hosts:
+        - api.github.com
+        - github.com
+        - "*.githubusercontent.com"
+      methods: [GET, POST]
+      credentialRef:
+        name: github-pat

@@ -11,3 +11,5 @@ resources:
   - service-agentplane-egress.yaml
   - service-agentplane-egress-admin.yaml
   - networkpolicy.yaml
+  - egresscredential-github-pat.yaml
+  - egresspolicy-github-public.yaml
