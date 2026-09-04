@@ -177,7 +177,7 @@ def _debundle_pipeline_plan(ctx, out_root):
         transitive = [dep[DefaultInfo].files for dep in ctx.attr.spec_tree_inputs] +
                      [dep[DefaultInfo].files for dep in ctx.attr.input_data] +
                      [pkg[DefaultInfo].files for pkg in ctx.attr.package_roots.keys()] +
-                     ([ctx.attr.tree_source_root[DefaultInfo].files] if ctx.attr.tree_source_root else []),
+                     [ctx.attr.tree_source_root[DefaultInfo].files],
     )
 
     return struct(
@@ -190,19 +190,17 @@ def _tree_source_root_arg(ctx):
     """`--tree-source-root`: the root the tree config's source-relative
     paths (`inputs.root`, `inputs.js_list_path`) resolve against.
 
-    Defaults to the execroot, i.e. the checked-in source tree. Setting
-    `tree_source_root` to any target instead resolves them against the root
-    that target's files live in, derived from `File.root.path` — empty for
-    source files (execroot) and `bazel-out/<cfg>/bin` for generated ones.
-    One label therefore covers both cases, and a corpus whose chunk is
-    *generated* — extracted from a pinned upstream artifact by a build
-    action rather than committed — can feed the pipeline directly, with no
-    `write_source_files` round-trip and nothing vendored into git.
+    Always a target — the one holding the chunk the spec reads. The root
+    comes from that target's own files via `File.root.path`: empty for
+    source files, so a committed chunk resolves against the execroot, and
+    `bazel-out/<cfg>/bin` for generated ones, so a chunk *extracted from a
+    pinned upstream artifact by a build action* resolves against bazel-bin.
+    One form covers both, which is why this is not derived from
+    `input_data`: that attr legitimately mixes roots (a source chunk
+    alongside generated vendor bundles), and the chunk root has to be
+    named unambiguously.
     """
     dep = ctx.attr.tree_source_root
-    if not dep:
-        return _shell_source_path(".")
-
     files = dep[DefaultInfo].files.to_list()
     if not files:
         fail("tree_source_root target {} produced no files".format(dep.label))
@@ -266,17 +264,17 @@ _DEBUNDLE_PIPELINE_ATTRS = {
     ),
     "input_data": attr.label_list(
         allow_files = True,
-        doc = "Inputs the spec references (extracted/, snapshots/). Either source-tree files or, with tree_source_root = \"bindir\", generated outputs.",
+        doc = "Inputs the spec references (extracted/, snapshots/, vendor bundles). Source-tree files, generated outputs, or a mix.",
     ),
     "tree_source_root": attr.label(
+        mandatory = True,
         doc = (
-            "Optional target whose output root the tree config's " +
-            "source-relative paths (`inputs.root`, `inputs.js_list_path`) " +
-            "resolve against. Unset (default) means the execroot, i.e. the " +
-            "checked-in source tree. Point it at a generated target to read " +
-            "a chunk produced by a build action instead of a committed one; " +
-            "the root is derived from the files' own root, so the same " +
-            "attribute works for source and generated targets alike."
+            "Target holding the chunk the spec reads. Its files' own root " +
+            "becomes the root that the tree config's source-relative paths " +
+            "(`inputs.root`, `inputs.js_list_path`) resolve against: the " +
+            "execroot for a committed chunk, bazel-bin for one produced by " +
+            "a build action. One form covers both, so a corpus never has to " +
+            "vendor its chunk into git to be buildable."
         ),
     ),
     "package_roots": attr.label_keyed_string_dict(
