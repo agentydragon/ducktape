@@ -3,9 +3,11 @@ import pytest_bazel
 from x.agentplane.runner.main import inherited_environment
 
 
-def test_harness_child_sees_the_egress_wiring_and_none_of_the_runner_credentials() -> None:
+def test_base_environment_carries_the_egress_wiring_and_neither_provider_credential() -> None:
     """A tool in the sandbox reaches the outside only through the sidecar, so the proxy variables have
-    to survive into the harness child; the model credentials the runner holds must not."""
+    to survive into the harness child. Neither provider key belongs in the base every child starts
+    from: each adapter adds its own on top, which is what keeps a Codex child from seeing the
+    Anthropic token and a Claude child from seeing the OpenAI one."""
     child = inherited_environment(
         {
             "HOME": "/home/runner",
