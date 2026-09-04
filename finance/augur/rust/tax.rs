@@ -172,16 +172,24 @@ pub fn assess(facts: TaxFacts, rules: &TaxRules) -> Result<TaxAssessment, TaxErr
         });
     }
 
+    // §63 nets the deduction against taxable income, which includes the gain, and §1(h)
+    // rates what is left of it — the order the Qualified Dividends and Capital Gain Tax
+    // Worksheet starts from, opening at Form 1040 line 15. A deduction larger than ordinary
+    // income therefore shelters part of the gain rather than going to waste.
+    let total_taxable = nonnegative(
+        ordinary_for_brackets
+            .checked_add(short_term)?
+            .checked_add(long_term)?
+            .checked_sub(ordinary_offset)?
+            .checked_sub(deduction)?,
+    );
     let ordinary_taxable = nonnegative(
         ordinary_for_brackets
             .checked_add(short_term)?
             .checked_sub(ordinary_offset)?
             .checked_sub(deduction)?,
     );
-    // Match the existing simulator contract: preferential gains remain fully
-    // taxable after the ordinary-income deduction calculation and are stacked
-    // on top of ordinary taxable income.
-    let capital_taxable = nonnegative(long_term);
+    let capital_taxable = total_taxable.checked_sub(ordinary_taxable)?;
     let ordinary_tax = apply_brackets(ordinary_taxable, &rules.ordinary_brackets)?;
     let long_term_capital_gain_tax = apply_stacked_brackets(
         capital_taxable,

@@ -288,3 +288,17 @@ py_library(
         "@pypi//pytest",
     ],
 )
+
+py_test(
+    name = "tax_law_test",
+    srcs = ["tax_law_test.py"],
+    deps = [
+        ":backend",
+        ":conftest",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/rust:fixture_spec",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

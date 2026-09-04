@@ -197,7 +197,10 @@ def test_backends_agree_on_the_tax_facts_a_tender_disposition_produces() -> None
     # A tender sale of a lot held past a year is long-term, and nothing else realizes.
     assert breakdown.get_column("stcg_quanta").to_list() == [0]
     assert breakdown.get_column("ltcg_quanta").to_list() == [9_840_000]
-    assert breakdown.get_column("capital_gain_tax_quanta").to_list() == [770_625]
+    # There is no ordinary income here, so the standard deduction goes unused against it and
+    # shelters that much of the gain instead: taxable income is 9_840_000 - 1_460_000, of
+    # which 4_702_500 sits in the 0% slice and the rest is rated at 15%.
+    assert breakdown.get_column("capital_gain_tax_quanta").to_list() == [551_625]
 
 
 if __name__ == "__main__":
