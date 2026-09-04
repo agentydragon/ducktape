@@ -73,10 +73,17 @@ optiplex. A Codex agent authenticates through the ChatGPT Codex Connector GitHub
 which acts as the user and spends the user's GraphQL budget, and would appear as
 neither a `claude` process nor a `gh` invocation.
 
-**Against that**: the burn recurred at 13:03 UTC with only one codex sandbox running,
-and the unfiltered recorder showed no GitHub-bound traffic from wyrm2 at all during it.
-So this is a lead, not a conclusion, and it does not by itself resolve the
-contradiction between the partition test and the empty capture.
+**And then cleared, by wiring.** The `haku-public-coder-codex` SandboxTemplate mounts no
+GitHub credential: only an `OPENAI_API_KEY` placeholder and the egress-proxy CA. GitHub
+access goes through haku-console's egress fence, which injects `haku-egress-github-token`
+— an ESO pull of `github-agentydragon-agent`, the separate bot account. That account's
+GraphQL bucket peaked at **0 used over 14 hours**. A codex sandbox calling GitHub spends
+the agent's quota, and the agent spent nothing.
+
+The delta is still worth having recorded — it is the largest thing that went away with
+the node — but it does not explain the burn, and the burn recurred at 13:03 UTC with one
+codex sandbox running while the unfiltered recorder saw no GitHub traffic from wyrm2 at
+all.
 
 Also gone: `haku-sandbox/{haku,ci,ci-log}`, the `agentplane-staging/accept-*` probes,
 twelve tf-runners (expected — ephemeral), and eight `local-path-storage` helper pods.
