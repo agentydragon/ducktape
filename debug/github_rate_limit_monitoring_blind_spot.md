@@ -378,6 +378,36 @@ The burn recurred, which positively exonerates all of them.
 Coverage caveat for everything measured tonight: `rugged` is down, so the connection
 recorder covers wyrm2 only.
 
+## Knobs not yet turned
+
+Each cuts one credential or one class of caller. Turn one at a time: the burn is
+intermittent enough that two simultaneous changes explain nothing.
+
+**`gh auth logout` on wyrm2.** Verified 2026-09-04: `GITHUB_TOKEN` is unset in both an
+agent session and a fresh login shell, nothing under `nix/` sets it, and
+`~/.config/gh/hosts.yml` (written 2026-07-07) holds an `oauth_token`. So local `gh` runs
+on an interactive `gh auth login` credential — the "GitHub CLI" OAuth app, last used
+within the last week — and not on a SOPS PAT. Logging out therefore cuts more than
+personal `gh` use: with no `GITHUB_TOKEN` in the environment, anything on this host that
+wants GitHub has to fall back to `gh auth token`, including `workspace_gc.py`'s fallback
+path and plausibly whatever the `claude` processes use when they reach
+`api.github.com`. Cost: local `gh` stops working until an interactive re-login, which
+also breaks the PR and CI-watching loops other sessions run.
+
+**Idle with processes running.** Leave wyrm2 awake with its `claude` processes alive but
+unattended, and start no cloud session. Splits "background behaviour of processes that
+exist" from "driven by operator activity" — which plain sleep does not, since suspending
+stops everything at once.
+
+**Stop cloud sessions only**, leaving local work untouched — aimed squarely at the
+`Claude` GitHub App, which acts as the user from Anthropic's infrastructure and is
+invisible to every probe deployed here.
+
+Unrelated defect found while checking the above:
+<devinfra/claude/claude_hook/profiles/cli/context.mako> tells every CLI agent session
+"`GITHUB_TOKEN` available (personal PAT from home-manager)". On wyrm2 that is false, and
+agents are being told they hold a credential they do not.
+
 ## Catching it next time
 
 The burn is off, so nothing can be attributed live right now, and every remaining
