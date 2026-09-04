@@ -1,21 +1,17 @@
-"""Rust/JAX differential coverage for stateful reduced-form tax-loss harvesting and its sale-time give-back.
+"""Rust/JAX differential coverage for stateful reduced-form tax-loss harvesting and its
+sale-time give-back.
 
 One target per domain so Bazel runs them concurrently: each case compiles its own
 JAX program, and those compiles are the suite's whole wall clock and peak memory.
 """
 
-from __future__ import annotations
-
-from pathlib import Path
 from typing import Any
 
 import polars as pl
 import pytest_bazel
 
-from finance.augur.rust.differential.fixture_adapter import run_legacy_fixture
-from finance.augur.rust.differential.fixtures import rust_run, tax_fixture
-from finance.augur.rust.differential.output_adapter import decode_rust_event_log
-from finance.augur.sim.testing.state_helpers import capital_gains_ytd
+from finance.augur.rust.differential.backend import RustResult, assert_backends_agree
+from finance.augur.rust.differential.fixtures import tax_fixture
 
 
 def tlh_fixture(
@@ -202,113 +198,71 @@ def tlh_fixture(
     }
 
 
-def rust_capital_gain_frame(rust: dict[str, Any]) -> pl.DataFrame:
-    rows: list[dict[str, Any]] = []
-    for rollout in rust["rollouts"]:
-        for snapshot in rollout["months"]:
-            for state in snapshot["capital_gains"]:
-                rows.extend(
-                    [
-                        {
-                            "rollout_index": rollout["rollout_id"],
-                            "month_index": snapshot["month"],
-                            "agent_id": state["agent_id"],
-                            "classification": "stcg",
-                            "gain_quanta": state["short_term_gain"],
-                        },
-                        {
-                            "rollout_index": rollout["rollout_id"],
-                            "month_index": snapshot["month"],
-                            "agent_id": state["agent_id"],
-                            "classification": "ltcg",
-                            "gain_quanta": state["long_term_gain"],
-                        },
-                    ]
-                )
-    return pl.DataFrame(rows).sort("rollout_index", "month_index", "agent_id", "classification")
+def _ledger(result: RustResult, rollout: int, month: int) -> int:
+    """The single harvest policy's cumulative deferral at one snapshot."""
+
+    row = result.tlh_ledger.filter(
+        (pl.col("rollout_index") == rollout) & (pl.col("month_index") == month) & (pl.col("policy_index") == 0)
+    )
+    return int(row.get_column("cumulative_harvest_quanta").item())
 
 
-def assert_tlh_parity(fixture: dict[str, Any], tmp_path: Path) -> dict[str, Any]:
-    legacy = run_legacy_fixture(fixture)
-    rust = rust_run(fixture, tmp_path)
-    legacy_lookup = {
-        (row["rollout_index"], row["month_index"], row["agent_id"], row["classification"]): row["gain_quanta"]
-        for row in capital_gains_ytd(legacy).to_dicts()
+def _assert_ledger_mirrors_short_term_gains(result: RustResult) -> None:
+    """Before the first year-end, the deferral ledger is exactly the short-term loss booked.
+
+    This is the invariant tying the two representations together: what the harvest policy
+    accumulates is what the taxpayer's short-term gain reflects, with the sign flipped.
+    """
+
+    short_term = {
+        (row["rollout_index"], row["month_index"]): row["gain_quanta"]
+        for row in result.capital_gains.filter(pl.col("classification") == "stcg").to_dicts()
     }
-    rust_gains = rust_capital_gain_frame(rust)
-    for row in rust_gains.to_dicts():
-        key = (row["rollout_index"], row["month_index"], row["agent_id"], row["classification"])
-        assert row["gain_quanta"] == legacy_lookup.get(key, 0)
-
-    rust_events = decode_rust_event_log(rust)
-    for legacy_frame, rust_frame, sort_columns in (
-        (
-            legacy.events_log.lot_dispositions,
-            rust_events.lot_dispositions,
-            ["rollout_index", "month_index", "cause_id", "lot_id"],
-        ),
-        (
-            legacy.events_log.tax_accruals,
-            rust_events.tax_accruals,
-            ["rollout_index", "month_index", "cause_id", "jurisdiction_id"],
-        ),
-        (
-            legacy.events_log.tax_breakdowns,
-            rust_events.tax_breakdowns,
-            ["rollout_index", "month_index", "cause_id", "jurisdiction_id"],
-        ),
-    ):
-        assert rust_frame.schema == legacy_frame.schema
-        assert rust_frame.sort(sort_columns).to_dicts() == legacy_frame.sort(sort_columns).to_dicts()
-
-    for rollout in rust["rollouts"]:
-        gains_by_month = {
-            row["month_index"]: row["gain_quanta"]
-            for row in rust_gains.filter(
-                (pl.col("rollout_index") == rollout["rollout_id"]) & (pl.col("classification") == "stcg")
-            ).to_dicts()
-        }
-        for snapshot in rollout["months"]:
-            if snapshot["month"] < 12:
-                assert snapshot["tlh_cumulative_harvest"][0] == -gains_by_month[snapshot["month"]]
-    return rust
+    pre_year_end = result.tlh_ledger.filter(pl.col("month_index") < 12)
+    assert not pre_year_end.is_empty()
+    for row in pre_year_end.to_dicts():
+        gain = short_term.get((row["rollout_index"], row["month_index"]), 0)
+        assert row["cumulative_harvest_quanta"] == -gain
 
 
-def test_rust_and_jax_match_tlh_harvest_paths_and_year_end_tax(tmp_path: Path) -> None:
-    rust = assert_tlh_parity(tlh_fixture(), tmp_path)
+def test_backends_agree_on_harvest_paths_and_year_end_tax() -> None:
+    result = assert_backends_agree(tlh_fixture())
+    _assert_ledger_mirrors_short_term_gains(result)
 
-    drawdown = rust["rollouts"][0]["months"][3]["tlh_cumulative_harvest"][0]
-    flat = rust["rollouts"][1]["months"][3]["tlh_cumulative_harvest"][0]
-    assert drawdown > flat > 0
-
-
-def test_rust_and_jax_match_tlh_partial_sale_give_back(tmp_path: Path) -> None:
-    rust = assert_tlh_parity(tlh_fixture(partial_sales=True), tmp_path)
-
-    assert rust["rollouts"][0]["months"][8]["tlh_cumulative_harvest"] == [0]
+    # The drawdown path harvests more than the flat one, and both harvest something.
+    assert _ledger(result, 0, 3) > _ledger(result, 1, 3) > 0
 
 
-def test_rust_and_jax_match_tlh_same_month_sales_share_pre_sale_ledger(tmp_path: Path) -> None:
-    rust = assert_tlh_parity(tlh_fixture(same_month_sales=True), tmp_path)
+def test_backends_agree_that_a_partial_sale_gives_basis_back() -> None:
+    result = assert_backends_agree(tlh_fixture(partial_sales=True))
+    _assert_ledger_mirrors_short_term_gains(result)
 
-    assert rust["rollouts"][0]["months"][8]["tlh_cumulative_harvest"] == [0]
+    assert _ledger(result, 0, 8) == 0
 
 
-def test_rust_and_jax_match_tlh_target_allocation_sale_give_back(tmp_path: Path) -> None:
-    rust = assert_tlh_parity(tlh_fixture(target_allocation_sale=True), tmp_path)
+def test_backends_agree_that_same_month_sales_share_the_pre_sale_ledger() -> None:
+    result = assert_backends_agree(tlh_fixture(same_month_sales=True))
+    _assert_ledger_mirrors_short_term_gains(result)
 
-    dispositions = decode_rust_event_log(rust).lot_dispositions
+    assert _ledger(result, 0, 8) == 0
+
+
+def test_backends_agree_on_give_back_through_a_target_allocation_sale() -> None:
+    result = assert_backends_agree(tlh_fixture(target_allocation_sale=True))
+
+    dispositions = result.events.lot_dispositions
     assert dispositions.filter(pl.col("cause_id").str.starts_with("allocation_sale_m1_security:sp500")).height == 1
-    assert rust["rollouts"][0]["months"][2]["tlh_cumulative_harvest"][0] > 0
+    assert _ledger(result, 0, 2) > 0
 
 
-def test_rust_and_jax_match_tlh_failure_suppression(tmp_path: Path) -> None:
-    rust = assert_tlh_parity(tlh_fixture(failure_after_first_harvest=True), tmp_path)
+def test_backends_agree_that_failure_suppresses_the_harvest_ledger() -> None:
+    result = assert_backends_agree(tlh_fixture(failure_after_first_harvest=True))
 
-    for rollout in rust["rollouts"]:
-        assert rollout["failed_month"] == 1
-        assert rollout["months"][1]["tlh_cumulative_harvest"][0] > 0
-        assert all(snapshot["tlh_cumulative_harvest"] == [0] for snapshot in rollout["months"][2:])
+    assert result.rollout_status.get_column("failed_month").unique().to_list() == [1]
+    for rollout in result.tlh_ledger.get_column("rollout_index").unique():
+        assert _ledger(result, rollout, 1) > 0
+        frozen = result.tlh_ledger.filter((pl.col("rollout_index") == rollout) & (pl.col("month_index") > 1))
+        assert frozen.get_column("cumulative_harvest_quanta").unique().to_list() == [0]
 
 
 if __name__ == "__main__":

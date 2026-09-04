@@ -1,21 +1,17 @@
-"""Rust/JAX differential coverage for security distributions and held-to-maturity nominal bonds and TIPS.
+"""Rust/JAX differential coverage for security distributions and held-to-maturity nominal
+bonds and TIPS.
 
 One target per domain so Bazel runs them concurrently: each case compiles its own
 JAX program, and those compiles are the suite's whole wall clock and peak memory.
 """
 
-from __future__ import annotations
-
-from pathlib import Path
 from typing import Any
 
 import polars as pl
 import pytest_bazel
 
-from finance.augur.rust.differential.fixture_adapter import run_legacy_fixture
-from finance.augur.rust.differential.fixtures import rust_cash_frame, rust_run, shared_integer_fixture, tax_fixture
-from finance.augur.sim.engine.jax_engine import run_jax_product_metric_arrays
-from finance.augur.sim.testing.state_helpers import cash_balances, ordinary_income_ytd
+from finance.augur.rust.differential.backend import assert_backends_agree
+from finance.augur.rust.differential.fixtures import shared_integer_fixture, tax_fixture
 
 
 def distribution_fixture() -> dict[str, Any]:
@@ -219,177 +215,57 @@ def bond_fixture() -> dict[str, Any]:
     return fixture
 
 
-def test_rust_and_jax_match_monthly_security_distributions(tmp_path: Path) -> None:
-    fixture = distribution_fixture()
-    legacy = run_legacy_fixture(fixture)
-    rust = rust_run(fixture, tmp_path)
+def test_backends_agree_on_monthly_security_distributions() -> None:
+    """A distribution pays on the units held that month, so a growing position grows it."""
 
-    legacy_cash = (
-        cash_balances(legacy)
-        .select("rollout_index", "month_index", "agent_id", "account_id", "balance_quanta")
-        .sort("rollout_index", "month_index", "agent_id", "account_id")
-    )
-    assert rust_cash_frame(rust).to_dicts() == legacy_cash.to_dicts()
-    assert [[outcome["amount"] for outcome in rollout["distributions"]] for rollout in rust["rollouts"]] == [
-        [200, 200, 200],
-        [400, 600, 800],
-    ]
+    result = assert_backends_agree(distribution_fixture())
+
+    by_rollout = result.distributions.sort("rollout_index", "month_index")
+    assert by_rollout.filter(pl.col("rollout_index") == 0).get_column("amount_quanta").to_list() == [200, 200, 200]
+    assert by_rollout.filter(pl.col("rollout_index") == 1).get_column("amount_quanta").to_list() == [400, 600, 800]
 
 
-def test_rust_and_jax_match_distribution_tax_character_slices(tmp_path: Path) -> None:
-    fixture = distribution_tax_fixture()
-    legacy = run_legacy_fixture(fixture)
-    rust = rust_run(fixture, tmp_path)
+def test_backends_agree_on_distribution_tax_character_slices() -> None:
+    """Each issuer slice is routed through its jurisdiction's interest-exemption policy."""
 
-    assert rust_cash_frame(rust).to_dicts() == (
-        cash_balances(legacy)
-        .select("rollout_index", "month_index", "agent_id", "account_id", "balance_quanta")
-        .sort("rollout_index", "month_index", "agent_id", "account_id")
-        .to_dicts()
-    )
-
-    legacy_tax = (
-        legacy.events_log.tax_breakdowns.select(
-            "rollout_index",
-            "month_index",
-            "agent_id",
-            "jurisdiction_id",
-            "ordinary_income_quanta",
-            "ordinary_taxable_quanta",
-            "ordinary_tax_quanta",
-            "total_tax_quanta",
-        )
-        .sort("rollout_index", "jurisdiction_id")
-        .to_dicts()
-    )
-    rust_tax = sorted(
-        [
-            {
-                "rollout_index": rollout["rollout_id"],
-                "month_index": accrual["month"],
-                "agent_id": accrual["agent_id"],
-                "jurisdiction_id": accrual["jurisdiction_id"],
-                "ordinary_income_quanta": accrual["ordinary_income"],
-                "ordinary_taxable_quanta": accrual["ordinary_taxable"],
-                "ordinary_tax_quanta": accrual["ordinary_tax"],
-                "total_tax_quanta": accrual["total_tax"],
-            }
-            for rollout in rust["rollouts"]
-            for accrual in rollout["tax_accruals"]
-        ],
-        key=lambda row: (row["rollout_index"], row["jurisdiction_id"]),
-    )
-    assert rust_tax == legacy_tax
-
-    legacy_sources = (
-        ordinary_income_ytd(legacy)
-        .filter((pl.col("month_index") == 11) & (pl.col("ordinary_income_quanta") != 0))
-        .select("rollout_index", "income_source", "ordinary_income_quanta")
-        .sort("rollout_index", "income_source")
-        .to_dicts()
-    )
-    rust_sources: list[dict[str, Any]] = []
-    for rollout in rust["rollouts"]:
-        by_source: dict[str, int] = {}
-        for outcome in rollout["distributions"]:
-            if outcome["month"] >= 11:
-                continue
-            issuer = outcome["issuer_jurisdiction_id"]
-            source = f"interest:{issuer}" if issuer is not None else "interest:corporate"
-            by_source[source] = by_source.get(source, 0) + outcome["amount"]
-        rust_sources.extend(
-            {"rollout_index": rollout["rollout_id"], "income_source": source, "ordinary_income_quanta": amount}
-            for source, amount in sorted(by_source.items())
-        )
-    assert rust_sources == legacy_sources
-    assert [outcome["amount"] for outcome in rust["rollouts"][0]["distributions"][:2]] == [80_000, 120_000]
-    assert [outcome["amount"] for outcome in rust["rollouts"][1]["distributions"][:2]] == [120_000, 180_000]
-    assert all(
-        sum(posting["amount"] for posting in entry["postings"]) == 0
-        for rollout in rust["rollouts"]
-        for entry in rollout["journal"]
-    )
+    assert_backends_agree(distribution_tax_fixture())
 
 
-def test_rust_and_jax_match_nominal_bonds_tips_and_issuer_tax_routing(tmp_path: Path) -> None:
-    fixture = bond_fixture()
-    legacy = run_legacy_fixture(fixture)
-    rust = rust_run(fixture, tmp_path)
+def test_backends_agree_on_nominal_bonds_tips_and_issuer_tax_routing() -> None:
+    result = assert_backends_agree(bond_fixture())
+    flows = result.bond_cashflows
 
-    legacy_cash = (
-        cash_balances(legacy)
-        .select("rollout_index", "month_index", "agent_id", "account_id", "balance_quanta")
-        .sort("rollout_index", "month_index", "agent_id", "account_id")
-    )
-    assert rust_cash_frame(rust).to_dicts() == legacy_cash.to_dicts()
+    def flow(rollout: int, bond_id: str, month: int) -> dict[str, Any]:
+        return flows.filter(
+            (pl.col("rollout_index") == rollout) & (pl.col("bond_id") == bond_id) & (pl.col("month_index") == month)
+        ).to_dicts()[0]
 
-    legacy_bond_value = run_jax_product_metric_arrays(legacy.plan, primary_agent_id="alice").metric_arrays()[
-        "bond_value_quanta"
-    ]
-    rust_bond_value = [
-        [
-            sum(bond["principal"] for bond in rollout["months"][month]["bonds"] if bond["agent_id"] == "alice")
-            for rollout in rust["rollouts"]
-        ]
-        for month in range(len(rust["rollouts"][0]["months"]))
-    ]
-    assert rust_bond_value == legacy_bond_value.tolist()
+    # Treasury and muni coupons carry their issuer; a corporate bond has none.
+    assert flow(0, "treasury", 5)["coupon_quanta"] == 250_000
+    assert flow(0, "treasury", 5)["issuer_jurisdiction_id"] == "federal_us"
+    assert flow(0, "california-muni", 5)["coupon_quanta"] == 200_000
+    assert flow(0, "corporate", 5)["coupon_quanta"] == 150_000
+    assert flow(0, "corporate", 5)["issuer_jurisdiction_id"] is None
 
-    columns = [
-        "rollout_index",
-        "month_index",
-        "agent_id",
-        "jurisdiction_id",
-        "ordinary_income_quanta",
-        "ordinary_taxable_quanta",
-        "ordinary_tax_quanta",
-        "total_tax_quanta",
-    ]
-    legacy_tax = legacy.events_log.tax_breakdowns.select(columns).sort("rollout_index", "jurisdiction_id").to_dicts()
-    rust_tax = sorted(
-        [
-            {
-                "rollout_index": rollout["rollout_id"],
-                "month_index": accrual["month"],
-                "agent_id": accrual["agent_id"],
-                "jurisdiction_id": accrual["jurisdiction_id"],
-                "ordinary_income_quanta": accrual["ordinary_income"],
-                "ordinary_taxable_quanta": accrual["ordinary_taxable"],
-                "ordinary_tax_quanta": accrual["ordinary_tax"],
-                "total_tax_quanta": accrual["total_tax"],
-            }
-            for rollout in rust["rollouts"]
-            for accrual in rollout["tax_accruals"]
-        ],
-        key=lambda row: (row["rollout_index"], row["jurisdiction_id"]),
-    )
-    assert rust_tax == legacy_tax
+    # TIPS: phantom accretion while CPI rises, par redemption at maturity.
+    assert flow(0, "tips", 6)["accretion_quanta"] == 10_000_000
+    assert flow(0, "tips", 6)["issuer_jurisdiction_id"] == "federal_us"
+    assert flow(0, "tips", 11)["coupon_quanta"] == 400_000
+    assert flow(0, "tips", 11)["redemption_quanta"] == 20_000_000
+    assert flow(1, "tips", 6)["accretion_quanta"] == 5_000_000
+    assert flow(1, "tips", 11)["redemption_quanta"] == 15_000_000
+    # A deflating path accretes negatively but the deflation floor holds redemption at par.
+    assert flow(2, "tips", 6)["accretion_quanta"] == -2_000_000
+    assert flow(2, "tips", 11)["coupon_quanta"] == 160_000
+    assert flow(2, "tips", 11)["redemption_quanta"] == 10_000_000
 
-    first = {(flow["bond_id"], flow["month"]): flow for flow in rust["rollouts"][0]["bond_cashflows"]}
-    assert first[("treasury", 5)]["coupon"] == 250_000
-    assert first[("treasury", 5)]["issuer_jurisdiction_id"] == "federal_us"
-    assert first[("california-muni", 5)]["coupon"] == 200_000
-    assert first[("corporate", 5)]["coupon"] == 150_000
-    assert first[("corporate", 5)]["issuer_jurisdiction_id"] is None
-    assert first[("tips", 6)]["accretion"] == 10_000_000
-    assert first[("tips", 6)]["issuer_jurisdiction_id"] == "federal_us"
-    assert first[("tips", 11)]["coupon"] == 400_000
-    assert first[("tips", 11)]["redemption"] == 20_000_000
-    assert [first[("rounding-up", month)]["coupon"] for month in range(12)] == [1] * 12
-    assert first[("rounding-down", 11)]["coupon"] == 0
-    assert [first[("rounding-five-month", month)]["coupon"] for month in (1, 6, 11)] == [19_280] * 3
-    second = {(flow["bond_id"], flow["month"]): flow for flow in rust["rollouts"][1]["bond_cashflows"]}
-    assert second[("tips", 6)]["accretion"] == 5_000_000
-    assert second[("tips", 11)]["redemption"] == 15_000_000
-    third = {(flow["bond_id"], flow["month"]): flow for flow in rust["rollouts"][2]["bond_cashflows"]}
-    assert third[("tips", 6)]["accretion"] == -2_000_000
-    assert third[("tips", 11)]["coupon"] == 160_000
-    assert third[("tips", 11)]["redemption"] == 10_000_000
-    assert all(
-        sum(posting["amount"] for posting in entry["postings"]) == 0
-        for rollout in rust["rollouts"]
-        for entry in rollout["journal"]
-    )
+    # Rounding edges of the once-per-period rational coupon.
+    rounding_up = flows.filter((pl.col("rollout_index") == 0) & (pl.col("bond_id") == "rounding-up"))
+    assert rounding_up.get_column("coupon_quanta").to_list() == [1] * 12
+    assert flow(0, "rounding-down", 11)["coupon_quanta"] == 0
+    assert [flow(0, "rounding-five-month", month)["coupon_quanta"] for month in (1, 6, 11)] == [19_280] * 3
+
+    assert result.journal.get_column("imbalance_quanta").unique().to_list() == [0]
 
 
 if __name__ == "__main__":

@@ -4,18 +4,13 @@ One target per domain so Bazel runs them concurrently: each case compiles its ow
 JAX program, and those compiles are the suite's whole wall clock and peak memory.
 """
 
-from __future__ import annotations
-
-from pathlib import Path
 from typing import Any
 
 import polars as pl
 import pytest_bazel
 
-from finance.augur.rust.differential.fixture_adapter import run_legacy_fixture
-from finance.augur.rust.differential.fixtures import rust_cash_frame, rust_lot_frame, rust_run, tax_fixture
-from finance.augur.rust.differential.output_adapter import decode_rust_event_log
-from finance.augur.sim.testing.state_helpers import asset_lots, cash_balances
+from finance.augur.rust.differential.backend import assert_backends_agree
+from finance.augur.rust.differential.fixtures import tax_fixture
 
 
 def private_equity_fixture() -> dict[str, Any]:
@@ -161,121 +156,47 @@ def private_equity_tax_fixture() -> dict[str, Any]:
     return fixture
 
 
-def assert_private_equity_parity(fixture: dict[str, Any], tmp_path: Path) -> dict[str, Any]:
-    legacy = run_legacy_fixture(fixture)
-    rust = rust_run(fixture, tmp_path)
-    rust_events = decode_rust_event_log(rust)
-
-    legacy_cash = (
-        cash_balances(legacy)
-        .select("rollout_index", "month_index", "agent_id", "account_id", "balance_quanta")
-        .sort("rollout_index", "month_index", "agent_id", "account_id")
-    )
-    assert rust_cash_frame(rust).to_dicts() == legacy_cash.to_dicts()
-
-    legacy_lots = (
-        asset_lots(legacy)
-        .select(
-            "rollout_index",
-            "month_index",
-            "lot_id",
-            "agent_id",
-            "account_id",
-            "asset_id",
-            "purchase_month_index",
-            "cost_basis_per_unit_quanta",
-            "remaining_quantity_quanta",
-            "quantity_scale",
-        )
-        .sort("rollout_index", "month_index", "lot_id")
-    )
-    assert rust_lot_frame(rust).to_dicts() == legacy_lots.to_dicts()
-
-    comparisons = (
-        (
-            legacy.events_log.lot_dispositions,
-            rust_events.lot_dispositions,
-            ["rollout_index", "month_index", "cause_id", "lot_id"],
-        ),
-        (
-            legacy.events_log.private_equity_events,
-            rust_events.private_equity_events,
-            ["rollout_index", "month_index", "issuer_id"],
-        ),
-        (
-            legacy.events_log.private_equity_opportunities,
-            rust_events.private_equity_opportunities,
-            ["rollout_index", "month_index", "cause_id"],
-        ),
-        (
-            legacy.events_log.tax_accruals,
-            rust_events.tax_accruals,
-            ["rollout_index", "month_index", "cause_id", "jurisdiction_id"],
-        ),
-        (
-            legacy.events_log.tax_breakdowns,
-            rust_events.tax_breakdowns,
-            ["rollout_index", "month_index", "cause_id", "jurisdiction_id"],
-        ),
-    )
-    for legacy_frame, rust_frame, sort_columns in comparisons:
-        assert rust_frame.schema == legacy_frame.schema
-        assert rust_frame.sort(sort_columns).to_dicts() == legacy_frame.sort(sort_columns).to_dicts()
-
-    assert all(
-        sum(posting["amount"] for posting in entry["postings"]) == 0
-        for rollout in rust["rollouts"]
-        for entry in rollout["journal"]
-    )
-    return rust
-
-
-def test_rust_and_jax_match_private_equity_protocol_sales_and_opportunities(tmp_path: Path) -> None:
-    rust = assert_private_equity_parity(private_equity_fixture(), tmp_path)
-
-    final_cash = {
-        row["rollout_index"]: row["balance_quanta"]
-        for row in rust_cash_frame(rust).filter(pl.col("month_index") == 3).to_dicts()
+def _final_cash(result) -> dict[int, int]:
+    return {
+        row["rollout_index"]: row["balance_quanta"] for row in result.cash.filter(pl.col("month_index") == 3).to_dicts()
     }
-    assert final_cash == {0: 250_000, 1: 500_000, 2: 300_000, 3: 10_000}
 
 
-def test_rust_and_jax_match_private_equity_protocol_without_owner_policy(tmp_path: Path) -> None:
+def test_backends_agree_on_tender_sales_and_opportunities() -> None:
+    result = assert_backends_agree(private_equity_fixture())
+
+    assert _final_cash(result) == {0: 250_000, 1: 500_000, 2: 300_000, 3: 10_000}
+    assert result.journal.get_column("imbalance_quanta").unique().to_list() == [0]
+
+
+def test_backends_agree_that_an_issuer_without_an_owner_policy_never_tenders() -> None:
     fixture = private_equity_fixture()
     fixture["scenario"]["private_equity_tender_policies"] = []
-    rust = assert_private_equity_parity(fixture, tmp_path)
-    rust_events = decode_rust_event_log(rust)
+    result = assert_backends_agree(fixture)
 
-    assert rust_events.lot_dispositions.is_empty()
-    assert set(rust_events.private_equity_opportunities.get_column("outcome")) == {"no_policy"}
-    assert {
-        row["rollout_index"]: row["balance_quanta"]
-        for row in rust_cash_frame(rust).filter(pl.col("month_index") == 3).to_dicts()
-    } == dict.fromkeys(range(4), 0)
+    assert result.events.lot_dispositions.is_empty()
+    assert set(result.events.private_equity_opportunities.get_column("outcome")) == {"no_policy"}
+    assert _final_cash(result) == dict.fromkeys(range(4), 0)
 
 
-def test_rust_and_jax_match_private_equity_floor_satisfied_before_voluntary_sales(tmp_path: Path) -> None:
+def test_backends_agree_that_a_satisfied_floor_suppresses_voluntary_sales() -> None:
     fixture = private_equity_fixture()
     fixture["scenario"]["accounts"][0]["opening_balance"] = 600_000
-    rust = assert_private_equity_parity(fixture, tmp_path)
-    dispositions = decode_rust_event_log(rust).lot_dispositions
+    result = assert_backends_agree(fixture)
 
-    assert not any(
-        cause.startswith(("pe_tender_", "pe_public_market_")) for cause in dispositions.get_column("cause_id")
-    )
-    assert {
-        row["rollout_index"]: row["balance_quanta"]
-        for row in rust_cash_frame(rust).filter(pl.col("month_index") == 3).to_dicts()
-    } == {0: 600_000, 1: 600_000, 2: 900_000, 3: 610_000}
+    causes = result.events.lot_dispositions.get_column("cause_id")
+    assert not any(cause.startswith(("pe_tender_", "pe_public_market_")) for cause in causes)
+    assert _final_cash(result) == {0: 600_000, 1: 600_000, 2: 900_000, 3: 610_000}
 
 
-def test_rust_and_jax_match_private_equity_disposition_tax_facts(tmp_path: Path) -> None:
-    rust = assert_private_equity_parity(private_equity_tax_fixture(), tmp_path)
-    [accrual] = rust["rollouts"][0]["tax_accruals"]
+def test_backends_agree_on_the_tax_facts_a_tender_disposition_produces() -> None:
+    result = assert_backends_agree(private_equity_tax_fixture())
+    breakdown = result.events.tax_breakdowns.filter(pl.col("rollout_index") == 0)
 
-    assert accrual["short_term_gain"] == 0
-    assert accrual["long_term_gain"] == 9_840_000
-    assert accrual["capital_gain_tax"] == 770_625
+    # A tender sale of a lot held past a year is long-term, and nothing else realizes.
+    assert breakdown.get_column("stcg_quanta").to_list() == [0]
+    assert breakdown.get_column("ltcg_quanta").to_list() == [9_840_000]
+    assert breakdown.get_column("capital_gain_tax_quanta").to_list() == [770_625]
 
 
 if __name__ == "__main__":

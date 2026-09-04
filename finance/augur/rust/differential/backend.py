@@ -87,6 +87,13 @@ class RustResult(SimulationResult):
     journal: pl.DataFrame
     tlh_ledger: pl.DataFrame
     bonds: pl.DataFrame
+    bond_cashflows: pl.DataFrame
+    distributions: pl.DataFrame
+    # The accrual fields Rust records beyond the canonical `tax_breakdowns` frame: §1250
+    # tax and the shared capital-loss carryforward have no JAX event counterpart.
+    tax_accrual_details: pl.DataFrame
+    # A property sale's tax split. The canonical frame carries the sale, not its components.
+    property_sale_details: pl.DataFrame
 
 
 def _sorted(rows: list[dict[str, Any]], schema: dict[str, Any], by: list[str]) -> pl.DataFrame:
@@ -108,6 +115,24 @@ def _canonical(frame: pl.DataFrame, by: list[str]) -> pl.DataFrame:
     return (frame.with_columns(casts) if casts else frame).sort(by)
 
 
+def _realized_gains(frame: pl.DataFrame, taxed: set[str]) -> pl.DataFrame:
+    """Taxed agents' nonzero gains.
+
+    Scoped to taxed agents because that is what both engines model: JAX also tracks gains
+    for any agent holding lots or selling, taxed or not, while Rust surfaces none for an
+    untaxed agent (docs/differential.md § Capital gains without a tax profile).
+
+    Zeroes are dropped because a zero gain and an absent row say the same thing, and the two
+    engines disagree only on which they emit — JAX masks by a per-tax-year active flag, Rust
+    reports every snapshot.
+    """
+
+    return frame.filter(
+        (pl.col("agent_id").cast(pl.String).is_in(list(taxed)) if taxed else pl.lit(value=False))
+        & (pl.col("gain_quanta") != 0)
+    )
+
+
 def _taxed_agents(fixture: dict[str, Any]) -> set[str]:
     return {profile["agent_id"] for profile in fixture["scenario"].get("tax_profiles", [])}
 
@@ -123,14 +148,8 @@ def run_jax(fixture: dict[str, Any]) -> SimulationResult:
         events=run.events_log,
         cash=_canonical(cash_balances(run), ["rollout_index", "month_index", "agent_id", "account_id"]),
         lots=_canonical(lots.drop("remaining_quantity"), ["rollout_index", "month_index", "lot_id"]),
-        # Scoped to taxed agents because that is what both engines model. JAX also tracks
-        # gains for any agent holding lots or selling, taxed or not; Rust surfaces none for
-        # an untaxed agent. See docs/product_metrics.md § Capital gains without a tax
-        # profile, and `test_rust_omits_capital_gains_for_an_untaxed_agent` below.
         capital_gains=_canonical(
-            capital_gains_ytd(run).filter(
-                pl.col("agent_id").cast(pl.String).is_in(list(taxed)) if taxed else pl.lit(value=False)
-            ),
+            _realized_gains(capital_gains_ytd(run), taxed),
             ["rollout_index", "month_index", "agent_id", "classification"],
         ),
         tax_liabilities=_canonical(
@@ -237,6 +256,7 @@ def rust_result(rust: dict[str, Any], fixture: dict[str, Any]) -> RustResult:
             }
             for rollout, month, record in _rust_rows(rust, "capital_gains")
             for classification, key in (("ltcg", "long_term_gain"), ("stcg", "short_term_gain"))
+            if record[key] != 0
         ],
         {
             "rollout_index": pl.Int64,
@@ -435,6 +455,76 @@ def rust_result(rust: dict[str, Any], fixture: dict[str, Any]) -> RustResult:
         },
         ["rollout_index", "month_index", "bond_id"],
     )
+
+    def detail_frame(channel: str, keys: dict[str, Any], money: tuple[str, ...], sort_by: list[str]) -> pl.DataFrame:
+        """One of Rust's own record streams, typed. `keys` maps column name to record field."""
+
+        return _sorted(
+            [
+                {
+                    "rollout_index": rollout["rollout_id"],
+                    "month_index": record["month"],
+                    **{column: record[field] for column, field in keys.items()},
+                    **{f"{name}_quanta": record[name] for name in money},
+                }
+                for rollout in rust["rollouts"]
+                for record in rollout[channel]
+            ],
+            {
+                "rollout_index": pl.Int64,
+                "month_index": pl.Int64,
+                **dict.fromkeys(keys, pl.String),
+                **{f"{name}_quanta": pl.Int64 for name in money},
+            },
+            sort_by,
+        )
+
+    bond_cashflows = detail_frame(
+        "bond_cashflows",
+        {"bond_id": "bond_id", "issuer_jurisdiction_id": "issuer_jurisdiction_id"},
+        ("coupon", "accretion", "redemption"),
+        ["rollout_index", "month_index", "bond_id"],
+    )
+    distributions = detail_frame(
+        "distributions",
+        {"asset_id": "asset_id", "issuer_jurisdiction_id": "issuer_jurisdiction_id"},
+        ("amount",),
+        ["rollout_index", "month_index", "asset_id"],
+    )
+    tax_accrual_details = detail_frame(
+        "tax_accruals",
+        {"agent_id": "agent_id", "jurisdiction_id": "jurisdiction_id"},
+        (
+            "ordinary_income",
+            "short_term_gain",
+            "long_term_gain",
+            "section_1250_recapture",
+            "ordinary_taxable",
+            "long_term_capital_gain_taxable",
+            "ordinary_tax",
+            "capital_gain_tax",
+            "section_1250_tax",
+            "total_tax",
+            "capital_loss_carryforward",
+            "salt_deduction",
+            "itemized_deduction",
+        ),
+        ["rollout_index", "month_index", "agent_id", "jurisdiction_id"],
+    )
+    property_sale_details = detail_frame(
+        "property_sales",
+        {"property_id": "property_id"},
+        (
+            "gross_proceeds",
+            "mortgage_payoff",
+            "net_cash_to_owner",
+            "realized_gain",
+            "depreciation_recapture",
+            "section_121_exclusion",
+            "long_term_capital_gain",
+        ),
+        ["rollout_index", "month_index", "property_id"],
+    )
     return RustResult(
         backend="rust",
         events=decode_rust_event_log(rust),
@@ -449,6 +539,10 @@ def rust_result(rust: dict[str, Any], fixture: dict[str, Any]) -> RustResult:
         journal=journal,
         tlh_ledger=tlh_ledger,
         bonds=bonds,
+        bond_cashflows=bond_cashflows,
+        distributions=distributions,
+        tax_accrual_details=tax_accrual_details,
+        property_sale_details=property_sale_details,
     )
 
 
