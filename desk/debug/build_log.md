@@ -605,3 +605,48 @@ eliminating cross-PCIe frame copies.
 **Observations.** Sway on seat-game, per-title gamescope, DP audio
 (via `01:00.1` passthrough), and Stellaris (Proton): all confirmed
 working. See `debug/atlas/direct_display_bringup/README.md`.
+
+## 2026-09-04 — keyboard lost on KVM switch: passthrough pinned to a vacated atlas port
+
+**Symptom.** Monitor showed atlas and typed into atlas. Pressing the KVM
+button switched _video_ to wyrm2 as expected, but keystrokes reached
+neither host — wyrm2 saw no input at all.
+
+**Diagnosis.** wyrm2's `usb3:` passthrough pins a physical host port path,
+`host=3-12.1`. atlas's kernel log showed the FV43U hub enumerating at
+`usb 3-12` (keyboard `3-12.1`) only until `03:13:10`; from `03:21` onward
+it came up at `usb 3-5` / `3-5.1`. The USB A→B cable had been knocked into
+a different atlas USB-A port. QEMU kept watching the vacated `3-12.1`, so
+on each KVM press the keyboard enumerated on the **atlas host**, `usbhid`
+bound it there, and the guest was handed nothing. Video was unaffected
+because it rides the independent DP path.
+
+Confirming detail: `usb3-port12` has **no SuperSpeed peer** (`peer` →
+`peer`), i.e. the original port was USB2-only; the new one (`3-5`, later
+`3-2`) pairs with a bus-4 SS port.
+
+**Fix.** Re-pinned to the live port. Verified end-to-end at `3-5.1`:
+KVM press → video _and_ keyboard + trackpoint both landed on wyrm2.
+Cable then deliberately relocated to a rear port and re-pinned to
+`3-2.1`.
+
+**Deviation found (Proxmox).** With `hotplug: network,disk,cpu,usb` set,
+`qm set 110 -usb3 …` still only stages the change — `qm pending` kept
+showing `cur usb3: host=3-12.1` and QEMU's `info qtree` kept
+`hostport = "12.1"`, including after a delete-then-re-add via `qm set`.
+Applying it live needs the QEMU monitor directly:
+
+```bash
+qm monitor 110 <<< "device_del usb3"
+qm monitor 110 <<< "device_add usb-host,bus=xhci.0,hostbus=3,hostport=2.1,id=usb3"
+```
+
+**Locating the port without switching the monitor.** The hub's SuperSpeed
+half (`0bda:0411`) stays enumerated on atlas even in USB-C mode, so
+`lsusb -t` shows which bus-4 port the cable is in; the kernel's
+`usb4-portN/peer` symlinks pair SS↔HS ports 1:1, giving the bus-3 port the
+keyboard will use.
+
+**Durable consequence.** The port-path pin is load-bearing and must be
+re-pinned whenever the cable moves — recorded as a gotcha in
+<../README.md> § Gaming display path, with the recovery recipe.

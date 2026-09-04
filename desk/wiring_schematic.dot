@@ -3,12 +3,12 @@ digraph desk_wiring {
     node  [shape=Mrecord, fontname="Helvetica", fontsize=10];
     edge  [fontname="Helvetica", fontsize=9, penwidth=1.8, dir=none];
 
-    monitor [label="{ AORUS FV43U — 43″ 4K@144 monitor | <spdif> optical S/PDIF out | <audio> 3.5 mm audio jack | <hdmi1> HDMI 2.1 · #1 | <hdmi2> HDMI 2.1 · #2 | <dp> DP 1.4 [wyrm2: card0-DP-1] | <usbc> USB-C in — video + hub + PD [hub: atlas 5-1.1] | <usbb> USB-B uplink [hub: atlas 3-12 when active] | <hi> USB-A upper [kbd: 5-1.1.1 / 3-12.1] | <lo> USB-A lower [cam: 5-1.1.5] }"];
+    monitor [label="{ AORUS FV43U — 43″ 4K@144 monitor | <spdif> optical S/PDIF out | <audio> 3.5 mm audio jack | <hdmi1> HDMI 2.1 · #1 | <hdmi2> HDMI 2.1 · #2 | <dp> DP 1.4 [wyrm2: card0-DP-1] | <usbc> USB-C in — video + hub + PD [hub: atlas 5-1.1] | <usbb> USB-B uplink [hub: atlas 3-2 when active] | <hi> USB-A upper [kbd: 5-1.1.1 / 3-2.1] | <lo> USB-A lower [cam: 5-1.1.5] }"];
 
     // KVM: header row, then two vertical columns side by side (peripheral / host)
     kvm [label="{ Sabrent SB-TB4K — TB4 KVM [atlas TB 0-1] | { { <pwr> power in | <ds_a> downstream TB4 A [→ 5-1.1] | <ds_b> downstream TB4 B | <ds_c> downstream TB4 C | <usba1> USB-A 1 | <usba2> USB-A 2 } | { <pc1> host PC1 (TB4) [atlas] | <pc2> host PC2 (TB4) [laptop] | <usba3> USB-A 3 | <usba4> USB-A 4 } } }"];
 
-    atlas [label="{ atlas — Proxmox tower · 2× RTX 5090 | <tb_top> mobo TB4 · top [TB domain 0 / card1-DP-1] | <tb_mid> mobo TB4 · middle | <usba_front> front USB-A bus 3 port 12 }"];
+    atlas [label="{ atlas — Proxmox tower · 2× RTX 5090 | <tb_top> mobo TB4 · top [TB domain 0 / card1-DP-1] | <tb_mid> mobo TB4 · middle | <usba_rear> rear USB-A bus 3 port 2 }"];
 
     wyrm2 [label="{ wyrm2 VM — local seat0 | <dp_out> RTX 5090 01:00.0 DP-OUT [card0-DP-1] | <gpu1> RTX 5090 02:00.0 [card2, headless] }"];
 
@@ -18,7 +18,7 @@ digraph desk_wiring {
     g_drawer    [shape=circle, style=dashed, label="drawer\ngrommet",    fontsize=9, width=1.2, height=1.2];
 
     cam [label="USB-A camera\natop monitor [5-1.1.5]"];
-    kbd [label="TEX Shura keyboard\n[5-1.1.1 / 3-12.1]"];
+    kbd [label="TEX Shura keyboard\n[5-1.1.1 / 3-2.1]"];
     hub [label="Under-desk USB-A hub"];
 
     // xlabel keeps labels near edges without forcing the router to bend
@@ -35,6 +35,6 @@ digraph desk_wiring {
 
     // Gaming display path (Plan A rev 2 — wired 2026-07-05)
     wyrm2:dp_out -> monitor:dp [xlabel="Ivanky 8K DP m-m", color="#00695c"];
-    monitor:usbb -> atlas:usba_front [xlabel="USB A→B", color="#827717"];
-    atlas:usba_front -> wyrm2 [xlabel="QEMU port-path\npassthrough (3-12.1)", color="#827717", style=dashed];
+    monitor:usbb -> atlas:usba_rear [xlabel="USB A→B", color="#827717"];
+    atlas:usba_rear -> wyrm2 [xlabel="QEMU port-path\npassthrough (3-2.1)", color="#827717", style=dashed];
 }
