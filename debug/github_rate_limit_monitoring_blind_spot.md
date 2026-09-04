@@ -378,6 +378,44 @@ The burn recurred, which positively exonerates all of them.
 Coverage caveat for everything measured tonight: `rugged` is down, so the connection
 recorder covers wyrm2 only.
 
+## Upstream: this is a known bug, reported twice
+
+Two Anthropic issues describe this consumption, in two different products. Both were
+found after the investigation above had independently reproduced their measurements.
+
+**<https://github.com/anthropics/claude-code/issues/88320>** — `area:desktop`, closed
+2026-08-24. The desktop app's internal `GhRestClient` spends the user's GraphQL points:
+**~569–640 per sidebar session switch, ~1,970 per turn start**, authenticated as the
+user. The reporter's controls line up with everything measured here: windows reaching
+"10,000+ used, 2x the limit" (attributed to parallelism, not to the counter saturation
+guessed at earlier in this note); flat ~2 points/min with the app running but idle; and
+0 points across 4m41s with the app quit. They eliminated the same candidates — shell
+commands, session hooks, CI, cron, OAuth apps.
+
+**<https://github.com/anthropics/claude-code/issues/63222>** — `area:core`, closed
+2026-06-30 **as stale, not fixed**. The CLI's inline PR-status feature exhausts the
+GraphQL bucket on repos with many open PRs, hourly, while REST stays healthy. This repo
+has many open PRs.
+
+Also relevant: **#81959** reports that `gh api rate_limit` names a different bucket than
+the one enforced — the blind spot this note opens with, rediscovered here from scratch —
+and **#65985** covers agent-generated tight `gh run view` polling loops, which the
+session transcripts here show running on a 15–30s period.
+
+Both products run on wyrm2: `claude-desktop-1.18286.0` (pinned by hand in
+<nix/packages/claude-desktop.nix>; the desktop report was against 1.32885.1) and eleven
+`claude` CLI processes. The desktop app's Electron renderers are named `Chrome_ChildIOT`,
+which is why the connection recorder's early tables filed them under Chrome.
+
+**No disabling setting is known.** Neither issue names a workaround, the settings
+inventory in <nix/home/claude_code/default.nix> has no PR-status toggle, and the CLI
+ships as a compiled bundle whose extractable strings expose only `DISABLE_AUTOUPDATER`
+and `DISABLE_INSTALLATION_CHECKS`.
+
+**The decisive test is cheap**: quit the desktop app and watch `used`. Upstream measured
+zero. That also apportions blame between the two products, which decides whether the CLI
+issue needs re-reporting with the better measurements collected here.
+
 ## Knobs not yet turned
 
 Each cuts one credential or one class of caller. Turn one at a time: the burn is
