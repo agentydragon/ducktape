@@ -68,10 +68,10 @@ spec:
             - HOME
             - --harness-env
             - PATH
-            # Both spellings of each, since clients disagree on case. NO_PROXY: loopback (the
-            # sidecar itself and the runner's own listeners), the LiteLLM host, and in-cluster
-            # Service names in the forms clients build; the Cilium fence keeps the direct path to
-            # LiteLLM alone.
+            # Both spellings of each, since clients disagree on case. NO_PROXY is loopback (the
+            # sidecar itself and the runner's own listeners) and in-cluster Service names in the
+            # forms clients build; LiteLLM is deliberately not among them, so model traffic takes
+            # the sidecar like everything else and the proxy is what holds the key.
             - --harness-env
             - HTTP_PROXY=http://127.0.0.1:3128
             - --harness-env
@@ -81,9 +81,9 @@ spec:
             - --harness-env
             - https_proxy=http://127.0.0.1:3128
             - --harness-env
-            - NO_PROXY=127.0.0.1,localhost,litellm.litellm.svc.cluster.local,litellm.litellm.svc,.svc,.svc.cluster.local,.cluster.local
+            - NO_PROXY=127.0.0.1,localhost,.svc,.svc.cluster.local,.cluster.local
             - --harness-env
-            - no_proxy=127.0.0.1,localhost,litellm.litellm.svc.cluster.local,litellm.litellm.svc,.svc,.svc.cluster.local,.cluster.local
+            - no_proxy=127.0.0.1,localhost,.svc,.svc.cluster.local,.cluster.local
             # The trust bundle, mounted over the system store below and named explicitly for the
             # clients that read an env pointer (Node, Python, curl, requests, git's libcurl).
             - --harness-env
@@ -108,19 +108,14 @@ spec:
           env:
             - name: LITELLM_URL
               value: http://litellm.litellm.svc.cluster.local:4000
-            # cheap-experiments LiteLLM virtual key (tf/gitops/litellm-keys):
-            # capped budget, cheap models only; its budget and allowlist are
-            # the kill switch for everything a runner can spend.
+            # Not the key: the placeholder the litellm-cheap-experiments EgressCredential derives
+            # from its name. Both harnesses send it as `Authorization: Bearer`, and the proxy puts
+            # the real key there on the way out. Nothing in this Pod can read the key, so a runner
+            # spends the budget only through requests the proxy admitted.
             - name: ANTHROPIC_AUTH_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: litellm-key-cheap-experiments
-                  key: api-key
+              value: agentplane-credential-litellm-cheap-experiments
             - name: OPENAI_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: litellm-key-cheap-experiments
-                  key: api-key
+              value: agentplane-credential-litellm-cheap-experiments
           resources:
             requests:
               cpu: 500m
