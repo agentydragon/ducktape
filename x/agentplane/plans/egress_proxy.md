@@ -104,6 +104,45 @@ Acceptance: from inside a staging sandbox, a `git ls-remote` of a public reposit
 through the proxy with no credential visible in the sandbox, and the same call without the
 sidecar's token is refused.
 
+### E5. The model endpoint through the proxy too
+
+A runner Pod carries the `cheap-experiments` LiteLLM key as environment and hands it to every
+harness child, and `NO_PROXY` names the LiteLLM host so that traffic bypasses the sidecar. That is
+the one real credential left in a sandbox, and the design does not require it there: the key opens
+an external system like any other, and holding those is what the proxy is for. The app's README
+calls it a staging-first convenience, "the same operational convenience the `agent-workspaces`
+Codex lane uses"; this package is what retires it.
+
+The end state is the shape every other credential already has. The harness gets a placeholder in
+place of the key, LiteLLM's host leaves `NO_PROXY` so model traffic takes the sidecar like
+everything else, and a rule substitutes the real key from a Secret in the credentials namespace.
+An agent that reads its own environment then finds nothing worth stealing, and a compromised
+harness cannot spend the budget except through a proxy that records every call.
+
+The runner change that enables it is a per-harness form of `--harness-env`: the provider
+credential stops being `os.environ["ANTHROPIC_AUTH_TOKEN"]` read by the runner and becomes a value
+the deployment declares for that harness, which is what lets it be a placeholder instead of a key.
+`--anthropic-base-url` can go the same way, since Claude's endpoint reaches it only as
+`ANTHROPIC_BASE_URL`. Two things do not follow:
+
+- **Codex's endpoint is not only an environment variable.** `native/codex/scenarios.command()`
+  builds `-c` config overrides from it as well as setting `OPENAI_BASE_URL`, so `--openai-base-url`
+  cannot become an env flag without generalizing those overrides too.
+- **`CLAUDE_CONFIG_DIR` and `CODEX_HOME` cannot move.** They are `session.directory / <harness>`,
+  computed per session by the runner, and no deployment can name them.
+
+Open questions to answer before it is worth doing:
+
+- **Latency and streaming.** Model traffic is long-lived streaming SSE, unlike the request-shaped
+  calls the proxy handles today. Whether interception costs anything that matters on a token
+  stream is a measurement nobody has taken.
+- **Whose budget.** The key is a per-instance budget cap and kill switch. Once the proxy
+  substitutes it, a rule decides which sandbox spends which key -- finer-grained than one key per
+  deployment, and possibly its own resource shape.
+- **What a proxy outage costs.** Model traffic bypassing the proxy is why a sandbox keeps working
+  across a proxy restart. Routing it through makes the proxy a hard dependency of every turn,
+  which the "the proxy depends on the API server only" decision above avoided everywhere else.
+
 ## Left out on purpose
 
 Per-thread and per-agent subjects, the webhook decision path, durable decision history, warm-pool
