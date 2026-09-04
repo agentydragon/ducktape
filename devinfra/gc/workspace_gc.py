@@ -105,8 +105,9 @@ def pr_states(repo: Path, branches: set[str]) -> dict[str, PrInfo]:
     Aliased `pullRequests(headRefName:)` fields fetch ~50 branches per request instead of a
     REST call per branch — a few round-trips rather than hundreds. `headRefName` matches PR
     records, so a branch whose remote ref was deleted after merge still resolves. Returns {}
-    when there is no token, no GitHub remote, or the API is unreachable — the caller then
-    classifies on git signals alone.
+    when there is no token, no GitHub remote, or the API is unreachable, and returns whatever
+    it resolved before a mid-sweep quota exhaustion — the caller classifies the rest on git
+    signals alone.
     """
     if not branches:
         return {}
@@ -120,15 +121,27 @@ def pr_states(repo: Path, branches: set[str]) -> dict[str, PrInfo]:
         return {}
     owner, name = slug.split("/", 1)
     headers = {"Authorization": f"bearer {token}", "User-Agent": "workspace-gc"}
+    states: dict[str, PrInfo] = {}
     try:
-        states: dict[str, PrInfo] = {}
         with httpx.Client(headers=headers, timeout=30) as client:
             for batch in itertools.batched(sorted(branches), _GRAPHQL_BATCH, strict=False):
                 query, alias_to_branch = _pr_query(owner, name, list(batch))
                 payload = client.post(_GRAPHQL_URL, json={"query": query}).raise_for_status().json()
                 data = payload.get("data")
                 if not data or data.get("repository") is None:
-                    raise RuntimeError(f"GraphQL returned no data: {payload.get('errors')}")
+                    errors = payload.get("errors") or []
+                    if any(error.get("type") == "RATE_LIMIT" for error in errors):
+                        # Quota is per-hour and shared with every other GitHub caller, so it
+                        # says nothing about this repo: keep the batches already resolved,
+                        # stop asking, and let the rest classify on git signals alone.
+                        logger.warning(
+                            "PR check incomplete: GitHub GraphQL quota exhausted; "
+                            "classified %d of %d branches with PR data",
+                            len(states),
+                            len(branches),
+                        )
+                        return states
+                    raise RuntimeError(f"GraphQL returned no data: {errors}")
                 repository = data["repository"]
                 for alias, branch in alias_to_branch.items():
                     connection = repository.get(alias)
