@@ -257,6 +257,28 @@ py_test(
     ],
 )
 
+py_test(
+    name = "product_scenario_test",
+    size = "medium",
+    srcs = ["product_scenario_test.py"],
+    data = [
+        "//finance/augur/api:public_fixture_config",
+        "//finance/augur/api:public_fixture_properties",
+    ],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/api:config",
+        "//finance/augur/api:product_service",
+        "//finance/augur/product:service",
+        "//finance/augur/product:wire",
+        "//finance/augur/rust:fixture_encoder",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "conftest",
     testonly = True,
