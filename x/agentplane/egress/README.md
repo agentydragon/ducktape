@@ -13,8 +13,8 @@ bbr test //x/agentplane/egress/...
 
 - `resources.py`: the boundary models of the two kinds, Sandboxes, and Secrets as read off the
   API server.
-- `policy.py`: the pure decision over an in-memory `Index` — subject bindings, first matching
-  rule, substitution, binding status. No I/O.
+- `policy.py`: the pure decision over an in-memory `Index` — subject bindings, the matching rule
+  the request's placeholder directs it to, substitution, binding status. No I/O.
 - `identity.py`: TokenReview, live Pod lookup, Sandbox owner, and the bounded verdict cache.
 - `upstream.py`: the admitted host resolved by the proxy, refused when it points anywhere not
   globally reachable, and pinned so the dial goes to the address checked.

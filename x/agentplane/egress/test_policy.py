@@ -48,6 +48,13 @@ CREDENTIAL = Credential(
 )
 GITHUB_RULE = Rule(hosts=["api.github.com"], methods=["GET", "POST"], paths=["/repos/**"], credential=CREDENTIAL)
 PUBLIC_RULE = Rule(hosts=["*.example.com"], paths=["/public/*"])
+APP_PLACEHOLDER = "PLACEHOLDER-APP"
+APP_SECRET_VALUE = "real-app-value"
+APP_CREDENTIAL = Credential(
+    secret_ref=SecretKeyRef(name="pat", key="app"), header="Authorization", placeholder=APP_PLACEHOLDER
+)
+APP_RULE = Rule(hosts=["api.github.com"], methods=["GET", "POST"], paths=["/repos/**"], credential=APP_CREDENTIAL)
+OPEN_RULE = Rule(hosts=["api.github.com"])
 
 
 def policy(name: str, *rules: Rule) -> EgressPolicy:
@@ -74,7 +81,11 @@ def index(
         policies={p.metadata.name: p for p in policies},
         bindings={b.metadata.name: b for b in bindings},
         sandboxes={SANDBOX.metadata.name: SANDBOX},
-        secrets={"pat": Secret(name="pat", data={"token": secret_value})} if secret_value is not None else {},
+        secrets=(
+            {"pat": Secret(name="pat", data={"token": secret_value, "app": APP_SECRET_VALUE})}
+            if secret_value is not None
+            else {}
+        ),
     )
 
 
@@ -86,6 +97,15 @@ def request(
 
 BASE_INDEX = index(policies=[policy("github", GITHUB_RULE, PUBLIC_RULE)], bindings=[binding("b", policies=["github"])])
 SWAPPED = Substitution(header="Authorization", values=(f"Bearer {SECRET_VALUE}",))
+APP_SWAPPED = Substitution(header="Authorization", values=(f"Bearer {APP_SECRET_VALUE}",))
+TWO_CREDENTIALS = index(
+    policies=[policy("tokens", GITHUB_RULE, APP_RULE)], bindings=[binding("b", policies=["tokens"])]
+)
+
+
+def broad_and_credentialed(*bindings: EgressBinding) -> Index:
+    """One host reachable two ways: a rule that carries the credential, and one that carries nothing."""
+    return index(policies=[policy("open", OPEN_RULE), policy("github", GITHUB_RULE)], bindings=list(bindings))
 
 
 @dataclass(frozen=True)
@@ -196,13 +216,55 @@ CASES = [
         Denied(DenyReason.CREDENTIAL_UNAVAILABLE),
     ),
     Case(
-        "first matching rule across bindings in name order wins",
-        index(
-            policies=[policy("open", Rule(hosts=["api.github.com"])), policy("github", GITHUB_RULE)],
-            bindings=[binding("b-open", policies=["open"]), binding("a-github", policies=["github"])],
-        ),
+        "the credentialed rule decides though the broad binding sorts first",
+        broad_and_credentialed(binding("a-open", policies=["open"]), binding("b-github", policies=["github"])),
+        request(authorization=f"Bearer {PLACEHOLDER}"),
+        Allowed("b-github", "github", 0, SWAPPED),
+    ),
+    Case(
+        "the credentialed rule decides though the broad binding sorts last",
+        broad_and_credentialed(binding("a-github", policies=["github"]), binding("b-open", policies=["open"])),
         request(authorization=f"Bearer {PLACEHOLDER}"),
         Allowed("a-github", "github", 0, SWAPPED),
+    ),
+    Case(
+        "the credentialed rule decides though its policy is listed second",
+        broad_and_credentialed(binding("b", policies=["open", "github"])),
+        request(authorization=f"Bearer {PLACEHOLDER}"),
+        Allowed("b", "github", 0, SWAPPED),
+    ),
+    Case(
+        "the credentialed rule decides though its policy is listed first",
+        broad_and_credentialed(binding("b", policies=["github", "open"])),
+        request(authorization=f"Bearer {PLACEHOLDER}"),
+        Allowed("b", "github", 0, SWAPPED),
+    ),
+    Case(
+        "a request carrying no placeholder is allowed by the broad rule",
+        broad_and_credentialed(binding("a-open", policies=["open"]), binding("b-github", policies=["github"])),
+        request(method="DELETE", path="/user"),
+        Allowed("a-open", "open", 0),
+    ),
+    Case(
+        "a placeholder the subject is not bound to is denied",
+        index(
+            policies=[policy("github", GITHUB_RULE), policy("app", APP_RULE)],
+            bindings=[binding("b", policies=["github"])],
+        ),
+        request(authorization=f"Bearer {APP_PLACEHOLDER}"),
+        Denied(DenyReason.PLACEHOLDER_UNRESOLVED),
+    ),
+    Case(
+        "the placeholder picks the first of two credentialed rules",
+        TWO_CREDENTIALS,
+        request(authorization=f"Bearer {PLACEHOLDER}"),
+        Allowed("b", "tokens", 0, SWAPPED),
+    ),
+    Case(
+        "the placeholder picks the second of two credentialed rules",
+        TWO_CREDENTIALS,
+        request(authorization=f"Bearer {APP_PLACEHOLDER}"),
+        Allowed("b", "tokens", 1, APP_SWAPPED),
     ),
 ]
 

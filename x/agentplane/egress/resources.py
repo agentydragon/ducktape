@@ -81,7 +81,10 @@ class Subject(_Wire):
 
 class BindingSpec(_Wire):
     subjects: list[Subject]
-    policies: list[str] = Field(description="EgressPolicy names in the same namespace, in precedence order.")
+    policies: list[str] = Field(
+        description="EgressPolicy names in the same namespace; the order only breaks ties between rules "
+        "that would decide alike."
+    )
     expires_at: AwareDatetime | None = Field(default=None, alias="expiresAt")
 
 

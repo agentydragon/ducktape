@@ -21,16 +21,29 @@ substitutes. The design it implements is [the ADR](../plans/adr_sandbox_proxy_ga
 - An `EgressBinding` grants by existing and unexpired: creating one is the whole act of allowing,
   and deleting it the whole act of taking that back. A binding names its subjects as Sandboxes by
   name and lists `EgressPolicy` names.
-- The subject's bindings are walked in name order, their policies in the listed order, and their
-  rules in order; the first rule whose hosts, methods, and paths match decides. A CONNECT is
-  matched on host alone; each request inside the tunnel is decided on its own.
+- A rule matches a request when its hosts, methods, and paths all admit it. One matching rule in
+  any policy of any of the subject's bindings is enough to admit the request; nothing matching
+  refuses with `no-rule`. A CONNECT is matched on host alone; each request inside the tunnel is
+  decided on its own.
+- Which of the matching rules decides is directed by the placeholder the request carries. A
+  placeholder is known when a credential of some `EgressPolicy` in the namespace names it, whether
+  or not the subject is bound to that policy. A request carrying a known placeholder is decided by
+  a matching rule whose credential resolves exactly that placeholder in that header; when none
+  does — the matching rules carry no credential, or another one, or the request carries two
+  placeholders no single credential resolves — it is refused with `placeholder-unresolved`. A
+  request carrying no known placeholder is decided by the first matching rule. Granting a subject
+  a broader binding therefore only widens what it may reach; it never takes a credential away from
+  a call that asks for one.
+- Where several matching rules would decide alike — two resolving the same placeholder, two
+  carrying no credential — the first in walk order is the one recorded: bindings by name, their
+  policies as listed, their rules in order. Which one that is changes neither the verdict nor what
+  is forwarded, and shows only in the decision log.
 - Hosts match exactly (case-insensitive) or by `*.` suffix, which never matches the apex. Path
   globs match the path without its query: `*` stays within one segment, `**` crosses segments.
-- A matching rule with a credential replaces the placeholder in the named header with the value
-  of the Secret named in the credentials namespace, also inside a `Basic` base64 payload. A known placeholder still present in its header
-  after that — the rule had no credential, the header held another rule's placeholder — denies
-  the request; a placeholder is never forwarded. A credential whose Secret or key is absent
-  denies rather than forwards.
+- The deciding rule's credential replaces the placeholder in the named header with the value of
+  the Secret named in the credentials namespace, also inside a `Basic` base64 payload; a
+  placeholder is never forwarded. A credential whose Secret or key is absent denies rather than
+  forwards.
 - Nothing else is forwarded: no binding, no rule, an unproven token, a Pod that does not match,
   an unknown Sandbox, or any failure to reach the API server all refuse. A refusal is `403`
   (`502` when the proxy itself could not decide) with an empty body and
