@@ -5,12 +5,6 @@ Every state-changing happening is a row on an event-kind frame.
 can hand one object to `apply_events`. Each kind frame's schema is
 keyed by `(rollout_index, month_index, cause_id)` plus the kind-
 specific columns.
-
-At spike 1 step 4: `transfers`, `asset_purchases`, and
-`lot_dispositions` are populated. Later layers add tax accruals +
-payments, tax settlements, mortgage payments, obligation accruals +
-settlements, occupancy-mode changes, depreciation accruals, failure
-events, etc.
 """
 
 from __future__ import annotations
@@ -37,28 +31,6 @@ TRANSFER_EVENT_SCHEMA = pl.Schema(
         # apply_events increments the recipient's ordinary_income_ytd.
         # Null for non-income transfers (e.g. expense payments).
         "income_category": pl.Utf8(),
-    }
-)
-
-
-# `AssetPurchase` records the creation of a new tax lot — either an
-# initial holding seeded at scenario start, or (later) an in-sim buy.
-# Initial-holding purchases at spike-1 step 4 do not draw cash; an
-# in-sim buy in a later layer will be paired with a transfer that
-# debits cash. The lot the purchase creates is keyed by
-# `(rollout_index, lot_id)` and shows up as a new row in
-# the dense lot state with `remaining_quantity = quantity`.
-ASSET_PURCHASE_EVENT_SCHEMA = pl.Schema(
-    {
-        "rollout_index": pl.Int64(),
-        "month_index": pl.Int64(),
-        "cause_id": pl.Utf8(),
-        "agent_id": pl.Utf8(),
-        "account_id": pl.Utf8(),
-        "asset_id": pl.Utf8(),
-        "lot_id": pl.Utf8(),
-        "quantity": pl.Float64(),
-        "cost_basis_per_unit_quanta": pl.Int64(),
     }
 )
 
@@ -341,7 +313,6 @@ class EventFrameCatalog:
     """Schemas for every frame carried by `EventLog`."""
 
     transfers: FrameSpec
-    asset_purchases: FrameSpec
     lot_dispositions: FrameSpec
     tax_accruals: FrameSpec
     tax_breakdowns: FrameSpec
@@ -362,7 +333,6 @@ class EventFrameCatalog:
     def ordered(self) -> tuple[FrameSpec, ...]:
         return (
             self.transfers,
-            self.asset_purchases,
             self.lot_dispositions,
             self.tax_accruals,
             self.tax_breakdowns,
@@ -384,7 +354,6 @@ class EventFrameCatalog:
 
 EVENT_FRAMES = EventFrameCatalog(
     transfers=FrameSpec("transfers", TRANSFER_EVENT_SCHEMA),
-    asset_purchases=FrameSpec("asset_purchases", ASSET_PURCHASE_EVENT_SCHEMA),
     lot_dispositions=FrameSpec("lot_dispositions", LOT_DISPOSITION_EVENT_SCHEMA),
     tax_accruals=FrameSpec("tax_accruals", TAX_ACCRUAL_EVENT_SCHEMA),
     tax_breakdowns=FrameSpec("tax_breakdowns", TAX_BREAKDOWN_EVENT_SCHEMA),
@@ -448,10 +417,6 @@ class EventLog:
     @property
     def transfers(self) -> pl.DataFrame:
         return self.frame(EVENT_FRAMES.transfers)
-
-    @property
-    def asset_purchases(self) -> pl.DataFrame:
-        return self.frame(EVENT_FRAMES.asset_purchases)
 
     @property
     def lot_dispositions(self) -> pl.DataFrame:

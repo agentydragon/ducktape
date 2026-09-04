@@ -201,7 +201,6 @@ def liabilities(run: Any) -> pl.DataFrame:
             "origination_month_index": plan.properties.month.astype(np.int64)[property_slot][liability],
             "monthly_payment_quanta": np.moveaxis(output.state.liability_monthly_payment, -1, 1).reshape(-1)[mask],
             "interest_paid_ytd_quanta": np.moveaxis(output.state.liability_interest_ytd, -1, 1).reshape(-1)[mask],
-            "principal_paid_ytd_quanta": np.moveaxis(output.state.liability_principal_ytd, -1, 1).reshape(-1)[mask],
         }
     )
 

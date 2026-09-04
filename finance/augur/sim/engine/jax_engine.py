@@ -269,7 +269,6 @@ class _ScanState(NamedTuple):
     liability_principal: Int64[Array, " liability rollout"]
     liability_monthly_payment: Int64[Array, " liability rollout"]
     liability_interest_ytd: Int64[Array, " liability rollout"]
-    liability_principal_ytd: Int64[Array, " liability rollout"]
     liability_rental_interest_ytd: Int64[Array, " liability rollout"]
     capital_loss_carryforward: Int64[Array, " capital_gain_profile rollout"]
     recapture_section_1250_ytd: Int64[Array, " tax_profile rollout"]
@@ -1777,7 +1776,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
             s.liability_principal,
             s.liability_monthly_payment,
         )
-        liab_interest_ytd, liab_principal_ytd = s.liability_interest_ytd, s.liability_principal_ytd
+        liab_interest_ytd = s.liability_interest_ytd
         liab_rental_ytd = s.liability_rental_interest_ytd
         capital_loss_carryforward, recapture_ytd = s.capital_loss_carryforward, s.recapture_section_1250_ytd
         taxliab_active, taxliab_amount = s.tax_liability_active, s.tax_liability_amount
@@ -1928,7 +1927,6 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         liab_principal = jnp.where(mort_orig_rows, mort_principal, liab_principal)
         liab_monthly = jnp.where(mort_orig_rows, mort_monthly, liab_monthly)
         liab_interest_ytd = jnp.where(mort_orig_rows, 0, liab_interest_ytd)
-        liab_principal_ytd = jnp.where(mort_orig_rows, 0, liab_principal_ytd)
         # Per-purchase event rows for `ys`, retaining the full property axis.
         purchase_active_rows = fires
 
@@ -2262,7 +2260,6 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         rented_per_slot = _gather_rows(property_rented_fraction, jnp.maximum(payment_metadata.property_slot, 0))
         liab_principal = _scatter_rows(liab_principal, mort_liab_idx, -principal_m)
         liab_interest_ytd = _scatter_rows(liab_interest_ytd, mort_liab_idx, interest_m)
-        liab_principal_ytd = _scatter_rows(liab_principal_ytd, mort_liab_idx, principal_m)
         liab_rental_ytd = _scatter_rows(liab_rental_ytd, mort_liab_idx, _scale_money(interest_m, rented_per_slot))
         # Mortgage-payment event slabs, scattered from obligation slots to their liability rows.
         liab_count = liab_principal.shape[0]
@@ -2574,7 +2571,7 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         )
         # Liability dollar fields are drained on failure; `active` and `rental_interest_ytd` are not.
         liab_principal, liab_monthly = liab_principal * keep, liab_monthly * keep
-        liab_interest_ytd, liab_principal_ytd = liab_interest_ytd * keep, liab_principal_ytd * keep
+        liab_interest_ytd = liab_interest_ytd * keep
         carry = _ScanState(
             cash=cash,
             ordinary_ytd=ordinary,
@@ -2599,7 +2596,6 @@ def _program_impl(program: _SimulationProgram) -> tuple:
             liability_principal=liab_principal,
             liability_monthly_payment=liab_monthly,
             liability_interest_ytd=liab_interest_ytd,
-            liability_principal_ytd=liab_principal_ytd,
             liability_rental_interest_ytd=liab_rental_ytd,
             capital_loss_carryforward=capital_loss_carryforward,
             recapture_section_1250_ytd=recapture_ytd,
@@ -2667,7 +2663,6 @@ def _program_impl(program: _SimulationProgram) -> tuple:
                 liability_principal=liab_principal,
                 liability_monthly_payment=liab_monthly,
                 liability_interest_ytd=liab_interest_ytd,
-                liability_principal_ytd=liab_principal_ytd,
                 failed=failed,
                 failed_month=failed_month,
             ),
@@ -2746,7 +2741,6 @@ def _program_impl(program: _SimulationProgram) -> tuple:
         liability_principal=liab0,
         liability_monthly_payment=liab0,
         liability_interest_ytd=liab0,
-        liability_principal_ytd=liab0,
         liability_rental_interest_ytd=liab0,
         capital_loss_carryforward=_zeros_i64((p.capital_gain_agent_count, r)),
         recapture_section_1250_ytd=_zeros_i64((p.tax_profile_count, r)),
