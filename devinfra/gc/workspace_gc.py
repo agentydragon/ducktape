@@ -303,15 +303,22 @@ def run_worktrees(repo: Path, *, show_all: bool, no_prs: bool, prune: bool) -> i
 
 
 def run_bases(repo: Path, *, output_user_root: Path, show_all: bool, no_prs: bool, sizes: bool, delete: bool) -> int:
+    # Inspect the bases first: that filesystem pass alone decides every PRUNE/KEEP verdict.
+    # Only the "workspace is a prunable worktree" annotation needs git, and only for the few
+    # worktrees that are actually a base's workspace — so the PR query is scoped to their
+    # branches instead of all of them, and no branch is ever classified.
     try:
-        prs = _gather_prs(repo, no_prs=no_prs)
-        scan = _scan(repo, prs=prs, output_user_root=output_user_root)
+        bases = list(output_base_gc.scan_output_user_root(output_user_root))
+        prs = {} if no_prs else pr_states(repo, workspace_scan.base_workspace_branches(repo, bases))
+        bases = workspace_scan.annotate_bases(
+            repo, bases, main=git_repo.main_ref(repo), pr_states=prs, active_path=_active_worktree(repo)
+        )
     except (GitError, OSError, RuntimeError) as error:
         print(error, file=sys.stderr)
         return 1
-    print(output_base_gc.render_report(scan.bases, include_kept=show_all, include_sizes=sizes))
+    print(output_base_gc.render_report(bases, include_kept=show_all, include_sizes=sizes))
     if not delete:
-        if any(isinstance(item, PrunableBase) for item in scan.bases):
+        if any(isinstance(item, PrunableBase) for item in bases):
             print("Dry run only; pass --delete to remove the prunable bases.")
         return 0
     return _apply_base_deletions(output_user_root)

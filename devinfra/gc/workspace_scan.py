@@ -6,6 +6,13 @@ it, and a base's on whether its workspace (a worktree) survives. `scan_workspace
 worktrees first, then branches against that result, then bases (annotating a retained base
 whose workspace is a prunable worktree). It is network-free — PR state is injected — so the
 CLI owns GitHub access and this stays unit-testable offline.
+
+`annotate_bases` is the bases-only path. A base's own PRUNE/KEEP verdict is decided by
+`output_base_gc` from the filesystem alone; the joint scan is needed only for the annotation
+on a *retained* base whose workspace is a prunable worktree. So the caller inspects the bases
+first and this classifies just the handful of worktrees that are some base's workspace —
+never the whole repo, and never any branch. On a checkout with a hundred worktrees that is
+the difference between five seconds and forty.
 """
 
 from __future__ import annotations
@@ -43,14 +50,15 @@ def pr_branch_candidates(repo: Path) -> set[str]:
     return names
 
 
+def _resolve(path: Path) -> Path | None:
+    try:
+        return path.resolve()
+    except OSError:
+        return None
+
+
 def _resolved(paths: set[Path]) -> set[Path]:
-    resolved: set[Path] = set()
-    for path in paths:
-        try:
-            resolved.add(path.resolve())
-        except OSError:
-            continue
-    return resolved
+    return {resolved for path in paths if (resolved := _resolve(path)) is not None}
 
 
 def _annotate_base(base: Inspection, prunable_workspaces: set[Path]) -> Inspection:
@@ -97,6 +105,70 @@ def _classify_branches(
     slices = [names[i : i + step] for i in range(0, len(names), step)]
     with ThreadPoolExecutor(max_workers=workers) as pool:
         return [item for chunk in pool.map(classify_slice, slices) for item in chunk]
+
+
+def base_workspace_branches(repo: Path, bases: list[Inspection]) -> set[str]:
+    """Branch names worth a PR lookup for a bases-only scan: those of base workspaces.
+
+    Only a worktree that is some retained base's workspace can change a base's annotation,
+    so the bases view queries PR state for those branches instead of every local branch.
+    """
+    workspaces = _retained_workspaces(bases)
+    return {wt.branch for wt in _worktrees_at(repo, workspaces) if wt.branch}
+
+
+def _retained_workspaces(bases: list[Inspection]) -> set[Path]:
+    return _resolved(
+        {base.workspace for base in bases if isinstance(base, RetainedBase) and base.workspace is not None}
+    )
+
+
+def _worktrees_at(repo: Path, workspaces: set[Path]) -> list[git_repo.Worktree]:
+    """The linked worktrees sitting at one of `workspaces` (already resolved)."""
+    if not workspaces:
+        return []
+    main_path = git_repo.main_worktree(repo)
+    return [wt for wt in git_repo.list_worktrees(repo) if wt.path != main_path and _resolve(wt.path) in workspaces]
+
+
+def annotate_bases(
+    repo: Path,
+    bases: list[Inspection],
+    *,
+    main: str,
+    pr_states: dict[str, PrInfo],
+    active_path: Path | None = None,
+    proc_root: Path = Path("/proc"),
+) -> list[Inspection]:
+    """Flag each retained base whose workspace is a prunable worktree.
+
+    Same annotation `scan_workspace` applies, but it classifies only the worktrees that are
+    some base's workspace — no other worktree, and no branch, can change the outcome.
+    """
+    candidates = _worktrees_at(repo, _retained_workspaces(bases))
+    if not candidates:
+        return bases
+
+    main_path = git_repo.main_worktree(repo)
+    live = worktree_gc.processes_by_worktree((wt.path for wt in candidates), proc_root=proc_root)
+    prunable = _resolved(
+        {
+            wt.path
+            for wt in candidates
+            if isinstance(
+                worktree_gc.classify_worktree(
+                    wt,
+                    main=main,
+                    pr_states=pr_states,
+                    main_path=main_path,
+                    active_path=active_path,
+                    live_pids=live.get(wt.path, []),
+                ),
+                PrunableWorktree,
+            )
+        }
+    )
+    return [_annotate_base(base, prunable) for base in bases]
 
 
 def scan_workspace(

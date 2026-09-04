@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from devinfra.gc import workspace_scan
+from devinfra.gc import output_base_gc, workspace_scan
 from devinfra.gc.branch_gc import PrunableBranch, RetainedBranch
-from devinfra.gc.output_base_gc import PrunableBase, RetainedBase
+from devinfra.gc.output_base_gc import Inspection, PrunableBase, RetainedBase, ReviewBase
 from devinfra.gc.worktree_gc import PrunableWorktree, RetainedWorktree
 
 
@@ -126,6 +126,65 @@ def test_base_with_absent_workspace_is_prunable(repo: Path, proc: Path, mountinf
     scan = _scan(repo, proc, mountinfo, output_user_root=root)
 
     assert [type(base) for base in scan.bases] == [PrunableBase]
+
+
+def _verdict(base: Inspection) -> tuple[type, Path, str | None]:
+    """Everything a base's row is rendered from, so the comparison is not just the class."""
+    reason = base.reason if isinstance(base, RetainedBase | ReviewBase) else None
+    return (type(base), base.path, reason)
+
+
+def _annotated(repo: Path, proc: Path, mountinfo: Path, root: Path) -> list[Inspection]:
+    bases = list(output_base_gc.scan_output_user_root(root, proc_root=proc, mountinfo_path=mountinfo))
+    return workspace_scan.annotate_bases(repo, bases, main="main", pr_states={}, proc_root=proc)
+
+
+def test_annotate_bases_matches_the_joint_scan(repo: Path, proc: Path, mountinfo: Path, tmp_path: Path) -> None:
+    """The bases-only path must reach the same verdicts as `scan_workspace`.
+
+    It skips branch classification and every worktree that is not a base workspace, so this
+    pins that the shortcut does not change an answer — including the annotation, which is the
+    one thing the shortcut still has to look at worktrees for.
+    """
+    prunable_wt = _add(repo, "wt_merged", "merged")
+    _add(repo, "wt_unrelated", "unrelated")  # never a base workspace; the fast path skips it
+    root = tmp_path / "output"
+    _make_base(root, prunable_wt.resolve())
+    _make_base(root, (repo.parent / "gone").resolve())  # workspace absent → prunable base
+
+    joint = _scan(repo, proc, mountinfo, output_user_root=root).bases
+    fast = _annotated(repo, proc, mountinfo, root)
+
+    assert [_verdict(item) for item in fast] == [_verdict(item) for item in joint]
+    assert any(isinstance(item, PrunableBase) for item in fast)
+    assert any(isinstance(item, RetainedBase) and "prunable worktree" in item.reason for item in fast)
+
+
+def test_annotate_bases_needs_no_worktree_scan_when_no_base_has_a_workspace(
+    repo: Path, proc: Path, mountinfo: Path, tmp_path: Path
+) -> None:
+    """With no retained base pointing at a live worktree there is nothing to annotate."""
+    _add(repo, "wt_merged", "merged")
+    root = tmp_path / "output"
+    _make_base(root, (repo.parent / "gone").resolve())
+
+    (base,) = _annotated(repo, proc, mountinfo, root)
+
+    assert isinstance(base, PrunableBase)
+
+
+def test_base_workspace_branches_covers_only_base_workspaces(
+    repo: Path, proc: Path, mountinfo: Path, tmp_path: Path
+) -> None:
+    """The PR query is scoped to base workspaces, not every branch in the repo."""
+    workspace_wt = _add(repo, "wt_workspace", "has_base")
+    _add(repo, "wt_unrelated", "no_base")
+    root = tmp_path / "output"
+    _make_base(root, workspace_wt.resolve())
+
+    bases = list(output_base_gc.scan_output_user_root(root, proc_root=proc, mountinfo_path=mountinfo))
+
+    assert workspace_scan.base_workspace_branches(repo, bases) == {"has_base"}
 
 
 if __name__ == "__main__":
