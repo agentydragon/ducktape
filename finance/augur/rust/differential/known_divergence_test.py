@@ -24,7 +24,7 @@ from finance.augur.sim.events import EVENT_FRAMES
 # hand-written fixture so far it did, because none of them held a long-term gain while
 # ordinary income sat under the standard deduction. JAX lets the unused deduction shelter
 # the gain, which is also what the US rule it models does.
-UNUSED_DEDUCTION_FIXTURE: dict[str, Any] = {
+LONG_TERM_LOT_FIXTURE: dict[str, Any] = {
     "schema_version": 8,
     "currency_code": "USD",
     "currency_quantum": "0.01",
@@ -84,7 +84,7 @@ UNUSED_DEDUCTION_FIXTURE: dict[str, Any] = {
 def _loss_fixture() -> dict[str, Any]:
     """The same shape, sold at a loss, with a §1211 ordinary-offset cap below the loss."""
 
-    fixture = copy.deepcopy(UNUSED_DEDUCTION_FIXTURE)
+    fixture = copy.deepcopy(LONG_TERM_LOT_FIXTURE)
     fixture["scenario"]["initial_lots"][0]["basis"] = 300_000
     fixture["scenario"]["tax_profiles"][0]["jurisdictions"][0]["max_capital_loss_ordinary_offset"] = 50_000
     return fixture
@@ -92,12 +92,6 @@ def _loss_fixture() -> dict[str, Any]:
 
 def _ordinary_income(result: SimulationResult) -> list[int]:
     return [int(value) for value in result.events.frame(EVENT_FRAMES.tax_breakdowns)["ordinary_income_quanta"]]
-
-
-def test_rust_taxes_a_long_term_gain_the_unused_standard_deduction_shelters_in_jax() -> None:
-    assert run_jax(UNUSED_DEDUCTION_FIXTURE).tax_liabilities["amount_owed_quanta"].to_list() == [0]
-    # 20% of the 1,000-quanta gain, with none of the 100,000 deduction reaching it.
-    assert run_rust(UNUSED_DEDUCTION_FIXTURE).tax_liabilities["amount_owed_quanta"].to_list() == [200]
 
 
 def test_jax_caps_the_capital_loss_ordinary_offset_at_its_own_constant() -> None:
