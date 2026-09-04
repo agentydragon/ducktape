@@ -67,9 +67,12 @@ class Client:
         await self._http.aclose()
 
     async def _json(self, method: str, path: str, **kwargs: Any) -> Any:
+        """The decoded body, or None when there is none: the app answers 202 to an accepted input
+        and 204 to a lifecycle command, both with an empty body, so the status alone does not say
+        whether there is anything to decode."""
         response = await self._http.request(method, path, **kwargs)
         response.raise_for_status()
-        return None if response.status_code == httpx.codes.NO_CONTENT else response.json()
+        return response.json() if response.content else None
 
     async def models(self) -> ModelCatalog:
         """Which models each harness may be opened with, as this deployment is configured."""
