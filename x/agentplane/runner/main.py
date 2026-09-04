@@ -2,8 +2,10 @@
 
 Credentials come from the runner's own environment, never from flags or the protocol:
 ANTHROPIC_AUTH_TOKEN for Claude sessions, OPENAI_API_KEY for Codex sessions. A harness child
-inherits only the variables in INHERITED: everything else the runner holds -- those two keys above
-all -- stays with the runner.
+inherits nothing implicitly: its environment is what --harness-env declares and what
+--harness-env-inherit names, so a variable the deployment sets on the runner container reaches the
+child only when it says so, and everything else the runner holds -- those two keys above all --
+stays with the runner.
 """
 
 from __future__ import annotations
@@ -12,7 +14,7 @@ import asyncio
 import logging
 import os
 import signal
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Annotated
 
@@ -25,32 +27,19 @@ logger = logging.getLogger(__name__)
 
 app = typer.Typer(add_completion=False)
 
-# What a harness child inherits from the runner's own environment. Beyond HOME and PATH, this is the
-# sandbox's egress wiring (x/agentplane/plans/adr_sandbox_proxy_gateway.md): the proxy variables name
-# the sidecar's loopback listener, so a tool that does not see them dials the internet directly and
-# the Pod's CiliumNetworkPolicy blackholes the SYN -- a two-minute hang with nothing reaching the
-# proxy, rather than a refusal. NO_PROXY alone is worse than none of them. The CA pointers name the
-# interception CA the tools must trust; Node reads no system store, so NODE_EXTRA_CA_CERTS is the
-# only one that reaches the harness CLIs themselves.
-INHERITED = (
-    "HOME",
-    "PATH",
-    "HTTP_PROXY",
-    "HTTPS_PROXY",
-    "NO_PROXY",
-    "http_proxy",
-    "https_proxy",
-    "no_proxy",
-    "SSL_CERT_FILE",
-    "NODE_EXTRA_CA_CERTS",
-    "CURL_CA_BUNDLE",
-    "GIT_SSL_CAINFO",
-    "REQUESTS_CA_BUNDLE",
-)
 
-
-def inherited_environment(environ: Mapping[str, str]) -> dict[str, str]:
-    return {key: environ[key] for key in INHERITED if key in environ}
+def harness_environment(
+    environ: Mapping[str, str], *, declared: Sequence[str], inherit: Sequence[str]
+) -> dict[str, str]:
+    """The environment every harness child starts from: the names taken from the runner's own
+    environment, then the KEY=VALUE entries the deployment declares, which win on a collision."""
+    child = {name: environ[name] for name in inherit if name in environ}
+    for entry in declared:
+        key, separator, value = entry.partition("=")
+        if not separator or not key:
+            raise ValueError(f"--harness-env expects KEY=VALUE, got {entry!r}")
+        child[key] = value
+    return child
 
 
 @app.command()
@@ -62,6 +51,17 @@ def main(
     codex_binary: Annotated[Path | None, typer.Option(help="Codex CLI; omit to refuse Codex sessions.")] = None,
     openai_base_url: Annotated[
         str | None, typer.Option(help="OpenAI Responses base URL, including /v1, for Codex.")
+    ] = None,
+    harness_env: Annotated[
+        list[str] | None,
+        typer.Option("--harness-env", help="KEY=VALUE a harness child starts with; repeat per variable."),
+    ] = None,
+    harness_env_inherit: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--harness-env-inherit",
+            help="Name copied from the runner's own environment into a harness child; repeat per variable.",
+        ),
     ] = None,
 ) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -78,7 +78,10 @@ def main(
             raise typer.BadParameter("--openai-base-url is required with --codex-binary")
         codex = CodexLaunch(binary=codex_binary, base_url=openai_base_url, api_key=os.environ["OPENAI_API_KEY"])
     config = RunnerConfig(
-        state_dir=state_dir, environment=inherited_environment(os.environ), claude=claude, codex=codex
+        state_dir=state_dir,
+        environment=harness_environment(os.environ, declared=harness_env or [], inherit=harness_env_inherit or []),
+        claude=claude,
+        codex=codex,
     )
     asyncio.run(async_main(config, listen))
 
