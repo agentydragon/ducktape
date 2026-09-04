@@ -8,6 +8,11 @@ package(default_visibility = ["//x/agentplane:__subpackages__"])
 # gazelle:resolve py x.agentplane.runner.protocol_pb2 //x/agentplane/runner:protocol_pb2
 # gazelle:resolve py x.agentplane.runner.protocol_pb2_grpc //x/agentplane/runner:protocol_pb2_grpc
 
+# No test here is small, and none of that is about the tests being slow: on the CI executor image
+# they are killed at a small target's 60s with the budget spent fetching inputs rather than running
+# -- 70s of `fileDownloadDurationUsec` against 12KB actually fetched and, for two of them, no CPU
+# burned at all. <debug/2026_08_rbe_small_test_timeouts.md> is the class.
+
 py_binary(
     name = "main_bin",
     main_module = "x.agentplane.app.main",
@@ -132,6 +137,7 @@ py_test(
 
 py_test(
     name = "test_inventory",
+    size = "medium",
     srcs = ["test_inventory.py"],
     deps = [
         ":conftest",
@@ -257,6 +263,7 @@ py_library(
 
 py_test(
     name = "test_trajectory",
+    size = "medium",
     srcs = ["test_trajectory.py"],
     deps = [
         ":conftest",
@@ -309,6 +316,7 @@ py_library(
 
 py_test(
     name = "test_egress",
+    size = "medium",
     srcs = ["test_egress.py"],
     deps = [
         ":conftest",
@@ -344,6 +352,7 @@ py_library(
 
 py_test(
     name = "test_auth_routes",
+    size = "medium",
     srcs = ["test_auth_routes.py"],
     deps = [
         ":api",
@@ -401,6 +410,7 @@ py_library(
 
 py_test(
     name = "test_live",
+    size = "medium",
     srcs = ["test_live.py"],
     deps = [
         ":api",
