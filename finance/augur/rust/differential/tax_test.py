@@ -16,6 +16,7 @@ from finance.augur.rust.differential.fixtures import (
     property_depreciation_fixture,
     tax_fixture,
 )
+from finance.augur.rust.fixture_spec import account_ref
 
 
 def tax_payment_fixture(*, funded: bool = True) -> dict[str, Any]:
@@ -30,8 +31,8 @@ def tax_payment_fixture(*, funded: bool = True) -> dict[str, Any]:
                 "start_month": 0,
                 "end_month": 11,
                 "cause_id": "alice-spends-paycheck",
-                "from": {"agent_id": "alice", "account_id": "checking"},
-                "to": {"agent_id": "payroll", "account_id": "checking"},
+                "from": account_ref("alice", "checking"),
+                "to": account_ref("payroll", "checking"),
                 "amount": 1_666_667,
             }
         )
@@ -75,8 +76,8 @@ def capital_loss_carryforward_fixture() -> dict[str, Any]:
     scenario = fixture["scenario"]
     scenario["horizon_months"] = 24
     scenario["accounts"] = [
-        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 0},
-        {"account": {"agent_id": "irs", "account_id": "checking"}, "opening_balance": 0},
+        {"account": account_ref("alice", "checking"), "opening_balance": 0},
+        {"account": account_ref("irs", "checking"), "opening_balance": 0},
     ]
     scenario["recurring_transfers"] = []
     scenario["initial_lots"] = [
@@ -131,8 +132,8 @@ def salt_deduction_fixture() -> dict[str, Any]:
     scenario["horizon_months"] = 24
     scenario["accounts"].extend(
         [
-            {"account": {"agent_id": "payroll", "account_id": "checking"}, "opening_balance": 0},
-            {"account": {"agent_id": "irs", "account_id": "checking"}, "opening_balance": 0},
+            {"account": account_ref("payroll", "checking"), "opening_balance": 0},
+            {"account": account_ref("irs", "checking"), "opening_balance": 0},
         ]
     )
     scenario["recurring_transfers"] = [
@@ -140,8 +141,8 @@ def salt_deduction_fixture() -> dict[str, Any]:
             "start_month": 0,
             "end_month": 23,
             "cause_id": "alice-paycheck",
-            "from": {"agent_id": "payroll", "account_id": "checking"},
-            "to": {"agent_id": "alice", "account_id": "checking"},
+            "from": account_ref("payroll", "checking"),
+            "to": account_ref("alice", "checking"),
             "amount": 2_000_000,
             "income_category": "ordinary",
         }

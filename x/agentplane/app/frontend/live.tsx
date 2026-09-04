@@ -38,8 +38,12 @@ export function liveSandboxUrl(name: string): string {
 
 export function useLive<T extends { watch: WatchHealth }>(url: string): Live<T> {
   const [state, setState] = useState<Live<T>>({ snapshot: null, health: null, connected: false });
+  // A different object starts blank; the same one under a different filter does not. Only the path
+  // says which this is -- the sandbox list's "show archived" is a query parameter, so resetting on
+  // every url would empty the page and flash the disconnected banner each time it was toggled.
+  const resource = new URL(url, window.location.origin).pathname;
+  useEffect(() => setState({ snapshot: null, health: null, connected: false }), [resource]);
   useEffect(() => {
-    setState({ snapshot: null, health: null, connected: false });
     let probed = false;
     const source = new EventSource(url);
     source.addEventListener("snapshot", (message: MessageEvent<string>) => {

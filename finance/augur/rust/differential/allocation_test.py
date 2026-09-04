@@ -13,6 +13,7 @@ import pytest_bazel
 
 from finance.augur.rust.differential.backend import BACKENDS, Backend, assert_backends_agree, run_jax, run_rust
 from finance.augur.rust.differential.fixtures import target_allocation_fixture, target_allocation_purchase_fixture
+from finance.augur.rust.fixture_spec import account_ref
 
 
 def target_allocation_failure_fixture() -> dict[str, Any]:
@@ -65,8 +66,8 @@ def target_allocation_purchase_then_sale_fixture() -> dict[str, Any]:
             "end_month": 1,
             "obligation_id": "rent",
             "obligation_type": "rent",
-            "from": {"agent_id": "alice", "account_id": "checking"},
-            "to": {"agent_id": "landlord", "account_id": "checking"},
+            "from": account_ref("alice", "checking"),
+            "to": account_ref("landlord", "checking"),
             "amount_due": 17_500_000,
         }
     ]
@@ -111,8 +112,8 @@ def _monthly_income_scenario(purchase_slots: int, *, rising_bond_price: bool) ->
             "end_month": 2,
             "obligation_id": "income",
             "obligation_type": "cash_spend",
-            "from": {"agent_id": "landlord", "account_id": "checking"},
-            "to": {"agent_id": "alice", "account_id": "checking"},
+            "from": account_ref("landlord", "checking"),
+            "to": account_ref("alice", "checking"),
             "amount_due": 3_000_000,
         }
     ]
@@ -217,8 +218,8 @@ def test_backends_agree_that_a_failed_settlement_suppresses_decided_purchases() 
         {
             "month": 0,
             "obligation_id": "unfundable",
-            "from": {"agent_id": "alice", "account_id": "checking"},
-            "to": {"agent_id": "landlord", "account_id": "checking"},
+            "from": account_ref("alice", "checking"),
+            "to": account_ref("landlord", "checking"),
             "amount_due": 10_000_000_000,
         }
     ]

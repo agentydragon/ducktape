@@ -4,14 +4,12 @@ Its own target because JAX bakes the selected agent into the compiled program: e
 agent below is a separate XLA compile of the 60-month scenario, and enough of them in
 one process exhausts the test runner's memory."""
 
-from pathlib import Path
-
 import pytest
 import pytest_bazel
 
 from finance.augur.product.metric_composition import METRIC_NAMES
 from finance.augur.rust.backend import run_rust_product_metric_arrays
-from finance.augur.rust.differential.fixtures import feature_rich_fixture, legacy_plan
+from finance.augur.rust.differential.fixtures import legacy_plan
 from finance.augur.sim.engine.jax_engine import run_jax_product_metric_arrays
 
 # One agent per policy family the benchmark fixture separates. JAX bakes the selected agent
@@ -22,7 +20,7 @@ from finance.augur.sim.engine.jax_engine import run_jax_product_metric_arrays
 PRODUCT_METRIC_AGENTS = ("allocator", "bondholder", "cashflow", "homeowner", "pe_owner")
 
 
-def test_rust_and_jax_match_every_product_metric_for_every_agent(tmp_path: Path) -> None:
+def test_rust_and_jax_match_every_product_metric_for_every_agent(feature_rich) -> None:
     """The seven base series, and everything composed from them, agree agent by agent.
 
     The feature-rich fixture splits policy families across agents, so it takes a set of
@@ -30,12 +28,11 @@ def test_rust_and_jax_match_every_product_metric_for_every_agent(tmp_path: Path)
     agent touches every metric. Shortfall needs a failing rollout and is covered below.
     """
 
-    fixture = feature_rich_fixture(tmp_path)
-    plan = legacy_plan(fixture)
+    plan = legacy_plan(feature_rich)
 
     nonzero_metrics: set[str] = set()
     for agent_id in PRODUCT_METRIC_AGENTS:
-        rust = run_rust_product_metric_arrays(fixture, primary_agent_id=agent_id).metric_arrays()
+        rust = run_rust_product_metric_arrays(feature_rich, primary_agent_id=agent_id).metric_arrays()
         legacy = run_jax_product_metric_arrays(plan, primary_agent_id=agent_id).metric_arrays()
         assert sorted(rust) == sorted(legacy) == sorted(("month_index", *METRIC_NAMES))
         for name in rust:
@@ -48,10 +45,9 @@ def test_rust_and_jax_match_every_product_metric_for_every_agent(tmp_path: Path)
     assert nonzero_metrics == set(METRIC_NAMES) - {"shortfall_quanta"}
 
 
-def test_rust_product_metrics_reject_an_unknown_primary_agent(tmp_path: Path) -> None:
-    fixture = feature_rich_fixture(tmp_path)
+def test_rust_product_metrics_reject_an_unknown_primary_agent(feature_rich) -> None:
     with pytest.raises(ValueError, match="no account for primary agent"):
-        run_rust_product_metric_arrays(fixture, primary_agent_id="nobody")
+        run_rust_product_metric_arrays(feature_rich, primary_agent_id="nobody")
 
 
 if __name__ == "__main__":

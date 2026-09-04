@@ -471,10 +471,11 @@ const PAGES: Record<string, string> = {
   // binding, still folded, shows the row the button starts as.
   sandbox_egress: "/sandboxes/demo-a1b2?tab=egress&rules=demo-a1b2-github-public",
   session: "/sandboxes/demo-a1b2/sessions/s-1",
-  session_reasoning: "/sandboxes/demo-a1b2/sessions/s-1?reasoning=open",
-  // The two switches are independent parameters, and the raw scenario turns both on: a reader
-  // following the frames wants the thinking they produced open too.
-  session_raw: "/sandboxes/demo-a1b2/sessions/s-1?raw=1&reasoning=open",
+  // `%23` is the `#` of the item id: the view scrolls to the newest event, so the block this
+  // scenario has to show open is the second turn's, and the first stays folded beside it.
+  session_reasoning: "/sandboxes/demo-a1b2/sessions/s-1?reasoning=r%231",
+  // The raw scenario opens it too: a reader following the frames wants the thinking they produced.
+  session_raw: "/sandboxes/demo-a1b2/sessions/s-1?raw=1&reasoning=r%231",
 };
 
 const page = new URLSearchParams(window.location.search).get("page") ?? "sandboxes";

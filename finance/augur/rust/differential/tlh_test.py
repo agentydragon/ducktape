@@ -12,6 +12,7 @@ import pytest_bazel
 
 from finance.augur.rust.differential.backend import RustResult, assert_backends_agree
 from finance.augur.rust.differential.fixtures import tax_fixture
+from finance.augur.rust.fixture_spec import account_ref
 
 
 def tlh_fixture(
@@ -75,12 +76,9 @@ def tlh_fixture(
             },
         ]
     accounts = [
-        {
-            "account": {"agent_id": "alice", "account_id": "brokerage"},
-            "opening_balance": 500 if target_allocation_sale else 0,
-        },
-        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 0},
-        {"account": {"agent_id": "irs", "account_id": "checking"}, "opening_balance": 0},
+        {"account": account_ref("alice", "brokerage"), "opening_balance": 500 if target_allocation_sale else 0},
+        {"account": account_ref("alice", "checking"), "opening_balance": 0},
+        {"account": account_ref("irs", "checking"), "opening_balance": 0},
     ]
     obligations = []
     target_allocation_policies = []
@@ -104,14 +102,14 @@ def tlh_fixture(
             }
         ]
     if failure_after_first_harvest:
-        accounts.append({"account": {"agent_id": "sink", "account_id": "checking"}, "opening_balance": 0})
+        accounts.append({"account": account_ref("sink", "checking"), "opening_balance": 0})
         obligations = [
             {
                 "month": 1,
                 "obligation_id": "unfunded_after_harvest",
                 "obligation_type": "cash_spend",
-                "from": {"agent_id": "alice", "account_id": "brokerage"},
-                "to": {"agent_id": "sink", "account_id": "checking"},
+                "from": account_ref("alice", "brokerage"),
+                "to": account_ref("sink", "checking"),
                 "amount_due": 1,
             }
         ]

@@ -12,12 +12,13 @@ import pytest_bazel
 
 from finance.augur.rust.differential.backend import assert_backends_agree
 from finance.augur.rust.differential.fixtures import shared_integer_fixture, tax_fixture
+from finance.augur.rust.fixture_spec import account_ref
 
 
 def distribution_fixture() -> dict[str, Any]:
     fixture = shared_integer_fixture()
     scenario = fixture["scenario"]
-    scenario["accounts"] = [{"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 0}]
+    scenario["accounts"] = [{"account": account_ref("alice", "checking"), "opening_balance": 0}]
     scenario["scheduled_transfers"] = []
     scenario["recurring_transfers"] = []
     scenario["obligations"] = []
@@ -54,8 +55,8 @@ def distribution_tax_fixture() -> dict[str, Any]:
         {"jurisdiction_id": "california", "level": "state"},
     ]
     scenario["accounts"] = [
-        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 0},
-        {"account": {"agent_id": "irs", "account_id": "checking"}, "opening_balance": 0},
+        {"account": account_ref("alice", "checking"), "opening_balance": 0},
+        {"account": account_ref("irs", "checking"), "opening_balance": 0},
     ]
     scenario["initial_lots"] = [
         {
@@ -103,8 +104,8 @@ def bond_fixture() -> dict[str, Any]:
         {"jurisdiction_id": "california", "level": "state"},
     ]
     scenario["accounts"] = [
-        {"account": {"agent_id": "alice", "account_id": "checking"}, "opening_balance": 0},
-        {"account": {"agent_id": "irs", "account_id": "checking"}, "opening_balance": 0},
+        {"account": account_ref("alice", "checking"), "opening_balance": 0},
+        {"account": account_ref("irs", "checking"), "opening_balance": 0},
     ]
     scenario["scheduled_transfers"] = []
     scenario["recurring_transfers"] = []
