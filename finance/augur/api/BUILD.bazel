@@ -85,7 +85,6 @@ py_library(
         "//finance/augur/model:series",
         "//finance/augur/model:state_space",
         "//finance/augur/model:trained_private_equity",
-        "//finance/augur/model:vecm",
         "//finance/augur/product:wire",
         "@pypi//pydantic",
         "@pypi//pyyaml",
@@ -443,7 +442,6 @@ oci_image(
     },
     tars = [
         ":server_image_layers",
-        "//finance/augur/fit/calibrated:trained_vecm_image_layer",
         "//third_party/debian_slim:cacerts",
     ],
 )

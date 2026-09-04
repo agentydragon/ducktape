@@ -1,23 +1,11 @@
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-
 package(default_visibility = ["//visibility:public"])
 
-# Calibrated VECM trained-state blob — produced by `bb run //finance/augur/fit:train`
-# against the scraped exogenous evidence read from `AUGUR_EVIDENCE_DIR` (see
-# augur/fit/evidence_data.py). Checked in so the deployment image bakes a
-# known-good model rather than requiring a training run on every image build.
+# Checked-in structural_macro fit — produced by `bb run //finance/augur/fit:train -- --model
+# structural_macro ...` and loaded via runfiles as StructuralMacroProviderConfig's/EquitySpec's
+# shipped defaults (see model/structural_macro.py's `_fitted_defaults`). Unlike the VECM
+# provider config, this isn't itself a deployable ProviderConfig — deployment-specific fields
+# (equity symbol, instruments) aren't fit outputs, so they stay in the deployment YAML.
 filegroup(
-    name = "trained_vecm_blob",
-    srcs = ["trained_vecm.npz"],
-)
-
-# Container layer placing the blob at /opt/augur/trained_vecm.npz. Deployment
-# YAML (e.g. gaffer-private's augur config) references that absolute path
-# explicitly. The same blob is also exposed in runfiles via the model
-# library's `data` dep, so dev-server runs against bazel-built binaries pick
-# it up automatically when the deployment config sets `trained_blob: null`.
-pkg_tar(
-    name = "trained_vecm_image_layer",
-    srcs = [":trained_vecm_blob"],
-    package_dir = "/opt/augur",
+    name = "trained_structural_macro_blob",
+    srcs = ["trained_structural_macro.yaml"],
 )

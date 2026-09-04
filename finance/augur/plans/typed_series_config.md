@@ -73,8 +73,8 @@ Each phase must land green on its own, with no permanent dual API.
    Phase 3.
 2. **Runtime frames typed.** Replace `series_id` / `asset_id` string dispatch in
    sampled frames, sim compiler inputs, codec helpers, projections, and decode.
-3. **Artifacts typed.** Retype state-space JSON and VECM `.npz` factor identity,
-   regenerate blobs, and then retype conditioning observations,
+3. **Artifacts typed.** Retype state-space JSON and VECM `trained_state` factor identity,
+   regenerate artifacts, and then retype conditioning observations,
    `location_series_sources`, and `latest_observations`.
 4. **Wire typed and guards added.** Retype API/frontend identity surfaces, delete
    parse/wire helpers, and add a CI guard against new prefix parsing.

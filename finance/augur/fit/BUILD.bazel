@@ -122,9 +122,12 @@ py_library(
     deps = [
         ":data",
         ":state_space",
+        ":structural_macro",
         "//finance/augur/model:provider_config",
         "//finance/augur/model:state_space",
+        "//finance/augur/model:structural_macro",
         "//finance/augur/model:vecm",
+        "//finance/evidence:loading",
         "@pypi//pyyaml",
     ],
 )
@@ -346,6 +349,7 @@ py_library(
     deps = [
         "//finance/augur/model:structural_macro",
         "//finance/evidence:loading",
+        "//finance/evidence:sources",
         "@pypi//numpy",
     ],
 )

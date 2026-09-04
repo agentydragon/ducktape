@@ -1,6 +1,6 @@
-"""Round-trip test: train the active VECM model offline, write the provider config +
-blob, re-load via Pydantic + `<Model>ProviderConfig.realize_model(...)`,
-and sample.
+"""Round-trip test: train a model offline, write the provider config (VECM embeds its
+fitted state directly; state_space writes it to a separate blob), re-load via Pydantic +
+`<Model>ProviderConfig.realize_model(...)`, and sample.
 
 This is the public contract the augur server consumes at startup: read
 `Config.models`, dispatch via the discriminated union, and
@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from zipfile import ZipFile
 
 import pytest
 import pytest_bazel
@@ -30,13 +29,9 @@ _ADAPTER: TypeAdapter[ProviderConfig] = TypeAdapter(ProviderConfig)
 @pytest.mark.parametrize("model_label", ["vecm"])
 def test_train_then_load_and_sample(model_label: str, tmp_path: Path, synthetic_evidence_dir: Path) -> None:
     out_manifest = tmp_path / "exogenous_provider.yaml"
-    out_blob = tmp_path / (f"trained_{model_label}.npz" if model_label == "vecm" else f"trained_{model_label}.json")
-    train_main(["--model", model_label, "--out-provider-config", str(out_manifest), "--out-blob", str(out_blob)])
+    train_main(["--model", model_label, "--out-provider-config", str(out_manifest)])
 
     assert out_manifest.exists()
-    assert out_blob.exists()
-    with ZipFile(out_blob) as artifact:
-        assert "n_factors.npy" not in artifact.namelist()
 
     parsed = _ADAPTER.validate_python(yaml.safe_load(out_manifest.read_text(encoding="utf-8")))
     # Trainer only emits the active trained provider config; narrow away the
@@ -44,7 +39,9 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path, synthetic_
     # accessible below.
     assert isinstance(parsed, VecmProviderConfig)
     assert parsed.type == model_label
-    assert parsed.trained_blob == out_blob
+    # Fitted state is embedded directly in the manifest — no separate blob to point at.
+    assert parsed.trained_state.factor_names
+    assert parsed.trained_state.params
     assert parsed.latest_observations  # non-empty; exact keys depend on the source-data schema
 
     model = parsed.realize_model()

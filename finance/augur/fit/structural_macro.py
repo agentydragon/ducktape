@@ -37,11 +37,18 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from itertools import pairwise
+from pathlib import Path
 
 import numpy as np
 
-from finance.augur.model.structural_macro import MONTHS_PER_YEAR
-from finance.evidence.loading import MonthlyLevel
+from finance.augur.model.structural_macro import (
+    MONTHS_PER_YEAR,
+    FitWindowProvenance,
+    MacroVarSpec,
+    StructuralMacroFittedDefaults,
+)
+from finance.evidence.loading import MonthlyLevel, read_french_market_levels, read_monthly_levels
+from finance.evidence.sources import FRED_CPI, FRED_FEDFUNDS, FRED_GS10, FRENCH_FACTORS, YAHOO_VFINX
 
 # FRED publishes both rate series in PERCENT; every rate inside augur is a decimal.
 PERCENT_TO_DECIMAL = 0.01
@@ -231,6 +238,8 @@ class RateBetaFit:
     beta: float
     r_squared: float
     sample_months: int
+    first_month: date
+    last_month: date
 
 
 def fit_rate_beta(*, equity_levels: Sequence[MonthlyLevel], short_rate: Sequence[MonthlyLevel]) -> RateBetaFit:
@@ -256,6 +265,8 @@ def fit_rate_beta(*, equity_levels: Sequence[MonthlyLevel], short_rate: Sequence
         beta=float(slope),
         r_squared=0.0 if total == 0.0 else 1.0 - float(np.var(residuals)) / total,
         sample_months=len(months),
+        first_month=months[0],
+        last_month=months[-1],
     )
 
 
@@ -285,10 +296,13 @@ class MacroVarFit:
     matters on its own: a rate surprise and an inflation surprise arrive together.
     """
 
-    intercept: tuple[float, ...]
-    transition: tuple[tuple[float, ...], ...]
-    shock_cholesky: tuple[tuple[float, ...], ...]
-    latest_state: tuple[float, ...]
+    # Fixed at 3 (MACRO_STATE_DIM), matching MacroVarSpec's field shapes exactly — this is
+    # always the (short_rate, term_spread, inflation_rate) VAR, not a generic N-state fitter.
+    intercept: tuple[float, float, float]
+    transition: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]
+    shock_cholesky: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]
+    latest_state: tuple[float, float, float]
+    first_month: date
     latest_month: date
     sample_months: int
 
@@ -371,6 +385,58 @@ def fit_macro_var(
         transition=tuple(tuple(row) for row in coefficients[1:].T.tolist()),
         shock_cholesky=tuple(tuple(row) for row in np.linalg.cholesky(covariance).tolist()),
         latest_state=tuple(states[-1].tolist()),
+        first_month=usable[0],
         latest_month=usable[-1],
         sample_months=len(usable),
+    )
+
+
+# ── Offline entry point: the checked-in fit ───────────────────────────────────────────────
+
+
+def fit_structural_macro_defaults(evidence_dir: Path) -> StructuralMacroFittedDefaults:
+    """Fit `structural_macro`'s checked-in defaults from real evidence: the joint macro VAR
+    and the equity log-return / rate-beta blocks, each on its own longest window (module
+    docstring; § Log-return blocks above) rather than the joint fit's shared aligned window.
+    """
+    macro_fit = fit_macro_var(
+        short_rate_percent=read_monthly_levels(evidence_dir, FRED_FEDFUNDS),
+        long_rate_percent=read_monthly_levels(evidence_dir, FRED_GS10),
+        cpi_level=read_monthly_levels(evidence_dir, FRED_CPI),
+    )
+    equity_fit = fit_log_returns(read_french_market_levels(evidence_dir, FRENCH_FACTORS))
+    beta_fit = fit_rate_beta(
+        equity_levels=read_monthly_levels(evidence_dir, YAHOO_VFINX),
+        short_rate=read_monthly_levels(evidence_dir, FRED_FEDFUNDS),
+    )
+
+    return StructuralMacroFittedDefaults(
+        macro_state=MacroVarSpec(
+            initial_state=macro_fit.latest_state,
+            intercept=macro_fit.intercept,
+            transition=macro_fit.transition,
+            shock_cholesky=macro_fit.shock_cholesky,
+        ),
+        macro_state_fit=FitWindowProvenance(
+            source=f"{FRED_FEDFUNDS.provenance_label},{FRED_GS10.provenance_label},{FRED_CPI.provenance_label}",
+            first_month=macro_fit.first_month,
+            last_month=macro_fit.latest_month,
+            sample_months=macro_fit.sample_months,
+        ),
+        equity_monthly_log_return_mu=equity_fit.monthly_log_mu,
+        equity_monthly_log_return_sigma=equity_fit.monthly_log_sigma,
+        equity_fit=FitWindowProvenance(
+            source=FRENCH_FACTORS.provenance_label,
+            first_month=equity_fit.first_month,
+            last_month=equity_fit.last_month,
+            sample_months=equity_fit.sample_months,
+        ),
+        rate_beta_fit=FitWindowProvenance(
+            source=f"{YAHOO_VFINX.provenance_label},{FRED_FEDFUNDS.provenance_label}",
+            first_month=beta_fit.first_month,
+            last_month=beta_fit.last_month,
+            sample_months=beta_fit.sample_months,
+        ),
+        rate_beta_fitted_value=beta_fit.beta,
+        rate_beta_r_squared=beta_fit.r_squared,
     )

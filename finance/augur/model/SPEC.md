@@ -179,7 +179,9 @@ how much they move an allocation answer.
 
 ## Not fittable here
 
-The provider implements `Sampler` only — not `Fittable`, not `Scorable`. Its parameters are
-config defaults produced offline by `//finance/augur/fit:structural_macro` and pasted in with
-provenance, deliberately: the fit does not go through the joint fit's single aligned window,
-and that separation is what buys the long histories in the table above.
+The provider implements `Sampler` only — not `Fittable`, not `Scorable`. Its config defaults
+are produced offline by `bb run //finance/augur/fit:train -- --model structural_macro` into
+the checked-in `fit/calibrated/trained_structural_macro.yaml` (fitted values plus the window/
+sample-count provenance in the table above, as data rather than a comment), deliberately: the
+fit does not go through the joint fit's single aligned window, and that separation is what
+buys the long histories in the table above.

@@ -26,7 +26,7 @@ of truth used by:
 
 VecmModel implements Sampler + Fittable + Scorable from one class — the
 trainable thing and the runtime sampler are the same object, parameterised
-by `params` once `fit` (or `from_blob`) has run.
+by `params` once `fit` (or `from_trained_state`) has run.
 """
 
 from __future__ import annotations
@@ -34,7 +34,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from functools import partial
-from pathlib import Path
 from typing import Any, Literal
 
 import jax
@@ -62,17 +61,10 @@ from finance.augur.model.series import (
     SecuritySymbol,
     parse_level_series_key,
 )
-from util.bazel.runfiles import get_required_path
 
 _SECURITY_ANCHOR_OBSERVATIONS: Mapping[SecuritySymbol, tuple[str, str | None]] = {
     SP500_SYMBOL: ("spy_adjusted_close_latest", "sp500_price_latest")
 }
-
-
-# Runfile location of the checked-in trained VECM blob. Used as a fallback
-# when the deployment config leaves `trained_blob` unset — see
-# `VecmProviderConfig.realize_model`.
-_BUNDLED_VECM_BLOB_RUNFILE = "_main/finance/augur/fit/calibrated/trained_vecm.npz"
 
 # Sample count for h>1 MC predictive density.
 _MC_HORIZON_SAMPLES = 5000
@@ -222,7 +214,7 @@ class VecmModel:
     Holds three groups of state:
 
     1. Fit results (factor_names, n_factors, params, train_log_levels):
-       populated by `fit(historical)` or `from_blob(...)`. Define the
+       populated by `fit(historical)` or `from_trained_state(...)`. Define the
        statistical model.
     2. Deployment-layer config (latest_observations): set by
        `VecmProviderConfig.realize_model` from YAML. Defines how
@@ -285,7 +277,7 @@ class VecmModel:
         available (so the scorer marks the row Unscored).
         """
         if not self.params:
-            raise RuntimeError("VecmModel has no fitted parameters; call fit() or from_blob() first")
+            raise RuntimeError("VecmModel has no fitted parameters; call fit() or from_trained_state() first")
         if horizon < 1:
             raise ValueError(f"horizon must be >= 1; got {horizon}")
         log_levels = np.log(historical.levels)
@@ -348,44 +340,36 @@ class VecmModel:
 
     # ──────────────────────── Persistence ────────────────────────
 
-    def save(self, blob_path: Path) -> None:
-        """Persist post-fit state to a `.npz` archive: the SVI/MAP params,
-        factor names, and the training log-level history needed to roll
-        forward at sample time."""
-        payload: dict[str, Any] = {
-            # On-disk factor identity is the wire-id string array, decoded back to typed
-            # LevelSeriesKeys by `from_blob` at the single `parse_level_series_key` boundary.
-            "factor_names": np.array([factor.wire_id for factor in self.factor_names], dtype=object),
-            "train_log_levels": self.train_log_levels,
-            **self.params,
-        }
-        np.savez_compressed(blob_path, **payload)
+    def to_trained_state(self) -> VecmTrainedState:
+        """Snapshot post-fit state into the embeddable form written directly into the
+        provider config YAML: the SVI/MAP params, factor names, and the training
+        log-level history needed to roll forward at sample time."""
+        return VecmTrainedState(
+            # Wire-id factor identity, decoded back to typed LevelSeriesKeys by
+            # `from_trained_state` at the single `parse_level_series_key` boundary.
+            factor_names=tuple(factor.wire_id for factor in self.factor_names),
+            train_log_levels=tuple(tuple(float(value) for value in row) for row in self.train_log_levels.tolist()),
+            params={name: _yaml_value(array) for name, array in self.params.items()},
+        )
 
     @classmethod
-    def from_blob(
+    def from_trained_state(
         cls,
-        blob_path: Path,
+        trained_state: VecmTrainedState,
         *,
         latest_observations: Mapping[str, Any],
         evidence_source_id: str,
         config: VecmConfig | None = None,
     ) -> VecmModel:
-        """Load post-fit state from a `.npz` written by `save(...)`, attach
-        deployment-layer config from the runtime YAML, and compute
-        provenance ids. The on-disk wire-id factor names decode to typed
-        `LevelSeriesKey`s at this single `parse_level_series_key` boundary."""
-        with np.load(blob_path, allow_pickle=True) as data:
-            param_keys = {k for k in data.files if k not in {"factor_names", "n_factors", "train_log_levels"}}
-            params = {k: np.asarray(data[k]) for k in param_keys}
-            factor_names = tuple(parse_level_series_key(str(name)) for name in data["factor_names"])
-            train_log_levels = np.asarray(data["train_log_levels"])
-            n_factors = len(factor_names)
+        """Rebuild post-fit state from `to_trained_state(...)`'s output, attach
+        deployment-layer config from the runtime YAML, and compute provenance ids."""
+        factor_names = tuple(parse_level_series_key(name) for name in trained_state.factor_names)
         model = cls(
             config=config or VecmConfig(),
             factor_names=factor_names,
-            n_factors=n_factors,
-            params=params,
-            train_log_levels=train_log_levels,
+            n_factors=len(factor_names),
+            params={name: np.asarray(value, dtype=np.float32) for name, value in trained_state.params.items()},
+            train_log_levels=np.asarray(trained_state.train_log_levels, dtype=np.float64),
             latest_observations=dict(latest_observations),
         )
         model._compute_provenance(evidence_source_id)
@@ -529,30 +513,38 @@ def _observation_value(observation: Any, key: str) -> float:
     raise TypeError(f"VECM latest_observations {key} must be a number or object with numeric 'value'")
 
 
+def _yaml_value(array: np.ndarray) -> float | tuple[float, ...]:
+    """A fitted param as its natural YAML shape: a bare scalar for a 0-d array (e.g.
+    `const_coint_auto_loc`), a tuple for anything with rank >= 1."""
+    return float(array) if array.ndim == 0 else tuple(float(value) for value in array.tolist())
+
+
+class VecmTrainedState(FrozenModel):
+    """The fitted VECM state, embedded directly in the provider config YAML rather than a
+    separate blob: SVI/MAP `params` (keyed by NumPyro's `<site>_auto_loc` param names — a
+    generic map because the site set is `_vecm_generative`'s to define, not this schema's to
+    duplicate), factor identity, and the training log-level history `VecmModel` needs to
+    anchor sampling at the last observed month. Written by `VecmModel.to_trained_state()`."""
+
+    factor_names: tuple[str, ...]
+    train_log_levels: tuple[tuple[float, ...], ...]
+    params: dict[str, float | tuple[float, ...]]
+
+
 class VecmProviderConfig(FrozenModel):
-    """Pre-trained VECM provider config — points at the trained-state blob
-    written by `bb run //finance/augur/fit:train`. The model is loaded at server
-    startup; no fitting happens on the request path."""
+    """Pre-trained VECM provider config, written whole by `bb run //finance/augur/fit:train
+    -- --model vecm ...`. The model is loaded at server startup; no fitting happens on the
+    request path."""
 
     type: Literal["vecm"] = "vecm"
-    trained_blob: Path | None = Field(
-        default=None,
-        description=(
-            "Absolute path to the .npz produced by VecmModel.save(...). "
-            "Leave null to use the trained blob bundled into the augur image "
-            "(at `/opt/augur/trained_vecm.npz` in the OCI image; the same "
-            "file is in runfiles for Bazel-driven dev binaries)."
-        ),
-    )
+    trained_state: VecmTrainedState
     latest_observations: dict[str, Any] = Field(
         description="Latest observed series state at the start of the simulation horizon (factor → value)."
     )
     current_mortgage30_rate_pct: float
 
     def realize_model(self) -> VecmModel:
-        blob_path = (
-            self.trained_blob if self.trained_blob is not None else get_required_path(_BUNDLED_VECM_BLOB_RUNFILE)
-        )
-        return VecmModel.from_blob(
-            blob_path, latest_observations=self.latest_observations, evidence_source_id=str(blob_path)
+        evidence_source_id = "vecm_trained_state:" + stable_identity_digest({"trained_state": self.trained_state})
+        return VecmModel.from_trained_state(
+            self.trained_state, latest_observations=self.latest_observations, evidence_source_id=evidence_source_id
         )

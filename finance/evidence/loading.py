@@ -257,3 +257,18 @@ def read_monthly_levels(evidence_dir: Path, source: EvidenceSource) -> list[Mont
         MonthlyLevel(month=month, value=value)
         for month, value in zip(monthly["month"].to_list(), monthly["value"].to_list(), strict=True)
     ]
+
+
+def read_french_market_levels(evidence_dir: Path, source: EvidenceSource) -> list[MonthlyLevel]:
+    """Ken French's CRSP total-market return, compounded into a synthetic level index (base
+    1.0 at the first month) — the level-series form `read_monthly_levels` points FRENCH
+    callers at ("compound the column you want"), fixed to `market_total_return` since there is
+    no `risk_free_rate`-as-a-level need yet.
+    """
+    factors = french_factors_frame(source_bytes(evidence_dir, source), source)
+    multiplier = 1.0
+    levels: list[MonthlyLevel] = []
+    for month, monthly_return in zip(factors["month"].to_list(), factors["market_total_return"].to_list(), strict=True):
+        multiplier *= 1.0 + monthly_return
+        levels.append(MonthlyLevel(month=month, value=multiplier))
+    return levels
