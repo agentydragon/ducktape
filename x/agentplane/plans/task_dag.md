@@ -80,7 +80,7 @@ flowchart TB
         C8["C8 Live push for every view<br/>the server says what changed, no page polls"]:::completed
         C9["C9 The profile a sandbox runs under<br/>withdrawn: profiles deferred pending design"]:::withdrawn
         C10["C10 Egress actions that say what they do<br/>a binding is the permission; revoke deletes it"]:::completed
-        C11["C11 An agent reads the egress rules that apply to it<br/>same listener, its own projection, no field a Secret could reach"]:::ready
+        C11["C11 An agent reads the egress rules that apply to it<br/>same listener, its own projection, no field a Secret could reach"]:::completed
     end
 
     F0["First functioning Agentplane<br/>both providers in sandboxes, driven and replayed from the app"]:::completed
@@ -98,7 +98,7 @@ flowchart TB
     R1["Read-only follower attachments"]:::future
 
     J["Secure egress integration<br/>per-Pod sidecar wraps traffic with the Pod's SA token;<br/>central proxy holds credentials and egress policy;<br/>first credential: the agentydragon-agent GitHub PAT"]:::ready
-    H["Declared substitution rules<br/>the policy names the parse and the location;<br/>the placeholder matches a whole component exactly"]:::next
+    H["Declared substitution rules<br/>a credential names its targets and its placeholder is derived;<br/>the placeholder matches a whole component exactly"]:::completed
     P["Rai decision<br/>dynamic per-Thread policy or explicit approval needed?"]:::decision
     K["Conditional access controller<br/>allow / deny / user approval required"]:::future
     R["Rai decision<br/>does the threat model require stronger isolation?"]:::decision
@@ -245,17 +245,6 @@ ones still open.
   decisions, since the proxy's ring already answers "why was I denied" and a self-diagnosable
   failure is the practical win; and whether this surface versions separately from the operator API,
   since agents are long-lived and roll independently of the app.
-- **H declared substitution rules:** an `EgressPolicy` says which parse and which location a
-  credential is substituted into, and the placeholder — derived from the credential's name, never
-  authored — equals a whole component of that parse: no substring replace, no undeclared `Basic`
-  fallback, and one shared parse behind both detection and substitution. Acceptance: a policy declares each target it substitutes into; a placeholder that
-  is a substring of a header value rather than a whole component is not substituted and not
-  detected; a request presenting a granted placeholder at a declared target is substituted at every
-  declared target it presents it in; one that presents a placeholder nothing bound to it resolves
-  is still refused `placeholder-unresolved`; the agent-facing view reports the target, so a sandbox
-  told only what the endpoint says forms a header GitHub accepts; and the staging policy is
-  expressed in the new shape with the old one gone from the CRD. Design and open questions:
-  [`egress_substitution_rules.md`](egress_substitution_rules.md).
 - **T2 named threads:** a small model proposes a name from the first turn, the user can edit it,
   and the name lives on the thread record; naming never touches the runner or the harness.
 - **T3 search and lookup:** find past interactions by text and by what an agent did; answer "what

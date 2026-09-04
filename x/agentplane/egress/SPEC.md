@@ -112,3 +112,22 @@ substitutes. The design it implements is [the ADR](../plans/adr_sandbox_proxy_ga
   once, and none more than three resync periods since it last completed a list-and-watch cycle. It
   reports how long ago each kind last completed one, so a wedged watch reads as an age rather than
   as a proxy quietly enforcing rules it stopped receiving updates to.
+
+## What the proxy does not decide
+
+- **Only HTTP(S).** A decision is made from a request's method, host, port, path and headers, so
+  substitution reaches header values and nothing else. A placeholder anywhere else — a query
+  parameter, a body, another envelope — is inert and reaches the upstream unsubstituted, which is
+  the property to keep: a URL-borne credential would travel through logs and referrers.
+- **Whether an intercepted gRPC stream reaches the decision at all is unmeasured.** Nothing here
+  mentions HTTP/2, HPACK or gRPC; the addon reads `flow.request.headers` and lets mitmproxy decide
+  what a request is. Whether a `grpcs://` stream arrives with its metadata as headers, with
+  trailers intact, over a long-lived bidirectional connection, from a client that first has to
+  trust the interception CA, has never been tested. This decides whether fencing Bazel's
+  BuildBuddy key is a matching question or a transport one, and it is a transport experiment, not
+  a looser matcher. Two statements in this repository disagree about whether it works elsewhere:
+  <../plans/external_access.md> says the key rides inside gRPC where the fence cannot substitute
+  it, while <../../../cluster/k8s/agents/public-coder-agent/app/deployment.yaml> says a local Bazel
+  client's authenticated gRPC does go through iron-proxy and locates the real obstacle elsewhere —
+  `bb remote` serialises the key into a command run on a BuildBuddy-hosted runner, outside any
+  fence of ours, where a placeholder would arrive unsubstituted.
