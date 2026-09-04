@@ -1,11 +1,12 @@
 # The GitHub GraphQL quota, and who is burning it
 
-Status: **partitioned to wyrm2, correlated with the Claude Code CLI, mechanism still
-unexplained.** Taking the machine offline across a reset drops consumption from ~10,500
-points/hour to 70. CLI sessions alone reproduce the burn with Claude Desktop not
-running. But a fully proxied CLI session issues ~4 GraphQL requests per five minutes,
-around 0.1% of the burn, so what the CLI does _while being watched_ does not account for
-it. The monitoring blind spot is closed; the consumer is not identified.
+Status: **the burn requires wyrm2 to be up, and nothing measured on wyrm2 accounts for
+it.** With every Claude Code session proxied, the account spent 6758 points in three
+minutes while the proxy captured 14, and nothing bypassed the proxy to `api.github.com`.
+Both instruments filter on that one hostname, so the leading explanation is that they
+share a blind spot rather than that the traffic does not exist. Widen the filters before
+concluding anything further. The monitoring blind spot that started this is closed; the
+consumer is not identified.
 
 ## The blind spot, and why it existed
 
@@ -583,27 +584,26 @@ The lesson is method, not result. A partition test costs twelve minutes of downt
 one bit; the instrumentation that preceded it cost a night and produced two wrong
 answers. Partition before attributing.
 
-### Confound: pods on wyrm2 died with the node
+### The confound, raised and dissolved
 
-The partition test does not isolate "the operator's local processes". Taking wyrm2
-offline also took away every pod scheduled on it, and one of those is a live suspect
-this note had already flagged and then walked past: a process named `main`, uid 65532,
-under containerd, connecting to `api.github.com` **every 60 seconds**.
+Taking wyrm2 offline also removed every pod scheduled on it, so "wyrm2 offline → quiet"
+did not by itself isolate the operator's local processes. One pod was a live suspect:
+a process named `main`, uid 65532, under containerd, connecting to `api.github.com`
+**every 60 seconds**, 158 recorded connections, last seen 09:57:57 UTC — two minutes
+before the node went down, and never again after the reboot.
 
-Its last connection was 09:57:57 UTC, two minutes before the node went down, and it has
-**not resumed since the reboot** — the same interval over which the account has been
-quiet. So "wyrm2 offline → quiet" is equally consistent with that pod being the
-consumer.
+It is `github-exporter`, this repo's own REST `/rate_limit` scraper. Its pod was
+`…-qvrsw` on wyrm2 and is now `…-wp2dc` on optiplex, started 09:59:03 UTC, fifty-five
+seconds before wyrm2's journal stopped. Everything matches: the deployment sets
+`runAsUser: 65532`, the upstream image is a Go binary so `comm` is `main`, and the
+ServiceMonitor interval is `1m`.
 
-Not yet identified: the process had exited by the time it was chased, no live `main`
-with that uid remains on the node, and nothing in this repo polls GitHub on a
-60-second interval. At one request a minute it is only ~60 points/hour unless its
-queries are individually expensive, which argues against it being the whole story —
-but it is unexplained, on the right machine, and it stopped at exactly the right moment.
+That **dissolves** the confound rather than confirming it. The pod did not stop; it
+moved, and kept scraping from optiplex throughout the quiet hour. Had it been the
+consumer, the drain would have continued after the reschedule. It did not. It also costs
+~60 REST points/hour and no GraphQL at all.
 
-What still stands independently of this confound is the CLI reintroduction below: pods
-did not change when three CLI sessions were started and ~5700 points went in four
-minutes.
+So the partition result stands: the burn stopped because wyrm2 went away.
 
 ## The CLI reproduces it; Desktop is not required
 
@@ -691,6 +691,57 @@ debugging or network-override switch is present on the command line`. Both doors
 recorder shows every process reaching `api.github.com`. While each line reads
 `.mitmdump-wrapp`, the capture is complete; a `comm="HTTP Client"` line means a session
 slipped out. Checking environments finds only what you thought to look at.
+
+## The measurement that clears the CLI, and breaks the story
+
+At the 11:02:36 reset, with **every** Claude Code session on wyrm2 proxied and the
+connection recorder confirming nothing bypassed the proxy:
+
+```text
+11:03:19  used=2076    ~2000 points in the first ~40s
+11:05:49  used=6758    +4682 over the next 150s
+```
+
+The proxy's capture over that period, and indeed over its whole lifetime:
+
+| Requests | Endpoint                                  |
+| -------- | ----------------------------------------- |
+| 20       | `GET /repos/agentydragon/ducktape/pulls…` |
+| 14       | `POST /graphql`                           |
+| 9        | `GET /repos/agentydragon/gaffer-private…` |
+| 3        | `GET /repos/agentydragon/ducktape`        |
+
+46 requests, 14 of them GraphQL, every one the same 1-point
+`pullRequest(number){reviewDecision}` query.
+
+```text
+account delta     ~6758 points
+captured GraphQL     14 points
+residual          ~6744 points   (99.8%)
+```
+
+**The CLI sessions are cleared.** Whatever spends this quota is not a proxied session's
+traffic, and it did not reach `api.github.com` from any process on wyrm2 that the
+connection recorder could see — a non-mitmdump connection would have appeared, and none
+did.
+
+### Four facts that cannot all be true of the assumed mechanism
+
+1. The burn requires wyrm2 to be up (partition test).
+2. It correlates with starting CLI sessions (~5700 points in four minutes).
+3. With every session proxied, the account spent 6758 points while the proxy captured 14.
+4. Nothing bypassed the proxy to `api.github.com`.
+
+No process making ordinary HTTPS requests to `api.github.com` from this machine
+satisfies all four. An assumption is wrong, and the most likely one is that the traffic
+goes to `api.github.com` at all: `--allow-hosts` decrypts only that hostname, and the
+recorder's analysis has filtered on those addresses throughout, so traffic to any other
+GitHub API host is invisible to **both** instruments simultaneously — a blind spot
+built by using the same assumption twice.
+
+**Next step**: widen both filters beyond `api.github.com` before running anything else.
+Every conclusion above about "nothing else on this machine touches the API" is scoped to
+that one hostname.
 
 ## Knobs not yet turned
 
