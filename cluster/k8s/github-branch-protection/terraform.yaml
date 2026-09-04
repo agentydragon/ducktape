@@ -5,11 +5,6 @@ metadata:
   name: github-branch-protection
   namespace: flux-system
 spec:
-  # EXPERIMENT(added 2026-09-04): suspended to test whether the GitHub-provider
-  # tf roots are spending the account's GraphQL quota. Unsuspend once the next
-  # reset window has been read either way -- a diagnostic, not a decision.
-  # See <debug/github_rate_limit_monitoring_blind_spot.md>.
-  suspend: true
   interval: 15m
   refreshBeforeApply: true
   path: ./tf/gitops/github-branch-protection
